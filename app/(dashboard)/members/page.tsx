@@ -1,69 +1,77 @@
-"use client"
-
-import { type ColumnDef } from "@tanstack/react-table"
 import { IconPlus, IconUsers } from "@tabler/icons-react"
 
-import { Button } from "@/components/ui/button"
+import { db } from "@/lib/db"
 import { DataTable } from "@/components/ui/data-table"
+import { buildColumns, type MemberRow } from "./columns"
+import { MembersToolbar } from "./toolbar"
 
-type Member = {
-  id: string
-  firstName: string
-  lastName: string
-  email: string | null
-  mobileNumber: string | null
-  smallGroup: string | null
-  lifeStage: string | null
-  dateJoined: string
+async function getMembers(): Promise<MemberRow[]> {
+  const members = await db.member.findMany({
+    orderBy: { dateJoined: "desc" },
+    include: {
+      lifeStage: { select: { id: true, name: true } },
+      smallGroup: { select: { name: true } },
+    },
+  })
+
+  return members.map((m) => ({
+    id: m.id,
+    firstName: m.firstName,
+    lastName: m.lastName,
+    email: m.email,
+    phone: m.phone,
+    smallGroupName: m.smallGroup?.name ?? null,
+    lifeStage: m.lifeStage?.name ?? null,
+    dateJoined: m.dateJoined.toLocaleDateString("en-PH", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    }),
+    // For edit pre-fill
+    address: m.address,
+    notes: m.notes,
+    lifeStageId: m.lifeStageId,
+    gender: m.gender,
+    language: m.language,
+    birthDate: m.birthDate
+      ? m.birthDate.toISOString().split("T")[0]
+      : null,
+    workCity: m.workCity,
+    workIndustry: m.workIndustry,
+    meetingPreference: m.meetingPreference,
+  }))
 }
 
-const columns: ColumnDef<Member>[] = [
-  {
-    accessorFn: (row) => `${row.firstName} ${row.lastName}`,
-    id: "name",
-    header: "Name",
-  },
-  {
-    accessorKey: "email",
-    header: "Email",
-  },
-  {
-    accessorKey: "mobileNumber",
-    header: "Mobile",
-  },
-  {
-    accessorKey: "smallGroup",
-    header: "Small Group",
-  },
-  {
-    accessorKey: "lifeStage",
-    header: "Life Stage",
-  },
-  {
-    accessorKey: "dateJoined",
-    header: "Date Joined",
-  },
-]
+async function getLifeStages() {
+  return db.lifeStage.findMany({
+    orderBy: { order: "asc" },
+    select: { id: true, name: true },
+  })
+}
 
-export default function MembersPage() {
-  const data: Member[] = []
+export default async function MembersPage() {
+  const [members, lifeStages] = await Promise.all([
+    getMembers(),
+    getLifeStages(),
+  ])
+
+  const columns = buildColumns(lifeStages)
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-semibold">Members</h2>
-          <p className="text-sm text-muted-foreground">Manage church member records</p>
+          <p className="text-sm text-muted-foreground">
+            Manage church member records
+          </p>
         </div>
-        <Button>
-          <IconPlus />
-          Add Member
-        </Button>
+        <MembersToolbar lifeStages={lifeStages} />
       </div>
 
       <DataTable
         columns={columns}
-        data={data}
+        data={members}
         emptyState={
           <>
             <IconUsers className="size-8" />
