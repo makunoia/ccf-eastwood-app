@@ -5,18 +5,8 @@ import { IconUsersGroup } from "@tabler/icons-react"
 import { DataTable } from "@/components/ui/data-table"
 import { buildColumns, type SmallGroupRow } from "./columns"
 
-export function SmallGroupsTable({
-  groups,
-  members,
-  smallGroups,
-  lifeStages,
-}: {
-  groups: SmallGroupRow[]
-  members: { id: string; firstName: string; lastName: string }[]
-  smallGroups: { id: string; name: string }[]
-  lifeStages: { id: string; name: string }[]
-}) {
-  const columns = buildColumns(members, smallGroups, lifeStages)
+export function SmallGroupsTable({ groups }: { groups: SmallGroupRow[] }) {
+  const columns = buildColumns()
 
   return (
     <DataTable

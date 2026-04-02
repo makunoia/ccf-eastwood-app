@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useRouter } from "next/navigation"
 import { type ColumnDef } from "@tanstack/react-table"
 import { IconDots, IconPencil, IconTrash } from "@tabler/icons-react"
 import { toast } from "sonner"
@@ -22,7 +23,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { deleteSmallGroup } from "./actions"
-import { SmallGroupDialog } from "./small-group-dialog"
 
 export type SmallGroupRow = {
   id: string
@@ -43,18 +43,8 @@ export type SmallGroupRow = {
   memberLimit: number | null
 }
 
-function RowActions({
-  row,
-  members,
-  smallGroups,
-  lifeStages,
-}: {
-  row: SmallGroupRow
-  members: { id: string; firstName: string; lastName: string }[]
-  smallGroups: { id: string; name: string }[]
-  lifeStages: { id: string; name: string }[]
-}) {
-  const [editOpen, setEditOpen] = React.useState(false)
+function RowActions({ row }: { row: SmallGroupRow }) {
+  const router = useRouter()
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
 
@@ -80,7 +70,9 @@ function RowActions({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onSelect={() => setEditOpen(true)}>
+          <DropdownMenuItem
+            onSelect={() => router.push(`/small-groups/${row.id}`)}
+          >
             <IconPencil className="mr-2 size-4" />
             Edit
           </DropdownMenuItem>
@@ -94,15 +86,6 @@ function RowActions({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-
-      <SmallGroupDialog
-        open={editOpen}
-        onOpenChange={setEditOpen}
-        group={row}
-        members={members}
-        smallGroups={smallGroups}
-        lifeStages={lifeStages}
-      />
 
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent>
@@ -136,11 +119,7 @@ function RowActions({
   )
 }
 
-export function buildColumns(
-  members: { id: string; firstName: string; lastName: string }[],
-  smallGroups: { id: string; name: string }[],
-  lifeStages: { id: string; name: string }[]
-): ColumnDef<SmallGroupRow>[] {
+export function buildColumns(): ColumnDef<SmallGroupRow>[] {
   return [
     {
       accessorKey: "name",
@@ -180,14 +159,7 @@ export function buildColumns(
     },
     {
       id: "actions",
-      cell: ({ row }) => (
-        <RowActions
-          row={row.original}
-          members={members}
-          smallGroups={smallGroups}
-          lifeStages={lifeStages}
-        />
-      ),
+      cell: ({ row }) => <RowActions row={row.original} />,
     },
   ]
 }

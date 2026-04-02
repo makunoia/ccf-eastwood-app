@@ -21,7 +21,6 @@ async function getMembers(): Promise<MemberRow[]> {
     smallGroupName: m.smallGroup?.name ?? null,
     lifeStage: m.lifeStage?.name ?? null,
     dateJoined: m.dateJoined.toISOString().split("T")[0],
-    // For edit pre-fill
     address: m.address,
     notes: m.notes,
     lifeStageId: m.lifeStageId,
@@ -36,18 +35,8 @@ async function getMembers(): Promise<MemberRow[]> {
   }))
 }
 
-async function getLifeStages() {
-  return db.lifeStage.findMany({
-    orderBy: { order: "asc" },
-    select: { id: true, name: true },
-  })
-}
-
 export default async function MembersPage() {
-  const [members, lifeStages] = await Promise.all([
-    getMembers(),
-    getLifeStages(),
-  ])
+  const members = await getMembers()
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
@@ -58,10 +47,10 @@ export default async function MembersPage() {
             Manage church member records
           </p>
         </div>
-        <MembersToolbar lifeStages={lifeStages} />
+        <MembersToolbar />
       </div>
 
-      <MembersTable members={members} lifeStages={lifeStages} />
+      <MembersTable members={members} />
     </div>
   )
 }

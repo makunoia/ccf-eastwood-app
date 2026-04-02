@@ -4,14 +4,8 @@ import { DataTable } from "@/components/ui/data-table"
 import { IconUsers } from "@tabler/icons-react"
 import { buildColumns, type MemberRow } from "./columns"
 
-export function MembersTable({
-  members,
-  lifeStages,
-}: {
-  members: MemberRow[]
-  lifeStages: { id: string; name: string }[]
-}) {
-  const columns = buildColumns(lifeStages)
+export function MembersTable({ members }: { members: MemberRow[] }) {
+  const columns = buildColumns()
 
   return (
     <DataTable
