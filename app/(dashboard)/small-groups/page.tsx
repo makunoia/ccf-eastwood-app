@@ -1,73 +1,89 @@
-"use client"
+import { db } from "@/lib/db"
+import { type SmallGroupRow } from "./columns"
+import { SmallGroupsTable } from "./small-groups-table"
+import { SmallGroupsToolbar } from "./toolbar"
 
-import { type ColumnDef } from "@tanstack/react-table"
-import { IconPlus, IconUsersGroup } from "@tabler/icons-react"
+async function getSmallGroups(): Promise<SmallGroupRow[]> {
+  const groups = await db.smallGroup.findMany({
+    orderBy: { createdAt: "desc" },
+    include: {
+      leader: { select: { id: true, firstName: true, lastName: true } },
+      parentGroup: { select: { id: true, name: true } },
+      lifeStage: { select: { id: true, name: true } },
+      _count: { select: { members: true } },
+    },
+  })
 
-import { Button } from "@/components/ui/button"
-import { DataTable } from "@/components/ui/data-table"
-
-type SmallGroup = {
-  id: string
-  name: string
-  leader: string
-  parentGroup: string | null
-  memberCount: number
-  lifeStage: string | null
-  language: string | null
+  return groups.map((g) => ({
+    id: g.id,
+    name: g.name,
+    leaderName: `${g.leader.firstName} ${g.leader.lastName}`,
+    leaderId: g.leader.id,
+    parentGroupId: g.parentGroupId,
+    parentGroupName: g.parentGroup?.name ?? null,
+    memberCount: g._count.members,
+    lifeStage: g.lifeStage?.name ?? null,
+    lifeStageId: g.lifeStageId,
+    language: g.language,
+    genderFocus: g.genderFocus,
+    ageRangeMin: g.ageRangeMin,
+    ageRangeMax: g.ageRangeMax,
+    meetingFormat: g.meetingFormat,
+    locationCity: g.locationCity,
+    memberLimit: g.memberLimit,
+  }))
 }
 
-const columns: ColumnDef<SmallGroup>[] = [
-  {
-    accessorKey: "name",
-    header: "Name",
-  },
-  {
-    accessorKey: "leader",
-    header: "Leader",
-  },
-  {
-    accessorKey: "parentGroup",
-    header: "Parent Group",
-  },
-  {
-    accessorKey: "memberCount",
-    header: "Members",
-  },
-  {
-    accessorKey: "lifeStage",
-    header: "Life Stage",
-  },
-  {
-    accessorKey: "language",
-    header: "Language",
-  },
-]
+async function getMembers() {
+  return db.member.findMany({
+    orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+    select: { id: true, firstName: true, lastName: true },
+  })
+}
 
-export default function SmallGroupsPage() {
-  const data: SmallGroup[] = []
+async function getLifeStages() {
+  return db.lifeStage.findMany({
+    orderBy: { order: "asc" },
+    select: { id: true, name: true },
+  })
+}
+
+async function getSmallGroupOptions() {
+  return db.smallGroup.findMany({
+    orderBy: { name: "asc" },
+    select: { id: true, name: true },
+  })
+}
+
+export default async function SmallGroupsPage() {
+  const [groups, members, lifeStages, smallGroupOptions] = await Promise.all([
+    getSmallGroups(),
+    getMembers(),
+    getLifeStages(),
+    getSmallGroupOptions(),
+  ])
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-semibold">Small Groups</h2>
-          <p className="text-sm text-muted-foreground">Manage fellowship groups and their hierarchy</p>
+          <p className="text-sm text-muted-foreground">
+            Manage fellowship groups and their hierarchy
+          </p>
         </div>
-        <Button>
-          <IconPlus />
-          Add Group
-        </Button>
+        <SmallGroupsToolbar
+          members={members}
+          smallGroups={smallGroupOptions}
+          lifeStages={lifeStages}
+        />
       </div>
 
-      <DataTable
-        columns={columns}
-        data={data}
-        emptyState={
-          <>
-            <IconUsersGroup className="size-8" />
-            <p className="text-sm">No small groups yet</p>
-          </>
-        }
+      <SmallGroupsTable
+        groups={groups}
+        members={members}
+        smallGroups={smallGroupOptions}
+        lifeStages={lifeStages}
       />
     </div>
   )
