@@ -1,0 +1,63 @@
+import { z } from "zod"
+
+const nullableString = z
+  .string()
+  .optional()
+  .transform((v) => (v === "" || v == null ? null : v.trim()))
+
+const nullableInt = z
+  .string()
+  .optional()
+  .transform((v) => (v === "" || v == null ? null : parseInt(v, 10)))
+  .pipe(z.number().int().positive().nullable())
+
+export const smallGroupSchema = z.object({
+  name: z.string().min(1, "Group name is required").trim(),
+  leaderId: z.string().min(1, "Leader is required"),
+  parentGroupId: nullableString,
+  lifeStageId: nullableString,
+  genderFocus: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.enum(["Male", "Female", "Mixed"]).optional().nullable()
+  ),
+  language: nullableString,
+  ageRangeMin: nullableInt,
+  ageRangeMax: nullableInt,
+  meetingFormat: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.enum(["Online", "Hybrid", "InPerson"]).optional().nullable()
+  ),
+  locationCity: nullableString,
+  memberLimit: nullableInt,
+})
+
+export type SmallGroupInput = z.infer<typeof smallGroupSchema>
+
+// Raw form values (before transform) — used as the form state type
+export type SmallGroupFormValues = {
+  name: string
+  leaderId: string
+  parentGroupId: string
+  lifeStageId: string
+  genderFocus: string
+  language: string
+  ageRangeMin: string
+  ageRangeMax: string
+  meetingFormat: string
+  locationCity: string
+  memberLimit: string
+}
+
+export const defaultSmallGroupForm: SmallGroupFormValues = {
+  name: "",
+  leaderId: "",
+  parentGroupId: "",
+  lifeStageId: "",
+  genderFocus: "",
+  language: "",
+  ageRangeMin: "",
+  ageRangeMax: "",
+  meetingFormat: "",
+  locationCity: "",
+  memberLimit: "",
+}
