@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useRouter } from "next/navigation"
 import { type ColumnDef } from "@tanstack/react-table"
 import { IconDots, IconPencil, IconTrash } from "@tabler/icons-react"
 import { toast } from "sonner"
@@ -22,7 +23,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { deleteMember } from "./actions"
-import { MemberDialog } from "./member-dialog"
 
 export type MemberRow = {
   id: string
@@ -45,14 +45,8 @@ export type MemberRow = {
   meetingPreference: string | null
 }
 
-function RowActions({
-  row,
-  lifeStages,
-}: {
-  row: MemberRow
-  lifeStages: { id: string; name: string }[]
-}) {
-  const [editOpen, setEditOpen] = React.useState(false)
+function RowActions({ row }: { row: MemberRow }) {
+  const router = useRouter()
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
 
@@ -78,7 +72,7 @@ function RowActions({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onSelect={() => setEditOpen(true)}>
+          <DropdownMenuItem onSelect={() => router.push(`/members/${row.id}`)}>
             <IconPencil className="mr-2 size-4" />
             Edit
           </DropdownMenuItem>
@@ -92,13 +86,6 @@ function RowActions({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-
-      <MemberDialog
-        open={editOpen}
-        onOpenChange={setEditOpen}
-        member={row}
-        lifeStages={lifeStages}
-      />
 
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent>
@@ -134,9 +121,7 @@ function RowActions({
   )
 }
 
-export function buildColumns(
-  lifeStages: { id: string; name: string }[]
-): ColumnDef<MemberRow>[] {
+export function buildColumns(): ColumnDef<MemberRow>[] {
   return [
     {
       accessorFn: (row) => `${row.firstName} ${row.lastName}`,
@@ -188,9 +173,7 @@ export function buildColumns(
     },
     {
       id: "actions",
-      cell: ({ row }) => (
-        <RowActions row={row.original} lifeStages={lifeStages} />
-      ),
+      cell: ({ row }) => <RowActions row={row.original} />,
     },
   ]
 }

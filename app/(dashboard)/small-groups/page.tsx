@@ -34,34 +34,8 @@ async function getSmallGroups(): Promise<SmallGroupRow[]> {
   }))
 }
 
-async function getMembers() {
-  return db.member.findMany({
-    orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
-    select: { id: true, firstName: true, lastName: true },
-  })
-}
-
-async function getLifeStages() {
-  return db.lifeStage.findMany({
-    orderBy: { order: "asc" },
-    select: { id: true, name: true },
-  })
-}
-
-async function getSmallGroupOptions() {
-  return db.smallGroup.findMany({
-    orderBy: { name: "asc" },
-    select: { id: true, name: true },
-  })
-}
-
 export default async function SmallGroupsPage() {
-  const [groups, members, lifeStages, smallGroupOptions] = await Promise.all([
-    getSmallGroups(),
-    getMembers(),
-    getLifeStages(),
-    getSmallGroupOptions(),
-  ])
+  const groups = await getSmallGroups()
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
@@ -72,19 +46,10 @@ export default async function SmallGroupsPage() {
             Manage fellowship groups and their hierarchy
           </p>
         </div>
-        <SmallGroupsToolbar
-          members={members}
-          smallGroups={smallGroupOptions}
-          lifeStages={lifeStages}
-        />
+        <SmallGroupsToolbar />
       </div>
 
-      <SmallGroupsTable
-        groups={groups}
-        members={members}
-        smallGroups={smallGroupOptions}
-        lifeStages={lifeStages}
-      />
+      <SmallGroupsTable groups={groups} />
     </div>
   )
 }
