@@ -212,28 +212,26 @@ export function MemberForm({ lifeStages, member }: Props) {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="dateJoined">
-                Date Joined <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                id="dateJoined"
-                type="date"
-                value={form.dateJoined}
-                onChange={(e) => set("dateJoined", e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="birthDate">Birth Date</Label>
-              <Input
-                id="birthDate"
-                type="date"
-                value={form.birthDate}
-                onChange={(e) => set("birthDate", e.target.value)}
-              />
-            </div>
+          <div className="space-y-2">
+            <Label htmlFor="dateJoined">
+              Date Joined <span className="text-destructive">*</span>
+            </Label>
+            <Input
+              id="dateJoined"
+              type="date"
+              value={form.dateJoined}
+              onChange={(e) => set("dateJoined", e.target.value)}
+              required
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="birthDate">Birth Date</Label>
+            <Input
+              id="birthDate"
+              type="date"
+              value={form.birthDate}
+              onChange={(e) => set("birthDate", e.target.value)}
+            />
           </div>
         </section>
 
