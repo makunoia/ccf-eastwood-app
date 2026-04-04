@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { IconArrowLeft, IconTrash } from "@tabler/icons-react"
+import { IconArrowLeft } from "@tabler/icons-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -31,6 +31,7 @@ import {
 } from "@/lib/validations/member"
 import { createMember, updateMember, deleteMember } from "./actions"
 import { type MemberRow } from "./columns"
+import { MobileFormActions } from "@/components/mobile-form-actions"
 
 type Props = {
   lifeStages: { id: string; name: string }[]
@@ -59,15 +60,20 @@ function toFormValues(member: MemberRow): MemberFormValues {
 export function MemberForm({ lifeStages, member }: Props) {
   const router = useRouter()
   const isEdit = !!member
-  const [form, setForm] = React.useState<MemberFormValues>(
+  const initialForm = React.useRef<MemberFormValues>(
     member ? toFormValues(member) : defaultMemberForm
   )
+  const [form, setForm] = React.useState<MemberFormValues>(initialForm.current)
   const [saving, setSaving] = React.useState(false)
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
 
   function set(field: keyof MemberFormValues, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }))
+  }
+
+  function handleRevert() {
+    setForm(initialForm.current)
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -101,7 +107,7 @@ export function MemberForm({ lifeStages, member }: Props) {
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-6 p-6">
+    <div className="flex flex-1 flex-col gap-6 p-6 pb-24 sm:pb-6">
       <div>
         <Link
           href="/members"
@@ -125,7 +131,7 @@ export function MemberForm({ lifeStages, member }: Props) {
               : "Fill in the details to add a new member."}
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="hidden shrink-0 items-center gap-2 sm:flex">
           {isEdit && (
             <Button
               type="button"
@@ -133,7 +139,6 @@ export function MemberForm({ lifeStages, member }: Props) {
               onClick={() => setDeleteOpen(true)}
               disabled={saving}
             >
-              <IconTrash className="size-4" />
               Delete
             </Button>
           )}
@@ -351,6 +356,15 @@ export function MemberForm({ lifeStages, member }: Props) {
           </div>
         </section>
       </form>
+
+      <MobileFormActions
+        formId="member-form"
+        isEdit={isEdit}
+        saving={saving}
+        saveLabel={isEdit ? "Save changes" : "Add member"}
+        onRevert={handleRevert}
+        onDelete={isEdit ? () => setDeleteOpen(true) : undefined}
+      />
 
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent>

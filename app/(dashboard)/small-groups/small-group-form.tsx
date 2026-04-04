@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { IconArrowLeft, IconTrash, IconUserPlus, IconUserMinus } from "@tabler/icons-react"
+import { IconArrowLeft, IconUserPlus, IconUserMinus } from "@tabler/icons-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -29,6 +29,7 @@ import {
   type SmallGroupFormValues,
 } from "@/lib/validations/small-group"
 import { createSmallGroup, updateSmallGroup, deleteSmallGroup, addMemberToGroup, removeMemberFromGroup, updateMemberGroupStatus } from "./actions"
+import { MobileFormActions } from "@/components/mobile-form-actions"
 import { type SmallGroupRow } from "./columns"
 
 type StatusOption = { id: string; name: string; order: number }
@@ -77,9 +78,10 @@ function toFormValues(group: SmallGroupRow): SmallGroupFormValues {
 export function SmallGroupForm({ members, smallGroups, lifeStages, statuses, group, groupMembers }: Props) {
   const router = useRouter()
   const isEdit = !!group
-  const [form, setForm] = React.useState<SmallGroupFormValues>(
+  const initialForm = React.useRef<SmallGroupFormValues>(
     group ? toFormValues(group) : defaultSmallGroupForm
   )
+  const [form, setForm] = React.useState<SmallGroupFormValues>(initialForm.current)
   const [saving, setSaving] = React.useState(false)
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
@@ -93,12 +95,25 @@ export function SmallGroupForm({ members, smallGroups, lifeStages, statuses, gro
     setForm((prev) => ({ ...prev, [field]: value }))
   }
 
+  function handleRevert() {
+    setForm(initialForm.current)
+  }
+
   // For edit mode, exclude self from parent group options to prevent trivial cycles
   const parentGroupOptions = smallGroups.filter((g) => g.id !== group?.id)
 
   // Members not already in this group, available to add
   const currentMemberIds = new Set(groupMembers?.map((m) => m.id) ?? [])
   const availableMembers = members.filter((m) => !currentMemberIds.has(m.id))
+
+  const memberLimitNum =
+    form.memberLimit !== "" ? parseInt(form.memberLimit, 10) : null
+  const currentMemberCount = groupMembers?.length ?? 0
+  const isAtCapacity =
+    memberLimitNum !== null &&
+    !isNaN(memberLimitNum) &&
+    memberLimitNum > 0 &&
+    currentMemberCount >= memberLimitNum
 
   // Map statusId → color class based on sorted order position
   const statusColorMap = Object.fromEntries(
@@ -176,7 +191,7 @@ export function SmallGroupForm({ members, smallGroups, lifeStages, statuses, gro
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-6 p-6">
+    <div className="flex flex-1 flex-col gap-6 p-6 pb-24 sm:pb-6">
       <div>
         <Link
           href="/small-groups"
@@ -198,7 +213,7 @@ export function SmallGroupForm({ members, smallGroups, lifeStages, statuses, gro
               : "Fill in the details to create a new small group."}
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="hidden shrink-0 items-center gap-2 sm:flex">
           {isEdit && (
             <Button
               type="button"
@@ -206,7 +221,6 @@ export function SmallGroupForm({ members, smallGroups, lifeStages, statuses, gro
               onClick={() => setDeleteOpen(true)}
               disabled={saving}
             >
-              <IconTrash className="size-4" />
               Delete
             </Button>
           )}
@@ -420,18 +434,29 @@ export function SmallGroupForm({ members, smallGroups, lifeStages, statuses, gro
         <section className="max-w-2xl space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-medium text-muted-foreground">
-              Members ({groupMembers.length})
+              Members (
+              {memberLimitNum !== null && !isNaN(memberLimitNum)
+                ? `${currentMemberCount} / ${memberLimitNum}`
+                : currentMemberCount}
+              )
             </h3>
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={() => setAddMemberOpen(true)}
+              disabled={isAtCapacity}
+              title={isAtCapacity ? `Group is at its member limit of ${memberLimitNum}` : undefined}
             >
               <IconUserPlus className="size-4" />
               Add member
             </Button>
           </div>
+          {isAtCapacity && (
+            <p className="text-xs text-muted-foreground">
+              This group has reached its member limit. Increase the limit or remove a member to add more.
+            </p>
+          )}
           {groupMembers.length === 0 ? (
             <p className="text-sm text-muted-foreground">No members in this group yet.</p>
           ) : (
@@ -546,6 +571,15 @@ export function SmallGroupForm({ members, smallGroups, lifeStages, statuses, gro
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <MobileFormActions
+        formId="small-group-form"
+        isEdit={isEdit}
+        saving={saving}
+        saveLabel={isEdit ? "Save changes" : "Create group"}
+        onRevert={handleRevert}
+        onDelete={isEdit ? () => setDeleteOpen(true) : undefined}
+      />
 
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent>
