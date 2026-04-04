@@ -13,7 +13,7 @@ type Event = {
   ministry: string
   date: string
   registration: string
-  isPaid: boolean
+  price: number | null
   registrantCount: number
 }
 
@@ -35,9 +35,9 @@ const columns: ColumnDef<Event>[] = [
     header: "Registration",
   },
   {
-    accessorKey: "isPaid",
+    accessorKey: "price",
     header: "Payment",
-    cell: ({ row }) => (row.original.isPaid ? "Paid" : "Free"),
+    cell: ({ row }) => (row.original.price != null ? "Paid" : "Free"),
   },
   {
     accessorKey: "registrantCount",
@@ -58,7 +58,7 @@ function EventCard({ event }: { event: Event }) {
           <span className="text-muted-foreground">Registration</span>
           <span>{event.registration}</span>
           <span className="text-muted-foreground">Payment</span>
-          <span>{event.isPaid ? "Paid" : "Free"}</span>
+          <span>{event.price != null ? "Paid" : "Free"}</span>
           <span className="text-muted-foreground">Registrants</span>
           <span>{event.registrantCount}</span>
         </div>

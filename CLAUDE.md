@@ -143,7 +143,7 @@ Volunteer {
 ### Event
 Church events hosted by a ministry. Can be free or paid (manual). Supports registration periods, attendance tracking, and breakout groups with facilitators.
 
-**Event fields:** `id`, `name`, `description`, `ministryId → Ministry`, `startDate`, `endDate`, `isPaid`, `price (nullable, in cents)`, `registrationStart`, `registrationEnd`, `createdAt`, `updatedAt`
+**Event fields:** `id`, `name`, `description`, `ministryId → Ministry`, `startDate`, `endDate`, `price (nullable, in cents — null means free)`, `registrationStart`, `registrationEnd`, `createdAt`, `updatedAt`
 
 **EventRegistrant** — people who register for an event (member or non-member):
 ```

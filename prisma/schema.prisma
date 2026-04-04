@@ -220,8 +220,7 @@ model Event {
   ministry          Ministry  @relation(fields: [ministryId], references: [id])
   startDate         DateTime
   endDate           DateTime
-  isPaid            Boolean   @default(false)
-  price             Int?      // in cents
+  price             Int?      // in cents; null = free
   registrationStart DateTime?
   registrationEnd   DateTime?
   createdAt         DateTime  @default(now())

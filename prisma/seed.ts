@@ -674,7 +674,6 @@ async function main() {
       ministryId: across.id,
       startDate: new Date("2026-05-09"),
       endDate: new Date("2026-05-11"),
-      isPaid: true,
       price: 250000, // PHP 2500 in cents
       registrationStart: new Date("2026-03-01"),
       registrationEnd: new Date("2026-04-30"),
@@ -688,7 +687,6 @@ async function main() {
       ministryId: elevate.id,
       startDate: new Date("2026-06-13"),
       endDate: new Date("2026-06-14"),
-      isPaid: false,
       registrationStart: new Date("2026-04-01"),
       registrationEnd: new Date("2026-06-01"),
     },
