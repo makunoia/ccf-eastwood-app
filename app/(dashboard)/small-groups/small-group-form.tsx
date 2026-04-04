@@ -100,6 +100,15 @@ export function SmallGroupForm({ members, smallGroups, lifeStages, statuses, gro
   const currentMemberIds = new Set(groupMembers?.map((m) => m.id) ?? [])
   const availableMembers = members.filter((m) => !currentMemberIds.has(m.id))
 
+  const memberLimitNum =
+    form.memberLimit !== "" ? parseInt(form.memberLimit, 10) : null
+  const currentMemberCount = groupMembers?.length ?? 0
+  const isAtCapacity =
+    memberLimitNum !== null &&
+    !isNaN(memberLimitNum) &&
+    memberLimitNum > 0 &&
+    currentMemberCount >= memberLimitNum
+
   // Map statusId → color class based on sorted order position
   const statusColorMap = Object.fromEntries(
     statuses.map((s, i) => [s.id, STATUS_COLOR_PALETTE[i % STATUS_COLOR_PALETTE.length]])
@@ -420,18 +429,29 @@ export function SmallGroupForm({ members, smallGroups, lifeStages, statuses, gro
         <section className="max-w-2xl space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-medium text-muted-foreground">
-              Members ({groupMembers.length})
+              Members (
+              {memberLimitNum !== null && !isNaN(memberLimitNum)
+                ? `${currentMemberCount} / ${memberLimitNum}`
+                : currentMemberCount}
+              )
             </h3>
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={() => setAddMemberOpen(true)}
+              disabled={isAtCapacity}
+              title={isAtCapacity ? `Group is at its member limit of ${memberLimitNum}` : undefined}
             >
               <IconUserPlus className="size-4" />
               Add member
             </Button>
           </div>
+          {isAtCapacity && (
+            <p className="text-xs text-muted-foreground">
+              This group has reached its member limit. Increase the limit or remove a member to add more.
+            </p>
+          )}
           {groupMembers.length === 0 ? (
             <p className="text-sm text-muted-foreground">No members in this group yet.</p>
           ) : (

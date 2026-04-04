@@ -77,6 +77,17 @@ export async function updateSmallGroup(
     }
   }
 
+  // Prevent reducing memberLimit below the current member count
+  if (parsed.data.memberLimit !== null) {
+    const currentCount = await db.member.count({ where: { smallGroupId: id } })
+    if (currentCount > parsed.data.memberLimit) {
+      return {
+        success: false,
+        error: `Cannot set limit to ${parsed.data.memberLimit}: group currently has ${currentCount} member${currentCount === 1 ? "" : "s"}`,
+      }
+    }
+  }
+
   try {
     await db.smallGroup.update({
       where: { id },
@@ -116,6 +127,21 @@ export async function addMemberToGroup(
   memberId: string
 ): Promise<ActionResult> {
   try {
+    const group = await db.smallGroup.findUnique({
+      where: { id: groupId },
+      select: {
+        memberLimit: true,
+        _count: { select: { members: true } },
+      },
+    })
+    if (!group) return { success: false, error: "Group not found" }
+    if (group.memberLimit !== null && group._count.members >= group.memberLimit) {
+      return {
+        success: false,
+        error: `This group has reached its member limit of ${group.memberLimit}`,
+      }
+    }
+
     // Default to the first status by order (e.g. "New")
     const firstStatus = await db.smallGroupStatus.findFirst({
       orderBy: { order: "asc" },
