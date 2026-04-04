@@ -3,14 +3,25 @@ import { db } from "@/lib/db"
 import { SmallGroupForm } from "../small-group-form"
 import { type SmallGroupRow } from "../columns"
 
-async function getSmallGroup(id: string): Promise<SmallGroupRow | null> {
+type GroupMember = {
+  id: string
+  firstName: string
+  lastName: string
+  email: string | null
+  phone: string | null
+}
+
+async function getSmallGroup(id: string): Promise<(SmallGroupRow & { groupMembers: GroupMember[] }) | null> {
   const g = await db.smallGroup.findUnique({
     where: { id },
     include: {
       leader: { select: { id: true, firstName: true, lastName: true } },
       parentGroup: { select: { id: true, name: true } },
       lifeStage: { select: { id: true, name: true } },
-      _count: { select: { members: true } },
+      members: {
+        select: { id: true, firstName: true, lastName: true, email: true, phone: true },
+        orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+      },
     },
   })
   if (!g) return null
@@ -21,7 +32,7 @@ async function getSmallGroup(id: string): Promise<SmallGroupRow | null> {
     leaderId: g.leader.id,
     parentGroupId: g.parentGroupId,
     parentGroupName: g.parentGroup?.name ?? null,
-    memberCount: g._count.members,
+    memberCount: g.members.length,
     lifeStage: g.lifeStage?.name ?? null,
     lifeStageId: g.lifeStageId,
     language: g.language,
@@ -31,6 +42,7 @@ async function getSmallGroup(id: string): Promise<SmallGroupRow | null> {
     meetingFormat: g.meetingFormat,
     locationCity: g.locationCity,
     memberLimit: g.memberLimit,
+    groupMembers: g.members,
   }
 }
 
@@ -71,6 +83,7 @@ export default async function SmallGroupDetailPage({
       smallGroups={smallGroups}
       lifeStages={lifeStages}
       group={group!}
+      groupMembers={group!.groupMembers}
     />
   )
 }
