@@ -43,7 +43,7 @@ export type SmallGroupRow = {
   memberLimit: number | null
 }
 
-function RowActions({ row }: { row: SmallGroupRow }) {
+export function RowActions({ row }: { row: SmallGroupRow }) {
   const router = useRouter()
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
