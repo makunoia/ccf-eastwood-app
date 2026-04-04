@@ -118,7 +118,7 @@ export async function addMemberToGroup(
   try {
     await db.member.update({
       where: { id: memberId },
-      data: { smallGroupId: groupId },
+      data: { smallGroupId: groupId, smallGroupStatus: "New" },
     })
     revalidatePath(`/small-groups/${groupId}`)
     revalidatePath("/small-groups")
@@ -135,13 +135,30 @@ export async function removeMemberFromGroup(
   try {
     await db.member.update({
       where: { id: memberId },
-      data: { smallGroupId: null },
+      data: { smallGroupId: null, smallGroupStatus: null },
     })
     revalidatePath(`/small-groups/${groupId}`)
     revalidatePath("/small-groups")
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to remove member from group" }
+  }
+}
+
+export async function updateMemberGroupStatus(
+  memberId: string,
+  groupId: string,
+  status: "New" | "Regular" | "Timothy" | "Leader"
+): Promise<ActionResult> {
+  try {
+    await db.member.update({
+      where: { id: memberId },
+      data: { smallGroupStatus: status },
+    })
+    revalidatePath(`/small-groups/${groupId}`)
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to update member status" }
   }
 }
 

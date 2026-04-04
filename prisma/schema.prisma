@@ -43,6 +43,13 @@ enum MatchingContext {
   Breakout
 }
 
+enum SmallGroupStatus {
+  New
+  Regular
+  Timothy
+  Leader
+}
+
 // ─── Auth (NextAuth / Auth.js v5) ────────────────────────────────────────────
 
 model User {
@@ -123,6 +130,7 @@ model Member {
 
   smallGroupId        String?
   smallGroup          SmallGroup?         @relation("SmallGroupMembers", fields: [smallGroupId], references: [id])
+  smallGroupStatus    SmallGroupStatus?
 
   // Matching fields
   gender              Gender?

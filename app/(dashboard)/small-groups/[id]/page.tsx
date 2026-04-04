@@ -9,6 +9,7 @@ type GroupMember = {
   lastName: string
   email: string | null
   phone: string | null
+  smallGroupStatus: "New" | "Regular" | "Timothy" | "Leader" | null
 }
 
 async function getSmallGroup(id: string): Promise<(SmallGroupRow & { groupMembers: GroupMember[] }) | null> {
@@ -19,7 +20,7 @@ async function getSmallGroup(id: string): Promise<(SmallGroupRow & { groupMember
       parentGroup: { select: { id: true, name: true } },
       lifeStage: { select: { id: true, name: true } },
       members: {
-        select: { id: true, firstName: true, lastName: true, email: true, phone: true },
+        select: { id: true, firstName: true, lastName: true, email: true, phone: true, smallGroupStatus: true },
         orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
       },
     },

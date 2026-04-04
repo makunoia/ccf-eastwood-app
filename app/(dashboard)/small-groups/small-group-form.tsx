@@ -28,8 +28,10 @@ import {
   defaultSmallGroupForm,
   type SmallGroupFormValues,
 } from "@/lib/validations/small-group"
-import { createSmallGroup, updateSmallGroup, deleteSmallGroup, addMemberToGroup, removeMemberFromGroup } from "./actions"
+import { createSmallGroup, updateSmallGroup, deleteSmallGroup, addMemberToGroup, removeMemberFromGroup, updateMemberGroupStatus } from "./actions"
 import { type SmallGroupRow } from "./columns"
+
+type SmallGroupStatus = "New" | "Regular" | "Timothy" | "Leader"
 
 type GroupMember = {
   id: string
@@ -37,6 +39,21 @@ type GroupMember = {
   lastName: string
   email: string | null
   phone: string | null
+  smallGroupStatus: SmallGroupStatus | null
+}
+
+const STATUS_OPTIONS: { value: SmallGroupStatus; label: string }[] = [
+  { value: "New", label: "New" },
+  { value: "Regular", label: "Regular" },
+  { value: "Timothy", label: "Timothy" },
+  { value: "Leader", label: "Leader" },
+]
+
+const STATUS_COLORS: Record<SmallGroupStatus, string> = {
+  New: "bg-slate-100 text-slate-700",
+  Regular: "bg-blue-100 text-blue-700",
+  Timothy: "bg-amber-100 text-amber-700",
+  Leader: "bg-green-100 text-green-700",
 }
 
 type Props = {
@@ -98,6 +115,17 @@ export function SmallGroupForm({ members, smallGroups, lifeStages, group, groupM
       toast.success("Member added to group")
       setAddMemberOpen(false)
       setSelectedMemberId("")
+      router.refresh()
+    } else {
+      toast.error(result.error)
+    }
+  }
+
+  async function handleStatusChange(memberId: string, status: SmallGroupStatus) {
+    if (!group) return
+    const result = await updateMemberGroupStatus(memberId, group.id, status)
+    if (result.success) {
+      toast.success("Status updated")
       router.refresh()
     } else {
       toast.error(result.error)
@@ -412,24 +440,39 @@ export function SmallGroupForm({ members, smallGroups, lifeStages, group, groupM
               {groupMembers.map((m) => (
                 <div
                   key={m.id}
-                  className="flex items-center justify-between px-4 py-3"
+                  className="flex items-center gap-3 px-4 py-3"
                 >
                   <Link
                     href={`/members/${m.id}`}
-                    className="flex-1 flex items-center justify-between hover:underline"
+                    className="flex-1 min-w-0 hover:underline"
                   >
                     <span className="text-sm font-medium">
                       {m.firstName} {m.lastName}
                     </span>
-                    <span className="text-sm text-muted-foreground">
+                    <span className="ml-3 text-sm text-muted-foreground">
                       {m.email ?? m.phone ?? "—"}
                     </span>
                   </Link>
+                  <Select
+                    value={m.smallGroupStatus ?? "New"}
+                    onValueChange={(v) => handleStatusChange(m.id, v as SmallGroupStatus)}
+                  >
+                    <SelectTrigger className={`w-28 h-7 text-xs font-medium border-0 ${STATUS_COLORS[m.smallGroupStatus ?? "New"]}`}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {STATUS_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="ml-2 text-destructive hover:text-destructive"
+                    className="text-destructive hover:text-destructive"
                     onClick={() => setRemoveConfirmMember(m)}
                     disabled={removingMemberId === m.id}
                   >
