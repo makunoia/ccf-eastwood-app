@@ -116,9 +116,14 @@ export async function addMemberToGroup(
   memberId: string
 ): Promise<ActionResult> {
   try {
+    // Default to the first status by order (e.g. "New")
+    const firstStatus = await db.smallGroupStatus.findFirst({
+      orderBy: { order: "asc" },
+      select: { id: true },
+    })
     await db.member.update({
       where: { id: memberId },
-      data: { smallGroupId: groupId, smallGroupStatus: "New" },
+      data: { smallGroupId: groupId, smallGroupStatusId: firstStatus?.id ?? null },
     })
     revalidatePath(`/small-groups/${groupId}`)
     revalidatePath("/small-groups")
@@ -135,7 +140,7 @@ export async function removeMemberFromGroup(
   try {
     await db.member.update({
       where: { id: memberId },
-      data: { smallGroupId: null, smallGroupStatus: null },
+      data: { smallGroupId: null, smallGroupStatusId: null },
     })
     revalidatePath(`/small-groups/${groupId}`)
     revalidatePath("/small-groups")
@@ -148,12 +153,12 @@ export async function removeMemberFromGroup(
 export async function updateMemberGroupStatus(
   memberId: string,
   groupId: string,
-  status: "New" | "Regular" | "Timothy" | "Leader"
+  statusId: string
 ): Promise<ActionResult> {
   try {
     await db.member.update({
       where: { id: memberId },
-      data: { smallGroupStatus: status },
+      data: { smallGroupStatusId: statusId },
     })
     revalidatePath(`/small-groups/${groupId}`)
     return { success: true, data: undefined }

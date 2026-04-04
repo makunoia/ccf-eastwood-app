@@ -7,7 +7,7 @@ type GroupMember = {
   id: string
   firstName: string
   lastName: string
-  smallGroupStatus: "New" | "Regular" | "Timothy" | "Leader" | null
+  smallGroupStatusId: string | null
 }
 
 async function getSmallGroup(id: string): Promise<(SmallGroupRow & { groupMembers: GroupMember[] }) | null> {
@@ -18,7 +18,7 @@ async function getSmallGroup(id: string): Promise<(SmallGroupRow & { groupMember
       parentGroup: { select: { id: true, name: true } },
       lifeStage: { select: { id: true, name: true } },
       members: {
-        select: { id: true, firstName: true, lastName: true, smallGroupStatus: true },
+        select: { id: true, firstName: true, lastName: true, smallGroupStatusId: true },
         orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
       },
     },
@@ -46,7 +46,7 @@ async function getSmallGroup(id: string): Promise<(SmallGroupRow & { groupMember
 }
 
 async function getData() {
-  const [members, smallGroups, lifeStages] = await Promise.all([
+  const [members, smallGroups, lifeStages, statuses] = await Promise.all([
     db.member.findMany({
       orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
       select: { id: true, firstName: true, lastName: true, smallGroupId: true },
@@ -59,8 +59,12 @@ async function getData() {
       orderBy: { order: "asc" },
       select: { id: true, name: true },
     }),
+    db.smallGroupStatus.findMany({
+      orderBy: { order: "asc" },
+      select: { id: true, name: true, order: true },
+    }),
   ])
-  return { members, smallGroups, lifeStages }
+  return { members, smallGroups, lifeStages, statuses }
 }
 
 export default async function SmallGroupDetailPage({
@@ -69,7 +73,7 @@ export default async function SmallGroupDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const [group, { members, smallGroups, lifeStages }] = await Promise.all([
+  const [group, { members, smallGroups, lifeStages, statuses }] = await Promise.all([
     getSmallGroup(id),
     getData(),
   ])
@@ -81,6 +85,7 @@ export default async function SmallGroupDetailPage({
       members={members}
       smallGroups={smallGroups}
       lifeStages={lifeStages}
+      statuses={statuses}
       group={group!}
       groupMembers={group!.groupMembers}
     />

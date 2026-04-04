@@ -31,33 +31,29 @@ import {
 import { createSmallGroup, updateSmallGroup, deleteSmallGroup, addMemberToGroup, removeMemberFromGroup, updateMemberGroupStatus } from "./actions"
 import { type SmallGroupRow } from "./columns"
 
-type SmallGroupStatus = "New" | "Regular" | "Timothy" | "Leader"
+type StatusOption = { id: string; name: string; order: number }
 
 type GroupMember = {
   id: string
   firstName: string
   lastName: string
-  smallGroupStatus: SmallGroupStatus | null
+  smallGroupStatusId: string | null
 }
 
-const STATUS_OPTIONS: { value: SmallGroupStatus; label: string }[] = [
-  { value: "New", label: "New" },
-  { value: "Regular", label: "Regular" },
-  { value: "Timothy", label: "Timothy" },
-  { value: "Leader", label: "Leader" },
+const STATUS_COLOR_PALETTE = [
+  "bg-slate-100 text-slate-700",
+  "bg-blue-100 text-blue-700",
+  "bg-amber-100 text-amber-700",
+  "bg-green-100 text-green-700",
+  "bg-purple-100 text-purple-700",
+  "bg-pink-100 text-pink-700",
 ]
-
-const STATUS_COLORS: Record<SmallGroupStatus, string> = {
-  New: "bg-slate-100 text-slate-700",
-  Regular: "bg-blue-100 text-blue-700",
-  Timothy: "bg-amber-100 text-amber-700",
-  Leader: "bg-green-100 text-green-700",
-}
 
 type Props = {
   members: { id: string; firstName: string; lastName: string; smallGroupId: string | null }[]
   smallGroups: { id: string; name: string }[]
   lifeStages: { id: string; name: string }[]
+  statuses: StatusOption[]
   group?: SmallGroupRow
   groupMembers?: GroupMember[]
 }
@@ -78,7 +74,7 @@ function toFormValues(group: SmallGroupRow): SmallGroupFormValues {
   }
 }
 
-export function SmallGroupForm({ members, smallGroups, lifeStages, group, groupMembers }: Props) {
+export function SmallGroupForm({ members, smallGroups, lifeStages, statuses, group, groupMembers }: Props) {
   const router = useRouter()
   const isEdit = !!group
   const [form, setForm] = React.useState<SmallGroupFormValues>(
@@ -104,6 +100,11 @@ export function SmallGroupForm({ members, smallGroups, lifeStages, group, groupM
   const currentMemberIds = new Set(groupMembers?.map((m) => m.id) ?? [])
   const availableMembers = members.filter((m) => !currentMemberIds.has(m.id))
 
+  // Map statusId → color class based on sorted order position
+  const statusColorMap = Object.fromEntries(
+    statuses.map((s, i) => [s.id, STATUS_COLOR_PALETTE[i % STATUS_COLOR_PALETTE.length]])
+  )
+
   async function handleAddMember() {
     if (!selectedMemberId || !group) return
     setAddingMember(true)
@@ -119,9 +120,9 @@ export function SmallGroupForm({ members, smallGroups, lifeStages, group, groupM
     }
   }
 
-  async function handleStatusChange(memberId: string, status: SmallGroupStatus) {
+  async function handleStatusChange(memberId: string, statusId: string) {
     if (!group) return
-    const result = await updateMemberGroupStatus(memberId, group.id, status)
+    const result = await updateMemberGroupStatus(memberId, group.id, statusId)
     if (result.success) {
       toast.success("Status updated")
       router.refresh()
@@ -449,16 +450,16 @@ export function SmallGroupForm({ members, smallGroups, lifeStages, group, groupM
                     </span>
                   </Link>
                   <Select
-                    value={m.smallGroupStatus ?? "New"}
-                    onValueChange={(v) => handleStatusChange(m.id, v as SmallGroupStatus)}
+                    value={m.smallGroupStatusId ?? ""}
+                    onValueChange={(v) => handleStatusChange(m.id, v)}
                   >
-                    <SelectTrigger className={`w-28 h-7 text-xs font-medium border-0 ${STATUS_COLORS[m.smallGroupStatus ?? "New"]}`}>
-                      <SelectValue />
+                    <SelectTrigger className={`w-28 h-7 text-xs font-medium border-0 ${m.smallGroupStatusId ? statusColorMap[m.smallGroupStatusId] : "bg-slate-100 text-slate-700"}`}>
+                      <SelectValue placeholder="—" />
                     </SelectTrigger>
                     <SelectContent>
-                      {STATUS_OPTIONS.map((opt) => (
-                        <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                          {opt.label}
+                      {statuses.map((s) => (
+                        <SelectItem key={s.id} value={s.id} className="text-xs">
+                          {s.name}
                         </SelectItem>
                       ))}
                     </SelectContent>

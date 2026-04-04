@@ -1,6 +1,6 @@
 import Link from "next/link"
-import { IconAdjustmentsHorizontal, IconTags } from "@tabler/icons-react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { IconAdjustmentsHorizontal, IconListCheck, IconTags } from "@tabler/icons-react"
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
 const sections = [
   {
@@ -8,6 +8,12 @@ const sections = [
     description: "Configure the life stage categories used for members and ministries",
     icon: IconTags,
     href: "/settings/life-stages",
+  },
+  {
+    title: "Small Group Statuses",
+    description: "Configure the integration stages used to track member progress in small groups",
+    icon: IconListCheck,
+    href: "/settings/small-group-statuses",
   },
   {
     title: "Matching Weights",
