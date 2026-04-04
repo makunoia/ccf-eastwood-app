@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { IconArrowLeft, IconTrash } from "@tabler/icons-react"
+import { IconArrowLeft } from "@tabler/icons-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -31,6 +31,7 @@ import {
 } from "@/lib/validations/ministry"
 import { createMinistry, updateMinistry, deleteMinistry } from "./actions"
 import { type MinistryRow } from "./columns"
+import { MobileFormActions } from "@/components/mobile-form-actions"
 
 type Props = {
   lifeStages: { id: string; name: string }[]
@@ -48,15 +49,20 @@ function toFormValues(ministry: MinistryRow): MinistryFormValues {
 export function MinistryForm({ lifeStages, ministry }: Props) {
   const router = useRouter()
   const isEdit = !!ministry
-  const [form, setForm] = React.useState<MinistryFormValues>(
+  const initialForm = React.useRef<MinistryFormValues>(
     ministry ? toFormValues(ministry) : defaultMinistryForm
   )
+  const [form, setForm] = React.useState<MinistryFormValues>(initialForm.current)
   const [saving, setSaving] = React.useState(false)
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
 
   function set(field: keyof MinistryFormValues, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }))
+  }
+
+  function handleRevert() {
+    setForm(initialForm.current)
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -90,7 +96,7 @@ export function MinistryForm({ lifeStages, ministry }: Props) {
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-6 p-6">
+    <div className="flex flex-1 flex-col gap-6 p-6 pb-24 sm:pb-6">
       <div>
         <Link
           href="/ministries"
@@ -112,7 +118,7 @@ export function MinistryForm({ lifeStages, ministry }: Props) {
               : "Fill in the details to add a new ministry."}
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="hidden shrink-0 items-center gap-2 sm:flex">
           {isEdit && (
             <Button
               type="button"
@@ -120,7 +126,6 @@ export function MinistryForm({ lifeStages, ministry }: Props) {
               onClick={() => setDeleteOpen(true)}
               disabled={saving}
             >
-              <IconTrash className="size-4" />
               Delete
             </Button>
           )}
@@ -179,6 +184,15 @@ export function MinistryForm({ lifeStages, ministry }: Props) {
           />
         </div>
       </form>
+
+      <MobileFormActions
+        formId="ministry-form"
+        isEdit={isEdit}
+        saving={saving}
+        saveLabel={isEdit ? "Save changes" : "Add ministry"}
+        onRevert={handleRevert}
+        onDelete={isEdit ? () => setDeleteOpen(true) : undefined}
+      />
 
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent>
