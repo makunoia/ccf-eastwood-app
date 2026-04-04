@@ -212,7 +212,7 @@ export function MemberForm({ lifeStages, member }: Props) {
             />
           </div>
 
-          <div className="space-y-2 overflow-hidden">
+          <div className="space-y-2">
             <Label htmlFor="dateJoined">
               Date Joined <span className="text-destructive">*</span>
             </Label>
@@ -225,7 +225,7 @@ export function MemberForm({ lifeStages, member }: Props) {
               required
             />
           </div>
-          <div className="space-y-2 overflow-hidden">
+          <div className="space-y-2">
             <Label htmlFor="birthDate">Birth Date</Label>
             <Input
               id="birthDate"
