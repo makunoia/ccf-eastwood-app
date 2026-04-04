@@ -45,7 +45,7 @@ export type MemberRow = {
   meetingPreference: string | null
 }
 
-function RowActions({ row }: { row: MemberRow }) {
+export function RowActions({ row }: { row: MemberRow }) {
   const router = useRouter()
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
