@@ -37,8 +37,6 @@ type GroupMember = {
   id: string
   firstName: string
   lastName: string
-  email: string | null
-  phone: string | null
   smallGroupStatus: SmallGroupStatus | null
 }
 
@@ -448,9 +446,6 @@ export function SmallGroupForm({ members, smallGroups, lifeStages, group, groupM
                   >
                     <span className="text-sm font-medium">
                       {m.firstName} {m.lastName}
-                    </span>
-                    <span className="ml-3 text-sm text-muted-foreground">
-                      {m.email ?? m.phone ?? "—"}
                     </span>
                   </Link>
                   <Select
