@@ -48,6 +48,7 @@ Core person record created when someone joins the church.
 **Relationships:**
 - Can lead one or more SmallGroups (`SmallGroup.leaderId`)
 - Belongs to **at most one** SmallGroup at a time (`Member.smallGroupId` direct FK)
+- Has a `smallGroupStatus (SmallGroupStatus nullable)` — tracks integration stage within the group: `New` (trying the group out) → `Regular` (integrated) → `Timothy` (potential leader) → `Leader` (leading their own group). Cleared to null when removed from a group; defaults to `New` when added.
 - Can volunteer in multiple ministries (`Volunteer` records)
 - Has a `lifeStageId → LifeStage (nullable)` — references the same admin-configurable LifeStage table used by Ministries
 

@@ -111,6 +111,62 @@ export async function deleteSmallGroup(id: string): Promise<ActionResult> {
   }
 }
 
+export async function addMemberToGroup(
+  groupId: string,
+  memberId: string
+): Promise<ActionResult> {
+  try {
+    // Default to the first status by order (e.g. "New")
+    const firstStatus = await db.smallGroupStatus.findFirst({
+      orderBy: { order: "asc" },
+      select: { id: true },
+    })
+    await db.member.update({
+      where: { id: memberId },
+      data: { smallGroupId: groupId, smallGroupStatusId: firstStatus?.id ?? null },
+    })
+    revalidatePath(`/small-groups/${groupId}`)
+    revalidatePath("/small-groups")
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to add member to group" }
+  }
+}
+
+export async function removeMemberFromGroup(
+  memberId: string,
+  groupId: string
+): Promise<ActionResult> {
+  try {
+    await db.member.update({
+      where: { id: memberId },
+      data: { smallGroupId: null, smallGroupStatusId: null },
+    })
+    revalidatePath(`/small-groups/${groupId}`)
+    revalidatePath("/small-groups")
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to remove member from group" }
+  }
+}
+
+export async function updateMemberGroupStatus(
+  memberId: string,
+  groupId: string,
+  statusId: string
+): Promise<ActionResult> {
+  try {
+    await db.member.update({
+      where: { id: memberId },
+      data: { smallGroupStatusId: statusId },
+    })
+    revalidatePath(`/small-groups/${groupId}`)
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to update member status" }
+  }
+}
+
 // Walk the child tree of `rootId` and check if `candidateId` is in it
 async function checkIsDescendant(
   rootId: string,

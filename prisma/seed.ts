@@ -30,6 +30,15 @@ async function main() {
   ])
   console.log("✓ Created 4 life stages")
 
+  // ─── Small Group Statuses ─────────────────────────────────────────────────
+  await Promise.all([
+    db.smallGroupStatus.create({ data: { name: "New", order: 1 } }),
+    db.smallGroupStatus.create({ data: { name: "Regular", order: 2 } }),
+    db.smallGroupStatus.create({ data: { name: "Timothy", order: 3 } }),
+    db.smallGroupStatus.create({ data: { name: "Leader", order: 4 } }),
+  ])
+  console.log("✓ Created 4 small group statuses")
+
   // ─── Admin User ───────────────────────────────────────────────────────────
   const hashedPassword = await bcrypt.hash("admin123", 12)
   await db.user.create({

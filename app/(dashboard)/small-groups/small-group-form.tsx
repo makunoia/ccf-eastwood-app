@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { IconArrowLeft, IconTrash } from "@tabler/icons-react"
+import { IconArrowLeft, IconTrash, IconUserPlus, IconUserMinus } from "@tabler/icons-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -28,21 +28,32 @@ import {
   defaultSmallGroupForm,
   type SmallGroupFormValues,
 } from "@/lib/validations/small-group"
-import { createSmallGroup, updateSmallGroup, deleteSmallGroup } from "./actions"
+import { createSmallGroup, updateSmallGroup, deleteSmallGroup, addMemberToGroup, removeMemberFromGroup, updateMemberGroupStatus } from "./actions"
 import { type SmallGroupRow } from "./columns"
+
+type StatusOption = { id: string; name: string; order: number }
 
 type GroupMember = {
   id: string
   firstName: string
   lastName: string
-  email: string | null
-  phone: string | null
+  smallGroupStatusId: string | null
 }
 
+const STATUS_COLOR_PALETTE = [
+  "bg-slate-100 text-slate-700",
+  "bg-blue-100 text-blue-700",
+  "bg-amber-100 text-amber-700",
+  "bg-green-100 text-green-700",
+  "bg-purple-100 text-purple-700",
+  "bg-pink-100 text-pink-700",
+]
+
 type Props = {
-  members: { id: string; firstName: string; lastName: string }[]
+  members: { id: string; firstName: string; lastName: string; smallGroupId: string | null }[]
   smallGroups: { id: string; name: string }[]
   lifeStages: { id: string; name: string }[]
+  statuses: StatusOption[]
   group?: SmallGroupRow
   groupMembers?: GroupMember[]
 }
@@ -63,7 +74,7 @@ function toFormValues(group: SmallGroupRow): SmallGroupFormValues {
   }
 }
 
-export function SmallGroupForm({ members, smallGroups, lifeStages, group, groupMembers }: Props) {
+export function SmallGroupForm({ members, smallGroups, lifeStages, statuses, group, groupMembers }: Props) {
   const router = useRouter()
   const isEdit = !!group
   const [form, setForm] = React.useState<SmallGroupFormValues>(
@@ -72,6 +83,11 @@ export function SmallGroupForm({ members, smallGroups, lifeStages, group, groupM
   const [saving, setSaving] = React.useState(false)
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
+  const [addMemberOpen, setAddMemberOpen] = React.useState(false)
+  const [selectedMemberId, setSelectedMemberId] = React.useState("")
+  const [addingMember, setAddingMember] = React.useState(false)
+  const [removingMemberId, setRemovingMemberId] = React.useState<string | null>(null)
+  const [removeConfirmMember, setRemoveConfirmMember] = React.useState<GroupMember | null>(null)
 
   function set(field: keyof SmallGroupFormValues, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -79,6 +95,55 @@ export function SmallGroupForm({ members, smallGroups, lifeStages, group, groupM
 
   // For edit mode, exclude self from parent group options to prevent trivial cycles
   const parentGroupOptions = smallGroups.filter((g) => g.id !== group?.id)
+
+  // Members not already in this group, available to add
+  const currentMemberIds = new Set(groupMembers?.map((m) => m.id) ?? [])
+  const availableMembers = members.filter((m) => !currentMemberIds.has(m.id))
+
+  // Map statusId → color class based on sorted order position
+  const statusColorMap = Object.fromEntries(
+    statuses.map((s, i) => [s.id, STATUS_COLOR_PALETTE[i % STATUS_COLOR_PALETTE.length]])
+  )
+
+  async function handleAddMember() {
+    if (!selectedMemberId || !group) return
+    setAddingMember(true)
+    const result = await addMemberToGroup(group.id, selectedMemberId)
+    setAddingMember(false)
+    if (result.success) {
+      toast.success("Member added to group")
+      setAddMemberOpen(false)
+      setSelectedMemberId("")
+      router.refresh()
+    } else {
+      toast.error(result.error)
+    }
+  }
+
+  async function handleStatusChange(memberId: string, statusId: string) {
+    if (!group) return
+    const result = await updateMemberGroupStatus(memberId, group.id, statusId)
+    if (result.success) {
+      toast.success("Status updated")
+      router.refresh()
+    } else {
+      toast.error(result.error)
+    }
+  }
+
+  async function handleRemoveMember(memberId: string) {
+    if (!group) return
+    setRemovingMemberId(memberId)
+    const result = await removeMemberFromGroup(memberId, group.id)
+    setRemovingMemberId(null)
+    setRemoveConfirmMember(null)
+    if (result.success) {
+      toast.success("Member removed from group")
+      router.refresh()
+    } else {
+      toast.error(result.error)
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -353,31 +418,134 @@ export function SmallGroupForm({ members, smallGroups, lifeStages, group, groupM
 
       {isEdit && groupMembers && (
         <section className="max-w-2xl space-y-3">
-          <h3 className="text-sm font-medium text-muted-foreground">
-            Members ({groupMembers.length})
-          </h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-medium text-muted-foreground">
+              Members ({groupMembers.length})
+            </h3>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setAddMemberOpen(true)}
+            >
+              <IconUserPlus className="size-4" />
+              Add member
+            </Button>
+          </div>
           {groupMembers.length === 0 ? (
             <p className="text-sm text-muted-foreground">No members in this group yet.</p>
           ) : (
             <div className="rounded-md border divide-y">
               {groupMembers.map((m) => (
-                <Link
+                <div
                   key={m.id}
-                  href={`/members/${m.id}`}
-                  className="flex items-center justify-between px-4 py-3 hover:bg-muted/50 transition-colors"
+                  className="flex items-center gap-3 px-4 py-3"
                 >
-                  <span className="text-sm font-medium">
-                    {m.firstName} {m.lastName}
-                  </span>
-                  <span className="text-sm text-muted-foreground">
-                    {m.email ?? m.phone ?? "—"}
-                  </span>
-                </Link>
+                  <Link
+                    href={`/members/${m.id}`}
+                    className="flex-1 min-w-0 hover:underline"
+                  >
+                    <span className="text-sm font-medium">
+                      {m.firstName} {m.lastName}
+                    </span>
+                  </Link>
+                  <Select
+                    value={m.smallGroupStatusId ?? ""}
+                    onValueChange={(v) => handleStatusChange(m.id, v)}
+                  >
+                    <SelectTrigger className={`w-28 h-7 text-xs font-medium border-0 ${m.smallGroupStatusId ? statusColorMap[m.smallGroupStatusId] : "bg-slate-100 text-slate-700"}`}>
+                      <SelectValue placeholder="—" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {statuses.map((s) => (
+                        <SelectItem key={s.id} value={s.id} className="text-xs">
+                          {s.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => setRemoveConfirmMember(m)}
+                    disabled={removingMemberId === m.id}
+                  >
+                    <IconUserMinus className="size-4" />
+                  </Button>
+                </div>
               ))}
             </div>
           )}
         </section>
       )}
+
+      {/* Add member dialog */}
+      <Dialog open={addMemberOpen} onOpenChange={(open) => { setAddMemberOpen(open); if (!open) setSelectedMemberId("") }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add member</DialogTitle>
+            <DialogDescription>
+              Select a member to add to <span className="font-medium">{group?.name}</span>.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="add-member-select">Member</Label>
+            {availableMembers.length === 0 ? (
+              <p className="text-sm text-muted-foreground">All members are already in this group.</p>
+            ) : (
+              <Select value={selectedMemberId} onValueChange={setSelectedMemberId}>
+                <SelectTrigger id="add-member-select">
+                  <SelectValue placeholder="Select a member" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableMembers.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.firstName} {m.lastName}
+                      {m.smallGroupId && m.smallGroupId !== group?.id && (
+                        <span className="ml-2 text-muted-foreground text-xs">(in another group)</span>
+                      )}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddMemberOpen(false)} disabled={addingMember}>
+              Cancel
+            </Button>
+            <Button onClick={handleAddMember} disabled={!selectedMemberId || addingMember || availableMembers.length === 0}>
+              {addingMember ? "Adding…" : "Add member"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Remove member confirmation dialog */}
+      <Dialog open={!!removeConfirmMember} onOpenChange={(open) => { if (!open) setRemoveConfirmMember(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove member</DialogTitle>
+            <DialogDescription>
+              Remove <span className="font-medium">{removeConfirmMember?.firstName} {removeConfirmMember?.lastName}</span> from <span className="font-medium">{group?.name}</span>? They will no longer belong to this group.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRemoveConfirmMember(null)} disabled={!!removingMemberId}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => removeConfirmMember && handleRemoveMember(removeConfirmMember.id)}
+              disabled={!!removingMemberId}
+            >
+              {removingMemberId ? "Removing…" : "Remove"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent>

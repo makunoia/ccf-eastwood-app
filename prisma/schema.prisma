@@ -123,6 +123,8 @@ model Member {
 
   smallGroupId        String?
   smallGroup          SmallGroup?         @relation("SmallGroupMembers", fields: [smallGroupId], references: [id])
+  smallGroupStatusId  String?
+  smallGroupStatus    SmallGroupStatus?   @relation(fields: [smallGroupStatusId], references: [id])
 
   // Matching fields
   gender              Gender?
@@ -175,6 +177,16 @@ model SmallGroup {
 
   members          Member[]             @relation("SmallGroupMembers")
   meetingSchedules GroupMeetingSchedule[]
+}
+
+model SmallGroupStatus {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  order     Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members   Member[]
 }
 
 model GroupMeetingSchedule {
