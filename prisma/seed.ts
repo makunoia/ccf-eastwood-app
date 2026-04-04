@@ -3,6 +3,13 @@ import { PrismaClient } from "../app/generated/prisma/client"
 import { PrismaPg } from "@prisma/adapter-pg"
 import bcrypt from "bcryptjs"
 
+const REQUIRED_ENV = ["DATABASE_URL"] as const
+const missingEnv = REQUIRED_ENV.filter((key) => !process.env[key])
+if (missingEnv.length > 0) {
+  console.error(`Missing required environment variables: ${missingEnv.join(", ")}`)
+  process.exit(1)
+}
+
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! })
 const db = new PrismaClient({ adapter })
 
