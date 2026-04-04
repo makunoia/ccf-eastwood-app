@@ -224,7 +224,6 @@ export function MemberForm({ lifeStages, member }: Props) {
             <Input
               id="dateJoined"
               type="date"
-              className="w-full"
               value={form.dateJoined}
               onChange={(e) => set("dateJoined", e.target.value)}
               required
@@ -235,7 +234,6 @@ export function MemberForm({ lifeStages, member }: Props) {
             <Input
               id="birthDate"
               type="date"
-              className="w-full"
               value={form.birthDate}
               onChange={(e) => set("birthDate", e.target.value)}
             />
