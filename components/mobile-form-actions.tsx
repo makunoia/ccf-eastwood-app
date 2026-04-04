@@ -1,5 +1,6 @@
 "use client"
 
+import * as React from "react"
 import { IconTrash, IconArrowBackUp } from "@tabler/icons-react"
 import { Button } from "@/components/ui/button"
 
@@ -20,8 +21,35 @@ export function MobileFormActions({
   onRevert,
   onDelete,
 }: Props) {
+  const barRef = React.useRef<HTMLDivElement>(null)
+
+  React.useEffect(() => {
+    const viewport = window.visualViewport
+    if (!viewport) return
+
+    function update() {
+      if (!barRef.current) return
+      // Distance from the bottom of the layout viewport to the bottom of the
+      // visual viewport — this equals the keyboard height when it is open.
+      const keyboardHeight =
+        window.innerHeight - viewport!.offsetTop - viewport!.height
+      barRef.current.style.bottom = `${Math.max(0, keyboardHeight)}px`
+    }
+
+    viewport.addEventListener("resize", update)
+    viewport.addEventListener("scroll", update)
+    return () => {
+      viewport.removeEventListener("resize", update)
+      viewport.removeEventListener("scroll", update)
+    }
+  }, [])
+
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-between gap-2 border-t bg-background px-4 py-3 sm:hidden">
+    <div
+      ref={barRef}
+      style={{ transition: "bottom 0.1s ease-out" }}
+      className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-between gap-2 border-t bg-background px-4 py-3 sm:hidden"
+    >
       <div className="flex items-center gap-1">
         {isEdit && onDelete && (
           <Button
