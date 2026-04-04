@@ -127,9 +127,12 @@
     cursor: pointer;
   }
 
-  /* Normalize date inputs to match text input height and width */
+  /* Normalize date inputs to match text input appearance */
   input[type="date"] {
     display: block;
+    -webkit-appearance: none;
+    appearance: none;
+    line-height: normal;
   }
   input[type="date"]::-webkit-datetime-edit,
   input[type="date"]::-webkit-datetime-edit-fields-wrapper,

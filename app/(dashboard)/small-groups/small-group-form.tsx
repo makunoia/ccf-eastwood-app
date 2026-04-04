@@ -31,11 +31,20 @@ import {
 import { createSmallGroup, updateSmallGroup, deleteSmallGroup } from "./actions"
 import { type SmallGroupRow } from "./columns"
 
+type GroupMember = {
+  id: string
+  firstName: string
+  lastName: string
+  email: string | null
+  phone: string | null
+}
+
 type Props = {
   members: { id: string; firstName: string; lastName: string }[]
   smallGroups: { id: string; name: string }[]
   lifeStages: { id: string; name: string }[]
   group?: SmallGroupRow
+  groupMembers?: GroupMember[]
 }
 
 function toFormValues(group: SmallGroupRow): SmallGroupFormValues {
@@ -54,7 +63,7 @@ function toFormValues(group: SmallGroupRow): SmallGroupFormValues {
   }
 }
 
-export function SmallGroupForm({ members, smallGroups, lifeStages, group }: Props) {
+export function SmallGroupForm({ members, smallGroups, lifeStages, group, groupMembers }: Props) {
   const router = useRouter()
   const isEdit = !!group
   const [form, setForm] = React.useState<SmallGroupFormValues>(
@@ -341,6 +350,34 @@ export function SmallGroupForm({ members, smallGroups, lifeStages, group }: Prop
           </div>
         </section>
       </form>
+
+      {isEdit && groupMembers && (
+        <section className="max-w-2xl space-y-3">
+          <h3 className="text-sm font-medium text-muted-foreground">
+            Members ({groupMembers.length})
+          </h3>
+          {groupMembers.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No members in this group yet.</p>
+          ) : (
+            <div className="rounded-md border divide-y">
+              {groupMembers.map((m) => (
+                <Link
+                  key={m.id}
+                  href={`/members/${m.id}`}
+                  className="flex items-center justify-between px-4 py-3 hover:bg-muted/50 transition-colors"
+                >
+                  <span className="text-sm font-medium">
+                    {m.firstName} {m.lastName}
+                  </span>
+                  <span className="text-sm text-muted-foreground">
+                    {m.email ?? m.phone ?? "—"}
+                  </span>
+                </Link>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent>
