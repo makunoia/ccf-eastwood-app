@@ -111,6 +111,40 @@ export async function deleteSmallGroup(id: string): Promise<ActionResult> {
   }
 }
 
+export async function addMemberToGroup(
+  groupId: string,
+  memberId: string
+): Promise<ActionResult> {
+  try {
+    await db.member.update({
+      where: { id: memberId },
+      data: { smallGroupId: groupId },
+    })
+    revalidatePath(`/small-groups/${groupId}`)
+    revalidatePath("/small-groups")
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to add member to group" }
+  }
+}
+
+export async function removeMemberFromGroup(
+  memberId: string,
+  groupId: string
+): Promise<ActionResult> {
+  try {
+    await db.member.update({
+      where: { id: memberId },
+      data: { smallGroupId: null },
+    })
+    revalidatePath(`/small-groups/${groupId}`)
+    revalidatePath("/small-groups")
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to remove member from group" }
+  }
+}
+
 // Walk the child tree of `rootId` and check if `candidateId` is in it
 async function checkIsDescendant(
   rootId: string,
