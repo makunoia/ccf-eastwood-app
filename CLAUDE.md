@@ -148,19 +148,19 @@ Church events hosted by a ministry. Three event types are supported, each with d
 |---|---|---|
 | **OneTime** | Single-date event, optional registration and payment | Women's monthly meet, special services |
 | **MultiDay** | Spans consecutive days, treated like OneTime but displayed as a date range | Retreats, camps |
-| **Recurring** | Repeats on a fixed schedule; no pre-registration — walk-in check-in per occurrence | Singles Fridays, Youth Saturdays |
+| **Recurring** | Repeats on a fixed schedule. First-timers register once; returning attendees check in per occurrence | Singles Fridays, Youth Saturdays |
 
 #### Feature applicability by type
 
 | Feature | OneTime | MultiDay | Recurring |
 |---|---|---|---|
-| Public registration form | ✅ | ✅ | ❌ |
+| Public registration form | ✅ | ✅ | ✅ (first-timers only, no payment) |
 | Payment tracking | ✅ | ✅ | ❌ |
-| Breakout groups | ✅ | ✅ | ❌ |
+| Breakout groups | ✅ | ✅ | ✅ |
 | Baptism module | ✅ | ✅ | ❌ |
 | Embarkation module | ✅ | ✅ | ❌ |
 | Volunteers | ✅ | ✅ | ✅ |
-| Check-in | Per event | Per event | Per occurrence |
+| Check-in | Per event (sets `attendedAt`) | Per event (sets `attendedAt`) | Per occurrence (`OccurrenceAttendee`) |
 
 **Event fields:** `id`, `name`, `description`, `ministryId → Ministry`, `type EventType @default(OneTime)`, `startDate`, `endDate`, `price (nullable, in cents — null means free)`, `registrationStart`, `registrationEnd`, `createdAt`, `updatedAt`
 
@@ -169,15 +169,17 @@ Church events hosted by a ministry. Three event types are supported, each with d
 **Event list** is filterable by ministry, type, and date range.
 
 #### Registration & Check-in URLs
-Each OneTime/MultiDay event has two public-facing links (no login required):
-- **Registration:** `/events/[id]/register` — the public registration form
-- **Check-in:** `/events/[id]/checkin` — admin or staff use this to mark attendance on the day
+All three event types have both a registration and a check-in URL (no login required):
+- **Registration:** `/events/[id]/register`
+- **Check-in:** `/events/[id]/checkin`
 
-Recurring events have only a check-in URL. The check-in page shows a date picker; selecting a date creates or opens that occurrence's attendee list.
+For **OneTime/MultiDay**: registration collects details and optionally payment; check-in sets `EventRegistrant.attendedAt`.
+
+For **Recurring**: registration is for first-timers only (no payment). Once registered, a person has a permanent `EventRegistrant` record for the series. Returning attendees skip the form — they just appear in the check-in list for each occurrence.
 
 These are separate routes from the admin dashboard event detail page.
 
-**EventRegistrant** — people who register for a OneTime or MultiDay event (member or non-member):
+**EventRegistrant** — one record per person per event series (all event types):
 ```
 id, eventId → Event
 memberId         → Member (nullable)
@@ -186,45 +188,57 @@ lastName         String (nullable)
 nickname         String (nullable)
 email            String (nullable)
 mobileNumber     String (nullable)
-isPaid           Boolean (default false)
-paymentReference String (nullable — reference number entered by admin when marking paid)
-attendedAt       DateTime (nullable — set when attendance is confirmed)
+isPaid           Boolean (default false)      -- OneTime/MultiDay only
+paymentReference String (nullable)            -- OneTime/MultiDay only
+attendedAt       DateTime (nullable)          -- OneTime/MultiDay only; null = didn't attend
 createdAt
+
+occurrenceAttendances OccurrenceAttendee[]    -- populated for Recurring events
 ```
 
 **No data duplication rule:** `firstName`, `lastName`, and `email` are only populated when `memberId` is null (non-member registrant). When `memberId` is set, all personal data is read from the linked `Member` record — never stored twice. Application layer must enforce this constraint.
 
-`BreakoutGroupMember.registrantId → EventRegistrant` — this single pointer handles both cases cleanly. Existing member data flows through the FK chain: `BreakoutGroupMember → EventRegistrant → Member`.
+`BreakoutGroupMember.registrantId → EventRegistrant` — this single pointer handles both cases cleanly.
 
 #### Recurring Event Occurrences
 
-Each physical instance of a recurring event is an `EventOccurrence`. Occurrences are created on-demand (when check-in is opened for a date) or generated in advance by the admin.
+Each physical session of a recurring event is an `EventOccurrence`. Occurrences are created on-demand when the check-in page is opened for a given date.
 
 ```
 EventOccurrence {
   id
   eventId   → Event
-  date      DateTime   (the specific date of this occurrence)
+  date      DateTime   (the specific date of this session)
   notes     String?
   createdAt
 
   attendees OccurrenceAttendee[]
+  @@unique([eventId, date])
 }
 
 OccurrenceAttendee {
   id
-  occurrenceId → EventOccurrence
-  memberId     → Member (nullable)
-  -- non-member walk-in fields (populated when memberId is null):
-  firstName    String?
-  lastName     String?
-  checkedInAt  DateTime @default(now())
+  occurrenceId  → EventOccurrence
+  registrantId  → EventRegistrant   (always set — walk-ins auto-create an EventRegistrant)
+  checkedInAt   DateTime @default(now())
 
-  @@unique([occurrenceId, memberId])  -- prevents duplicate check-ins
+  @@unique([occurrenceId, registrantId])
 }
 ```
 
-**Admin view for recurring events:** The event detail page shows a list of past occurrences with attendance counts. Clicking an occurrence shows its attendee list.
+**Why `registrantId` (not `memberId`) on `OccurrenceAttendee`:**
+Pointing to `EventRegistrant` means the person's details (name, email, member link) are stored once on registration and reused for every occurrence check-in. Walk-ins who haven't pre-registered get an `EventRegistrant` auto-created at check-in time — so after their first visit, they're in the system for all future check-ins.
+
+**Check-in flow (Recurring):**
+1. Admin opens `/events/[id]/checkin` — today's date pre-selected; occurrence created/found
+2. Page shows the full registered list (`EventRegistrant[]` for this event) with a "checked in / not yet" status for today
+3. Admin taps a name → `OccurrenceAttendee` record created
+4. "Walk-in" button → mobile lookup → member resolution → `EventRegistrant` created if new → checked in
+
+**Registration flow (Recurring, first-timers):**
+Same mobile-lookup multi-step form as OneTime, but with no payment fields. On submission, creates `EventRegistrant`. Does not auto-check them in (they still need to check in on the day).
+
+**Admin view for recurring events:** The event detail page shows a list of past occurrences with per-session attendance counts. Clicking an occurrence opens its attendee list.
 
 #### Member Resolution at Registration
 When the registration form is submitted, the system runs a lookup against existing Member records by **mobile number (exact match)**.

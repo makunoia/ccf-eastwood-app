@@ -161,11 +161,10 @@ model Member {
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
 
-  ledGroups             SmallGroup[]          @relation("SmallGroupLeader")
-  schedulePreferences   SchedulePreference[]
-  volunteers            Volunteer[]
-  eventRegistrations    EventRegistrant[]
-  occurrenceAttendances OccurrenceAttendee[]
+  ledGroups           SmallGroup[]        @relation("SmallGroupLeader")
+  schedulePreferences SchedulePreference[]
+  volunteers          Volunteer[]
+  eventRegistrations  EventRegistrant[]
 }
 
 model SchedulePreference {
@@ -283,14 +282,11 @@ model OccurrenceAttendee {
   id           String          @id @default(cuid())
   occurrenceId String
   occurrence   EventOccurrence @relation(fields: [occurrenceId], references: [id], onDelete: Cascade)
-  memberId     String?
-  member       Member?         @relation(fields: [memberId], references: [id])
-  // Non-member walk-in fields (populated when memberId is null)
-  firstName    String?
-  lastName     String?
+  registrantId String
+  registrant   EventRegistrant @relation(fields: [registrantId], references: [id], onDelete: Cascade)
   checkedInAt  DateTime        @default(now())
 
-  @@unique([occurrenceId, memberId])
+  @@unique([occurrenceId, registrantId])
 }
 
 model EventRegistrant {
@@ -316,6 +312,7 @@ model EventRegistrant {
   breakoutGroupMemberships BreakoutGroupMember[]
   baptismOptIn             BaptismOptIn?
   busPassengers            BusPassenger[]
+  occurrenceAttendances    OccurrenceAttendee[]
 }
 
 model BreakoutGroup {
