@@ -25,6 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   enableModule,
   disableModule,
@@ -32,6 +33,7 @@ import {
   updateBus,
   deleteBus,
 } from "../../module-actions"
+import { CommitteeManager } from "../committees"
 
 type BusRow = {
   id: string
@@ -41,11 +43,15 @@ type BusRow = {
   _count: { passengers: number }
 }
 
+type CommitteeRole = { id: string; name: string }
+type Committee = { id: string; name: string; roles: CommitteeRole[] }
+
 type Props = {
   eventId: string
   eventName: string
   enabledModules: string[]
   buses: BusRow[]
+  committees: Committee[]
 }
 
 type BusFormValues = { name: string; capacity: string; direction: string }
@@ -149,7 +155,7 @@ function BusDialog({
   )
 }
 
-export function EventSettingsClient({ eventId, eventName, enabledModules, buses }: Props) {
+export function EventSettingsClient({ eventId, eventName, enabledModules, buses, committees }: Props) {
   const [modules, setModules] = React.useState<Set<string>>(new Set(enabledModules))
   const [togglingModule, setTogglingModule] = React.useState<string | null>(null)
   const [busDialogOpen, setBusDialogOpen] = React.useState(false)
@@ -221,108 +227,120 @@ export function EventSettingsClient({ eventId, eventName, enabledModules, buses 
         <p className="text-sm text-muted-foreground">Configure modules and options for this event</p>
       </div>
 
-      {/* Modules */}
-      <section className="space-y-4 max-w-2xl">
-        <h3 className="text-sm font-medium text-muted-foreground">Add-on Modules</h3>
+      <Tabs defaultValue="modules">
+        <TabsList>
+          <TabsTrigger value="modules">Modules</TabsTrigger>
+          <TabsTrigger value="committees">Committees</TabsTrigger>
+        </TabsList>
 
-        {/* Baptism */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <IconCross className="size-5 text-muted-foreground" />
-                <div>
-                  <CardTitle className="text-base">Baptism</CardTitle>
-                  <CardDescription className="mt-0.5">
-                    Track registrants who will be baptized at this event. Managed mid-event by admin.
-                  </CardDescription>
-                </div>
-              </div>
-              <Switch
-                checked={modules.has("Baptism")}
-                onCheckedChange={() => handleToggleModule("Baptism")}
-                disabled={togglingModule === "Baptism"}
-              />
-            </div>
-          </CardHeader>
-        </Card>
+        <TabsContent value="modules" className="mt-6">
+          <section className="space-y-4 max-w-2xl">
+            <h3 className="text-sm font-medium text-muted-foreground">Add-on Modules</h3>
 
-        {/* Embarkation */}
-        <Card>
-          <CardHeader className={modules.has("Embarkation") ? "pb-3" : undefined}>
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <IconBus className="size-5 text-muted-foreground" />
-                <div>
-                  <CardTitle className="text-base">Embarkation</CardTitle>
-                  <CardDescription className="mt-0.5">
-                    Assign registrants and volunteers to buses. Print a manifest per bus.
-                  </CardDescription>
-                </div>
-              </div>
-              <Switch
-                checked={modules.has("Embarkation")}
-                onCheckedChange={() => handleToggleModule("Embarkation")}
-                disabled={togglingModule === "Embarkation"}
-              />
-            </div>
-          </CardHeader>
-
-          {modules.has("Embarkation") && (
-            <CardContent className="pt-0 space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-medium">Buses</p>
-                <Button size="sm" variant="outline" onClick={openAddBus}>
-                  <IconPlus className="mr-1 size-3.5" />
-                  Add bus
-                </Button>
-              </div>
-
-              {buses.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-2">
-                  No buses added yet. Add a bus to get started.
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  {buses.map((bus) => (
-                    <div
-                      key={bus.id}
-                      className="flex items-center justify-between rounded-lg border px-3 py-2"
-                    >
-                      <div>
-                        <p className="text-sm font-medium">{bus.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {DIRECTION_LABELS[bus.direction]} ·{" "}
-                          {bus._count.passengers} assigned
-                          {bus.capacity != null && ` / ${bus.capacity}`}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="size-7"
-                          onClick={() => openEditBus(bus)}
-                        >
-                          <IconPencil className="size-3.5" />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="size-7 text-destructive hover:text-destructive"
-                          onClick={() => openDeleteBus(bus)}
-                        >
-                          <IconTrash className="size-3.5" />
-                        </Button>
-                      </div>
+            {/* Baptism */}
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <IconCross className="size-5 text-muted-foreground" />
+                    <div>
+                      <CardTitle className="text-base">Baptism</CardTitle>
+                      <CardDescription className="mt-0.5">
+                        Track registrants who will be baptized at this event. Managed mid-event by admin.
+                      </CardDescription>
                     </div>
-                  ))}
+                  </div>
+                  <Switch
+                    checked={modules.has("Baptism")}
+                    onCheckedChange={() => handleToggleModule("Baptism")}
+                    disabled={togglingModule === "Baptism"}
+                  />
                 </div>
+              </CardHeader>
+            </Card>
+
+            {/* Embarkation */}
+            <Card>
+              <CardHeader className={modules.has("Embarkation") ? "pb-3" : undefined}>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <IconBus className="size-5 text-muted-foreground" />
+                    <div>
+                      <CardTitle className="text-base">Embarkation</CardTitle>
+                      <CardDescription className="mt-0.5">
+                        Assign registrants and volunteers to buses. Print a manifest per bus.
+                      </CardDescription>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={modules.has("Embarkation")}
+                    onCheckedChange={() => handleToggleModule("Embarkation")}
+                    disabled={togglingModule === "Embarkation"}
+                  />
+                </div>
+              </CardHeader>
+
+              {modules.has("Embarkation") && (
+                <CardContent className="pt-0 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium">Buses</p>
+                    <Button size="sm" variant="outline" onClick={openAddBus}>
+                      <IconPlus className="mr-1 size-3.5" />
+                      Add bus
+                    </Button>
+                  </div>
+
+                  {buses.length === 0 ? (
+                    <p className="text-sm text-muted-foreground py-2">
+                      No buses added yet. Add a bus to get started.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {buses.map((bus) => (
+                        <div
+                          key={bus.id}
+                          className="flex items-center justify-between rounded-lg border px-3 py-2"
+                        >
+                          <div>
+                            <p className="text-sm font-medium">{bus.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {DIRECTION_LABELS[bus.direction]} ·{" "}
+                              {bus._count.passengers} assigned
+                              {bus.capacity != null && ` / ${bus.capacity}`}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="size-7"
+                              onClick={() => openEditBus(bus)}
+                            >
+                              <IconPencil className="size-3.5" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="size-7 text-destructive hover:text-destructive"
+                              onClick={() => openDeleteBus(bus)}
+                            >
+                              <IconTrash className="size-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
               )}
-            </CardContent>
-          )}
-        </Card>
-      </section>
+            </Card>
+          </section>
+        </TabsContent>
+
+        <TabsContent value="committees" className="mt-6 max-w-2xl">
+          <CommitteeManager eventId={eventId} committees={committees} />
+        </TabsContent>
+      </Tabs>
 
       {/* Bus add/edit dialog */}
       <BusDialog
