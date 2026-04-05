@@ -175,10 +175,7 @@ createdAt
 `BreakoutGroupMember.registrantId → EventRegistrant` — this single pointer handles both cases cleanly. Existing member data flows through the FK chain: `BreakoutGroupMember → EventRegistrant → Member`.
 
 #### Member Resolution at Registration
-When the registration form is submitted, the system runs a lookup against existing Member records:
-- Email (exact)
-- Mobile number (exact)
-- firstName + lastName + birthDate (all three must match)
+When the registration form is submitted, the system runs a lookup against existing Member records by **mobile number (exact match)**.
 
 **If a match is found:** A **"Confirm your details"** screen is shown to the registrant, displaying the matched Member's name, email, and phone. If they confirm it's them, `EventRegistrant.memberId` is set and personal fields are left null. If they say "that's not me", they proceed as a non-member.
 
