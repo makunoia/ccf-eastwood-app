@@ -103,9 +103,10 @@ model LifeStage {
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
-  members     Member[]
-  ministries  Ministry[]
-  smallGroups SmallGroup[]
+  members        Member[]
+  ministries     Ministry[]
+  smallGroups    SmallGroup[]
+  breakoutGroups BreakoutGroup[]
 }
 
 model Member {
@@ -247,9 +248,10 @@ model EventRegistrant {
   email        String?
   mobileNumber String?
 
-  isPaid     Boolean   @default(false)
-  attendedAt DateTime?
-  createdAt  DateTime  @default(now())
+  isPaid           Boolean   @default(false)
+  paymentReference String?
+  attendedAt       DateTime?
+  createdAt        DateTime  @default(now())
 
   breakoutGroupMemberships BreakoutGroupMember[]
 }
@@ -261,13 +263,31 @@ model BreakoutGroup {
   name          String
   facilitatorId String?
   facilitator   Volunteer?   @relation(fields: [facilitatorId], references: [id])
-  memberLimit   Int?
-  lifeStage     String?
+
+  // Matching fields (mirrors SmallGroup)
+  lifeStageId   String?
+  lifeStage     LifeStage?   @relation(fields: [lifeStageId], references: [id])
   genderFocus   GenderFocus?
   language      String?
+  ageRangeMin   Int?
+  ageRangeMax   Int?
+  meetingFormat MeetingFormat?
+  locationCity  String?
+  memberLimit   Int?
+
   createdAt     DateTime     @default(now())
 
-  members BreakoutGroupMember[]
+  members   BreakoutGroupMember[]
+  schedules BreakoutGroupSchedule[]
+}
+
+model BreakoutGroupSchedule {
+  id             String        @id @default(cuid())
+  breakoutGroupId String
+  breakoutGroup  BreakoutGroup @relation(fields: [breakoutGroupId], references: [id], onDelete: Cascade)
+  dayOfWeek      Int           // 0 = Sunday, 6 = Saturday
+  timeStart      String        // HH:MM
+  timeEnd        String        // HH:MM
 }
 
 model BreakoutGroupMember {

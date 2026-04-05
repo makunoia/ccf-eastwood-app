@@ -145,17 +145,27 @@ Church events hosted by a ministry. Can be free or paid (manual). Supports regis
 
 **Event fields:** `id`, `name`, `description`, `ministryId → Ministry`, `startDate`, `endDate`, `price (nullable, in cents — null means free)`, `registrationStart`, `registrationEnd`, `createdAt`, `updatedAt`
 
+**Event list** is filterable by ministry and date range.
+
+#### Registration & Check-in URLs
+Each event has two public-facing links (no login required):
+- **Registration:** `/events/[id]/register` — the public registration form
+- **Check-in:** `/events/[id]/checkin` — admin or staff use this to mark attendance on the day
+
+These are separate routes from the admin dashboard event detail page.
+
 **EventRegistrant** — people who register for an event (member or non-member):
 ```
 id, eventId → Event
-memberId      → Member (nullable)
-firstName     String (nullable)
-lastName      String (nullable)
-nickname      String (nullable)
-email         String (nullable)
-mobileNumber  String (nullable)
-isPaid
-attendedAt   (nullable — set when attendance is confirmed by admin)
+memberId         → Member (nullable)
+firstName        String (nullable)
+lastName         String (nullable)
+nickname         String (nullable)
+email            String (nullable)
+mobileNumber     String (nullable)
+isPaid           Boolean (default false)
+paymentReference String (nullable — reference number entered by admin when marking paid)
+attendedAt       DateTime (nullable — set when attendance is confirmed)
 createdAt
 ```
 
@@ -164,21 +174,33 @@ createdAt
 `BreakoutGroupMember.registrantId → EventRegistrant` — this single pointer handles both cases cleanly. Existing member data flows through the FK chain: `BreakoutGroupMember → EventRegistrant → Member`.
 
 #### Member Resolution at Registration
-When the registration form is submitted, the system runs a lookup against existing Member records using the fields provided:
+When the registration form is submitted, the system runs a lookup against existing Member records:
 - Email (exact)
 - Mobile number (exact)
 - firstName + lastName + birthDate (all three must match)
 
-**If a match is found:** The registrant is shown a **"Confirm your details"** screen displaying the matched Member's information. If they confirm it's them, `EventRegistrant.memberId` is set and personal fields are left null.
+**If a match is found:** A **"Confirm your details"** screen is shown to the registrant, displaying the matched Member's name, email, and phone. If they confirm it's them, `EventRegistrant.memberId` is set and personal fields are left null. If they say "that's not me", they proceed as a non-member.
 
-**If no match:** The registrant is created as a non-member — personal fields (`firstName`, `lastName`, `nickname`, `email`, `mobileNumber`) are stored on the `EventRegistrant` record. No Member record is created at this point.
+**If no match:** The registrant is created as a non-member — personal fields stored on `EventRegistrant`. No Member record is created.
 
-This resolution is synchronous and happens during the registration flow — no admin intervention or pending state required.
+This resolution is synchronous, happens during the registration flow, and requires no admin intervention.
 
-**BreakoutGroup** — sub-groups within an event, each led by a volunteer facilitator:
+#### Payment
+Admin manually marks `isPaid = true` on a registrant. When doing so, a **payment reference number** (`paymentReference`) must be entered. This is stored on the `EventRegistrant` record for tracking.
+
+**BreakoutGroup** — sub-groups within an event, each led by a volunteer facilitator. Uses the same matching fields as SmallGroup so the same algorithm and weights apply:
 ```
 id, eventId → Event, name
-facilitatorId → Volunteer
+facilitatorId  → Volunteer (nullable)
+lifeStageId    → LifeStage (nullable)
+genderFocus    GenderFocus (nullable)
+language       String (nullable)
+ageRangeMin    Int (nullable)
+ageRangeMax    Int (nullable)
+meetingFormat  MeetingFormat (nullable)
+locationCity   String (nullable)
+memberLimit    Int (nullable)
+schedules      BreakoutGroupSchedule[] { dayOfWeek, timeStart, timeEnd }
 createdAt
 ```
 
@@ -227,7 +249,7 @@ Each candidate (member or event registrant) is scored against every eligible gro
 `lifeStageId → LifeStage (nullable — null means "accepts all life stages")`, `genderFocus (Male|Female|Mixed)`, `language`, `ageRangeMin`, `ageRangeMax`, `meetingFormat (Online|Hybrid|InPerson)`, `locationCity`, `memberLimit`, and a related `GroupMeetingSchedule[]` table `{ dayOfWeek, timeStart, timeEnd }`
 
 **BreakoutGroup — matching fields:**
-`memberLimit`, `lifeStage (nullable)`, `genderFocus (nullable)`, `language (nullable)`
+Same as SmallGroup: `lifeStageId → LifeStage (nullable)`, `genderFocus (nullable)`, `language (nullable)`, `ageRangeMin`, `ageRangeMax`, `meetingFormat (nullable)`, `locationCity (nullable)`, `memberLimit`, and a related `BreakoutGroupSchedule[]` table `{ dayOfWeek, timeStart, timeEnd }`. The same scoring functions and engine are used for both contexts — only the weights differ.
 
 **MatchingWeightConfig:**
 `{ context (SmallGroup|Breakout), lifeStage, gender, language, age, schedule, location, mode, career, capacity }` — all floats summing to 1.0
