@@ -127,6 +127,7 @@ model LifeStage {
   updatedAt   DateTime   @updatedAt
 
   members        Member[]
+  guests         Guest[]
   ministries     Ministry[]
   smallGroups    SmallGroup[]
   breakoutGroups BreakoutGroup[]
@@ -165,6 +166,35 @@ model Member {
   schedulePreferences SchedulePreference[]
   volunteers          Volunteer[]
   eventRegistrations  EventRegistrant[]
+  guest               Guest?              // set if this Member was promoted from a Guest
+}
+
+model Guest {
+  id          String   @id @default(cuid())
+  firstName   String
+  lastName    String
+  email       String?
+  phone       String?
+  notes       String?
+
+  // Matching fields (same set as Member — used for SmallGroup placement)
+  lifeStageId      String?
+  lifeStage        LifeStage?        @relation(fields: [lifeStageId], references: [id])
+  gender           Gender?
+  language         String?
+  birthDate        DateTime?
+  workCity         String?
+  workIndustry     String?
+  meetingPreference MeetingPreference?
+
+  // Promotion — set when Guest is added to a Small Group and becomes a Member
+  memberId    String?  @unique
+  member      Member?  @relation(fields: [memberId], references: [id])
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  eventRegistrations EventRegistrant[]
 }
 
 model SchedulePreference {
@@ -296,6 +326,9 @@ model EventRegistrant {
 
   memberId     String?
   member       Member?   @relation(fields: [memberId], references: [id])
+
+  guestId      String?
+  guest        Guest?    @relation(fields: [guestId], references: [id])
 
   // Only populated when memberId is null (non-member registrant)
   firstName    String?

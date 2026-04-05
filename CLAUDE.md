@@ -1,8 +1,9 @@
 # Churchie — Project Reference
 
 ## What This Is
-**Churchie** is a church management web application for administrators. It covers five core domains:
+**Churchie** is a church management web application for administrators. It covers six core domains:
 - **Members** — person records of church members
+- **Guests** — non-members who attend events; the entry point into the pipeline
 - **Small Groups** — member-led fellowship groups forming a hierarchical network
 - **Ministries** — sub-operations within the church, each targeting a life stage
 - **Events** — church events with registration, attendance tracking, and breakout groups
@@ -41,7 +42,7 @@ No member self-service portal at this stage.
 ## Domain Model
 
 ### Member
-Core person record created when someone joins the church.
+Core person record created when a Guest joins a Small Group (auto-promoted) or when added directly by an admin.
 
 **Fields:** `id`, `firstName`, `lastName`, `email`, `phone`, `address`, `dateJoined`, `notes`, `createdAt`, `updatedAt`
 
@@ -52,6 +53,31 @@ Core person record created when someone joins the church.
 - Can volunteer in multiple ministries (`Volunteer` records)
 - Has a `lifeStageId → LifeStage (nullable)` — references the same admin-configurable LifeStage table used by Ministries
 - Has `eventRegistrations EventRegistrant[]` — tracks all events the member has registered for; `attendedAt` on each record indicates whether they actually attended
+- Has `guest Guest?` — back-relation; set if this Member was promoted from a Guest record
+
+---
+
+### Guest
+A person who has attended one or more church events but has not yet joined a Small Group. Guests are the entry point into the discipleship pipeline.
+
+**Every non-member registrant becomes a Guest** — regardless of event type. When someone registers or checks in to an event and cannot be matched to an existing Member, a Guest record is created (or found by mobile number) and linked to their `EventRegistrant`.
+
+**Fields:** `id`, `firstName`, `lastName`, `email`, `phone`, `notes`, `createdAt`, `updatedAt`
+
+**Matching fields** (same set as Member, used for eventual SmallGroup placement): `lifeStageId → LifeStage (nullable)`, `gender`, `language`, `birthDate`, `workCity`, `workIndustry`, `meetingPreference`
+
+**Promotion to Member:**
+When a Guest is added to a Small Group, the system automatically:
+1. Creates a `Member` record from the Guest's data (`dateJoined = today`)
+2. Sets `Member.smallGroupId` and `Member.smallGroupStatus = New`
+3. Sets `Guest.memberId` to the new Member (marks the Guest as promoted)
+4. Updates all `EventRegistrant` records linked to this Guest: sets `memberId` to the new Member
+
+After promotion, the Guest record is retained for historical traceability (`Guest.memberId` links to their Member record). Promoted guests no longer appear in the active Guest list.
+
+**Relationships:**
+- `eventRegistrations EventRegistrant[]` — all events attended as a guest
+- `memberId → Member (nullable, unique)` — set when promoted; null = still an active guest
 
 ---
 
@@ -183,6 +209,7 @@ These are separate routes from the admin dashboard event detail page.
 ```
 id, eventId → Event
 memberId         → Member (nullable)
+guestId          → Guest  (nullable)
 firstName        String (nullable)
 lastName         String (nullable)
 nickname         String (nullable)
@@ -196,9 +223,11 @@ createdAt
 occurrenceAttendances OccurrenceAttendee[]    -- populated for Recurring events
 ```
 
-**No data duplication rule:** `firstName`, `lastName`, and `email` are only populated when `memberId` is null (non-member registrant). When `memberId` is set, all personal data is read from the linked `Member` record — never stored twice. Application layer must enforce this constraint.
+**No data duplication rule:** Personal fields (`firstName`, `lastName`, `email`) are only populated when both `memberId` and `guestId` are null (a truly anonymous/one-off registrant). When either FK is set, all personal data is read from the linked `Member` or `Guest` record — never stored twice. Application layer must enforce this constraint.
 
-`BreakoutGroupMember.registrantId → EventRegistrant` — this single pointer handles both cases cleanly.
+**Exactly one of:** `memberId`, `guestId`, or personal fields — enforced at the application layer.
+
+`BreakoutGroupMember.registrantId → EventRegistrant` — this single pointer handles all three cases cleanly.
 
 #### Recurring Event Occurrences
 
