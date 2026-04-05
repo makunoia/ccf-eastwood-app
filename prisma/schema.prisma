@@ -43,6 +43,17 @@ enum MatchingContext {
   Breakout
 }
 
+enum EventModuleType {
+  Baptism
+  Embarkation
+}
+
+enum BusDirection {
+  ToVenue
+  FromVenue
+  Both
+}
+
 // ─── Auth (NextAuth / Auth.js v5) ────────────────────────────────────────────
 
 model User {
@@ -231,6 +242,9 @@ model Event {
   breakoutGroups BreakoutGroup[]
   committees     VolunteerCommittee[]
   volunteers     Volunteer[]
+  modules        EventModule[]
+  baptismOptIns  BaptismOptIn[]
+  buses          Bus[]
 }
 
 model EventRegistrant {
@@ -254,6 +268,8 @@ model EventRegistrant {
   createdAt        DateTime  @default(now())
 
   breakoutGroupMemberships BreakoutGroupMember[]
+  baptismOptIn             BaptismOptIn?
+  busPassengers            BusPassenger[]
 }
 
 model BreakoutGroup {
@@ -346,6 +362,7 @@ model Volunteer {
   updatedAt       DateTime           @updatedAt
 
   facilitatedGroups BreakoutGroup[]
+  busPassengers     BusPassenger[]
 }
 
 model MatchingWeightConfig {
@@ -361,4 +378,53 @@ model MatchingWeightConfig {
   career    Float
   capacity  Float
   updatedAt DateTime        @updatedAt
+}
+
+// ─── Event Add-on Modules ─────────────────────────────────────────────────────
+
+model EventModule {
+  id        String          @id @default(cuid())
+  eventId   String
+  event     Event           @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  type      EventModuleType
+  createdAt DateTime        @default(now())
+
+  @@unique([eventId, type])
+}
+
+model BaptismOptIn {
+  id           String          @id @default(cuid())
+  eventId      String
+  event        Event           @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  registrantId String          @unique
+  registrant   EventRegistrant @relation(fields: [registrantId], references: [id], onDelete: Cascade)
+  createdAt    DateTime        @default(now())
+
+  @@unique([eventId, registrantId])
+}
+
+model Bus {
+  id        String       @id @default(cuid())
+  eventId   String
+  event     Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  name      String
+  capacity  Int?         // null = unlimited
+  direction BusDirection @default(ToVenue)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  passengers BusPassenger[]
+}
+
+model BusPassenger {
+  id           String           @id @default(cuid())
+  busId        String
+  bus          Bus              @relation(fields: [busId], references: [id], onDelete: Cascade)
+  registrantId String?
+  registrant   EventRegistrant? @relation(fields: [registrantId], references: [id], onDelete: Cascade)
+  volunteerId  String?
+  volunteer    Volunteer?       @relation(fields: [volunteerId], references: [id], onDelete: Cascade)
+  createdAt    DateTime         @default(now())
+
+  // Exactly one of registrantId or volunteerId must be set (enforced at app layer)
 }
