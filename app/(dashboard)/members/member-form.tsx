@@ -24,6 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import {
   defaultMemberForm,
@@ -36,6 +37,7 @@ import { MobileFormActions } from "@/components/mobile-form-actions"
 type Props = {
   lifeStages: { id: string; name: string }[]
   member?: MemberRow
+  eventHistory?: React.ReactNode
 }
 
 function toFormValues(member: MemberRow): MemberFormValues {
@@ -57,7 +59,7 @@ function toFormValues(member: MemberRow): MemberFormValues {
   }
 }
 
-export function MemberForm({ lifeStages, member }: Props) {
+export function MemberForm({ lifeStages, member, eventHistory }: Props) {
   const router = useRouter()
   const isEdit = !!member
   const initialForm = React.useRef<MemberFormValues>(
@@ -148,11 +150,20 @@ export function MemberForm({ lifeStages, member }: Props) {
         </div>
       </div>
 
-      <form
-        id="member-form"
-        onSubmit={handleSubmit}
-        className="max-w-2xl space-y-8"
-      >
+      <Tabs defaultValue="profile" className="flex flex-col gap-4">
+        {isEdit && eventHistory && (
+          <TabsList className="w-fit">
+            <TabsTrigger value="profile">Profile</TabsTrigger>
+            <TabsTrigger value="events">Events</TabsTrigger>
+          </TabsList>
+        )}
+
+        <TabsContent value="profile" className="mt-0">
+        <form
+          id="member-form"
+          onSubmit={handleSubmit}
+          className="max-w-2xl space-y-8"
+        >
         {/* Personal Info */}
         <section className="space-y-4">
           <h3 className="text-sm font-medium text-muted-foreground">
@@ -353,7 +364,15 @@ export function MemberForm({ lifeStages, member }: Props) {
             />
           </div>
         </section>
-      </form>
+        </form>
+        </TabsContent>
+
+        {isEdit && eventHistory && (
+          <TabsContent value="events" className="mt-0 max-w-2xl">
+            {eventHistory}
+          </TabsContent>
+        )}
+      </Tabs>
 
       <MobileFormActions
         formId="member-form"

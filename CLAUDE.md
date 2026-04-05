@@ -51,6 +51,7 @@ Core person record created when someone joins the church.
 - Has a `smallGroupStatus (SmallGroupStatus nullable)` — tracks integration stage within the group: `New` (trying the group out) → `Regular` (integrated) → `Timothy` (potential leader) → `Leader` (leading their own group). Cleared to null when removed from a group; defaults to `New` when added.
 - Can volunteer in multiple ministries (`Volunteer` records)
 - Has a `lifeStageId → LifeStage (nullable)` — references the same admin-configurable LifeStage table used by Ministries
+- Has `eventRegistrations EventRegistrant[]` — tracks all events the member has registered for; `attendedAt` on each record indicates whether they actually attended
 
 ---
 
@@ -143,19 +144,29 @@ Volunteer {
 ### Event
 Church events hosted by a ministry. Can be free or paid (manual). Supports registration periods, attendance tracking, and breakout groups with facilitators.
 
-**Event fields:** `id`, `name`, `description`, `ministryId → Ministry`, `startDate`, `endDate`, `isPaid`, `price (nullable, in cents)`, `registrationStart`, `registrationEnd`, `createdAt`, `updatedAt`
+**Event fields:** `id`, `name`, `description`, `ministryId → Ministry`, `startDate`, `endDate`, `price (nullable, in cents — null means free)`, `registrationStart`, `registrationEnd`, `createdAt`, `updatedAt`
+
+**Event list** is filterable by ministry and date range.
+
+#### Registration & Check-in URLs
+Each event has two public-facing links (no login required):
+- **Registration:** `/events/[id]/register` — the public registration form
+- **Check-in:** `/events/[id]/checkin` — admin or staff use this to mark attendance on the day
+
+These are separate routes from the admin dashboard event detail page.
 
 **EventRegistrant** — people who register for an event (member or non-member):
 ```
 id, eventId → Event
-memberId      → Member (nullable)
-firstName     String (nullable)
-lastName      String (nullable)
-nickname      String (nullable)
-email         String (nullable)
-mobileNumber  String (nullable)
-isPaid
-attendedAt   (nullable — set when attendance is confirmed by admin)
+memberId         → Member (nullable)
+firstName        String (nullable)
+lastName         String (nullable)
+nickname         String (nullable)
+email            String (nullable)
+mobileNumber     String (nullable)
+isPaid           Boolean (default false)
+paymentReference String (nullable — reference number entered by admin when marking paid)
+attendedAt       DateTime (nullable — set when attendance is confirmed)
 createdAt
 ```
 
@@ -164,21 +175,30 @@ createdAt
 `BreakoutGroupMember.registrantId → EventRegistrant` — this single pointer handles both cases cleanly. Existing member data flows through the FK chain: `BreakoutGroupMember → EventRegistrant → Member`.
 
 #### Member Resolution at Registration
-When the registration form is submitted, the system runs a lookup against existing Member records using the fields provided:
-- Email (exact)
-- Mobile number (exact)
-- firstName + lastName + birthDate (all three must match)
+When the registration form is submitted, the system runs a lookup against existing Member records by **mobile number (exact match)**.
 
-**If a match is found:** The registrant is shown a **"Confirm your details"** screen displaying the matched Member's information. If they confirm it's them, `EventRegistrant.memberId` is set and personal fields are left null.
+**If a match is found:** A **"Confirm your details"** screen is shown to the registrant, displaying the matched Member's name, email, and phone. If they confirm it's them, `EventRegistrant.memberId` is set and personal fields are left null. If they say "that's not me", they proceed as a non-member.
 
-**If no match:** The registrant is created as a non-member — personal fields (`firstName`, `lastName`, `nickname`, `email`, `mobileNumber`) are stored on the `EventRegistrant` record. No Member record is created at this point.
+**If no match:** The registrant is created as a non-member — personal fields stored on `EventRegistrant`. No Member record is created.
 
-This resolution is synchronous and happens during the registration flow — no admin intervention or pending state required.
+This resolution is synchronous, happens during the registration flow, and requires no admin intervention.
 
-**BreakoutGroup** — sub-groups within an event, each led by a volunteer facilitator:
+#### Payment
+Admin manually marks `isPaid = true` on a registrant. When doing so, a **payment reference number** (`paymentReference`) must be entered. This is stored on the `EventRegistrant` record for tracking.
+
+**BreakoutGroup** — sub-groups within an event, each led by a volunteer facilitator. Uses the same matching fields as SmallGroup so the same algorithm and weights apply:
 ```
 id, eventId → Event, name
-facilitatorId → Volunteer
+facilitatorId  → Volunteer (nullable)
+lifeStageId    → LifeStage (nullable)
+genderFocus    GenderFocus (nullable)
+language       String (nullable)
+ageRangeMin    Int (nullable)
+ageRangeMax    Int (nullable)
+meetingFormat  MeetingFormat (nullable)
+locationCity   String (nullable)
+memberLimit    Int (nullable)
+schedules      BreakoutGroupSchedule[] { dayOfWeek, timeStart, timeEnd }
 createdAt
 ```
 
@@ -191,7 +211,73 @@ assignedAt
 
 ---
 
-## Matching Algorithm
+## Event Add-on Modules
+
+Optional features toggled per-event in **Event Settings → Modules**. When enabled, a new tab appears on the event detail page. Modules are tracked in a single `EventModule` table:
+
+```
+EventModule {
+  id
+  eventId → Event
+  type    EventModuleType (Baptism | Embarkation)
+  createdAt
+  @@unique([eventId, type])
+}
+```
+
+### Module: Baptism
+
+Tracks registrants who will be baptized at the event. Opt-in is **not** part of the public registration form — it is managed by admin mid-event from the attendees list.
+
+**Admin tab (Baptism):** List of opted-in registrants. Admin manually adds/removes people. Shows count.
+
+```
+BaptismOptIn {
+  id
+  eventId      → Event
+  registrantId → EventRegistrant (unique per event — one opt-in per registrant)
+  createdAt
+}
+```
+
+### Module: Embarkation
+
+Manages bus assignments for people going to the event venue. Applies to both registrants and volunteers.
+
+**Admin tab (Embarkation):**
+- Define buses (name, capacity, direction)
+- Assign registrants and volunteers to buses
+- View per-bus passenger list
+- Print PDF manifest per bus
+
+**Bus manifest PDF** — dedicated print route: `/events/[id]/buses/[busId]/manifest`
+Rendered as a printable HTML page (`@media print`) with a "Print / Save as PDF" button using browser native print-to-PDF. No external PDF library.
+
+**Bus direction** — `ToVenue` is the default for most events. `FromVenue` and `Both` available when needed.
+
+```
+Bus {
+  id
+  eventId   → Event
+  name      String   (e.g. "Bus 1", "Blue Bus")
+  capacity  Int?     (null = unlimited)
+  direction BusDirection (ToVenue | FromVenue | Both)
+  createdAt, updatedAt
+}
+
+BusPassenger {
+  id
+  busId        → Bus
+  registrantId → EventRegistrant (nullable)
+  volunteerId  → Volunteer       (nullable)
+  -- exactly one of registrantId or volunteerId must be set
+  createdAt
+}
+```
+
+**Settings UI (Event Settings → Modules):** Toggle cards — off by default. Embarkation toggle reveals bus management (add/edit buses).
+
+
 
 A weighted scoring engine automates SmallGroup suggestions and Breakout Group assignment. The algorithm **assists** — admins always review and confirm the output.
 
@@ -227,7 +313,7 @@ Each candidate (member or event registrant) is scored against every eligible gro
 `lifeStageId → LifeStage (nullable — null means "accepts all life stages")`, `genderFocus (Male|Female|Mixed)`, `language`, `ageRangeMin`, `ageRangeMax`, `meetingFormat (Online|Hybrid|InPerson)`, `locationCity`, `memberLimit`, and a related `GroupMeetingSchedule[]` table `{ dayOfWeek, timeStart, timeEnd }`
 
 **BreakoutGroup — matching fields:**
-`memberLimit`, `lifeStage (nullable)`, `genderFocus (nullable)`, `language (nullable)`
+Same as SmallGroup: `lifeStageId → LifeStage (nullable)`, `genderFocus (nullable)`, `language (nullable)`, `ageRangeMin`, `ageRangeMax`, `meetingFormat (nullable)`, `locationCity (nullable)`, `memberLimit`, and a related `BreakoutGroupSchedule[]` table `{ dayOfWeek, timeStart, timeEnd }`. The same scoring functions and engine are used for both contexts — only the weights differ.
 
 **MatchingWeightConfig:**
 `{ context (SmallGroup|Breakout), lifeStage, gender, language, age, schedule, location, mode, career, capacity }` — all floats summing to 1.0
