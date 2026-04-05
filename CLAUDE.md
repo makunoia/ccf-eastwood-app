@@ -142,20 +142,42 @@ Volunteer {
 ---
 
 ### Event
-Church events hosted by a ministry. Can be free or paid (manual). Supports registration periods, attendance tracking, and breakout groups with facilitators.
+Church events hosted by a ministry. Three event types are supported, each with different behaviour:
 
-**Event fields:** `id`, `name`, `description`, `ministryId → Ministry`, `startDate`, `endDate`, `price (nullable, in cents — null means free)`, `registrationStart`, `registrationEnd`, `createdAt`, `updatedAt`
+| Type | Description | Examples |
+|---|---|---|
+| **OneTime** | Single-date event, optional registration and payment | Women's monthly meet, special services |
+| **MultiDay** | Spans consecutive days, treated like OneTime but displayed as a date range | Retreats, camps |
+| **Recurring** | Repeats on a fixed schedule; no pre-registration — walk-in check-in per occurrence | Singles Fridays, Youth Saturdays |
 
-**Event list** is filterable by ministry and date range.
+#### Feature applicability by type
+
+| Feature | OneTime | MultiDay | Recurring |
+|---|---|---|---|
+| Public registration form | ✅ | ✅ | ❌ |
+| Payment tracking | ✅ | ✅ | ❌ |
+| Breakout groups | ✅ | ✅ | ❌ |
+| Baptism module | ✅ | ✅ | ❌ |
+| Embarkation module | ✅ | ✅ | ❌ |
+| Volunteers | ✅ | ✅ | ✅ |
+| Check-in | Per event | Per event | Per occurrence |
+
+**Event fields:** `id`, `name`, `description`, `ministryId → Ministry`, `type EventType @default(OneTime)`, `startDate`, `endDate`, `price (nullable, in cents — null means free)`, `registrationStart`, `registrationEnd`, `createdAt`, `updatedAt`
+
+**Recurring-only fields:** `recurrenceDayOfWeek Int?` (0 = Sunday … 6 = Saturday), `recurrenceFrequency RecurrenceFrequency?` (Weekly | Biweekly | Monthly)
+
+**Event list** is filterable by ministry, type, and date range.
 
 #### Registration & Check-in URLs
-Each event has two public-facing links (no login required):
+Each OneTime/MultiDay event has two public-facing links (no login required):
 - **Registration:** `/events/[id]/register` — the public registration form
 - **Check-in:** `/events/[id]/checkin` — admin or staff use this to mark attendance on the day
 
+Recurring events have only a check-in URL. The check-in page shows a date picker; selecting a date creates or opens that occurrence's attendee list.
+
 These are separate routes from the admin dashboard event detail page.
 
-**EventRegistrant** — people who register for an event (member or non-member):
+**EventRegistrant** — people who register for a OneTime or MultiDay event (member or non-member):
 ```
 id, eventId → Event
 memberId         → Member (nullable)
@@ -173,6 +195,36 @@ createdAt
 **No data duplication rule:** `firstName`, `lastName`, and `email` are only populated when `memberId` is null (non-member registrant). When `memberId` is set, all personal data is read from the linked `Member` record — never stored twice. Application layer must enforce this constraint.
 
 `BreakoutGroupMember.registrantId → EventRegistrant` — this single pointer handles both cases cleanly. Existing member data flows through the FK chain: `BreakoutGroupMember → EventRegistrant → Member`.
+
+#### Recurring Event Occurrences
+
+Each physical instance of a recurring event is an `EventOccurrence`. Occurrences are created on-demand (when check-in is opened for a date) or generated in advance by the admin.
+
+```
+EventOccurrence {
+  id
+  eventId   → Event
+  date      DateTime   (the specific date of this occurrence)
+  notes     String?
+  createdAt
+
+  attendees OccurrenceAttendee[]
+}
+
+OccurrenceAttendee {
+  id
+  occurrenceId → EventOccurrence
+  memberId     → Member (nullable)
+  -- non-member walk-in fields (populated when memberId is null):
+  firstName    String?
+  lastName     String?
+  checkedInAt  DateTime @default(now())
+
+  @@unique([occurrenceId, memberId])  -- prevents duplicate check-ins
+}
+```
+
+**Admin view for recurring events:** The event detail page shows a list of past occurrences with attendance counts. Clicking an occurrence shows its attendee list.
 
 #### Member Resolution at Registration
 When the registration form is submitted, the system runs a lookup against existing Member records by **mobile number (exact match)**.
