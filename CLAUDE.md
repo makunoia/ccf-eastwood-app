@@ -211,7 +211,73 @@ assignedAt
 
 ---
 
-## Matching Algorithm
+## Event Add-on Modules
+
+Optional features toggled per-event in **Event Settings → Modules**. When enabled, a new tab appears on the event detail page. Modules are tracked in a single `EventModule` table:
+
+```
+EventModule {
+  id
+  eventId → Event
+  type    EventModuleType (Baptism | Embarkation)
+  createdAt
+  @@unique([eventId, type])
+}
+```
+
+### Module: Baptism
+
+Tracks registrants who will be baptized at the event. Opt-in is **not** part of the public registration form — it is managed by admin mid-event from the attendees list.
+
+**Admin tab (Baptism):** List of opted-in registrants. Admin manually adds/removes people. Shows count.
+
+```
+BaptismOptIn {
+  id
+  eventId      → Event
+  registrantId → EventRegistrant (unique per event — one opt-in per registrant)
+  createdAt
+}
+```
+
+### Module: Embarkation
+
+Manages bus assignments for people going to the event venue. Applies to both registrants and volunteers.
+
+**Admin tab (Embarkation):**
+- Define buses (name, capacity, direction)
+- Assign registrants and volunteers to buses
+- View per-bus passenger list
+- Print PDF manifest per bus
+
+**Bus manifest PDF** — dedicated print route: `/events/[id]/buses/[busId]/manifest`
+Rendered as a printable HTML page (`@media print`) with a "Print / Save as PDF" button using browser native print-to-PDF. No external PDF library.
+
+**Bus direction** — `ToVenue` is the default for most events. `FromVenue` and `Both` available when needed.
+
+```
+Bus {
+  id
+  eventId   → Event
+  name      String   (e.g. "Bus 1", "Blue Bus")
+  capacity  Int?     (null = unlimited)
+  direction BusDirection (ToVenue | FromVenue | Both)
+  createdAt, updatedAt
+}
+
+BusPassenger {
+  id
+  busId        → Bus
+  registrantId → EventRegistrant (nullable)
+  volunteerId  → Volunteer       (nullable)
+  -- exactly one of registrantId or volunteerId must be set
+  createdAt
+}
+```
+
+**Settings UI (Event Settings → Modules):** Toggle cards — off by default. Embarkation toggle reveals bus management (add/edit buses).
+
+
 
 A weighted scoring engine automates SmallGroup suggestions and Breakout Group assignment. The algorithm **assists** — admins always review and confirm the output.
 
