@@ -51,6 +51,7 @@ Core person record created when someone joins the church.
 - Has a `smallGroupStatus (SmallGroupStatus nullable)` — tracks integration stage within the group: `New` (trying the group out) → `Regular` (integrated) → `Timothy` (potential leader) → `Leader` (leading their own group). Cleared to null when removed from a group; defaults to `New` when added.
 - Can volunteer in multiple ministries (`Volunteer` records)
 - Has a `lifeStageId → LifeStage (nullable)` — references the same admin-configurable LifeStage table used by Ministries
+- Has `eventRegistrations EventRegistrant[]` — tracks all events the member has registered for; `attendedAt` on each record indicates whether they actually attended
 
 ---
 
