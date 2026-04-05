@@ -24,6 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import {
   defaultMinistryForm,
@@ -32,10 +33,15 @@ import {
 import { createMinistry, updateMinistry, deleteMinistry } from "./actions"
 import { type MinistryRow } from "./columns"
 import { MobileFormActions } from "@/components/mobile-form-actions"
+import { CommitteeManager } from "./[id]/committees"
+
+type CommitteeRole = { id: string; name: string }
+type Committee = { id: string; name: string; roles: CommitteeRole[] }
 
 type Props = {
   lifeStages: { id: string; name: string }[]
   ministry?: MinistryRow
+  committees?: Committee[]
 }
 
 function toFormValues(ministry: MinistryRow): MinistryFormValues {
@@ -46,7 +52,7 @@ function toFormValues(ministry: MinistryRow): MinistryFormValues {
   }
 }
 
-export function MinistryForm({ lifeStages, ministry }: Props) {
+export function MinistryForm({ lifeStages, ministry, committees = [] }: Props) {
   const router = useRouter()
   const isEdit = !!ministry
   const initialForm = React.useRef<MinistryFormValues>(
@@ -135,55 +141,73 @@ export function MinistryForm({ lifeStages, ministry }: Props) {
         </div>
       </div>
 
-      <form
-        id="ministry-form"
-        onSubmit={handleSubmit}
-        className="max-w-2xl space-y-6"
-      >
-        <div className="space-y-2">
-          <Label htmlFor="name">
-            Name <span className="text-destructive">*</span>
-          </Label>
-          <Input
-            id="name"
-            value={form.name}
-            onChange={(e) => set("name", e.target.value)}
-            placeholder="e.g. Across, Elevate"
-            required
-          />
-        </div>
+      <Tabs defaultValue="details" className="w-full">
+        <TabsList>
+          <TabsTrigger value="details">Details</TabsTrigger>
+          {isEdit && <TabsTrigger value="committees">Committees</TabsTrigger>}
+        </TabsList>
 
-        <div className="space-y-2">
-          <Label htmlFor="lifeStage">Life Stage</Label>
-          <Select
-            value={form.lifeStageId}
-            onValueChange={(v) => set("lifeStageId", v === "none" ? "" : v)}
+        <TabsContent value="details" className="mt-6">
+          <form
+            id="ministry-form"
+            onSubmit={handleSubmit}
+            className="max-w-2xl space-y-6"
           >
-            <SelectTrigger id="lifeStage">
-              <SelectValue placeholder="Select life stage" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">None</SelectItem>
-              {lifeStages.map((ls) => (
-                <SelectItem key={ls.id} value={ls.id}>
-                  {ls.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+            <div className="space-y-2">
+              <Label htmlFor="name">
+                Name <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="name"
+                value={form.name}
+                onChange={(e) => set("name", e.target.value)}
+                placeholder="e.g. Across, Elevate"
+                required
+              />
+            </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="description">Description</Label>
-          <Textarea
-            id="description"
-            value={form.description}
-            onChange={(e) => set("description", e.target.value)}
-            placeholder="Brief description of this ministry…"
-            rows={3}
-          />
-        </div>
-      </form>
+            <div className="space-y-2">
+              <Label htmlFor="lifeStage">Life Stage</Label>
+              <Select
+                value={form.lifeStageId}
+                onValueChange={(v) => set("lifeStageId", v === "none" ? "" : v)}
+              >
+                <SelectTrigger id="lifeStage">
+                  <SelectValue placeholder="Select life stage" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {lifeStages.map((ls) => (
+                    <SelectItem key={ls.id} value={ls.id}>
+                      {ls.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="description">Description</Label>
+              <Textarea
+                id="description"
+                value={form.description}
+                onChange={(e) => set("description", e.target.value)}
+                placeholder="Brief description of this ministry…"
+                rows={3}
+              />
+            </div>
+          </form>
+        </TabsContent>
+
+        {isEdit && (
+          <TabsContent value="committees" className="mt-6">
+            <CommitteeManager
+              ministryId={ministry!.id}
+              committees={committees}
+            />
+          </TabsContent>
+        )}
+      </Tabs>
 
       <MobileFormActions
         formId="ministry-form"

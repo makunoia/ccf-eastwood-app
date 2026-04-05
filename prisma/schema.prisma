@@ -356,10 +356,12 @@ model Volunteer {
   preferredRole   CommitteeRole      @relation("PreferredRole", fields: [preferredRoleId], references: [id])
   assignedRoleId  String?
   assignedRole    CommitteeRole?     @relation("AssignedRole", fields: [assignedRoleId], references: [id])
-  status          VolunteerStatus    @default(Pending)
-  notes           String?
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
+  status               VolunteerStatus    @default(Pending)
+  notes                String?
+  leaderApprovalToken  String?           @unique
+  leaderNotes          String?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
 
   facilitatedGroups BreakoutGroup[]
   busPassengers     BusPassenger[]

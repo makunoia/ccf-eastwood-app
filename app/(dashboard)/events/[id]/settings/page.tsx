@@ -19,6 +19,17 @@ async function getEventSettings(id: string) {
           _count: { select: { passengers: true } },
         },
       },
+      committees: {
+        orderBy: { createdAt: "asc" },
+        select: {
+          id: true,
+          name: true,
+          roles: {
+            orderBy: { createdAt: "asc" },
+            select: { id: true, name: true },
+          },
+        },
+      },
     },
   })
   return event ?? null
@@ -41,6 +52,7 @@ export default async function EventSettingsPage({
       eventName={event.name}
       enabledModules={enabledModules}
       buses={event.buses}
+      committees={event.committees}
     />
   )
 }

@@ -4,7 +4,7 @@ import { MinistryForm } from "../ministry-form"
 import { type MinistryRow } from "../columns"
 
 async function getData(id: string) {
-  const [ministry, lifeStages] = await Promise.all([
+  const [ministry, lifeStages, committees] = await Promise.all([
     db.ministry.findUnique({
       where: { id },
       include: {
@@ -16,8 +16,20 @@ async function getData(id: string) {
       orderBy: { order: "asc" },
       select: { id: true, name: true },
     }),
+    db.volunteerCommittee.findMany({
+      where: { ministryId: id },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        name: true,
+        roles: {
+          orderBy: { createdAt: "asc" },
+          select: { id: true, name: true },
+        },
+      },
+    }),
   ])
-  return { ministry, lifeStages }
+  return { ministry, lifeStages, committees }
 }
 
 export default async function EditMinistryPage({
@@ -26,7 +38,7 @@ export default async function EditMinistryPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const { ministry, lifeStages } = await getData(id)
+  const { ministry, lifeStages, committees } = await getData(id)
 
   if (!ministry) notFound()
 
@@ -40,5 +52,11 @@ export default async function EditMinistryPage({
     eventCount: ministry._count.events,
   }
 
-  return <MinistryForm lifeStages={lifeStages} ministry={ministryRow} />
+  return (
+    <MinistryForm
+      lifeStages={lifeStages}
+      ministry={ministryRow}
+      committees={committees}
+    />
+  )
 }
