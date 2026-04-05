@@ -252,6 +252,7 @@ model Event {
   // Recurring-only fields
   recurrenceDayOfWeek   Int?                // 0 = Sunday … 6 = Saturday
   recurrenceFrequency   RecurrenceFrequency?
+  recurrenceEndDate     DateTime?           // null = runs indefinitely
   createdAt             DateTime            @default(now())
   updatedAt             DateTime            @updatedAt
 

@@ -164,7 +164,7 @@ Church events hosted by a ministry. Three event types are supported, each with d
 
 **Event fields:** `id`, `name`, `description`, `ministryId → Ministry`, `type EventType @default(OneTime)`, `startDate`, `endDate`, `price (nullable, in cents — null means free)`, `registrationStart`, `registrationEnd`, `createdAt`, `updatedAt`
 
-**Recurring-only fields:** `recurrenceDayOfWeek Int?` (0 = Sunday … 6 = Saturday), `recurrenceFrequency RecurrenceFrequency?` (Weekly | Biweekly | Monthly)
+**Recurring-only fields:** `recurrenceDayOfWeek Int?` (0 = Sunday … 6 = Saturday), `recurrenceFrequency RecurrenceFrequency?` (Weekly | Biweekly | Monthly), `recurrenceEndDate DateTime?` (null = runs indefinitely)
 
 **Event list** is filterable by ministry, type, and date range.
 
