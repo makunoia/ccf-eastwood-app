@@ -150,6 +150,8 @@ Volunteer {
   assignedRoleId  → CommitteeRole  (nullable — set by admin after review)
   status          (Pending | Confirmed | Rejected)
   notes
+  leaderApprovalToken  String? (unique UUID — auto-generated at sign-up)
+  leaderNotes          String? (optional notes submitted by the leader on approve/reject)
   createdAt, updatedAt
 }
 ```
@@ -160,6 +162,13 @@ Volunteer {
 - Status begins as `Pending` and moves to `Confirmed` or `Rejected` after admin review
 - A member can have multiple Volunteer records (different ministries, different events)
 - `BreakoutGroup.facilitatorId` still points to a `Volunteer` record (the confirmed volunteer assigned as facilitator)
+
+**Leader approval flow:**
+1. On sign-up, `leaderApprovalToken` (UUID) is auto-generated and stored
+2. Admin copies `/volunteer-approval/[token]` from the volunteer detail page and sends it to the member's Small Group leader (WhatsApp, email, etc.)
+3. Leader opens the link (no login required) → sees volunteer details → submits Approve or Reject + optional `leaderNotes`
+4. Approval sets `status = Confirmed` automatically; rejection sets `status = Rejected`
+5. Admin can always manually override status from the volunteer detail page
 
 #### Settings managed by Ministry Admin
 - **Ministry Settings** → committees and roles for that ministry's volunteers
@@ -274,7 +283,7 @@ When the registration form is submitted, the system runs a lookup against existi
 
 **If a match is found:** A **"Confirm your details"** screen is shown to the registrant, displaying the matched Member's name, email, and phone. If they confirm it's them, `EventRegistrant.memberId` is set and personal fields are left null. If they say "that's not me", they proceed as a non-member.
 
-**If no match:** The registrant is created as a non-member — personal fields stored on `EventRegistrant`. No Member record is created.
+**If no match:** A `Guest` record is created (or found by mobile number if they've registered before) and linked via `EventRegistrant.guestId`. Personal fields on `EventRegistrant` are left null — the Guest record is the source of truth. This Guest will appear in the `/guests` dashboard and can eventually be promoted to a Member when they join a Small Group.
 
 This resolution is synchronous, happens during the registration flow, and requires no admin intervention.
 
@@ -330,7 +339,7 @@ Tracks registrants who will be baptized at the event. Opt-in is **not** part of 
 BaptismOptIn {
   id
   eventId      → Event
-  registrantId → EventRegistrant (unique per event — one opt-in per registrant)
+  registrantId → EventRegistrant (@unique — one baptism per registrant globally, across all events)
   createdAt
 }
 ```
@@ -440,6 +449,7 @@ churchie/
 │   ├── (auth)/                   # Login / auth pages
 │   ├── (dashboard)/              # Protected admin area
 │   │   ├── members/
+│   │   ├── guests/
 │   │   ├── small-groups/
 │   │   ├── ministries/
 │   │   ├── events/
@@ -504,7 +514,8 @@ churchie/
 - Always show a confirmation dialog before any destructive action
 
 ### Timestamps
-- Every model has `createdAt` (`@default(now())`) and `updatedAt` (`@updatedAt`) managed by Prisma
+- Every **entity model** has `createdAt` (`@default(now())`) and `updatedAt` (`@updatedAt`) managed by Prisma
+- **Immutable join/log models** (e.g. `OccurrenceAttendee`, `BreakoutGroupMember`, `BusPassenger`, `BaptismOptIn`) have only `createdAt` or a semantically named timestamp (`checkedInAt`, `assignedAt`) — no `updatedAt`, since these records are never mutated after creation
 - Store all datetimes in UTC
 
 ### TypeScript
