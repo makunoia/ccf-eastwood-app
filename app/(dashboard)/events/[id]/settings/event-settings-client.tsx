@@ -31,7 +31,7 @@ import {
   createBus,
   updateBus,
   deleteBus,
-} from "../../../module-actions"
+} from "../../module-actions"
 
 type BusRow = {
   id: string

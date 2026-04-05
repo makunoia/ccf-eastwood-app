@@ -75,14 +75,17 @@ type BusPassenger = {
   id: string
   busId: string
   registrantId: string | null
-  registrant: (Omit<Registrant, "member"> & {
+  registrant: {
+    id: string
+    memberId: string | null
+    firstName: string | null
+    lastName: string | null
     member: { id: string; firstName: string; lastName: string; phone: string | null } | null
-  }) | null
+  } | null
   volunteerId: string | null
   volunteer: {
     id: string
-    member: VolunteerMember
-    busPassengers: { id: string; busId: string }[]
+    member: { id: string; firstName: string; lastName: string }
   } | null
 }
 
