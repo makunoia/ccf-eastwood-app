@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { MemberForm } from "../member-form"
+import { MemberEventHistory } from "./member-event-history"
 import { type MemberRow } from "../columns"
 
 async function getMember(id: string): Promise<MemberRow | null> {
@@ -40,15 +41,43 @@ async function getLifeStages() {
   })
 }
 
+async function getMemberEventRegistrations(memberId: string) {
+  return db.eventRegistrant.findMany({
+    where: { memberId },
+    orderBy: { createdAt: "desc" },
+    include: {
+      event: {
+        select: {
+          id: true,
+          name: true,
+          startDate: true,
+          price: true,
+          ministry: { select: { name: true } },
+        },
+      },
+    },
+  })
+}
+
 export default async function MemberDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const [member, lifeStages] = await Promise.all([getMember(id), getLifeStages()])
+  const [member, lifeStages, registrations] = await Promise.all([
+    getMember(id),
+    getLifeStages(),
+    getMemberEventRegistrations(id),
+  ])
 
   if (!member) notFound()
 
-  return <MemberForm lifeStages={lifeStages} member={member} />
+  return (
+    <MemberForm
+      lifeStages={lifeStages}
+      member={member}
+      eventHistory={<MemberEventHistory registrations={registrations} />}
+    />
+  )
 }
