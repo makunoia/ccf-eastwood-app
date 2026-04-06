@@ -10,7 +10,7 @@ export const metadata: Metadata = {
   description: "Church management for administrators",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "default",
+    statusBarStyle: "black-translucent",
     title: "Churchie",
   },
   formatDetection: {
