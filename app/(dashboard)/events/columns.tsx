@@ -27,7 +27,7 @@ import { deleteEvent } from "./actions"
 export type EventRow = {
   id: string
   name: string
-  ministry: string
+  ministries: { id: string; name: string }[]
   startDate: string
   endDate: string
   price: number | null
@@ -36,7 +36,6 @@ export type EventRow = {
   registrantCount: number
   // for edit form
   description: string | null
-  ministryId: string
   type: "OneTime" | "MultiDay" | "Recurring"
   recurrenceDayOfWeek: number | null
   recurrenceFrequency: "Weekly" | "Biweekly" | "Monthly" | null
@@ -148,8 +147,13 @@ export function buildColumns(): ColumnDef<EventRow>[] {
       header: "Name",
     },
     {
-      accessorKey: "ministry",
+      id: "ministry",
       header: "Ministry",
+      cell: ({ row }) => {
+        const { ministries } = row.original
+        if (ministries.length === 0) return <span className="text-muted-foreground">—</span>
+        return ministries.map((m) => m.name).join(", ")
+      },
     },
     {
       id: "date",

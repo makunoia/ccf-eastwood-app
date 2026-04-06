@@ -7,7 +7,7 @@ async function getEvents(): Promise<EventRow[]> {
   const events = await db.event.findMany({
     orderBy: { startDate: "desc" },
     include: {
-      ministry: { select: { id: true, name: true } },
+      ministries: { include: { ministry: { select: { id: true, name: true } } } },
       _count: { select: { registrants: true } },
     },
   })
@@ -16,8 +16,7 @@ async function getEvents(): Promise<EventRow[]> {
     id: e.id,
     name: e.name,
     description: e.description,
-    ministry: e.ministry.name,
-    ministryId: e.ministryId,
+    ministries: e.ministries.map((em) => em.ministry),
     type: e.type,
     startDate: e.startDate.toISOString().split("T")[0],
     endDate: e.endDate.toISOString().split("T")[0],

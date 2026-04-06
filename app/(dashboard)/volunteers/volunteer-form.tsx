@@ -37,7 +37,17 @@ type CommitteeRole = { id: string; name: string }
 type Committee = { id: string; name: string; roles: CommitteeRole[] }
 
 type Ministry = { id: string; name: string; committees: Committee[] }
-type Event = { id: string; name: string; committees: Committee[] }
+type Event = {
+  id: string
+  name: string
+  committees: Committee[]
+  affiliatedMinistries: Ministry[]
+}
+
+type CommitteeGroup = {
+  label: string
+  committees: Committee[]
+}
 
 type Props = {
   members: { id: string; firstName: string; lastName: string }[]
@@ -98,17 +108,31 @@ export function VolunteerForm({ members, ministries, events, volunteer }: Props)
 
   // ── Cascading data ────────────────────────────────────────────────────────
 
-  const scopeCommittees: Committee[] = React.useMemo(() => {
+  // For ministry scope: flat list. For event scope: grouped by origin.
+  const committeeGroups: CommitteeGroup[] = React.useMemo(() => {
     if (form.scopeType === "ministry") {
-      return ministries.find((m) => m.id === form.ministryId)?.committees ?? []
+      const committees = ministries.find((m) => m.id === form.ministryId)?.committees ?? []
+      return committees.length ? [{ label: "", committees }] : []
     }
     if (form.scopeType === "event") {
-      return events.find((e) => e.id === form.eventId)?.committees ?? []
+      const selectedEvent = events.find((e) => e.id === form.eventId)
+      if (!selectedEvent) return []
+      const groups: CommitteeGroup[] = []
+      if (selectedEvent.committees.length > 0) {
+        groups.push({ label: "Event", committees: selectedEvent.committees })
+      }
+      for (const ministry of selectedEvent.affiliatedMinistries) {
+        if (ministry.committees.length > 0) {
+          groups.push({ label: ministry.name, committees: ministry.committees })
+        }
+      }
+      return groups
     }
     return []
   }, [form.scopeType, form.ministryId, form.eventId, ministries, events])
 
-  const selectedCommittee = scopeCommittees.find((c) => c.id === form.committeeId)
+  const allScopeCommittees = committeeGroups.flatMap((g) => g.committees)
+  const selectedCommittee = allScopeCommittees.find((c) => c.id === form.committeeId)
   const committeeRoles = selectedCommittee?.roles ?? []
 
   // ── Submit ────────────────────────────────────────────────────────────────
@@ -326,15 +350,28 @@ export function VolunteerForm({ members, ministries, events, volunteer }: Props)
                 <SelectValue placeholder="Select committee" />
               </SelectTrigger>
               <SelectContent>
-                {scopeCommittees.length === 0 ? (
+                {committeeGroups.length === 0 ? (
                   <SelectItem value="none" disabled>
                     No committees — add them in settings
                   </SelectItem>
-                ) : (
-                  scopeCommittees.map((c) => (
+                ) : committeeGroups.every((g) => g.label === "") ? (
+                  committeeGroups[0].committees.map((c) => (
                     <SelectItem key={c.id} value={c.id}>
                       {c.name}
                     </SelectItem>
+                  ))
+                ) : (
+                  committeeGroups.map((group) => (
+                    <React.Fragment key={group.label}>
+                      <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+                        {group.label}
+                      </div>
+                      {group.committees.map((c) => (
+                        <SelectItem key={c.id} value={c.id} className="pl-4">
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                    </React.Fragment>
                   ))
                 )}
               </SelectContent>

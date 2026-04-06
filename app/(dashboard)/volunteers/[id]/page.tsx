@@ -53,6 +53,27 @@ async function getData(id: string) {
             },
           },
         },
+        ministries: {
+          include: {
+            ministry: {
+              select: {
+                id: true,
+                name: true,
+                committees: {
+                  orderBy: { createdAt: "asc" },
+                  select: {
+                    id: true,
+                    name: true,
+                    roles: {
+                      orderBy: { createdAt: "asc" },
+                      select: { id: true, name: true },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     }),
   ])
@@ -93,11 +114,18 @@ export default async function EditVolunteerPage({
     leaderNotes: volunteer.leaderNotes,
   }
 
+  const mappedEvents = events.map((e) => ({
+    id: e.id,
+    name: e.name,
+    committees: e.committees,
+    affiliatedMinistries: e.ministries.map((em) => em.ministry),
+  }))
+
   return (
     <VolunteerForm
       members={members}
       ministries={ministries}
-      events={events}
+      events={mappedEvents}
       volunteer={volunteerProp}
     />
   )
