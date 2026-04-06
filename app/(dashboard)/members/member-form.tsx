@@ -38,6 +38,7 @@ type Props = {
   lifeStages: { id: string; name: string }[]
   member?: MemberRow
   eventHistory?: React.ReactNode
+  smallGroups?: React.ReactNode
 }
 
 function toFormValues(member: MemberRow): MemberFormValues {
@@ -59,7 +60,7 @@ function toFormValues(member: MemberRow): MemberFormValues {
   }
 }
 
-export function MemberForm({ lifeStages, member, eventHistory }: Props) {
+export function MemberForm({ lifeStages, member, eventHistory, smallGroups }: Props) {
   const router = useRouter()
   const isEdit = !!member
   const initialForm = React.useRef<MemberFormValues>(
@@ -151,10 +152,15 @@ export function MemberForm({ lifeStages, member, eventHistory }: Props) {
       </div>
 
       <Tabs defaultValue="profile" className="flex flex-col gap-4">
-        {isEdit && eventHistory && (
+        {isEdit && (eventHistory || smallGroups) && (
           <TabsList className="w-fit">
             <TabsTrigger value="profile">Profile</TabsTrigger>
-            <TabsTrigger value="events">Events</TabsTrigger>
+            {smallGroups && (
+              <TabsTrigger value="small-groups">Small Groups</TabsTrigger>
+            )}
+            {eventHistory && (
+              <TabsTrigger value="events">Events</TabsTrigger>
+            )}
           </TabsList>
         )}
 
@@ -366,6 +372,12 @@ export function MemberForm({ lifeStages, member, eventHistory }: Props) {
         </section>
         </form>
         </TabsContent>
+
+        {isEdit && smallGroups && (
+          <TabsContent value="small-groups" className="mt-0">
+            {smallGroups}
+          </TabsContent>
+        )}
 
         {isEdit && eventHistory && (
           <TabsContent value="events" className="mt-0 max-w-2xl">
