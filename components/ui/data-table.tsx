@@ -84,7 +84,9 @@ export function DataTable<TData, TValue>({
             onCheckedChange={(value) => ctx.row.toggleSelected(!!value)}
             aria-label="Select row"
           />
-          {flexRender(firstCol.cell, ctx)}
+          {firstCol.cell
+            ? flexRender(firstCol.cell, ctx)
+            : String(ctx.getValue() ?? "")}
         </div>
       ),
     }

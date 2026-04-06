@@ -33,7 +33,7 @@ function EventCard({ event }: { event: EventRow }) {
         </div>
         <div className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
           <span className="text-muted-foreground">Ministry</span>
-          <span>{event.ministry}</span>
+          <span>{event.ministries.length > 0 ? event.ministries.map((m) => m.name).join(", ") : "—"}</span>
           <span className="text-muted-foreground">Date</span>
           <span>
             {formatDate(event.startDate)}
