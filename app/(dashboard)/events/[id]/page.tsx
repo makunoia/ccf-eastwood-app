@@ -9,6 +9,37 @@ async function getEventType(id: string) {
   return db.event.findUnique({ where: { id }, select: { id: true, type: true } })
 }
 
+const breakoutGroupsInclude = {
+  orderBy: { createdAt: "asc" } as const,
+  include: {
+    facilitator: {
+      include: { member: { select: { id: true, firstName: true, lastName: true } } },
+    },
+    coFacilitator: {
+      include: { member: { select: { id: true, firstName: true, lastName: true } } },
+    },
+    members: {
+      orderBy: { assignedAt: "asc" } as const,
+      include: {
+        registrant: {
+          select: {
+            id: true,
+            memberId: true,
+            guestId: true,
+            firstName: true,
+            lastName: true,
+            nickname: true,
+            mobileNumber: true,
+            member: { select: { id: true, firstName: true, lastName: true } },
+            guest: { select: { id: true, firstName: true, lastName: true } },
+          },
+        },
+      },
+    },
+    lifeStage: { select: { id: true, name: true } },
+  },
+}
+
 async function getEvent(id: string) {
   const event = await db.event.findUnique({
     where: { id },
@@ -55,6 +86,7 @@ async function getEvent(id: string) {
           busPassengers: { select: { id: true, busId: true } },
         },
       },
+      breakoutGroups: breakoutGroupsInclude,
     },
   })
   if (!event) return null
@@ -83,6 +115,13 @@ async function getMultiDayEvent(id: string) {
           _count: { select: { attendees: true } },
         },
       },
+      volunteers: {
+        where: { status: "Confirmed" },
+        include: {
+          member: { select: { id: true, firstName: true, lastName: true } },
+        },
+      },
+      breakoutGroups: breakoutGroupsInclude,
     },
   })
   if (!event) return null
@@ -111,6 +150,13 @@ async function getRecurringEvent(id: string) {
           _count: { select: { attendees: true } },
         },
       },
+      volunteers: {
+        where: { status: "Confirmed" },
+        include: {
+          member: { select: { id: true, firstName: true, lastName: true } },
+        },
+      },
+      breakoutGroups: breakoutGroupsInclude,
     },
   })
   if (!event) return null
@@ -123,13 +169,16 @@ export default async function EventDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const probe = await getEventType(id)
+  const [probe, lifeStages] = await Promise.all([
+    getEventType(id),
+    db.lifeStage.findMany({ orderBy: { order: "asc" }, select: { id: true, name: true } }),
+  ])
   if (!probe) notFound()
 
   if (probe.type === "Recurring") {
     const event = await getRecurringEvent(id)
     if (!event) notFound()
-    return <RecurringEventDetail event={event} />
+    return <RecurringEventDetail event={event} lifeStages={lifeStages} />
   }
 
   if (probe.type === "MultiDay") {
@@ -140,10 +189,10 @@ export default async function EventDetailPage({
     // Re-fetch after ensuring occurrences so we get the latest data
     const fresh = await getMultiDayEvent(id)
     if (!fresh) notFound()
-    return <MultiDayEventDetail event={fresh} />
+    return <MultiDayEventDetail event={fresh} lifeStages={lifeStages} />
   }
 
   const event = await getEvent(id)
   if (!event) notFound()
-  return <EventDetail event={event} />
+  return <EventDetail event={event} lifeStages={lifeStages} />
 }

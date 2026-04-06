@@ -368,8 +368,10 @@ model BreakoutGroup {
   eventId       String
   event         Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
   name          String
-  facilitatorId String?
-  facilitator   Volunteer?   @relation(fields: [facilitatorId], references: [id])
+  facilitatorId   String?
+  facilitator     Volunteer?   @relation("FacilitatedGroups", fields: [facilitatorId], references: [id])
+  coFacilitatorId String?
+  coFacilitator   Volunteer?   @relation("CoFacilitatedGroups", fields: [coFacilitatorId], references: [id])
 
   // Matching fields (mirrors SmallGroup)
   lifeStageId   String?
@@ -457,8 +459,9 @@ model Volunteer {
   createdAt            DateTime          @default(now())
   updatedAt            DateTime          @updatedAt
 
-  facilitatedGroups BreakoutGroup[]
-  busPassengers     BusPassenger[]
+  facilitatedGroups   BreakoutGroup[] @relation("FacilitatedGroups")
+  coFacilitatedGroups BreakoutGroup[] @relation("CoFacilitatedGroups")
+  busPassengers       BusPassenger[]
 }
 
 model MatchingWeightConfig {

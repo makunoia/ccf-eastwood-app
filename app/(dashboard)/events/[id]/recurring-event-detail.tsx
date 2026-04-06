@@ -26,6 +26,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { createOccurrence } from "@/app/(dashboard)/events/actions"
+import { BreakoutGroupsTab } from "./breakouts-tab"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -53,6 +54,7 @@ type Registrant = {
   firstName: string | null
   lastName: string | null
   nickname: string | null
+  mobileNumber: string | null
   createdAt: Date
 }
 
@@ -60,6 +62,47 @@ type OccurrenceRow = {
   id: string
   date: Date
   _count: { attendees: number }
+}
+
+type VolunteerForBreakout = {
+  id: string
+  member: { id: string; firstName: string; lastName: string }
+}
+
+type BreakoutGroupMemberRow = {
+  breakoutGroupId: string
+  registrantId: string
+  assignedAt: Date
+  registrant: {
+    id: string
+    memberId: string | null
+    guestId: string | null
+    firstName: string | null
+    lastName: string | null
+    nickname: string | null
+    mobileNumber: string | null
+    member: { id: string; firstName: string; lastName: string } | null
+    guest: { id: string; firstName: string; lastName: string } | null
+  }
+}
+
+type BreakoutGroupData = {
+  id: string
+  name: string
+  facilitatorId: string | null
+  facilitator: { id: string; member: { id: string; firstName: string; lastName: string } } | null
+  coFacilitatorId: string | null
+  coFacilitator: { id: string; member: { id: string; firstName: string; lastName: string } } | null
+  memberLimit: number | null
+  lifeStageId: string | null
+  lifeStage: { id: string; name: string } | null
+  genderFocus: string | null
+  language: string | null
+  ageRangeMin: number | null
+  ageRangeMax: number | null
+  meetingFormat: string | null
+  locationCity: string | null
+  members: BreakoutGroupMemberRow[]
 }
 
 type RecurringEvent = {
@@ -73,6 +116,8 @@ type RecurringEvent = {
   ministries: { ministry: { id: string; name: string } }[]
   registrants: Registrant[]
   occurrences: OccurrenceRow[]
+  volunteers: VolunteerForBreakout[]
+  breakoutGroups: BreakoutGroupData[]
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -287,7 +332,7 @@ function RegistrantsTab({ registrants }: { registrants: Registrant[] }) {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function RecurringEventDetail({ event }: { event: RecurringEvent }) {
+export function RecurringEventDetail({ event, lifeStages }: { event: RecurringEvent; lifeStages: { id: string; name: string }[] }) {
   const router = useRouter()
 
   const totalAttendance = event.occurrences.reduce((sum, o) => sum + o._count.attendees, 0)
@@ -396,6 +441,7 @@ export function RecurringEventDetail({ event }: { event: RecurringEvent }) {
           <TabsTrigger value="registrants">
             Registrants ({event.registrants.length})
           </TabsTrigger>
+          <TabsTrigger value="breakouts">Breakout Groups</TabsTrigger>
         </TabsList>
 
         <TabsContent value="occurrences" className="mt-4 flex-1">
@@ -404,6 +450,16 @@ export function RecurringEventDetail({ event }: { event: RecurringEvent }) {
 
         <TabsContent value="registrants" className="mt-4 flex-1">
           <RegistrantsTab registrants={event.registrants} />
+        </TabsContent>
+
+        <TabsContent value="breakouts" className="mt-4">
+          <BreakoutGroupsTab
+            eventId={event.id}
+            breakoutGroups={event.breakoutGroups}
+            registrants={event.registrants}
+            volunteers={event.volunteers}
+            lifeStages={lifeStages}
+          />
         </TabsContent>
       </Tabs>
     </div>
