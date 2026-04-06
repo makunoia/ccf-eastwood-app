@@ -132,15 +132,28 @@ export async function createRegistrant(
       })
       return { success: true, data: { id: registrant.id } }
     } else {
-      // Non-member — store personal fields
+      // Non-member — find or create Guest by phone, then link via guestId
+      const existingGuest = await db.guest.findFirst({
+        where: { phone: parsed.data.mobileNumber },
+        select: { id: true },
+      })
+      const guestId = existingGuest
+        ? existingGuest.id
+        : (await db.guest.create({
+            data: {
+              firstName: parsed.data.firstName,
+              lastName: parsed.data.lastName,
+              email: parsed.data.email ?? null,
+              phone: parsed.data.mobileNumber,
+            },
+            select: { id: true },
+          })).id
+
       const registrant = await db.eventRegistrant.create({
         data: {
           eventId,
-          firstName: parsed.data.firstName,
-          lastName: parsed.data.lastName,
+          guestId,
           nickname: parsed.data.nickname ?? null,
-          email: parsed.data.email ?? null,
-          mobileNumber: parsed.data.mobileNumber,
         },
         select: { id: true },
       })
@@ -171,6 +184,9 @@ export async function getCheckinRegistrants(eventId: string) {
     orderBy: { createdAt: "asc" },
     include: {
       member: {
+        select: { id: true, firstName: true, lastName: true, phone: true },
+      },
+      guest: {
         select: { id: true, firstName: true, lastName: true, phone: true },
       },
     },

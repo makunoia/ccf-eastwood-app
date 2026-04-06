@@ -14,6 +14,9 @@ async function getEvent(id: string) {
           member: {
             select: { id: true, firstName: true, lastName: true, phone: true, email: true },
           },
+          guest: {
+            select: { id: true, firstName: true, lastName: true, phone: true, email: true },
+          },
           baptismOptIn: { select: { id: true } },
         },
       },
@@ -26,6 +29,7 @@ async function getEvent(id: string) {
               registrant: {
                 include: {
                   member: { select: { id: true, firstName: true, lastName: true, phone: true } },
+                  guest: { select: { id: true, firstName: true, lastName: true } },
                 },
               },
               volunteer: {

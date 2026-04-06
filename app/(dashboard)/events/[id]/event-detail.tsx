@@ -59,6 +59,7 @@ type Registrant = {
   eventId: string
   memberId: string | null
   member: Member | null
+  guest: { id: string; firstName: string; lastName: string; phone: string | null; email: string | null } | null
   firstName: string | null
   lastName: string | null
   nickname: string | null
@@ -81,6 +82,7 @@ type BusPassenger = {
     firstName: string | null
     lastName: string | null
     member: { id: string; firstName: string; lastName: string; phone: string | null } | null
+    guest: { id: string; firstName: string; lastName: string } | null
   } | null
   volunteerId: string | null
   volunteer: {
@@ -139,11 +141,14 @@ function getRegistrationStatus(event: Event) {
 
 function registrantDisplayName(r: Registrant) {
   if (r.member) return `${r.member.firstName} ${r.member.lastName}`
+  if (r.guest)  return `${r.guest.firstName} ${r.guest.lastName}`
   return `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim()
 }
 
 function registrantMobile(r: Registrant) {
-  return r.member ? r.member.phone : r.mobileNumber
+  if (r.member) return r.member.phone
+  if (r.guest)  return r.guest.phone
+  return r.mobileNumber
 }
 
 const DIRECTION_LABELS: Record<string, string> = {
@@ -463,7 +468,9 @@ function EmbarkationTab({
                     const name = p.registrant
                       ? (p.registrant.member
                           ? `${p.registrant.member.firstName} ${p.registrant.member.lastName}`
-                          : `${p.registrant.firstName ?? ""} ${p.registrant.lastName ?? ""}`.trim())
+                          : p.registrant.guest
+                            ? `${p.registrant.guest.firstName} ${p.registrant.guest.lastName}`
+                            : `${p.registrant.firstName ?? ""} ${p.registrant.lastName ?? ""}`.trim())
                       : p.volunteer
                         ? `${p.volunteer.member.firstName} ${p.volunteer.member.lastName}`
                         : "—"

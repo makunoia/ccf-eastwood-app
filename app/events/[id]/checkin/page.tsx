@@ -16,6 +16,9 @@ async function getEventWithRegistrants(id: string) {
           member: {
             select: { id: true, firstName: true, lastName: true, phone: true },
           },
+          guest: {
+            select: { id: true, firstName: true, lastName: true, phone: true },
+          },
         },
       },
     },

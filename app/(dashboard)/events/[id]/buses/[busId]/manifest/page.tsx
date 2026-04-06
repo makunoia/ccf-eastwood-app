@@ -20,6 +20,7 @@ async function getBusManifest(busId: string) {
           registrant: {
             include: {
               member: { select: { firstName: true, lastName: true, phone: true, email: true } },
+              guest: { select: { firstName: true, lastName: true, phone: true } },
             },
           },
           volunteer: {
@@ -68,8 +69,10 @@ export default async function ManifestPage({
     const r = p.registrant!
     const name = r.member
       ? `${r.member.firstName} ${r.member.lastName}`
-      : `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim()
-    const mobile = r.member ? r.member.phone : r.mobileNumber
+      : r.guest
+        ? `${r.guest.firstName} ${r.guest.lastName}`
+        : `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim()
+    const mobile = r.member ? r.member.phone : r.guest ? r.guest.phone : r.mobileNumber
     return {
       id: p.id,
       name,

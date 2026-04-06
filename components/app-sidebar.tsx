@@ -9,6 +9,7 @@ import {
   IconHelp,
   IconLayoutDashboard,
   IconSettings,
+  IconUserScan,
   IconUsers,
   IconUsersGroup,
 } from "@tabler/icons-react"
@@ -31,6 +32,11 @@ const navMain = [
     title: "Dashboard",
     url: "/dashboard",
     icon: IconLayoutDashboard,
+  },
+  {
+    title: "Guests",
+    url: "/guests",
+    icon: IconUserScan,
   },
   {
     title: "Members",
