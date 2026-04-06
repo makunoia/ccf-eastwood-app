@@ -1,167 +1,285 @@
 "use client"
 
 import * as React from "react"
-import { IconCheck, IconSearch } from "@tabler/icons-react"
-import { toast } from "sonner"
+import { IconCheck, IconLoader2, IconUserQuestion } from "@tabler/icons-react"
 
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import {
+  lookupCheckinRegistrant,
   markCheckinAttendance,
   checkInToOccurrence,
 } from "@/app/(dashboard)/events/actions"
 
-type Member = {
-  id: string
-  firstName: string
-  lastName: string
-  phone: string | null
-}
-
-type Guest = {
-  id: string
-  firstName: string
-  lastName: string
-  phone: string | null
-}
-
-type Registrant = {
-  id: string
-  memberId: string | null
-  member: Member | null
-  guest: Guest | null
-  firstName: string | null
-  lastName: string | null
-  nickname: string | null
-  mobileNumber: string | null
-  attendedAt: Date | null
-}
+type Step = "lookup" | "confirm" | "already-in" | "success" | "not-found"
 
 type Props = {
   eventId: string
-  registrants: Registrant[]
-  occurrenceId: string | null        // null = OneTime/MultiDay mode
-  initialCheckedInIds: string[]      // pre-populated for Recurring
+  occurrenceId: string | null
 }
 
-function getDisplayName(r: Registrant) {
-  if (r.member) return `${r.member.firstName} ${r.member.lastName}`
-  if (r.guest)  return `${r.guest.firstName} ${r.guest.lastName}`
-  return `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim()
-}
+const AUTO_RESET_MS = 4000
 
-function getDisplayMobile(r: Registrant) {
-  if (r.member) return r.member.phone
-  if (r.guest)  return r.guest.phone
-  return r.mobileNumber
-}
+export function CheckinBoard({ eventId, occurrenceId }: Props) {
+  const [step, setStep] = React.useState<Step>("lookup")
+  const [query, setQuery] = React.useState("")
+  const [loading, setLoading] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+  const [matched, setMatched] = React.useState<{
+    registrantId: string
+    name: string
+    nickname: string | null
+  } | null>(null)
+  const inputRef = React.useRef<HTMLInputElement>(null)
+  const resetTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 
-export function CheckinBoard({ eventId, registrants, occurrenceId, initialCheckedInIds }: Props) {
-  const [checkedInIds, setCheckedInIds] = React.useState<Set<string>>(() => {
-    if (occurrenceId !== null) {
-      // Recurring: seed from server-fetched occurrence attendees
-      return new Set(initialCheckedInIds)
+  function reset() {
+    if (resetTimer.current) clearTimeout(resetTimer.current)
+    setStep("lookup")
+    setQuery("")
+    setError(null)
+    setMatched(null)
+    setLoading(false)
+    setTimeout(() => inputRef.current?.focus(), 50)
+  }
+
+  function scheduleReset() {
+    if (resetTimer.current) clearTimeout(resetTimer.current)
+    resetTimer.current = setTimeout(reset, AUTO_RESET_MS)
+  }
+
+  React.useEffect(() => {
+    inputRef.current?.focus()
+    return () => {
+      if (resetTimer.current) clearTimeout(resetTimer.current)
     }
-    // OneTime/MultiDay: seed from attendedAt on each registrant
-    return new Set(registrants.filter((r) => r.attendedAt !== null).map((r) => r.id))
-  })
+  }, [])
 
-  const [search, setSearch] = React.useState("")
-  const [marking, setMarking] = React.useState<string | null>(null)
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!query.trim()) return
+    setError(null)
+    setLoading(true)
 
-  const filtered = registrants.filter((r) => {
-    const name = getDisplayName(r).toLowerCase()
-    const mobile = getDisplayMobile(r) ?? ""
-    const q = search.toLowerCase()
-    return name.includes(q) || mobile.includes(q)
-  })
+    const result = await lookupCheckinRegistrant(eventId, query, occurrenceId)
+    setLoading(false)
 
-  async function handleCheckin(r: Registrant) {
-    if (checkedInIds.has(r.id)) return
-    setMarking(r.id)
+    if (!result.success) {
+      setError(result.error)
+      return
+    }
 
-    const result =
-      occurrenceId !== null
-        ? await checkInToOccurrence(occurrenceId, r.id)
-        : await markCheckinAttendance(r.id)
+    if (!result.data) {
+      setStep("not-found")
+      scheduleReset()
+      return
+    }
 
-    setMarking(null)
-    if (result.success) {
-      setCheckedInIds((prev) => new Set([...prev, r.id]))
-      toast.success(`${getDisplayName(r)} checked in`)
+    setMatched({
+      registrantId: result.data.registrantId,
+      name: result.data.name,
+      nickname: result.data.nickname,
+    })
+
+    if (result.data.alreadyCheckedIn) {
+      setStep("already-in")
+      scheduleReset()
     } else {
-      toast.error(result.error)
+      setStep("confirm")
     }
   }
 
-  return (
-    <div className="flex flex-col gap-4 p-4">
-      {/* Stats */}
-      <div className="flex items-center gap-3">
-        <Badge variant="secondary" className="text-sm">
-          {checkedInIds.size} / {registrants.length} checked in
-        </Badge>
-      </div>
+  async function handleConfirm() {
+    if (!matched) return
+    setLoading(true)
 
-      {/* Search */}
-      <div className="relative">
-        <IconSearch className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          className="pl-9"
-          placeholder="Search by name or mobile…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          autoFocus
-        />
-      </div>
+    const result =
+      occurrenceId !== null
+        ? await checkInToOccurrence(occurrenceId, matched.registrantId)
+        : await markCheckinAttendance(matched.registrantId)
 
-      {/* Registrant list */}
-      <div className="flex flex-col gap-2">
-        {filtered.length === 0 && (
-          <p className="py-8 text-center text-sm text-muted-foreground">
-            No registrants found
-          </p>
-        )}
-        {filtered.map((r) => {
-          const attended = checkedInIds.has(r.id)
-          return (
-            <div
-              key={r.id}
-              className={`flex items-center justify-between rounded-lg border p-3 transition-colors ${
-                attended ? "border-green-200 bg-green-50" : ""
-              }`}
-            >
-              <div>
-                <p className="font-medium text-sm">{getDisplayName(r)}</p>
-                {r.nickname && (
-                  <p className="text-xs text-muted-foreground">{r.nickname}</p>
-                )}
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {getDisplayMobile(r) ?? "—"}
-                </p>
-              </div>
-              <Button
-                size="sm"
-                variant={attended ? "secondary" : "default"}
-                onClick={() => handleCheckin(r)}
-                disabled={attended || marking === r.id}
-              >
-                {attended ? (
-                  <>
-                    <IconCheck className="mr-1 size-3.5" />
-                    Checked in
-                  </>
-                ) : marking === r.id ? (
-                  "Checking in…"
-                ) : (
-                  "Check in"
-                )}
-              </Button>
+    setLoading(false)
+
+    if (!result.success) {
+      setError(result.error)
+      return
+    }
+
+    setStep("success")
+    scheduleReset()
+  }
+
+  // ── Lookup ───────────────────────────────────────────────────────────────
+  if (step === "lookup") {
+    return (
+      <div className="flex min-h-[70svh] flex-col items-center justify-center px-6 py-12">
+        <div className="w-full max-w-sm space-y-6">
+          <div className="space-y-1 text-center">
+            <h2 className="text-2xl font-semibold tracking-tight">Check in</h2>
+            <p className="text-sm text-muted-foreground">
+              Enter your email address or mobile number
+            </p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="checkin-query">Email or mobile number</Label>
+              <Input
+                id="checkin-query"
+                ref={inputRef}
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value)
+                  setError(null)
+                }}
+                placeholder="juan@email.com or +63 917 123 4567"
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
+                className="h-12 text-base"
+              />
+              {error && <p className="text-sm text-destructive">{error}</p>}
             </div>
-          )
-        })}
+
+            <Button
+              type="submit"
+              className="h-12 w-full text-base"
+              disabled={loading || !query.trim()}
+            >
+              {loading ? (
+                <>
+                  <IconLoader2 className="mr-2 size-4 animate-spin" />
+                  Looking up…
+                </>
+              ) : (
+                "Find my registration"
+              )}
+            </Button>
+          </form>
+        </div>
       </div>
-    </div>
-  )
+    )
+  }
+
+  // ── Confirm ──────────────────────────────────────────────────────────────
+  if (step === "confirm" && matched) {
+    return (
+      <div className="flex min-h-[70svh] flex-col items-center justify-center px-6 py-12">
+        <div className="w-full max-w-sm space-y-6">
+          <div className="space-y-1 text-center">
+            <h2 className="text-2xl font-semibold tracking-tight">Is this you?</h2>
+            <p className="text-sm text-muted-foreground">
+              Confirm your details to check in
+            </p>
+          </div>
+
+          <div className="rounded-xl border bg-muted/40 px-6 py-5 text-center">
+            <p className="text-xl font-semibold">{matched.name}</p>
+            {matched.nickname && (
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                &ldquo;{matched.nickname}&rdquo;
+              </p>
+            )}
+          </div>
+
+          {error && <p className="text-sm text-destructive text-center">{error}</p>}
+
+          <div className="flex flex-col gap-3">
+            <Button
+              className="h-12 w-full text-base"
+              onClick={handleConfirm}
+              disabled={loading}
+            >
+              {loading ? (
+                <>
+                  <IconLoader2 className="mr-2 size-4 animate-spin" />
+                  Checking in…
+                </>
+              ) : (
+                "Yes, check me in"
+              )}
+            </Button>
+            <Button
+              variant="ghost"
+              className="h-11 w-full"
+              onClick={reset}
+              disabled={loading}
+            >
+              That&apos;s not me
+            </Button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Success ──────────────────────────────────────────────────────────────
+  if (step === "success" && matched) {
+    return (
+      <div className="flex min-h-[70svh] flex-col items-center justify-center px-6 py-12">
+        <div className="w-full max-w-sm space-y-6 text-center">
+          <div className="mx-auto flex size-20 items-center justify-center rounded-full bg-green-100">
+            <IconCheck className="size-10 text-green-600" />
+          </div>
+          <div className="space-y-1">
+            <h2 className="text-2xl font-semibold tracking-tight">
+              Welcome, {matched.nickname ?? matched.name.split(" ")[0]}!
+            </h2>
+            <p className="text-sm text-muted-foreground">You&apos;re checked in.</p>
+          </div>
+          <p className="text-xs text-muted-foreground">Returning to start in a moment…</p>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Already checked in ───────────────────────────────────────────────────
+  if (step === "already-in" && matched) {
+    return (
+      <div className="flex min-h-[70svh] flex-col items-center justify-center px-6 py-12">
+        <div className="w-full max-w-sm space-y-6 text-center">
+          <div className="mx-auto flex size-20 items-center justify-center rounded-full bg-green-100">
+            <IconCheck className="size-10 text-green-600" />
+          </div>
+          <div className="space-y-1">
+            <h2 className="text-2xl font-semibold tracking-tight">Already checked in</h2>
+            <p className="text-sm text-muted-foreground">
+              {matched.name} is already checked in for this session.
+            </p>
+          </div>
+          <Button variant="outline" className="h-11 w-full" onClick={reset}>
+            Done
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Not found ────────────────────────────────────────────────────────────
+  if (step === "not-found") {
+    return (
+      <div className="flex min-h-[70svh] flex-col items-center justify-center px-6 py-12">
+        <div className="w-full max-w-sm space-y-6 text-center">
+          <div className="mx-auto flex size-20 items-center justify-center rounded-full bg-muted">
+            <IconUserQuestion className="size-10 text-muted-foreground" />
+          </div>
+          <div className="space-y-1">
+            <h2 className="text-2xl font-semibold tracking-tight">Not found</h2>
+            <p className="text-sm text-muted-foreground">
+              We couldn&apos;t find a registration for{" "}
+              <span className="font-medium">{query}</span>.
+              <br />
+              Double-check your email or mobile number, or ask the event team for help.
+            </p>
+          </div>
+          <Button className="h-12 w-full text-base" onClick={reset}>
+            Try again
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  return null
 }

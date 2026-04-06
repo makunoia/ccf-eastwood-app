@@ -2,26 +2,14 @@ import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { CheckinBoard } from "./checkin-board"
 
-async function getEventWithRegistrants(id: string) {
+async function getEvent(id: string) {
   return db.event.findUnique({
     where: { id },
     select: {
       id: true,
       name: true,
       type: true,
-      startDate: true,
       ministries: { select: { ministry: { select: { name: true } } } },
-      registrants: {
-        orderBy: { createdAt: "asc" },
-        include: {
-          member: {
-            select: { id: true, firstName: true, lastName: true, phone: true },
-          },
-          guest: {
-            select: { id: true, firstName: true, lastName: true, phone: true },
-          },
-        },
-      },
     },
   })
 }
@@ -32,7 +20,7 @@ export default async function CheckinPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const event = await getEventWithRegistrants(id)
+  const event = await getEvent(id)
   if (!event) notFound()
 
   // Recurring and MultiDay events use per-occurrence/per-day check-in links
@@ -42,7 +30,8 @@ export default async function CheckinPage({
         <div className="border-b px-4 py-4">
           <h1 className="text-lg font-semibold">{event.name}</h1>
           <p className="text-sm text-muted-foreground">
-            {event.ministries.map((em) => em.ministry.name).join(" · ")}{event.ministries.length > 0 ? " · " : ""}Check-in
+            {event.ministries.map((em) => em.ministry.name).join(" · ")}
+            {event.ministries.length > 0 ? " · " : ""}Check-in
           </p>
         </div>
         <div className="flex flex-col items-center justify-center gap-2 px-4 py-16 text-center">
@@ -65,15 +54,11 @@ export default async function CheckinPage({
       <div className="border-b px-4 py-4">
         <h1 className="text-lg font-semibold">{event.name}</h1>
         <p className="text-sm text-muted-foreground">
-          {event.ministries.map((em) => em.ministry.name).join(" · ")}{event.ministries.length > 0 ? " · " : ""}Check-in
+          {event.ministries.map((em) => em.ministry.name).join(" · ")}
+          {event.ministries.length > 0 ? " · " : ""}Check-in
         </p>
       </div>
-      <CheckinBoard
-        eventId={event.id}
-        registrants={event.registrants}
-        occurrenceId={null}
-        initialCheckedInIds={[]}
-      />
+      <CheckinBoard eventId={event.id} occurrenceId={null} />
     </div>
   )
 }
