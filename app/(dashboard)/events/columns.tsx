@@ -37,6 +37,10 @@ export type EventRow = {
   // for edit form
   description: string | null
   ministryId: string
+  type: "OneTime" | "MultiDay" | "Recurring"
+  recurrenceDayOfWeek: number | null
+  recurrenceFrequency: "Weekly" | "Biweekly" | "Monthly" | null
+  recurrenceEndDate: string | null
 }
 
 function formatDate(iso: string) {

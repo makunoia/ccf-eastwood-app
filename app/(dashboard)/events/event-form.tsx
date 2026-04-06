@@ -38,11 +38,22 @@ type Props = {
   event?: EventRow
 }
 
+const DAY_OF_WEEK_OPTIONS = [
+  { value: "0", label: "Sunday" },
+  { value: "1", label: "Monday" },
+  { value: "2", label: "Tuesday" },
+  { value: "3", label: "Wednesday" },
+  { value: "4", label: "Thursday" },
+  { value: "5", label: "Friday" },
+  { value: "6", label: "Saturday" },
+]
+
 function toFormValues(event: EventRow): EventFormValues {
   return {
     name: event.name,
     description: event.description ?? "",
     ministryId: event.ministryId,
+    type: event.type,
     startDate: event.startDate,
     endDate: event.endDate,
     price:
@@ -51,6 +62,12 @@ function toFormValues(event: EventRow): EventFormValues {
         : "",
     registrationStart: event.registrationStart ?? "",
     registrationEnd: event.registrationEnd ?? "",
+    recurrenceDayOfWeek:
+      event.recurrenceDayOfWeek != null
+        ? String(event.recurrenceDayOfWeek)
+        : "",
+    recurrenceFrequency: event.recurrenceFrequency ?? "",
+    recurrenceEndDate: event.recurrenceEndDate ?? "",
   }
 }
 
@@ -64,6 +81,8 @@ export function EventForm({ ministries, event }: Props) {
   const [saving, setSaving] = React.useState(false)
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
+
+  const isRecurring = form.type === "Recurring"
 
   function set(field: keyof EventFormValues, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -196,6 +215,30 @@ export function EventForm({ ministries, event }: Props) {
           </div>
 
           <div className="space-y-2">
+            <Label htmlFor="type">
+              Event Type <span className="text-destructive">*</span>
+            </Label>
+            <Select
+              value={form.type}
+              onValueChange={(v) => set("type", v)}
+            >
+              <SelectTrigger id="type">
+                <SelectValue placeholder="Select type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="OneTime">One-time</SelectItem>
+                <SelectItem value="MultiDay">Multi-day</SelectItem>
+                <SelectItem value="Recurring">Recurring</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {form.type === "OneTime" && "Single-date event with optional registration and payment."}
+              {form.type === "MultiDay" && "Spans consecutive days, treated as a date range."}
+              {form.type === "Recurring" && "Repeats on a fixed schedule. First-timers register once; returning attendees check in per occurrence."}
+            </p>
+          </div>
+
+          <div className="space-y-2">
             <Label htmlFor="description">Description</Label>
             <Textarea
               id="description"
@@ -215,7 +258,8 @@ export function EventForm({ ministries, event }: Props) {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="startDate">
-                Start Date <span className="text-destructive">*</span>
+                {isRecurring ? "Series Start Date" : "Start Date"}{" "}
+                <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="startDate"
@@ -227,7 +271,8 @@ export function EventForm({ ministries, event }: Props) {
             </div>
             <div className="space-y-2">
               <Label htmlFor="endDate">
-                End Date <span className="text-destructive">*</span>
+                {isRecurring ? "Series End Date" : "End Date"}{" "}
+                <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="endDate"
@@ -239,6 +284,67 @@ export function EventForm({ ministries, event }: Props) {
             </div>
           </div>
         </section>
+
+        {/* Recurring Settings */}
+        {isRecurring && (
+          <section className="space-y-4">
+            <h3 className="text-sm font-medium text-muted-foreground">
+              Recurrence Settings
+            </h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="recurrenceDayOfWeek">
+                  Day of Week <span className="text-destructive">*</span>
+                </Label>
+                <Select
+                  value={form.recurrenceDayOfWeek}
+                  onValueChange={(v) => set("recurrenceDayOfWeek", v)}
+                >
+                  <SelectTrigger id="recurrenceDayOfWeek">
+                    <SelectValue placeholder="Select day" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DAY_OF_WEEK_OPTIONS.map((d) => (
+                      <SelectItem key={d.value} value={d.value}>
+                        {d.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="recurrenceFrequency">
+                  Frequency <span className="text-destructive">*</span>
+                </Label>
+                <Select
+                  value={form.recurrenceFrequency}
+                  onValueChange={(v) => set("recurrenceFrequency", v)}
+                >
+                  <SelectTrigger id="recurrenceFrequency">
+                    <SelectValue placeholder="Select frequency" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Weekly">Weekly</SelectItem>
+                    <SelectItem value="Biweekly">Biweekly</SelectItem>
+                    <SelectItem value="Monthly">Monthly</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="recurrenceEndDate">End Date</Label>
+              <Input
+                id="recurrenceEndDate"
+                type="date"
+                value={form.recurrenceEndDate}
+                onChange={(e) => set("recurrenceEndDate", e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Leave blank if the series runs indefinitely.
+              </p>
+            </div>
+          </section>
+        )}
 
         {/* Registration */}
         <section className="space-y-4">
@@ -267,27 +373,29 @@ export function EventForm({ ministries, event }: Props) {
           </div>
         </section>
 
-        {/* Pricing */}
-        <section className="space-y-4">
-          <h3 className="text-sm font-medium text-muted-foreground">
-            Pricing
-          </h3>
-          <div className="space-y-2">
-            <Label htmlFor="price">Price (PHP)</Label>
-            <Input
-              id="price"
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.price}
-              onChange={(e) => set("price", e.target.value)}
-              placeholder="Leave blank for free"
-            />
-            <p className="text-xs text-muted-foreground">
-              Leave blank if the event is free.
-            </p>
-          </div>
-        </section>
+        {/* Pricing — not applicable for Recurring events */}
+        {!isRecurring && (
+          <section className="space-y-4">
+            <h3 className="text-sm font-medium text-muted-foreground">
+              Pricing
+            </h3>
+            <div className="space-y-2">
+              <Label htmlFor="price">Price (PHP)</Label>
+              <Input
+                id="price"
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.price}
+                onChange={(e) => set("price", e.target.value)}
+                placeholder="Leave blank for free"
+              />
+              <p className="text-xs text-muted-foreground">
+                Leave blank if the event is free.
+              </p>
+            </div>
+          </section>
+        )}
       </form>
 
       <MobileFormActions

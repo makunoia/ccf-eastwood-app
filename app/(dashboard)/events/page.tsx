@@ -18,6 +18,7 @@ async function getEvents(): Promise<EventRow[]> {
     description: e.description,
     ministry: e.ministry.name,
     ministryId: e.ministryId,
+    type: e.type,
     startDate: e.startDate.toISOString().split("T")[0],
     endDate: e.endDate.toISOString().split("T")[0],
     price: e.price,
@@ -28,6 +29,11 @@ async function getEvents(): Promise<EventRow[]> {
       ? e.registrationEnd.toISOString().split("T")[0]
       : null,
     registrantCount: e._count.registrants,
+    recurrenceDayOfWeek: e.recurrenceDayOfWeek,
+    recurrenceFrequency: e.recurrenceFrequency,
+    recurrenceEndDate: e.recurrenceEndDate
+      ? e.recurrenceEndDate.toISOString().split("T")[0]
+      : null,
   }))
 }
 
