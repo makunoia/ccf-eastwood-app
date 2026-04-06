@@ -49,7 +49,7 @@ Core person record created when a Guest joins a Small Group (auto-promoted) or w
 **Relationships:**
 - Can lead one or more SmallGroups (`SmallGroup.leaderId`)
 - Belongs to **at most one** SmallGroup at a time (`Member.smallGroupId` direct FK)
-- Has a `smallGroupStatus (SmallGroupStatus nullable)` — tracks integration stage within the group: `New` (trying the group out) → `Regular` (integrated) → `Timothy` (potential leader) → `Leader` (leading their own group). Cleared to null when removed from a group; defaults to `New` when added.
+- Has a `smallGroupStatusId → SmallGroupStatus (nullable)` — tracks integration stage within the group. References the admin-configurable `SmallGroupStatus` table (managed in **Settings → Small Group Statuses**). Defaults to the first status by `order` when added. Cleared to null when removed from a group.
 - Can volunteer in multiple ministries (`Volunteer` records)
 - Has a `lifeStageId → LifeStage (nullable)` — references the same admin-configurable LifeStage table used by Ministries
 - Has `eventRegistrations EventRegistrant[]` — tracks all events the member has registered for; `attendedAt` on each record indicates whether they actually attended
@@ -69,7 +69,7 @@ A person who has attended one or more church events but has not yet joined a Sma
 **Promotion to Member:**
 When a Guest is added to a Small Group, the system automatically:
 1. Creates a `Member` record from the Guest's data (`dateJoined = today`)
-2. Sets `Member.smallGroupId` and `Member.smallGroupStatus = New`
+2. Sets `Member.smallGroupId` and `Member.smallGroupStatusId` to the first `SmallGroupStatus` (by order)
 3. Sets `Guest.memberId` to the new Member (marks the Guest as promoted)
 4. Updates all `EventRegistrant` records linked to this Guest: sets `memberId` to the new Member
 
@@ -98,11 +98,20 @@ Members belong to a group via a direct FK on Member: `Member.smallGroupId → Sm
 
 ---
 
+### SmallGroupStatus
+Tracks a member's integration stage within their small group. Statuses are admin-configurable and ordered.
+
+**Fields:** `id`, `name`, `order`, `createdAt`, `updatedAt`
+- Managed by Super Admins in **Settings → Small Group Statuses**
+- The first status by `order` is auto-assigned when a member joins a group; cleared when removed
+
+---
+
 ### Ministry
 A sub-operation within the church targeting a specific life stage (e.g. "Across" = Family Ministry, "Elevate" = Youth Ministry).
 
 **LifeStage fields:** `id`, `name` (e.g. "Family", "Youth", "Young Adults"), `order`
-- Life stages are managed by Super Admins in **Settings**
+- Life stages are managed by Super Admins in **Settings → Life Stages**
 
 **Ministry fields:** `id`, `name`, `lifeStageId → LifeStage`, `description`, `createdAt`, `updatedAt`
 
@@ -182,7 +191,7 @@ Church events hosted by a ministry. Three event types are supported, each with d
 | Type | Description | Examples |
 |---|---|---|
 | **OneTime** | Single-date event, optional registration and payment | Women's monthly meet, special services |
-| **MultiDay** | Spans consecutive days, treated like OneTime but displayed as a date range | Retreats, camps |
+| **MultiDay** | Spans consecutive days; per-day attendance tracked via occurrences | Retreats, camps |
 | **Recurring** | Repeats on a fixed schedule. First-timers register once; returning attendees check in per occurrence | Singles Fridays, Youth Saturdays |
 
 #### Feature applicability by type
@@ -195,9 +204,11 @@ Church events hosted by a ministry. Three event types are supported, each with d
 | Baptism module | ✅ | ✅ | ❌ |
 | Embarkation module | ✅ | ✅ | ❌ |
 | Volunteers | ✅ | ✅ | ✅ |
-| Check-in | Per event (sets `attendedAt`) | Per event (sets `attendedAt`) | Per occurrence (`OccurrenceAttendee`) |
+| Check-in | Per event (sets `attendedAt`) | Per day (`OccurrenceAttendee`) | Per occurrence (`OccurrenceAttendee`) |
 
-**Event fields:** `id`, `name`, `description`, `ministryId → Ministry`, `type EventType @default(OneTime)`, `startDate`, `endDate`, `price (nullable, in cents — null means free)`, `registrationStart`, `registrationEnd`, `createdAt`, `updatedAt`
+**Event fields:** `id`, `name`, `description`, `type EventType @default(OneTime)`, `startDate`, `endDate`, `price (nullable, in cents — null means free)`, `registrationStart`, `registrationEnd`, `createdAt`, `updatedAt`
+
+**Event-Ministry relationship:** Many-to-many via `EventMinistry` join table — an event can belong to multiple ministries. (`ministries EventMinistry[]`)
 
 **Recurring-only fields:** `recurrenceDayOfWeek Int?` (0 = Sunday … 6 = Saturday), `recurrenceFrequency RecurrenceFrequency?` (Weekly | Biweekly | Monthly), `recurrenceEndDate DateTime?` (null = runs indefinitely)
 
@@ -208,7 +219,9 @@ All three event types have both a registration and a check-in URL (no login requ
 - **Registration:** `/events/[id]/register`
 - **Check-in:** `/events/[id]/checkin`
 
-For **OneTime/MultiDay**: registration collects details and optionally payment; check-in sets `EventRegistrant.attendedAt`.
+For **OneTime**: registration collects details and optionally payment; check-in sets `EventRegistrant.attendedAt`.
+
+For **MultiDay**: same registration form with optional payment, but check-in is per-day — all occurrences are auto-generated for each day in the date range via `ensureMultiDayOccurrences()`, and check-in creates `OccurrenceAttendee` records per day.
 
 For **Recurring**: registration is for first-timers only (no payment). Once registered, a person has a permanent `EventRegistrant` record for the series. Returning attendees skip the form — they just appear in the check-in list for each occurrence.
 
@@ -226,10 +239,10 @@ email            String (nullable)
 mobileNumber     String (nullable)
 isPaid           Boolean (default false)      -- OneTime/MultiDay only
 paymentReference String (nullable)            -- OneTime/MultiDay only
-attendedAt       DateTime (nullable)          -- OneTime/MultiDay only; null = didn't attend
+attendedAt       DateTime (nullable)          -- OneTime only; null = didn't attend
 createdAt
 
-occurrenceAttendances OccurrenceAttendee[]    -- populated for Recurring events
+occurrenceAttendances OccurrenceAttendee[]    -- populated for MultiDay and Recurring events
 ```
 
 **No data duplication rule:** Personal fields (`firstName`, `lastName`, `email`) are only populated when both `memberId` and `guestId` are null (a truly anonymous/one-off registrant). When either FK is set, all personal data is read from the linked `Member` or `Guest` record — never stored twice. Application layer must enforce this constraint.
@@ -238,9 +251,9 @@ occurrenceAttendances OccurrenceAttendee[]    -- populated for Recurring events
 
 `BreakoutGroupMember.registrantId → EventRegistrant` — this single pointer handles all three cases cleanly.
 
-#### Recurring Event Occurrences
+#### MultiDay & Recurring Event Occurrences
 
-Each physical session of a recurring event is an `EventOccurrence`. Occurrences are created on-demand when the check-in page is opened for a given date.
+Each physical session of a recurring event — or each day of a multi-day event — is an `EventOccurrence`. For **MultiDay** events, occurrences are auto-generated for every day in the date range when the event is saved (`ensureMultiDayOccurrences()`). For **Recurring** events, occurrences are created on-demand when the check-in page is opened for a given date.
 
 ```
 EventOccurrence {
@@ -249,6 +262,7 @@ EventOccurrence {
   date      DateTime   (the specific date of this session)
   notes     String?
   createdAt
+  updatedAt
 
   attendees OccurrenceAttendee[]
   @@unique([eventId, date])
@@ -276,7 +290,7 @@ Pointing to `EventRegistrant` means the person's details (name, email, member li
 **Registration flow (Recurring, first-timers):**
 Same mobile-lookup multi-step form as OneTime, but with no payment fields. On submission, creates `EventRegistrant`. Does not auto-check them in (they still need to check in on the day).
 
-**Admin view for recurring events:** The event detail page shows a list of past occurrences with per-session attendance counts. Clicking an occurrence opens its attendee list.
+**Admin view for MultiDay/recurring events:** The event detail page shows a list of occurrences with per-session attendance counts. Clicking an occurrence opens its attendee list.
 
 #### Member Resolution at Registration
 When the registration form is submitted, the system runs a lookup against existing Member records by **mobile number (exact match)**.
@@ -455,8 +469,9 @@ churchie/
 │   │   ├── events/
 │   │   ├── volunteers/
 │   │   └── settings/
-│   │       ├── life-stages/      # LifeStage CRUD
-│   │       └── matching/         # Matching weight configuration
+│   │       ├── life-stages/          # LifeStage CRUD
+│   │       ├── small-group-statuses/ # SmallGroupStatus CRUD
+│   │       └── matching/             # Matching weight configuration
 │   └── api/
 │       └── auth/                 # NextAuth.js route handler
 ├── components/
