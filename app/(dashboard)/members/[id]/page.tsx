@@ -82,7 +82,7 @@ async function getMemberEventRegistrations(memberId: string) {
     include: {
       event: {
         include: {
-          ministry: { select: { name: true } },
+          ministries: { include: { ministry: { select: { name: true } } } },
         },
       },
     },

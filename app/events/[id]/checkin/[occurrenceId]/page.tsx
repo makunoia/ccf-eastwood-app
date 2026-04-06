@@ -13,7 +13,7 @@ async function getOccurrenceWithEvent(occurrenceId: string) {
           id: true,
           name: true,
           type: true,
-          ministry: { select: { name: true } },
+          ministries: { select: { ministry: { select: { name: true } } } },
           registrants: {
             orderBy: { createdAt: "asc" },
             include: {
@@ -61,7 +61,7 @@ export default async function OccurrenceCheckinPage({
         <div className="border-b px-4 py-4">
           <h1 className="text-lg font-semibold">{occurrence.event.name}</h1>
           <p className="text-sm text-muted-foreground">
-            {occurrence.event.ministry.name} · Check-in · {dateLabel}
+            {occurrence.event.ministries.map((em) => em.ministry.name).join(" · ")}{occurrence.event.ministries.length > 0 ? " · " : ""}Check-in · {dateLabel}
           </p>
         </div>
         <div className="flex flex-col items-center justify-center gap-2 px-4 py-16 text-center">
@@ -85,7 +85,7 @@ export default async function OccurrenceCheckinPage({
       <div className="border-b px-4 py-4">
         <h1 className="text-lg font-semibold">{occurrence.event.name}</h1>
         <p className="text-sm text-muted-foreground">
-          {occurrence.event.ministry.name} · Check-in · {dateLabel}
+          {occurrence.event.ministries.map((em) => em.ministry.name).join(" · ")}{occurrence.event.ministries.length > 0 ? " · " : ""}Check-in · {dateLabel}
         </p>
       </div>
       <CheckinBoard

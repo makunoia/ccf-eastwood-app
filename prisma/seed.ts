@@ -671,7 +671,7 @@ async function main() {
     data: {
       name: "Family Camp 2026",
       description: "Annual family camp for couples and parents to grow together in faith.",
-      ministryId: across.id,
+      ministries: { create: [{ ministryId: across.id }] },
       startDate: new Date("2026-05-09"),
       endDate: new Date("2026-05-11"),
       price: 250000, // PHP 2500 in cents
@@ -684,7 +684,7 @@ async function main() {
     data: {
       name: "Youth Summit 2026",
       description: "A powerful gathering for youth to connect, worship, and grow.",
-      ministryId: elevate.id,
+      ministries: { create: [{ ministryId: elevate.id }] },
       startDate: new Date("2026-06-13"),
       endDate: new Date("2026-06-14"),
       registrationStart: new Date("2026-04-01"),
