@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { MultiSelect } from "@/components/ui/multi-select"
 import {
   Select,
   SelectContent,
@@ -30,6 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
 import { Separator } from "@/components/ui/separator"
 import {
   createBreakoutGroup,
@@ -74,7 +76,7 @@ type BreakoutGroup = {
   lifeStageId: string | null
   lifeStage: { id: string; name: string } | null
   genderFocus: string | null
-  language: string | null
+  language: string[]
   ageRangeMin: number | null
   ageRangeMax: number | null
   meetingFormat: string | null
@@ -122,7 +124,7 @@ function matchingProfileSummary(group: BreakoutGroup): string {
   const parts: string[] = []
   if (group.lifeStage) parts.push(group.lifeStage.name)
   if (group.genderFocus) parts.push(group.genderFocus)
-  if (group.language) parts.push(group.language)
+  if (group.language.length > 0) parts.push(group.language.join(", "))
   if (group.ageRangeMin != null || group.ageRangeMax != null) {
     const min = group.ageRangeMin ?? "?"
     const max = group.ageRangeMax ?? "+"
@@ -151,7 +153,7 @@ const EMPTY_FORM = {
   memberLimit: "",
   lifeStageId: "",
   genderFocus: "",
-  language: "",
+  language: [] as string[],
   ageRangeMin: "",
   ageRangeMax: "",
   meetingFormat: "",
@@ -172,7 +174,7 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages }: Gro
               memberLimit: group.memberLimit?.toString() ?? "",
               lifeStageId: group.lifeStageId ?? "",
               genderFocus: group.genderFocus ?? "",
-              language: group.language ?? "",
+              language: group.language ?? [],
               ageRangeMin: group.ageRangeMin?.toString() ?? "",
               ageRangeMax: group.ageRangeMax?.toString() ?? "",
               meetingFormat: group.meetingFormat ?? "",
@@ -199,11 +201,11 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages }: Gro
       memberLimit: form.memberLimit ? Number(form.memberLimit) : null,
       lifeStageId: form.lifeStageId || null,
       genderFocus: (form.genderFocus as "Male" | "Female" | "Mixed") || null,
-      language: form.language.trim() || null,
+      language: form.language,
       ageRangeMin: form.ageRangeMin ? Number(form.ageRangeMin) : null,
       ageRangeMax: form.ageRangeMax ? Number(form.ageRangeMax) : null,
       meetingFormat: (form.meetingFormat as "Online" | "Hybrid" | "InPerson") || null,
-      locationCity: form.locationCity.trim() || null,
+      locationCity: form.locationCity || null,
     }
     const result = isEdit
       ? await updateBreakoutGroup(group.id, eventId, data)
@@ -293,8 +295,12 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages }: Gro
 
           {/* Language */}
           <div className="space-y-1.5">
-            <Label htmlFor="bg-lang">Language</Label>
-            <Input id="bg-lang" placeholder="e.g. Filipino" {...field("language")} />
+            <Label>Language</Label>
+            <MultiSelect
+              options={LANGUAGE_OPTIONS}
+              value={form.language}
+              onChange={(v) => setForm((f) => ({ ...f, language: v }))}
+            />
           </div>
 
           {/* Age range */}
@@ -330,8 +336,21 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages }: Gro
 
           {/* Location city */}
           <div className="space-y-1.5">
-            <Label htmlFor="bg-city">Location City</Label>
-            <Input id="bg-city" placeholder="e.g. Manila" {...field("locationCity")} />
+            <Label>Location City</Label>
+            <Select
+              value={form.locationCity}
+              onValueChange={(v) => setForm((f) => ({ ...f, locationCity: v === "_none" ? "" : v }))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select city" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_none">No preference</SelectItem>
+                {CITY_OPTIONS.map((city) => (
+                  <SelectItem key={city} value={city}>{city}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
 

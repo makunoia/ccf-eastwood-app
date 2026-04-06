@@ -9,7 +9,7 @@ export const breakoutGroupSchema = z
     // Matching profile (optional — used for future auto-assign)
     lifeStageId: z.string().nullable().optional(),
     genderFocus: z.enum(["Male", "Female", "Mixed"]).nullable().optional(),
-    language: z.string().nullable().optional(),
+    language: z.array(z.string()).default([]),
     ageRangeMin: z.coerce.number().int().min(0).nullable().optional(),
     ageRangeMax: z.coerce.number().int().min(0).nullable().optional(),
     meetingFormat: z.enum(["Online", "Hybrid", "InPerson"]).nullable().optional(),

@@ -221,7 +221,7 @@ model SmallGroup {
   lifeStageId   String?
   lifeStage     LifeStage?     @relation(fields: [lifeStageId], references: [id])
   genderFocus   GenderFocus?
-  language      String?
+  language      String[]
   ageRangeMin   Int?
   ageRangeMax   Int?
   meetingFormat MeetingFormat?
@@ -377,7 +377,7 @@ model BreakoutGroup {
   lifeStageId   String?
   lifeStage     LifeStage?   @relation(fields: [lifeStageId], references: [id])
   genderFocus   GenderFocus?
-  language      String?
+  language      String[]
   ageRangeMin   Int?
   ageRangeMax   Int?
   meetingFormat MeetingFormat?

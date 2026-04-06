@@ -34,7 +34,7 @@ export type SmallGroupRow = {
   memberCount: number
   lifeStage: string | null
   lifeStageId: string | null
-  language: string | null
+  language: string[]
   genderFocus: string | null
   ageRangeMin: number | null
   ageRangeMax: number | null
