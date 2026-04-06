@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { MultiSelect } from "@/components/ui/multi-select"
 import {
   Select,
   SelectContent,
@@ -28,6 +29,7 @@ import {
   defaultSmallGroupForm,
   type SmallGroupFormValues,
 } from "@/lib/validations/small-group"
+import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
 import { createSmallGroup, updateSmallGroup, deleteSmallGroup, addMemberToGroup, removeMemberFromGroup, updateMemberGroupStatus } from "./actions"
 import { MobileFormActions } from "@/components/mobile-form-actions"
 import { type SmallGroupRow } from "./columns"
@@ -66,7 +68,7 @@ function toFormValues(group: SmallGroupRow): SmallGroupFormValues {
     parentGroupId: group.parentGroupId ?? "",
     lifeStageId: group.lifeStageId ?? "",
     genderFocus: group.genderFocus ?? "",
-    language: group.language ?? "",
+    language: group.language ?? [],
     ageRangeMin: group.ageRangeMin != null ? String(group.ageRangeMin) : "",
     ageRangeMax: group.ageRangeMax != null ? String(group.ageRangeMax) : "",
     meetingFormat: group.meetingFormat ?? "",
@@ -91,7 +93,7 @@ export function SmallGroupForm({ members, smallGroups, lifeStages, statuses, gro
   const [removingMemberId, setRemovingMemberId] = React.useState<string | null>(null)
   const [removeConfirmMember, setRemoveConfirmMember] = React.useState<GroupMember | null>(null)
 
-  function set(field: keyof SmallGroupFormValues, value: string) {
+  function set(field: keyof SmallGroupFormValues, value: string | string[]) {
     setForm((prev) => ({ ...prev, [field]: value }))
   }
 
@@ -350,12 +352,11 @@ export function SmallGroupForm({ members, smallGroups, lifeStages, statuses, gro
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="language">Primary Language</Label>
-            <Input
-              id="language"
+            <Label>Language</Label>
+            <MultiSelect
+              options={LANGUAGE_OPTIONS}
               value={form.language}
-              onChange={(e) => set("language", e.target.value)}
-              placeholder="Filipino"
+              onChange={(v) => set("language", v)}
             />
           </div>
 
@@ -407,12 +408,20 @@ export function SmallGroupForm({ members, smallGroups, lifeStages, statuses, gro
 
             <div className="space-y-2">
               <Label htmlFor="locationCity">City</Label>
-              <Input
-                id="locationCity"
+              <Select
                 value={form.locationCity}
-                onChange={(e) => set("locationCity", e.target.value)}
-                placeholder="Quezon City"
-              />
+                onValueChange={(v) => set("locationCity", v === "_none" ? "" : v)}
+              >
+                <SelectTrigger id="locationCity">
+                  <SelectValue placeholder="Select city" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">No preference</SelectItem>
+                  {CITY_OPTIONS.map((city) => (
+                    <SelectItem key={city} value={city}>{city}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 

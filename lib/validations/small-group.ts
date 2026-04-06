@@ -20,7 +20,7 @@ export const smallGroupSchema = z.object({
     (v) => (v === "" ? undefined : v),
     z.enum(["Male", "Female", "Mixed"]).optional().nullable()
   ),
-  language: nullableString,
+  language: z.array(z.string()).default([]),
   ageRangeMin: nullableInt,
   ageRangeMax: nullableInt,
   meetingFormat: z.preprocess(
@@ -40,7 +40,7 @@ export type SmallGroupFormValues = {
   parentGroupId: string
   lifeStageId: string
   genderFocus: string
-  language: string
+  language: string[]
   ageRangeMin: string
   ageRangeMax: string
   meetingFormat: string
@@ -54,7 +54,7 @@ export const defaultSmallGroupForm: SmallGroupFormValues = {
   parentGroupId: "",
   lifeStageId: "",
   genderFocus: "",
-  language: "",
+  language: [],
   ageRangeMin: "",
   ageRangeMax: "",
   meetingFormat: "",

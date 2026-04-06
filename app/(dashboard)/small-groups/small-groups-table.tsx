@@ -32,7 +32,7 @@ function SmallGroupCard({ group }: { group: SmallGroupRow }) {
           <span className="text-muted-foreground">Life Stage</span>
           <span>{group.lifeStage ?? <span className="text-muted-foreground">—</span>}</span>
           <span className="text-muted-foreground">Language</span>
-          <span>{group.language ?? <span className="text-muted-foreground">—</span>}</span>
+          <span>{group.language.length > 0 ? group.language.join(", ") : <span className="text-muted-foreground">—</span>}</span>
         </div>
       </CardContent>
     </Card>

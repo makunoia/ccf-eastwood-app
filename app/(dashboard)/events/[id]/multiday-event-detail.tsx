@@ -86,7 +86,7 @@ type BreakoutGroupData = {
   lifeStageId: string | null
   lifeStage: { id: string; name: string } | null
   genderFocus: string | null
-  language: string | null
+  language: string[]
   ageRangeMin: number | null
   ageRangeMax: number | null
   meetingFormat: string | null
