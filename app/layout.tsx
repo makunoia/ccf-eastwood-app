@@ -8,10 +8,22 @@ import "./globals.css"
 export const metadata: Metadata = {
   title: "Churchie",
   description: "Church management for administrators",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Churchie",
+  },
+  formatDetection: {
+    telephone: false,
+  },
 }
 
 export const viewport: Viewport = {
   viewportFit: "cover",
+  width: "device-width",
+  initialScale: 1,
+  minimumScale: 1,
+  themeColor: "#18181b",
 }
 
 export default function RootLayout({
