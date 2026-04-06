@@ -82,7 +82,26 @@ async function getEvent(id: string) {
       volunteers: {
         where: { status: "Confirmed" },
         include: {
-          member: { select: { id: true, firstName: true, lastName: true } },
+          member: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              ledGroups: {
+                select: {
+                  id: true,
+                  name: true,
+                  lifeStageId: true,
+                  genderFocus: true,
+                  language: true,
+                  ageRangeMin: true,
+                  ageRangeMax: true,
+                  meetingFormat: true,
+                  locationCity: true,
+                },
+              },
+            },
+          },
           busPassengers: { select: { id: true, busId: true } },
         },
       },
@@ -118,7 +137,26 @@ async function getMultiDayEvent(id: string) {
       volunteers: {
         where: { status: "Confirmed" },
         include: {
-          member: { select: { id: true, firstName: true, lastName: true } },
+          member: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              ledGroups: {
+                select: {
+                  id: true,
+                  name: true,
+                  lifeStageId: true,
+                  genderFocus: true,
+                  language: true,
+                  ageRangeMin: true,
+                  ageRangeMax: true,
+                  meetingFormat: true,
+                  locationCity: true,
+                },
+              },
+            },
+          },
         },
       },
       breakoutGroups: breakoutGroupsInclude,
@@ -153,7 +191,26 @@ async function getRecurringEvent(id: string) {
       volunteers: {
         where: { status: "Confirmed" },
         include: {
-          member: { select: { id: true, firstName: true, lastName: true } },
+          member: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              ledGroups: {
+                select: {
+                  id: true,
+                  name: true,
+                  lifeStageId: true,
+                  genderFocus: true,
+                  language: true,
+                  ageRangeMin: true,
+                  ageRangeMax: true,
+                  meetingFormat: true,
+                  locationCity: true,
+                },
+              },
+            },
+          },
         },
       },
       breakoutGroups: breakoutGroupsInclude,
