@@ -14,17 +14,6 @@ async function getOccurrenceWithEvent(occurrenceId: string) {
           name: true,
           type: true,
           ministries: { select: { ministry: { select: { name: true } } } },
-          registrants: {
-            orderBy: { createdAt: "asc" },
-            include: {
-              member: {
-                select: { id: true, firstName: true, lastName: true, phone: true },
-              },
-              guest: {
-                select: { id: true, firstName: true, lastName: true, phone: true },
-              },
-            },
-          },
         },
       },
     },
@@ -61,7 +50,8 @@ export default async function OccurrenceCheckinPage({
         <div className="border-b px-4 py-4">
           <h1 className="text-lg font-semibold">{occurrence.event.name}</h1>
           <p className="text-sm text-muted-foreground">
-            {occurrence.event.ministries.map((em) => em.ministry.name).join(" · ")}{occurrence.event.ministries.length > 0 ? " · " : ""}Check-in · {dateLabel}
+            {occurrence.event.ministries.map((em) => em.ministry.name).join(" · ")}
+            {occurrence.event.ministries.length > 0 ? " · " : ""}Check-in · {dateLabel}
           </p>
         </div>
         <div className="flex flex-col items-center justify-center gap-2 px-4 py-16 text-center">
@@ -74,26 +64,16 @@ export default async function OccurrenceCheckinPage({
     )
   }
 
-  const existing = await db.occurrenceAttendee.findMany({
-    where: { occurrenceId },
-    select: { registrantId: true },
-  })
-  const initialCheckedInIds = existing.map((a) => a.registrantId)
-
   return (
     <div className="min-h-svh bg-background">
       <div className="border-b px-4 py-4">
         <h1 className="text-lg font-semibold">{occurrence.event.name}</h1>
         <p className="text-sm text-muted-foreground">
-          {occurrence.event.ministries.map((em) => em.ministry.name).join(" · ")}{occurrence.event.ministries.length > 0 ? " · " : ""}Check-in · {dateLabel}
+          {occurrence.event.ministries.map((em) => em.ministry.name).join(" · ")}
+          {occurrence.event.ministries.length > 0 ? " · " : ""}Check-in · {dateLabel}
         </p>
       </div>
-      <CheckinBoard
-        eventId={id}
-        registrants={occurrence.event.registrants}
-        occurrenceId={occurrenceId}
-        initialCheckedInIds={initialCheckedInIds}
-      />
+      <CheckinBoard eventId={id} occurrenceId={occurrenceId} />
     </div>
   )
 }

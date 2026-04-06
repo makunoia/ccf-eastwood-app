@@ -329,3 +329,77 @@ export async function checkInToOccurrence(
     return { success: false, error: "Failed to check in" }
   }
 }
+
+type CheckinRegistrantResult = {
+  registrantId: string
+  name: string
+  nickname: string | null
+  alreadyCheckedIn: boolean
+}
+
+export async function lookupCheckinRegistrant(
+  eventId: string,
+  query: string,
+  occurrenceId: string | null
+): Promise<ActionResult<CheckinRegistrantResult | null>> {
+  const q = query.trim()
+  if (!q) return { success: true, data: null }
+
+  try {
+    const registrants = await db.eventRegistrant.findMany({
+      where: { eventId },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        nickname: true,
+        email: true,
+        mobileNumber: true,
+        attendedAt: true,
+        member: { select: { firstName: true, lastName: true, email: true, phone: true } },
+        guest: { select: { firstName: true, lastName: true, email: true, phone: true } },
+      },
+    })
+
+    const lq = q.toLowerCase()
+    const qNorm = q.replace(/\s+/g, "")
+
+    const matched = registrants.find((r) => {
+      const email = r.member?.email ?? r.guest?.email ?? r.email ?? ""
+      const phone = r.member?.phone ?? r.guest?.phone ?? r.mobileNumber ?? ""
+      return (
+        email.toLowerCase() === lq ||
+        phone.replace(/\s+/g, "") === qNorm
+      )
+    })
+
+    if (!matched) return { success: true, data: null }
+
+    const firstName = matched.member?.firstName ?? matched.guest?.firstName ?? matched.firstName ?? ""
+    const lastName = matched.member?.lastName ?? matched.guest?.lastName ?? matched.lastName ?? ""
+    const name = `${firstName} ${lastName}`.trim()
+
+    let alreadyCheckedIn: boolean
+    if (occurrenceId !== null) {
+      const existing = await db.occurrenceAttendee.findUnique({
+        where: { occurrenceId_registrantId: { occurrenceId, registrantId: matched.id } },
+        select: { id: true },
+      })
+      alreadyCheckedIn = existing !== null
+    } else {
+      alreadyCheckedIn = matched.attendedAt !== null
+    }
+
+    return {
+      success: true,
+      data: {
+        registrantId: matched.id,
+        name,
+        nickname: matched.nickname,
+        alreadyCheckedIn,
+      },
+    }
+  } catch {
+    return { success: false, error: "Lookup failed. Please try again." }
+  }
+}
