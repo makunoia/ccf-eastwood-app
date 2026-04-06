@@ -95,9 +95,21 @@ type Registrant = {
   guest: { id: string; firstName: string; lastName: string; phone?: string | null; email?: string | null } | null
 }
 
+type LedGroup = {
+  id: string
+  name: string
+  lifeStageId: string | null
+  genderFocus: string | null
+  language: string[]
+  ageRangeMin: number | null
+  ageRangeMax: number | null
+  meetingFormat: string | null
+  locationCity: string | null
+}
+
 type Volunteer = {
   id: string
-  member: PersonName
+  member: { id: string; firstName: string; lastName: string; ledGroups: LedGroup[] }
 }
 
 type Props = {
@@ -146,11 +158,13 @@ type GroupFormDialogProps = {
   eventId: string
   group?: BreakoutGroup
   lifeStages: { id: string; name: string }[]
+  volunteers: Volunteer[]
 }
 
 const EMPTY_FORM = {
   name: "",
   memberLimit: "",
+  facilitatorId: "",
   lifeStageId: "",
   genderFocus: "",
   language: [] as string[],
@@ -160,18 +174,33 @@ const EMPTY_FORM = {
   locationCity: "",
 }
 
-function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages }: GroupFormDialogProps) {
+function deriveProfileFromGroup(g: LedGroup) {
+  return {
+    lifeStageId: g.lifeStageId ?? "",
+    genderFocus: g.genderFocus ?? "",
+    language: g.language,
+    ageRangeMin: g.ageRangeMin != null ? String(g.ageRangeMin) : "",
+    ageRangeMax: g.ageRangeMax != null ? String(g.ageRangeMax) : "",
+    meetingFormat: g.meetingFormat ?? "",
+    locationCity: g.locationCity ?? "",
+  }
+}
+
+function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volunteers }: GroupFormDialogProps) {
   const isEdit = !!group
   const [form, setForm] = React.useState(EMPTY_FORM)
+  const [sourceGroupId, setSourceGroupId] = React.useState("")
   const [saving, setSaving] = React.useState(false)
 
   React.useEffect(() => {
     if (open) {
+      setSourceGroupId("")
       setForm(
         group
           ? {
               name: group.name,
               memberLimit: group.memberLimit?.toString() ?? "",
+              facilitatorId: group.facilitatorId ?? "",
               lifeStageId: group.lifeStageId ?? "",
               genderFocus: group.genderFocus ?? "",
               language: group.language ?? [],
@@ -184,6 +213,31 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages }: Gro
       )
     }
   }, [open, group])
+
+  function handleVolunteerChange(volunteerId: string) {
+    setSourceGroupId("")
+    const vol = volunteers.find((v) => v.id === volunteerId)
+    if (!vol) {
+      setForm((f) => ({ ...f, facilitatorId: volunteerId }))
+      return
+    }
+    const ledGroups = vol.member.ledGroups
+    if (ledGroups.length === 1) {
+      setForm((f) => ({ ...f, facilitatorId: volunteerId, ...deriveProfileFromGroup(ledGroups[0]) }))
+    } else {
+      setForm((f) => ({ ...f, facilitatorId: volunteerId }))
+    }
+  }
+
+  function handleSourceGroupChange(groupId: string) {
+    setSourceGroupId(groupId)
+    const vol = volunteers.find((v) => v.id === form.facilitatorId)
+    const g = vol?.member.ledGroups.find((lg) => lg.id === groupId)
+    if (g) setForm((f) => ({ ...f, ...deriveProfileFromGroup(g) }))
+  }
+
+  const selectedVolunteer = volunteers.find((v) => v.id === form.facilitatorId) ?? null
+  const ledGroups = selectedVolunteer?.member.ledGroups ?? []
 
   function field(key: keyof typeof EMPTY_FORM) {
     return {
@@ -198,6 +252,7 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages }: Gro
     setSaving(true)
     const data = {
       name: form.name.trim(),
+      facilitatorId: form.facilitatorId || null,
       memberLimit: form.memberLimit ? Number(form.memberLimit) : null,
       lifeStageId: form.lifeStageId || null,
       genderFocus: (form.genderFocus as "Male" | "Female" | "Mixed") || null,
@@ -250,9 +305,57 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages }: Gro
             />
           </div>
 
+          {/* Facilitator */}
+          <div className="space-y-1.5">
+            <Label>Facilitator</Label>
+            <Select
+              value={form.facilitatorId}
+              onValueChange={(v) => handleVolunteerChange(v === "_none" ? "" : v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Unassigned" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_none">Unassigned</SelectItem>
+                {volunteers.map((v) => (
+                  <SelectItem key={v.id} value={v.id}>
+                    {volunteerName(v)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Source group selector — only when facilitator leads 2+ groups */}
+          {form.facilitatorId && ledGroups.length > 1 && (
+            <div className="space-y-1.5">
+              <Label>Source small group <span className="text-muted-foreground font-normal">(to derive matching profile)</span></Label>
+              <Select
+                value={sourceGroupId}
+                onValueChange={handleSourceGroupChange}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a group…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ledGroups.map((g) => (
+                    <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* Hint when facilitator leads no groups */}
+          {form.facilitatorId && ledGroups.length === 0 && (
+            <p className="text-xs text-muted-foreground">
+              This volunteer does not lead any small group — set the matching profile manually.
+            </p>
+          )}
+
           <Separator />
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-            Matching Profile <span className="normal-case font-normal">(optional — used for future auto-assign)</span>
+            Matching Profile <span className="normal-case font-normal">(optional — used for auto-assign)</span>
           </p>
 
           {/* Life Stage */}
@@ -846,6 +949,7 @@ export function BreakoutGroupsTab({
         onOpenChange={setCreateDialogOpen}
         eventId={eventId}
         lifeStages={lifeStages}
+        volunteers={volunteers}
       />
       <GroupFormDialog
         open={!!editingGroup}
@@ -853,6 +957,7 @@ export function BreakoutGroupsTab({
         eventId={eventId}
         group={editingGroup ?? undefined}
         lifeStages={lifeStages}
+        volunteers={volunteers}
       />
       <DeleteGroupDialog
         group={deletingGroup}

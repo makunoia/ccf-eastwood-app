@@ -53,9 +53,20 @@ type OccurrenceRow = {
   _count: { attendees: number }
 }
 
+type LedGroup = {
+  id: string
+  name: string
+  lifeStageId: string | null
+  genderFocus: string | null
+  language: string[]
+  ageRangeMin: number | null
+  ageRangeMax: number | null
+  meetingFormat: string | null
+  locationCity: string | null
+}
 type VolunteerForBreakout = {
   id: string
-  member: { id: string; firstName: string; lastName: string }
+  member: { id: string; firstName: string; lastName: string; ledGroups: LedGroup[] }
 }
 
 type BreakoutGroupMemberRow = {

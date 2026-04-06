@@ -53,7 +53,18 @@ import { BreakoutGroupsTab } from "./breakouts-tab"
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Member = { id: string; firstName: string; lastName: string; phone: string | null; email: string | null }
-type VolunteerMember = { id: string; firstName: string; lastName: string }
+type LedGroup = {
+  id: string
+  name: string
+  lifeStageId: string | null
+  genderFocus: string | null
+  language: string[]
+  ageRangeMin: number | null
+  ageRangeMax: number | null
+  meetingFormat: string | null
+  locationCity: string | null
+}
+type VolunteerMember = { id: string; firstName: string; lastName: string; ledGroups: LedGroup[] }
 
 type Registrant = {
   id: string
