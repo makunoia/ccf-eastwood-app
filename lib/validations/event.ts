@@ -38,7 +38,7 @@ export const eventSchema = z
     ministryId: z.string().min(1, "Ministry is required"),
     type: z.enum(["OneTime", "MultiDay", "Recurring"]),
     startDate: z.string().min(1, "Start date is required").transform((v) => new Date(v)),
-    endDate: z.string().min(1, "End date is required").transform((v) => new Date(v)),
+    endDate: z.string().optional().transform((v) => (v === "" || v == null ? null : new Date(v))),
     price: nullablePrice,
     registrationStart: nullableDate,
     registrationEnd: nullableDate,
@@ -52,6 +52,13 @@ export const eventSchema = z
     recurrenceEndDate: nullableDate,
   })
   .superRefine((data, ctx) => {
+    if (data.type === "MultiDay" && !data.endDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["endDate"],
+        message: "End date is required for multi-day events",
+      })
+    }
     if (data.type === "Recurring") {
       if (data.recurrenceDayOfWeek == null) {
         ctx.addIssue({

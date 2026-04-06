@@ -255,10 +255,37 @@ export function EventForm({ ministries, event }: Props) {
           <h3 className="text-sm font-medium text-muted-foreground">
             Event Dates
           </h3>
-          <div className="grid grid-cols-2 gap-4">
+          {form.type === "MultiDay" ? (
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="startDate">
+                  Start Date <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="startDate"
+                  type="date"
+                  value={form.startDate}
+                  onChange={(e) => set("startDate", e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="endDate">
+                  End Date <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="endDate"
+                  type="date"
+                  value={form.endDate}
+                  onChange={(e) => set("endDate", e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+          ) : (
             <div className="space-y-2">
               <Label htmlFor="startDate">
-                {isRecurring ? "Series Start Date" : "Start Date"}{" "}
+                {isRecurring ? "Series Start Date" : "Date"}{" "}
                 <span className="text-destructive">*</span>
               </Label>
               <Input
@@ -269,20 +296,7 @@ export function EventForm({ ministries, event }: Props) {
                 required
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="endDate">
-                {isRecurring ? "Series End Date" : "End Date"}{" "}
-                <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                id="endDate"
-                type="date"
-                value={form.endDate}
-                onChange={(e) => set("endDate", e.target.value)}
-                required
-              />
-            </div>
-          </div>
+          )}
         </section>
 
         {/* Recurring Settings */}
