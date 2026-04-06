@@ -48,6 +48,7 @@ import {
   assignToBus,
   unassignFromBus,
 } from "../module-actions"
+import { BreakoutGroupsTab } from "./breakouts-tab"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -105,6 +106,42 @@ type Volunteer = {
   busPassengers: { id: string; busId: string }[]
 }
 
+type BreakoutGroupMemberRow = {
+  breakoutGroupId: string
+  registrantId: string
+  assignedAt: Date
+  registrant: {
+    id: string
+    memberId: string | null
+    guestId: string | null
+    firstName: string | null
+    lastName: string | null
+    nickname: string | null
+    mobileNumber: string | null
+    member: { id: string; firstName: string; lastName: string } | null
+    guest: { id: string; firstName: string; lastName: string } | null
+  }
+}
+
+type BreakoutGroup = {
+  id: string
+  name: string
+  facilitatorId: string | null
+  facilitator: { id: string; member: VolunteerMember } | null
+  coFacilitatorId: string | null
+  coFacilitator: { id: string; member: VolunteerMember } | null
+  memberLimit: number | null
+  lifeStageId: string | null
+  lifeStage: { id: string; name: string } | null
+  genderFocus: string | null
+  language: string | null
+  ageRangeMin: number | null
+  ageRangeMax: number | null
+  meetingFormat: string | null
+  locationCity: string | null
+  members: BreakoutGroupMemberRow[]
+}
+
 type Event = {
   id: string
   name: string
@@ -120,6 +157,7 @@ type Event = {
   baptismOptIns: { registrantId: string }[]
   buses: Bus[]
   volunteers: Volunteer[]
+  breakoutGroups: BreakoutGroup[]
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -553,7 +591,7 @@ function EmbarkationTab({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function EventDetail({ event }: { event: Event }) {
+export function EventDetail({ event, lifeStages }: { event: Event; lifeStages: { id: string; name: string }[] }) {
   const router = useRouter()
   const regStatus = getRegistrationStatus(event)
   const enabledModules = new Set(event.modules.map((m) => m.type))
@@ -670,9 +708,13 @@ export function EventDetail({ event }: { event: Event }) {
         </TabsContent>
 
         <TabsContent value="breakouts" className="mt-4">
-          <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
-            <p className="text-sm">Breakout groups — coming soon</p>
-          </div>
+          <BreakoutGroupsTab
+            eventId={event.id}
+            breakoutGroups={event.breakoutGroups}
+            registrants={event.registrants}
+            volunteers={event.volunteers}
+            lifeStages={lifeStages}
+          />
         </TabsContent>
 
         <TabsContent value="volunteers" className="mt-4">
