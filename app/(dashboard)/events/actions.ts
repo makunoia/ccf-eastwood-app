@@ -33,7 +33,6 @@ export async function createEvent(
       data: {
         name: parsed.data.name,
         description: parsed.data.description ?? null,
-        ministryId: parsed.data.ministryId,
         type: parsed.data.type,
         startDate: parsed.data.startDate,
         endDate: parsed.data.endDate ?? parsed.data.startDate,
@@ -43,6 +42,9 @@ export async function createEvent(
         recurrenceDayOfWeek: parsed.data.type === "Recurring" ? parsed.data.recurrenceDayOfWeek : null,
         recurrenceFrequency: parsed.data.type === "Recurring" ? (parsed.data.recurrenceFrequency ?? null) : null,
         recurrenceEndDate: parsed.data.type === "Recurring" ? (parsed.data.recurrenceEndDate ?? null) : null,
+        ministries: parsed.data.ministryIds?.length
+          ? { create: parsed.data.ministryIds.map((ministryId) => ({ ministryId })) }
+          : undefined,
       },
       select: { id: true },
     })
@@ -66,23 +68,28 @@ export async function updateEvent(
   }
 
   try {
-    await db.event.update({
-      where: { id },
-      data: {
-        name: parsed.data.name,
-        description: parsed.data.description ?? null,
-        ministryId: parsed.data.ministryId,
-        type: parsed.data.type,
-        startDate: parsed.data.startDate,
-        endDate: parsed.data.endDate ?? parsed.data.startDate,
-        price: parsed.data.type === "Recurring" ? null : (parsed.data.price ?? null),
-        registrationStart: parsed.data.registrationStart ?? null,
-        registrationEnd: parsed.data.registrationEnd ?? null,
-        recurrenceDayOfWeek: parsed.data.type === "Recurring" ? parsed.data.recurrenceDayOfWeek : null,
-        recurrenceFrequency: parsed.data.type === "Recurring" ? (parsed.data.recurrenceFrequency ?? null) : null,
-        recurrenceEndDate: parsed.data.type === "Recurring" ? (parsed.data.recurrenceEndDate ?? null) : null,
-      },
-    })
+    await db.$transaction([
+      db.eventMinistry.deleteMany({ where: { eventId: id } }),
+      db.event.update({
+        where: { id },
+        data: {
+          name: parsed.data.name,
+          description: parsed.data.description ?? null,
+          type: parsed.data.type,
+          startDate: parsed.data.startDate,
+          endDate: parsed.data.endDate ?? parsed.data.startDate,
+          price: parsed.data.type === "Recurring" ? null : (parsed.data.price ?? null),
+          registrationStart: parsed.data.registrationStart ?? null,
+          registrationEnd: parsed.data.registrationEnd ?? null,
+          recurrenceDayOfWeek: parsed.data.type === "Recurring" ? parsed.data.recurrenceDayOfWeek : null,
+          recurrenceFrequency: parsed.data.type === "Recurring" ? (parsed.data.recurrenceFrequency ?? null) : null,
+          recurrenceEndDate: parsed.data.type === "Recurring" ? (parsed.data.recurrenceEndDate ?? null) : null,
+          ministries: parsed.data.ministryIds?.length
+            ? { create: parsed.data.ministryIds.map((ministryId) => ({ ministryId })) }
+            : undefined,
+        },
+      }),
+    ])
     revalidatePath("/events")
     revalidatePath(`/events/${id}`)
     return { success: true, data: undefined }

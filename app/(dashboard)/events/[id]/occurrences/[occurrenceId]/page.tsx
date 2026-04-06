@@ -12,7 +12,7 @@ async function getOccurrence(occurrenceId: string) {
         select: {
           id: true,
           name: true,
-          ministry: { select: { name: true } },
+          ministries: { include: { ministry: { select: { name: true } } } },
         },
       },
       attendees: {
@@ -78,7 +78,9 @@ export default async function OccurrenceDetailPage({
       <div className="space-y-1">
         <h2 className="text-xl font-semibold">{dateLabel}</h2>
         <p className="text-sm text-muted-foreground">
-          {occurrence.event.ministry.name} · {occurrence.attendees.length} attended
+          {occurrence.event.ministries.map((em) => em.ministry.name).join(" · ")}
+          {occurrence.event.ministries.length > 0 && " · "}
+          {occurrence.attendees.length} attended
         </p>
       </div>
 

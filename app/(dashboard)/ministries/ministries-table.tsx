@@ -15,14 +15,14 @@ function MinistryCard({ ministry }: { ministry: MinistryRow }) {
       className="cursor-pointer hover:bg-muted/50 transition-colors"
       onClick={() => router.push(`/ministries/${ministry.id}`)}
     >
-      <CardContent className="pt-4 pb-4">
+      <CardContent className="p-3">
         <div className="flex items-start justify-between gap-2">
           <p className="font-medium leading-tight">{ministry.name}</p>
           <div onClick={(e) => e.stopPropagation()}>
             <RowActions row={ministry} />
           </div>
         </div>
-        <div className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
+        <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
           <span className="text-muted-foreground">Life Stage</span>
           <span>
             {ministry.lifeStage ?? (
@@ -51,7 +51,7 @@ export function MinistriesTable({ ministries }: { ministries: MinistryRow[] }) {
   return (
     <>
       {/* Mobile card list */}
-      <div className="flex flex-col gap-3 md:hidden">
+      <div className="flex flex-col gap-2 md:hidden">
         {ministries.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
             <IconBuilding className="size-8" />

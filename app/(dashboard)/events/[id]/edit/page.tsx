@@ -6,15 +6,16 @@ import { type EventRow } from "../../columns"
 async function getEvent(id: string): Promise<EventRow | null> {
   const e = await db.event.findUnique({
     where: { id },
-    include: { ministry: { select: { id: true, name: true } } },
+    include: {
+      ministries: { include: { ministry: { select: { id: true, name: true } } } },
+    },
   })
   if (!e) return null
   return {
     id: e.id,
     name: e.name,
     description: e.description,
-    ministry: e.ministry.name,
-    ministryId: e.ministryId,
+    ministries: e.ministries.map((em) => em.ministry),
     type: e.type,
     startDate: e.startDate.toISOString().split("T")[0],
     endDate: e.endDate.toISOString().split("T")[0],

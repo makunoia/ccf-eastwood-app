@@ -15,7 +15,7 @@ function MemberCard({ member }: { member: MemberRow }) {
       className="cursor-pointer hover:bg-muted/50 transition-colors"
       onClick={() => router.push(`/members/${member.id}`)}
     >
-      <CardContent className="pt-4 pb-4">
+      <CardContent className="p-3">
         <div className="flex items-start justify-between gap-2">
           <p className="font-medium leading-tight">
             {member.firstName} {member.lastName}
@@ -24,7 +24,7 @@ function MemberCard({ member }: { member: MemberRow }) {
             <RowActions row={member} />
           </div>
         </div>
-        <div className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
+        <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
           <span className="text-muted-foreground">Email</span>
           <span>{member.email ?? <span className="text-muted-foreground">—</span>}</span>
           <span className="text-muted-foreground">Mobile</span>
@@ -54,7 +54,7 @@ export function MembersTable({ members }: { members: MemberRow[] }) {
   return (
     <>
       {/* Mobile card list */}
-      <div className="flex flex-col gap-3 md:hidden">
+      <div className="flex flex-col gap-2 md:hidden">
         {members.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
             <IconUsers className="size-8" />

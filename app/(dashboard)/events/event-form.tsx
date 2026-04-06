@@ -7,6 +7,7 @@ import { IconArrowLeft } from "@tabler/icons-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
@@ -52,7 +53,7 @@ function toFormValues(event: EventRow): EventFormValues {
   return {
     name: event.name,
     description: event.description ?? "",
-    ministryId: event.ministryId,
+    ministryIds: event.ministries.map((m) => m.id),
     type: event.type,
     startDate: event.startDate,
     endDate: event.endDate,
@@ -193,25 +194,38 @@ export function EventForm({ ministries, event }: Props) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="ministryId">
-              Ministry <span className="text-destructive">*</span>
-            </Label>
-            <Select
-              value={form.ministryId}
-              onValueChange={(v) => set("ministryId", v)}
-              required
-            >
-              <SelectTrigger id="ministryId">
-                <SelectValue placeholder="Select ministry" />
-              </SelectTrigger>
-              <SelectContent>
+            <Label>Ministry</Label>
+            <p className="text-xs text-muted-foreground">
+              Select one or more ministries, or leave blank for a ministry-agnostic event.
+            </p>
+            {ministries.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No ministries configured.</p>
+            ) : (
+              <div className="space-y-2 rounded-md border p-3">
                 {ministries.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>
-                    {m.name}
-                  </SelectItem>
+                  <div key={m.id} className="flex items-center gap-2">
+                    <Checkbox
+                      id={`ministry-${m.id}`}
+                      checked={form.ministryIds.includes(m.id)}
+                      onCheckedChange={(checked) => {
+                        setForm((prev) => ({
+                          ...prev,
+                          ministryIds: checked
+                            ? [...prev.ministryIds, m.id]
+                            : prev.ministryIds.filter((id) => id !== m.id),
+                        }))
+                      }}
+                    />
+                    <label
+                      htmlFor={`ministry-${m.id}`}
+                      className="text-sm leading-none cursor-pointer"
+                    >
+                      {m.name}
+                    </label>
+                  </div>
                 ))}
-              </SelectContent>
-            </Select>
+              </div>
+            )}
           </div>
 
           <div className="space-y-2">

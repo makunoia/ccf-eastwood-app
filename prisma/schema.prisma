@@ -265,7 +265,7 @@ model Ministry {
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
-  events     Event[]
+  events     EventMinistry[]
   committees VolunteerCommittee[]
   volunteers Volunteer[]
 }
@@ -274,8 +274,6 @@ model Event {
   id                    String              @id @default(cuid())
   name                  String
   description           String?
-  ministryId            String
-  ministry              Ministry            @relation(fields: [ministryId], references: [id])
   type                  EventType           @default(OneTime)
   startDate             DateTime
   endDate               DateTime
@@ -289,14 +287,25 @@ model Event {
   createdAt             DateTime            @default(now())
   updatedAt             DateTime            @updatedAt
 
+  ministries     EventMinistry[]
   registrants    EventRegistrant[]
-  occurrences     EventOccurrence[]
+  occurrences    EventOccurrence[]
   breakoutGroups BreakoutGroup[]
   committees     VolunteerCommittee[]
   volunteers     Volunteer[]
   modules        EventModule[]
   baptismOptIns  BaptismOptIn[]
   buses          Bus[]
+}
+
+model EventMinistry {
+  eventId    String
+  ministryId String
+  event      Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  ministry   Ministry @relation(fields: [ministryId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@id([eventId, ministryId])
 }
 
 model EventOccurrence {

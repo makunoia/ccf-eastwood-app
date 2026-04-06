@@ -35,7 +35,7 @@ export const eventSchema = z
   .object({
     name: z.string().min(1, "Name is required").trim(),
     description: nullableString,
-    ministryId: z.string().min(1, "Ministry is required"),
+    ministryIds: z.array(z.string()).optional().default([]),
     type: z.enum(["OneTime", "MultiDay", "Recurring"]),
     startDate: z.string().min(1, "Start date is required").transform((v) => new Date(v)),
     endDate: z.string().optional().transform((v) => (v === "" || v == null ? null : new Date(v))),
@@ -82,7 +82,7 @@ export type EventInput = z.infer<typeof eventSchema>
 export type EventFormValues = {
   name: string
   description: string
-  ministryId: string
+  ministryIds: string[]
   type: "OneTime" | "MultiDay" | "Recurring"
   startDate: string
   endDate: string
@@ -97,7 +97,7 @@ export type EventFormValues = {
 export const defaultEventForm: EventFormValues = {
   name: "",
   description: "",
-  ministryId: "",
+  ministryIds: [],
   type: "OneTime",
   startDate: "",
   endDate: "",

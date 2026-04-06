@@ -11,7 +11,7 @@ async function getBusManifest(busId: string) {
           id: true,
           name: true,
           startDate: true,
-          ministry: { select: { name: true } },
+          ministries: { include: { ministry: { select: { name: true } } } },
         },
       },
       passengers: {
@@ -93,7 +93,7 @@ export default async function ManifestPage({
         year: "numeric",
         timeZone: "UTC",
       })}
-      ministry={bus.event.ministry.name}
+      ministry={bus.event.ministries.map((em) => em.ministry.name).join(" · ") || "—"}
       passengers={passengers}
     />
   )

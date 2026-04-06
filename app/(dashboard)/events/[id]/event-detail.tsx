@@ -109,8 +109,7 @@ type Event = {
   id: string
   name: string
   description: string | null
-  ministryId: string
-  ministry: { id: string; name: string }
+  ministries: { ministry: { id: string; name: string } }[]
   startDate: Date
   endDate: Date
   price: number | null
@@ -582,7 +581,11 @@ export function EventDetail({ event }: { event: Event }) {
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1">
           <h2 className="text-xl font-semibold">{event.name}</h2>
-          <p className="text-sm text-muted-foreground">{event.ministry.name}</p>
+          {event.ministries.length > 0 && (
+            <p className="text-sm text-muted-foreground">
+              {event.ministries.map((em) => em.ministry.name).join(" · ")}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => router.push(`/events/${event.id}/settings`)}>

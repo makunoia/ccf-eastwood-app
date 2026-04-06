@@ -13,7 +13,7 @@ async function getEvent(id: string) {
   const event = await db.event.findUnique({
     where: { id },
     include: {
-      ministry: { select: { id: true, name: true } },
+      ministries: { include: { ministry: { select: { id: true, name: true } } } },
       modules: { select: { type: true } },
       registrants: {
         orderBy: { createdAt: "asc" },
@@ -65,7 +65,7 @@ async function getMultiDayEvent(id: string) {
   const event = await db.event.findUnique({
     where: { id },
     include: {
-      ministry: { select: { id: true, name: true } },
+      ministries: { include: { ministry: { select: { id: true, name: true } } } },
       registrants: {
         orderBy: { createdAt: "asc" },
         include: {
@@ -93,7 +93,7 @@ async function getRecurringEvent(id: string) {
   const event = await db.event.findUnique({
     where: { id },
     include: {
-      ministry: { select: { id: true, name: true } },
+      ministries: { include: { ministry: { select: { id: true, name: true } } } },
       registrants: {
         orderBy: { createdAt: "asc" },
         include: {

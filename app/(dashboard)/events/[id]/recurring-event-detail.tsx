@@ -70,7 +70,7 @@ type RecurringEvent = {
   recurrenceEndDate: Date | null
   recurrenceDayOfWeek: number | null
   recurrenceFrequency: "Weekly" | "Biweekly" | "Monthly" | null
-  ministry: { id: string; name: string }
+  ministries: { ministry: { id: string; name: string } }[]
   registrants: Registrant[]
   occurrences: OccurrenceRow[]
 }
@@ -314,7 +314,11 @@ export function RecurringEventDetail({ event }: { event: RecurringEvent }) {
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1">
           <h2 className="text-xl font-semibold">{event.name}</h2>
-          <p className="text-sm text-muted-foreground">{event.ministry.name}</p>
+          {event.ministries.length > 0 && (
+            <p className="text-sm text-muted-foreground">
+              {event.ministries.map((em) => em.ministry.name).join(" · ")}
+            </p>
+          )}
           <div className="flex items-center gap-2 pt-0.5">
             <Badge variant="secondary" className="gap-1.5">
               <IconCalendarRepeat className="size-3" />
