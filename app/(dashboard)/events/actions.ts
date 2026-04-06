@@ -244,3 +244,37 @@ export async function unmarkRegistrantAttended(
     return { success: false, error: "Failed to unmark attendance" }
   }
 }
+
+export async function findOrCreateOccurrence(
+  eventId: string,
+  date: string // "YYYY-MM-DD" UTC
+): Promise<ActionResult<{ id: string }>> {
+  try {
+    const dateValue = new Date(`${date}T00:00:00.000Z`)
+    const occurrence = await db.eventOccurrence.upsert({
+      where: { eventId_date: { eventId, date: dateValue } },
+      create: { eventId, date: dateValue },
+      update: {},
+      select: { id: true },
+    })
+    return { success: true, data: { id: occurrence.id } }
+  } catch {
+    return { success: false, error: "Failed to find or create occurrence" }
+  }
+}
+
+export async function checkInToOccurrence(
+  occurrenceId: string,
+  registrantId: string
+): Promise<ActionResult> {
+  try {
+    await db.occurrenceAttendee.upsert({
+      where: { occurrenceId_registrantId: { occurrenceId, registrantId } },
+      create: { occurrenceId, registrantId },
+      update: {},
+    })
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to check in" }
+  }
+}

@@ -1,6 +1,11 @@
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { EventDetail } from "./event-detail"
+import { RecurringEventDetail } from "./recurring-event-detail"
+
+async function getEventType(id: string) {
+  return db.event.findUnique({ where: { id }, select: { id: true, type: true } })
+}
 
 async function getEvent(id: string) {
   const event = await db.event.findUnique({
@@ -54,12 +59,49 @@ async function getEvent(id: string) {
   return event
 }
 
+async function getRecurringEvent(id: string) {
+  const event = await db.event.findUnique({
+    where: { id },
+    include: {
+      ministry: { select: { id: true, name: true } },
+      registrants: {
+        orderBy: { createdAt: "asc" },
+        include: {
+          member: {
+            select: { id: true, firstName: true, lastName: true, phone: true, email: true },
+          },
+          guest: {
+            select: { id: true, firstName: true, lastName: true, phone: true, email: true },
+          },
+        },
+      },
+      occurrences: {
+        orderBy: { date: "desc" },
+        include: {
+          _count: { select: { attendees: true } },
+        },
+      },
+    },
+  })
+  if (!event) return null
+  return event
+}
+
 export default async function EventDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
+  const probe = await getEventType(id)
+  if (!probe) notFound()
+
+  if (probe.type === "Recurring") {
+    const event = await getRecurringEvent(id)
+    if (!event) notFound()
+    return <RecurringEventDetail event={event} />
+  }
+
   const event = await getEvent(id)
   if (!event) notFound()
   return <EventDetail event={event} />
