@@ -35,8 +35,8 @@ export default async function CheckinPage({
   const event = await getEventWithRegistrants(id)
   if (!event) notFound()
 
-  // Recurring events use per-occurrence check-in links
-  if (event.type === "Recurring") {
+  // Recurring and MultiDay events use per-occurrence/per-day check-in links
+  if (event.type === "Recurring" || event.type === "MultiDay") {
     return (
       <div className="min-h-svh bg-background">
         <div className="border-b px-4 py-4">
@@ -46,16 +46,20 @@ export default async function CheckinPage({
           </p>
         </div>
         <div className="flex flex-col items-center justify-center gap-2 px-4 py-16 text-center">
-          <p className="font-medium text-sm">Use the session check-in link</p>
+          <p className="font-medium text-sm">
+            {event.type === "MultiDay" ? "Use the day check-in link" : "Use the session check-in link"}
+          </p>
           <p className="text-sm text-muted-foreground">
-            Each session has its own check-in link. Copy it from the event page in the admin dashboard.
+            {event.type === "MultiDay"
+              ? "Each day has its own check-in link. Copy it from the event page in the admin dashboard."
+              : "Each session has its own check-in link. Copy it from the event page in the admin dashboard."}
           </p>
         </div>
       </div>
     )
   }
 
-  // OneTime / MultiDay
+  // OneTime
   return (
     <div className="min-h-svh bg-background">
       <div className="border-b px-4 py-4">

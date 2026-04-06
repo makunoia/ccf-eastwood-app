@@ -39,7 +39,7 @@ export default async function OccurrenceCheckinPage({
   const { id, occurrenceId } = await params
   const occurrence = await getOccurrenceWithEvent(occurrenceId)
 
-  if (!occurrence || occurrence.event.id !== id || occurrence.event.type !== "Recurring") {
+  if (!occurrence || occurrence.event.id !== id || occurrence.event.type === "OneTime") {
     notFound()
   }
 

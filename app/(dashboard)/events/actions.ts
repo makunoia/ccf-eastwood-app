@@ -269,6 +269,44 @@ export async function createOccurrence(
   }
 }
 
+export async function ensureMultiDayOccurrences(
+  eventId: string,
+  startDate: Date,
+  endDate: Date,
+): Promise<ActionResult<{ id: string; date: Date }[]>> {
+  try {
+    const dates: Date[] = []
+    const current = new Date(startDate)
+    current.setUTCHours(0, 0, 0, 0)
+    const end = new Date(endDate)
+    end.setUTCHours(0, 0, 0, 0)
+    while (current <= end) {
+      dates.push(new Date(current))
+      current.setUTCDate(current.getUTCDate() + 1)
+    }
+
+    await Promise.all(
+      dates.map((date) =>
+        db.eventOccurrence.upsert({
+          where: { eventId_date: { eventId, date } },
+          create: { eventId, date },
+          update: {},
+        })
+      )
+    )
+
+    const occurrences = await db.eventOccurrence.findMany({
+      where: { eventId, date: { gte: dates[0], lte: dates[dates.length - 1] } },
+      orderBy: { date: "asc" },
+      include: { _count: { select: { attendees: true } } },
+    })
+
+    return { success: true, data: occurrences }
+  } catch {
+    return { success: false, error: "Failed to ensure daily occurrences" }
+  }
+}
+
 export async function checkInToOccurrence(
   occurrenceId: string,
   registrantId: string
