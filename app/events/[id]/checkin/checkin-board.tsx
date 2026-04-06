@@ -16,10 +16,18 @@ type Member = {
   phone: string | null
 }
 
+type Guest = {
+  id: string
+  firstName: string
+  lastName: string
+  phone: string | null
+}
+
 type Registrant = {
   id: string
   memberId: string | null
   member: Member | null
+  guest: Guest | null
   firstName: string | null
   lastName: string | null
   nickname: string | null
@@ -33,14 +41,15 @@ type Props = {
 }
 
 function getDisplayName(r: Registrant) {
-  if (r.member) {
-    return `${r.member.firstName} ${r.member.lastName}`
-  }
+  if (r.member) return `${r.member.firstName} ${r.member.lastName}`
+  if (r.guest)  return `${r.guest.firstName} ${r.guest.lastName}`
   return `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim()
 }
 
 function getDisplayMobile(r: Registrant) {
-  return r.member ? r.member.phone : r.mobileNumber
+  if (r.member) return r.member.phone
+  if (r.guest)  return r.guest.phone
+  return r.mobileNumber
 }
 
 export function CheckinBoard({ eventId, registrants: initial }: Props) {
