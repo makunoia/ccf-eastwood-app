@@ -67,7 +67,7 @@ async function getMemberSmallGroupInfo(memberId: string) {
           statusName: m.smallGroupStatus?.name ?? null,
         }
       : null,
-    ledGroups: m.ledGroups.map((g) => ({
+    ledGroups: m.ledGroups.map((g: { id: string; name: string; _count: { members: number } }) => ({
       id: g.id,
       name: g.name,
       memberCount: g._count.members,
@@ -81,11 +81,7 @@ async function getMemberEventRegistrations(memberId: string) {
     orderBy: { createdAt: "desc" },
     include: {
       event: {
-        select: {
-          id: true,
-          name: true,
-          startDate: true,
-          price: true,
+        include: {
           ministry: { select: { name: true } },
         },
       },
