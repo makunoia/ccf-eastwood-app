@@ -10,7 +10,7 @@ async function getEventWithRegistrants(id: string) {
       name: true,
       type: true,
       startDate: true,
-      ministry: { select: { name: true } },
+      ministries: { select: { ministry: { select: { name: true } } } },
       registrants: {
         orderBy: { createdAt: "asc" },
         include: {
@@ -42,7 +42,7 @@ export default async function CheckinPage({
         <div className="border-b px-4 py-4">
           <h1 className="text-lg font-semibold">{event.name}</h1>
           <p className="text-sm text-muted-foreground">
-            {event.ministry.name} · Check-in
+            {event.ministries.map((em) => em.ministry.name).join(" · ")}{event.ministries.length > 0 ? " · " : ""}Check-in
           </p>
         </div>
         <div className="flex flex-col items-center justify-center gap-2 px-4 py-16 text-center">
@@ -65,7 +65,7 @@ export default async function CheckinPage({
       <div className="border-b px-4 py-4">
         <h1 className="text-lg font-semibold">{event.name}</h1>
         <p className="text-sm text-muted-foreground">
-          {event.ministry.name} · Check-in
+          {event.ministries.map((em) => em.ministry.name).join(" · ")}{event.ministries.length > 0 ? " · " : ""}Check-in
         </p>
       </div>
       <CheckinBoard

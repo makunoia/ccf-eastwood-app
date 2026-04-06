@@ -13,7 +13,7 @@ async function getEvent(id: string) {
       price: true,
       registrationStart: true,
       registrationEnd: true,
-      ministry: { select: { name: true } },
+      ministries: { select: { ministry: { select: { name: true } } } },
     },
   })
   return event ?? null
@@ -34,7 +34,7 @@ export default async function RegisterPage({
         <div className="mb-6 text-center">
           <h1 className="text-2xl font-bold">{event.name}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {event.ministry.name} ·{" "}
+            {event.ministries.map((em) => em.ministry.name).join(" · ")}{event.ministries.length > 0 ? " · " : ""}
             {event.startDate.toLocaleDateString("en-PH", {
               month: "long",
               day: "numeric",

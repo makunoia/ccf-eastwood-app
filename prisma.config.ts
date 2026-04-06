@@ -10,11 +10,6 @@ export default defineConfig({
     seed: "tsx prisma/seed.ts",
   },
   datasource: {
-    url: process.env.DATABASE_URL,
-    // Migrations require a direct (non-pooled) connection because Prisma uses
-    // pg_advisory_lock, which is incompatible with connection poolers like Neon's.
-    // Set DIRECT_DATABASE_URL to the non-pooled connection string (remove "-pooler"
-    // from the Neon hostname). Falls back to DATABASE_URL if not set.
-    directUrl: process.env.DIRECT_DATABASE_URL ?? process.env.DATABASE_URL,
+    url: process.env.DIRECT_DATABASE_URL ?? process.env.DATABASE_URL,
   },
 });

@@ -13,7 +13,7 @@ type Registration = {
     name: string
     startDate: Date
     price: number | null
-    ministry: { name: string }
+    ministries: { ministry: { name: string } }[]
   }
 }
 
@@ -45,7 +45,7 @@ export function MemberEventHistory({
               {r.event.name}
             </Link>
             <p className="text-xs text-muted-foreground mt-0.5">
-              {r.event.ministry.name} ·{" "}
+              {r.event.ministries.map((em) => em.ministry.name).join(" · ")}{r.event.ministries.length > 0 ? " · " : ""}
               {r.event.startDate.toLocaleDateString("en-PH", {
                 month: "short",
                 day: "numeric",
