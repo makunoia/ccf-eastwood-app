@@ -7,7 +7,10 @@ import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { markCheckinAttendance } from "@/app/(dashboard)/events/actions"
+import {
+  markCheckinAttendance,
+  checkInToOccurrence,
+} from "@/app/(dashboard)/events/actions"
 
 type Member = {
   id: string
@@ -38,6 +41,8 @@ type Registrant = {
 type Props = {
   eventId: string
   registrants: Registrant[]
+  occurrenceId: string | null        // null = OneTime/MultiDay mode
+  initialCheckedInIds: string[]      // pre-populated for Recurring
 }
 
 function getDisplayName(r: Registrant) {
@@ -52,8 +57,16 @@ function getDisplayMobile(r: Registrant) {
   return r.mobileNumber
 }
 
-export function CheckinBoard({ eventId, registrants: initial }: Props) {
-  const [registrants, setRegistrants] = React.useState(initial)
+export function CheckinBoard({ eventId, registrants, occurrenceId, initialCheckedInIds }: Props) {
+  const [checkedInIds, setCheckedInIds] = React.useState<Set<string>>(() => {
+    if (occurrenceId !== null) {
+      // Recurring: seed from server-fetched occurrence attendees
+      return new Set(initialCheckedInIds)
+    }
+    // OneTime/MultiDay: seed from attendedAt on each registrant
+    return new Set(registrants.filter((r) => r.attendedAt !== null).map((r) => r.id))
+  })
+
   const [search, setSearch] = React.useState("")
   const [marking, setMarking] = React.useState<string | null>(null)
 
@@ -64,19 +77,18 @@ export function CheckinBoard({ eventId, registrants: initial }: Props) {
     return name.includes(q) || mobile.includes(q)
   })
 
-  const checkedIn = registrants.filter((r) => r.attendedAt).length
-
   async function handleCheckin(r: Registrant) {
-    if (r.attendedAt) return
+    if (checkedInIds.has(r.id)) return
     setMarking(r.id)
-    const result = await markCheckinAttendance(r.id)
+
+    const result =
+      occurrenceId !== null
+        ? await checkInToOccurrence(occurrenceId, r.id)
+        : await markCheckinAttendance(r.id)
+
     setMarking(null)
     if (result.success) {
-      setRegistrants((prev) =>
-        prev.map((reg) =>
-          reg.id === r.id ? { ...reg, attendedAt: new Date() } : reg
-        )
-      )
+      setCheckedInIds((prev) => new Set([...prev, r.id]))
       toast.success(`${getDisplayName(r)} checked in`)
     } else {
       toast.error(result.error)
@@ -88,7 +100,7 @@ export function CheckinBoard({ eventId, registrants: initial }: Props) {
       {/* Stats */}
       <div className="flex items-center gap-3">
         <Badge variant="secondary" className="text-sm">
-          {checkedIn} / {registrants.length} checked in
+          {checkedInIds.size} / {registrants.length} checked in
         </Badge>
       </div>
 
@@ -112,7 +124,7 @@ export function CheckinBoard({ eventId, registrants: initial }: Props) {
           </p>
         )}
         {filtered.map((r) => {
-          const attended = !!r.attendedAt
+          const attended = checkedInIds.has(r.id)
           return (
             <div
               key={r.id}
