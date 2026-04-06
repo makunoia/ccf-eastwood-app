@@ -2,6 +2,7 @@ import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { MemberForm } from "../member-form"
 import { MemberEventHistory } from "./member-event-history"
+import { MemberSmallGroups } from "./member-small-groups"
 import { type MemberRow } from "../columns"
 
 async function getMember(id: string): Promise<MemberRow | null> {
@@ -41,6 +42,39 @@ async function getLifeStages() {
   })
 }
 
+async function getMemberSmallGroupInfo(memberId: string) {
+  const m = await db.member.findUnique({
+    where: { id: memberId },
+    select: {
+      smallGroup: { select: { id: true, name: true } },
+      smallGroupStatus: { select: { name: true } },
+      ledGroups: {
+        select: {
+          id: true,
+          name: true,
+          _count: { select: { members: true } },
+        },
+        orderBy: { name: "asc" },
+      },
+    },
+  })
+  if (!m) return null
+  return {
+    memberOf: m.smallGroup
+      ? {
+          id: m.smallGroup.id,
+          name: m.smallGroup.name,
+          statusName: m.smallGroupStatus?.name ?? null,
+        }
+      : null,
+    ledGroups: m.ledGroups.map((g) => ({
+      id: g.id,
+      name: g.name,
+      memberCount: g._count.members,
+    })),
+  }
+}
+
 async function getMemberEventRegistrations(memberId: string) {
   return db.eventRegistrant.findMany({
     where: { memberId },
@@ -65,10 +99,11 @@ export default async function MemberDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const [member, lifeStages, registrations] = await Promise.all([
+  const [member, lifeStages, registrations, smallGroupInfo] = await Promise.all([
     getMember(id),
     getLifeStages(),
     getMemberEventRegistrations(id),
+    getMemberSmallGroupInfo(id),
   ])
 
   if (!member) notFound()
@@ -78,6 +113,14 @@ export default async function MemberDetailPage({
       lifeStages={lifeStages}
       member={member}
       eventHistory={<MemberEventHistory registrations={registrations} />}
+      smallGroups={
+        smallGroupInfo ? (
+          <MemberSmallGroups
+            memberOf={smallGroupInfo.memberOf}
+            ledGroups={smallGroupInfo.ledGroups}
+          />
+        ) : undefined
+      }
     />
   )
 }
