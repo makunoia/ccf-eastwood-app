@@ -9,11 +9,11 @@ import { buildColumns, type GuestRow } from "./columns"
 function GuestCard({ guest }: { guest: GuestRow }) {
   return (
     <Card>
-      <CardContent className="pt-4 pb-4">
+      <CardContent className="p-3">
         <p className="font-medium leading-tight">
           {guest.firstName} {guest.lastName}
         </p>
-        <div className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
+        <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
           <span className="text-muted-foreground">Email</span>
           <span>{guest.email ?? <span className="text-muted-foreground">—</span>}</span>
           <span className="text-muted-foreground">Mobile</span>
@@ -43,7 +43,7 @@ export function GuestsTable({ guests }: { guests: GuestRow[] }) {
   return (
     <>
       {/* Mobile card list */}
-      <div className="flex flex-col gap-3 md:hidden">
+      <div className="flex flex-col gap-2 md:hidden">
         {guests.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
             <IconUserScan className="size-8" />

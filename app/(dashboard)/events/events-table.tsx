@@ -24,14 +24,14 @@ function EventCard({ event }: { event: EventRow }) {
       className="cursor-pointer hover:bg-muted/50 transition-colors"
       onClick={() => router.push(`/events/${event.id}`)}
     >
-      <CardContent className="pt-4 pb-4">
+      <CardContent className="p-3">
         <div className="flex items-start justify-between gap-2">
           <p className="font-medium leading-tight">{event.name}</p>
           <div onClick={(e) => e.stopPropagation()}>
             <RowActions row={event} />
           </div>
         </div>
-        <div className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
+        <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
           <span className="text-muted-foreground">Ministry</span>
           <span>{event.ministries.length > 0 ? event.ministries.map((m) => m.name).join(", ") : "—"}</span>
           <span className="text-muted-foreground">Date</span>
@@ -59,7 +59,7 @@ export function EventsTable({ events }: { events: EventRow[] }) {
   return (
     <>
       {/* Mobile card list */}
-      <div className="flex flex-col gap-3 md:hidden">
+      <div className="flex flex-col gap-2 md:hidden">
         {events.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
             <IconCalendar className="size-8" />

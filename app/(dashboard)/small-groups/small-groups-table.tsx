@@ -15,14 +15,14 @@ function SmallGroupCard({ group }: { group: SmallGroupRow }) {
       className="cursor-pointer hover:bg-muted/50 transition-colors"
       onClick={() => router.push(`/small-groups/${group.id}`)}
     >
-      <CardContent className="pt-4 pb-4">
+      <CardContent className="p-3">
         <div className="flex items-start justify-between gap-2">
           <p className="font-medium leading-tight">{group.name}</p>
           <div onClick={(e) => e.stopPropagation()}>
             <RowActions row={group} />
           </div>
         </div>
-        <div className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
+        <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
           <span className="text-muted-foreground">Leader</span>
           <span>{group.leaderName}</span>
           <span className="text-muted-foreground">Parent Group</span>
@@ -45,7 +45,7 @@ export function SmallGroupsTable({ groups }: { groups: SmallGroupRow[] }) {
   return (
     <>
       {/* Mobile card list */}
-      <div className="flex flex-col gap-3 md:hidden">
+      <div className="flex flex-col gap-2 md:hidden">
         {groups.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
             <IconUsersGroup className="size-8" />

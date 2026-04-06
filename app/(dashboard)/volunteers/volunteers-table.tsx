@@ -22,7 +22,7 @@ function VolunteerCard({ volunteer }: { volunteer: VolunteerRow }) {
       className="cursor-pointer hover:bg-muted/50 transition-colors"
       onClick={() => router.push(`/volunteers/${volunteer.id}`)}
     >
-      <CardContent className="pt-4 pb-4">
+      <CardContent className="p-3">
         <div className="flex items-start justify-between gap-2">
           <p className="font-medium leading-tight">{volunteer.memberName}</p>
           <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
@@ -30,7 +30,7 @@ function VolunteerCard({ volunteer }: { volunteer: VolunteerRow }) {
             <RowActions row={volunteer} />
           </div>
         </div>
-        <div className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
+        <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
           <span className="text-muted-foreground">Ministry / Event</span>
           <span>{volunteer.scope}</span>
           <span className="text-muted-foreground">Committee</span>
@@ -55,7 +55,7 @@ export function VolunteersTable({ volunteers }: { volunteers: VolunteerRow[] }) 
   return (
     <>
       {/* Mobile card list */}
-      <div className="flex flex-col gap-3 md:hidden">
+      <div className="flex flex-col gap-2 md:hidden">
         {volunteers.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
             <IconHeart className="size-8" />
