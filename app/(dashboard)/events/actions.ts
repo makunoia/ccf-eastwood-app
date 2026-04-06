@@ -245,21 +245,65 @@ export async function unmarkRegistrantAttended(
   }
 }
 
-export async function findOrCreateOccurrence(
+export async function createOccurrence(
   eventId: string,
   date: string // "YYYY-MM-DD" UTC
 ): Promise<ActionResult<{ id: string }>> {
   try {
     const dateValue = new Date(`${date}T00:00:00.000Z`)
-    const occurrence = await db.eventOccurrence.upsert({
+    const existing = await db.eventOccurrence.findUnique({
       where: { eventId_date: { eventId, date: dateValue } },
-      create: { eventId, date: dateValue },
-      update: {},
       select: { id: true },
     })
+    if (existing) {
+      return { success: false, error: "A session already exists for this date" }
+    }
+    const occurrence = await db.eventOccurrence.create({
+      data: { eventId, date: dateValue },
+      select: { id: true },
+    })
+    revalidatePath(`/events/${eventId}`)
     return { success: true, data: { id: occurrence.id } }
   } catch {
-    return { success: false, error: "Failed to find or create occurrence" }
+    return { success: false, error: "Failed to create session" }
+  }
+}
+
+export async function ensureMultiDayOccurrences(
+  eventId: string,
+  startDate: Date,
+  endDate: Date,
+): Promise<ActionResult<{ id: string; date: Date }[]>> {
+  try {
+    const dates: Date[] = []
+    const current = new Date(startDate)
+    current.setUTCHours(0, 0, 0, 0)
+    const end = new Date(endDate)
+    end.setUTCHours(0, 0, 0, 0)
+    while (current <= end) {
+      dates.push(new Date(current))
+      current.setUTCDate(current.getUTCDate() + 1)
+    }
+
+    await Promise.all(
+      dates.map((date) =>
+        db.eventOccurrence.upsert({
+          where: { eventId_date: { eventId, date } },
+          create: { eventId, date },
+          update: {},
+        })
+      )
+    )
+
+    const occurrences = await db.eventOccurrence.findMany({
+      where: { eventId, date: { gte: dates[0], lte: dates[dates.length - 1] } },
+      orderBy: { date: "asc" },
+      include: { _count: { select: { attendees: true } } },
+    })
+
+    return { success: true, data: occurrences }
+  } catch {
+    return { success: false, error: "Failed to ensure daily occurrences" }
   }
 }
 
