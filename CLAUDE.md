@@ -1,8 +1,9 @@
 # Churchie — Project Reference
 
 ## What This Is
-**Churchie** is a church management web application for administrators. It covers five core domains:
+**Churchie** is a church management web application for administrators. It covers six core domains:
 - **Members** — person records of church members
+- **Guests** — non-members who attend events; the entry point into the pipeline
 - **Small Groups** — member-led fellowship groups forming a hierarchical network
 - **Ministries** — sub-operations within the church, each targeting a life stage
 - **Events** — church events with registration, attendance tracking, and breakout groups
@@ -41,7 +42,7 @@ No member self-service portal at this stage.
 ## Domain Model
 
 ### Member
-Core person record created when someone joins the church.
+Core person record created when a Guest joins a Small Group (auto-promoted) or when added directly by an admin.
 
 **Fields:** `id`, `firstName`, `lastName`, `email`, `phone`, `address`, `dateJoined`, `notes`, `createdAt`, `updatedAt`
 
@@ -52,6 +53,31 @@ Core person record created when someone joins the church.
 - Can volunteer in multiple ministries (`Volunteer` records)
 - Has a `lifeStageId → LifeStage (nullable)` — references the same admin-configurable LifeStage table used by Ministries
 - Has `eventRegistrations EventRegistrant[]` — tracks all events the member has registered for; `attendedAt` on each record indicates whether they actually attended
+- Has `guest Guest?` — back-relation; set if this Member was promoted from a Guest record
+
+---
+
+### Guest
+A person who has attended one or more church events but has not yet joined a Small Group. Guests are the entry point into the discipleship pipeline.
+
+**Every non-member registrant becomes a Guest** — regardless of event type. When someone registers or checks in to an event and cannot be matched to an existing Member, a Guest record is created (or found by mobile number) and linked to their `EventRegistrant`.
+
+**Fields:** `id`, `firstName`, `lastName`, `email`, `phone`, `notes`, `createdAt`, `updatedAt`
+
+**Matching fields** (same set as Member, used for eventual SmallGroup placement): `lifeStageId → LifeStage (nullable)`, `gender`, `language`, `birthDate`, `workCity`, `workIndustry`, `meetingPreference`
+
+**Promotion to Member:**
+When a Guest is added to a Small Group, the system automatically:
+1. Creates a `Member` record from the Guest's data (`dateJoined = today`)
+2. Sets `Member.smallGroupId` and `Member.smallGroupStatus = New`
+3. Sets `Guest.memberId` to the new Member (marks the Guest as promoted)
+4. Updates all `EventRegistrant` records linked to this Guest: sets `memberId` to the new Member
+
+After promotion, the Guest record is retained for historical traceability (`Guest.memberId` links to their Member record). Promoted guests no longer appear in the active Guest list.
+
+**Relationships:**
+- `eventRegistrations EventRegistrant[]` — all events attended as a guest
+- `memberId → Member (nullable, unique)` — set when promoted; null = still an active guest
 
 ---
 
@@ -124,6 +150,8 @@ Volunteer {
   assignedRoleId  → CommitteeRole  (nullable — set by admin after review)
   status          (Pending | Confirmed | Rejected)
   notes
+  leaderApprovalToken  String? (unique UUID — auto-generated at sign-up)
+  leaderNotes          String? (optional notes submitted by the leader on approve/reject)
   createdAt, updatedAt
 }
 ```
@@ -135,6 +163,13 @@ Volunteer {
 - A member can have multiple Volunteer records (different ministries, different events)
 - `BreakoutGroup.facilitatorId` still points to a `Volunteer` record (the confirmed volunteer assigned as facilitator)
 
+**Leader approval flow:**
+1. On sign-up, `leaderApprovalToken` (UUID) is auto-generated and stored
+2. Admin copies `/volunteer-approval/[token]` from the volunteer detail page and sends it to the member's Small Group leader (WhatsApp, email, etc.)
+3. Leader opens the link (no login required) → sees volunteer details → submits Approve or Reject + optional `leaderNotes`
+4. Approval sets `status = Confirmed` automatically; rejection sets `status = Rejected`
+5. Admin can always manually override status from the volunteer detail page
+
 #### Settings managed by Ministry Admin
 - **Ministry Settings** → committees and roles for that ministry's volunteers
 - **Event Settings** → committees and roles for that specific event's volunteers
@@ -142,44 +177,113 @@ Volunteer {
 ---
 
 ### Event
-Church events hosted by a ministry. Can be free or paid (manual). Supports registration periods, attendance tracking, and breakout groups with facilitators.
+Church events hosted by a ministry. Three event types are supported, each with different behaviour:
 
-**Event fields:** `id`, `name`, `description`, `ministryId → Ministry`, `startDate`, `endDate`, `price (nullable, in cents — null means free)`, `registrationStart`, `registrationEnd`, `createdAt`, `updatedAt`
+| Type | Description | Examples |
+|---|---|---|
+| **OneTime** | Single-date event, optional registration and payment | Women's monthly meet, special services |
+| **MultiDay** | Spans consecutive days, treated like OneTime but displayed as a date range | Retreats, camps |
+| **Recurring** | Repeats on a fixed schedule. First-timers register once; returning attendees check in per occurrence | Singles Fridays, Youth Saturdays |
 
-**Event list** is filterable by ministry and date range.
+#### Feature applicability by type
+
+| Feature | OneTime | MultiDay | Recurring |
+|---|---|---|---|
+| Public registration form | ✅ | ✅ | ✅ (first-timers only, no payment) |
+| Payment tracking | ✅ | ✅ | ❌ |
+| Breakout groups | ✅ | ✅ | ✅ |
+| Baptism module | ✅ | ✅ | ❌ |
+| Embarkation module | ✅ | ✅ | ❌ |
+| Volunteers | ✅ | ✅ | ✅ |
+| Check-in | Per event (sets `attendedAt`) | Per event (sets `attendedAt`) | Per occurrence (`OccurrenceAttendee`) |
+
+**Event fields:** `id`, `name`, `description`, `ministryId → Ministry`, `type EventType @default(OneTime)`, `startDate`, `endDate`, `price (nullable, in cents — null means free)`, `registrationStart`, `registrationEnd`, `createdAt`, `updatedAt`
+
+**Recurring-only fields:** `recurrenceDayOfWeek Int?` (0 = Sunday … 6 = Saturday), `recurrenceFrequency RecurrenceFrequency?` (Weekly | Biweekly | Monthly), `recurrenceEndDate DateTime?` (null = runs indefinitely)
+
+**Event list** is filterable by ministry, type, and date range.
 
 #### Registration & Check-in URLs
-Each event has two public-facing links (no login required):
-- **Registration:** `/events/[id]/register` — the public registration form
-- **Check-in:** `/events/[id]/checkin` — admin or staff use this to mark attendance on the day
+All three event types have both a registration and a check-in URL (no login required):
+- **Registration:** `/events/[id]/register`
+- **Check-in:** `/events/[id]/checkin`
+
+For **OneTime/MultiDay**: registration collects details and optionally payment; check-in sets `EventRegistrant.attendedAt`.
+
+For **Recurring**: registration is for first-timers only (no payment). Once registered, a person has a permanent `EventRegistrant` record for the series. Returning attendees skip the form — they just appear in the check-in list for each occurrence.
 
 These are separate routes from the admin dashboard event detail page.
 
-**EventRegistrant** — people who register for an event (member or non-member):
+**EventRegistrant** — one record per person per event series (all event types):
 ```
 id, eventId → Event
 memberId         → Member (nullable)
+guestId          → Guest  (nullable)
 firstName        String (nullable)
 lastName         String (nullable)
 nickname         String (nullable)
 email            String (nullable)
 mobileNumber     String (nullable)
-isPaid           Boolean (default false)
-paymentReference String (nullable — reference number entered by admin when marking paid)
-attendedAt       DateTime (nullable — set when attendance is confirmed)
+isPaid           Boolean (default false)      -- OneTime/MultiDay only
+paymentReference String (nullable)            -- OneTime/MultiDay only
+attendedAt       DateTime (nullable)          -- OneTime/MultiDay only; null = didn't attend
 createdAt
+
+occurrenceAttendances OccurrenceAttendee[]    -- populated for Recurring events
 ```
 
-**No data duplication rule:** `firstName`, `lastName`, and `email` are only populated when `memberId` is null (non-member registrant). When `memberId` is set, all personal data is read from the linked `Member` record — never stored twice. Application layer must enforce this constraint.
+**No data duplication rule:** Personal fields (`firstName`, `lastName`, `email`) are only populated when both `memberId` and `guestId` are null (a truly anonymous/one-off registrant). When either FK is set, all personal data is read from the linked `Member` or `Guest` record — never stored twice. Application layer must enforce this constraint.
 
-`BreakoutGroupMember.registrantId → EventRegistrant` — this single pointer handles both cases cleanly. Existing member data flows through the FK chain: `BreakoutGroupMember → EventRegistrant → Member`.
+**Exactly one of:** `memberId`, `guestId`, or personal fields — enforced at the application layer.
+
+`BreakoutGroupMember.registrantId → EventRegistrant` — this single pointer handles all three cases cleanly.
+
+#### Recurring Event Occurrences
+
+Each physical session of a recurring event is an `EventOccurrence`. Occurrences are created on-demand when the check-in page is opened for a given date.
+
+```
+EventOccurrence {
+  id
+  eventId   → Event
+  date      DateTime   (the specific date of this session)
+  notes     String?
+  createdAt
+
+  attendees OccurrenceAttendee[]
+  @@unique([eventId, date])
+}
+
+OccurrenceAttendee {
+  id
+  occurrenceId  → EventOccurrence
+  registrantId  → EventRegistrant   (always set — walk-ins auto-create an EventRegistrant)
+  checkedInAt   DateTime @default(now())
+
+  @@unique([occurrenceId, registrantId])
+}
+```
+
+**Why `registrantId` (not `memberId`) on `OccurrenceAttendee`:**
+Pointing to `EventRegistrant` means the person's details (name, email, member link) are stored once on registration and reused for every occurrence check-in. Walk-ins who haven't pre-registered get an `EventRegistrant` auto-created at check-in time — so after their first visit, they're in the system for all future check-ins.
+
+**Check-in flow (Recurring):**
+1. Admin opens `/events/[id]/checkin` — today's date pre-selected; occurrence created/found
+2. Page shows the full registered list (`EventRegistrant[]` for this event) with a "checked in / not yet" status for today
+3. Admin taps a name → `OccurrenceAttendee` record created
+4. "Walk-in" button → mobile lookup → member resolution → `EventRegistrant` created if new → checked in
+
+**Registration flow (Recurring, first-timers):**
+Same mobile-lookup multi-step form as OneTime, but with no payment fields. On submission, creates `EventRegistrant`. Does not auto-check them in (they still need to check in on the day).
+
+**Admin view for recurring events:** The event detail page shows a list of past occurrences with per-session attendance counts. Clicking an occurrence opens its attendee list.
 
 #### Member Resolution at Registration
 When the registration form is submitted, the system runs a lookup against existing Member records by **mobile number (exact match)**.
 
 **If a match is found:** A **"Confirm your details"** screen is shown to the registrant, displaying the matched Member's name, email, and phone. If they confirm it's them, `EventRegistrant.memberId` is set and personal fields are left null. If they say "that's not me", they proceed as a non-member.
 
-**If no match:** The registrant is created as a non-member — personal fields stored on `EventRegistrant`. No Member record is created.
+**If no match:** A `Guest` record is created (or found by mobile number if they've registered before) and linked via `EventRegistrant.guestId`. Personal fields on `EventRegistrant` are left null — the Guest record is the source of truth. This Guest will appear in the `/guests` dashboard and can eventually be promoted to a Member when they join a Small Group.
 
 This resolution is synchronous, happens during the registration flow, and requires no admin intervention.
 
@@ -235,7 +339,7 @@ Tracks registrants who will be baptized at the event. Opt-in is **not** part of 
 BaptismOptIn {
   id
   eventId      → Event
-  registrantId → EventRegistrant (unique per event — one opt-in per registrant)
+  registrantId → EventRegistrant (@unique — one baptism per registrant globally, across all events)
   createdAt
 }
 ```
@@ -345,6 +449,7 @@ churchie/
 │   ├── (auth)/                   # Login / auth pages
 │   ├── (dashboard)/              # Protected admin area
 │   │   ├── members/
+│   │   ├── guests/
 │   │   ├── small-groups/
 │   │   ├── ministries/
 │   │   ├── events/
@@ -409,7 +514,8 @@ churchie/
 - Always show a confirmation dialog before any destructive action
 
 ### Timestamps
-- Every model has `createdAt` (`@default(now())`) and `updatedAt` (`@updatedAt`) managed by Prisma
+- Every **entity model** has `createdAt` (`@default(now())`) and `updatedAt` (`@updatedAt`) managed by Prisma
+- **Immutable join/log models** (e.g. `OccurrenceAttendee`, `BreakoutGroupMember`, `BusPassenger`, `BaptismOptIn`) have only `createdAt` or a semantically named timestamp (`checkedInAt`, `assignedAt`) — no `updatedAt`, since these records are never mutated after creation
 - Store all datetimes in UTC
 
 ### TypeScript

@@ -38,6 +38,18 @@ enum VolunteerStatus {
   Rejected
 }
 
+enum EventType {
+  OneTime
+  MultiDay
+  Recurring
+}
+
+enum RecurrenceFrequency {
+  Weekly
+  Biweekly
+  Monthly
+}
+
 enum MatchingContext {
   SmallGroup
   Breakout
@@ -115,6 +127,7 @@ model LifeStage {
   updatedAt   DateTime   @updatedAt
 
   members        Member[]
+  guests         Guest[]
   ministries     Ministry[]
   smallGroups    SmallGroup[]
   breakoutGroups BreakoutGroup[]
@@ -153,6 +166,35 @@ model Member {
   schedulePreferences SchedulePreference[]
   volunteers          Volunteer[]
   eventRegistrations  EventRegistrant[]
+  guest               Guest?              // set if this Member was promoted from a Guest
+}
+
+model Guest {
+  id          String   @id @default(cuid())
+  firstName   String
+  lastName    String
+  email       String?
+  phone       String?
+  notes       String?
+
+  // Matching fields (same set as Member — used for SmallGroup placement)
+  lifeStageId      String?
+  lifeStage        LifeStage?        @relation(fields: [lifeStageId], references: [id])
+  gender           Gender?
+  language         String?
+  birthDate        DateTime?
+  workCity         String?
+  workIndustry     String?
+  meetingPreference MeetingPreference?
+
+  // Promotion — set when Guest is added to a Small Group and becomes a Member
+  memberId    String?  @unique
+  member      Member?  @relation(fields: [memberId], references: [id])
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  eventRegistrations EventRegistrant[]
 }
 
 model SchedulePreference {
@@ -162,6 +204,8 @@ model SchedulePreference {
   dayOfWeek Int      // 0 = Sunday, 6 = Saturday
   timeStart String   // HH:MM
   timeEnd   String   // HH:MM
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model SmallGroup {
@@ -208,6 +252,8 @@ model GroupMeetingSchedule {
   dayOfWeek    Int
   timeStart    String
   timeEnd      String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 }
 
 model Ministry {
@@ -225,26 +271,57 @@ model Ministry {
 }
 
 model Event {
-  id                String    @id @default(cuid())
-  name              String
-  description       String?
-  ministryId        String
-  ministry          Ministry  @relation(fields: [ministryId], references: [id])
-  startDate         DateTime
-  endDate           DateTime
-  price             Int?      // in cents; null = free
-  registrationStart DateTime?
-  registrationEnd   DateTime?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id                    String              @id @default(cuid())
+  name                  String
+  description           String?
+  ministryId            String
+  ministry              Ministry            @relation(fields: [ministryId], references: [id])
+  type                  EventType           @default(OneTime)
+  startDate             DateTime
+  endDate               DateTime
+  price                 Int?                // in cents; null = free
+  registrationStart     DateTime?
+  registrationEnd       DateTime?
+  // Recurring-only fields
+  recurrenceDayOfWeek   Int?                // 0 = Sunday … 6 = Saturday
+  recurrenceFrequency   RecurrenceFrequency?
+  recurrenceEndDate     DateTime?           // null = runs indefinitely
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
 
   registrants    EventRegistrant[]
+  occurrences     EventOccurrence[]
   breakoutGroups BreakoutGroup[]
   committees     VolunteerCommittee[]
   volunteers     Volunteer[]
   modules        EventModule[]
   baptismOptIns  BaptismOptIn[]
   buses          Bus[]
+}
+
+model EventOccurrence {
+  id        String               @id @default(cuid())
+  eventId   String
+  event     Event                @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  date      DateTime
+  notes     String?
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+
+  attendees OccurrenceAttendee[]
+
+  @@unique([eventId, date])
+}
+
+model OccurrenceAttendee {
+  id           String          @id @default(cuid())
+  occurrenceId String
+  occurrence   EventOccurrence @relation(fields: [occurrenceId], references: [id], onDelete: Cascade)
+  registrantId String
+  registrant   EventRegistrant @relation(fields: [registrantId], references: [id], onDelete: Cascade)
+  checkedInAt  DateTime        @default(now())
+
+  @@unique([occurrenceId, registrantId])
 }
 
 model EventRegistrant {
@@ -255,7 +332,10 @@ model EventRegistrant {
   memberId     String?
   member       Member?   @relation(fields: [memberId], references: [id])
 
-  // Only populated when memberId is null (non-member registrant)
+  guestId      String?
+  guest        Guest?    @relation(fields: [guestId], references: [id])
+
+  // Only populated when both memberId and guestId are null (truly anonymous registrant)
   firstName    String?
   lastName     String?
   nickname     String?
@@ -266,10 +346,12 @@ model EventRegistrant {
   paymentReference String?
   attendedAt       DateTime?
   createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   breakoutGroupMemberships BreakoutGroupMember[]
   baptismOptIn             BaptismOptIn?
   busPassengers            BusPassenger[]
+  occurrenceAttendances    OccurrenceAttendee[]
 }
 
 model BreakoutGroup {
@@ -292,18 +374,21 @@ model BreakoutGroup {
   memberLimit   Int?
 
   createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
 
   members   BreakoutGroupMember[]
   schedules BreakoutGroupSchedule[]
 }
 
 model BreakoutGroupSchedule {
-  id             String        @id @default(cuid())
+  id              String        @id @default(cuid())
   breakoutGroupId String
-  breakoutGroup  BreakoutGroup @relation(fields: [breakoutGroupId], references: [id], onDelete: Cascade)
-  dayOfWeek      Int           // 0 = Sunday, 6 = Saturday
-  timeStart      String        // HH:MM
-  timeEnd        String        // HH:MM
+  breakoutGroup   BreakoutGroup @relation(fields: [breakoutGroupId], references: [id], onDelete: Cascade)
+  dayOfWeek       Int           // 0 = Sunday, 6 = Saturday
+  timeStart       String        // HH:MM
+  timeEnd         String        // HH:MM
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 }
 
 model BreakoutGroupMember {
@@ -390,6 +475,7 @@ model EventModule {
   event     Event           @relation(fields: [eventId], references: [id], onDelete: Cascade)
   type      EventModuleType
   createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
 
   @@unique([eventId, type])
 }
@@ -398,7 +484,7 @@ model BaptismOptIn {
   id           String          @id @default(cuid())
   eventId      String
   event        Event           @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  registrantId String          @unique
+  registrantId String          @unique  // one baptism per registrant globally (across all events)
   registrant   EventRegistrant @relation(fields: [registrantId], references: [id], onDelete: Cascade)
   createdAt    DateTime        @default(now())
 
