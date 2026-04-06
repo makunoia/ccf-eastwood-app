@@ -13,10 +13,52 @@ const breakoutGroupsInclude = {
   orderBy: { createdAt: "asc" } as const,
   include: {
     facilitator: {
-      include: { member: { select: { id: true, firstName: true, lastName: true } } },
+      include: {
+        member: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            ledGroups: {
+              select: {
+                id: true,
+                name: true,
+                lifeStageId: true,
+                genderFocus: true,
+                language: true,
+                ageRangeMin: true,
+                ageRangeMax: true,
+                meetingFormat: true,
+                locationCity: true,
+              },
+            },
+          },
+        },
+      },
     },
     coFacilitator: {
-      include: { member: { select: { id: true, firstName: true, lastName: true } } },
+      include: {
+        member: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            ledGroups: {
+              select: {
+                id: true,
+                name: true,
+                lifeStageId: true,
+                genderFocus: true,
+                language: true,
+                ageRangeMin: true,
+                ageRangeMax: true,
+                meetingFormat: true,
+                locationCity: true,
+              },
+            },
+          },
+        },
+      },
     },
     members: {
       orderBy: { assignedAt: "asc" } as const,
