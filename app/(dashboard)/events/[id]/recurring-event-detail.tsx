@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
   IconArrowLeft,
+  IconCalendarPlus,
   IconCalendarRepeat,
   IconCopy,
   IconPencil,
@@ -14,7 +15,17 @@ import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { createOccurrence } from "@/app/(dashboard)/events/actions"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -116,42 +127,110 @@ function registrantContact(r: Registrant): string | null {
 // ─── Occurrences tab ──────────────────────────────────────────────────────────
 
 function OccurrencesTab({ occurrences, eventId }: { occurrences: OccurrenceRow[]; eventId: string }) {
-  if (occurrences.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
-        <IconCalendarRepeat className="size-8" />
-        <p className="text-sm">No sessions recorded yet.</p>
-        <p className="text-xs">Open the check-in link to start tracking attendance.</p>
-      </div>
-    )
+  const router = useRouter()
+  const [dialogOpen, setDialogOpen] = React.useState(false)
+  const [date, setDate] = React.useState("")
+  const [saving, setSaving] = React.useState(false)
+
+  async function handleAddSession() {
+    if (!date) return
+    setSaving(true)
+    const result = await createOccurrence(eventId, date)
+    setSaving(false)
+    if (result.success) {
+      toast.success("Session added")
+      setDialogOpen(false)
+      setDate("")
+      router.refresh()
+    } else {
+      toast.error(result.error)
+    }
+  }
+
+  function copyCheckinLink(occurrenceId: string) {
+    const url = `${window.location.origin}/events/${eventId}/checkin/${occurrenceId}`
+    navigator.clipboard.writeText(url)
+    toast.success("Check-in link copied")
   }
 
   return (
-    <div className="overflow-x-auto rounded-lg border">
-      <table className="w-full text-sm">
-        <thead className="border-b bg-muted/50">
-          <tr>
-            <th className="px-4 py-3 text-left font-medium">Date</th>
-            <th className="px-4 py-3 text-left font-medium">Attendance</th>
-            <th className="px-4 py-3" />
-          </tr>
-        </thead>
-        <tbody>
-          {occurrences.map((o) => (
-            <tr key={o.id} className="border-b last:border-0">
-              <td className="px-4 py-3 font-medium">{formatOccurrenceDate(o.date)}</td>
-              <td className="px-4 py-3">
-                <Badge variant="secondary">{o._count.attendees} attended</Badge>
-              </td>
-              <td className="px-4 py-3 text-right">
-                <Button variant="outline" size="sm" asChild>
-                  <Link href={`/events/${eventId}/occurrences/${o.id}`}>View</Link>
-                </Button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="flex flex-col gap-4">
+      <div className="flex justify-end">
+        <Button size="sm" onClick={() => setDialogOpen(true)}>
+          <IconCalendarPlus className="mr-2 size-4" />
+          Add Session
+        </Button>
+      </div>
+
+      {occurrences.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
+          <IconCalendarRepeat className="size-8" />
+          <p className="text-sm">No sessions yet.</p>
+          <p className="text-xs">Add a session to start tracking attendance.</p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-lg border">
+          <table className="w-full text-sm">
+            <thead className="border-b bg-muted/50">
+              <tr>
+                <th className="px-4 py-3 text-left font-medium">Date</th>
+                <th className="px-4 py-3 text-left font-medium">Attendance</th>
+                <th className="px-4 py-3" />
+              </tr>
+            </thead>
+            <tbody>
+              {occurrences.map((o) => (
+                <tr key={o.id} className="border-b last:border-0">
+                  <td className="px-4 py-3 font-medium">{formatOccurrenceDate(o.date)}</td>
+                  <td className="px-4 py-3">
+                    <Badge variant="secondary">{o._count.attendees} attended</Badge>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-end gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => copyCheckinLink(o.id)}
+                      >
+                        <IconCopy className="mr-1.5 size-3.5" />
+                        Check-in link
+                      </Button>
+                      <Button variant="outline" size="sm" asChild>
+                        <Link href={`/events/${eventId}/occurrences/${o.id}`}>View</Link>
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Session</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="session-date">Date</Label>
+            <Input
+              id="session-date"
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleAddSession} disabled={!date || saving}>
+              {saving ? "Adding…" : "Add Session"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -301,14 +380,6 @@ export function RecurringEventDetail({ event }: { event: RecurringEvent }) {
         >
           <IconCopy className="mr-2 size-3.5" />
           Registration link
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => copyLink(`/events/${event.id}/checkin`)}
-        >
-          <IconCopy className="mr-2 size-3.5" />
-          Check-in link
         </Button>
       </div>
 

@@ -245,21 +245,27 @@ export async function unmarkRegistrantAttended(
   }
 }
 
-export async function findOrCreateOccurrence(
+export async function createOccurrence(
   eventId: string,
   date: string // "YYYY-MM-DD" UTC
 ): Promise<ActionResult<{ id: string }>> {
   try {
     const dateValue = new Date(`${date}T00:00:00.000Z`)
-    const occurrence = await db.eventOccurrence.upsert({
+    const existing = await db.eventOccurrence.findUnique({
       where: { eventId_date: { eventId, date: dateValue } },
-      create: { eventId, date: dateValue },
-      update: {},
       select: { id: true },
     })
+    if (existing) {
+      return { success: false, error: "A session already exists for this date" }
+    }
+    const occurrence = await db.eventOccurrence.create({
+      data: { eventId, date: dateValue },
+      select: { id: true },
+    })
+    revalidatePath(`/events/${eventId}`)
     return { success: true, data: { id: occurrence.id } }
   } catch {
-    return { success: false, error: "Failed to find or create occurrence" }
+    return { success: false, error: "Failed to create session" }
   }
 }
 
