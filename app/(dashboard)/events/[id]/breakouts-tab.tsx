@@ -128,7 +128,7 @@ function registrantName(r: { memberId: string | null; firstName: string | null; 
   return [r.firstName, r.lastName].filter(Boolean).join(" ") || "Unknown"
 }
 
-function volunteerName(v: Volunteer) {
+function volunteerName(v: { member: { firstName: string; lastName: string } }) {
   return `${v.member.firstName} ${v.member.lastName}`
 }
 
@@ -725,7 +725,6 @@ function DeleteGroupDialog({ group, onOpenChange, eventId }: DeleteGroupDialogPr
 type GroupCardProps = {
   group: BreakoutGroup
   eventId: string
-  volunteers: Volunteer[]
   onEdit: (group: BreakoutGroup) => void
   onDelete: (group: BreakoutGroup) => void
   onAssignFacilitator: (group: BreakoutGroup, role: "facilitator" | "coFacilitator") => void
@@ -933,7 +932,6 @@ export function BreakoutGroupsTab({
               key={group.id}
               group={group}
               eventId={eventId}
-              volunteers={volunteers}
               onEdit={setEditingGroup}
               onDelete={setDeletingGroup}
               onAssignFacilitator={(g, role) => setFacilitatorSlot({ group: g, role })}
