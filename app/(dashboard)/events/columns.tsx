@@ -92,7 +92,7 @@ export function RowActions({ row }: { row: EventRow }) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onSelect={() => router.push(`/events/${row.id}`)}>
+          <DropdownMenuItem onSelect={() => router.push(`/event/${row.id}/dashboard`)}>
             <IconEye className="mr-2 size-4" />
             View
           </DropdownMenuItem>

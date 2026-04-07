@@ -1,10 +1,10 @@
 import { redirect } from "next/navigation"
 
-export default async function LegacyEventSettingsPage({
+export default async function EventRootPage({
   params,
 }: {
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  redirect(`/event/${id}/settings`)
+  redirect(`/event/${id}/dashboard`)
 }

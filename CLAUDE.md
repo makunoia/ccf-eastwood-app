@@ -37,6 +37,8 @@
 
 No member self-service portal at this stage.
 
+**Event workspace sidebar:** Super Admins see a "← Events" back link at the bottom of the event sidebar. Ministry Admins do **not** see this link — they have no access to the global events list. The back-link visibility is controlled by `showBackLink` prop on `EventSidebar`, set in `app/(event)/[id]/layout.tsx` based on the user's role. Role-based access is not yet implemented in the schema — `showBackLink` currently defaults to `true` for all users and should be updated once roles are added.
+
 ---
 
 ## Domain Model
@@ -187,6 +189,19 @@ Volunteer {
 
 ### Event
 Church events hosted by a ministry. Three event types are supported, each with different behaviour:
+
+**Event workspace:** Opening an event navigates to `/event/[id]/dashboard` — a dedicated mini-app route group (`app/(event)/`) with its own sidebar (`EventSidebar`), independent of the main app sidebar. The workspace contains:
+- `dashboard` — stats, public links, edit/settings shortcuts
+- `registrants` — attendee list with payment and attendance tracking
+- `sessions` — occurrence list (Recurring & MultiDay only)
+- `sessions/[occurrenceId]` — individual session attendee list
+- `breakouts` — breakout group assignment
+- `volunteers` — event volunteer list
+- `baptism` — baptism opt-in tracking (if Baptism module enabled)
+- `embarkation` — bus assignment (if Embarkation module enabled)
+- `settings` — module toggles, committees, buses
+
+Old URLs (`/events/[id]`, `/events/[id]/settings`, `/events/[id]/occurrences/[occurrenceId]`) redirect to their new counterparts. The app is a PWA (`display: standalone`), so navigation stays within the same window — no `target="_blank"` for event links (bus manifest print route is the only intentional exception).
 
 | Type | Description | Examples |
 |---|---|---|
