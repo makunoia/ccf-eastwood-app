@@ -27,6 +27,7 @@ import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { createOccurrence } from "@/app/(dashboard)/events/actions"
 import { BreakoutGroupsTab } from "./breakouts-tab"
+import { VolunteersTab, type VolunteerGroup } from "./volunteers-tab"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -75,9 +76,21 @@ type LedGroup = {
   meetingFormat: string | null
   locationCity: string | null
 }
-type VolunteerForBreakout = {
+type Volunteer = {
   id: string
+  status: string
+  notes: string | null
   member: { id: string; firstName: string; lastName: string; ledGroups: LedGroup[] }
+  committee: { id: string; name: string }
+  preferredRole: { id: string; name: string }
+  assignedRole: { id: string; name: string } | null
+}
+
+type MinistryForEvent = {
+  id: string
+  name: string
+  lifeStage: { id: string; name: string } | null
+  volunteers: Volunteer[]
 }
 
 type BreakoutGroupMemberRow = {
@@ -124,10 +137,10 @@ type RecurringEvent = {
   recurrenceEndDate: Date | null
   recurrenceDayOfWeek: number | null
   recurrenceFrequency: "Weekly" | "Biweekly" | "Monthly" | null
-  ministries: { ministry: { id: string; name: string } }[]
+  ministries: { ministry: MinistryForEvent }[]
   registrants: Registrant[]
   occurrences: OccurrenceRow[]
-  volunteers: VolunteerForBreakout[]
+  volunteers: Volunteer[]
   breakoutGroups: BreakoutGroupData[]
 }
 
@@ -348,6 +361,25 @@ export function RecurringEventDetail({ event, lifeStages }: { event: RecurringEv
 
   const totalAttendance = event.occurrences.reduce((sum, o) => sum + o._count.attendees, 0)
 
+  const volunteerGroups: VolunteerGroup[] = [
+    ...event.ministries.map((em) => ({
+      label: em.ministry.name,
+      source: "ministry" as const,
+      volunteers: em.ministry.volunteers,
+    })),
+    ...(event.volunteers.length > 0 || event.ministries.length === 0
+      ? [{ label: "Event", source: "event" as const, volunteers: event.volunteers }]
+      : []),
+  ]
+  const totalVolunteerCount = volunteerGroups.reduce((sum, g) => sum + g.volunteers.length, 0)
+
+  const confirmedVolunteers = [
+    ...event.volunteers.filter((v) => v.status === "Confirmed"),
+    ...event.ministries.flatMap((em) =>
+      em.ministry.volunteers.filter((v) => v.status === "Confirmed")
+    ),
+  ]
+
   function copyLink(path: string) {
     const url = `${window.location.origin}${path}`
     navigator.clipboard.writeText(url)
@@ -453,6 +485,9 @@ export function RecurringEventDetail({ event, lifeStages }: { event: RecurringEv
             Registrants ({event.registrants.length})
           </TabsTrigger>
           <TabsTrigger value="breakouts">Breakout Groups</TabsTrigger>
+          <TabsTrigger value="volunteers">
+            Volunteers {totalVolunteerCount > 0 && `(${totalVolunteerCount})`}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="occurrences" className="mt-4 flex-1">
@@ -468,9 +503,13 @@ export function RecurringEventDetail({ event, lifeStages }: { event: RecurringEv
             eventId={event.id}
             breakoutGroups={event.breakoutGroups}
             registrants={event.registrants}
-            volunteers={event.volunteers}
+            volunteers={confirmedVolunteers}
             lifeStages={lifeStages}
           />
+        </TabsContent>
+
+        <TabsContent value="volunteers" className="mt-4">
+          <VolunteersTab groups={volunteerGroups} eventId={event.id} />
         </TabsContent>
       </Tabs>
     </div>

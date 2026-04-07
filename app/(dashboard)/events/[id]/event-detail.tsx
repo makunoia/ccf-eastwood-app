@@ -49,6 +49,7 @@ import {
   unassignFromBus,
 } from "../module-actions"
 import { BreakoutGroupsTab } from "./breakouts-tab"
+import { VolunteersTab, type VolunteerGroup } from "./volunteers-tab"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -113,8 +114,13 @@ type Bus = {
 
 type Volunteer = {
   id: string
+  status: string
+  notes: string | null
   member: VolunteerMember
-  busPassengers: { id: string; busId: string }[]
+  committee: { id: string; name: string }
+  preferredRole: { id: string; name: string }
+  assignedRole: { id: string; name: string } | null
+  busPassengers?: { id: string; busId: string }[]
 }
 
 type BreakoutGroupMemberRow = {
@@ -153,11 +159,18 @@ type BreakoutGroup = {
   members: BreakoutGroupMemberRow[]
 }
 
+type MinistryForEvent = {
+  id: string
+  name: string
+  lifeStage: { id: string; name: string } | null
+  volunteers: Volunteer[]
+}
+
 type Event = {
   id: string
   name: string
   description: string | null
-  ministries: { ministry: { id: string; name: string } }[]
+  ministries: { ministry: MinistryForEvent }[]
   startDate: Date
   endDate: Date
   price: number | null
@@ -611,6 +624,25 @@ export function EventDetail({ event, lifeStages }: { event: Event; lifeStages: {
   const attendedCount = event.registrants.filter((r) => r.attendedAt).length
   const baptismCount = event.baptismOptIns.length
 
+  const volunteerGroups: VolunteerGroup[] = [
+    ...event.ministries.map((em) => ({
+      label: em.ministry.name,
+      source: "ministry" as const,
+      volunteers: em.ministry.volunteers,
+    })),
+    ...(event.volunteers.length > 0 || event.ministries.length === 0
+      ? [{ label: "Event", source: "event" as const, volunteers: event.volunteers }]
+      : []),
+  ]
+  const totalVolunteerCount = volunteerGroups.reduce((sum, g) => sum + g.volunteers.length, 0)
+
+  const confirmedVolunteers = [
+    ...event.volunteers.filter((v) => v.status === "Confirmed"),
+    ...event.ministries.flatMap((em) =>
+      em.ministry.volunteers.filter((v) => v.status === "Confirmed")
+    ),
+  ]
+
   function copyLink(path: string) {
     const url = `${window.location.origin}${path}`
     navigator.clipboard.writeText(url)
@@ -703,7 +735,9 @@ export function EventDetail({ event, lifeStages }: { event: Event; lifeStages: {
             Registrants ({event.registrants.length})
           </TabsTrigger>
           <TabsTrigger value="breakouts">Breakout Groups</TabsTrigger>
-          <TabsTrigger value="volunteers">Volunteers</TabsTrigger>
+          <TabsTrigger value="volunteers">
+            Volunteers {totalVolunteerCount > 0 && `(${totalVolunteerCount})`}
+          </TabsTrigger>
           {enabledModules.has("Baptism") && (
             <TabsTrigger value="baptism">
               Baptism {baptismCount > 0 && `(${baptismCount})`}
@@ -723,15 +757,13 @@ export function EventDetail({ event, lifeStages }: { event: Event; lifeStages: {
             eventId={event.id}
             breakoutGroups={event.breakoutGroups}
             registrants={event.registrants}
-            volunteers={event.volunteers}
+            volunteers={confirmedVolunteers}
             lifeStages={lifeStages}
           />
         </TabsContent>
 
         <TabsContent value="volunteers" className="mt-4">
-          <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
-            <p className="text-sm">Volunteers — coming soon</p>
-          </div>
+          <VolunteersTab groups={volunteerGroups} eventId={event.id} />
         </TabsContent>
 
         {enabledModules.has("Baptism") && (
@@ -745,7 +777,7 @@ export function EventDetail({ event, lifeStages }: { event: Event; lifeStages: {
             <EmbarkationTab
               buses={event.buses}
               registrants={event.registrants}
-              volunteers={event.volunteers}
+              volunteers={confirmedVolunteers}
               eventId={event.id}
             />
           </TabsContent>
