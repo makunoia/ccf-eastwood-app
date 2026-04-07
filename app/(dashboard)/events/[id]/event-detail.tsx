@@ -697,7 +697,7 @@ export function EventDetail({ event, lifeStages }: { event: Event; lifeStages: {
               : "Free"}
           </p>
         </div>
-        {event.type !== "MultiDay" && (
+        {event.type !== "Recurring" && (
           <div className="rounded-lg border p-3">
             <p className="text-xs text-muted-foreground">Registration</p>
             <p className="mt-0.5 text-sm font-medium">

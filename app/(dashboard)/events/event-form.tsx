@@ -84,7 +84,6 @@ export function EventForm({ ministries, event }: Props) {
   const [deleting, setDeleting] = React.useState(false)
 
   const isRecurring = form.type === "Recurring"
-  const isMultiDay = form.type === "MultiDay"
 
   function set(field: keyof EventFormValues, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -375,8 +374,8 @@ export function EventForm({ ministries, event }: Props) {
           </section>
         )}
 
-        {/* Registration — not applicable for MultiDay events */}
-        {!isMultiDay && (
+        {/* Registration — not applicable for Recurring events */}
+        {!isRecurring && (
           <section className="space-y-4">
             <h3 className="text-sm font-medium text-muted-foreground">
               Registration Window
