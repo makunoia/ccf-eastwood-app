@@ -84,6 +84,7 @@ export function EventForm({ ministries, event }: Props) {
   const [deleting, setDeleting] = React.useState(false)
 
   const isRecurring = form.type === "Recurring"
+  const isMultiDay = form.type === "MultiDay"
 
   function set(field: keyof EventFormValues, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -374,32 +375,34 @@ export function EventForm({ ministries, event }: Props) {
           </section>
         )}
 
-        {/* Registration */}
-        <section className="space-y-4">
-          <h3 className="text-sm font-medium text-muted-foreground">
-            Registration Window
-          </h3>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="registrationStart">Opens</Label>
-              <Input
-                id="registrationStart"
-                type="date"
-                value={form.registrationStart}
-                onChange={(e) => set("registrationStart", e.target.value)}
-              />
+        {/* Registration — not applicable for MultiDay events */}
+        {!isMultiDay && (
+          <section className="space-y-4">
+            <h3 className="text-sm font-medium text-muted-foreground">
+              Registration Window
+            </h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="registrationStart">Opens</Label>
+                <Input
+                  id="registrationStart"
+                  type="date"
+                  value={form.registrationStart}
+                  onChange={(e) => set("registrationStart", e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="registrationEnd">Closes</Label>
+                <Input
+                  id="registrationEnd"
+                  type="date"
+                  value={form.registrationEnd}
+                  onChange={(e) => set("registrationEnd", e.target.value)}
+                />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="registrationEnd">Closes</Label>
-              <Input
-                id="registrationEnd"
-                type="date"
-                value={form.registrationEnd}
-                onChange={(e) => set("registrationEnd", e.target.value)}
-              />
-            </div>
-          </div>
-        </section>
+          </section>
+        )}
 
         {/* Pricing — not applicable for Recurring events */}
         {!isRecurring && (
