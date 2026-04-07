@@ -55,7 +55,7 @@ export default async function EventLayout({
         showBackLink={showBackLink}
       />
       <SidebarInset>
-        <EventHeader />
+        <EventHeader eventId={event.id} eventType={event.type} />
         <div className="flex flex-1 flex-col">
           {children}
         </div>

@@ -219,18 +219,14 @@ export function EventDashboardClient({ event }: { event: EventDashboardData }) {
       )}
 
       {/* Public links */}
-      <div className="flex flex-wrap gap-2">
-        <Button variant="outline" size="sm" onClick={() => copyLink(`/events/${event.id}/register`)}>
-          <IconCopy className="mr-2 size-3.5" />
-          Registration link
-        </Button>
-        {!isRecurring && !isMultiDay && (
+      {!isRecurring && !isMultiDay && (
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={() => copyLink(`/events/${event.id}/checkin`)}>
             <IconCopy className="mr-2 size-3.5" />
             Check-in link
           </Button>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }
