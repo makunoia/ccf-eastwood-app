@@ -8,8 +8,8 @@ import { buildColumns, type GuestRow } from "./columns"
 
 function GuestCard({ guest }: { guest: GuestRow }) {
   return (
-    <Card>
-      <CardContent className="p-3">
+    <Card className="py-0">
+      <CardContent className="p-4">
         <p className="font-medium leading-tight">
           {guest.firstName} {guest.lastName}
         </p>

@@ -8,7 +8,7 @@ export function SmallGroupsToolbar() {
     <Button asChild>
       <Link href="/small-groups/new">
         <IconPlus />
-        Add Group
+        <span className="hidden sm:inline">Add Group</span>
       </Link>
     </Button>
   )

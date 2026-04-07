@@ -13,7 +13,7 @@ export function SmallGroupStatusesToolbar() {
     <>
       <Button onClick={() => setOpen(true)}>
         <IconPlus />
-        Add Status
+        <span className="hidden sm:inline">Add Status</span>
       </Button>
       <SmallGroupStatusDialog open={open} onOpenChange={setOpen} />
     </>

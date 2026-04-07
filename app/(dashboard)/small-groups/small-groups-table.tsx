@@ -12,10 +12,10 @@ function SmallGroupCard({ group }: { group: SmallGroupRow }) {
 
   return (
     <Card
-      className="cursor-pointer hover:bg-muted/50 transition-colors"
+      className="cursor-pointer hover:bg-muted/50 transition-colors py-0"
       onClick={() => router.push(`/small-groups/${group.id}`)}
     >
-      <CardContent className="p-3">
+      <CardContent className="p-4">
         <div className="flex items-start justify-between gap-2">
           <p className="font-medium leading-tight">{group.name}</p>
           <div onClick={(e) => e.stopPropagation()}>

@@ -8,7 +8,7 @@ export function EventsToolbar() {
     <Button asChild>
       <Link href="/events/new">
         <IconPlus />
-        Add Event
+        <span className="hidden sm:inline">Add Event</span>
       </Link>
     </Button>
   )

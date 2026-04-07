@@ -46,7 +46,7 @@ export default async function MinistriesPage() {
         <Button asChild>
           <Link href="/ministries/new">
             <IconPlus />
-            Add Ministry
+            <span className="hidden sm:inline">Add Ministry</span>
           </Link>
         </Button>
       </div>
