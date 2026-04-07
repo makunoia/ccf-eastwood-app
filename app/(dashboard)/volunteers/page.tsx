@@ -47,7 +47,7 @@ export default async function VolunteersPage() {
         <Button asChild>
           <Link href="/volunteers/new">
             <IconPlus />
-            Add Volunteer
+            <span className="hidden sm:inline">Add Volunteer</span>
           </Link>
         </Button>
       </div>

@@ -8,7 +8,7 @@ export function MembersToolbar() {
     <Button asChild>
       <Link href="/members/new">
         <IconPlus />
-        Add Member
+        <span className="hidden sm:inline">Add Member</span>
       </Link>
     </Button>
   )
