@@ -86,7 +86,45 @@ async function getEvent(id: string) {
   const event = await db.event.findUnique({
     where: { id },
     include: {
-      ministries: { include: { ministry: { select: { id: true, name: true } } } },
+      ministries: {
+        include: {
+          ministry: {
+            select: {
+              id: true,
+              name: true,
+              lifeStage: { select: { id: true, name: true } },
+              volunteers: {
+                orderBy: { createdAt: "asc" as const },
+                include: {
+                  member: {
+                    select: {
+                      id: true,
+                      firstName: true,
+                      lastName: true,
+                      ledGroups: {
+                        select: {
+                          id: true,
+                          name: true,
+                          lifeStageId: true,
+                          genderFocus: true,
+                          language: true,
+                          ageRangeMin: true,
+                          ageRangeMax: true,
+                          meetingFormat: true,
+                          locationCity: true,
+                        },
+                      },
+                    },
+                  },
+                  committee: { select: { id: true, name: true } },
+                  preferredRole: { select: { id: true, name: true } },
+                  assignedRole: { select: { id: true, name: true } },
+                },
+              },
+            },
+          },
+        },
+      },
       modules: { select: { type: true } },
       registrants: {
         orderBy: { createdAt: "asc" },
@@ -161,7 +199,45 @@ async function getMultiDayEvent(id: string) {
   const event = await db.event.findUnique({
     where: { id },
     include: {
-      ministries: { include: { ministry: { select: { id: true, name: true } } } },
+      ministries: {
+        include: {
+          ministry: {
+            select: {
+              id: true,
+              name: true,
+              lifeStage: { select: { id: true, name: true } },
+              volunteers: {
+                orderBy: { createdAt: "asc" as const },
+                include: {
+                  member: {
+                    select: {
+                      id: true,
+                      firstName: true,
+                      lastName: true,
+                      ledGroups: {
+                        select: {
+                          id: true,
+                          name: true,
+                          lifeStageId: true,
+                          genderFocus: true,
+                          language: true,
+                          ageRangeMin: true,
+                          ageRangeMax: true,
+                          meetingFormat: true,
+                          locationCity: true,
+                        },
+                      },
+                    },
+                  },
+                  committee: { select: { id: true, name: true } },
+                  preferredRole: { select: { id: true, name: true } },
+                  assignedRole: { select: { id: true, name: true } },
+                },
+              },
+            },
+          },
+        },
+      },
       registrants: {
         orderBy: { createdAt: "asc" },
         include: {
@@ -218,7 +294,45 @@ async function getRecurringEvent(id: string) {
   const event = await db.event.findUnique({
     where: { id },
     include: {
-      ministries: { include: { ministry: { select: { id: true, name: true } } } },
+      ministries: {
+        include: {
+          ministry: {
+            select: {
+              id: true,
+              name: true,
+              lifeStage: { select: { id: true, name: true } },
+              volunteers: {
+                orderBy: { createdAt: "asc" as const },
+                include: {
+                  member: {
+                    select: {
+                      id: true,
+                      firstName: true,
+                      lastName: true,
+                      ledGroups: {
+                        select: {
+                          id: true,
+                          name: true,
+                          lifeStageId: true,
+                          genderFocus: true,
+                          language: true,
+                          ageRangeMin: true,
+                          ageRangeMax: true,
+                          meetingFormat: true,
+                          locationCity: true,
+                        },
+                      },
+                    },
+                  },
+                  committee: { select: { id: true, name: true } },
+                  preferredRole: { select: { id: true, name: true } },
+                  assignedRole: { select: { id: true, name: true } },
+                },
+              },
+            },
+          },
+        },
+      },
       registrants: {
         orderBy: { createdAt: "asc" },
         include: {

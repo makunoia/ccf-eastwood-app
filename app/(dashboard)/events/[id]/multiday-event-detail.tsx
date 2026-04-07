@@ -16,7 +16,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { BreakoutGroupsTab } from "./breakouts-tab"
-import { VolunteersTab } from "./volunteers-tab"
+import { VolunteersTab, type VolunteerGroup } from "./volunteers-tab"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -75,6 +75,13 @@ type Volunteer = {
   assignedRole: { id: string; name: string } | null
 }
 
+type MinistryForEvent = {
+  id: string
+  name: string
+  lifeStage: { id: string; name: string } | null
+  volunteers: Volunteer[]
+}
+
 type BreakoutGroupMemberRow = {
   breakoutGroupId: string
   registrantId: string
@@ -117,7 +124,7 @@ type MultiDayEvent = {
   description: string | null
   startDate: Date
   endDate: Date
-  ministries: { ministry: { id: string; name: string } }[]
+  ministries: { ministry: MinistryForEvent }[]
   registrants: Registrant[]
   occurrences: OccurrenceRow[]
   volunteers: Volunteer[]
@@ -263,6 +270,25 @@ export function MultiDayEventDetail({ event, lifeStages }: { event: MultiDayEven
 
   const totalAttendance = event.occurrences.reduce((sum, o) => sum + o._count.attendees, 0)
 
+  const volunteerGroups: VolunteerGroup[] = [
+    ...event.ministries.map((em) => ({
+      label: em.ministry.name,
+      source: "ministry" as const,
+      volunteers: em.ministry.volunteers,
+    })),
+    ...(event.volunteers.length > 0 || event.ministries.length === 0
+      ? [{ label: "Event", source: "event" as const, volunteers: event.volunteers }]
+      : []),
+  ]
+  const totalVolunteerCount = volunteerGroups.reduce((sum, g) => sum + g.volunteers.length, 0)
+
+  const confirmedVolunteers = [
+    ...event.volunteers.filter((v) => v.status === "Confirmed"),
+    ...event.ministries.flatMap((em) =>
+      em.ministry.volunteers.filter((v) => v.status === "Confirmed")
+    ),
+  ]
+
   function copyLink(path: string) {
     const url = `${window.location.origin}${path}`
     navigator.clipboard.writeText(url)
@@ -359,7 +385,7 @@ export function MultiDayEventDetail({ event, lifeStages }: { event: MultiDayEven
           </TabsTrigger>
           <TabsTrigger value="breakouts">Breakout Groups</TabsTrigger>
           <TabsTrigger value="volunteers">
-            Volunteers {event.volunteers.length > 0 && `(${event.volunteers.length})`}
+            Volunteers {totalVolunteerCount > 0 && `(${totalVolunteerCount})`}
           </TabsTrigger>
         </TabsList>
 
@@ -376,13 +402,13 @@ export function MultiDayEventDetail({ event, lifeStages }: { event: MultiDayEven
             eventId={event.id}
             breakoutGroups={event.breakoutGroups}
             registrants={event.registrants}
-            volunteers={event.volunteers.filter((v) => v.status === "Confirmed")}
+            volunteers={confirmedVolunteers}
             lifeStages={lifeStages}
           />
         </TabsContent>
 
         <TabsContent value="volunteers" className="mt-4">
-          <VolunteersTab volunteers={event.volunteers} eventId={event.id} />
+          <VolunteersTab groups={volunteerGroups} eventId={event.id} />
         </TabsContent>
       </Tabs>
     </div>
