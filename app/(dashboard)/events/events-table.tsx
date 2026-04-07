@@ -22,7 +22,7 @@ function EventCard({ event }: { event: EventRow }) {
   return (
     <Card
       className="cursor-pointer hover:bg-muted/50 transition-colors py-0"
-      onClick={() => router.push(`/events/${event.id}`)}
+      onClick={() => router.push(`/event/${event.id}/dashboard`)}
     >
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-2">

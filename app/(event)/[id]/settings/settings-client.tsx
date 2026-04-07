@@ -1,11 +1,9 @@
 "use client"
 
 import * as React from "react"
-import Link from "next/link"
-import { IconArrowLeft, IconBus, IconCross, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react"
+import { IconBus, IconCross, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react"
 import { toast } from "sonner"
 
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -32,8 +30,10 @@ import {
   createBus,
   updateBus,
   deleteBus,
-} from "../../module-actions"
-import { CommitteeManager } from "../committees"
+} from "@/app/(dashboard)/events/module-actions"
+import { CommitteeManager } from "@/app/(dashboard)/events/[id]/committees"
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type BusRow = {
   id: string
@@ -48,10 +48,10 @@ type Committee = { id: string; name: string; roles: CommitteeRole[] }
 
 type Props = {
   eventId: string
-  eventName: string
   enabledModules: string[]
   buses: BusRow[]
   committees: Committee[]
+  showEmbarkation: boolean
 }
 
 type BusFormValues = { name: string; capacity: string; direction: string }
@@ -62,6 +62,8 @@ const DIRECTION_LABELS: Record<string, string> = {
   FromVenue: "From Venue",
   Both: "Both ways",
 }
+
+// ─── Bus dialog ───────────────────────────────────────────────────────────────
 
 function BusDialog({
   open,
@@ -131,9 +133,7 @@ function BusDialog({
           <div className="space-y-2">
             <Label htmlFor="busDirection">Direction</Label>
             <Select value={form.direction} onValueChange={(v) => set("direction", v)}>
-              <SelectTrigger id="busDirection">
-                <SelectValue />
-              </SelectTrigger>
+              <SelectTrigger id="busDirection"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="ToVenue">To Venue</SelectItem>
                 <SelectItem value="FromVenue">From Venue</SelectItem>
@@ -143,9 +143,7 @@ function BusDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-            Cancel
-          </Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
           <Button onClick={handleSave} disabled={saving}>
             {saving ? "Saving…" : isEdit ? "Save changes" : "Add bus"}
           </Button>
@@ -155,7 +153,9 @@ function BusDialog({
   )
 }
 
-export function EventSettingsClient({ eventId, eventName, enabledModules, buses, committees }: Props) {
+// ─── Main component ───────────────────────────────────────────────────────────
+
+export function EventSettingsClient({ eventId, enabledModules, buses, committees, showEmbarkation }: Props) {
   const [modules, setModules] = React.useState<Set<string>>(new Set(enabledModules))
   const [togglingModule, setTogglingModule] = React.useState<string | null>(null)
   const [busDialogOpen, setBusDialogOpen] = React.useState(false)
@@ -182,21 +182,6 @@ export function EventSettingsClient({ eventId, eventName, enabledModules, buses,
     }
   }
 
-  function openAddBus() {
-    setEditingBus(undefined)
-    setBusDialogOpen(true)
-  }
-
-  function openEditBus(bus: BusRow) {
-    setEditingBus(bus)
-    setBusDialogOpen(true)
-  }
-
-  function openDeleteBus(bus: BusRow) {
-    setBusToDelete(bus)
-    setDeleteDialogOpen(true)
-  }
-
   async function handleDeleteBus() {
     if (!busToDelete) return
     setDeletingBusId(busToDelete.id)
@@ -213,17 +198,7 @@ export function EventSettingsClient({ eventId, eventName, enabledModules, buses,
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">
       <div>
-        <Link
-          href={`/events/${eventId}`}
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <IconArrowLeft className="size-4" />
-          {eventName}
-        </Link>
-      </div>
-
-      <div>
-        <h2 className="text-xl font-semibold">Event Settings</h2>
+        <h2 className="text-xl font-semibold">Settings</h2>
         <p className="text-sm text-muted-foreground">Configure modules and options for this event</p>
       </div>
 
@@ -259,81 +234,82 @@ export function EventSettingsClient({ eventId, eventName, enabledModules, buses,
               </CardHeader>
             </Card>
 
-            {/* Embarkation */}
-            <Card>
-              <CardHeader className={modules.has("Embarkation") ? "pb-3" : undefined}>
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <IconBus className="size-5 text-muted-foreground" />
-                    <div>
-                      <CardTitle className="text-base">Embarkation</CardTitle>
-                      <CardDescription className="mt-0.5">
-                        Assign registrants and volunteers to buses. Print a manifest per bus.
-                      </CardDescription>
+            {/* Embarkation — only for OneTime/MultiDay */}
+            {showEmbarkation && (
+              <Card>
+                <CardHeader className={modules.has("Embarkation") ? "pb-3" : undefined}>
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <IconBus className="size-5 text-muted-foreground" />
+                      <div>
+                        <CardTitle className="text-base">Embarkation</CardTitle>
+                        <CardDescription className="mt-0.5">
+                          Assign registrants and volunteers to buses. Print a manifest per bus.
+                        </CardDescription>
+                      </div>
                     </div>
+                    <Switch
+                      checked={modules.has("Embarkation")}
+                      onCheckedChange={() => handleToggleModule("Embarkation")}
+                      disabled={togglingModule === "Embarkation"}
+                    />
                   </div>
-                  <Switch
-                    checked={modules.has("Embarkation")}
-                    onCheckedChange={() => handleToggleModule("Embarkation")}
-                    disabled={togglingModule === "Embarkation"}
-                  />
-                </div>
-              </CardHeader>
+                </CardHeader>
 
-              {modules.has("Embarkation") && (
-                <CardContent className="pt-0 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium">Buses</p>
-                    <Button size="sm" variant="outline" onClick={openAddBus}>
-                      <IconPlus className="mr-1 size-3.5" />
-                      Add bus
-                    </Button>
-                  </div>
-
-                  {buses.length === 0 ? (
-                    <p className="text-sm text-muted-foreground py-2">
-                      No buses added yet. Add a bus to get started.
-                    </p>
-                  ) : (
-                    <div className="space-y-2">
-                      {buses.map((bus) => (
-                        <div
-                          key={bus.id}
-                          className="flex items-center justify-between rounded-lg border px-3 py-2"
-                        >
-                          <div>
-                            <p className="text-sm font-medium">{bus.name}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {DIRECTION_LABELS[bus.direction]} ·{" "}
-                              {bus._count.passengers} assigned
-                              {bus.capacity != null && ` / ${bus.capacity}`}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="size-7"
-                              onClick={() => openEditBus(bus)}
-                            >
-                              <IconPencil className="size-3.5" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="size-7 text-destructive hover:text-destructive"
-                              onClick={() => openDeleteBus(bus)}
-                            >
-                              <IconTrash className="size-3.5" />
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
+                {modules.has("Embarkation") && (
+                  <CardContent className="pt-0 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium">Buses</p>
+                      <Button size="sm" variant="outline" onClick={() => { setEditingBus(undefined); setBusDialogOpen(true) }}>
+                        <IconPlus className="mr-1 size-3.5" />
+                        Add bus
+                      </Button>
                     </div>
-                  )}
-                </CardContent>
-              )}
-            </Card>
+                    {buses.length === 0 ? (
+                      <p className="text-sm text-muted-foreground py-2">
+                        No buses added yet.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {buses.map((bus) => (
+                          <div
+                            key={bus.id}
+                            className="flex items-center justify-between rounded-lg border px-3 py-2"
+                          >
+                            <div>
+                              <p className="text-sm font-medium">{bus.name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {DIRECTION_LABELS[bus.direction]} ·{" "}
+                                {bus._count.passengers} assigned
+                                {bus.capacity != null && ` / ${bus.capacity}`}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="size-7"
+                                onClick={() => { setEditingBus(bus); setBusDialogOpen(true) }}
+                              >
+                                <IconPencil className="size-3.5" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="size-7 text-destructive hover:text-destructive"
+                                onClick={() => { setBusToDelete(bus); setDeleteDialogOpen(true) }}
+                              >
+                                <IconTrash className="size-3.5" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                )}
+              </Card>
+            )}
           </section>
         </TabsContent>
 
@@ -342,7 +318,6 @@ export function EventSettingsClient({ eventId, eventName, enabledModules, buses,
         </TabsContent>
       </Tabs>
 
-      {/* Bus add/edit dialog */}
       <BusDialog
         open={busDialogOpen}
         onOpenChange={setBusDialogOpen}
@@ -350,7 +325,6 @@ export function EventSettingsClient({ eventId, eventName, enabledModules, buses,
         bus={editingBus}
       />
 
-      {/* Bus delete confirm */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent>
           <DialogHeader>
