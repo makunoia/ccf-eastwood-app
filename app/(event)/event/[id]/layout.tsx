@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
+import { EventHeader } from "@/components/event-header"
 import { EventSidebar } from "@/components/event-sidebar"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 
@@ -54,6 +55,7 @@ export default async function EventLayout({
         showBackLink={showBackLink}
       />
       <SidebarInset>
+        <EventHeader />
         <div className="flex flex-1 flex-col">
           {children}
         </div>
