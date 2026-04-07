@@ -697,15 +697,17 @@ export function EventDetail({ event, lifeStages }: { event: Event; lifeStages: {
               : "Free"}
           </p>
         </div>
-        <div className="rounded-lg border p-3">
-          <p className="text-xs text-muted-foreground">Registration</p>
-          <p className="mt-0.5 text-sm font-medium">
-            {regStatus === "open" && <span className="text-green-600">Open</span>}
-            {regStatus === "upcoming" && <span className="text-yellow-600">Upcoming</span>}
-            {regStatus === "closed" && <span className="text-muted-foreground">Closed</span>}
-            {!regStatus && <span className="text-muted-foreground">—</span>}
-          </p>
-        </div>
+        {event.type !== "Recurring" && (
+          <div className="rounded-lg border p-3">
+            <p className="text-xs text-muted-foreground">Registration</p>
+            <p className="mt-0.5 text-sm font-medium">
+              {regStatus === "open" && <span className="text-green-600">Open</span>}
+              {regStatus === "upcoming" && <span className="text-yellow-600">Upcoming</span>}
+              {regStatus === "closed" && <span className="text-muted-foreground">Closed</span>}
+              {!regStatus && <span className="text-muted-foreground">—</span>}
+            </p>
+          </div>
+        )}
         <div className="rounded-lg border p-3">
           <p className="text-xs text-muted-foreground">Registrants</p>
           <p className="mt-0.5 text-sm font-medium">
