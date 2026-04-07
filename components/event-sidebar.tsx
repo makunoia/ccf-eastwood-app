@@ -5,8 +5,8 @@ import { usePathname } from "next/navigation"
 import {
   IconArrowLeft,
   IconBus,
-  IconCalendarDays,
-  IconCalendarRange,
+  IconCalendarWeek,
+  IconCalendarEvent,
   IconCross,
   IconLayoutDashboard,
   IconSettings,
@@ -66,13 +66,13 @@ export function EventSidebar({
     {
       title: "Sessions",
       url: `${base}/sessions`,
-      icon: IconCalendarDays,
+      icon: IconCalendarWeek,
       show: eventType === "Recurring",
     },
     {
       title: "Days",
       url: `${base}/sessions`,
-      icon: IconCalendarRange,
+      icon: IconCalendarEvent,
       show: eventType === "MultiDay",
     },
     {
