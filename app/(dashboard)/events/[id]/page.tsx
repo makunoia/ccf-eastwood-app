@@ -122,7 +122,7 @@ async function getEvent(id: string) {
         },
       },
       volunteers: {
-        where: { status: "Confirmed" },
+        orderBy: { createdAt: "asc" as const },
         include: {
           member: {
             select: {
@@ -144,6 +144,9 @@ async function getEvent(id: string) {
               },
             },
           },
+          committee: { select: { id: true, name: true } },
+          preferredRole: { select: { id: true, name: true } },
+          assignedRole: { select: { id: true, name: true } },
           busPassengers: { select: { id: true, busId: true } },
         },
       },
@@ -177,7 +180,7 @@ async function getMultiDayEvent(id: string) {
         },
       },
       volunteers: {
-        where: { status: "Confirmed" },
+        orderBy: { createdAt: "asc" as const },
         include: {
           member: {
             select: {
@@ -199,6 +202,9 @@ async function getMultiDayEvent(id: string) {
               },
             },
           },
+          committee: { select: { id: true, name: true } },
+          preferredRole: { select: { id: true, name: true } },
+          assignedRole: { select: { id: true, name: true } },
         },
       },
       breakoutGroups: breakoutGroupsInclude,
@@ -231,7 +237,7 @@ async function getRecurringEvent(id: string) {
         },
       },
       volunteers: {
-        where: { status: "Confirmed" },
+        orderBy: { createdAt: "asc" as const },
         include: {
           member: {
             select: {
@@ -253,6 +259,9 @@ async function getRecurringEvent(id: string) {
               },
             },
           },
+          committee: { select: { id: true, name: true } },
+          preferredRole: { select: { id: true, name: true } },
+          assignedRole: { select: { id: true, name: true } },
         },
       },
       breakoutGroups: breakoutGroupsInclude,

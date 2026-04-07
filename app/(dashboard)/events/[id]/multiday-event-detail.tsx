@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { BreakoutGroupsTab } from "./breakouts-tab"
+import { VolunteersTab } from "./volunteers-tab"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -64,9 +65,14 @@ type LedGroup = {
   meetingFormat: string | null
   locationCity: string | null
 }
-type VolunteerForBreakout = {
+type Volunteer = {
   id: string
+  status: string
+  notes: string | null
   member: { id: string; firstName: string; lastName: string; ledGroups: LedGroup[] }
+  committee: { id: string; name: string }
+  preferredRole: { id: string; name: string }
+  assignedRole: { id: string; name: string } | null
 }
 
 type BreakoutGroupMemberRow = {
@@ -114,7 +120,7 @@ type MultiDayEvent = {
   ministries: { ministry: { id: string; name: string } }[]
   registrants: Registrant[]
   occurrences: OccurrenceRow[]
-  volunteers: VolunteerForBreakout[]
+  volunteers: Volunteer[]
   breakoutGroups: BreakoutGroupData[]
 }
 
@@ -352,6 +358,9 @@ export function MultiDayEventDetail({ event, lifeStages }: { event: MultiDayEven
             Registrants ({event.registrants.length})
           </TabsTrigger>
           <TabsTrigger value="breakouts">Breakout Groups</TabsTrigger>
+          <TabsTrigger value="volunteers">
+            Volunteers {event.volunteers.length > 0 && `(${event.volunteers.length})`}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="days" className="mt-4 flex-1">
@@ -367,9 +376,13 @@ export function MultiDayEventDetail({ event, lifeStages }: { event: MultiDayEven
             eventId={event.id}
             breakoutGroups={event.breakoutGroups}
             registrants={event.registrants}
-            volunteers={event.volunteers}
+            volunteers={event.volunteers.filter((v) => v.status === "Confirmed")}
             lifeStages={lifeStages}
           />
+        </TabsContent>
+
+        <TabsContent value="volunteers" className="mt-4">
+          <VolunteersTab volunteers={event.volunteers} eventId={event.id} />
         </TabsContent>
       </Tabs>
     </div>

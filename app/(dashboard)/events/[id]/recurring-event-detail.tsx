@@ -27,6 +27,7 @@ import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { createOccurrence } from "@/app/(dashboard)/events/actions"
 import { BreakoutGroupsTab } from "./breakouts-tab"
+import { VolunteersTab } from "./volunteers-tab"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -75,9 +76,14 @@ type LedGroup = {
   meetingFormat: string | null
   locationCity: string | null
 }
-type VolunteerForBreakout = {
+type Volunteer = {
   id: string
+  status: string
+  notes: string | null
   member: { id: string; firstName: string; lastName: string; ledGroups: LedGroup[] }
+  committee: { id: string; name: string }
+  preferredRole: { id: string; name: string }
+  assignedRole: { id: string; name: string } | null
 }
 
 type BreakoutGroupMemberRow = {
@@ -127,7 +133,7 @@ type RecurringEvent = {
   ministries: { ministry: { id: string; name: string } }[]
   registrants: Registrant[]
   occurrences: OccurrenceRow[]
-  volunteers: VolunteerForBreakout[]
+  volunteers: Volunteer[]
   breakoutGroups: BreakoutGroupData[]
 }
 
@@ -453,6 +459,9 @@ export function RecurringEventDetail({ event, lifeStages }: { event: RecurringEv
             Registrants ({event.registrants.length})
           </TabsTrigger>
           <TabsTrigger value="breakouts">Breakout Groups</TabsTrigger>
+          <TabsTrigger value="volunteers">
+            Volunteers {event.volunteers.length > 0 && `(${event.volunteers.length})`}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="occurrences" className="mt-4 flex-1">
@@ -468,9 +477,13 @@ export function RecurringEventDetail({ event, lifeStages }: { event: RecurringEv
             eventId={event.id}
             breakoutGroups={event.breakoutGroups}
             registrants={event.registrants}
-            volunteers={event.volunteers}
+            volunteers={event.volunteers.filter((v) => v.status === "Confirmed")}
             lifeStages={lifeStages}
           />
+        </TabsContent>
+
+        <TabsContent value="volunteers" className="mt-4">
+          <VolunteersTab volunteers={event.volunteers} eventId={event.id} />
         </TabsContent>
       </Tabs>
     </div>

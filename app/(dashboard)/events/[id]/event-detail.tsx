@@ -49,6 +49,7 @@ import {
   unassignFromBus,
 } from "../module-actions"
 import { BreakoutGroupsTab } from "./breakouts-tab"
+import { VolunteersTab } from "./volunteers-tab"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -113,7 +114,12 @@ type Bus = {
 
 type Volunteer = {
   id: string
+  status: string
+  notes: string | null
   member: VolunteerMember
+  committee: { id: string; name: string }
+  preferredRole: { id: string; name: string }
+  assignedRole: { id: string; name: string } | null
   busPassengers: { id: string; busId: string }[]
 }
 
@@ -703,7 +709,9 @@ export function EventDetail({ event, lifeStages }: { event: Event; lifeStages: {
             Registrants ({event.registrants.length})
           </TabsTrigger>
           <TabsTrigger value="breakouts">Breakout Groups</TabsTrigger>
-          <TabsTrigger value="volunteers">Volunteers</TabsTrigger>
+          <TabsTrigger value="volunteers">
+            Volunteers {event.volunteers.length > 0 && `(${event.volunteers.length})`}
+          </TabsTrigger>
           {enabledModules.has("Baptism") && (
             <TabsTrigger value="baptism">
               Baptism {baptismCount > 0 && `(${baptismCount})`}
@@ -723,15 +731,13 @@ export function EventDetail({ event, lifeStages }: { event: Event; lifeStages: {
             eventId={event.id}
             breakoutGroups={event.breakoutGroups}
             registrants={event.registrants}
-            volunteers={event.volunteers}
+            volunteers={event.volunteers.filter((v) => v.status === "Confirmed")}
             lifeStages={lifeStages}
           />
         </TabsContent>
 
         <TabsContent value="volunteers" className="mt-4">
-          <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
-            <p className="text-sm">Volunteers — coming soon</p>
-          </div>
+          <VolunteersTab volunteers={event.volunteers} eventId={event.id} />
         </TabsContent>
 
         {enabledModules.has("Baptism") && (
@@ -745,7 +751,7 @@ export function EventDetail({ event, lifeStages }: { event: Event; lifeStages: {
             <EmbarkationTab
               buses={event.buses}
               registrants={event.registrants}
-              volunteers={event.volunteers}
+              volunteers={event.volunteers.filter((v) => v.status === "Confirmed")}
               eventId={event.id}
             />
           </TabsContent>
