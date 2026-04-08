@@ -21,6 +21,10 @@ async function getSmallGroup(id: string): Promise<(SmallGroupRow & { groupMember
         select: { id: true, firstName: true, lastName: true, smallGroupStatusId: true },
         orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
       },
+      meetingSchedules: {
+        select: { id: true, dayOfWeek: true, timeStart: true, timeEnd: true },
+        orderBy: [{ dayOfWeek: "asc" }, { timeStart: "asc" }],
+      },
     },
   })
   if (!g) return null
@@ -41,6 +45,7 @@ async function getSmallGroup(id: string): Promise<(SmallGroupRow & { groupMember
     meetingFormat: g.meetingFormat,
     locationCity: g.locationCity,
     memberLimit: g.memberLimit,
+    meetingSchedules: g.meetingSchedules,
     groupMembers: g.members,
   }
 }

@@ -31,6 +31,7 @@ async function getSmallGroups(): Promise<SmallGroupRow[]> {
     meetingFormat: g.meetingFormat,
     locationCity: g.locationCity,
     memberLimit: g.memberLimit,
+    meetingSchedules: [],
   }))
 }
 
