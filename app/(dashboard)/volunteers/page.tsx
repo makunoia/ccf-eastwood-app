@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { db } from "@/lib/db"
 import { type VolunteerRow } from "./columns"
 import { VolunteersTable } from "./volunteers-table"
+import { VolunteerImportTrigger } from "./volunteer-import-trigger"
 
 async function getVolunteers(): Promise<VolunteerRow[]> {
   const volunteers = await db.volunteer.findMany({
@@ -32,8 +33,19 @@ async function getVolunteers(): Promise<VolunteerRow[]> {
   }))
 }
 
+async function getScopeOptions() {
+  const [ministries, events] = await Promise.all([
+    db.ministry.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    db.event.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+  ])
+  return { ministries, events }
+}
+
 export default async function VolunteersPage() {
-  const volunteers = await getVolunteers()
+  const [volunteers, { ministries, events }] = await Promise.all([
+    getVolunteers(),
+    getScopeOptions(),
+  ])
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
@@ -44,12 +56,15 @@ export default async function VolunteersPage() {
             Manage volunteer registrations and role assignments
           </p>
         </div>
-        <Button asChild>
-          <Link href="/volunteers/new">
-            <IconPlus />
-            <span className="hidden sm:inline">Add Volunteer</span>
-          </Link>
-        </Button>
+        <div className="flex items-center gap-2">
+          <VolunteerImportTrigger ministries={ministries} events={events} />
+          <Button asChild>
+            <Link href="/volunteers/new">
+              <IconPlus />
+              <span className="hidden sm:inline">Add Volunteer</span>
+            </Link>
+          </Button>
+        </div>
       </div>
 
       <VolunteersTable volunteers={volunteers} />

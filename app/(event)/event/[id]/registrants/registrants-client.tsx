@@ -17,11 +17,17 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { IconUpload } from "@tabler/icons-react"
+import { ImportWizard } from "@/components/import/import-wizard"
 import {
   markRegistrantAttended,
   markRegistrantPaid,
   unmarkRegistrantAttended,
 } from "@/app/(dashboard)/events/actions"
+import {
+  checkRegistrantDuplicates,
+  importEventRegistrants,
+} from "./import-actions"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -106,6 +112,7 @@ export function RegistrantsClient({ eventId, eventType, isPaidEvent, registrants
   const [paymentDialogOpen, setPaymentDialogOpen] = React.useState(false)
   const [selectedId, setSelectedId] = React.useState<string | null>(null)
   const [togglingAttendance, setTogglingAttendance] = React.useState<string | null>(null)
+  const [importOpen, setImportOpen] = React.useState(false)
 
   const isRecurringOrMultiDay = eventType === "Recurring" || eventType === "MultiDay"
 
@@ -118,14 +125,31 @@ export function RegistrantsClient({ eventId, eventType, isPaidEvent, registrants
     if (!result.success) toast.error(result.error)
   }
 
+  const importWizard = (
+    <ImportWizard
+      config={{ entity: "event-registrant", context: { eventId } }}
+      open={importOpen}
+      onOpenChange={setImportOpen}
+      onCheckDuplicates={(rows) => checkRegistrantDuplicates(eventId, rows)}
+      onImport={(rows) => importEventRegistrants(eventId, rows)}
+    />
+  )
+
   if (registrants.length === 0) {
     return (
       <div className="flex flex-1 flex-col gap-6 p-6">
-        <h2 className="text-lg font-semibold">Registrants</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Registrants</h2>
+          <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
+            <IconUpload className="size-4" />
+            <span className="hidden sm:inline">Import</span>
+          </Button>
+        </div>
         <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
           <IconClock className="size-8" />
           <p className="text-sm">No registrants yet</p>
         </div>
+        {importWizard}
       </div>
     )
   }
@@ -134,7 +158,13 @@ export function RegistrantsClient({ eventId, eventType, isPaidEvent, registrants
     <div className="flex flex-1 flex-col gap-4 p-6">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">Registrants</h2>
-        <span className="text-sm text-muted-foreground">{registrants.length} total</span>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-muted-foreground">{registrants.length} total</span>
+          <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
+            <IconUpload className="size-4" />
+            <span className="hidden sm:inline">Import</span>
+          </Button>
+        </div>
       </div>
 
       <div className="overflow-x-auto rounded-lg border">
@@ -217,6 +247,8 @@ export function RegistrantsClient({ eventId, eventType, isPaidEvent, registrants
           onOpenChange={setPaymentDialogOpen}
         />
       )}
+
+      {importWizard}
     </div>
   )
 }

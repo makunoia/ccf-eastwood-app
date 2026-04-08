@@ -34,6 +34,9 @@ import { createMinistry, updateMinistry, deleteMinistry } from "./actions"
 import { type MinistryRow } from "./columns"
 import { MobileFormActions } from "@/components/mobile-form-actions"
 import { CommitteeManager } from "./[id]/committees"
+import { ImportWizard } from "@/components/import/import-wizard"
+import { IconUpload } from "@tabler/icons-react"
+import { checkVolunteerDuplicates, importVolunteers } from "./volunteer-import-actions"
 
 type CommitteeRole = { id: string; name: string }
 type Committee = { id: string; name: string; roles: CommitteeRole[] }
@@ -62,6 +65,7 @@ export function MinistryForm({ lifeStages, ministry, committees = [] }: Props) {
   const [saving, setSaving] = React.useState(false)
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
+  const [importOpen, setImportOpen] = React.useState(false)
 
   function set(field: keyof MinistryFormValues, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -126,14 +130,24 @@ export function MinistryForm({ lifeStages, ministry, committees = [] }: Props) {
         </div>
         <div className="hidden shrink-0 items-center gap-2 sm:flex">
           {isEdit && (
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() => setDeleteOpen(true)}
-              disabled={saving}
-            >
-              Delete
-            </Button>
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setImportOpen(true)}
+              >
+                <IconUpload className="size-4" />
+                Import Volunteers
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => setDeleteOpen(true)}
+                disabled={saving}
+              >
+                Delete
+              </Button>
+            </>
           )}
           <Button type="submit" form="ministry-form" disabled={saving}>
             {saving ? "Saving…" : isEdit ? "Save changes" : "Add ministry"}
@@ -246,6 +260,16 @@ export function MinistryForm({ lifeStages, ministry, committees = [] }: Props) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {isEdit && ministry && (
+        <ImportWizard
+          config={{ entity: "volunteer", context: { ministryId: ministry.id } }}
+          open={importOpen}
+          onOpenChange={setImportOpen}
+          onCheckDuplicates={checkVolunteerDuplicates}
+          onImport={(rows) => importVolunteers({ ministryId: ministry.id }, rows)}
+        />
+      )}
     </div>
   )
 }
