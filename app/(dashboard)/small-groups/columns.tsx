@@ -41,6 +41,7 @@ export type SmallGroupRow = {
   meetingFormat: string | null
   locationCity: string | null
   memberLimit: number | null
+  meetingSchedules: Array<{ id: string; dayOfWeek: number; timeStart: string; timeEnd: string }>
 }
 
 export function RowActions({ row }: { row: SmallGroupRow }) {

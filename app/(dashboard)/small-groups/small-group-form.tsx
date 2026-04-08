@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { IconArrowLeft, IconUserPlus, IconUserMinus } from "@tabler/icons-react"
+import { IconArrowLeft, IconUserPlus, IconUserMinus, IconPlus, IconX } from "@tabler/icons-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -28,6 +28,7 @@ import {
 import {
   defaultSmallGroupForm,
   type SmallGroupFormValues,
+  type ScheduleFormEntry,
 } from "@/lib/validations/small-group"
 import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
 import { createSmallGroup, updateSmallGroup, deleteSmallGroup, addMemberToGroup, removeMemberFromGroup, updateMemberGroupStatus } from "./actions"
@@ -61,6 +62,16 @@ type Props = {
   groupMembers?: GroupMember[]
 }
 
+const DAYS_OF_WEEK = [
+  { value: "0", label: "Sunday" },
+  { value: "1", label: "Monday" },
+  { value: "2", label: "Tuesday" },
+  { value: "3", label: "Wednesday" },
+  { value: "4", label: "Thursday" },
+  { value: "5", label: "Friday" },
+  { value: "6", label: "Saturday" },
+]
+
 function toFormValues(group: SmallGroupRow): SmallGroupFormValues {
   return {
     name: group.name,
@@ -74,6 +85,11 @@ function toFormValues(group: SmallGroupRow): SmallGroupFormValues {
     meetingFormat: group.meetingFormat ?? "",
     locationCity: group.locationCity ?? "",
     memberLimit: group.memberLimit != null ? String(group.memberLimit) : "",
+    schedules: group.meetingSchedules.map((s) => ({
+      dayOfWeek: String(s.dayOfWeek),
+      timeStart: s.timeStart,
+      timeEnd: s.timeEnd,
+    })),
   }
 }
 
@@ -93,8 +109,30 @@ export function SmallGroupForm({ members, smallGroups, lifeStages, statuses, gro
   const [removingMemberId, setRemovingMemberId] = React.useState<string | null>(null)
   const [removeConfirmMember, setRemoveConfirmMember] = React.useState<GroupMember | null>(null)
 
-  function set(field: keyof SmallGroupFormValues, value: string | string[]) {
+  function set(field: Exclude<keyof SmallGroupFormValues, "schedules">, value: string | string[]) {
     setForm((prev) => ({ ...prev, [field]: value }))
+  }
+
+  function addSchedule() {
+    setForm((prev) => ({
+      ...prev,
+      schedules: [...prev.schedules, { dayOfWeek: "0", timeStart: "", timeEnd: "" }],
+    }))
+  }
+
+  function removeSchedule(index: number) {
+    setForm((prev) => ({
+      ...prev,
+      schedules: prev.schedules.filter((_, i) => i !== index),
+    }))
+  }
+
+  function updateSchedule(index: number, field: keyof ScheduleFormEntry, value: string) {
+    setForm((prev) => {
+      const schedules = [...prev.schedules]
+      schedules[index] = { ...schedules[index], [field]: value }
+      return { ...prev, schedules }
+    })
   }
 
   function handleRevert() {
@@ -435,6 +473,66 @@ export function SmallGroupForm({ members, smallGroups, lifeStages, statuses, gro
               onChange={(e) => set("memberLimit", e.target.value)}
               placeholder="12"
             />
+          </div>
+        </section>
+
+        {/* Meeting Schedule */}
+        <section className="space-y-4">
+          <h3 className="text-sm font-medium text-muted-foreground">
+            Meeting Schedule
+          </h3>
+
+          <div className="space-y-2">
+            {form.schedules.map((s, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <Select
+                  value={s.dayOfWeek}
+                  onValueChange={(v) => updateSchedule(i, "dayOfWeek", v)}
+                >
+                  <SelectTrigger className="w-36">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DAYS_OF_WEEK.map((d) => (
+                      <SelectItem key={d.value} value={d.value}>
+                        {d.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  type="time"
+                  value={s.timeStart}
+                  onChange={(e) => updateSchedule(i, "timeStart", e.target.value)}
+                  className="w-32"
+                />
+                <span className="text-sm text-muted-foreground">to</span>
+                <Input
+                  type="time"
+                  value={s.timeEnd}
+                  onChange={(e) => updateSchedule(i, "timeEnd", e.target.value)}
+                  className="w-32"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => removeSchedule(i)}
+                  className="shrink-0"
+                >
+                  <IconX className="size-4" />
+                </Button>
+              </div>
+            ))}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={addSchedule}
+            >
+              <IconPlus className="size-4" />
+              Add time slot
+            </Button>
           </div>
         </section>
       </form>

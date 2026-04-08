@@ -11,6 +11,15 @@ const nullableInt = z
   .transform((v) => (v === "" || v == null ? null : parseInt(v, 10)))
   .pipe(z.number().int().positive().nullable())
 
+const scheduleEntrySchema = z.object({
+  dayOfWeek: z
+    .string()
+    .transform((v) => parseInt(v, 10))
+    .pipe(z.number().int().min(0).max(6)),
+  timeStart: z.string().regex(/^\d{2}:\d{2}$/, "Invalid time format"),
+  timeEnd: z.string().regex(/^\d{2}:\d{2}$/, "Invalid time format"),
+})
+
 export const smallGroupSchema = z.object({
   name: z.string().min(1, "Group name is required").trim(),
   leaderId: z.string().min(1, "Leader is required"),
@@ -29,9 +38,16 @@ export const smallGroupSchema = z.object({
   ),
   locationCity: nullableString,
   memberLimit: nullableInt,
+  schedules: z.array(scheduleEntrySchema).default([]),
 })
 
 export type SmallGroupInput = z.infer<typeof smallGroupSchema>
+
+export type ScheduleFormEntry = {
+  dayOfWeek: string // "0"–"6"
+  timeStart: string // "HH:MM"
+  timeEnd: string   // "HH:MM"
+}
 
 // Raw form values (before transform) — used as the form state type
 export type SmallGroupFormValues = {
@@ -46,6 +62,7 @@ export type SmallGroupFormValues = {
   meetingFormat: string
   locationCity: string
   memberLimit: string
+  schedules: ScheduleFormEntry[]
 }
 
 export const defaultSmallGroupForm: SmallGroupFormValues = {
@@ -60,4 +77,5 @@ export const defaultSmallGroupForm: SmallGroupFormValues = {
   meetingFormat: "",
   locationCity: "",
   memberLimit: "",
+  schedules: [],
 }
