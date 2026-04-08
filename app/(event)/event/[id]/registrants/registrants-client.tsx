@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { IconCheck, IconClock, IconX } from "@tabler/icons-react"
 import { toast } from "sonner"
 
@@ -156,7 +157,14 @@ export function RegistrantsClient({ eventId, eventType, isPaidEvent, registrants
           <tbody>
             {registrants.map((r) => (
               <tr key={r.id} className="border-b last:border-0">
-                <td className="px-4 py-3 font-medium">{displayName(r)}</td>
+                <td className="px-4 py-3 font-medium">
+                  <Link
+                    href={`/event/${eventId}/registrants/${r.id}`}
+                    className="hover:underline"
+                  >
+                    {displayName(r)}
+                  </Link>
+                </td>
                 <td className="px-4 py-3 text-muted-foreground text-sm">{displayMobile(r) ?? "—"}</td>
                 <td className="px-4 py-3">
                   {r.memberId ? <Badge variant="secondary">Member</Badge> : <Badge variant="outline">Guest</Badge>}
