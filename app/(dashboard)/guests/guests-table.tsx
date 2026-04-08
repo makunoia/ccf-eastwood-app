@@ -1,5 +1,6 @@
 "use client"
 
+import { useRouter } from "next/navigation"
 import { IconUserScan } from "@tabler/icons-react"
 
 import { DataTable } from "@/components/ui/data-table"
@@ -7,8 +8,12 @@ import { Card, CardContent } from "@/components/ui/card"
 import { buildColumns, type GuestRow } from "./columns"
 
 function GuestCard({ guest }: { guest: GuestRow }) {
+  const router = useRouter()
   return (
-    <Card className="py-0">
+    <Card
+      className="cursor-pointer py-0 transition-colors hover:bg-muted/50"
+      onClick={() => router.push(`/guests/${guest.id}`)}
+    >
       <CardContent className="p-4">
         <p className="font-medium leading-tight">
           {guest.firstName} {guest.lastName}

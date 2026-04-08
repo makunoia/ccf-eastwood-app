@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { type ColumnDef } from "@tanstack/react-table"
 
 export type GuestRow = {
@@ -19,6 +20,14 @@ export function buildColumns(): ColumnDef<GuestRow>[] {
       accessorFn: (row) => `${row.firstName} ${row.lastName}`,
       id: "name",
       header: "Name",
+      cell: ({ row }) => (
+        <Link
+          href={`/guests/${row.original.id}`}
+          className="font-medium hover:underline"
+        >
+          {row.original.firstName} {row.original.lastName}
+        </Link>
+      ),
     },
     {
       accessorKey: "email",
