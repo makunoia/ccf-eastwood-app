@@ -36,7 +36,7 @@ import { MobileFormActions } from "@/components/mobile-form-actions"
 import { CommitteeManager } from "./[id]/committees"
 import { ImportWizard } from "@/components/import/import-wizard"
 import { IconUpload } from "@tabler/icons-react"
-import { checkVolunteerDuplicates, importVolunteers } from "./volunteer-import-actions"
+import { checkVolunteerDuplicates, importVolunteers } from "@/app/(dashboard)/volunteers/import-actions"
 
 type CommitteeRole = { id: string; name: string }
 type Committee = { id: string; name: string; roles: CommitteeRole[] }
