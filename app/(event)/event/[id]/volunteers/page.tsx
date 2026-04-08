@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { VolunteersTab, type VolunteerGroup } from "@/app/(dashboard)/events/[id]/volunteers-tab"
+import { VolunteerImportButton } from "./volunteer-import-button"
 
 async function getEventVolunteers(id: string) {
   return db.event.findUnique({
@@ -104,9 +105,12 @@ export default async function VolunteersPage({
     <div className="flex flex-1 flex-col gap-4 p-6">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">Volunteers</h2>
-        {totalCount > 0 && (
-          <span className="text-sm text-muted-foreground">{totalCount} total</span>
-        )}
+        <div className="flex items-center gap-3">
+          {totalCount > 0 && (
+            <span className="text-sm text-muted-foreground">{totalCount} total</span>
+          )}
+          <VolunteerImportButton eventId={event.id} />
+        </div>
       </div>
       <VolunteersTab groups={volunteerGroups} eventId={event.id} />
     </div>
