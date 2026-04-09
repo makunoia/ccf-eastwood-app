@@ -63,7 +63,7 @@ export function StepPreview({ fields, rows, checking, onResolutionChange, onSetA
       )}
 
       {/* Preview table */}
-      <div className="overflow-x-auto rounded-lg border max-h-[360px] overflow-y-auto">
+      <div className="overflow-x-auto rounded-lg border max-h-[min(360px,40vh)] overflow-y-auto">
         <table className="w-full text-sm">
           <thead className="bg-muted/50 border-b sticky top-0">
             <tr>
