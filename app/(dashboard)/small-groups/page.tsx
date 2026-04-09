@@ -1,10 +1,13 @@
+import { GenderFocus, MeetingFormat, Prisma } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import { type SmallGroupRow } from "./columns"
 import { SmallGroupsTable } from "./small-groups-table"
 import { SmallGroupsToolbar } from "./toolbar"
+import { SmallGroupsFilters } from "./small-groups-filters"
 
-async function getSmallGroups(): Promise<SmallGroupRow[]> {
+async function getSmallGroups(where: Prisma.SmallGroupWhereInput): Promise<SmallGroupRow[]> {
   const groups = await db.smallGroup.findMany({
+    where,
     orderBy: { createdAt: "desc" },
     include: {
       leader: { select: { id: true, firstName: true, lastName: true } },
@@ -35,8 +38,38 @@ async function getSmallGroups(): Promise<SmallGroupRow[]> {
   }))
 }
 
-export default async function SmallGroupsPage() {
-  const groups = await getSmallGroups()
+export default async function SmallGroupsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+}) {
+  const params = await searchParams
+  const search = (params.search as string) || ""
+  const lifeStageId = (params.lifeStageId as string) || ""
+  const genderFocus = (params.genderFocus as string) || ""
+  const meetingFormat = (params.meetingFormat as string) || ""
+
+  const where: Prisma.SmallGroupWhereInput = {
+    AND: [
+      search
+        ? {
+            OR: [
+              { name: { contains: search, mode: "insensitive" } },
+              { leader: { firstName: { contains: search, mode: "insensitive" } } },
+              { leader: { lastName: { contains: search, mode: "insensitive" } } },
+            ],
+          }
+        : {},
+      lifeStageId ? { lifeStageId } : {},
+      genderFocus ? { genderFocus: genderFocus as GenderFocus } : {},
+      meetingFormat ? { meetingFormat: meetingFormat as MeetingFormat } : {},
+    ],
+  }
+
+  const [groups, lifeStages] = await Promise.all([
+    getSmallGroups(where),
+    db.lifeStage.findMany({ orderBy: { order: "asc" }, select: { id: true, name: true } }),
+  ])
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
@@ -49,6 +82,15 @@ export default async function SmallGroupsPage() {
         </div>
         <SmallGroupsToolbar />
       </div>
+
+      <SmallGroupsFilters
+        key={`${search}-${lifeStageId}-${genderFocus}-${meetingFormat}`}
+        lifeStages={lifeStages}
+        search={search}
+        lifeStageId={lifeStageId}
+        genderFocus={genderFocus}
+        meetingFormat={meetingFormat}
+      />
 
       <SmallGroupsTable groups={groups} />
     </div>

@@ -1,10 +1,12 @@
+import { Gender, Prisma } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import { type GuestRow } from "./columns"
 import { GuestsTable } from "./guests-table"
+import { GuestsFilters } from "./guests-filters"
 
-async function getGuests(): Promise<GuestRow[]> {
+async function getGuests(where: Prisma.GuestWhereInput): Promise<GuestRow[]> {
   const guests = await db.guest.findMany({
-    where: { memberId: null },
+    where,
     orderBy: { createdAt: "desc" },
     include: {
       lifeStage: { select: { name: true } },
@@ -24,8 +26,38 @@ async function getGuests(): Promise<GuestRow[]> {
   }))
 }
 
-export default async function GuestsPage() {
-  const guests = await getGuests()
+export default async function GuestsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+}) {
+  const params = await searchParams
+  const search = (params.search as string) || ""
+  const lifeStageId = (params.lifeStageId as string) || ""
+  const gender = (params.gender as string) || ""
+
+  const where: Prisma.GuestWhereInput = {
+    AND: [
+      { memberId: null },
+      search
+        ? {
+            OR: [
+              { firstName: { contains: search, mode: "insensitive" } },
+              { lastName: { contains: search, mode: "insensitive" } },
+              { email: { contains: search, mode: "insensitive" } },
+              { phone: { contains: search, mode: "insensitive" } },
+            ],
+          }
+        : {},
+      lifeStageId ? { lifeStageId } : {},
+      gender ? { gender: gender as Gender } : {},
+    ],
+  }
+
+  const [guests, lifeStages] = await Promise.all([
+    getGuests(where),
+    db.lifeStage.findMany({ orderBy: { order: "asc" }, select: { id: true, name: true } }),
+  ])
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
@@ -35,6 +67,15 @@ export default async function GuestsPage() {
           Non-members who have attended events
         </p>
       </div>
+
+      <GuestsFilters
+        key={`${search}-${lifeStageId}-${gender}`}
+        lifeStages={lifeStages}
+        search={search}
+        lifeStageId={lifeStageId}
+        gender={gender}
+      />
+
       <GuestsTable guests={guests} />
     </div>
   )

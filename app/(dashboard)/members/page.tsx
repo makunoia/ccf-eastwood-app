@@ -1,10 +1,13 @@
+import { Gender, Prisma } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import { type MemberRow } from "./columns"
 import { MembersTable } from "./members-table"
 import { MembersToolbar } from "./toolbar"
+import { MembersFilters } from "./members-filters"
 
-async function getMembers(): Promise<MemberRow[]> {
+async function getMembers(where: Prisma.MemberWhereInput): Promise<MemberRow[]> {
   const members = await db.member.findMany({
+    where,
     orderBy: { dateJoined: "desc" },
     include: {
       lifeStage: { select: { id: true, name: true } },
@@ -35,8 +38,40 @@ async function getMembers(): Promise<MemberRow[]> {
   }))
 }
 
-export default async function MembersPage() {
-  const members = await getMembers()
+export default async function MembersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+}) {
+  const params = await searchParams
+  const search = (params.search as string) || ""
+  const lifeStageId = (params.lifeStageId as string) || ""
+  const smallGroupId = (params.smallGroupId as string) || ""
+  const gender = (params.gender as string) || ""
+
+  const where: Prisma.MemberWhereInput = {
+    AND: [
+      search
+        ? {
+            OR: [
+              { firstName: { contains: search, mode: "insensitive" } },
+              { lastName: { contains: search, mode: "insensitive" } },
+              { email: { contains: search, mode: "insensitive" } },
+              { phone: { contains: search, mode: "insensitive" } },
+            ],
+          }
+        : {},
+      lifeStageId ? { lifeStageId } : {},
+      smallGroupId ? { smallGroupId } : {},
+      gender ? { gender: gender as Gender } : {},
+    ],
+  }
+
+  const [members, lifeStages, smallGroups] = await Promise.all([
+    getMembers(where),
+    db.lifeStage.findMany({ orderBy: { order: "asc" }, select: { id: true, name: true } }),
+    db.smallGroup.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+  ])
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
@@ -49,6 +84,16 @@ export default async function MembersPage() {
         </div>
         <MembersToolbar />
       </div>
+
+      <MembersFilters
+        key={`${search}-${lifeStageId}-${smallGroupId}-${gender}`}
+        lifeStages={lifeStages}
+        smallGroups={smallGroups}
+        search={search}
+        lifeStageId={lifeStageId}
+        smallGroupId={smallGroupId}
+        gender={gender}
+      />
 
       <MembersTable members={members} />
     </div>
