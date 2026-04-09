@@ -1,13 +1,16 @@
 import Link from "next/link"
 import { IconPlus } from "@tabler/icons-react"
+import { Prisma } from "@/app/generated/prisma/client"
 
 import { Button } from "@/components/ui/button"
 import { db } from "@/lib/db"
 import { type MinistryRow } from "./columns"
 import { MinistriesTable } from "./ministries-table"
+import { MinistriesFilters } from "./ministries-filters"
 
-async function getMinistries(): Promise<MinistryRow[]> {
+async function getMinistries(where: Prisma.MinistryWhereInput): Promise<MinistryRow[]> {
   const ministries = await db.ministry.findMany({
+    where,
     orderBy: { name: "asc" },
     include: {
       lifeStage: { select: { id: true, name: true } },
@@ -31,8 +34,33 @@ async function getMinistries(): Promise<MinistryRow[]> {
   }))
 }
 
-export default async function MinistriesPage() {
-  const ministries = await getMinistries()
+export default async function MinistriesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+}) {
+  const params = await searchParams
+  const search = (params.search as string) || ""
+  const lifeStageId = (params.lifeStageId as string) || ""
+
+  const where: Prisma.MinistryWhereInput = {
+    AND: [
+      search
+        ? {
+            OR: [
+              { name: { contains: search, mode: "insensitive" } },
+              { description: { contains: search, mode: "insensitive" } },
+            ],
+          }
+        : {},
+      lifeStageId ? { lifeStageId } : {},
+    ],
+  }
+
+  const [ministries, lifeStages] = await Promise.all([
+    getMinistries(where),
+    db.lifeStage.findMany({ orderBy: { order: "asc" }, select: { id: true, name: true } }),
+  ])
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
@@ -50,6 +78,13 @@ export default async function MinistriesPage() {
           </Link>
         </Button>
       </div>
+
+      <MinistriesFilters
+        key={`${search}-${lifeStageId}`}
+        lifeStages={lifeStages}
+        search={search}
+        lifeStageId={lifeStageId}
+      />
 
       <MinistriesTable ministries={ministries} />
     </div>

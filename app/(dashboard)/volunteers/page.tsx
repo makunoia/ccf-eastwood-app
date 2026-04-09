@@ -1,14 +1,17 @@
 import Link from "next/link"
 import { IconPlus } from "@tabler/icons-react"
+import { Prisma, VolunteerStatus } from "@/app/generated/prisma/client"
 
 import { Button } from "@/components/ui/button"
 import { db } from "@/lib/db"
 import { type VolunteerRow } from "./columns"
 import { VolunteersTable } from "./volunteers-table"
 import { VolunteerImportTrigger } from "./volunteer-import-trigger"
+import { VolunteersFilters } from "./volunteers-filters"
 
-async function getVolunteers(): Promise<VolunteerRow[]> {
+async function getVolunteers(where: Prisma.VolunteerWhereInput): Promise<VolunteerRow[]> {
   const volunteers = await db.volunteer.findMany({
+    where,
     orderBy: { createdAt: "desc" },
     include: {
       member: { select: { firstName: true, lastName: true } },
@@ -41,9 +44,35 @@ async function getScopeOptions() {
   return { ministries, events }
 }
 
-export default async function VolunteersPage() {
+export default async function VolunteersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+}) {
+  const params = await searchParams
+  const search = (params.search as string) || ""
+  const status = (params.status as string) || ""
+  const ministryId = (params.ministryId as string) || ""
+  const eventId = (params.eventId as string) || ""
+
+  const where: Prisma.VolunteerWhereInput = {
+    AND: [
+      search
+        ? {
+            OR: [
+              { member: { firstName: { contains: search, mode: "insensitive" } } },
+              { member: { lastName: { contains: search, mode: "insensitive" } } },
+            ],
+          }
+        : {},
+      status ? { status: status as VolunteerStatus } : {},
+      ministryId ? { ministryId } : {},
+      eventId ? { eventId } : {},
+    ],
+  }
+
   const [volunteers, { ministries, events }] = await Promise.all([
-    getVolunteers(),
+    getVolunteers(where),
     getScopeOptions(),
   ])
 
@@ -66,6 +95,16 @@ export default async function VolunteersPage() {
           </Button>
         </div>
       </div>
+
+      <VolunteersFilters
+        key={`${search}-${status}-${ministryId}-${eventId}`}
+        ministries={ministries}
+        events={events}
+        search={search}
+        status={status}
+        ministryId={ministryId}
+        eventId={eventId}
+      />
 
       <VolunteersTable volunteers={volunteers} />
     </div>

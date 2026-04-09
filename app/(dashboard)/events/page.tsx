@@ -1,10 +1,13 @@
+import { EventType, Prisma } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import { type EventRow } from "./columns"
 import { EventsTable } from "./events-table"
 import { EventsToolbar } from "./toolbar"
+import { EventsFilters } from "./events-filters"
 
-async function getEvents(): Promise<EventRow[]> {
+async function getEvents(where: Prisma.EventWhereInput): Promise<EventRow[]> {
   const events = await db.event.findMany({
+    where,
     orderBy: { startDate: "desc" },
     include: {
       ministries: { include: { ministry: { select: { id: true, name: true } } } },
@@ -36,8 +39,41 @@ async function getEvents(): Promise<EventRow[]> {
   }))
 }
 
-export default async function EventsPage() {
-  const events = await getEvents()
+export default async function EventsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+}) {
+  const params = await searchParams
+  const search = (params.search as string) || ""
+  const ministryId = (params.ministryId as string) || ""
+  const type = (params.type as string) || ""
+  const dateFrom = (params.dateFrom as string) || ""
+  const dateTo = (params.dateTo as string) || ""
+
+  const where: Prisma.EventWhereInput = {
+    AND: [
+      search
+        ? {
+            OR: [
+              { name: { contains: search, mode: "insensitive" } },
+              { description: { contains: search, mode: "insensitive" } },
+            ],
+          }
+        : {},
+      ministryId
+        ? { ministries: { some: { ministryId } } }
+        : {},
+      type ? { type: type as EventType } : {},
+      dateFrom ? { startDate: { gte: new Date(dateFrom) } } : {},
+      dateTo ? { startDate: { lte: new Date(`${dateTo}T23:59:59.999Z`) } } : {},
+    ],
+  }
+
+  const [events, ministries] = await Promise.all([
+    getEvents(where),
+    db.ministry.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+  ])
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
@@ -50,6 +86,16 @@ export default async function EventsPage() {
         </div>
         <EventsToolbar />
       </div>
+
+      <EventsFilters
+        key={`${search}-${ministryId}-${type}-${dateFrom}-${dateTo}`}
+        ministries={ministries}
+        search={search}
+        ministryId={ministryId}
+        type={type}
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+      />
 
       <EventsTable events={events} />
     </div>
