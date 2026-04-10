@@ -66,19 +66,58 @@ enum BusDirection {
   Both
 }
 
+enum UserRole {
+  SuperAdmin
+  Staff
+}
+
+enum FeatureArea {
+  Members
+  Guests
+  SmallGroups
+  Ministries
+  Events
+  Volunteers
+}
+
 // ─── Auth (NextAuth / Auth.js v5) ────────────────────────────────────────────
 
 model User {
-  id            String    @id @default(cuid())
-  name          String?
-  email         String    @unique
-  emailVerified DateTime?
-  image         String?
-  password      String?
-  accounts      Account[]
-  sessions      Session[]
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id                String           @id @default(cuid())
+  name              String?
+  email             String           @unique
+  emailVerified     DateTime?
+  image             String?
+  password          String?
+  role              UserRole         @default(Staff)
+  mustChangePassword Boolean         @default(false)
+  requiresTotpSetup Boolean          @default(false)
+  totpSecret        String?
+  totpEnabled       Boolean          @default(false)
+  accounts          Account[]
+  sessions          Session[]
+  permissions       UserPermission[]
+  eventAccess       UserEventAccess[]
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+}
+
+model UserPermission {
+  id      String      @id @default(cuid())
+  userId  String
+  feature FeatureArea
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, feature])
+}
+
+model UserEventAccess {
+  userId  String
+  eventId String
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@id([userId, eventId])
 }
 
 model Account {
@@ -296,6 +335,7 @@ model Event {
   modules        EventModule[]
   baptismOptIns  BaptismOptIn[]
   buses          Bus[]
+  userAccess     UserEventAccess[]
 }
 
 model EventMinistry {
