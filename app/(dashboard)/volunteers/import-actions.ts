@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
 import type { DuplicateMatch, ImportResult, RowResolution } from "@/lib/import/types"
 import { Gender, MeetingPreference, VolunteerStatus, Prisma } from "@/app/generated/prisma/client"
+import { toTitleCase, formatPhilippinePhone } from "@/lib/utils"
 
 type ActionResult<T = void> =
   | { success: true; data: T }
@@ -16,7 +17,9 @@ export async function checkVolunteerDuplicates(
 ): Promise<ActionResult<DuplicateMatch[]>> {
   try {
     const emails = rows.map((r) => r.email).filter(Boolean) as string[]
-    const phones = rows.map((r) => r.phone).filter(Boolean) as string[]
+    const phones = rows
+      .map((r) => (r.phone ? formatPhilippinePhone(r.phone) : undefined))
+      .filter(Boolean) as string[]
 
     const members = await db.member.findMany({
       where: {
@@ -112,8 +115,8 @@ export async function importVolunteers(
   for (let i = 0; i < rows.length; i++) {
     const { mapped, resolution, existingId } = rows[i]
     try {
-      const firstName = mapped.firstName?.trim()
-      const lastName  = mapped.lastName?.trim()
+      const firstName = mapped.firstName ? toTitleCase(mapped.firstName) : ""
+      const lastName  = mapped.lastName  ? toTitleCase(mapped.lastName)  : ""
 
       if (!firstName || !lastName) {
         result.errors.push({ row: i, message: "First name and last name are required" })
@@ -162,7 +165,7 @@ export async function importVolunteers(
             firstName,
             lastName,
             email:             mapped.email?.trim() || null,
-            phone:             mapped.phone?.trim() || null,
+            phone:             mapped.phone ? formatPhilippinePhone(mapped.phone) : null,
             gender:            mapped.gender ? parseGender(mapped.gender) : undefined,
             language:          mapped.language?.trim() || null,
             meetingPreference: mapped.meetingPreference ? parseMeetingPreference(mapped.meetingPreference) : undefined,
@@ -176,7 +179,7 @@ export async function importVolunteers(
             firstName,
             lastName,
             email:             mapped.email?.trim() || null,
-            phone:             mapped.phone?.trim() || null,
+            phone:             mapped.phone ? formatPhilippinePhone(mapped.phone) : null,
             dateJoined:        new Date(),
             gender:            mapped.gender ? parseGender(mapped.gender) : null,
             language:          mapped.language?.trim() || null,

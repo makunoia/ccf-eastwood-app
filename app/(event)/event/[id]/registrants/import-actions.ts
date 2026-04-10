@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
 import type { DuplicateMatch, ImportResult, RowResolution } from "@/lib/import/types"
 import { Prisma } from "@/app/generated/prisma/client"
+import { toTitleCase, formatPhilippinePhone } from "@/lib/utils"
 
 type ActionResult<T = void> =
   | { success: true; data: T }
@@ -17,7 +18,9 @@ export async function checkRegistrantDuplicates(
 ): Promise<ActionResult<DuplicateMatch[]>> {
   try {
     const emails  = rows.map((r) => r.email).filter(Boolean) as string[]
-    const phones  = rows.map((r) => r.phone).filter(Boolean) as string[]
+    const phones  = rows
+      .map((r) => (r.phone ? formatPhilippinePhone(r.phone) : undefined))
+      .filter(Boolean) as string[]
 
     const [members, guests] = await Promise.all([
       db.member.findMany({
@@ -110,8 +113,8 @@ export async function importEventRegistrants(
   for (let i = 0; i < rows.length; i++) {
     const { mapped, resolution, existingId, existingType } = rows[i]
     try {
-      const firstName = mapped.firstName?.trim()
-      const lastName  = mapped.lastName?.trim()
+      const firstName = mapped.firstName ? toTitleCase(mapped.firstName) : ""
+      const lastName  = mapped.lastName  ? toTitleCase(mapped.lastName)  : ""
       if (!firstName || !lastName) {
         result.errors.push({ row: i, message: "First name and last name are required" })
         result.skipped++
@@ -155,7 +158,7 @@ export async function importEventRegistrants(
             firstName,
             lastName,
             email: mapped.email?.trim() || null,
-            phone: mapped.mobileNumber?.trim() || null,
+            phone: mapped.mobileNumber ? formatPhilippinePhone(mapped.mobileNumber) : null,
           },
         })
         const alreadyExists = await db.eventRegistrant.findFirst({
@@ -184,7 +187,7 @@ export async function importEventRegistrants(
             firstName,
             lastName,
             email: mapped.email?.trim() || null,
-            phone: mapped.mobileNumber?.trim() || null,
+            phone: mapped.mobileNumber ? formatPhilippinePhone(mapped.mobileNumber) : null,
           },
         })
         const alreadyExists = await db.eventRegistrant.findFirst({
@@ -207,7 +210,7 @@ export async function importEventRegistrants(
 
       // No existing match — find or create Guest + EventRegistrant
       const email  = mapped.email?.trim() || null
-      const mobile = mapped.mobileNumber?.trim() || null
+      const mobile = mapped.mobileNumber ? formatPhilippinePhone(mapped.mobileNumber) : null
       let guest = await db.guest.findFirst({
         where: {
           memberId: null,
