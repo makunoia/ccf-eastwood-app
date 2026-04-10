@@ -1,5 +1,8 @@
 import { authenticator } from "@otplib/preset-default"
 
+// Configure once at module level — allows ±1 time-step window to account for clock drift
+authenticator.options = { window: 1 }
+
 /** Generate a new base32-encoded TOTP secret. */
 export function generateSecret(): string {
   return authenticator.generateSecret()
@@ -20,6 +23,5 @@ export function buildTotpUri(secret: string, email: string, issuer = "Churchie")
  * Allows ±1 time step window to account for clock drift.
  */
 export function verifyTotpCode(secret: string, code: string): boolean {
-  authenticator.options = { window: 1 }
   return authenticator.verify({ token: code, secret })
 }

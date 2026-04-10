@@ -37,7 +37,7 @@ export async function login(
     jar.set("pre_auth_token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
+      sameSite: "strict",
       maxAge: 5 * 60, // 5 minutes
       path: "/",
     })
