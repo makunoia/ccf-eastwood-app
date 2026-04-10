@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
 import type { DuplicateMatch, ImportResult, RowResolution } from "@/lib/import/types"
 import { Gender, MeetingPreference, Prisma } from "@/app/generated/prisma/client"
+import { toTitleCase, formatPhilippinePhone } from "@/lib/utils"
 
 type ActionResult<T = void> =
   | { success: true; data: T }
@@ -16,7 +17,9 @@ export async function checkMemberDuplicates(
 ): Promise<ActionResult<DuplicateMatch[]>> {
   try {
     const emails = rows.map((r) => r.email).filter(Boolean) as string[]
-    const phones = rows.map((r) => r.phone).filter(Boolean) as string[]
+    const phones = rows
+      .map((r) => (r.phone ? formatPhilippinePhone(r.phone) : undefined))
+      .filter(Boolean) as string[]
 
     const members = await db.member.findMany({
       where: {
@@ -83,10 +86,10 @@ function parseDate(v: string): Date | null {
 
 function buildMemberData(mapped: Record<string, string>) {
   return {
-    firstName:         mapped.firstName?.trim() || "",
-    lastName:          mapped.lastName?.trim() || "",
+    firstName:         mapped.firstName ? toTitleCase(mapped.firstName) : "",
+    lastName:          mapped.lastName  ? toTitleCase(mapped.lastName)  : "",
     email:             mapped.email?.trim() || null,
-    phone:             mapped.phone?.trim() || null,
+    phone:             mapped.phone ? formatPhilippinePhone(mapped.phone) : null,
     address:           mapped.address?.trim() || null,
     dateJoined:        parseDate(mapped.dateJoined) ?? new Date(),
     notes:             mapped.notes?.trim() || null,
