@@ -16,12 +16,23 @@ export async function initTotpSetup(): Promise<
   const session = await auth()
   if (!session?.user?.id) return { error: "Not authenticated." }
 
-  const secret = generateSecret()
-
-  await db.user.update({
+  const user = await db.user.findUnique({
     where: { id: session.user.id },
-    data: { totpSecret: secret },
+    select: { totpSecret: true, totpEnabled: true },
   })
+
+  if (!user) return { error: "User not found." }
+  if (user.totpEnabled) return { error: "TOTP is already enabled." }
+
+  // Reuse existing secret if already generated (idempotent on page refresh)
+  const secret = user.totpSecret ?? generateSecret()
+
+  if (!user.totpSecret) {
+    await db.user.update({
+      where: { id: session.user.id },
+      data: { totpSecret: secret },
+    })
+  }
 
   return { secret, email: session.user.email ?? "user" }
 }
@@ -56,5 +67,5 @@ export async function enableTotp(
     data: { totpEnabled: true, requiresTotpSetup: false },
   })
 
-  redirect("/setup/change-password")
+  redirect("/change-password")
 }

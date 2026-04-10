@@ -5,6 +5,7 @@ import { Prisma } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import bcrypt from "bcryptjs"
 import { generatePassword } from "@/lib/password"
+import { auth } from "@/lib/auth"
 import {
   createUserSchema,
   updateUserPermissionsSchema,
@@ -16,9 +17,19 @@ type ActionResult<T = void> =
   | { success: true; data: T }
   | { success: false; error: string }
 
+async function requireSuperAdmin(): Promise<{ error: string } | null> {
+  const session = await auth()
+  if (!session?.user) return { error: "Not authenticated." }
+  if ((session.user as any).role !== "SuperAdmin") return { error: "Unauthorized." }
+  return null
+}
+
 export async function createUser(
   raw: CreateUserInput
 ): Promise<ActionResult<{ id: string; generatedPassword: string }>> {
+  const authError = await requireSuperAdmin()
+  if (authError) return { success: false, error: authError.error }
+
   const parsed = createUserSchema.safeParse(raw)
   if (!parsed.success) {
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
@@ -62,6 +73,9 @@ export async function updateUserPermissions(
   id: string,
   raw: UpdateUserPermissionsInput
 ): Promise<ActionResult> {
+  const authError = await requireSuperAdmin()
+  if (authError) return { success: false, error: authError.error }
+
   const parsed = updateUserPermissionsSchema.safeParse(raw)
   if (!parsed.success) {
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
@@ -71,12 +85,10 @@ export async function updateUserPermissions(
 
   try {
     await db.$transaction([
-      // Replace all permissions
       db.userPermission.deleteMany({ where: { userId: id } }),
       ...(permissions.length > 0
         ? [db.userPermission.createMany({ data: permissions.map((feature) => ({ userId: id, feature })) })]
         : []),
-      // Replace all event access
       db.userEventAccess.deleteMany({ where: { userId: id } }),
       ...(eventIds.length > 0
         ? [db.userEventAccess.createMany({ data: eventIds.map((eventId) => ({ userId: id, eventId })) })]
@@ -91,6 +103,14 @@ export async function updateUserPermissions(
 }
 
 export async function deleteUser(id: string): Promise<ActionResult> {
+  const authError = await requireSuperAdmin()
+  if (authError) return { success: false, error: authError.error }
+
+  // Prevent deletion of SuperAdmin accounts
+  const target = await db.user.findUnique({ where: { id }, select: { role: true } })
+  if (!target) return { success: false, error: "User not found" }
+  if (target.role === "SuperAdmin") return { success: false, error: "Cannot delete a Super Admin account" }
+
   try {
     await db.user.delete({ where: { id } })
     revalidatePath("/settings/users")

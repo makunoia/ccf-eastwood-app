@@ -12,6 +12,7 @@ import {
   IconUserScan,
   IconUsers,
   IconUsersGroup,
+  type Icon,
 } from "@tabler/icons-react"
 import type { FeatureArea } from "@/app/generated/prisma/client"
 
@@ -28,7 +29,7 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
 
-type NavItem = { title: string; url: string; icon: React.ElementType; feature?: FeatureArea }
+type NavItem = { title: string; url: string; icon: Icon; feature?: FeatureArea }
 
 const navMain: NavItem[] = [
   { title: "Dashboard", url: "/dashboard", icon: IconLayoutDashboard },
@@ -40,7 +41,7 @@ const navMain: NavItem[] = [
   { title: "Volunteers", url: "/volunteers", icon: IconHeart, feature: "Volunteers" },
 ]
 
-const navSecondary = [
+const navSecondary: { title: string; url: string; icon: Icon }[] = [
   { title: "Settings", url: "/settings", icon: IconSettings },
   { title: "Help", url: "#", icon: IconHelp },
 ]
@@ -58,11 +59,14 @@ type AppSidebarProps = React.ComponentProps<typeof Sidebar> & {
 export function AppSidebar({ user, role, permissions, ...props }: AppSidebarProps) {
   const isSuperAdmin = role === "SuperAdmin"
 
-  const filteredNav = navMain.filter((item) => {
-    if (!item.feature) return true // Dashboard always visible
-    if (isSuperAdmin) return true
-    return (permissions ?? []).includes(item.feature)
-  })
+  // Filter items and strip the internal `feature` field before passing to NavMain
+  const filteredNav = navMain
+    .filter((item) => {
+      if (!item.feature) return true // Dashboard always visible
+      if (isSuperAdmin) return true
+      return (permissions ?? []).includes(item.feature)
+    })
+    .map(({ feature: _f, ...rest }) => rest)
 
   // Staff cannot access Settings
   const filteredSecondary = isSuperAdmin

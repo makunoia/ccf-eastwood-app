@@ -1,10 +1,13 @@
+import NextAuth from "next-auth"
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
-import { auth } from "@/lib/auth"
-import { ROUTE_PERMISSIONS } from "@/lib/permissions"
+import { authConfig } from "./auth.config"
 import type { FeatureArea } from "@/app/generated/prisma/client"
 
-// Paths that never require auth or special handling
+// Create a lightweight Auth.js instance for middleware (no Prisma/DB imports)
+const { auth } = NextAuth(authConfig)
+
+// Paths that never require authentication
 const PUBLIC_PREFIXES = [
   "/login",
   "/api/auth",
@@ -23,8 +26,19 @@ const EVENT_PUBLIC_PATTERNS = [
   /^\/events\/[^/]+\/volunteer/,
 ]
 
-// Paths the user can visit while in the setup/onboarding flow
-const SETUP_PATHS = ["/setup", "/login"]
+// Paths accessible during the first-login setup flow
+const SETUP_PREFIXES = ["/2fa", "/change-password", "/login"]
+
+// Maps route prefixes to the FeatureArea required to access them
+const ROUTE_PERMISSIONS: [string, FeatureArea][] = [
+  ["/members", "Members"],
+  ["/guests", "Guests"],
+  ["/small-groups", "SmallGroups"],
+  ["/ministries", "Ministries"],
+  ["/events", "Events"],
+  ["/event", "Events"],
+  ["/volunteers", "Volunteers"],
+]
 
 export default auth(function middleware(req: NextRequest & { auth: any }) {
   const { pathname } = req.nextUrl
@@ -35,7 +49,7 @@ export default auth(function middleware(req: NextRequest & { auth: any }) {
     return NextResponse.next()
   }
 
-  // Allow public event/volunteer routes
+  // Allow public event/volunteer paths
   if (EVENT_PUBLIC_PATTERNS.some((re) => re.test(pathname))) {
     return NextResponse.next()
   }
@@ -47,18 +61,18 @@ export default auth(function middleware(req: NextRequest & { auth: any }) {
 
   const user = session.user as any
 
-  // ── TOTP second-step: credentials verified but TOTP not yet submitted ──────
-  // (Handled by pre-auth cookie flow; full session only created after TOTP)
-  // If someone reaches here without a full session, they've already been redirected above.
-
-  // ── Setup flow: allow /setup/** and /login/** only ─────────────────────────
+  // ── First-login setup flow ─────────────────────────────────────────────────
   if (user.requiresTotpSetup || user.mustChangePassword) {
-    if (SETUP_PATHS.some((p) => pathname.startsWith(p))) {
+    if (SETUP_PREFIXES.some((p) => pathname.startsWith(p))) {
       return NextResponse.next()
     }
-    // Direct to the right setup step
-    const dest = user.requiresTotpSetup ? "/setup/2fa" : "/setup/change-password"
+    const dest = user.requiresTotpSetup ? "/2fa" : "/change-password"
     return NextResponse.redirect(new URL(dest, req.url))
+  }
+
+  // ── Block setup pages for fully-set-up users ──────────────────────────────
+  if (pathname.startsWith("/2fa") || pathname.startsWith("/change-password")) {
+    return NextResponse.redirect(new URL("/dashboard", req.url))
   }
 
   // ── Super Admin: full access ───────────────────────────────────────────────
@@ -71,16 +85,16 @@ export default auth(function middleware(req: NextRequest & { auth: any }) {
     return NextResponse.redirect(new URL("/dashboard", req.url))
   }
 
-  // ── Staff: check feature permissions for protected routes ─────────────────
-  for (const [prefix, feature] of Object.entries(ROUTE_PERMISSIONS) as [string, FeatureArea][]) {
+  // ── Staff: enforce feature-based route access ──────────────────────────────
+  for (const [prefix, feature] of ROUTE_PERMISSIONS) {
     if (pathname.startsWith(prefix)) {
       const permissions: FeatureArea[] = user.permissions ?? []
       if (!permissions.includes(feature)) {
         return NextResponse.redirect(new URL("/dashboard", req.url))
       }
 
-      // Event-specific access check
-      if ((prefix === "/event" || prefix === "/events") && feature === "Events") {
+      // Event-specific access: check event ID if the user has a restricted list
+      if (feature === "Events") {
         const eventIdMatch = pathname.match(/^\/event\/([^/]+)/)
         if (eventIdMatch) {
           const eventId = eventIdMatch[1]

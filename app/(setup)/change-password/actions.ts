@@ -1,10 +1,9 @@
 "use server"
 
-import { auth } from "@/lib/auth"
+import { auth, signOut } from "@/lib/auth"
 import { db } from "@/lib/db"
 import bcrypt from "bcryptjs"
 import { changePasswordSchema } from "@/lib/validations/user-management"
-import { redirect } from "next/navigation"
 
 export async function changePassword(
   _prevState: { error?: string; fieldErrors?: Record<string, string> } | null,
@@ -34,5 +33,8 @@ export async function changePassword(
     data: { password: hashed, mustChangePassword: false },
   })
 
-  redirect("/dashboard")
+  // Force a fresh login so the new JWT reflects mustChangePassword: false
+  // signOut throws a redirect internally; the return is unreachable but required by TypeScript
+  await signOut({ redirectTo: "/login" })
+  return {}
 }
