@@ -167,7 +167,7 @@ export async function importVolunteers(
             email:             mapped.email?.trim() || null,
             phone:             mapped.phone ? formatPhilippinePhone(mapped.phone) : null,
             gender:            mapped.gender ? parseGender(mapped.gender) : undefined,
-            language:          mapped.language?.trim() || null,
+            language:          mapped.language?.trim() ? [mapped.language.trim()] : [],
             meetingPreference: mapped.meetingPreference ? parseMeetingPreference(mapped.meetingPreference) : undefined,
           },
         })
@@ -182,7 +182,7 @@ export async function importVolunteers(
             phone:             mapped.phone ? formatPhilippinePhone(mapped.phone) : null,
             dateJoined:        new Date(),
             gender:            mapped.gender ? parseGender(mapped.gender) : null,
-            language:          mapped.language?.trim() || null,
+            language:          mapped.language?.trim() ? [mapped.language.trim()] : [],
             meetingPreference: mapped.meetingPreference ? parseMeetingPreference(mapped.meetingPreference) : null,
             notes:             mapped.notes?.trim() || null,
           },

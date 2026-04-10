@@ -29,7 +29,7 @@ export const guestSchema = z.object({
     (v) => (v === "" ? undefined : v),
     z.enum(["Male", "Female"]).optional().nullable()
   ),
-  language: nullableString,
+  language: z.string().array().default([]),
   birthDate: nullableDate,
   workCity: nullableString,
   workIndustry: nullableString,
@@ -49,7 +49,7 @@ export type GuestFormValues = {
   notes: string
   lifeStageId: string
   gender: string
-  language: string
+  language: string[]
   birthDate: string
   workCity: string
   workIndustry: string
@@ -64,7 +64,7 @@ export const defaultGuestForm: GuestFormValues = {
   notes: "",
   lifeStageId: "",
   gender: "",
-  language: "",
+  language: [],
   birthDate: "",
   workCity: "",
   workIndustry: "",

@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { MultiSelect } from "@/components/ui/multi-select"
 import {
   Select,
   SelectContent,
@@ -33,6 +34,7 @@ import {
 import { createMember, updateMember, deleteMember } from "./actions"
 import { type MemberRow } from "./columns"
 import { MobileFormActions } from "@/components/mobile-form-actions"
+import { LANGUAGE_OPTIONS } from "@/lib/constants/group-options"
 
 type Props = {
   lifeStages: { id: string; name: string }[]
@@ -52,7 +54,7 @@ function toFormValues(member: MemberRow): MemberFormValues {
     notes: member.notes ?? "",
     lifeStageId: member.lifeStageId ?? "",
     gender: member.gender ?? "",
-    language: member.language ?? "",
+    language: member.language,
     birthDate: member.birthDate ?? "",
     workCity: member.workCity ?? "",
     workIndustry: member.workIndustry ?? "",
@@ -71,7 +73,7 @@ export function MemberForm({ lifeStages, member, eventHistory, smallGroups }: Pr
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
 
-  function set(field: keyof MemberFormValues, value: string) {
+  function set<K extends keyof MemberFormValues>(field: K, value: MemberFormValues[K]) {
     setForm((prev) => ({ ...prev, [field]: value }))
   }
 
@@ -300,12 +302,12 @@ export function MemberForm({ lifeStages, member, eventHistory, smallGroups }: Pr
             </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="language">Primary Language</Label>
-            <Input
-              id="language"
+            <Label>Primary Language</Label>
+            <MultiSelect
+              options={LANGUAGE_OPTIONS}
               value={form.language}
-              onChange={(e) => set("language", e.target.value)}
-              placeholder="Filipino"
+              onChange={(v) => set("language", v)}
+              placeholder="Select language(s)"
             />
           </div>
         </section>

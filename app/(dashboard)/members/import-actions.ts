@@ -94,7 +94,7 @@ function buildMemberData(mapped: Record<string, string>) {
     dateJoined:        parseDate(mapped.dateJoined) ?? new Date(),
     notes:             mapped.notes?.trim() || null,
     gender:            mapped.gender ? parseGender(mapped.gender) : null,
-    language:          mapped.language?.trim() || null,
+    language:          mapped.language?.trim() ? [mapped.language.trim()] : [],
     birthDate:         mapped.birthDate ? parseDate(mapped.birthDate) : null,
     workCity:          mapped.workCity?.trim() || null,
     workIndustry:      mapped.workIndustry?.trim() || null,

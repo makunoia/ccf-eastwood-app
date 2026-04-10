@@ -153,7 +153,7 @@ model Member {
 
   // Matching fields
   gender              Gender?
-  language            String?
+  language            String[]
   birthDate           DateTime?
   workCity            String?
   workIndustry        String?
@@ -181,7 +181,7 @@ model Guest {
   lifeStageId      String?
   lifeStage        LifeStage?        @relation(fields: [lifeStageId], references: [id])
   gender           Gender?
-  language         String?
+  language         String[]
   birthDate        DateTime?
   workCity         String?
   workIndustry     String?
