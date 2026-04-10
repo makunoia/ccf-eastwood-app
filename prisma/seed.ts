@@ -46,6 +46,9 @@ async function main() {
       name: "Super Admin",
       email: "admin@churchie.app",
       password: hashedPassword,
+      role: "SuperAdmin",
+      mustChangePassword: false,
+      requiresTotpSetup: false,
     },
   })
   console.log("✓ Created admin user (admin@churchie.app / admin123)")

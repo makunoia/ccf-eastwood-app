@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation"
 import { auth } from "@/lib/auth"
+import { redirect } from "next/navigation"
 import { AppSidebar } from "@/components/app-sidebar"
 import { SiteHeader } from "@/components/site-header"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
@@ -28,6 +28,8 @@ export default async function DashboardLayout({
           email: session.user?.email ?? "",
           avatar: session.user?.image ?? "",
         }}
+        role={(session.user as any)?.role}
+        permissions={(session.user as any)?.permissions}
       />
       <SidebarInset>
         <SiteHeader />

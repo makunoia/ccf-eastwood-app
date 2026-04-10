@@ -1,8 +1,14 @@
 import Link from "next/link"
-import { IconAdjustmentsHorizontal, IconListCheck, IconTags } from "@tabler/icons-react"
+import { IconAdjustmentsHorizontal, IconListCheck, IconTags, IconUsers } from "@tabler/icons-react"
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
 const sections = [
+  {
+    title: "Users",
+    description: "Manage admin accounts and configure scoped feature access per user",
+    icon: IconUsers,
+    href: "/settings/users",
+  },
   {
     title: "Life Stages",
     description: "Configure the life stage categories used for members and ministries",

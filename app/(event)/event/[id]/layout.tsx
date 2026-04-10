@@ -4,6 +4,7 @@ import { db } from "@/lib/db"
 import { EventHeader } from "@/components/event-header"
 import { EventSidebar } from "@/components/event-sidebar"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
+import { canAccessEvent, isSuperAdmin } from "@/lib/permissions"
 
 async function getEventMeta(id: string) {
   return db.event.findUnique({
@@ -31,11 +32,13 @@ export default async function EventLayout({
   const event = await getEventMeta(id)
   if (!event) notFound()
 
-  const modules = event.modules.map((m) => m.type)
+  // Check event-specific access for Staff users
+  if (!canAccessEvent(session, id)) {
+    redirect("/dashboard")
+  }
 
-  // TODO: when roles are implemented, set showBackLink based on role:
-  // showBackLink = session.user.role === "SuperAdmin"
-  const showBackLink = true
+  const modules = event.modules.map((m) => m.type)
+  const showBackLink = isSuperAdmin(session)
 
   return (
     <SidebarProvider
