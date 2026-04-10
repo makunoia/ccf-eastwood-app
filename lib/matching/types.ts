@@ -7,7 +7,7 @@ export type TimeSlot = {
 export type CandidateProfile = {
   lifeStageId: string | null
   gender: "Male" | "Female" | null
-  language: string | null
+  language: string[]
   birthDate: Date | null
   workCity: string | null
   workIndustry: string | null
@@ -18,7 +18,7 @@ export type CandidateProfile = {
 export const EMPTY_CANDIDATE: CandidateProfile = {
   lifeStageId: null,
   gender: null,
-  language: null,
+  language: [],
   birthDate: null,
   workCity: null,
   workIndustry: null,

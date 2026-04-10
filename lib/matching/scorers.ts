@@ -35,12 +35,12 @@ export function scoreGender(
 }
 
 export function scoreLanguage(
-  candidateLanguage: string | null,
+  candidateLanguages: string[],
   groupLanguages: string[]
 ): number {
   if (groupLanguages.length === 0) return 0.5 // group has no language preference
-  if (candidateLanguage === null) return 0.5
-  return groupLanguages.includes(candidateLanguage) ? 1.0 : 0.0
+  if (candidateLanguages.length === 0) return 0.5 // no data on candidate
+  return candidateLanguages.some((l) => groupLanguages.includes(l)) ? 1.0 : 0.0
 }
 
 export function scoreAge(

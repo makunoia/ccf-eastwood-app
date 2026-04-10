@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { MultiSelect } from "@/components/ui/multi-select"
 import {
   Select,
   SelectContent,
@@ -33,6 +34,7 @@ import {
 } from "@/lib/validations/guest"
 import { updateGuest, deleteGuest } from "./actions"
 import { MobileFormActions } from "@/components/mobile-form-actions"
+import { LANGUAGE_OPTIONS } from "@/lib/constants/group-options"
 
 type GuestDetail = {
   id: string
@@ -43,7 +45,7 @@ type GuestDetail = {
   notes: string | null
   lifeStageId: string | null
   gender: string | null
-  language: string | null
+  language: string[]
   birthDate: string | null
   workCity: string | null
   workIndustry: string | null
@@ -67,7 +69,7 @@ function toFormValues(guest: GuestDetail): GuestFormValues {
     notes: guest.notes ?? "",
     lifeStageId: guest.lifeStageId ?? "",
     gender: guest.gender ?? "",
-    language: guest.language ?? "",
+    language: guest.language,
     birthDate: guest.birthDate ?? "",
     workCity: guest.workCity ?? "",
     workIndustry: guest.workIndustry ?? "",
@@ -87,7 +89,7 @@ export function GuestForm({ lifeStages, guest, eventHistory, matchSection }: Pro
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
 
-  function set(field: keyof GuestFormValues, value: string) {
+  function set<K extends keyof GuestFormValues>(field: K, value: GuestFormValues[K]) {
     setForm((prev) => ({ ...prev, [field]: value }))
   }
 
@@ -312,12 +314,12 @@ export function GuestForm({ lifeStages, guest, eventHistory, matchSection }: Pro
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="language">Primary Language</Label>
-                <Input
-                  id="language"
+                <Label>Primary Language</Label>
+                <MultiSelect
+                  options={LANGUAGE_OPTIONS}
                   value={form.language}
-                  onChange={(e) => set("language", e.target.value)}
-                  placeholder="Filipino"
+                  onChange={(v) => set("language", v)}
+                  placeholder="Select language(s)"
                   disabled={isPromoted}
                 />
               </div>

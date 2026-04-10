@@ -10,7 +10,7 @@ import type { CandidateProfile, GroupProfile, MatchResult, WeightConfig } from "
 function buildCandidateFromMember(m: {
   lifeStageId: string | null
   gender: "Male" | "Female" | null
-  language: string | null
+  language: string[]
   birthDate: Date | null
   workCity: string | null
   workIndustry: string | null
@@ -32,7 +32,7 @@ function buildCandidateFromMember(m: {
 function buildCandidateFromGuest(g: {
   lifeStageId: string | null
   gender: "Male" | "Female" | null
-  language: string | null
+  language: string[]
   birthDate: Date | null
   workCity: string | null
   workIndustry: string | null

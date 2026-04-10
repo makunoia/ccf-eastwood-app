@@ -38,7 +38,7 @@ export type MemberRow = {
   notes: string | null
   lifeStageId: string | null
   gender: string | null
-  language: string | null
+  language: string[]
   birthDate: string | null
   workCity: string | null
   workIndustry: string | null

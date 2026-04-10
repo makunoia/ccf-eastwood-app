@@ -2,11 +2,8 @@
 
 import * as React from "react"
 import {
-  type CellContext,
   type ColumnDef,
   type ColumnFiltersState,
-  type HeaderContext,
-  type RowSelectionState,
   type SortingState,
   type VisibilityState,
   flexRender,
@@ -24,7 +21,6 @@ import {
 } from "@tabler/icons-react"
 
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import {
   Select,
@@ -56,52 +52,15 @@ export function DataTable<TData, TValue>({
   const [sorting, setSorting] = React.useState<SortingState>([])
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
   const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({})
-  const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({})
   const [pagination, setPagination] = React.useState({ pageIndex: 0, pageSize: 10 })
-
-  const columnsWithSelect = React.useMemo((): ColumnDef<TData, TValue>[] => {
-    if (columns.length === 0) return columns
-    const [firstCol, ...restCols] = columns
-    const mergedFirst = {
-      ...firstCol,
-      header: (ctx: HeaderContext<TData, TValue>) => (
-        <div className="flex items-center gap-2">
-          <Checkbox
-            checked={
-              ctx.table.getIsAllPageRowsSelected() ||
-              (ctx.table.getIsSomePageRowsSelected() && "indeterminate")
-            }
-            onCheckedChange={(value) => ctx.table.toggleAllPageRowsSelected(!!value)}
-            aria-label="Select all"
-          />
-          {flexRender(firstCol.header, ctx)}
-        </div>
-      ),
-      cell: (ctx: CellContext<TData, TValue>) => (
-        <div className="flex items-center gap-2">
-          <Checkbox
-            checked={ctx.row.getIsSelected()}
-            onCheckedChange={(value) => ctx.row.toggleSelected(!!value)}
-            aria-label="Select row"
-          />
-          {firstCol.cell
-            ? flexRender(firstCol.cell, ctx)
-            : String(ctx.getValue() ?? "")}
-        </div>
-      ),
-    }
-    return [mergedFirst as unknown as ColumnDef<TData, TValue>, ...restCols]
-  }, [columns])
 
   const table = useReactTable({
     data,
-    columns: columnsWithSelect,
-    state: { sorting, columnFilters, columnVisibility, rowSelection, pagination },
-    enableRowSelection: true,
+    columns,
+    state: { sorting, columnFilters, columnVisibility, pagination },
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: setColumnVisibility,
-    onRowSelectionChange: setRowSelection,
     onPaginationChange: setPagination,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
@@ -129,7 +88,7 @@ export function DataTable<TData, TValue>({
           {table.getRowModel().rows.length > 0 && (
             <TableBody>
               {table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id} data-state={row.getIsSelected() && "selected"}>
+                <TableRow key={row.id}>
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -147,12 +106,7 @@ export function DataTable<TData, TValue>({
         )}
       </div>
 
-      <div className="flex items-center justify-between border-t px-4 py-3">
-        <span className="hidden text-sm text-muted-foreground lg:block">
-          {table.getFilteredSelectedRowModel().rows.length} of{" "}
-          {table.getFilteredRowModel().rows.length} row(s) selected
-        </span>
-
+      <div className="flex items-center justify-end border-t px-4 py-3">
         <div className="flex items-center gap-4">
           <div className="hidden items-center gap-2 lg:flex">
             <Label htmlFor="rows-per-page" className="text-sm text-muted-foreground">
