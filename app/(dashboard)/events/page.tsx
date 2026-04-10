@@ -1,5 +1,7 @@
 import { EventType, Prisma } from "@/app/generated/prisma/client"
+import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
+import { isSuperAdmin } from "@/lib/permissions"
 import { type EventRow } from "./columns"
 import { EventsTable } from "./events-table"
 import { EventsToolbar } from "./toolbar"
@@ -44,6 +46,7 @@ export default async function EventsPage({
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>
 }) {
+  const session = await auth()
   const params = await searchParams
   const search = (params.search as string) || ""
   const ministryId = (params.ministryId as string) || ""
@@ -51,8 +54,15 @@ export default async function EventsPage({
   const dateFrom = (params.dateFrom as string) || ""
   const dateTo = (params.dateTo as string) || ""
 
+  // For Staff users with a restricted event access list, limit results to allowed events only
+  const allowedEventIds =
+    !isSuperAdmin(session) && (session?.user?.eventAccess ?? []).length > 0
+      ? session!.user.eventAccess
+      : null
+
   const where: Prisma.EventWhereInput = {
     AND: [
+      allowedEventIds ? { id: { in: allowedEventIds } } : {},
       search
         ? {
             OR: [
