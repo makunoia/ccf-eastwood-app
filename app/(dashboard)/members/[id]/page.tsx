@@ -3,6 +3,7 @@ import { db } from "@/lib/db"
 import { MemberForm } from "../member-form"
 import { MemberEventHistory } from "./member-event-history"
 import { MemberSmallGroups } from "./member-small-groups"
+import { MemberMatchSection } from "./member-match-section"
 import { type MemberRow } from "../columns"
 
 async function getMember(id: string): Promise<MemberRow | null> {
@@ -111,10 +112,17 @@ export default async function MemberDetailPage({
       eventHistory={<MemberEventHistory registrations={registrations} />}
       smallGroups={
         smallGroupInfo ? (
-          <MemberSmallGroups
-            memberOf={smallGroupInfo.memberOf}
-            ledGroups={smallGroupInfo.ledGroups}
-          />
+          <div className="space-y-6">
+            <MemberSmallGroups
+              memberOf={smallGroupInfo.memberOf}
+              ledGroups={smallGroupInfo.ledGroups}
+            />
+            <div className="border-t" />
+            <MemberMatchSection
+              memberId={id}
+              hasGroup={!!smallGroupInfo.memberOf}
+            />
+          </div>
         ) : undefined
       }
     />

@@ -2,8 +2,10 @@
 
 import * as React from "react"
 import {
+  IconLoader,
   IconPencil,
   IconPlus,
+  IconSparkles,
   IconTrash,
   IconUser,
   IconUserPlus,
@@ -40,6 +42,7 @@ import {
   addRegistrantToBreakout,
   removeRegistrantFromBreakout,
   setFacilitator,
+  autoAssignBreakouts,
 } from "../breakout-actions"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -880,6 +883,7 @@ export function BreakoutGroupsTab({
     group: BreakoutGroup
     role: "facilitator" | "coFacilitator"
   } | null>(null)
+  const [autoAssigning, setAutoAssigning] = React.useState(false)
 
   // Compute which registrants are already assigned to any group
   const assignedRegistrantIds = React.useMemo(() => {
@@ -897,6 +901,26 @@ export function BreakoutGroupsTab({
   const unassignedCount = unassignedRegistrants.length
   const totalCount = registrants.length
 
+  async function handleAutoAssign() {
+    setAutoAssigning(true)
+    const result = await autoAssignBreakouts(eventId)
+    setAutoAssigning(false)
+    if (result.success) {
+      const { assigned, skipped } = result.data
+      if (assigned === 0) {
+        toast.info("No registrants could be assigned — all groups may be at capacity.")
+      } else if (skipped > 0) {
+        toast.success(
+          `${assigned} registrant${assigned !== 1 ? "s" : ""} assigned. ${skipped} skipped (no suitable group with capacity).`
+        )
+      } else {
+        toast.success(`${assigned} registrant${assigned !== 1 ? "s" : ""} auto-assigned.`)
+      }
+    } else {
+      toast.error(result.error)
+    }
+  }
+
   return (
     <div className="space-y-4">
       {/* Summary bar */}
@@ -910,10 +934,27 @@ export function BreakoutGroupsTab({
             </>
           )}
         </p>
-        <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
-          <IconPlus className="size-4" />
-          New Group
-        </Button>
+        <div className="flex items-center gap-2">
+          {unassignedCount > 0 && breakoutGroups.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => { void handleAutoAssign() }}
+              disabled={autoAssigning}
+            >
+              {autoAssigning ? (
+                <IconLoader className="size-4 animate-spin" />
+              ) : (
+                <IconSparkles className="size-4" />
+              )}
+              {autoAssigning ? "Assigning…" : "Auto-Assign"}
+            </Button>
+          )}
+          <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
+            <IconPlus className="size-4" />
+            New Group
+          </Button>
+        </div>
       </div>
 
       {/* Groups */}

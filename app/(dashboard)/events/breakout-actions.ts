@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
 import { breakoutGroupSchema } from "@/lib/validations/breakout-group"
 import type { BreakoutGroupFormValues } from "@/lib/validations/breakout-group"
+import { matchBreakoutGroups } from "@/lib/matching"
 
 type ActionResult<T = void> =
   | { success: true; data: T }
@@ -135,6 +136,53 @@ export async function removeRegistrantFromBreakout(
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to remove registrant from breakout group" }
+  }
+}
+
+// ─── Facilitator assignment ───────────────────────────────────────────────────
+
+// ─── Auto-assign ─────────────────────────────────────────────────────────────
+
+export async function autoAssignBreakouts(
+  eventId: string
+): Promise<ActionResult<{ assigned: number; skipped: number }>> {
+  try {
+    const unassigned = await db.eventRegistrant.findMany({
+      where: {
+        eventId,
+        breakoutGroupMemberships: { none: {} },
+      },
+      select: { id: true },
+    })
+
+    if (unassigned.length === 0) {
+      return { success: true, data: { assigned: 0, skipped: 0 } }
+    }
+
+    let assigned = 0
+    let skipped = 0
+
+    for (const { id: registrantId } of unassigned) {
+      const matches = await matchBreakoutGroups(registrantId, eventId, {
+        excludeAssigned: true,
+        limit: 1,
+      })
+
+      if (matches.length === 0) {
+        skipped++
+        continue
+      }
+
+      await db.breakoutGroupMember.create({
+        data: { breakoutGroupId: matches[0].groupId, registrantId },
+      })
+      assigned++
+    }
+
+    revalidatePath(`/event/${eventId}/breakouts`)
+    return { success: true, data: { assigned, skipped } }
+  } catch {
+    return { success: false, error: "Failed to auto-assign registrants" }
   }
 }
 
