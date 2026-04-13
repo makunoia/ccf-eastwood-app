@@ -65,7 +65,7 @@ export function MinistriesTable({ ministries }: { ministries: MinistryRow[] }) {
       </div>
 
       {/* Desktop table */}
-      <div className="hidden md:block">
+      <div className="hidden md:flex md:flex-1 md:flex-col">
         <DataTable
           columns={columns}
           data={ministries}
