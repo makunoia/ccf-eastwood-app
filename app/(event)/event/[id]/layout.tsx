@@ -42,6 +42,7 @@ export default async function EventLayout({
 
   return (
     <SidebarProvider
+      className="h-svh"
       style={
         {
           "--sidebar-width": "calc(var(--spacing) * 72)",

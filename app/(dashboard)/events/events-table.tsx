@@ -71,7 +71,7 @@ export function EventsTable({ events }: { events: EventRow[] }) {
       </div>
 
       {/* Desktop table */}
-      <div className="hidden md:block">
+      <div className="hidden md:flex md:flex-1 md:flex-col">
         <DataTable
           columns={columns}
           data={events}
