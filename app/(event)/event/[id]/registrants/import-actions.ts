@@ -92,7 +92,7 @@ type ImportRow = {
   mapped: Record<string, string>
   resolution: RowResolution
   existingId?: string
-  existingType?: "member" | "guest"
+  existingType?: "member" | "guest" | "small-group"
 }
 
 function parseBool(v: string): boolean {
