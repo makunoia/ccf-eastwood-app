@@ -1,4 +1,4 @@
-export type ImportEntity = "member" | "event-registrant" | "volunteer"
+export type ImportEntity = "member" | "event-registrant" | "volunteer" | "guest" | "small-group"
 
 export type FieldDefinition = {
   key: string
@@ -23,7 +23,7 @@ export type ColumnMapping = Record<string, string> // fieldKey → header (or ""
 export type DuplicateMatch = {
   rowIndex: number
   existingId: string
-  existingType: "member" | "guest"
+  existingType: "member" | "guest" | "small-group"
   existingName: string
   existingEmail: string | null
   existingPhone: string | null

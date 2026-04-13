@@ -68,10 +68,10 @@ type Props = {
   onOpenChange: (v: boolean) => void
   // Server actions injected per-entity (avoids dynamic imports)
   onCheckDuplicates: (
-    rows: { email?: string; phone?: string }[]
+    rows: { email?: string; phone?: string; name?: string }[]
   ) => Promise<{ success: true; data: DuplicateMatch[] } | { success: false; error: string }>
   onImport: (
-    rows: Array<{ mapped: Record<string, string>; resolution: RowResolution; existingId?: string; existingType?: "member" | "guest" }>
+    rows: Array<{ mapped: Record<string, string>; resolution: RowResolution; existingId?: string; existingType?: "member" | "guest" | "small-group" }>
   ) => Promise<{ success: true; data: ImportResult } | { success: false; error: string }>
 }
 
@@ -189,6 +189,7 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
     const lookups = rows.map((r) => ({
       email: r.mapped["email"] || undefined,
       phone: r.mapped["phone"] || r.mapped["mobileNumber"] || undefined,
+      name:  r.mapped["name"]  || undefined,
     }))
     const dupResult = await onCheckDuplicates(lookups)
     setChecking(false)

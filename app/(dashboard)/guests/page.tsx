@@ -3,6 +3,7 @@ import { db } from "@/lib/db"
 import { type GuestRow } from "./columns"
 import { GuestsTable } from "./guests-table"
 import { GuestsFilters } from "./guests-filters"
+import { GuestsToolbar } from "./guests-toolbar"
 
 async function getGuests(where: Prisma.GuestWhereInput): Promise<GuestRow[]> {
   const guests = await db.guest.findMany({
@@ -61,11 +62,14 @@ export default async function GuestsPage({
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
-      <div>
-        <h2 className="text-xl font-semibold">Guests</h2>
-        <p className="text-sm text-muted-foreground">
-          Non-members who have attended events
-        </p>
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-semibold">Guests</h2>
+          <p className="text-sm text-muted-foreground">
+            Non-members who have attended events
+          </p>
+        </div>
+        <GuestsToolbar />
       </div>
 
       <GuestsFilters
