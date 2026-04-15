@@ -20,13 +20,23 @@ async function getOccurrenceWithEvent(occurrenceId: string) {
   })
 }
 
+async function getLifeStages() {
+  return db.lifeStage.findMany({
+    orderBy: { order: "asc" },
+    select: { id: true, name: true },
+  })
+}
+
 export default async function OccurrenceCheckinPage({
   params,
 }: {
   params: Promise<{ id: string; occurrenceId: string }>
 }) {
   const { id, occurrenceId } = await params
-  const occurrence = await getOccurrenceWithEvent(occurrenceId)
+  const [occurrence, lifeStages] = await Promise.all([
+    getOccurrenceWithEvent(occurrenceId),
+    getLifeStages(),
+  ])
 
   if (!occurrence || occurrence.event.id !== id || occurrence.event.type === "OneTime") {
     notFound()
@@ -73,7 +83,7 @@ export default async function OccurrenceCheckinPage({
           {occurrence.event.ministries.length > 0 ? " · " : ""}Check-in · {dateLabel}
         </p>
       </div>
-      <CheckinBoard eventId={id} occurrenceId={occurrenceId} />
+      <CheckinBoard eventId={id} occurrenceId={occurrenceId} lifeStages={lifeStages} />
     </div>
   )
 }

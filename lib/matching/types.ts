@@ -12,7 +12,7 @@ export type CandidateProfile = {
   workCity: string | null
   workIndustry: string | null
   meetingPreference: "Online" | "Hybrid" | "InPerson" | null
-  scheduleSlots: TimeSlot[] // always [] for Guest (no SchedulePreference relation)
+  scheduleSlots: TimeSlot[] // 0-or-1 slot for Guests (stored as inline fields on Guest)
 }
 
 export const EMPTY_CANDIDATE: CandidateProfile = {
@@ -61,4 +61,10 @@ export type MatchResult = {
   groupName: string
   totalScore: number
   breakdown: ScoreBreakdown
+}
+
+export type EscalationLevel = {
+  level: 1 | 2 | 3
+  source: "breakout-facilitator" | "event-volunteer" | "all-small-groups"
+  matches: MatchResult[]
 }

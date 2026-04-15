@@ -36,13 +36,9 @@ export async function createSmallGroup(
         meetingFormat: parsed.data.meetingFormat ?? null,
         locationCity: parsed.data.locationCity ?? null,
         memberLimit: parsed.data.memberLimit ?? null,
-        meetingSchedules: {
-          create: parsed.data.schedules.map((s) => ({
-            dayOfWeek: s.dayOfWeek,
-            timeStart: s.timeStart,
-            timeEnd: s.timeEnd,
-          })),
-        },
+        scheduleDayOfWeek: parsed.data.scheduleDayOfWeek ?? null,
+        scheduleTimeStart: parsed.data.scheduleTimeStart ?? null,
+        scheduleTimeEnd: parsed.data.scheduleTimeEnd ?? null,
       },
       select: { id: true },
     })
@@ -110,14 +106,9 @@ export async function updateSmallGroup(
         meetingFormat: parsed.data.meetingFormat ?? null,
         locationCity: parsed.data.locationCity ?? null,
         memberLimit: parsed.data.memberLimit ?? null,
-        meetingSchedules: {
-          deleteMany: {},
-          create: parsed.data.schedules.map((s) => ({
-            dayOfWeek: s.dayOfWeek,
-            timeStart: s.timeStart,
-            timeEnd: s.timeEnd,
-          })),
-        },
+        scheduleDayOfWeek: parsed.data.scheduleDayOfWeek ?? null,
+        scheduleTimeStart: parsed.data.scheduleTimeStart ?? null,
+        scheduleTimeEnd: parsed.data.scheduleTimeEnd ?? null,
       },
     })
     revalidatePath("/small-groups")

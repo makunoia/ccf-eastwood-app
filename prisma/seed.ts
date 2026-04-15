@@ -439,19 +439,16 @@ async function main() {
 
   console.log("✓ Created 6 small groups (with 2-level hierarchy)")
 
-  // ─── Group Meeting Schedules ──────────────────────────────────────────────
-  await db.groupMeetingSchedule.createMany({
-    data: [
-      { smallGroupId: familyAlpha.id, dayOfWeek: 6, timeStart: "09:00", timeEnd: "11:00" },
-      { smallGroupId: familyBeta.id, dayOfWeek: 6, timeStart: "09:00", timeEnd: "11:00" },
-      { smallGroupId: youngAdultsConnect.id, dayOfWeek: 6, timeStart: "14:00", timeEnd: "16:00" },
-      { smallGroupId: youngAdultsConnect.id, dayOfWeek: 2, timeStart: "19:00", timeEnd: "21:00" },
-      { smallGroupId: youngProfessionals.id, dayOfWeek: 5, timeStart: "19:00", timeEnd: "21:00" },
-      { smallGroupId: youthCrew.id, dayOfWeek: 0, timeStart: "15:00", timeEnd: "17:00" },
-      { smallGroupId: seniorsFellowship.id, dayOfWeek: 0, timeStart: "10:00", timeEnd: "12:00" },
-    ],
-  })
-  console.log("✓ Created group meeting schedules")
+  // ─── Group Meeting Schedules (one per group) ─────────────────────────────
+  await Promise.all([
+    db.smallGroup.update({ where: { id: familyAlpha.id }, data: { scheduleDayOfWeek: 6, scheduleTimeStart: "09:00", scheduleTimeEnd: "11:00" } }),
+    db.smallGroup.update({ where: { id: familyBeta.id }, data: { scheduleDayOfWeek: 6, scheduleTimeStart: "09:00", scheduleTimeEnd: "11:00" } }),
+    db.smallGroup.update({ where: { id: youngAdultsConnect.id }, data: { scheduleDayOfWeek: 6, scheduleTimeStart: "14:00", scheduleTimeEnd: "16:00" } }),
+    db.smallGroup.update({ where: { id: youngProfessionals.id }, data: { scheduleDayOfWeek: 5, scheduleTimeStart: "19:00", scheduleTimeEnd: "21:00" } }),
+    db.smallGroup.update({ where: { id: youthCrew.id }, data: { scheduleDayOfWeek: 0, scheduleTimeStart: "15:00", scheduleTimeEnd: "17:00" } }),
+    db.smallGroup.update({ where: { id: seniorsFellowship.id }, data: { scheduleDayOfWeek: 0, scheduleTimeStart: "10:00", scheduleTimeEnd: "12:00" } }),
+  ])
+  console.log("✓ Updated group meeting schedules (one per group)")
 
   // ─── Assign Members to Small Groups ──────────────────────────────────────
   await Promise.all([

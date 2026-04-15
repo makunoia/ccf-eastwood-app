@@ -3,7 +3,7 @@ import { MatchingContext } from "@/app/generated/prisma/client"
 import { DEFAULT_WEIGHTS } from "@/lib/validations/matching-weights"
 import { scoreGroup } from "./engine"
 import { EMPTY_CANDIDATE } from "./types"
-import type { CandidateProfile, GroupProfile, MatchResult, WeightConfig } from "./types"
+import type { CandidateProfile, GroupProfile, MatchResult, WeightConfig, EscalationLevel } from "./types"
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -37,6 +37,9 @@ function buildCandidateFromGuest(g: {
   workCity: string | null
   workIndustry: string | null
   meetingPreference: "Online" | "Hybrid" | "InPerson" | null
+  scheduleDayOfWeek: number | null
+  scheduleTimeStart: string | null
+  scheduleTimeEnd: string | null
 }): CandidateProfile {
   return {
     lifeStageId: g.lifeStageId,
@@ -46,7 +49,10 @@ function buildCandidateFromGuest(g: {
     workCity: g.workCity,
     workIndustry: g.workIndustry,
     meetingPreference: g.meetingPreference,
-    scheduleSlots: [], // Guest has no SchedulePreference relation
+    scheduleSlots:
+      g.scheduleDayOfWeek !== null
+        ? [{ dayOfWeek: g.scheduleDayOfWeek, timeStart: g.scheduleTimeStart!, timeEnd: g.scheduleTimeEnd! }]
+        : [],
   }
 }
 
@@ -62,9 +68,11 @@ function buildSmallGroupProfile(
     meetingFormat: "Online" | "Hybrid" | "InPerson" | null
     locationCity: string | null
     memberLimit: number | null
+    scheduleDayOfWeek: number | null
+    scheduleTimeStart: string | null
+    scheduleTimeEnd: string | null
     _count: { members: number }
     members: { workIndustry: string | null }[]
-    meetingSchedules: { dayOfWeek: number; timeStart: string; timeEnd: string }[]
   },
   overrideCount?: number,
   overrideIndustries?: string[]
@@ -84,9 +92,31 @@ function buildSmallGroupProfile(
     memberIndustries:
       overrideIndustries ??
       (g.members.map((m) => m.workIndustry).filter(Boolean) as string[]),
-    scheduleSlots: g.meetingSchedules,
+    scheduleSlots:
+      g.scheduleDayOfWeek !== null
+        ? [{ dayOfWeek: g.scheduleDayOfWeek, timeStart: g.scheduleTimeStart!, timeEnd: g.scheduleTimeEnd! }]
+        : [],
   }
 }
+
+// Prisma select object for a fully-scorable SmallGroup
+const SMALL_GROUP_SCORE_SELECT = {
+  id: true,
+  name: true,
+  lifeStageId: true,
+  genderFocus: true,
+  language: true,
+  ageRangeMin: true,
+  ageRangeMax: true,
+  meetingFormat: true,
+  locationCity: true,
+  memberLimit: true,
+  scheduleDayOfWeek: true,
+  scheduleTimeStart: true,
+  scheduleTimeEnd: true,
+  _count: { select: { members: true } },
+  members: { select: { workIndustry: true } },
+} as const
 
 async function loadSmallGroupWeights(): Promise<WeightConfig> {
   const config = await db.matchingWeightConfig.findUnique({
@@ -122,6 +152,9 @@ export async function matchSmallGroups(
         workCity: true,
         workIndustry: true,
         meetingPreference: true,
+        scheduleDayOfWeek: true,
+        scheduleTimeStart: true,
+        scheduleTimeEnd: true,
       },
     })
     if (!guest) return []
@@ -150,23 +183,7 @@ export async function matchSmallGroups(
   }
 
   const groups = await db.smallGroup.findMany({
-    select: {
-      id: true,
-      name: true,
-      lifeStageId: true,
-      genderFocus: true,
-      language: true,
-      ageRangeMin: true,
-      ageRangeMax: true,
-      meetingFormat: true,
-      locationCity: true,
-      memberLimit: true,
-      _count: { select: { members: true } },
-      members: { select: { workIndustry: true } },
-      meetingSchedules: {
-        select: { dayOfWeek: true, timeStart: true, timeEnd: true },
-      },
-    },
+    select: SMALL_GROUP_SCORE_SELECT,
   })
 
   const weights = await loadSmallGroupWeights()
@@ -183,6 +200,112 @@ export async function matchSmallGroups(
     .map((g) => scoreGroup(candidate, buildSmallGroupProfile(g), weights))
     .sort((a, b) => b.totalScore - a.totalScore)
     .slice(0, options?.limit ?? 5)
+}
+
+// ─── Small Group Escalation Matching ─────────────────────────────────────────
+
+/**
+ * Matches a guest to small groups in three escalating levels:
+ *   1. Small groups led by this guest's breakout group facilitator(s) in the given event
+ *   2. Small groups led by any other volunteer at the same event
+ *   3. All remaining small groups
+ *
+ * Each level only includes groups not already covered by a higher level.
+ */
+export async function matchSmallGroupsWithEscalation(
+  guestId: string,
+  eventId: string
+): Promise<EscalationLevel[]> {
+  const guest = await db.guest.findUnique({
+    where: { id: guestId },
+    select: {
+      lifeStageId: true,
+      gender: true,
+      language: true,
+      birthDate: true,
+      workCity: true,
+      workIndustry: true,
+      meetingPreference: true,
+      scheduleDayOfWeek: true,
+      scheduleTimeStart: true,
+      scheduleTimeEnd: true,
+    },
+  })
+  if (!guest) return []
+
+  const candidate = buildCandidateFromGuest(guest)
+  const weights = await loadSmallGroupWeights()
+
+  // ── Collect Level 1 group IDs (breakout facilitators' small groups) ───────
+  const breakoutMemberships = await db.breakoutGroupMember.findMany({
+    where: { registrant: { guestId, eventId } },
+    select: {
+      breakoutGroup: {
+        select: {
+          facilitator: {
+            select: { member: { select: { ledGroups: { select: { id: true } } } } },
+          },
+          coFacilitator: {
+            select: { member: { select: { ledGroups: { select: { id: true } } } } },
+          },
+        },
+      },
+    },
+  })
+
+  const level1Ids = new Set<string>()
+  for (const bm of breakoutMemberships) {
+    bm.breakoutGroup.facilitator?.member.ledGroups.forEach((g) => level1Ids.add(g.id))
+    bm.breakoutGroup.coFacilitator?.member.ledGroups.forEach((g) => level1Ids.add(g.id))
+  }
+
+  // ── Collect Level 2 group IDs (other event volunteer leaders) ─────────────
+  const eventVolunteers = await db.volunteer.findMany({
+    where: { eventId },
+    select: { member: { select: { ledGroups: { select: { id: true } } } } },
+  })
+
+  const level2Ids = new Set<string>()
+  for (const v of eventVolunteers) {
+    v.member.ledGroups.forEach((g) => {
+      if (!level1Ids.has(g.id)) level2Ids.add(g.id)
+    })
+  }
+
+  // ── Fetch and score all small groups in one query ─────────────────────────
+  const allGroups = await db.smallGroup.findMany({
+    select: SMALL_GROUP_SCORE_SELECT,
+  })
+
+  const eligible = allGroups.filter(
+    (g) => g.memberLimit === null || g._count.members < g.memberLimit
+  )
+
+  const scored = eligible.map((g) => ({
+    result: scoreGroup(candidate, buildSmallGroupProfile(g), weights),
+    id: g.id,
+  }))
+
+  const sortByScore = (arr: typeof scored) =>
+    arr.map((s) => s.result).sort((a, b) => b.totalScore - a.totalScore)
+
+  const l1Scored = scored.filter((s) => level1Ids.has(s.id))
+  const l2Scored = scored.filter((s) => level2Ids.has(s.id))
+  const l3Scored = scored.filter((s) => !level1Ids.has(s.id) && !level2Ids.has(s.id))
+
+  const levels: EscalationLevel[] = []
+
+  if (l1Scored.length > 0) {
+    levels.push({ level: 1, source: "breakout-facilitator", matches: sortByScore(l1Scored) })
+  }
+  if (l2Scored.length > 0) {
+    levels.push({ level: 2, source: "event-volunteer", matches: sortByScore(l2Scored) })
+  }
+  if (l3Scored.length > 0) {
+    levels.push({ level: 3, source: "all-small-groups", matches: sortByScore(l3Scored).slice(0, 5) })
+  }
+
+  return levels
 }
 
 // ─── Breakout Group Matching ──────────────────────────────────────────────────
@@ -221,6 +344,9 @@ export async function matchBreakoutGroups(
           workCity: true,
           workIndustry: true,
           meetingPreference: true,
+          scheduleDayOfWeek: true,
+          scheduleTimeStart: true,
+          scheduleTimeEnd: true,
         },
       },
     },
