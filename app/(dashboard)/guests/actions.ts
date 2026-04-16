@@ -78,6 +78,9 @@ export async function promoteGuestToMember(
         workCity: true,
         workIndustry: true,
         meetingPreference: true,
+        scheduleDayOfWeek: true,
+        scheduleTimeStart: true,
+        scheduleTimeEnd: true,
       },
     })
 
@@ -124,6 +127,19 @@ export async function promoteGuestToMember(
           dateJoined: new Date(),
           smallGroupId: groupId,
           smallGroupStatusId: firstStatus?.id ?? null,
+          ...(guest.scheduleDayOfWeek !== null &&
+          guest.scheduleTimeStart !== null &&
+          guest.scheduleTimeEnd !== null
+            ? {
+                schedulePreferences: {
+                  create: {
+                    dayOfWeek: guest.scheduleDayOfWeek,
+                    timeStart: guest.scheduleTimeStart,
+                    timeEnd: guest.scheduleTimeEnd,
+                  },
+                },
+              }
+            : {}),
         },
         select: { id: true },
       })

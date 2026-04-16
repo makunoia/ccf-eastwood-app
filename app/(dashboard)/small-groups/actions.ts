@@ -112,6 +112,7 @@ export async function updateSmallGroup(
       },
     })
     revalidatePath("/small-groups")
+    revalidatePath(`/small-groups/${id}`)
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to update small group" }

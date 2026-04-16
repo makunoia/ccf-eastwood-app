@@ -50,8 +50,8 @@ function buildCandidateFromGuest(g: {
     workIndustry: g.workIndustry,
     meetingPreference: g.meetingPreference,
     scheduleSlots:
-      g.scheduleDayOfWeek !== null
-        ? [{ dayOfWeek: g.scheduleDayOfWeek, timeStart: g.scheduleTimeStart!, timeEnd: g.scheduleTimeEnd! }]
+      g.scheduleDayOfWeek !== null && g.scheduleTimeStart !== null && g.scheduleTimeEnd !== null
+        ? [{ dayOfWeek: g.scheduleDayOfWeek, timeStart: g.scheduleTimeStart, timeEnd: g.scheduleTimeEnd }]
         : [],
   }
 }
@@ -93,8 +93,8 @@ function buildSmallGroupProfile(
       overrideIndustries ??
       (g.members.map((m) => m.workIndustry).filter(Boolean) as string[]),
     scheduleSlots:
-      g.scheduleDayOfWeek !== null
-        ? [{ dayOfWeek: g.scheduleDayOfWeek, timeStart: g.scheduleTimeStart!, timeEnd: g.scheduleTimeEnd! }]
+      g.scheduleDayOfWeek !== null && g.scheduleTimeStart !== null && g.scheduleTimeEnd !== null
+        ? [{ dayOfWeek: g.scheduleDayOfWeek, timeStart: g.scheduleTimeStart, timeEnd: g.scheduleTimeEnd }]
         : [],
   }
 }

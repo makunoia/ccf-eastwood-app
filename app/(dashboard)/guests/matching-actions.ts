@@ -1,6 +1,7 @@
 "use server"
 
 import { matchSmallGroups, matchSmallGroupsWithEscalation } from "@/lib/matching"
+import { db } from "@/lib/db"
 import type { MatchResult, EscalationLevel } from "@/lib/matching/types"
 
 type ActionResult<T> =
@@ -23,7 +24,6 @@ export async function findSmallGroupMatchesWithEscalation(
 ): Promise<ActionResult<EscalationLevel[]>> {
   try {
     // Find the most recent event where this guest has a breakout group assignment
-    const { db } = await import("@/lib/db")
     const breakoutMembership = await db.breakoutGroupMember.findFirst({
       where: { registrant: { guestId } },
       orderBy: { assignedAt: "desc" },
