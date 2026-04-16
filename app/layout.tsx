@@ -1,8 +1,10 @@
 import type { Metadata, Viewport } from "next"
+import { Suspense } from "react"
 import { GeistSans } from "geist/font/sans"
 import { GeistMono } from "geist/font/mono"
 import { Toaster } from "sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { NavigationLoader } from "@/components/navigation-loader"
 import "./globals.css"
 
 export const metadata: Metadata = {
@@ -37,6 +39,9 @@ export default function RootLayout({
         <TooltipProvider>
           {children}
           <Toaster richColors position="top-right" />
+          <Suspense>
+            <NavigationLoader />
+          </Suspense>
         </TooltipProvider>
       </body>
     </html>

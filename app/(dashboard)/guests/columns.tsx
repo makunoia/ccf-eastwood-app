@@ -23,7 +23,7 @@ export function buildColumns(): ColumnDef<GuestRow>[] {
       cell: ({ row }) => (
         <Link
           href={`/guests/${row.original.id}`}
-          className="font-medium hover:underline"
+          className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
         >
           {row.original.firstName} {row.original.lastName}
         </Link>

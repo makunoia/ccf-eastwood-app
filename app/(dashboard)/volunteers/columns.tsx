@@ -116,7 +116,7 @@ export function buildColumns(): ColumnDef<VolunteerRow>[] {
       cell: ({ row }) => (
         <Link
           href={`/volunteers/${row.original.id}`}
-          className="font-medium hover:underline"
+          className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
         >
           {row.original.memberName}
         </Link>
