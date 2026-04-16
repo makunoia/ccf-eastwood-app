@@ -6,7 +6,6 @@ import { IconSparkles, IconLoader, IconX } from "@tabler/icons-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { WEIGHT_FIELDS } from "@/lib/validations/matching-weights"
 import { findSmallGroupMatchesWithEscalation } from "../matching-actions"
 import { promoteGuestToMember, clearGuestClaimedGroup } from "../actions"
@@ -67,13 +66,52 @@ function MatchCard({
   )
 }
 
-// ─── Pipeline status badge ────────────────────────────────────────────────────
+// ─── Pipeline stepper ────────────────────────────────────────────────────────
 
-const PIPELINE_BADGE: Record<GuestPipelineStatus, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
-  New:          { label: "New",           variant: "secondary" },
-  EventAttendee:{ label: "Event Attendee",variant: "outline"   },
-  Matched:      { label: "Matched",       variant: "default"   },
-  Member:       { label: "Member",        variant: "default"   },
+const PIPELINE_STAGES: GuestPipelineStatus[] = ["New", "EventAttendee", "Matched", "Member"]
+const STAGE_LABEL: Record<GuestPipelineStatus, string> = {
+  New: "New",
+  EventAttendee: "Event Attendee",
+  Matched: "Matched",
+  Member: "Member",
+}
+
+function PipelineStepper({ status }: { status: GuestPipelineStatus }) {
+  const activeIndex = PIPELINE_STAGES.indexOf(status)
+  return (
+    <div className="flex items-stretch rounded-lg border overflow-hidden text-xs font-medium">
+      {PIPELINE_STAGES.map((stage, i) => {
+        const isActive = i === activeIndex
+        const isPast = i < activeIndex
+        return (
+          <React.Fragment key={stage}>
+            {i > 0 && (
+              <div
+                className={[
+                  "flex items-center self-stretch px-0 text-[10px]",
+                  isPast || isActive ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
+                ].join(" ")}
+              >
+                <span className="w-3 text-center select-none">›</span>
+              </div>
+            )}
+            <div
+              className={[
+                "flex items-center px-3 py-2 select-none",
+                isActive
+                  ? "bg-primary text-primary-foreground"
+                  : isPast
+                  ? "bg-primary/15 text-primary"
+                  : "bg-muted text-muted-foreground",
+              ].join(" ")}
+            >
+              {STAGE_LABEL[stage]}
+            </div>
+          </React.Fragment>
+        )
+      })}
+    </div>
+  )
 }
 
 // ─── Level labels ─────────────────────────────────────────────────────────────
@@ -150,21 +188,19 @@ export function GuestMatchSection({
 
   if (pipelineStatus === "Member") {
     return (
-      <p className="text-sm text-muted-foreground py-4">
-        This guest has been promoted to a member and is already in a small group.
-      </p>
+      <div className="max-w-2xl space-y-4">
+        <PipelineStepper status={pipelineStatus} />
+        <p className="text-sm text-muted-foreground">
+          This guest has been promoted to a member and is already in a small group.
+        </p>
+      </div>
     )
   }
 
-  const { label, variant } = PIPELINE_BADGE[pipelineStatus]
-
   return (
     <div className="max-w-2xl space-y-4">
-      {/* Pipeline status badge */}
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-muted-foreground">Pipeline stage:</span>
-        <Badge variant={variant}>{label}</Badge>
-      </div>
+      {/* Pipeline stepper */}
+      <PipelineStepper status={pipelineStatus} />
 
       {/* Claimed group banner */}
       {localClaimedGroup && (
