@@ -31,6 +31,7 @@ import {
 } from "@/lib/validations/small-group"
 import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
 import { createSmallGroup, updateSmallGroup, deleteSmallGroup, addMemberToGroup, removeMemberFromGroup, updateMemberGroupStatus } from "./actions"
+import { searchGuests, promoteGuestToMember } from "@/app/(dashboard)/guests/actions"
 import { MobileFormActions } from "@/components/mobile-form-actions"
 import { type SmallGroupRow } from "./columns"
 
@@ -41,6 +42,14 @@ type GroupMember = {
   firstName: string
   lastName: string
   smallGroupStatusId: string | null
+}
+
+type GuestSearchResult = {
+  id: string
+  firstName: string
+  lastName: string
+  email: string | null
+  phone: string | null
 }
 
 const STATUS_COLOR_PALETTE = [
@@ -105,6 +114,12 @@ export function SmallGroupForm({ members, smallGroups, lifeStages, statuses, gro
   const [addingMember, setAddingMember] = React.useState(false)
   const [removingMemberId, setRemovingMemberId] = React.useState<string | null>(null)
   const [removeConfirmMember, setRemoveConfirmMember] = React.useState<GroupMember | null>(null)
+  const [addGuestOpen, setAddGuestOpen] = React.useState(false)
+  const [guestQuery, setGuestQuery] = React.useState("")
+  const [guestResults, setGuestResults] = React.useState<GuestSearchResult[]>([])
+  const [selectedGuest, setSelectedGuest] = React.useState<GuestSearchResult | null>(null)
+  const [searchingGuests, setSearchingGuests] = React.useState(false)
+  const [addingGuest, setAddingGuest] = React.useState(false)
 
   function set(field: keyof SmallGroupFormValues, value: string | string[]) {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -153,6 +168,38 @@ export function SmallGroupForm({ members, smallGroups, lifeStages, statuses, gro
       toast.success("Member added to group")
       setAddMemberOpen(false)
       setSelectedMemberId("")
+      router.refresh()
+    } else {
+      toast.error(result.error)
+    }
+  }
+
+  async function handleGuestSearch(q: string) {
+    setGuestQuery(q)
+    setSelectedGuest(null)
+    if (q.trim().length < 2) { setGuestResults([]); return }
+    setSearchingGuests(true)
+    const result = await searchGuests(q)
+    setSearchingGuests(false)
+    if (result.success) setGuestResults(result.data)
+  }
+
+  function resetGuestDialog() {
+    setGuestQuery("")
+    setGuestResults([])
+    setSelectedGuest(null)
+    setAddingGuest(false)
+  }
+
+  async function handleAddGuest() {
+    if (!selectedGuest || !group) return
+    setAddingGuest(true)
+    const result = await promoteGuestToMember(selectedGuest.id, group.id)
+    setAddingGuest(false)
+    if (result.success) {
+      toast.success(`${selectedGuest.firstName} ${selectedGuest.lastName} promoted and added to group`)
+      setAddGuestOpen(false)
+      resetGuestDialog()
       router.refresh()
     } else {
       toast.error(result.error)
@@ -521,17 +568,30 @@ export function SmallGroupForm({ members, smallGroups, lifeStages, statuses, gro
                 : currentMemberCount}
               )
             </h3>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setAddMemberOpen(true)}
-              disabled={isAtCapacity}
-              title={isAtCapacity ? `Group is at its member limit of ${memberLimitNum}` : undefined}
-            >
-              <IconUserPlus className="size-4" />
-              Add member
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setAddGuestOpen(true)}
+                disabled={isAtCapacity}
+                title={isAtCapacity ? `Group is at its member limit of ${memberLimitNum}` : undefined}
+              >
+                <IconUserPlus className="size-4" />
+                Add guest
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setAddMemberOpen(true)}
+                disabled={isAtCapacity}
+                title={isAtCapacity ? `Group is at its member limit of ${memberLimitNum}` : undefined}
+              >
+                <IconUserPlus className="size-4" />
+                Add member
+              </Button>
+            </div>
           </div>
           {isAtCapacity && (
             <p className="text-xs text-muted-foreground">
@@ -624,6 +684,65 @@ export function SmallGroupForm({ members, smallGroups, lifeStages, statuses, gro
             </Button>
             <Button onClick={handleAddMember} disabled={!selectedMemberId || addingMember || availableMembers.length === 0}>
               {addingMember ? "Adding…" : "Add member"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add guest dialog */}
+      <Dialog open={addGuestOpen} onOpenChange={(open) => { setAddGuestOpen(open); if (!open) resetGuestDialog() }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add guest</DialogTitle>
+            <DialogDescription>
+              Search for a guest to promote and add to{" "}
+              <span className="font-medium">{group?.name}</span>. This will create a Member record from the guest&apos;s profile.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-2">
+              <Label>Search guests</Label>
+              <Input
+                placeholder="Name, phone, or email…"
+                value={guestQuery}
+                onChange={(e) => handleGuestSearch(e.target.value)}
+                autoFocus
+              />
+            </div>
+            {searchingGuests && (
+              <p className="text-sm text-muted-foreground">Searching…</p>
+            )}
+            {!searchingGuests && guestQuery.trim().length >= 2 && guestResults.length === 0 && (
+              <p className="text-sm text-muted-foreground">No guests found.</p>
+            )}
+            {guestResults.length > 0 && (
+              <div className="rounded-md border divide-y max-h-52 overflow-y-auto">
+                {guestResults.map((g) => (
+                  <button
+                    key={g.id}
+                    type="button"
+                    onClick={() => setSelectedGuest(g)}
+                    className={`w-full text-left px-3 py-2.5 hover:bg-muted transition-colors ${
+                      selectedGuest?.id === g.id ? "bg-muted" : ""
+                    }`}
+                  >
+                    <div className="text-sm font-medium">
+                      {g.firstName} {g.lastName}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {[g.phone, g.email].filter(Boolean).join(" · ")}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddGuestOpen(false)} disabled={addingGuest}>
+              Cancel
+            </Button>
+            <Button onClick={handleAddGuest} disabled={!selectedGuest || addingGuest}>
+              {addingGuest ? "Promoting…" : "Promote & add"}
             </Button>
           </DialogFooter>
         </DialogContent>

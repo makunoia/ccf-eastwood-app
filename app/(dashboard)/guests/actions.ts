@@ -316,3 +316,38 @@ export async function searchMembersForLeaderLookup(
     return { success: false, error: "Search failed" }
   }
 }
+
+// ─── Guest Search ──────────────────────────────────────────────────────────────
+
+type GuestSearchResult = {
+  id: string
+  firstName: string
+  lastName: string
+  email: string | null
+  phone: string | null
+}
+
+export async function searchGuests(
+  query: string
+): Promise<ActionResult<GuestSearchResult[]>> {
+  const q = query.trim()
+  if (q.length < 2) return { success: true, data: [] }
+  try {
+    const guests = await db.guest.findMany({
+      where: {
+        memberId: null, // only non-promoted guests
+        OR: [
+          { firstName: { contains: q, mode: "insensitive" } },
+          { lastName: { contains: q, mode: "insensitive" } },
+          { phone: { contains: q, mode: "insensitive" } },
+          { email: { contains: q, mode: "insensitive" } },
+        ],
+      },
+      select: { id: true, firstName: true, lastName: true, email: true, phone: true },
+      take: 10,
+    })
+    return { success: true, data: guests }
+  } catch {
+    return { success: false, error: "Search failed" }
+  }
+}
