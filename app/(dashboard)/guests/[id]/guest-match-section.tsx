@@ -15,7 +15,8 @@ import {
 } from "@/components/ui/dialog"
 import { WEIGHT_FIELDS } from "@/lib/validations/matching-weights"
 import { findSmallGroupMatchesWithEscalation } from "../matching-actions"
-import { promoteGuestToMember, clearGuestClaimedGroup } from "../actions"
+import { clearGuestClaimedGroup } from "../actions"
+import { assignGuestToGroupTemporarily } from "../../small-groups/actions"
 import type { MatchResult, ScoreBreakdown, EscalationLevel } from "@/lib/matching/types"
 import type { GuestPipelineStatus } from "@/lib/guest-utils"
 
@@ -91,11 +92,12 @@ function MatchCard({
 
 // ─── Pipeline stepper ────────────────────────────────────────────────────────
 
-const PIPELINE_STAGES: GuestPipelineStatus[] = ["New", "EventAttendee", "Matched", "Member"]
+const PIPELINE_STAGES: GuestPipelineStatus[] = ["New", "EventAttendee", "Matched", "Pending", "Member"]
 const STAGE_LABEL: Record<GuestPipelineStatus, string> = {
   New: "New",
   EventAttendee: "Event Attendee",
   Matched: "Matched",
+  Pending: "Pending",
   Member: "Member",
 }
 
@@ -173,10 +175,12 @@ export function GuestMatchSection({
   guestId,
   pipelineStatus,
   claimedGroup,
+  pendingGroupName,
 }: {
   guestId: string
   pipelineStatus: GuestPipelineStatus
   claimedGroup: ClaimedGroup
+  pendingGroupName: string | null
 }) {
   const router = useRouter()
   const [state, setState] = React.useState<"idle" | "loading" | "done">("idle")
@@ -198,11 +202,11 @@ export function GuestMatchSection({
 
   async function handleAssign(groupId: string) {
     setAssigningId(groupId)
-    const res = await promoteGuestToMember(guestId, groupId)
+    const res = await assignGuestToGroupTemporarily(groupId, guestId)
     setAssigningId(null)
     if (res.success) {
-      toast.success("Guest promoted to member and assigned to group")
-      router.push(`/members/${res.data.memberId}`)
+      toast.success("Guest temporarily assigned — awaiting leader confirmation")
+      router.refresh()
     } else {
       toast.error(res.error)
     }
@@ -236,6 +240,23 @@ export function GuestMatchSection({
     )
   }
 
+  if (pipelineStatus === "Pending") {
+    return (
+      <div className="max-w-2xl space-y-4">
+        <PipelineStepper status={pipelineStatus} />
+        <div className="rounded-lg border bg-muted/40 p-4">
+          <p className="text-sm font-medium">Awaiting leader confirmation</p>
+          <p className="text-sm text-muted-foreground">
+            {pendingGroupName
+              ? <>This guest has been temporarily assigned to <span className="font-medium text-foreground">{pendingGroupName}</span>.</>
+              : "This guest has a pending small group assignment."}{" "}
+            They will be promoted to a member once the group leader confirms via the link.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="max-w-2xl space-y-4">
       {/* Pipeline stepper */}
@@ -259,7 +280,7 @@ export function GuestMatchSection({
               onClick={() => { void handleConfirmClaimed() }}
               disabled={assigningId !== null || clearingClaimed}
             >
-              {assigningId === localClaimedGroup.id ? "Assigning…" : "Confirm → Promote to Member"}
+              {assigningId === localClaimedGroup.id ? "Assigning…" : "Assign (Pending Leader Confirmation)"}
             </Button>
             <Button
               size="sm"
@@ -280,7 +301,7 @@ export function GuestMatchSection({
           <h3 className="text-sm font-medium">Small Group Matching</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
             Find the best-fit small group based on this guest&apos;s profile.
-            Assigning will promote them to a member.
+            Assigning creates a pending request — the leader confirms via their link.
           </p>
         </div>
         <Button

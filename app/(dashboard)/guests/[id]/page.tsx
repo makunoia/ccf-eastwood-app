@@ -6,26 +6,32 @@ import { GuestMatchSection } from "./guest-match-section"
 import { computeGuestStatus } from "@/lib/guest-utils"
 
 async function getGuest(id: string) {
-  const g = await db.guest.findUnique({
-    where: { id },
-    include: {
-      lifeStage: { select: { id: true, name: true } },
-      claimedSmallGroup: {
-        select: {
-          id: true,
-          name: true,
-          leader: { select: { id: true, firstName: true, lastName: true } },
+  const [g, pendingRequest] = await Promise.all([
+    db.guest.findUnique({
+      where: { id },
+      include: {
+        lifeStage: { select: { id: true, name: true } },
+        claimedSmallGroup: {
+          select: {
+            id: true,
+            name: true,
+            leader: { select: { id: true, firstName: true, lastName: true } },
+          },
+        },
+        eventRegistrations: {
+          select: {
+            attendedAt: true,
+            occurrenceAttendances: { select: { id: true } },
+            breakoutGroupMemberships: { select: { breakoutGroupId: true } },
+          },
         },
       },
-      eventRegistrations: {
-        select: {
-          attendedAt: true,
-          occurrenceAttendances: { select: { id: true } },
-          breakoutGroupMemberships: { select: { breakoutGroupId: true } },
-        },
-      },
-    },
-  })
+    }),
+    db.smallGroupMemberRequest.findFirst({
+      where: { guestId: id, status: "Pending" },
+      select: { smallGroup: { select: { name: true } } },
+    }),
+  ])
   if (!g) return null
   return {
     id: g.id,
@@ -44,6 +50,7 @@ async function getGuest(id: string) {
     memberId: g.memberId,
     claimedSmallGroup: g.claimedSmallGroup,
     eventRegistrations: g.eventRegistrations,
+    pendingGroupName: pendingRequest?.smallGroup?.name ?? null,
   }
 }
 
@@ -84,6 +91,7 @@ export default async function GuestDetailPage({
 
   const pipelineStatus = computeGuestStatus({
     memberId: guest.memberId,
+    hasPendingSmallGroupRequest: guest.pendingGroupName !== null,
     eventRegistrations: guest.eventRegistrations,
   })
 
@@ -97,6 +105,7 @@ export default async function GuestDetailPage({
           guestId={id}
           pipelineStatus={pipelineStatus}
           claimedGroup={guest.claimedSmallGroup}
+          pendingGroupName={guest.pendingGroupName}
         />
       }
     />
