@@ -429,11 +429,11 @@ export function SmallGroupForm({
           <h2 className="text-xl font-semibold">
             {isEdit ? group!.name : "New Small Group"}
           </h2>
-          <p className="text-sm text-muted-foreground">
-            {isEdit
-              ? "Edit group details below."
-              : "Fill in the details to create a new small group."}
-          </p>
+          {!isEdit && (
+            <p className="text-sm text-muted-foreground">
+              Fill in the details to create a new small group.
+            </p>
+          )}
         </div>
         <div className="hidden shrink-0 items-center gap-2 sm:flex">
           {isEdit && (
@@ -452,438 +452,275 @@ export function SmallGroupForm({
         </div>
       </div>
 
-      <form
-        id="small-group-form"
-        onSubmit={handleSubmit}
-        className="max-w-2xl space-y-8"
-      >
-        {/* Basic Info */}
-        <section className="space-y-4">
-          <h3 className="text-sm font-medium text-muted-foreground">
-            Group Information
-          </h3>
-
-          <div className="space-y-2">
-            <Label htmlFor="name">
-              Group Name <span className="text-destructive">*</span>
-            </Label>
-            <Input
-              id="name"
-              value={form.name}
-              onChange={(e) => set("name", e.target.value)}
-              placeholder="Victory Group Alpha"
-              required
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="leaderId">
-              Leader <span className="text-destructive">*</span>
-            </Label>
-            <Select
-              value={form.leaderId}
-              onValueChange={(v) => set("leaderId", v)}
-              required
-            >
-              <SelectTrigger id="leaderId">
-                <SelectValue placeholder="Select a leader" />
-              </SelectTrigger>
-              <SelectContent>
-                {members.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>
-                    {m.firstName} {m.lastName}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="parentGroupId">Parent Group</Label>
-            <Select
-              value={form.parentGroupId}
-              onValueChange={(v) =>
-                set("parentGroupId", v === "none" ? "" : v)
-              }
-            >
-              <SelectTrigger id="parentGroupId">
-                <SelectValue placeholder="No parent (top-level group)" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">None</SelectItem>
-                {parentGroupOptions.map((g) => (
-                  <SelectItem key={g.id} value={g.id}>
-                    {g.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </section>
-
-        {/* Matching Info */}
-        <section className="space-y-4">
-          <h3 className="text-sm font-medium text-muted-foreground">
-            Matching Information
-          </h3>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="lifeStageId">Life Stage</Label>
-              <Select
-                value={form.lifeStageId}
-                onValueChange={(v) =>
-                  set("lifeStageId", v === "none" ? "" : v)
-                }
-              >
-                <SelectTrigger id="lifeStageId">
-                  <SelectValue placeholder="Any" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Any</SelectItem>
-                  {lifeStages.map((ls) => (
-                    <SelectItem key={ls.id} value={ls.id}>
-                      {ls.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="genderFocus">Gender Focus</Label>
-              <Select
-                value={form.genderFocus}
-                onValueChange={(v) =>
-                  set("genderFocus", v === "none" ? "" : v)
-                }
-              >
-                <SelectTrigger id="genderFocus">
-                  <SelectValue placeholder="Mixed" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Mixed</SelectItem>
-                  <SelectItem value="Male">Male</SelectItem>
-                  <SelectItem value="Female">Female</SelectItem>
-                  <SelectItem value="Mixed">Mixed</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label>Language</Label>
-            <MultiSelect
-              options={LANGUAGE_OPTIONS}
-              value={form.language}
-              onChange={(v) => set("language", v)}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="ageRangeMin">Min Age</Label>
-              <Input
-                id="ageRangeMin"
-                type="number"
-                min={1}
-                value={form.ageRangeMin}
-                onChange={(e) => set("ageRangeMin", e.target.value)}
-                placeholder="18"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="ageRangeMax">Max Age</Label>
-              <Input
-                id="ageRangeMax"
-                type="number"
-                min={1}
-                value={form.ageRangeMax}
-                onChange={(e) => set("ageRangeMax", e.target.value)}
-                placeholder="35"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="meetingFormat">Meeting Format</Label>
-              <Select
-                value={form.meetingFormat}
-                onValueChange={(v) =>
-                  set("meetingFormat", v === "none" ? "" : v)
-                }
-              >
-                <SelectTrigger id="meetingFormat">
-                  <SelectValue placeholder="No preference" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No preference</SelectItem>
-                  <SelectItem value="Online">Online</SelectItem>
-                  <SelectItem value="Hybrid">Hybrid</SelectItem>
-                  <SelectItem value="InPerson">In Person</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="locationCity">City</Label>
-              <Select
-                value={form.locationCity}
-                onValueChange={(v) => set("locationCity", v === "_none" ? "" : v)}
-              >
-                <SelectTrigger id="locationCity">
-                  <SelectValue placeholder="Select city" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="_none">No preference</SelectItem>
-                  {CITY_OPTIONS.map((city) => (
-                    <SelectItem key={city} value={city}>{city}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="memberLimit">Member Limit</Label>
-            <Input
-              id="memberLimit"
-              type="number"
-              min={1}
-              value={form.memberLimit}
-              onChange={(e) => set("memberLimit", e.target.value)}
-              placeholder="12"
-            />
-          </div>
-        </section>
-
-        {/* Meeting Schedule */}
-        <section className="space-y-4">
-          <h3 className="text-sm font-medium text-muted-foreground">
-            Meeting Schedule
-          </h3>
-
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Select
-                value={form.scheduleDayOfWeek}
-                onValueChange={(v) => set("scheduleDayOfWeek", v === "none" ? "" : v)}
-              >
-                <SelectTrigger className="w-36">
-                  <SelectValue placeholder="Day" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No day set</SelectItem>
-                  {DAYS_OF_WEEK.map((d) => (
-                    <SelectItem key={d.value} value={d.value}>
-                      {d.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Input
-                type="time"
-                value={form.scheduleTimeStart}
-                onChange={(e) => set("scheduleTimeStart", e.target.value)}
-                className="w-32"
-              />
-              <span className="text-sm text-muted-foreground">to</span>
-              <Input
-                type="time"
-                value={form.scheduleTimeEnd}
-                onChange={(e) => set("scheduleTimeEnd", e.target.value)}
-                className="w-32"
-              />
-            </div>
-            {(form.scheduleDayOfWeek || form.scheduleTimeStart || form.scheduleTimeEnd) && (
-              <button
-                type="button"
-                onClick={clearSchedule}
-                className="text-xs text-muted-foreground underline-offset-2 hover:underline"
-              >
-                Clear schedule
-              </button>
-            )}
-          </div>
-        </section>
-      </form>
-
-      {isEdit && (
-        <Tabs defaultValue="members" className="max-w-2xl">
+      {isEdit ? (
+        <Tabs defaultValue="details" className="max-w-2xl">
           <TabsList>
-            <TabsTrigger value="members">Members</TabsTrigger>
-            <TabsTrigger value="activity">
-              Activity{logs.length > 0 ? ` (${logs.length})` : ""}
+            <TabsTrigger value="details">Details</TabsTrigger>
+            <TabsTrigger value="logs">
+              Logs{logs.length > 0 ? ` (${logs.length})` : ""}
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="members" className="mt-4 space-y-6">
-            {groupMembers && (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-medium text-muted-foreground">
-                    Members (
-                    {memberLimitNum !== null && !isNaN(memberLimitNum)
-                      ? `${currentMemberCount} / ${memberLimitNum}`
-                      : currentMemberCount}
-                    )
-                  </h3>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={isAtCapacity}
-                        title={isAtCapacity ? `Group is at its member limit of ${memberLimitNum}` : undefined}
-                      >
-                        <IconUserPlus className="size-4" />
-                        Add
-                        <IconChevronDown className="size-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => setAddGuestOpen(true)}>
-                        Guest
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setAddMemberOpen(true)}>
-                        Member
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-                {isAtCapacity && (
-                  <p className="text-xs text-muted-foreground">
-                    This group has reached its member limit. Increase the limit or remove a member to add more.
-                  </p>
-                )}
-                {groupMembers.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No members in this group yet.</p>
-                ) : (
-                  <div className="rounded-md border divide-y">
-                    {groupMembers.map((m) => (
-                      <div
-                        key={m.id}
-                        className="flex items-center gap-3 px-4 py-3"
-                      >
-                        <Link
-                          href={`/members/${m.id}`}
-                          className="flex-1 min-w-0 hover:underline"
-                        >
-                          <span className="text-sm font-medium">
-                            {m.firstName} {m.lastName}
-                          </span>
-                        </Link>
-                        <Select
-                          value={m.smallGroupStatusId ?? ""}
-                          onValueChange={(v) => handleStatusChange(m.id, v)}
-                        >
-                          <SelectTrigger className={`w-28 h-7 text-xs font-medium border-0 ${m.smallGroupStatusId ? statusColorMap[m.smallGroupStatusId] : "bg-slate-100 text-slate-700"}`}>
-                            <SelectValue placeholder="—" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {statuses.map((s) => (
-                              <SelectItem key={s.id} value={s.id} className="text-xs">
-                                {s.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="text-destructive hover:text-destructive"
-                          onClick={() => setRemoveConfirmMember(m)}
-                          disabled={removingMemberId === m.id}
-                        >
-                          <IconUserMinus className="size-4" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+          <TabsContent value="details" className="mt-4">
+            <form
+              id="small-group-form"
+              onSubmit={handleSubmit}
+              className="space-y-8"
+            >
+              {/* Basic Info */}
+              <section className="space-y-4">
+                <h3 className="text-sm font-medium text-muted-foreground">
+                  Group Information
+                </h3>
 
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-medium text-muted-foreground">
-                    Temporary Members
-                  </h3>
-                  {pendingRequests.length > 0 && (
-                    <span className="inline-flex items-center justify-center rounded-full bg-amber-100 text-amber-700 text-xs font-semibold px-2 py-0.5">
-                      {pendingRequests.length}
-                    </span>
+                <div className="space-y-2">
+                  <Label htmlFor="name">
+                    Group Name <span className="text-destructive">*</span>
+                  </Label>
+                  <Input
+                    id="name"
+                    value={form.name}
+                    onChange={(e) => set("name", e.target.value)}
+                    placeholder="Victory Group Alpha"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="leaderId">
+                    Leader <span className="text-destructive">*</span>
+                  </Label>
+                  <Select
+                    value={form.leaderId}
+                    onValueChange={(v) => set("leaderId", v)}
+                    required
+                  >
+                    <SelectTrigger id="leaderId">
+                      <SelectValue placeholder="Select a leader" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {members.map((m) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.firstName} {m.lastName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="parentGroupId">Parent Group</Label>
+                  <Select
+                    value={form.parentGroupId}
+                    onValueChange={(v) =>
+                      set("parentGroupId", v === "none" ? "" : v)
+                    }
+                  >
+                    <SelectTrigger id="parentGroupId">
+                      <SelectValue placeholder="No parent (top-level group)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      {parentGroupOptions.map((g) => (
+                        <SelectItem key={g.id} value={g.id}>
+                          {g.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </section>
+
+              {/* Matching Info */}
+              <section className="space-y-4">
+                <h3 className="text-sm font-medium text-muted-foreground">
+                  Matching Information
+                </h3>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="lifeStageId">Life Stage</Label>
+                    <Select
+                      value={form.lifeStageId}
+                      onValueChange={(v) =>
+                        set("lifeStageId", v === "none" ? "" : v)
+                      }
+                    >
+                      <SelectTrigger id="lifeStageId">
+                        <SelectValue placeholder="Any" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Any</SelectItem>
+                        {lifeStages.map((ls) => (
+                          <SelectItem key={ls.id} value={ls.id}>
+                            {ls.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="genderFocus">Gender Focus</Label>
+                    <Select
+                      value={form.genderFocus}
+                      onValueChange={(v) =>
+                        set("genderFocus", v === "none" ? "" : v)
+                      }
+                    >
+                      <SelectTrigger id="genderFocus">
+                        <SelectValue placeholder="Mixed" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Mixed</SelectItem>
+                        <SelectItem value="Male">Male</SelectItem>
+                        <SelectItem value="Female">Female</SelectItem>
+                        <SelectItem value="Mixed">Mixed</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Language</Label>
+                  <MultiSelect
+                    options={LANGUAGE_OPTIONS}
+                    value={form.language}
+                    onChange={(v) => set("language", v)}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="ageRangeMin">Min Age</Label>
+                    <Input
+                      id="ageRangeMin"
+                      type="number"
+                      min={1}
+                      value={form.ageRangeMin}
+                      onChange={(e) => set("ageRangeMin", e.target.value)}
+                      placeholder="18"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="ageRangeMax">Max Age</Label>
+                    <Input
+                      id="ageRangeMax"
+                      type="number"
+                      min={1}
+                      value={form.ageRangeMax}
+                      onChange={(e) => set("ageRangeMax", e.target.value)}
+                      placeholder="35"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="meetingFormat">Meeting Format</Label>
+                    <Select
+                      value={form.meetingFormat}
+                      onValueChange={(v) =>
+                        set("meetingFormat", v === "none" ? "" : v)
+                      }
+                    >
+                      <SelectTrigger id="meetingFormat">
+                        <SelectValue placeholder="No preference" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No preference</SelectItem>
+                        <SelectItem value="Online">Online</SelectItem>
+                        <SelectItem value="Hybrid">Hybrid</SelectItem>
+                        <SelectItem value="InPerson">In Person</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="locationCity">City</Label>
+                    <Select
+                      value={form.locationCity}
+                      onValueChange={(v) => set("locationCity", v === "_none" ? "" : v)}
+                    >
+                      <SelectTrigger id="locationCity">
+                        <SelectValue placeholder="Select city" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="_none">No preference</SelectItem>
+                        {CITY_OPTIONS.map((city) => (
+                          <SelectItem key={city} value={city}>{city}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="memberLimit">Member Limit</Label>
+                  <Input
+                    id="memberLimit"
+                    type="number"
+                    min={1}
+                    value={form.memberLimit}
+                    onChange={(e) => set("memberLimit", e.target.value)}
+                    placeholder="12"
+                  />
+                </div>
+              </section>
+
+              {/* Meeting Schedule */}
+              <section className="space-y-4">
+                <h3 className="text-sm font-medium text-muted-foreground">
+                  Meeting Schedule
+                </h3>
+
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Select
+                      value={form.scheduleDayOfWeek}
+                      onValueChange={(v) => set("scheduleDayOfWeek", v === "none" ? "" : v)}
+                    >
+                      <SelectTrigger className="w-36">
+                        <SelectValue placeholder="Day" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No day set</SelectItem>
+                        {DAYS_OF_WEEK.map((d) => (
+                          <SelectItem key={d.value} value={d.value}>
+                            {d.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      type="time"
+                      value={form.scheduleTimeStart}
+                      onChange={(e) => set("scheduleTimeStart", e.target.value)}
+                      className="w-32"
+                    />
+                    <span className="text-sm text-muted-foreground">to</span>
+                    <Input
+                      type="time"
+                      value={form.scheduleTimeEnd}
+                      onChange={(e) => set("scheduleTimeEnd", e.target.value)}
+                      className="w-32"
+                    />
+                  </div>
+                  {(form.scheduleDayOfWeek || form.scheduleTimeStart || form.scheduleTimeEnd) && (
+                    <button
+                      type="button"
+                      onClick={clearSchedule}
+                      className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                    >
+                      Clear schedule
+                    </button>
                   )}
                 </div>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setTempGuestOpen(true)}
-                  >
-                    <IconUserPlus className="size-4" />
-                    Assign guest
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setTempMemberOpen(true)}
-                  >
-                    <IconUserPlus className="size-4" />
-                    Transfer
-                  </Button>
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Temporarily assigned people appear here until the group leader confirms or declines via the leader link.
-              </p>
-              {pendingRequests.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No pending assignments.</p>
-              ) : (
-                <div className="rounded-md border divide-y">
-                  {pendingRequests.map((req) => (
-                    <div key={req.id} className="flex items-center gap-3 px-4 py-3">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{req.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {req.type === "guest"
-                            ? "New guest"
-                            : req.fromGroupName
-                              ? `Transfer from ${req.fromGroupName}`
-                              : "Transfer from another group"}
-                          {req.assignedByName && ` · Assigned by ${req.assignedByName}`}
-                          {" · "}
-                          {formatRelativeTime(req.createdAt)}
-                        </p>
-                      </div>
-                      <span className="shrink-0 text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">
-                        Pending
-                      </span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="text-destructive hover:text-destructive shrink-0"
-                        onClick={() => handleCancelRequest(req.id)}
-                        disabled={cancellingRequestId === req.id}
-                        title="Cancel assignment"
-                      >
-                        <IconX className="size-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+              </section>
+            </form>
           </TabsContent>
 
-          <TabsContent value="activity" className="mt-4">
+          <TabsContent value="logs" className="mt-4">
             {logs.length === 0 ? (
               <p className="text-sm text-muted-foreground">No activity yet.</p>
             ) : (
@@ -918,6 +755,428 @@ export function SmallGroupForm({
             )}
           </TabsContent>
         </Tabs>
+      ) : (
+        <form
+          id="small-group-form"
+          onSubmit={handleSubmit}
+          className="max-w-2xl space-y-8"
+        >
+          {/* Basic Info */}
+          <section className="space-y-4">
+            <h3 className="text-sm font-medium text-muted-foreground">
+              Group Information
+            </h3>
+
+            <div className="space-y-2">
+              <Label htmlFor="name">
+                Group Name <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="name"
+                value={form.name}
+                onChange={(e) => set("name", e.target.value)}
+                placeholder="Victory Group Alpha"
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="leaderId">
+                Leader <span className="text-destructive">*</span>
+              </Label>
+              <Select
+                value={form.leaderId}
+                onValueChange={(v) => set("leaderId", v)}
+                required
+              >
+                <SelectTrigger id="leaderId">
+                  <SelectValue placeholder="Select a leader" />
+                </SelectTrigger>
+                <SelectContent>
+                  {members.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.firstName} {m.lastName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="parentGroupId">Parent Group</Label>
+              <Select
+                value={form.parentGroupId}
+                onValueChange={(v) =>
+                  set("parentGroupId", v === "none" ? "" : v)
+                }
+              >
+                <SelectTrigger id="parentGroupId">
+                  <SelectValue placeholder="No parent (top-level group)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {parentGroupOptions.map((g) => (
+                    <SelectItem key={g.id} value={g.id}>
+                      {g.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </section>
+
+          {/* Matching Info */}
+          <section className="space-y-4">
+            <h3 className="text-sm font-medium text-muted-foreground">
+              Matching Information
+            </h3>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="lifeStageId">Life Stage</Label>
+                <Select
+                  value={form.lifeStageId}
+                  onValueChange={(v) =>
+                    set("lifeStageId", v === "none" ? "" : v)
+                  }
+                >
+                  <SelectTrigger id="lifeStageId">
+                    <SelectValue placeholder="Any" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Any</SelectItem>
+                    {lifeStages.map((ls) => (
+                      <SelectItem key={ls.id} value={ls.id}>
+                        {ls.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="genderFocus">Gender Focus</Label>
+                <Select
+                  value={form.genderFocus}
+                  onValueChange={(v) =>
+                    set("genderFocus", v === "none" ? "" : v)
+                  }
+                >
+                  <SelectTrigger id="genderFocus">
+                    <SelectValue placeholder="Mixed" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Mixed</SelectItem>
+                    <SelectItem value="Male">Male</SelectItem>
+                    <SelectItem value="Female">Female</SelectItem>
+                    <SelectItem value="Mixed">Mixed</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Language</Label>
+              <MultiSelect
+                options={LANGUAGE_OPTIONS}
+                value={form.language}
+                onChange={(v) => set("language", v)}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="ageRangeMin">Min Age</Label>
+                <Input
+                  id="ageRangeMin"
+                  type="number"
+                  min={1}
+                  value={form.ageRangeMin}
+                  onChange={(e) => set("ageRangeMin", e.target.value)}
+                  placeholder="18"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ageRangeMax">Max Age</Label>
+                <Input
+                  id="ageRangeMax"
+                  type="number"
+                  min={1}
+                  value={form.ageRangeMax}
+                  onChange={(e) => set("ageRangeMax", e.target.value)}
+                  placeholder="35"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="meetingFormat">Meeting Format</Label>
+                <Select
+                  value={form.meetingFormat}
+                  onValueChange={(v) =>
+                    set("meetingFormat", v === "none" ? "" : v)
+                  }
+                >
+                  <SelectTrigger id="meetingFormat">
+                    <SelectValue placeholder="No preference" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No preference</SelectItem>
+                    <SelectItem value="Online">Online</SelectItem>
+                    <SelectItem value="Hybrid">Hybrid</SelectItem>
+                    <SelectItem value="InPerson">In Person</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="locationCity">City</Label>
+                <Select
+                  value={form.locationCity}
+                  onValueChange={(v) => set("locationCity", v === "_none" ? "" : v)}
+                >
+                  <SelectTrigger id="locationCity">
+                    <SelectValue placeholder="Select city" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">No preference</SelectItem>
+                    {CITY_OPTIONS.map((city) => (
+                      <SelectItem key={city} value={city}>{city}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="memberLimit">Member Limit</Label>
+              <Input
+                id="memberLimit"
+                type="number"
+                min={1}
+                value={form.memberLimit}
+                onChange={(e) => set("memberLimit", e.target.value)}
+                placeholder="12"
+              />
+            </div>
+          </section>
+
+          {/* Meeting Schedule */}
+          <section className="space-y-4">
+            <h3 className="text-sm font-medium text-muted-foreground">
+              Meeting Schedule
+            </h3>
+
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Select
+                  value={form.scheduleDayOfWeek}
+                  onValueChange={(v) => set("scheduleDayOfWeek", v === "none" ? "" : v)}
+                >
+                  <SelectTrigger className="w-36">
+                    <SelectValue placeholder="Day" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No day set</SelectItem>
+                    {DAYS_OF_WEEK.map((d) => (
+                      <SelectItem key={d.value} value={d.value}>
+                        {d.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  type="time"
+                  value={form.scheduleTimeStart}
+                  onChange={(e) => set("scheduleTimeStart", e.target.value)}
+                  className="w-32"
+                />
+                <span className="text-sm text-muted-foreground">to</span>
+                <Input
+                  type="time"
+                  value={form.scheduleTimeEnd}
+                  onChange={(e) => set("scheduleTimeEnd", e.target.value)}
+                  className="w-32"
+                />
+              </div>
+              {(form.scheduleDayOfWeek || form.scheduleTimeStart || form.scheduleTimeEnd) && (
+                <button
+                  type="button"
+                  onClick={clearSchedule}
+                  className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                >
+                  Clear schedule
+                </button>
+              )}
+            </div>
+          </section>
+        </form>
+      )}
+
+      {isEdit && groupMembers && (
+        <section className="max-w-2xl space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-medium text-muted-foreground">
+              Members (
+              {memberLimitNum !== null && !isNaN(memberLimitNum)
+                ? `${currentMemberCount} / ${memberLimitNum}`
+                : currentMemberCount}
+              )
+            </h3>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={isAtCapacity}
+                  title={isAtCapacity ? `Group is at its member limit of ${memberLimitNum}` : undefined}
+                >
+                  <IconUserPlus className="size-4" />
+                  Add
+                  <IconChevronDown className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setAddGuestOpen(true)}>
+                  Guest
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setAddMemberOpen(true)}>
+                  Member
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+          {isAtCapacity && (
+            <p className="text-xs text-muted-foreground">
+              This group has reached its member limit. Increase the limit or remove a member to add more.
+            </p>
+          )}
+          {groupMembers.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No members in this group yet.</p>
+          ) : (
+            <div className="rounded-md border divide-y">
+              {groupMembers.map((m) => (
+                <div
+                  key={m.id}
+                  className="flex items-center gap-3 px-4 py-3"
+                >
+                  <Link
+                    href={`/members/${m.id}`}
+                    className="flex-1 min-w-0 hover:underline"
+                  >
+                    <span className="text-sm font-medium">
+                      {m.firstName} {m.lastName}
+                    </span>
+                  </Link>
+                  <Select
+                    value={m.smallGroupStatusId ?? ""}
+                    onValueChange={(v) => handleStatusChange(m.id, v)}
+                  >
+                    <SelectTrigger className={`w-28 h-7 text-xs font-medium border-0 ${m.smallGroupStatusId ? statusColorMap[m.smallGroupStatusId] : "bg-slate-100 text-slate-700"}`}>
+                      <SelectValue placeholder="—" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {statuses.map((s) => (
+                        <SelectItem key={s.id} value={s.id} className="text-xs">
+                          {s.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => setRemoveConfirmMember(m)}
+                    disabled={removingMemberId === m.id}
+                  >
+                    <IconUserMinus className="size-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {isEdit && (
+        <section className="max-w-2xl space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-medium text-muted-foreground">
+                Temporary Members
+              </h3>
+              {pendingRequests.length > 0 && (
+                <span className="inline-flex items-center justify-center rounded-full bg-amber-100 text-amber-700 text-xs font-semibold px-2 py-0.5">
+                  {pendingRequests.length}
+                </span>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setTempGuestOpen(true)}
+              >
+                <IconUserPlus className="size-4" />
+                Assign guest
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setTempMemberOpen(true)}
+              >
+                <IconUserPlus className="size-4" />
+                Transfer
+              </Button>
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Temporarily assigned people appear here until the group leader confirms or declines via the leader link.
+          </p>
+          {pendingRequests.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No pending assignments.</p>
+          ) : (
+            <div className="rounded-md border divide-y">
+              {pendingRequests.map((req) => (
+                <div key={req.id} className="flex items-center gap-3 px-4 py-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{req.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {req.type === "guest"
+                        ? "New guest"
+                        : req.fromGroupName
+                          ? `Transfer from ${req.fromGroupName}`
+                          : "Transfer from another group"}
+                      {req.assignedByName && ` · Assigned by ${req.assignedByName}`}
+                      {" · "}
+                      {formatRelativeTime(req.createdAt)}
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">
+                    Pending
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive hover:text-destructive shrink-0"
+                    onClick={() => handleCancelRequest(req.id)}
+                    disabled={cancellingRequestId === req.id}
+                    title="Cancel assignment"
+                  >
+                    <IconX className="size-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
       )}
 
       {/* Add member dialog */}
