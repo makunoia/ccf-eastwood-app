@@ -14,6 +14,7 @@ export const breakoutGroupSchema = z
     ageRangeMax: z.coerce.number().int().min(0).nullable().optional(),
     meetingFormat: z.enum(["Online", "Hybrid", "InPerson"]).nullable().optional(),
     locationCity: z.string().nullable().optional(),
+    linkedSmallGroupId: z.string().nullable().optional(),
   })
   .refine(
     (data) => {
