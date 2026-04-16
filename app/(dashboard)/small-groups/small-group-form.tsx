@@ -3,7 +3,17 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { IconArrowLeft, IconUserPlus, IconUserMinus } from "@tabler/icons-react"
+import {
+  IconArrowLeft,
+  IconUserPlus,
+  IconUserMinus,
+  IconLink,
+  IconCheck,
+  IconX,
+  IconClock,
+  IconChevronDown,
+  IconChevronUp,
+} from "@tabler/icons-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -30,7 +40,18 @@ import {
   type SmallGroupFormValues,
 } from "@/lib/validations/small-group"
 import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
-import { createSmallGroup, updateSmallGroup, deleteSmallGroup, addMemberToGroup, removeMemberFromGroup, updateMemberGroupStatus } from "./actions"
+import {
+  createSmallGroup,
+  updateSmallGroup,
+  deleteSmallGroup,
+  addMemberToGroup,
+  removeMemberFromGroup,
+  updateMemberGroupStatus,
+  generateGroupConfirmationToken,
+  assignGuestToGroupTemporarily,
+  assignMemberTransferTemporarily,
+  cancelTempAssignment,
+} from "./actions"
 import { searchGuests, promoteGuestToMember } from "@/app/(dashboard)/guests/actions"
 import { MobileFormActions } from "@/components/mobile-form-actions"
 import { type SmallGroupRow } from "./columns"
@@ -61,6 +82,23 @@ const STATUS_COLOR_PALETTE = [
   "bg-pink-100 text-pink-700",
 ]
 
+type PendingRequest = {
+  id: string
+  type: "guest" | "member"
+  name: string
+  fromGroupName: string | null
+  assignedByName: string | null
+  createdAt: Date
+}
+
+type GroupLogEntry = {
+  id: string
+  action: string
+  description: string | null
+  performedByName: string | null
+  createdAt: Date
+}
+
 type Props = {
   members: { id: string; firstName: string; lastName: string; smallGroupId: string | null }[]
   smallGroups: { id: string; name: string }[]
@@ -68,6 +106,9 @@ type Props = {
   statuses: StatusOption[]
   group?: SmallGroupRow
   groupMembers?: GroupMember[]
+  pendingRequests?: PendingRequest[]
+  logs?: GroupLogEntry[]
+  leaderConfirmationToken?: string | null
 }
 
 const DAYS_OF_WEEK = [
@@ -99,7 +140,40 @@ function toFormValues(group: SmallGroupRow): SmallGroupFormValues {
   }
 }
 
-export function SmallGroupForm({ members, smallGroups, lifeStages, statuses, group, groupMembers }: Props) {
+const LOG_ACTION_LABELS: Record<string, string> = {
+  GroupCreated: "Group created",
+  MemberAdded: "Member added",
+  MemberRemoved: "Member removed",
+  MemberTransferred: "Member transferred",
+  TempAssignmentCreated: "Temp assignment created",
+  TempAssignmentConfirmed: "Assignment confirmed",
+  TempAssignmentRejected: "Assignment rejected/cancelled",
+}
+
+function formatRelativeTime(date: Date): string {
+  const now = Date.now()
+  const diff = now - new Date(date).getTime()
+  const minutes = Math.floor(diff / 60000)
+  const hours = Math.floor(diff / 3600000)
+  const days = Math.floor(diff / 86400000)
+  if (minutes < 1) return "just now"
+  if (minutes < 60) return `${minutes}m ago`
+  if (hours < 24) return `${hours}h ago`
+  if (days < 30) return `${days}d ago`
+  return new Date(date).toLocaleDateString()
+}
+
+export function SmallGroupForm({
+  members,
+  smallGroups,
+  lifeStages,
+  statuses,
+  group,
+  groupMembers,
+  pendingRequests = [],
+  logs = [],
+  leaderConfirmationToken,
+}: Props) {
   const router = useRouter()
   const isEdit = !!group
   const initialForm = React.useRef<SmallGroupFormValues>(
@@ -120,6 +194,25 @@ export function SmallGroupForm({ members, smallGroups, lifeStages, statuses, gro
   const [selectedGuest, setSelectedGuest] = React.useState<GuestSearchResult | null>(null)
   const [searchingGuests, setSearchingGuests] = React.useState(false)
   const [addingGuest, setAddingGuest] = React.useState(false)
+
+  // Temporary assignment state
+  const [tempGuestOpen, setTempGuestOpen] = React.useState(false)
+  const [tempGuestQuery, setTempGuestQuery] = React.useState("")
+  const [tempGuestResults, setTempGuestResults] = React.useState<GuestSearchResult[]>([])
+  const [tempSelectedGuest, setTempSelectedGuest] = React.useState<GuestSearchResult | null>(null)
+  const [searchingTempGuests, setSearchingTempGuests] = React.useState(false)
+  const [assigningTempGuest, setAssigningTempGuest] = React.useState(false)
+
+  const [tempMemberOpen, setTempMemberOpen] = React.useState(false)
+  const [tempSelectedMemberId, setTempSelectedMemberId] = React.useState("")
+  const [assigningTempMember, setAssigningTempMember] = React.useState(false)
+
+  const [cancellingRequestId, setCancellingRequestId] = React.useState<string | null>(null)
+  const [generatingToken, setGeneratingToken] = React.useState(false)
+  const [confirmationToken, setConfirmationToken] = React.useState<string | null>(
+    leaderConfirmationToken ?? null
+  )
+  const [logExpanded, setLogExpanded] = React.useState(false)
 
   function set(field: keyof SmallGroupFormValues, value: string | string[]) {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -226,6 +319,87 @@ export function SmallGroupForm({ members, smallGroups, lifeStages, statuses, gro
     if (result.success) {
       toast.success("Member removed from group")
       router.refresh()
+    } else {
+      toast.error(result.error)
+    }
+  }
+
+  async function handleTempGuestSearch(q: string) {
+    setTempGuestQuery(q)
+    setTempSelectedGuest(null)
+    if (q.trim().length < 2) { setTempGuestResults([]); return }
+    setSearchingTempGuests(true)
+    const result = await searchGuests(q)
+    setSearchingTempGuests(false)
+    if (result.success) setTempGuestResults(result.data)
+  }
+
+  function resetTempGuestDialog() {
+    setTempGuestQuery("")
+    setTempGuestResults([])
+    setTempSelectedGuest(null)
+    setAssigningTempGuest(false)
+  }
+
+  async function handleAssignTempGuest() {
+    if (!tempSelectedGuest || !group) return
+    setAssigningTempGuest(true)
+    const result = await assignGuestToGroupTemporarily(group.id, tempSelectedGuest.id)
+    setAssigningTempGuest(false)
+    if (result.success) {
+      toast.success(`${tempSelectedGuest.firstName} ${tempSelectedGuest.lastName} temporarily assigned — pending leader confirmation`)
+      setTempGuestOpen(false)
+      resetTempGuestDialog()
+      router.refresh()
+    } else {
+      toast.error(result.error)
+    }
+  }
+
+  async function handleAssignTempMember() {
+    if (!tempSelectedMemberId || !group) return
+    setAssigningTempMember(true)
+    const result = await assignMemberTransferTemporarily(group.id, tempSelectedMemberId)
+    setAssigningTempMember(false)
+    if (result.success) {
+      toast.success("Transfer request created — pending leader confirmation")
+      setTempMemberOpen(false)
+      setTempSelectedMemberId("")
+      router.refresh()
+    } else {
+      toast.error(result.error)
+    }
+  }
+
+  async function handleCancelRequest(requestId: string) {
+    setCancellingRequestId(requestId)
+    const result = await cancelTempAssignment(requestId)
+    setCancellingRequestId(null)
+    if (result.success) {
+      toast.success("Assignment cancelled")
+      router.refresh()
+    } else {
+      toast.error(result.error)
+    }
+  }
+
+  async function handleCopyLeaderLink() {
+    if (!group) return
+    if (confirmationToken) {
+      const url = `${window.location.origin}/small-group-confirmation/${confirmationToken}`
+      await navigator.clipboard.writeText(url)
+      toast.success("Leader confirmation link copied to clipboard")
+      return
+    }
+    setGeneratingToken(true)
+    const result = await generateGroupConfirmationToken(group.id)
+    setGeneratingToken(false)
+    if (result.success) {
+      const token = result.data.url.split("/").pop()!
+      setConfirmationToken(token)
+      const url = `${window.location.origin}${result.data.url}`
+      await navigator.clipboard.writeText(url)
+      toast.success("Leader confirmation link generated and copied to clipboard")
     } else {
       toast.error(result.error)
     }
@@ -647,6 +821,143 @@ export function SmallGroupForm({ members, smallGroups, lifeStages, statuses, gro
         </section>
       )}
 
+      {/* Temporary Members section */}
+      {isEdit && (
+        <section className="max-w-2xl space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-medium text-muted-foreground">
+                Temporary Members
+              </h3>
+              {pendingRequests.length > 0 && (
+                <span className="inline-flex items-center justify-center rounded-full bg-amber-100 text-amber-700 text-xs font-semibold px-2 py-0.5">
+                  {pendingRequests.length}
+                </span>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleCopyLeaderLink}
+                disabled={generatingToken}
+              >
+                <IconLink className="size-4" />
+                {generatingToken ? "Generating…" : "Copy leader link"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setTempGuestOpen(true)}
+              >
+                <IconUserPlus className="size-4" />
+                Assign guest
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setTempMemberOpen(true)}
+              >
+                <IconUserPlus className="size-4" />
+                Assign transfer
+              </Button>
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Temporarily assigned people appear here until the group leader confirms or declines via the leader link.
+          </p>
+          {pendingRequests.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No pending assignments.</p>
+          ) : (
+            <div className="rounded-md border divide-y">
+              {pendingRequests.map((req) => (
+                <div key={req.id} className="flex items-center gap-3 px-4 py-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{req.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {req.type === "guest"
+                        ? "New guest"
+                        : req.fromGroupName
+                          ? `Transfer from ${req.fromGroupName}`
+                          : "Transfer from another group"}
+                      {req.assignedByName && ` · Assigned by ${req.assignedByName}`}
+                      {" · "}
+                      {formatRelativeTime(req.createdAt)}
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">
+                    Pending
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive hover:text-destructive shrink-0"
+                    onClick={() => handleCancelRequest(req.id)}
+                    disabled={cancellingRequestId === req.id}
+                    title="Cancel assignment"
+                  >
+                    <IconX className="size-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Activity Log section */}
+      {isEdit && logs.length > 0 && (
+        <section className="max-w-2xl space-y-3">
+          <button
+            type="button"
+            onClick={() => setLogExpanded((p) => !p)}
+            className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <IconClock className="size-4" />
+            Activity Log ({logs.length})
+            {logExpanded ? (
+              <IconChevronUp className="size-4" />
+            ) : (
+              <IconChevronDown className="size-4" />
+            )}
+          </button>
+          {logExpanded && (
+            <div className="rounded-md border divide-y">
+              {logs.map((log) => (
+                <div key={log.id} className="flex items-start gap-3 px-4 py-3">
+                  <div className="mt-0.5 shrink-0">
+                    {(log.action === "MemberAdded" || log.action === "TempAssignmentConfirmed" || log.action === "GroupCreated") ? (
+                      <span className="inline-flex size-5 items-center justify-center rounded-full bg-green-100">
+                        <IconCheck className="size-3 text-green-700" />
+                      </span>
+                    ) : log.action === "MemberRemoved" || log.action === "TempAssignmentRejected" ? (
+                      <span className="inline-flex size-5 items-center justify-center rounded-full bg-red-100">
+                        <IconX className="size-3 text-red-700" />
+                      </span>
+                    ) : (
+                      <span className="inline-flex size-5 items-center justify-center rounded-full bg-blue-100">
+                        <IconClock className="size-3 text-blue-700" />
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm">{log.description ?? LOG_ACTION_LABELS[log.action] ?? log.action}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {log.performedByName ? `${log.performedByName} · ` : ""}
+                      {formatRelativeTime(log.createdAt)}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
       {/* Add member dialog */}
       <Dialog open={addMemberOpen} onOpenChange={(open) => { setAddMemberOpen(open); if (!open) setSelectedMemberId("") }}>
         <DialogContent>
@@ -767,6 +1078,112 @@ export function SmallGroupForm({ members, smallGroups, lifeStages, statuses, gro
               disabled={!!removingMemberId}
             >
               {removingMemberId ? "Removing…" : "Remove"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Assign guest temporarily dialog */}
+      <Dialog
+        open={tempGuestOpen}
+        onOpenChange={(open) => { setTempGuestOpen(open); if (!open) resetTempGuestDialog() }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Assign guest temporarily</DialogTitle>
+            <DialogDescription>
+              Search for a guest to temporarily assign to{" "}
+              <span className="font-medium">{group?.name}</span>. The group leader must confirm before they become a full member.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-2">
+              <Label>Search guests</Label>
+              <Input
+                placeholder="Name, phone, or email…"
+                value={tempGuestQuery}
+                onChange={(e) => handleTempGuestSearch(e.target.value)}
+                autoFocus
+              />
+            </div>
+            {searchingTempGuests && (
+              <p className="text-sm text-muted-foreground">Searching…</p>
+            )}
+            {!searchingTempGuests && tempGuestQuery.trim().length >= 2 && tempGuestResults.length === 0 && (
+              <p className="text-sm text-muted-foreground">No guests found.</p>
+            )}
+            {tempGuestResults.length > 0 && (
+              <div className="rounded-md border divide-y max-h-52 overflow-y-auto">
+                {tempGuestResults.map((g) => (
+                  <button
+                    key={g.id}
+                    type="button"
+                    onClick={() => setTempSelectedGuest(g)}
+                    className={`w-full text-left px-3 py-2.5 hover:bg-muted transition-colors ${
+                      tempSelectedGuest?.id === g.id ? "bg-muted" : ""
+                    }`}
+                  >
+                    <div className="text-sm font-medium">
+                      {g.firstName} {g.lastName}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {[g.phone, g.email].filter(Boolean).join(" · ")}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTempGuestOpen(false)} disabled={assigningTempGuest}>
+              Cancel
+            </Button>
+            <Button onClick={handleAssignTempGuest} disabled={!tempSelectedGuest || assigningTempGuest}>
+              {assigningTempGuest ? "Assigning…" : "Assign temporarily"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Assign member transfer temporarily dialog */}
+      <Dialog
+        open={tempMemberOpen}
+        onOpenChange={(open) => { setTempMemberOpen(open); if (!open) setTempSelectedMemberId("") }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Assign member transfer</DialogTitle>
+            <DialogDescription>
+              Select a member to temporarily assign for transfer to{" "}
+              <span className="font-medium">{group?.name}</span>. The group leader must confirm before they are moved.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="temp-member-select">Member</Label>
+            <Select value={tempSelectedMemberId} onValueChange={setTempSelectedMemberId}>
+              <SelectTrigger id="temp-member-select">
+                <SelectValue placeholder="Select a member" />
+              </SelectTrigger>
+              <SelectContent>
+                {members
+                  .filter((m) => !currentMemberIds.has(m.id))
+                  .map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.firstName} {m.lastName}
+                      {m.smallGroupId && (
+                        <span className="ml-2 text-muted-foreground text-xs">(in a group)</span>
+                      )}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTempMemberOpen(false)} disabled={assigningTempMember}>
+              Cancel
+            </Button>
+            <Button onClick={handleAssignTempMember} disabled={!tempSelectedMemberId || assigningTempMember}>
+              {assigningTempMember ? "Assigning…" : "Assign transfer"}
             </Button>
           </DialogFooter>
         </DialogContent>

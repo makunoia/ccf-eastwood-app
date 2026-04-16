@@ -66,6 +66,22 @@ enum BusDirection {
   Both
 }
 
+enum MemberRequestStatus {
+  Pending
+  Confirmed
+  Rejected
+}
+
+enum SmallGroupLogAction {
+  GroupCreated
+  MemberAdded
+  MemberRemoved
+  MemberTransferred
+  TempAssignmentCreated
+  TempAssignmentConfirmed
+  TempAssignmentRejected
+}
+
 enum UserRole {
   SuperAdmin
   Staff
@@ -98,6 +114,8 @@ model User {
   sessions          Session[]
   permissions       UserPermission[]
   eventAccess       UserEventAccess[]
+  groupRequests     SmallGroupMemberRequest[]
+  smallGroupLogs    SmallGroupLog[]
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 }
@@ -206,6 +224,8 @@ model Member {
   volunteers          Volunteer[]
   eventRegistrations  EventRegistrant[]
   guest               Guest?              // set if this Member was promoted from a Guest
+  groupRequests       SmallGroupMemberRequest[]
+  smallGroupLogs      SmallGroupLog[]
 }
 
 model Guest {
@@ -243,6 +263,8 @@ model Guest {
   updatedAt   DateTime @updatedAt
 
   eventRegistrations EventRegistrant[]
+  groupRequests      SmallGroupMemberRequest[]
+  smallGroupLogs     SmallGroupLog[]
 }
 
 model SchedulePreference {
@@ -281,11 +303,17 @@ model SmallGroup {
   scheduleTimeStart String?  // HH:MM
   scheduleTimeEnd   String?  // HH:MM
 
+  // Leader confirmation token for the public confirmation link
+  leaderConfirmationToken String?  @unique
+
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
 
-  members   Member[]   @relation("SmallGroupMembers")
-  claimants Guest[]    @relation("GuestClaimedGroup")
+  members          Member[]             @relation("SmallGroupMembers")
+  claimants        Guest[]              @relation("GuestClaimedGroup")
+  memberRequests   SmallGroupMemberRequest[]
+  incomingTransfers SmallGroupMemberRequest[] @relation("TransferFrom")
+  logs             SmallGroupLog[]
 }
 
 model SmallGroupStatus {
@@ -572,4 +600,55 @@ model BusPassenger {
   createdAt    DateTime         @default(now())
 
   // Exactly one of registrantId or volunteerId must be set (enforced at app layer)
+}
+
+// ─── Small Group Member Requests & Logs ──────────────────────────────────────
+
+model SmallGroupMemberRequest {
+  id           String              @id @default(cuid())
+  smallGroupId String
+  smallGroup   SmallGroup          @relation(fields: [smallGroupId], references: [id], onDelete: Cascade)
+
+  // Exactly one of guestId or memberId must be set (enforced at app layer)
+  guestId      String?
+  guest        Guest?              @relation(fields: [guestId], references: [id], onDelete: Cascade)
+  memberId     String?
+  member       Member?             @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  // For member transfers: record the source group at request time
+  fromGroupId  String?
+  fromGroup    SmallGroup?         @relation("TransferFrom", fields: [fromGroupId], references: [id])
+
+  status       MemberRequestStatus @default(Pending)
+  notes        String?
+
+  assignedByUserId String?
+  assignedByUser   User?           @relation(fields: [assignedByUserId], references: [id])
+
+  resolvedAt   DateTime?
+  createdAt    DateTime            @default(now())
+}
+
+model SmallGroupLog {
+  id           String              @id @default(cuid())
+  smallGroupId String
+  smallGroup   SmallGroup          @relation(fields: [smallGroupId], references: [id], onDelete: Cascade)
+  action       SmallGroupLogAction
+
+  // Subject (who was affected)
+  memberId     String?
+  member       Member?             @relation(fields: [memberId], references: [id])
+  guestId      String?
+  guest        Guest?              @relation(fields: [guestId], references: [id])
+
+  // Transfer metadata
+  fromGroupId  String?
+  toGroupId    String?
+
+  // Actor
+  performedByUserId String?
+  performedByUser   User?          @relation(fields: [performedByUserId], references: [id])
+
+  description  String?
+  createdAt    DateTime            @default(now())
 }
