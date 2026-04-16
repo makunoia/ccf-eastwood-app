@@ -34,7 +34,7 @@ import {
 import { createMember, updateMember, deleteMember } from "./actions"
 import { type MemberRow } from "./columns"
 import { MobileFormActions } from "@/components/mobile-form-actions"
-import { LANGUAGE_OPTIONS } from "@/lib/constants/group-options"
+import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
 
 type Props = {
   lifeStages: { id: string; name: string }[]
@@ -320,12 +320,22 @@ export function MemberForm({ lifeStages, member, eventHistory, smallGroups }: Pr
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="workCity">Work / Home City</Label>
-              <Input
-                id="workCity"
-                value={form.workCity}
-                onChange={(e) => set("workCity", e.target.value)}
-                placeholder="Quezon City"
-              />
+              <Select
+                value={form.workCity || "_none"}
+                onValueChange={(v) => set("workCity", v === "_none" ? "" : v)}
+              >
+                <SelectTrigger id="workCity">
+                  <SelectValue placeholder="Select city" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">No preference</SelectItem>
+                  {CITY_OPTIONS.map((city) => (
+                    <SelectItem key={city} value={city}>
+                      {city}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="workIndustry">Industry</Label>

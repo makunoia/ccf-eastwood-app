@@ -12,7 +12,7 @@ export async function findSmallGroupMatchesForGuest(
   guestId: string
 ): Promise<ActionResult<MatchResult[]>> {
   try {
-    const results = await matchSmallGroups({ guestId }, { limit: 5 })
+    const results = await matchSmallGroups({ guestId }, { limit: 10 })
     return { success: true, data: results }
   } catch {
     return { success: false, error: "Failed to compute matches" }
@@ -39,7 +39,7 @@ export async function findSmallGroupMatchesWithEscalation(
     }
 
     // No breakout assignment — fall back to flat match wrapped as Level 3
-    const results = await matchSmallGroups({ guestId }, { limit: 5 })
+    const results = await matchSmallGroups({ guestId }, { limit: 10 })
     if (results.length === 0) return { success: true, data: [] }
     return {
       success: true,
