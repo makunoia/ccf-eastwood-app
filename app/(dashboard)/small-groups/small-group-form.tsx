@@ -7,16 +7,21 @@ import {
   IconArrowLeft,
   IconUserPlus,
   IconUserMinus,
-  IconLink,
   IconCheck,
   IconX,
   IconClock,
   IconChevronDown,
-  IconChevronUp,
 } from "@tabler/icons-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Dialog,
   DialogContent,
@@ -47,7 +52,6 @@ import {
   addMemberToGroup,
   removeMemberFromGroup,
   updateMemberGroupStatus,
-  generateGroupConfirmationToken,
   assignGuestToGroupTemporarily,
   assignMemberTransferTemporarily,
   cancelTempAssignment,
@@ -208,11 +212,6 @@ export function SmallGroupForm({
   const [assigningTempMember, setAssigningTempMember] = React.useState(false)
 
   const [cancellingRequestId, setCancellingRequestId] = React.useState<string | null>(null)
-  const [generatingToken, setGeneratingToken] = React.useState(false)
-  const [confirmationToken, setConfirmationToken] = React.useState<string | null>(
-    leaderConfirmationToken ?? null
-  )
-  const [logExpanded, setLogExpanded] = React.useState(false)
 
   function set(field: keyof SmallGroupFormValues, value: string | string[]) {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -378,28 +377,6 @@ export function SmallGroupForm({
     if (result.success) {
       toast.success("Assignment cancelled")
       router.refresh()
-    } else {
-      toast.error(result.error)
-    }
-  }
-
-  async function handleCopyLeaderLink() {
-    if (!group) return
-    if (confirmationToken) {
-      const url = `${window.location.origin}/small-group-confirmation/${confirmationToken}`
-      await navigator.clipboard.writeText(url)
-      toast.success("Leader confirmation link copied to clipboard")
-      return
-    }
-    setGeneratingToken(true)
-    const result = await generateGroupConfirmationToken(group.id)
-    setGeneratingToken(false)
-    if (result.success) {
-      const token = result.data.url.split("/").pop()!
-      setConfirmationToken(token)
-      const url = `${window.location.origin}${result.data.url}`
-      await navigator.clipboard.writeText(url)
-      toast.success("Leader confirmation link generated and copied to clipboard")
     } else {
       toast.error(result.error)
     }
@@ -732,230 +709,215 @@ export function SmallGroupForm({
         </section>
       </form>
 
-      {isEdit && groupMembers && (
-        <section className="max-w-2xl space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-medium text-muted-foreground">
-              Members (
-              {memberLimitNum !== null && !isNaN(memberLimitNum)
-                ? `${currentMemberCount} / ${memberLimitNum}`
-                : currentMemberCount}
-              )
-            </h3>
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setAddGuestOpen(true)}
-                disabled={isAtCapacity}
-                title={isAtCapacity ? `Group is at its member limit of ${memberLimitNum}` : undefined}
-              >
-                <IconUserPlus className="size-4" />
-                Add guest
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setAddMemberOpen(true)}
-                disabled={isAtCapacity}
-                title={isAtCapacity ? `Group is at its member limit of ${memberLimitNum}` : undefined}
-              >
-                <IconUserPlus className="size-4" />
-                Add member
-              </Button>
-            </div>
-          </div>
-          {isAtCapacity && (
-            <p className="text-xs text-muted-foreground">
-              This group has reached its member limit. Increase the limit or remove a member to add more.
-            </p>
-          )}
-          {groupMembers.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No members in this group yet.</p>
-          ) : (
-            <div className="rounded-md border divide-y">
-              {groupMembers.map((m) => (
-                <div
-                  key={m.id}
-                  className="flex items-center gap-3 px-4 py-3"
-                >
-                  <Link
-                    href={`/members/${m.id}`}
-                    className="flex-1 min-w-0 hover:underline"
-                  >
-                    <span className="text-sm font-medium">
-                      {m.firstName} {m.lastName}
+      {isEdit && (
+        <Tabs defaultValue="members" className="max-w-2xl">
+          <TabsList>
+            <TabsTrigger value="members">Members</TabsTrigger>
+            <TabsTrigger value="activity">
+              Activity{logs.length > 0 ? ` (${logs.length})` : ""}
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="members" className="mt-4 space-y-6">
+            {groupMembers && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-medium text-muted-foreground">
+                    Members (
+                    {memberLimitNum !== null && !isNaN(memberLimitNum)
+                      ? `${currentMemberCount} / ${memberLimitNum}`
+                      : currentMemberCount}
+                    )
+                  </h3>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={isAtCapacity}
+                        title={isAtCapacity ? `Group is at its member limit of ${memberLimitNum}` : undefined}
+                      >
+                        <IconUserPlus className="size-4" />
+                        Add
+                        <IconChevronDown className="size-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => setAddGuestOpen(true)}>
+                        Guest
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setAddMemberOpen(true)}>
+                        Member
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+                {isAtCapacity && (
+                  <p className="text-xs text-muted-foreground">
+                    This group has reached its member limit. Increase the limit or remove a member to add more.
+                  </p>
+                )}
+                {groupMembers.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No members in this group yet.</p>
+                ) : (
+                  <div className="rounded-md border divide-y">
+                    {groupMembers.map((m) => (
+                      <div
+                        key={m.id}
+                        className="flex items-center gap-3 px-4 py-3"
+                      >
+                        <Link
+                          href={`/members/${m.id}`}
+                          className="flex-1 min-w-0 hover:underline"
+                        >
+                          <span className="text-sm font-medium">
+                            {m.firstName} {m.lastName}
+                          </span>
+                        </Link>
+                        <Select
+                          value={m.smallGroupStatusId ?? ""}
+                          onValueChange={(v) => handleStatusChange(m.id, v)}
+                        >
+                          <SelectTrigger className={`w-28 h-7 text-xs font-medium border-0 ${m.smallGroupStatusId ? statusColorMap[m.smallGroupStatusId] : "bg-slate-100 text-slate-700"}`}>
+                            <SelectValue placeholder="—" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {statuses.map((s) => (
+                              <SelectItem key={s.id} value={s.id} className="text-xs">
+                                {s.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => setRemoveConfirmMember(m)}
+                          disabled={removingMemberId === m.id}
+                        >
+                          <IconUserMinus className="size-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-medium text-muted-foreground">
+                    Temporary Members
+                  </h3>
+                  {pendingRequests.length > 0 && (
+                    <span className="inline-flex items-center justify-center rounded-full bg-amber-100 text-amber-700 text-xs font-semibold px-2 py-0.5">
+                      {pendingRequests.length}
                     </span>
-                  </Link>
-                  <Select
-                    value={m.smallGroupStatusId ?? ""}
-                    onValueChange={(v) => handleStatusChange(m.id, v)}
-                  >
-                    <SelectTrigger className={`w-28 h-7 text-xs font-medium border-0 ${m.smallGroupStatusId ? statusColorMap[m.smallGroupStatusId] : "bg-slate-100 text-slate-700"}`}>
-                      <SelectValue placeholder="—" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {statuses.map((s) => (
-                        <SelectItem key={s.id} value={s.id} className="text-xs">
-                          {s.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  )}
+                </div>
+                <div className="flex gap-2">
                   <Button
                     type="button"
-                    variant="ghost"
+                    variant="outline"
                     size="sm"
-                    className="text-destructive hover:text-destructive"
-                    onClick={() => setRemoveConfirmMember(m)}
-                    disabled={removingMemberId === m.id}
+                    onClick={() => setTempGuestOpen(true)}
                   >
-                    <IconUserMinus className="size-4" />
+                    <IconUserPlus className="size-4" />
+                    Assign guest
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setTempMemberOpen(true)}
+                  >
+                    <IconUserPlus className="size-4" />
+                    Transfer
                   </Button>
                 </div>
-              ))}
-            </div>
-          )}
-        </section>
-      )}
-
-      {/* Temporary Members section */}
-      {isEdit && (
-        <section className="max-w-2xl space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm font-medium text-muted-foreground">
-                Temporary Members
-              </h3>
-              {pendingRequests.length > 0 && (
-                <span className="inline-flex items-center justify-center rounded-full bg-amber-100 text-amber-700 text-xs font-semibold px-2 py-0.5">
-                  {pendingRequests.length}
-                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Temporarily assigned people appear here until the group leader confirms or declines via the leader link.
+              </p>
+              {pendingRequests.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No pending assignments.</p>
+              ) : (
+                <div className="rounded-md border divide-y">
+                  {pendingRequests.map((req) => (
+                    <div key={req.id} className="flex items-center gap-3 px-4 py-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{req.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {req.type === "guest"
+                            ? "New guest"
+                            : req.fromGroupName
+                              ? `Transfer from ${req.fromGroupName}`
+                              : "Transfer from another group"}
+                          {req.assignedByName && ` · Assigned by ${req.assignedByName}`}
+                          {" · "}
+                          {formatRelativeTime(req.createdAt)}
+                        </p>
+                      </div>
+                      <span className="shrink-0 text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">
+                        Pending
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive hover:text-destructive shrink-0"
+                        onClick={() => handleCancelRequest(req.id)}
+                        disabled={cancellingRequestId === req.id}
+                        title="Cancel assignment"
+                      >
+                        <IconX className="size-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleCopyLeaderLink}
-                disabled={generatingToken}
-              >
-                <IconLink className="size-4" />
-                {generatingToken ? "Generating…" : "Copy leader link"}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setTempGuestOpen(true)}
-              >
-                <IconUserPlus className="size-4" />
-                Assign guest
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setTempMemberOpen(true)}
-              >
-                <IconUserPlus className="size-4" />
-                Assign transfer
-              </Button>
-            </div>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Temporarily assigned people appear here until the group leader confirms or declines via the leader link.
-          </p>
-          {pendingRequests.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No pending assignments.</p>
-          ) : (
-            <div className="rounded-md border divide-y">
-              {pendingRequests.map((req) => (
-                <div key={req.id} className="flex items-center gap-3 px-4 py-3">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{req.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {req.type === "guest"
-                        ? "New guest"
-                        : req.fromGroupName
-                          ? `Transfer from ${req.fromGroupName}`
-                          : "Transfer from another group"}
-                      {req.assignedByName && ` · Assigned by ${req.assignedByName}`}
-                      {" · "}
-                      {formatRelativeTime(req.createdAt)}
-                    </p>
-                  </div>
-                  <span className="shrink-0 text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">
-                    Pending
-                  </span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="text-destructive hover:text-destructive shrink-0"
-                    onClick={() => handleCancelRequest(req.id)}
-                    disabled={cancellingRequestId === req.id}
-                    title="Cancel assignment"
-                  >
-                    <IconX className="size-4" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      )}
+          </TabsContent>
 
-      {/* Activity Log section */}
-      {isEdit && logs.length > 0 && (
-        <section className="max-w-2xl space-y-3">
-          <button
-            type="button"
-            onClick={() => setLogExpanded((p) => !p)}
-            className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <IconClock className="size-4" />
-            Activity Log ({logs.length})
-            {logExpanded ? (
-              <IconChevronUp className="size-4" />
+          <TabsContent value="activity" className="mt-4">
+            {logs.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No activity yet.</p>
             ) : (
-              <IconChevronDown className="size-4" />
+              <div className="rounded-md border divide-y">
+                {logs.map((log) => (
+                  <div key={log.id} className="flex items-start gap-3 px-4 py-3">
+                    <div className="mt-0.5 shrink-0">
+                      {(log.action === "MemberAdded" || log.action === "TempAssignmentConfirmed" || log.action === "GroupCreated") ? (
+                        <span className="inline-flex size-5 items-center justify-center rounded-full bg-green-100">
+                          <IconCheck className="size-3 text-green-700" />
+                        </span>
+                      ) : log.action === "MemberRemoved" || log.action === "TempAssignmentRejected" ? (
+                        <span className="inline-flex size-5 items-center justify-center rounded-full bg-red-100">
+                          <IconX className="size-3 text-red-700" />
+                        </span>
+                      ) : (
+                        <span className="inline-flex size-5 items-center justify-center rounded-full bg-blue-100">
+                          <IconClock className="size-3 text-blue-700" />
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm">{log.description ?? LOG_ACTION_LABELS[log.action] ?? log.action}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {log.performedByName ? `${log.performedByName} · ` : ""}
+                        {formatRelativeTime(log.createdAt)}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
-          </button>
-          {logExpanded && (
-            <div className="rounded-md border divide-y">
-              {logs.map((log) => (
-                <div key={log.id} className="flex items-start gap-3 px-4 py-3">
-                  <div className="mt-0.5 shrink-0">
-                    {(log.action === "MemberAdded" || log.action === "TempAssignmentConfirmed" || log.action === "GroupCreated") ? (
-                      <span className="inline-flex size-5 items-center justify-center rounded-full bg-green-100">
-                        <IconCheck className="size-3 text-green-700" />
-                      </span>
-                    ) : log.action === "MemberRemoved" || log.action === "TempAssignmentRejected" ? (
-                      <span className="inline-flex size-5 items-center justify-center rounded-full bg-red-100">
-                        <IconX className="size-3 text-red-700" />
-                      </span>
-                    ) : (
-                      <span className="inline-flex size-5 items-center justify-center rounded-full bg-blue-100">
-                        <IconClock className="size-3 text-blue-700" />
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm">{log.description ?? LOG_ACTION_LABELS[log.action] ?? log.action}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {log.performedByName ? `${log.performedByName} · ` : ""}
-                      {formatRelativeTime(log.createdAt)}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
+          </TabsContent>
+        </Tabs>
       )}
 
       {/* Add member dialog */}
