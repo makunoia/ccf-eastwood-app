@@ -7,6 +7,8 @@ import {
   IconCalendarPlus,
   IconCalendarRepeat,
   IconCopy,
+  IconDoorEnter,
+  IconDoorExit,
 } from "@tabler/icons-react"
 import { toast } from "sonner"
 
@@ -21,11 +23,15 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { createOccurrence } from "@/app/(dashboard)/events/actions"
+import {
+  createOccurrence,
+  setOccurrenceCheckinOpen,
+} from "@/app/(dashboard)/events/actions"
 
 type OccurrenceRow = {
   id: string
   date: string
+  isOpen: boolean
   attendeeCount: number
 }
 
@@ -53,6 +59,19 @@ export function SessionsClient({ eventId, eventType, occurrences }: Props) {
   const [saving, setSaving] = React.useState(false)
 
   const title = isRecurring ? "Sessions" : "Days"
+  const [togglingId, setTogglingId] = React.useState<string | null>(null)
+
+  async function handleToggleOpen(occurrenceId: string, currentlyOpen: boolean) {
+    setTogglingId(occurrenceId)
+    const result = await setOccurrenceCheckinOpen(occurrenceId, !currentlyOpen, eventId)
+    setTogglingId(null)
+    if (result.success) {
+      toast.success(currentlyOpen ? "Check-in closed" : "Check-in opened")
+      router.refresh()
+    } else {
+      toast.error(result.error)
+    }
+  }
 
   async function handleAddSession() {
     if (!date) return
@@ -110,15 +129,40 @@ export function SessionsClient({ eventId, eventType, occurrences }: Props) {
             <tbody>
               {occurrences.map((o) => (
                 <tr key={o.id} className="border-b last:border-0">
-                  <td className="px-4 py-3 font-medium">{formatOccurrenceDate(o.date)}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{formatOccurrenceDate(o.date)}</span>
+                      {o.isOpen && (
+                        <Badge variant="default" className="text-xs">Check-in open</Badge>
+                      )}
+                    </div>
+                  </td>
                   <td className="px-4 py-3">
                     <Badge variant="secondary">{o.attendeeCount} attended</Badge>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleToggleOpen(o.id, o.isOpen)}
+                        disabled={togglingId === o.id}
+                      >
+                        {o.isOpen ? (
+                          <>
+                            <IconDoorExit className="mr-1.5 size-3.5" />
+                            Close check-in
+                          </>
+                        ) : (
+                          <>
+                            <IconDoorEnter className="mr-1.5 size-3.5" />
+                            Open check-in
+                          </>
+                        )}
+                      </Button>
                       <Button variant="ghost" size="sm" onClick={() => copyCheckinLink(o.id)}>
                         <IconCopy className="mr-1.5 size-3.5" />
-                        Check-in link
+                        Copy link
                       </Button>
                       <Button variant="outline" size="sm" asChild>
                         <Link href={`/event/${eventId}/sessions/${o.id}`}>View</Link>

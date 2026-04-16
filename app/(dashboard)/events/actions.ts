@@ -330,6 +330,23 @@ export async function checkInToOccurrence(
   }
 }
 
+export async function setOccurrenceCheckinOpen(
+  occurrenceId: string,
+  isOpen: boolean,
+  eventId: string
+): Promise<ActionResult> {
+  try {
+    await db.eventOccurrence.update({
+      where: { id: occurrenceId },
+      data: { isOpen },
+    })
+    revalidatePath(`/event/${eventId}/sessions`)
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to update session" }
+  }
+}
+
 type GuestSmallGroupPrompt = {
   guestId: string
   existingProfile: {
@@ -464,5 +481,111 @@ export async function lookupCheckinRegistrant(
     }
   } catch {
     return { success: false, error: "Lookup failed. Please try again." }
+  }
+}
+
+const walkInSchema = z.object({
+  firstName: z.string().min(1, "First name is required").trim(),
+  lastName: z.string().min(1, "Last name is required").trim(),
+  nickname: z.string().optional().transform((v) => (!v?.trim() ? null : v.trim())),
+  email: z.string().optional().transform((v) => (!v?.trim() ? null : v.trim())),
+  mobileNumber: z.string().min(1, "Mobile number is required").trim(),
+})
+
+export async function walkInCheckin(
+  eventId: string,
+  raw: z.infer<typeof walkInSchema>,
+  occurrenceId: string | null
+): Promise<ActionResult<{ registrantId: string; name: string }>> {
+  const parsed = walkInSchema.safeParse(raw)
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
+  }
+
+  try {
+    // Member lookup can happen outside the transaction (read-only)
+    const member = await db.member.findFirst({
+      where: { phone: parsed.data.mobileNumber },
+      select: { id: true, firstName: true, lastName: true },
+    })
+
+    const { registrantId, name } = await db.$transaction(async (tx) => {
+      let memberId: string | null = null
+      let guestId: string | null = null
+      let displayName: string
+
+      if (member) {
+        memberId = member.id
+        displayName = `${member.firstName} ${member.lastName}`.trim()
+      } else {
+        // Find existing Guest by phone, then by email as fallback
+        let existingGuest = await tx.guest.findFirst({
+          where: { phone: parsed.data.mobileNumber },
+          select: { id: true, firstName: true, lastName: true },
+        })
+        if (!existingGuest && parsed.data.email) {
+          existingGuest = await tx.guest.findFirst({
+            where: { email: parsed.data.email },
+            select: { id: true, firstName: true, lastName: true },
+          })
+        }
+
+        if (existingGuest) {
+          guestId = existingGuest.id
+          displayName = `${existingGuest.firstName} ${existingGuest.lastName}`.trim()
+        } else {
+          const newGuest = await tx.guest.create({
+            data: {
+              firstName: parsed.data.firstName,
+              lastName: parsed.data.lastName,
+              email: parsed.data.email ?? null,
+              phone: parsed.data.mobileNumber,
+            },
+            select: { id: true },
+          })
+          guestId = newGuest.id
+          displayName = `${parsed.data.firstName} ${parsed.data.lastName}`.trim()
+        }
+      }
+
+      // Find or create EventRegistrant
+      const existingRegistrant = await tx.eventRegistrant.findFirst({
+        where: memberId ? { eventId, memberId } : { eventId, guestId: guestId! },
+        select: { id: true },
+      })
+
+      const regId = existingRegistrant
+        ? existingRegistrant.id
+        : (
+            await tx.eventRegistrant.create({
+              data: {
+                eventId,
+                ...(memberId ? { memberId } : { guestId: guestId! }),
+                nickname: parsed.data.nickname ?? null,
+              },
+              select: { id: true },
+            })
+          ).id
+
+      // Check in immediately
+      if (occurrenceId !== null) {
+        await tx.occurrenceAttendee.upsert({
+          where: { occurrenceId_registrantId: { occurrenceId, registrantId: regId } },
+          create: { occurrenceId, registrantId: regId },
+          update: {},
+        })
+      } else {
+        await tx.eventRegistrant.update({
+          where: { id: regId },
+          data: { attendedAt: new Date() },
+        })
+      }
+
+      return { registrantId: regId, name: displayName }
+    })
+
+    return { success: true, data: { registrantId, name } }
+  } catch {
+    return { success: false, error: "Failed to register. Please try again." }
   }
 }
