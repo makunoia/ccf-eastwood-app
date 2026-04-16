@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
-import { BreakoutGroupsTab } from "@/app/(dashboard)/events/[id]/breakouts-tab"
+import { BreakoutGroupsTable } from "./breakout-table"
 
 const breakoutGroupsInclude = {
   orderBy: { createdAt: "asc" } as const,
@@ -53,25 +53,11 @@ const breakoutGroupsInclude = {
         },
       },
     },
-    members: {
-      orderBy: { assignedAt: "asc" } as const,
-      include: {
-        registrant: {
-          select: {
-            id: true,
-            memberId: true,
-            guestId: true,
-            firstName: true,
-            lastName: true,
-            nickname: true,
-            mobileNumber: true,
-            member: { select: { id: true, firstName: true, lastName: true } },
-            guest: { select: { id: true, firstName: true, lastName: true } },
-          },
-        },
-      },
+    linkedSmallGroup: {
+      select: { id: true, name: true },
     },
     lifeStage: { select: { id: true, name: true } },
+    _count: { select: { members: true } },
   },
 }
 
@@ -80,19 +66,10 @@ async function getEventBreakouts(id: string) {
     where: { id },
     select: {
       id: true,
+      _count: { select: { registrants: true } },
       registrants: {
-        orderBy: { createdAt: "asc" },
-        select: {
-          id: true,
-          memberId: true,
-          guestId: true,
-          firstName: true,
-          lastName: true,
-          nickname: true,
-          mobileNumber: true,
-          member: { select: { id: true, firstName: true, lastName: true } },
-          guest: { select: { id: true, firstName: true, lastName: true } },
-        },
+        select: { id: true },
+        where: { breakoutGroupMemberships: { none: {} } },
       },
       volunteers: {
         where: { status: "Confirmed" },
@@ -181,13 +158,19 @@ export default async function BreakoutsPage({
     ...event.ministries.flatMap((em) => em.ministry.volunteers),
   ]
 
+  const breakoutGroupRows = event.breakoutGroups.map((g) => ({
+    ...g,
+    memberCount: g._count.members,
+  }))
+
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
       <h2 className="text-lg font-semibold">Breakout Groups</h2>
-      <BreakoutGroupsTab
+      <BreakoutGroupsTable
         eventId={event.id}
-        breakoutGroups={event.breakoutGroups}
-        registrants={event.registrants}
+        breakoutGroups={breakoutGroupRows}
+        registrantCount={event._count.registrants}
+        unassignedCount={event.registrants.length}
         volunteers={confirmedVolunteers}
         lifeStages={lifeStages}
       />
