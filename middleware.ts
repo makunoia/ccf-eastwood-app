@@ -22,6 +22,7 @@ const EVENT_PUBLIC_PATTERNS = [
   /^\/events\/[^/]+\/register/,
   /^\/events\/[^/]+\/checkin/,
   /^\/volunteer-approval\//,
+  /^\/small-group-confirmation\//,
   /^\/ministries\/[^/]+\/volunteer/,
   /^\/events\/[^/]+\/volunteer/,
 ]

@@ -1,7 +1,9 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { randomUUID } from "crypto"
 import { db } from "@/lib/db"
+import { auth } from "@/lib/auth"
 import {
   smallGroupSchema,
   type SmallGroupFormValues,
@@ -10,6 +12,11 @@ import {
 type ActionResult<T = void> =
   | { success: true; data: T }
   | { success: false; error: string }
+
+async function getActorId(): Promise<string | null> {
+  const session = await auth()
+  return (session?.user as any)?.id ?? null
+}
 
 export async function createSmallGroup(
   raw: SmallGroupFormValues
@@ -23,6 +30,7 @@ export async function createSmallGroup(
   }
 
   try {
+    const actorId = await getActorId()
     const group = await db.$transaction(async (tx) => {
       const created = await tx.smallGroup.create({
         data: {
@@ -58,6 +66,15 @@ export async function createSmallGroup(
           },
         })
       }
+
+      await tx.smallGroupLog.create({
+        data: {
+          smallGroupId: created.id,
+          action: "GroupCreated",
+          performedByUserId: actorId,
+          description: `Group "${parsed.data.name}" was created`,
+        },
+      })
 
       return created
     })
@@ -204,9 +221,25 @@ export async function addMemberToGroup(
       orderBy: { order: "asc" },
       select: { id: true },
     })
+    const actorId = await getActorId()
+    const member = await db.member.findUnique({
+      where: { id: memberId },
+      select: { firstName: true, lastName: true },
+    })
     await db.member.update({
       where: { id: memberId },
       data: { smallGroupId: groupId, smallGroupStatusId: firstStatus?.id ?? null },
+    })
+    await db.smallGroupLog.create({
+      data: {
+        smallGroupId: groupId,
+        action: "MemberAdded",
+        memberId,
+        performedByUserId: actorId,
+        description: member
+          ? `${member.firstName} ${member.lastName} was added to the group`
+          : "A member was added to the group",
+      },
     })
     revalidatePath(`/small-groups/${groupId}`)
     revalidatePath("/small-groups")
@@ -221,9 +254,25 @@ export async function removeMemberFromGroup(
   groupId: string
 ): Promise<ActionResult> {
   try {
+    const actorId = await getActorId()
+    const member = await db.member.findUnique({
+      where: { id: memberId },
+      select: { firstName: true, lastName: true },
+    })
     await db.member.update({
       where: { id: memberId },
       data: { smallGroupId: null, smallGroupStatusId: null },
+    })
+    await db.smallGroupLog.create({
+      data: {
+        smallGroupId: groupId,
+        action: "MemberRemoved",
+        memberId,
+        performedByUserId: actorId,
+        description: member
+          ? `${member.firstName} ${member.lastName} was removed from the group`
+          : "A member was removed from the group",
+      },
     })
     revalidatePath(`/small-groups/${groupId}`)
     revalidatePath("/small-groups")
@@ -247,6 +296,176 @@ export async function updateMemberGroupStatus(
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to update member status" }
+  }
+}
+
+// ─── Temporary Assignment Actions ────────────────────────────────────────────
+
+export async function generateGroupConfirmationToken(
+  groupId: string
+): Promise<ActionResult<{ url: string }>> {
+  try {
+    const token = randomUUID()
+    await db.smallGroup.update({
+      where: { id: groupId },
+      data: { leaderConfirmationToken: token },
+    })
+    revalidatePath(`/small-groups/${groupId}`)
+    return { success: true, data: { url: `/small-group-confirmation/${token}` } }
+  } catch {
+    return { success: false, error: "Failed to generate confirmation link" }
+  }
+}
+
+export async function assignGuestToGroupTemporarily(
+  groupId: string,
+  guestId: string
+): Promise<ActionResult> {
+  try {
+    const guest = await db.guest.findUnique({
+      where: { id: guestId },
+      select: { firstName: true, lastName: true, memberId: true },
+    })
+    if (!guest) return { success: false, error: "Guest not found" }
+    if (guest.memberId) {
+      return { success: false, error: "This guest has already been promoted to a member" }
+    }
+
+    // Check for existing pending request for this guest in this group
+    const existing = await db.smallGroupMemberRequest.findFirst({
+      where: { smallGroupId: groupId, guestId, status: "Pending" },
+    })
+    if (existing) {
+      return { success: false, error: "This guest already has a pending assignment to this group" }
+    }
+
+    const actorId = await getActorId()
+    await db.$transaction([
+      db.smallGroupMemberRequest.create({
+        data: {
+          smallGroupId: groupId,
+          guestId,
+          assignedByUserId: actorId,
+        },
+      }),
+      db.smallGroupLog.create({
+        data: {
+          smallGroupId: groupId,
+          action: "TempAssignmentCreated",
+          guestId,
+          performedByUserId: actorId,
+          description: `${guest.firstName} ${guest.lastName} was temporarily assigned to the group (pending leader confirmation)`,
+        },
+      }),
+    ])
+
+    revalidatePath(`/small-groups/${groupId}`)
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to assign guest to group" }
+  }
+}
+
+export async function assignMemberTransferTemporarily(
+  groupId: string,
+  memberId: string
+): Promise<ActionResult> {
+  try {
+    const member = await db.member.findUnique({
+      where: { id: memberId },
+      select: { firstName: true, lastName: true, smallGroupId: true },
+    })
+    if (!member) return { success: false, error: "Member not found" }
+    if (member.smallGroupId === groupId) {
+      return { success: false, error: "This member is already in this group" }
+    }
+
+    // Check for existing pending transfer request to this group
+    const existing = await db.smallGroupMemberRequest.findFirst({
+      where: { smallGroupId: groupId, memberId, status: "Pending" },
+    })
+    if (existing) {
+      return { success: false, error: "This member already has a pending transfer to this group" }
+    }
+
+    const actorId = await getActorId()
+    await db.$transaction([
+      db.smallGroupMemberRequest.create({
+        data: {
+          smallGroupId: groupId,
+          memberId,
+          fromGroupId: member.smallGroupId ?? null,
+          assignedByUserId: actorId,
+        },
+      }),
+      db.smallGroupLog.create({
+        data: {
+          smallGroupId: groupId,
+          action: "TempAssignmentCreated",
+          memberId,
+          fromGroupId: member.smallGroupId ?? null,
+          toGroupId: groupId,
+          performedByUserId: actorId,
+          description: `${member.firstName} ${member.lastName} was temporarily assigned for transfer to this group (pending leader confirmation)`,
+        },
+      }),
+    ])
+
+    revalidatePath(`/small-groups/${groupId}`)
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to assign member transfer" }
+  }
+}
+
+export async function cancelTempAssignment(
+  requestId: string
+): Promise<ActionResult> {
+  try {
+    const request = await db.smallGroupMemberRequest.findUnique({
+      where: { id: requestId },
+      select: {
+        smallGroupId: true,
+        status: true,
+        guestId: true,
+        memberId: true,
+        guest: { select: { firstName: true, lastName: true } },
+        member: { select: { firstName: true, lastName: true } },
+      },
+    })
+    if (!request) return { success: false, error: "Request not found" }
+    if (request.status !== "Pending") {
+      return { success: false, error: "This request has already been resolved" }
+    }
+
+    const actorId = await getActorId()
+    const personName = request.guest
+      ? `${request.guest.firstName} ${request.guest.lastName}`
+      : request.member
+        ? `${request.member.firstName} ${request.member.lastName}`
+        : "Unknown"
+
+    await db.$transaction([
+      db.smallGroupMemberRequest.update({
+        where: { id: requestId },
+        data: { status: "Rejected", resolvedAt: new Date() },
+      }),
+      db.smallGroupLog.create({
+        data: {
+          smallGroupId: request.smallGroupId,
+          action: "TempAssignmentRejected",
+          guestId: request.guestId ?? null,
+          memberId: request.memberId ?? null,
+          performedByUserId: actorId,
+          description: `Temporary assignment for ${personName} was cancelled by admin`,
+        },
+      }),
+    ])
+
+    revalidatePath(`/small-groups/${request.smallGroupId}`)
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to cancel assignment" }
   }
 }
 
