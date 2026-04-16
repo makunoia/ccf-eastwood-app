@@ -98,7 +98,7 @@ type Registrant = {
   guest: { id: string; firstName: string; lastName: string; phone?: string | null; email?: string | null } | null
 }
 
-type LedGroup = {
+type SmallGroupProfile = {
   id: string
   name: string
   lifeStageId: string | null
@@ -112,7 +112,7 @@ type LedGroup = {
 
 type Volunteer = {
   id: string
-  member: { id: string; firstName: string; lastName: string; ledGroups: LedGroup[] }
+  member: { id: string; firstName: string; lastName: string; smallGroup: SmallGroupProfile | null }
 }
 
 type Props = {
@@ -177,7 +177,7 @@ const EMPTY_FORM = {
   locationCity: "",
 }
 
-function deriveProfileFromGroup(g: LedGroup) {
+function deriveProfileFromGroup(g: SmallGroupProfile) {
   return {
     lifeStageId: g.lifeStageId ?? "",
     genderFocus: g.genderFocus ?? "",
@@ -192,12 +192,10 @@ function deriveProfileFromGroup(g: LedGroup) {
 function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volunteers }: GroupFormDialogProps) {
   const isEdit = !!group
   const [form, setForm] = React.useState(EMPTY_FORM)
-  const [sourceGroupId, setSourceGroupId] = React.useState("")
   const [saving, setSaving] = React.useState(false)
 
   React.useEffect(() => {
     if (open) {
-      setSourceGroupId("")
       setForm(
         group
           ? {
@@ -218,29 +216,19 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
   }, [open, group])
 
   function handleVolunteerChange(volunteerId: string) {
-    setSourceGroupId("")
     const vol = volunteers.find((v) => v.id === volunteerId)
     if (!vol) {
       setForm((f) => ({ ...f, facilitatorId: volunteerId }))
       return
     }
-    const ledGroups = vol.member.ledGroups
-    if (ledGroups.length === 1) {
-      setForm((f) => ({ ...f, facilitatorId: volunteerId, ...deriveProfileFromGroup(ledGroups[0]) }))
+    if (vol.member.smallGroup) {
+      setForm((f) => ({ ...f, facilitatorId: volunteerId, ...deriveProfileFromGroup(vol.member.smallGroup!) }))
     } else {
       setForm((f) => ({ ...f, facilitatorId: volunteerId }))
     }
   }
 
-  function handleSourceGroupChange(groupId: string) {
-    setSourceGroupId(groupId)
-    const vol = volunteers.find((v) => v.id === form.facilitatorId)
-    const g = vol?.member.ledGroups.find((lg) => lg.id === groupId)
-    if (g) setForm((f) => ({ ...f, ...deriveProfileFromGroup(g) }))
-  }
-
   const selectedVolunteer = volunteers.find((v) => v.id === form.facilitatorId) ?? null
-  const ledGroups = selectedVolunteer?.member.ledGroups ?? []
 
   function field(key: keyof typeof EMPTY_FORM) {
     return {
@@ -329,30 +317,10 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
             </Select>
           </div>
 
-          {/* Source group selector — only when facilitator leads 2+ groups */}
-          {form.facilitatorId && ledGroups.length > 1 && (
-            <div className="space-y-1.5">
-              <Label>Source small group <span className="text-muted-foreground font-normal">(to derive matching profile)</span></Label>
-              <Select
-                value={sourceGroupId}
-                onValueChange={handleSourceGroupChange}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a group…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {ledGroups.map((g) => (
-                    <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {/* Hint when facilitator leads no groups */}
-          {form.facilitatorId && ledGroups.length === 0 && (
+          {/* Hint when facilitator has no small group membership */}
+          {form.facilitatorId && !selectedVolunteer?.member.smallGroup && (
             <p className="text-xs text-muted-foreground">
-              This volunteer does not lead any small group — set the matching profile manually.
+              This volunteer does not belong to a small group — set the matching profile manually.
             </p>
           )}
 

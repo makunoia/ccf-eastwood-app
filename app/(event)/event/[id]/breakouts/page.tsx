@@ -12,19 +12,6 @@ const breakoutGroupsInclude = {
             id: true,
             firstName: true,
             lastName: true,
-            ledGroups: {
-              select: {
-                id: true,
-                name: true,
-                lifeStageId: true,
-                genderFocus: true,
-                language: true,
-                ageRangeMin: true,
-                ageRangeMax: true,
-                meetingFormat: true,
-                locationCity: true,
-              },
-            },
           },
         },
       },
@@ -36,19 +23,6 @@ const breakoutGroupsInclude = {
             id: true,
             firstName: true,
             lastName: true,
-            ledGroups: {
-              select: {
-                id: true,
-                name: true,
-                lifeStageId: true,
-                genderFocus: true,
-                language: true,
-                ageRangeMin: true,
-                ageRangeMax: true,
-                meetingFormat: true,
-                locationCity: true,
-              },
-            },
           },
         },
       },
@@ -103,7 +77,7 @@ async function getEventBreakouts(id: string) {
               id: true,
               firstName: true,
               lastName: true,
-              ledGroups: {
+              smallGroup: {
                 select: {
                   id: true,
                   name: true,
@@ -135,7 +109,7 @@ async function getEventBreakouts(id: string) {
                       id: true,
                       firstName: true,
                       lastName: true,
-                      ledGroups: {
+                      smallGroup: {
                         select: {
                           id: true,
                           name: true,
