@@ -22,6 +22,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import Link from "next/link"
 import { deleteMinistry } from "./actions"
 
 export type MinistryRow = {
@@ -114,6 +115,14 @@ export function buildColumns(): ColumnDef<MinistryRow>[] {
     {
       accessorKey: "name",
       header: "Name",
+      cell: ({ row }) => (
+        <Link
+          href={`/ministries/${row.original.id}`}
+          className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+        >
+          {row.original.name}
+        </Link>
+      ),
     },
     {
       accessorKey: "lifeStage",

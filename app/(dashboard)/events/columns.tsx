@@ -22,6 +22,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import Link from "next/link"
 import { deleteEvent } from "./actions"
 
 export type EventRow = {
@@ -145,6 +146,14 @@ export function buildColumns(): ColumnDef<EventRow>[] {
     {
       accessorKey: "name",
       header: "Name",
+      cell: ({ row }) => (
+        <Link
+          href={`/event/${row.original.id}/dashboard`}
+          className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+        >
+          {row.original.name}
+        </Link>
+      ),
     },
     {
       id: "ministry",

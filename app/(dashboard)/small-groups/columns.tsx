@@ -22,6 +22,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import Link from "next/link"
 import { deleteSmallGroup } from "./actions"
 
 export type SmallGroupRow = {
@@ -127,6 +128,14 @@ export function buildColumns(): ColumnDef<SmallGroupRow>[] {
     {
       accessorKey: "name",
       header: "Name",
+      cell: ({ row }) => (
+        <Link
+          href={`/small-groups/${row.original.id}`}
+          className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+        >
+          {row.original.name}
+        </Link>
+      ),
     },
     {
       accessorKey: "leaderName",
