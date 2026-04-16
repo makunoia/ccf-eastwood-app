@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
 import { matchBreakoutGroups } from "@/lib/matching"
 import type { MatchResult } from "@/lib/matching/types"
+import { tryCreateSmallGroupRequestFromBreakout } from "@/lib/create-small-group-request"
 
 type ActionResult<T> =
   | { success: true; data: T }
@@ -45,6 +46,7 @@ export async function assignRegistrantToBreakout(
     await db.breakoutGroupMember.create({
       data: { breakoutGroupId: groupId, registrantId },
     })
+    await tryCreateSmallGroupRequestFromBreakout(groupId, registrantId)
 
     revalidatePath(`/event/${eventId}/registrants`)
     revalidatePath(`/event/${eventId}/breakouts`)

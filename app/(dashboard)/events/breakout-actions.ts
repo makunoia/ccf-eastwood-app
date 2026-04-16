@@ -5,6 +5,10 @@ import { db } from "@/lib/db"
 import { breakoutGroupSchema } from "@/lib/validations/breakout-group"
 import type { BreakoutGroupFormValues } from "@/lib/validations/breakout-group"
 import { matchBreakoutGroups } from "@/lib/matching"
+import {
+  tryCreateSmallGroupRequestFromBreakout,
+  tryCancelSmallGroupRequestFromBreakout,
+} from "@/lib/create-small-group-request"
 
 type ActionResult<T = void> =
   | { success: true; data: T }
@@ -20,7 +24,7 @@ export async function createBreakoutGroup(
   if (!parsed.success) {
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
   }
-  const { name, facilitatorId, coFacilitatorId, memberLimit, ...profile } = parsed.data
+  const { name, facilitatorId, coFacilitatorId, memberLimit, linkedSmallGroupId, ...profile } = parsed.data
   try {
     const group = await db.breakoutGroup.create({
       data: {
@@ -29,6 +33,7 @@ export async function createBreakoutGroup(
         facilitatorId: facilitatorId ?? null,
         coFacilitatorId: coFacilitatorId ?? null,
         memberLimit: memberLimit ?? null,
+        linkedSmallGroupId: linkedSmallGroupId ?? null,
         lifeStageId: profile.lifeStageId ?? null,
         genderFocus: profile.genderFocus ?? null,
         language: profile.language,
@@ -55,7 +60,7 @@ export async function updateBreakoutGroup(
   if (!parsed.success) {
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
   }
-  const { name, facilitatorId, coFacilitatorId, memberLimit, ...profile } = parsed.data
+  const { name, facilitatorId, coFacilitatorId, memberLimit, linkedSmallGroupId, ...profile } = parsed.data
   try {
     await db.breakoutGroup.update({
       where: { id: groupId },
@@ -64,6 +69,7 @@ export async function updateBreakoutGroup(
         facilitatorId: facilitatorId ?? null,
         coFacilitatorId: coFacilitatorId ?? null,
         memberLimit: memberLimit ?? null,
+        linkedSmallGroupId: linkedSmallGroupId ?? null,
         lifeStageId: profile.lifeStageId ?? null,
         genderFocus: profile.genderFocus ?? null,
         language: profile.language,
@@ -116,6 +122,7 @@ export async function addRegistrantToBreakout(
       }
     }
     await db.breakoutGroupMember.create({ data: { breakoutGroupId: groupId, registrantId } })
+    await tryCreateSmallGroupRequestFromBreakout(groupId, registrantId)
     revalidatePath(`/events/${eventId}`)
     return { success: true, data: undefined }
   } catch {
@@ -132,6 +139,7 @@ export async function removeRegistrantFromBreakout(
     await db.breakoutGroupMember.delete({
       where: { breakoutGroupId_registrantId: { breakoutGroupId: groupId, registrantId } },
     })
+    await tryCancelSmallGroupRequestFromBreakout(groupId, registrantId)
     revalidatePath(`/events/${eventId}`)
     return { success: true, data: undefined }
   } catch {
@@ -176,6 +184,7 @@ export async function autoAssignBreakouts(
       await db.breakoutGroupMember.create({
         data: { breakoutGroupId: matches[0].groupId, registrantId },
       })
+      await tryCreateSmallGroupRequestFromBreakout(matches[0].groupId, registrantId)
       assigned++
     }
 
@@ -192,7 +201,8 @@ export async function setFacilitator(
   groupId: string,
   volunteerId: string | null,
   role: "facilitator" | "coFacilitator",
-  eventId: string
+  eventId: string,
+  linkedSmallGroupId?: string | null
 ): Promise<ActionResult> {
   // Validate the volunteer belongs to this event (if assigning, not clearing)
   if (volunteerId !== null) {
@@ -221,7 +231,11 @@ export async function setFacilitator(
     await db.breakoutGroup.update({
       where: { id: groupId },
       data: role === "facilitator"
-        ? { facilitatorId: volunteerId }
+        ? {
+            facilitatorId: volunteerId,
+            // Update linked group when facilitator changes (only when explicitly provided)
+            ...(linkedSmallGroupId !== undefined ? { linkedSmallGroupId } : {}),
+          }
         : { coFacilitatorId: volunteerId },
     })
     revalidatePath(`/events/${eventId}`)

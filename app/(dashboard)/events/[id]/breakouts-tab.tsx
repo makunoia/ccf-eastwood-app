@@ -76,6 +76,7 @@ type BreakoutGroup = {
   coFacilitatorId: string | null
   coFacilitator: { id: string; member: PersonName } | null
   memberLimit: number | null
+  linkedSmallGroupId: string | null
   lifeStageId: string | null
   lifeStage: { id: string; name: string } | null
   genderFocus: string | null
@@ -197,7 +198,7 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
 
   React.useEffect(() => {
     if (open) {
-      setSourceGroupId("")
+      setSourceGroupId(group?.linkedSmallGroupId ?? "")
       setForm(
         group
           ? {
@@ -226,6 +227,8 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
     }
     const ledGroups = vol.member.ledGroups
     if (ledGroups.length === 1) {
+      // Auto-select the only group — derive profile and store as linkedSmallGroupId
+      setSourceGroupId(ledGroups[0].id)
       setForm((f) => ({ ...f, facilitatorId: volunteerId, ...deriveProfileFromGroup(ledGroups[0]) }))
     } else {
       setForm((f) => ({ ...f, facilitatorId: volunteerId }))
@@ -257,6 +260,7 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
       name: form.name.trim(),
       facilitatorId: form.facilitatorId || null,
       memberLimit: form.memberLimit ? Number(form.memberLimit) : null,
+      linkedSmallGroupId: sourceGroupId || null,
       lifeStageId: form.lifeStageId || null,
       genderFocus: (form.genderFocus as "Male" | "Female" | "Mixed") || null,
       language: form.language,
@@ -332,7 +336,7 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
           {/* Source group selector — only when facilitator leads 2+ groups */}
           {form.facilitatorId && ledGroups.length > 1 && (
             <div className="space-y-1.5">
-              <Label>Source small group <span className="text-muted-foreground font-normal">(to derive matching profile)</span></Label>
+              <Label>Source small group <span className="text-muted-foreground font-normal">(matching profile + DGroup assignment)</span></Label>
               <Select
                 value={sourceGroupId}
                 onValueChange={handleSourceGroupChange}
@@ -488,6 +492,7 @@ function AssignFacilitatorDialog({
   open, onOpenChange, eventId, group, role, volunteers,
 }: AssignFacilitatorDialogProps) {
   const [selectedId, setSelectedId] = React.useState("")
+  const [linkedGroupId, setLinkedGroupId] = React.useState("")
   const [saving, setSaving] = React.useState(false)
 
   const currentId = group
@@ -500,9 +505,22 @@ function AssignFacilitatorDialog({
     : null
   const eligibleVolunteers = volunteers.filter((v) => v.id !== otherSlotId)
 
+  const selectedVol = eligibleVolunteers.find((v) => v.id === selectedId) ?? null
+  const ledGroups = selectedVol?.member.ledGroups ?? []
+
   React.useEffect(() => {
-    if (open) setSelectedId(currentId ?? "")
-  }, [open, currentId])
+    if (open) {
+      setSelectedId(currentId ?? "")
+      setLinkedGroupId(role === "facilitator" ? (group?.linkedSmallGroupId ?? "") : "")
+    }
+  }, [open, currentId, group, role])
+
+  // Auto-resolve linked group when selected volunteer changes
+  React.useEffect(() => {
+    if (ledGroups.length === 1) setLinkedGroupId(ledGroups[0].id)
+    else if (ledGroups.length !== 1) setLinkedGroupId("")
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId])
 
   async function handleSave() {
     if (!group) return
@@ -511,7 +529,8 @@ function AssignFacilitatorDialog({
       group.id,
       selectedId || null,
       role,
-      eventId
+      eventId,
+      role === "facilitator" ? (linkedGroupId || null) : undefined
     )
     setSaving(false)
     if (result.success) {
@@ -558,6 +577,23 @@ function AssignFacilitatorDialog({
             </p>
           )}
         </div>
+
+        {/* Linked small group — only for facilitator role when volunteer leads 2+ groups */}
+        {role === "facilitator" && selectedId && ledGroups.length > 1 && (
+          <div className="space-y-1.5">
+            <Label>Linked small group <span className="text-muted-foreground font-normal">(for DGroup assignment)</span></Label>
+            <Select value={linkedGroupId} onValueChange={setLinkedGroupId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select a group…" />
+              </SelectTrigger>
+              <SelectContent>
+                {ledGroups.map((g) => (
+                  <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
