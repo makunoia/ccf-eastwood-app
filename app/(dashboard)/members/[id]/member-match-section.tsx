@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog"
 import { WEIGHT_FIELDS } from "@/lib/validations/matching-weights"
 import { findSmallGroupMatchesForMember, assignMemberToSmallGroup } from "../matching-actions"
+import { assignMemberTransferTemporarily } from "@/app/(dashboard)/small-groups/actions"
 import type { MatchResult, ScoreBreakdown } from "@/lib/matching/types"
 
 function ScoreBar({ value }: { value: number }) {
@@ -32,10 +33,12 @@ function MatchCard({
   result,
   onAssign,
   assigning,
+  isTransfer,
 }: {
   result: MatchResult
   onAssign: () => void
   assigning: boolean
+  isTransfer: boolean
 }) {
   const score = Math.round(result.totalScore * 100)
   const [detailsOpen, setDetailsOpen] = React.useState(false)
@@ -53,7 +56,9 @@ function MatchCard({
               See Details
             </Button>
             <Button size="sm" onClick={onAssign} disabled={assigning}>
-              {assigning ? "Assigning…" : "Assign"}
+              {assigning
+                ? (isTransfer ? "Transferring…" : "Assigning…")
+                : (isTransfer ? "Transfer" : "Assign")}
             </Button>
           </div>
         </div>
@@ -110,10 +115,15 @@ export function MemberMatchSection({
 
   async function handleAssign(groupId: string) {
     setAssigningId(groupId)
-    const res = await assignMemberToSmallGroup(memberId, groupId)
+    const res = hasGroup
+      ? await assignMemberTransferTemporarily(groupId, memberId)
+      : await assignMemberToSmallGroup(memberId, groupId)
     setAssigningId(null)
     if (res.success) {
-      toast.success(hasGroup ? "Member moved to new group" : "Member assigned to group")
+      toast.success(hasGroup
+        ? "Transfer request created — pending leader confirmation"
+        : "Member assigned to group"
+      )
       router.refresh()
       setState("idle")
       setResults([])
@@ -129,7 +139,7 @@ export function MemberMatchSection({
           <h3 className="text-sm font-medium">Small Group Matching</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
             {hasGroup
-              ? "Find a better-fit small group based on this member's profile. Assigning will move them from their current group."
+              ? "Find a better-fit small group for this member. Matching will create a transfer request pending leader confirmation."
               : "Find the best-fit small group based on this member's profile."}
           </p>
         </div>
@@ -162,6 +172,7 @@ export function MemberMatchSection({
                   result={r}
                   onAssign={() => { void handleAssign(r.groupId) }}
                   assigning={assigningId === r.groupId}
+                  isTransfer={hasGroup}
                 />
               ))}
             </div>
