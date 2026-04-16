@@ -32,7 +32,7 @@ import {
   defaultGuestForm,
   type GuestFormValues,
 } from "@/lib/validations/guest"
-import { updateGuest, deleteGuest } from "./actions"
+import { createGuest, updateGuest, deleteGuest } from "./actions"
 import { MobileFormActions } from "@/components/mobile-form-actions"
 import { LANGUAGE_OPTIONS } from "@/lib/constants/group-options"
 
@@ -99,12 +99,14 @@ export function GuestForm({ lifeStages, guest, eventHistory, matchSection }: Pro
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!guest) return
     setSaving(true)
-    const result = await updateGuest(guest.id, form)
+    const result = isEdit
+      ? await updateGuest(guest!.id, form)
+      : await createGuest(form)
     setSaving(false)
     if (result.success) {
-      toast.success("Guest updated")
+      toast.success(isEdit ? "Guest updated" : "Guest added")
+      if (!isEdit) router.push("/guests")
     } else {
       toast.error(result.error)
     }
@@ -157,9 +159,13 @@ export function GuestForm({ lifeStages, guest, eventHistory, matchSection }: Pro
               Delete
             </Button>
           )}
-          {isEdit && (
+          {isEdit ? (
             <Button type="submit" form="guest-form" disabled={saving || isPromoted}>
               {saving ? "Saving…" : "Save changes"}
+            </Button>
+          ) : (
+            <Button type="submit" form="guest-form" disabled={saving}>
+              {saving ? "Adding…" : "Add Guest"}
             </Button>
           )}
         </div>
@@ -410,7 +416,7 @@ export function GuestForm({ lifeStages, guest, eventHistory, matchSection }: Pro
           formId="guest-form"
           isEdit={isEdit}
           saving={saving}
-          saveLabel="Save changes"
+          saveLabel={isEdit ? "Save changes" : "Add Guest"}
           onRevert={handleRevert}
           onDelete={isEdit ? () => setDeleteOpen(true) : undefined}
         />

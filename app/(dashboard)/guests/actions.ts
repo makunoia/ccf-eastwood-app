@@ -9,6 +9,42 @@ type ActionResult<T = void> =
   | { success: true; data: T }
   | { success: false; error: string }
 
+export async function createGuest(
+  raw: GuestFormValues
+): Promise<ActionResult<{ id: string }>> {
+  const parsed = guestSchema.safeParse(raw)
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Invalid input",
+    }
+  }
+
+  try {
+    const guest = await db.guest.create({
+      data: {
+        firstName: parsed.data.firstName,
+        lastName: parsed.data.lastName,
+        email: parsed.data.email ?? null,
+        phone: parsed.data.phone ?? null,
+        notes: parsed.data.notes ?? null,
+        lifeStageId: parsed.data.lifeStageId ?? null,
+        gender: parsed.data.gender ?? null,
+        language: parsed.data.language,
+        birthDate: parsed.data.birthDate ?? null,
+        workCity: parsed.data.workCity ?? null,
+        workIndustry: parsed.data.workIndustry ?? null,
+        meetingPreference: parsed.data.meetingPreference ?? null,
+      },
+      select: { id: true },
+    })
+    revalidatePath("/guests")
+    return { success: true, data: { id: guest.id } }
+  } catch {
+    return { success: false, error: "Failed to create guest" }
+  }
+}
+
 export async function updateGuest(
   id: string,
   raw: GuestFormValues
