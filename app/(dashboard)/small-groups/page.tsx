@@ -34,7 +34,9 @@ async function getSmallGroups(where: Prisma.SmallGroupWhereInput): Promise<Small
     meetingFormat: g.meetingFormat,
     locationCity: g.locationCity,
     memberLimit: g.memberLimit,
-    meetingSchedules: [],
+    scheduleDayOfWeek: g.scheduleDayOfWeek,
+    scheduleTimeStart: g.scheduleTimeStart,
+    scheduleTimeEnd: g.scheduleTimeEnd,
   }))
 }
 

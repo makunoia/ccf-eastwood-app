@@ -226,6 +226,15 @@ model Guest {
   workIndustry     String?
   meetingPreference MeetingPreference?
 
+  // Single schedule preference (one time slot per guest — mirrors SmallGroup pattern)
+  scheduleDayOfWeek Int?     // 0 = Sunday … 6 = Saturday
+  scheduleTimeStart String?  // HH:MM
+  scheduleTimeEnd   String?  // HH:MM
+
+  // Self-reported small group from check-in prompt
+  claimedSmallGroupId String?
+  claimedSmallGroup   SmallGroup? @relation("GuestClaimedGroup", fields: [claimedSmallGroupId], references: [id])
+
   // Promotion — set when Guest is added to a Small Group and becomes a Member
   memberId    String?  @unique
   member      Member?  @relation(fields: [memberId], references: [id])
@@ -267,11 +276,16 @@ model SmallGroup {
   locationCity  String?
   memberLimit   Int?
 
+  // Single meeting schedule (one time slot per group)
+  scheduleDayOfWeek Int?     // 0 = Sunday … 6 = Saturday
+  scheduleTimeStart String?  // HH:MM
+  scheduleTimeEnd   String?  // HH:MM
+
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
 
-  members          Member[]             @relation("SmallGroupMembers")
-  meetingSchedules GroupMeetingSchedule[]
+  members   Member[]   @relation("SmallGroupMembers")
+  claimants Guest[]    @relation("GuestClaimedGroup")
 }
 
 model SmallGroupStatus {
@@ -284,16 +298,6 @@ model SmallGroupStatus {
   members   Member[]
 }
 
-model GroupMeetingSchedule {
-  id           String     @id @default(cuid())
-  smallGroupId String
-  smallGroup   SmallGroup @relation(fields: [smallGroupId], references: [id], onDelete: Cascade)
-  dayOfWeek    Int
-  timeStart    String
-  timeEnd      String
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-}
 
 model Ministry {
   id          String     @id @default(cuid())

@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { IconArrowLeft, IconUserPlus, IconUserMinus, IconPlus, IconX } from "@tabler/icons-react"
+import { IconArrowLeft, IconUserPlus, IconUserMinus } from "@tabler/icons-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -28,7 +28,6 @@ import {
 import {
   defaultSmallGroupForm,
   type SmallGroupFormValues,
-  type ScheduleFormEntry,
 } from "@/lib/validations/small-group"
 import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
 import { createSmallGroup, updateSmallGroup, deleteSmallGroup, addMemberToGroup, removeMemberFromGroup, updateMemberGroupStatus } from "./actions"
@@ -85,11 +84,9 @@ function toFormValues(group: SmallGroupRow): SmallGroupFormValues {
     meetingFormat: group.meetingFormat ?? "",
     locationCity: group.locationCity ?? "",
     memberLimit: group.memberLimit != null ? String(group.memberLimit) : "",
-    schedules: group.meetingSchedules.map((s) => ({
-      dayOfWeek: String(s.dayOfWeek),
-      timeStart: s.timeStart,
-      timeEnd: s.timeEnd,
-    })),
+    scheduleDayOfWeek: group.scheduleDayOfWeek != null ? String(group.scheduleDayOfWeek) : "",
+    scheduleTimeStart: group.scheduleTimeStart ?? "",
+    scheduleTimeEnd: group.scheduleTimeEnd ?? "",
   }
 }
 
@@ -109,30 +106,17 @@ export function SmallGroupForm({ members, smallGroups, lifeStages, statuses, gro
   const [removingMemberId, setRemovingMemberId] = React.useState<string | null>(null)
   const [removeConfirmMember, setRemoveConfirmMember] = React.useState<GroupMember | null>(null)
 
-  function set(field: Exclude<keyof SmallGroupFormValues, "schedules">, value: string | string[]) {
+  function set(field: keyof SmallGroupFormValues, value: string | string[]) {
     setForm((prev) => ({ ...prev, [field]: value }))
   }
 
-  function addSchedule() {
+  function clearSchedule() {
     setForm((prev) => ({
       ...prev,
-      schedules: [...prev.schedules, { dayOfWeek: "0", timeStart: "", timeEnd: "" }],
+      scheduleDayOfWeek: "",
+      scheduleTimeStart: "",
+      scheduleTimeEnd: "",
     }))
-  }
-
-  function removeSchedule(index: number) {
-    setForm((prev) => ({
-      ...prev,
-      schedules: prev.schedules.filter((_, i) => i !== index),
-    }))
-  }
-
-  function updateSchedule(index: number, field: keyof ScheduleFormEntry, value: string) {
-    setForm((prev) => {
-      const schedules = [...prev.schedules]
-      schedules[index] = { ...schedules[index], [field]: value }
-      return { ...prev, schedules }
-    })
   }
 
   function handleRevert() {
@@ -482,57 +466,47 @@ export function SmallGroupForm({ members, smallGroups, lifeStages, statuses, gro
             Meeting Schedule
           </h3>
 
-          <div className="space-y-2">
-            {form.schedules.map((s, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <Select
-                  value={s.dayOfWeek}
-                  onValueChange={(v) => updateSchedule(i, "dayOfWeek", v)}
-                >
-                  <SelectTrigger className="w-36">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {DAYS_OF_WEEK.map((d) => (
-                      <SelectItem key={d.value} value={d.value}>
-                        {d.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Input
-                  type="time"
-                  value={s.timeStart}
-                  onChange={(e) => updateSchedule(i, "timeStart", e.target.value)}
-                  className="w-32"
-                />
-                <span className="text-sm text-muted-foreground">to</span>
-                <Input
-                  type="time"
-                  value={s.timeEnd}
-                  onChange={(e) => updateSchedule(i, "timeEnd", e.target.value)}
-                  className="w-32"
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => removeSchedule(i)}
-                  className="shrink-0"
-                >
-                  <IconX className="size-4" />
-                </Button>
-              </div>
-            ))}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={addSchedule}
-            >
-              <IconPlus className="size-4" />
-              Add time slot
-            </Button>
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Select
+                value={form.scheduleDayOfWeek}
+                onValueChange={(v) => set("scheduleDayOfWeek", v === "none" ? "" : v)}
+              >
+                <SelectTrigger className="w-36">
+                  <SelectValue placeholder="Day" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No day set</SelectItem>
+                  {DAYS_OF_WEEK.map((d) => (
+                    <SelectItem key={d.value} value={d.value}>
+                      {d.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input
+                type="time"
+                value={form.scheduleTimeStart}
+                onChange={(e) => set("scheduleTimeStart", e.target.value)}
+                className="w-32"
+              />
+              <span className="text-sm text-muted-foreground">to</span>
+              <Input
+                type="time"
+                value={form.scheduleTimeEnd}
+                onChange={(e) => set("scheduleTimeEnd", e.target.value)}
+                className="w-32"
+              />
+            </div>
+            {(form.scheduleDayOfWeek || form.scheduleTimeStart || form.scheduleTimeEnd) && (
+              <button
+                type="button"
+                onClick={clearSchedule}
+                className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+              >
+                Clear schedule
+              </button>
+            )}
           </div>
         </section>
       </form>

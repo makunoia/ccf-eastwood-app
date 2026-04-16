@@ -330,11 +330,27 @@ export async function checkInToOccurrence(
   }
 }
 
+type GuestSmallGroupPrompt = {
+  guestId: string
+  existingProfile: {
+    lifeStageId: string | null
+    gender: "Male" | "Female" | null
+    language: string[]
+    meetingPreference: "Online" | "Hybrid" | "InPerson" | null
+    workCity: string | null
+    scheduleDayOfWeek: number | null
+    scheduleTimeStart: string | null
+    scheduleTimeEnd: string | null
+  }
+}
+
 type CheckinRegistrantResult = {
   registrantId: string
   name: string
   nickname: string | null
   alreadyCheckedIn: boolean
+  // Set when this is a guest's 2nd+ occurrence check-in and their profile is incomplete
+  guestSmallGroupPrompt: GuestSmallGroupPrompt | null
 }
 
 export async function lookupCheckinRegistrant(
@@ -356,8 +372,25 @@ export async function lookupCheckinRegistrant(
         email: true,
         mobileNumber: true,
         attendedAt: true,
+        guestId: true,
         member: { select: { firstName: true, lastName: true, email: true, phone: true } },
-        guest: { select: { firstName: true, lastName: true, email: true, phone: true } },
+        guest: {
+          select: {
+            firstName: true,
+            lastName: true,
+            email: true,
+            phone: true,
+            lifeStageId: true,
+            gender: true,
+            language: true,
+            meetingPreference: true,
+            workCity: true,
+            scheduleDayOfWeek: true,
+            scheduleTimeStart: true,
+            scheduleTimeEnd: true,
+            claimedSmallGroupId: true,
+          },
+        },
       },
     })
 
@@ -390,6 +423,35 @@ export async function lookupCheckinRegistrant(
       alreadyCheckedIn = matched.attendedAt !== null
     }
 
+    // Determine if we should prompt about small group interest.
+    // Only for guests on occurrence-based events (recurring/multiday) with 2+ prior check-ins.
+    let guestSmallGroupPrompt: GuestSmallGroupPrompt | null = null
+    if (occurrenceId !== null && matched.guestId && matched.guest) {
+      const g = matched.guest
+      const profileIncomplete = !g.lifeStageId || !g.gender || !g.meetingPreference
+      const noClaimedGroup = !g.claimedSmallGroupId
+      if (profileIncomplete && noClaimedGroup) {
+        const priorCheckInCount = await db.occurrenceAttendee.count({
+          where: { registrantId: matched.id, occurrence: { eventId } },
+        })
+        if (priorCheckInCount >= 1) {
+          guestSmallGroupPrompt = {
+            guestId: matched.guestId,
+            existingProfile: {
+              lifeStageId: g.lifeStageId,
+              gender: g.gender,
+              language: g.language,
+              meetingPreference: g.meetingPreference,
+              workCity: g.workCity,
+              scheduleDayOfWeek: g.scheduleDayOfWeek,
+              scheduleTimeStart: g.scheduleTimeStart,
+              scheduleTimeEnd: g.scheduleTimeEnd,
+            },
+          }
+        }
+      }
+    }
+
     return {
       success: true,
       data: {
@@ -397,6 +459,7 @@ export async function lookupCheckinRegistrant(
         name,
         nickname: matched.nickname,
         alreadyCheckedIn,
+        guestSmallGroupPrompt,
       },
     }
   } catch {

@@ -3,12 +3,27 @@ import { db } from "@/lib/db"
 import { GuestForm } from "../guest-form"
 import { GuestEventHistory } from "./guest-event-history"
 import { GuestMatchSection } from "./guest-match-section"
+import { computeGuestStatus } from "@/lib/guest-utils"
 
 async function getGuest(id: string) {
   const g = await db.guest.findUnique({
     where: { id },
     include: {
       lifeStage: { select: { id: true, name: true } },
+      claimedSmallGroup: {
+        select: {
+          id: true,
+          name: true,
+          leader: { select: { id: true, firstName: true, lastName: true } },
+        },
+      },
+      eventRegistrations: {
+        select: {
+          attendedAt: true,
+          occurrenceAttendances: { select: { id: true } },
+          breakoutGroupMemberships: { select: { breakoutGroupId: true } },
+        },
+      },
     },
   })
   if (!g) return null
@@ -27,6 +42,8 @@ async function getGuest(id: string) {
     workIndustry: g.workIndustry,
     meetingPreference: g.meetingPreference as string | null,
     memberId: g.memberId,
+    claimedSmallGroup: g.claimedSmallGroup,
+    eventRegistrations: g.eventRegistrations,
   }
 }
 
@@ -65,13 +82,22 @@ export default async function GuestDetailPage({
 
   if (!guest) notFound()
 
+  const pipelineStatus = computeGuestStatus({
+    memberId: guest.memberId,
+    eventRegistrations: guest.eventRegistrations,
+  })
+
   return (
     <GuestForm
       lifeStages={lifeStages}
       guest={guest}
       eventHistory={<GuestEventHistory registrations={registrations} />}
       matchSection={
-        <GuestMatchSection guestId={id} isPromoted={!!guest.memberId} />
+        <GuestMatchSection
+          guestId={id}
+          pipelineStatus={pipelineStatus}
+          claimedGroup={guest.claimedSmallGroup}
+        />
       }
     />
   )
