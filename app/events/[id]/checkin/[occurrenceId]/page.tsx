@@ -8,6 +8,7 @@ async function getOccurrenceWithEvent(occurrenceId: string) {
     select: {
       id: true,
       date: true,
+      isOpen: true,
       event: {
         select: {
           id: true,
@@ -54,7 +55,7 @@ export default async function OccurrenceCheckinPage({
   const today = new Date().toISOString().split("T")[0]
   const occurrenceDate = occurrence.date.toISOString().split("T")[0]
 
-  if (today !== occurrenceDate) {
+  if (today !== occurrenceDate && !occurrence.isOpen) {
     return (
       <div className="min-h-svh bg-background">
         <div className="border-b px-4 py-4">

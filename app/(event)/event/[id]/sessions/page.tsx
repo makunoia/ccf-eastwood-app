@@ -16,6 +16,7 @@ async function getEventSessions(id: string) {
         select: {
           id: true,
           date: true,
+          isOpen: true,
           _count: { select: { attendees: true } },
         },
       },
@@ -52,6 +53,7 @@ export default async function SessionsPage({
       occurrences={occurrences.map((o) => ({
         id: o.id,
         date: o.date.toISOString(),
+        isOpen: o.isOpen,
         attendeeCount: o._count.attendees,
       }))}
     />

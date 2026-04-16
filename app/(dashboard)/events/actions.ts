@@ -330,6 +330,23 @@ export async function checkInToOccurrence(
   }
 }
 
+export async function setOccurrenceCheckinOpen(
+  occurrenceId: string,
+  isOpen: boolean,
+  eventId: string
+): Promise<ActionResult> {
+  try {
+    await db.eventOccurrence.update({
+      where: { id: occurrenceId },
+      data: { isOpen },
+    })
+    revalidatePath(`/event/${eventId}/sessions`)
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to update session" }
+  }
+}
+
 type GuestSmallGroupPrompt = {
   guestId: string
   existingProfile: {
