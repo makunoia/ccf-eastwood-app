@@ -201,8 +201,8 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurri
       {
         firstName: walkInForm.firstName,
         lastName: walkInForm.lastName,
-        nickname: walkInForm.nickname || undefined,
-        email: isPhone ? (walkInForm.email || undefined) : query,
+        nickname: walkInForm.nickname || null,
+        email: isPhone ? (walkInForm.email || null) : query,
         mobileNumber: isPhone ? query : walkInForm.mobileNumber,
       },
       occurrenceId
