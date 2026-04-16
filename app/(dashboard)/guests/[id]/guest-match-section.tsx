@@ -6,6 +6,13 @@ import { IconSparkles, IconLoader, IconX } from "@tabler/icons-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog"
 import { WEIGHT_FIELDS } from "@/lib/validations/matching-weights"
 import { findSmallGroupMatchesWithEscalation } from "../matching-actions"
 import { promoteGuestToMember, clearGuestClaimedGroup } from "../actions"
@@ -35,34 +42,50 @@ function MatchCard({
   assigning: boolean
 }) {
   const score = Math.round(result.totalScore * 100)
+  const [detailsOpen, setDetailsOpen] = React.useState(false)
 
   return (
-    <div className="rounded-lg border p-4 space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="font-medium">{result.groupName}</p>
-          <p className="text-sm text-muted-foreground">{score}% match</p>
+    <>
+      <div className="rounded-lg border p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="font-medium">{result.groupName}</p>
+            <p className="text-sm text-muted-foreground">{score}% match</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="ghost" onClick={() => setDetailsOpen(true)}>
+              See Details
+            </Button>
+            <Button size="sm" onClick={onAssign} disabled={assigning}>
+              {assigning ? "Assigning…" : "Assign"}
+            </Button>
+          </div>
         </div>
-        <Button size="sm" onClick={onAssign} disabled={assigning}>
-          {assigning ? "Assigning…" : "Assign"}
-        </Button>
       </div>
 
-      <div className="space-y-2">
-        {WEIGHT_FIELDS.map((field) => {
-          const raw = result.breakdown[field.key as keyof ScoreBreakdown]
-          return (
-            <div key={field.key} className="grid grid-cols-[120px_1fr_32px] items-center gap-2">
-              <span className="text-xs text-muted-foreground truncate">{field.label}</span>
-              <ScoreBar value={raw} />
-              <span className="text-xs tabular-nums text-right">
-                {Math.round(raw * 100)}%
-              </span>
-            </div>
-          )
-        })}
-      </div>
-    </div>
+      <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{result.groupName}</DialogTitle>
+            <DialogDescription>{score}% overall match</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            {WEIGHT_FIELDS.map((field) => {
+              const raw = result.breakdown[field.key as keyof ScoreBreakdown]
+              return (
+                <div key={field.key} className="grid grid-cols-[120px_1fr_32px] items-center gap-2">
+                  <span className="text-xs text-muted-foreground truncate">{field.label}</span>
+                  <ScoreBar value={raw} />
+                  <span className="text-xs tabular-nums text-right">
+                    {Math.round(raw * 100)}%
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 

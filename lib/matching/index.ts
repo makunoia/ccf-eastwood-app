@@ -199,7 +199,7 @@ export async function matchSmallGroups(
   return eligible
     .map((g) => scoreGroup(candidate, buildSmallGroupProfile(g), weights))
     .sort((a, b) => b.totalScore - a.totalScore)
-    .slice(0, options?.limit ?? 5)
+    .slice(0, options?.limit ?? 10)
 }
 
 // ─── Small Group Escalation Matching ─────────────────────────────────────────
@@ -302,7 +302,7 @@ export async function matchSmallGroupsWithEscalation(
     levels.push({ level: 2, source: "event-volunteer", matches: sortByScore(l2Scored) })
   }
   if (l3Scored.length > 0) {
-    levels.push({ level: 3, source: "all-small-groups", matches: sortByScore(l3Scored).slice(0, 5) })
+    levels.push({ level: 3, source: "all-small-groups", matches: sortByScore(l3Scored).slice(0, 10) })
   }
 
   return levels

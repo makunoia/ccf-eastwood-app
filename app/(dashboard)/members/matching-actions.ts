@@ -15,7 +15,7 @@ export async function findSmallGroupMatchesForMember(
   try {
     const results = await matchSmallGroups(
       { memberId },
-      { excludeCurrentGroup: true, limit: 5 }
+      { excludeCurrentGroup: true, limit: 10 }
     )
     return { success: true, data: results }
   } catch {
