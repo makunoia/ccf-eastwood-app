@@ -32,9 +32,9 @@ export default async function DashboardLayout({
         role={(session.user as any)?.role}
         permissions={(session.user as any)?.permissions}
       />
-      <SidebarInset>
+      <SidebarInset className="overflow-hidden">
         <SiteHeader />
-        <div className="flex flex-1 flex-col">
+        <div className="flex flex-1 flex-col overflow-y-auto min-h-0">
           {children}
         </div>
       </SidebarInset>
