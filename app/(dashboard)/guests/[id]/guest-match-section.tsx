@@ -78,36 +78,52 @@ const STAGE_LABEL: Record<GuestPipelineStatus, string> = {
 
 function PipelineStepper({ status }: { status: GuestPipelineStatus }) {
   const activeIndex = PIPELINE_STAGES.indexOf(status)
+  // px depth of the chevron point
+  const CHEVRON = 18
+
   return (
-    <div className="flex items-stretch rounded-lg border overflow-hidden text-xs font-medium">
+    <div className="flex overflow-hidden rounded-lg border">
       {PIPELINE_STAGES.map((stage, i) => {
         const isActive = i === activeIndex
         const isPast = i < activeIndex
+        const isFirst = i === 0
+        const isLast = i === PIPELINE_STAGES.length - 1
+
+        // Chevron polygon: right edge points right; left edge indents inward (except first)
+        const clipPath = isFirst
+          ? `polygon(0 0, calc(100% - ${CHEVRON}px) 0, 100% 50%, calc(100% - ${CHEVRON}px) 100%, 0 100%)`
+          : isLast
+          ? `polygon(0 0, 100% 0, 100% 100%, 0 100%, ${CHEVRON}px 50%)`
+          : `polygon(0 0, calc(100% - ${CHEVRON}px) 0, 100% 50%, calc(100% - ${CHEVRON}px) 100%, 0 100%, ${CHEVRON}px 50%)`
+
         return (
-          <React.Fragment key={stage}>
-            {i > 0 && (
-              <div
-                className={[
-                  "flex items-center self-stretch px-0 text-[10px]",
-                  isPast || isActive ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
-                ].join(" ")}
-              >
-                <span className="w-3 text-center select-none">›</span>
-              </div>
-            )}
-            <div
-              className={[
-                "flex items-center px-3 py-2 select-none",
-                isActive
-                  ? "bg-primary text-primary-foreground"
-                  : isPast
-                  ? "bg-primary/15 text-primary"
-                  : "bg-muted text-muted-foreground",
-              ].join(" ")}
-            >
+          <div
+            key={stage}
+            className={[
+              "relative flex flex-1 items-center select-none text-xs",
+              isActive
+                ? "bg-foreground text-background"
+                : isPast
+                ? "bg-muted text-foreground/50"
+                : "bg-muted/40 text-muted-foreground/60",
+            ].join(" ")}
+            style={{
+              clipPath,
+              // Pull each segment left so the previous arrow overlaps this indent
+              marginLeft: i > 0 ? `-${CHEVRON}px` : undefined,
+              // Left segments sit on top so arrows are visible
+              zIndex: PIPELINE_STAGES.length - i,
+              // Inner padding: compensate for the indent on the left side
+              paddingTop: 10,
+              paddingBottom: 10,
+              paddingLeft: isFirst ? 16 : CHEVRON + 10,
+              paddingRight: isLast ? 16 : CHEVRON + 10,
+            }}
+          >
+            <span className={isActive ? "font-semibold" : "font-medium"}>
               {STAGE_LABEL[stage]}
-            </div>
-          </React.Fragment>
+            </span>
+          </div>
         )
       })}
     </div>
