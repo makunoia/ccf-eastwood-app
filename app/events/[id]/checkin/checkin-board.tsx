@@ -17,6 +17,7 @@ import {
   lookupCheckinRegistrant,
   markCheckinAttendance,
   checkInToOccurrence,
+  walkInCheckin,
 } from "@/app/(dashboard)/events/actions"
 import {
   saveGuestMatchingProfile,
@@ -48,7 +49,8 @@ type Step =
   | "confirm"
   | "already-in"
   | "success"
-  | "not-found"
+  | "not-found-prompt"
+  | "walk-in-form"
   | "sg-prompt"
   | "sg-profile"
   | "sg-leader-search"
@@ -64,6 +66,7 @@ type Props = {
   eventId: string
   occurrenceId: string | null
   lifeStages?: LifeStage[]
+  isRecurring?: boolean
 }
 
 const AUTO_RESET_MS = 4000
@@ -78,12 +81,23 @@ const DAYS_OF_WEEK = [
   { value: "6", label: "Saturday" },
 ]
 
-export function CheckinBoard({ eventId, occurrenceId, lifeStages = [] }: Props) {
+function queryIsPhone(q: string): boolean {
+  return !q.includes("@")
+}
+
+export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurring = false }: Props) {
   const [step, setStep] = React.useState<Step>("lookup")
   const [query, setQuery] = React.useState("")
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [matched, setMatched] = React.useState<MatchedState | null>(null)
+  const [walkInForm, setWalkInForm] = React.useState({
+    firstName: "",
+    lastName: "",
+    nickname: "",
+    email: "",
+    mobileNumber: "",
+  })
   const inputRef = React.useRef<HTMLInputElement>(null)
   const resetTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -93,6 +107,7 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [] }: Props) 
     setQuery("")
     setError(null)
     setMatched(null)
+    setWalkInForm({ firstName: "", lastName: "", nickname: "", email: "", mobileNumber: "" })
     setLoading(false)
     setTimeout(() => inputRef.current?.focus(), 50)
   }
@@ -124,8 +139,7 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [] }: Props) 
     }
 
     if (!result.data) {
-      setStep("not-found")
-      scheduleReset()
+      setStep("not-found-prompt")
       return
     }
 
@@ -171,6 +185,42 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [] }: Props) 
   }
 
   function goToSuccess() {
+    setStep("success")
+    scheduleReset()
+  }
+
+  async function handleWalkInSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!walkInForm.firstName.trim() || !walkInForm.lastName.trim()) return
+    setError(null)
+    setLoading(true)
+
+    const isPhone = queryIsPhone(query)
+    const result = await walkInCheckin(
+      eventId,
+      {
+        firstName: walkInForm.firstName,
+        lastName: walkInForm.lastName,
+        nickname: walkInForm.nickname || undefined,
+        email: isPhone ? (walkInForm.email || undefined) : query,
+        mobileNumber: isPhone ? query : walkInForm.mobileNumber,
+      },
+      occurrenceId
+    )
+
+    setLoading(false)
+
+    if (!result.success) {
+      setError(result.error)
+      return
+    }
+
+    setMatched({
+      registrantId: result.data.registrantId,
+      name: result.data.name,
+      nickname: null,
+      guestSmallGroupPrompt: null,
+    })
     setStep("success")
     scheduleReset()
   }
@@ -386,7 +436,7 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [] }: Props) 
   }
 
   // ── Not found ────────────────────────────────────────────────────────────
-  if (step === "not-found") {
+  if (step === "not-found-prompt") {
     return (
       <div className="flex min-h-[70svh] flex-col items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm space-y-6 text-center">
@@ -398,13 +448,156 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [] }: Props) 
             <p className="text-sm text-muted-foreground">
               We couldn&apos;t find a registration for{" "}
               <span className="font-medium">{query}</span>.
-              <br />
-              Double-check your email or mobile number, or ask the event team for help.
+              {!isRecurring && (
+                <>
+                  <br />
+                  Double-check your email or mobile number, or ask the event team for help.
+                </>
+              )}
             </p>
           </div>
-          <Button className="h-12 w-full text-base" onClick={reset}>
-            Try again
-          </Button>
+          <div className="flex flex-col gap-3">
+            {isRecurring && (
+              <Button
+                className="h-12 w-full text-base"
+                onClick={() => setStep("walk-in-form")}
+              >
+                Register now
+              </Button>
+            )}
+            <Button
+              variant={isRecurring ? "ghost" : "default"}
+              className="h-12 w-full text-base"
+              onClick={reset}
+            >
+              Try again
+            </Button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Walk-in registration form ─────────────────────────────────────────────
+  if (step === "walk-in-form") {
+    const isPhone = queryIsPhone(query)
+    return (
+      <div className="flex min-h-[70svh] flex-col items-center justify-center px-6 py-12">
+        <div className="w-full max-w-sm space-y-6">
+          <div className="space-y-1 text-center">
+            <h2 className="text-2xl font-semibold tracking-tight">Register &amp; check in</h2>
+            <p className="text-sm text-muted-foreground">
+              Fill in your details and we&apos;ll check you in right away.
+            </p>
+          </div>
+
+          <form onSubmit={handleWalkInSubmit} className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="walkin-first">First name</Label>
+                <Input
+                  id="walkin-first"
+                  value={walkInForm.firstName}
+                  onChange={(e) => setWalkInForm((p) => ({ ...p, firstName: e.target.value }))}
+                  className="h-11"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="walkin-last">Last name</Label>
+                <Input
+                  id="walkin-last"
+                  value={walkInForm.lastName}
+                  onChange={(e) => setWalkInForm((p) => ({ ...p, lastName: e.target.value }))}
+                  className="h-11"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="walkin-nickname">Nickname <span className="text-muted-foreground">(optional)</span></Label>
+              <Input
+                id="walkin-nickname"
+                value={walkInForm.nickname}
+                onChange={(e) => setWalkInForm((p) => ({ ...p, nickname: e.target.value }))}
+                className="h-11"
+              />
+            </div>
+
+            {isPhone ? (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="walkin-mobile">Mobile number</Label>
+                  <Input
+                    id="walkin-mobile"
+                    value={query}
+                    readOnly
+                    className="h-11 bg-muted/50"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="walkin-email">Email <span className="text-muted-foreground">(optional)</span></Label>
+                  <Input
+                    id="walkin-email"
+                    type="email"
+                    value={walkInForm.email}
+                    onChange={(e) => setWalkInForm((p) => ({ ...p, email: e.target.value }))}
+                    className="h-11"
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="walkin-email">Email</Label>
+                  <Input
+                    id="walkin-email"
+                    type="email"
+                    value={query}
+                    readOnly
+                    className="h-11 bg-muted/50"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="walkin-mobile">Mobile number</Label>
+                  <Input
+                    id="walkin-mobile"
+                    value={walkInForm.mobileNumber}
+                    onChange={(e) => setWalkInForm((p) => ({ ...p, mobileNumber: e.target.value }))}
+                    placeholder="+63 917 123 4567"
+                    className="h-11"
+                    required
+                  />
+                </div>
+              </>
+            )}
+
+            {error && <p className="text-sm text-destructive">{error}</p>}
+
+            <Button
+              type="submit"
+              className="h-12 w-full text-base"
+              disabled={loading || !walkInForm.firstName.trim() || !walkInForm.lastName.trim()}
+            >
+              {loading ? (
+                <>
+                  <IconLoader2 className="mr-2 size-4 animate-spin" />
+                  Registering…
+                </>
+              ) : (
+                "Register & check in"
+              )}
+            </Button>
+          </form>
+
+          <button
+            type="button"
+            onClick={() => { setError(null); setStep("not-found-prompt") }}
+            className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          >
+            <IconArrowLeft className="size-4" /> Back
+          </button>
         </div>
       </div>
     )

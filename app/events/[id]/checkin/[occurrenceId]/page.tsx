@@ -83,7 +83,12 @@ export default async function OccurrenceCheckinPage({
           {occurrence.event.ministries.length > 0 ? " · " : ""}Check-in · {dateLabel}
         </p>
       </div>
-      <CheckinBoard eventId={id} occurrenceId={occurrenceId} lifeStages={lifeStages} />
+      <CheckinBoard
+        eventId={id}
+        occurrenceId={occurrenceId}
+        lifeStages={lifeStages}
+        isRecurring={occurrence.event.type === "Recurring"}
+      />
     </div>
   )
 }
