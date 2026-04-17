@@ -17,6 +17,9 @@ const ledGroupsSelect = {
     ageRangeMax: true,
     meetingFormat: true,
     locationCity: true,
+    scheduleDayOfWeek: true,
+    scheduleTimeStart: true,
+    scheduleTimeEnd: true,
   },
 } as const
 
@@ -42,6 +45,9 @@ async function getBreakoutGroup(groupId: string, eventId: string) {
                   ageRangeMax: true,
                   meetingFormat: true,
                   locationCity: true,
+                  scheduleDayOfWeek: true,
+                  scheduleTimeStart: true,
+                  scheduleTimeEnd: true,
                 },
               },
             },
@@ -66,6 +72,9 @@ async function getBreakoutGroup(groupId: string, eventId: string) {
                   ageRangeMax: true,
                   meetingFormat: true,
                   locationCity: true,
+                  scheduleDayOfWeek: true,
+                  scheduleTimeStart: true,
+                  scheduleTimeEnd: true,
                 },
               },
             },
@@ -73,6 +82,7 @@ async function getBreakoutGroup(groupId: string, eventId: string) {
         },
       },
       linkedSmallGroup: { select: { id: true, name: true } },
+      schedules: { select: { dayOfWeek: true, timeStart: true, timeEnd: true } },
       lifeStage: { select: { id: true, name: true } },
       members: {
         orderBy: { assignedAt: "asc" },
@@ -87,6 +97,7 @@ async function getBreakoutGroup(groupId: string, eventId: string) {
               nickname: true,
               mobileNumber: true,
               attendedAt: true,
+              _count: { select: { occurrenceAttendances: true } },
               member: {
                 select: {
                   id: true,
@@ -217,6 +228,7 @@ export default async function BreakoutGroupDetailPage({
               ageRangeMax: group.ageRangeMax,
               meetingFormat: group.meetingFormat,
               locationCity: group.locationCity,
+              schedule: group.schedules[0] ?? null,
             }}
             eventId={eventId}
             lifeStages={lifeStages}
@@ -245,6 +257,7 @@ export default async function BreakoutGroupDetailPage({
           locationCity: group.locationCity,
           memberLimit: group.memberLimit,
           members: group.members,
+          schedules: group.schedules,
         }}
         unassignedRegistrants={eventData.registrants}
         availableVolunteers={confirmedVolunteers}

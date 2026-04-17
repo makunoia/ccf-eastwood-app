@@ -24,7 +24,7 @@ export async function createBreakoutGroup(
   if (!parsed.success) {
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
   }
-  const { name, facilitatorId, coFacilitatorId, memberLimit, linkedSmallGroupId, ...profile } = parsed.data
+  const { name, facilitatorId, coFacilitatorId, memberLimit, linkedSmallGroupId, schedule, ...profile } = parsed.data
   try {
     const group = await db.breakoutGroup.create({
       data: {
@@ -41,6 +41,17 @@ export async function createBreakoutGroup(
         ageRangeMax: profile.ageRangeMax ?? null,
         meetingFormat: profile.meetingFormat ?? null,
         locationCity: profile.locationCity ?? null,
+        ...(schedule
+          ? {
+              schedules: {
+                create: {
+                  dayOfWeek: schedule.dayOfWeek,
+                  timeStart: schedule.timeStart,
+                  timeEnd: schedule.timeEnd,
+                },
+              },
+            }
+          : {}),
       },
       select: { id: true },
     })
@@ -60,7 +71,7 @@ export async function updateBreakoutGroup(
   if (!parsed.success) {
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
   }
-  const { name, facilitatorId, coFacilitatorId, memberLimit, linkedSmallGroupId, ...profile } = parsed.data
+  const { name, facilitatorId, coFacilitatorId, memberLimit, linkedSmallGroupId, schedule, ...profile } = parsed.data
   try {
     await db.breakoutGroup.update({
       where: { id: groupId },
@@ -77,6 +88,18 @@ export async function updateBreakoutGroup(
         ageRangeMax: profile.ageRangeMax ?? null,
         meetingFormat: profile.meetingFormat ?? null,
         locationCity: profile.locationCity ?? null,
+        schedules: {
+          deleteMany: {},
+          ...(schedule
+            ? {
+                create: {
+                  dayOfWeek: schedule.dayOfWeek,
+                  timeStart: schedule.timeStart,
+                  timeEnd: schedule.timeEnd,
+                },
+              }
+            : {}),
+        },
       },
     })
     revalidatePath(`/events/${eventId}`)
@@ -207,7 +230,13 @@ export async function setFacilitator(
   // Validate the volunteer belongs to this event (if assigning, not clearing)
   if (volunteerId !== null) {
     const volunteer = await db.volunteer.findFirst({
-      where: { id: volunteerId, eventId },
+      where: {
+        id: volunteerId,
+        OR: [
+          { eventId },
+          { ministry: { events: { some: { eventId } } } },
+        ],
+      },
       select: { id: true },
     })
     if (!volunteer) {

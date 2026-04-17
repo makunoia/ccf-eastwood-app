@@ -59,6 +59,9 @@ type LedGroup = {
   ageRangeMax: number | null
   meetingFormat: string | null
   locationCity: string | null
+  scheduleDayOfWeek: number | null
+  scheduleTimeStart: string | null
+  scheduleTimeEnd: string | null
 }
 
 type FacilitatorVolunteer = {
@@ -91,6 +94,7 @@ type BreakoutMemberRow = {
     nickname: string | null
     mobileNumber: string | null
     attendedAt: Date | null
+    _count: { occurrenceAttendances: number }
     member: RegistrantMember | null
     guest: { id: string; firstName: string; lastName: string } | null
   }
@@ -132,6 +136,7 @@ export type BreakoutDetailData = {
   locationCity: string | null
   memberLimit: number | null
   members: BreakoutMemberRow[]
+  schedules: { dayOfWeek: number; timeStart: string; timeEnd: string }[]
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
@@ -160,6 +165,16 @@ const GENDER_FOCUS_LABELS: Record<string, string> = {
   Mixed: "Mixed",
 }
 
+const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+
+function formatTime(t: string) {
+  const [hStr, mStr] = t.split(":")
+  const h = parseInt(hStr)
+  const ampm = h >= 12 ? "PM" : "AM"
+  const hour = h % 12 || 12
+  return `${hour}:${mStr} ${ampm}`
+}
+
 // ─── Facilitator small group card ───────────────────────────────────────────────
 
 function SmallGroupCard({ group }: { group: LedGroup }) {
@@ -173,11 +188,19 @@ function SmallGroupCard({ group }: { group: LedGroup }) {
   if (group.meetingFormat) parts.push(MEETING_FORMAT_LABELS[group.meetingFormat] ?? group.meetingFormat)
   if (group.locationCity) parts.push(group.locationCity)
 
+  const schedule =
+    group.scheduleDayOfWeek != null && group.scheduleTimeStart && group.scheduleTimeEnd
+      ? `${DAY_LABELS[group.scheduleDayOfWeek]} ${formatTime(group.scheduleTimeStart)}–${formatTime(group.scheduleTimeEnd)}`
+      : null
+
   return (
     <div className="rounded-md border bg-muted/30 px-3 py-2">
       <p className="text-sm font-medium">{group.name}</p>
       {parts.length > 0 && (
         <p className="text-xs text-muted-foreground mt-0.5">{parts.join(" · ")}</p>
+      )}
+      {schedule && (
+        <p className="text-xs text-muted-foreground mt-0.5">{schedule}</p>
       )}
     </div>
   )
@@ -529,7 +552,7 @@ function MembersTable({
                       )}
                     </TableCell>
                     <TableCell>
-                      {r.attendedAt ? (
+                      {r.attendedAt || r._count.occurrenceAttendances > 0 ? (
                         <span className="flex items-center gap-1 text-sm text-green-600">
                           <IconCheck className="size-4" />
                           Attended
@@ -582,34 +605,8 @@ export function BreakoutDetail({
   unassignedRegistrants: UnassignedRegistrant[]
   availableVolunteers: AvailableVolunteer[]
 }) {
-  const profileParts: string[] = []
-  if (group.lifeStage) profileParts.push(group.lifeStage.name)
-  if (group.genderFocus) profileParts.push(GENDER_FOCUS_LABELS[group.genderFocus] ?? group.genderFocus)
-  if (group.language.length > 0) profileParts.push(group.language.join(", "))
-  if (group.ageRangeMin != null || group.ageRangeMax != null) {
-    profileParts.push(`Ages ${group.ageRangeMin ?? "?"}–${group.ageRangeMax ?? "+"}`)
-  }
-  if (group.meetingFormat) profileParts.push(MEETING_FORMAT_LABELS[group.meetingFormat] ?? group.meetingFormat)
-  if (group.locationCity) profileParts.push(group.locationCity)
-
   return (
     <div className="space-y-6">
-      {/* Matching profile */}
-      {profileParts.length > 0 && (
-        <div>
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5">Matching Profile</p>
-          <p className="text-sm">{profileParts.join(" · ")}</p>
-          {group.linkedSmallGroup && (
-            <p className="text-sm mt-1">
-              <span className="text-muted-foreground">Linked Small Group: </span>
-              {group.linkedSmallGroup.name}
-            </p>
-          )}
-        </div>
-      )}
-
-      {profileParts.length > 0 && <Separator />}
-
       {/* Facilitators */}
       <div className="grid gap-6 sm:grid-cols-2">
         <FacilitatorSection
@@ -631,6 +628,22 @@ export function BreakoutDetail({
           availableVolunteers={availableVolunteers}
         />
       </div>
+
+      {group.schedules.length > 0 && (
+        <>
+          <Separator />
+          <div>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Schedule</p>
+            <div className="flex flex-wrap gap-2">
+              {group.schedules.map((s, i) => (
+                <span key={i} className="inline-flex items-center rounded-md border bg-muted/30 px-2.5 py-1 text-sm">
+                  {DAY_LABELS[s.dayOfWeek]} {formatTime(s.timeStart)}–{formatTime(s.timeEnd)}
+                </span>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
 
       <Separator />
 
