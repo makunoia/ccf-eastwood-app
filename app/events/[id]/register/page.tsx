@@ -8,6 +8,7 @@ async function getEvent(id: string) {
     select: {
       id: true,
       name: true,
+      type: true,
       startDate: true,
       endDate: true,
       price: true,
@@ -27,6 +28,14 @@ export default async function RegisterPage({
   const { id } = await params
   const event = await getEvent(id)
   if (!event) notFound()
+
+  const isRecurring = event.type === "Recurring"
+  const lifeStages = isRecurring
+    ? await db.lifeStage.findMany({
+        orderBy: { order: "asc" },
+        select: { id: true, name: true },
+      })
+    : []
 
   return (
     <div className="min-h-svh bg-muted flex items-start justify-center p-4 pt-12">
@@ -51,7 +60,7 @@ export default async function RegisterPage({
             </p>
           )}
         </div>
-        <RegistrationForm eventId={event.id} />
+        <RegistrationForm eventId={event.id} isRecurring={isRecurring} lifeStages={lifeStages} />
       </div>
     </div>
   )

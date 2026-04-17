@@ -11,6 +11,15 @@ const registrantSchema = z.object({
   nickname: z.string().optional().transform((v) => (v === "" || v == null ? null : v.trim())),
   email: z.string().optional().transform((v) => (v === "" || v == null ? null : v.trim())),
   mobileNumber: z.string().min(1, "Mobile number is required").trim(),
+  // Optional matching fields — collected on recurring event registration forms
+  lifeStageId: z.string().optional().nullable().transform((v) => v || null),
+  gender: z.enum(["Male", "Female"]).optional().nullable(),
+  language: z.array(z.string()).optional().default([]),
+  meetingPreference: z.enum(["Online", "Hybrid", "InPerson"]).optional().nullable(),
+  workCity: z.string().optional().nullable().transform((v) => v || null),
+  scheduleDayOfWeek: z.number().int().min(0).max(6).optional().nullable(),
+  scheduleTimeStart: z.string().optional().nullable().transform((v) => v || null),
+  scheduleTimeEnd: z.string().optional().nullable().transform((v) => v || null),
 })
 
 type ActionResult<T = void> =
@@ -140,22 +149,61 @@ export async function createRegistrant(
       return { success: true, data: { id: registrant.id } }
     } else {
       // Non-member — find or create Guest by phone, then link via guestId
+      const matchingProfile = {
+        lifeStageId: parsed.data.lifeStageId ?? null,
+        gender: parsed.data.gender ?? null,
+        language: parsed.data.language?.length ? parsed.data.language : undefined,
+        meetingPreference: parsed.data.meetingPreference ?? null,
+        workCity: parsed.data.workCity ?? null,
+        scheduleDayOfWeek: parsed.data.scheduleDayOfWeek ?? null,
+        scheduleTimeStart: parsed.data.scheduleTimeStart ?? null,
+        scheduleTimeEnd: parsed.data.scheduleTimeEnd ?? null,
+      }
+
       const existingGuest = await db.guest.findFirst({
         where: { phone: parsed.data.mobileNumber },
         select: { id: true },
       })
-      const guestId = existingGuest
-        ? existingGuest.id
-        : (await db.guest.create({
-            data: {
-              firstName: parsed.data.firstName,
-              lastName: parsed.data.lastName,
-              email: parsed.data.email ?? null,
-              phone: parsed.data.mobileNumber,
-              language: [],
-            },
-            select: { id: true },
-          })).id
+
+      let guestId: string
+      if (existingGuest) {
+        guestId = existingGuest.id
+        // Update matching profile with any newly provided data
+        await db.guest.update({
+          where: { id: guestId },
+          data: {
+            ...(matchingProfile.lifeStageId !== null && { lifeStageId: matchingProfile.lifeStageId }),
+            ...(matchingProfile.gender !== null && { gender: matchingProfile.gender }),
+            ...(matchingProfile.language !== undefined && { language: matchingProfile.language }),
+            ...(matchingProfile.meetingPreference !== null && { meetingPreference: matchingProfile.meetingPreference }),
+            ...(matchingProfile.workCity !== null && { workCity: matchingProfile.workCity }),
+            ...(matchingProfile.scheduleDayOfWeek !== null && {
+              scheduleDayOfWeek: matchingProfile.scheduleDayOfWeek,
+              scheduleTimeStart: matchingProfile.scheduleTimeStart,
+              scheduleTimeEnd: matchingProfile.scheduleTimeEnd,
+            }),
+          },
+        })
+      } else {
+        const newGuest = await db.guest.create({
+          data: {
+            firstName: parsed.data.firstName,
+            lastName: parsed.data.lastName,
+            email: parsed.data.email ?? null,
+            phone: parsed.data.mobileNumber,
+            language: matchingProfile.language ?? [],
+            lifeStageId: matchingProfile.lifeStageId,
+            gender: matchingProfile.gender,
+            meetingPreference: matchingProfile.meetingPreference,
+            workCity: matchingProfile.workCity,
+            scheduleDayOfWeek: matchingProfile.scheduleDayOfWeek,
+            scheduleTimeStart: matchingProfile.scheduleTimeStart,
+            scheduleTimeEnd: matchingProfile.scheduleTimeEnd,
+          },
+          select: { id: true },
+        })
+        guestId = newGuest.id
+      }
 
       const registrant = await db.eventRegistrant.create({
         data: {

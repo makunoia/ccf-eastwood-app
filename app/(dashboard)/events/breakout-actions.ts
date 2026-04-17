@@ -172,6 +172,44 @@ export async function removeRegistrantFromBreakout(
 
 // ─── Facilitator assignment ───────────────────────────────────────────────────
 
+// ─── Auto-assign on check-in ─────────────────────────────────────────────────
+
+/**
+ * Called after a registrant checks in to an occurrence.
+ * Silently assigns them to the best-matching breakout group if they're not
+ * already assigned to one. Never throws — failures are swallowed so they
+ * never block the check-in flow.
+ */
+export async function autoAssignRegistrantToBreakout(
+  registrantId: string,
+  eventId: string
+): Promise<void> {
+  try {
+    const alreadyAssigned = await db.breakoutGroupMember.findFirst({
+      where: { registrantId, breakoutGroup: { eventId } },
+      select: { breakoutGroupId: true },
+    })
+    if (alreadyAssigned) return
+
+    const matches = await matchBreakoutGroups(registrantId, eventId, {
+      excludeAssigned: true,
+      limit: 1,
+    })
+    if (matches.length === 0) return
+
+    const topMatch = matches[0]
+
+    await db.breakoutGroupMember.create({
+      data: { breakoutGroupId: topMatch.groupId, registrantId },
+    })
+    await tryCreateSmallGroupRequestFromBreakout(topMatch.groupId, registrantId)
+
+    revalidatePath(`/event/${eventId}/breakouts`)
+  } catch {
+    // Swallow — auto-assign is best-effort and must not interrupt check-in
+  }
+}
+
 // ─── Auto-assign ─────────────────────────────────────────────────────────────
 
 export async function autoAssignBreakouts(
