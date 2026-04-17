@@ -6,6 +6,7 @@ import { IconCheck, IconLoader2, IconUserQuestion, IconArrowLeft } from "@tabler
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { PhonePHInput } from "@/components/ui/phone-ph-input"
 import {
   Select,
   SelectContent,
@@ -567,12 +568,11 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurri
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="walkin-mobile">Mobile number</Label>
-                  <Input
+                  <PhonePHInput
                     id="walkin-mobile"
                     value={walkInForm.mobileNumber}
-                    onChange={(e) => setWalkInForm((p) => ({ ...p, mobileNumber: e.target.value }))}
-                    placeholder="+63 917 123 4567"
-                    className="h-11"
+                    onChange={(v) => setWalkInForm((p) => ({ ...p, mobileNumber: v }))}
+                    wrapperClassName="h-11"
                     required
                   />
                 </div>
