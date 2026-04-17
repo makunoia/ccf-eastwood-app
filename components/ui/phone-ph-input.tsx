@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils"
 
 type PhonePHInputProps = Omit<
   React.InputHTMLAttributes<HTMLInputElement>,
-  "value" | "onChange" | "type" | "prefix"
+  "value" | "onChange" | "type" | "prefix" | "maxLength"
 > & {
   value: string
   onChange: (value: string) => void
@@ -15,6 +15,7 @@ type PhonePHInputProps = Omit<
 
 function extractLocalDigits(input: string): string {
   const digits = input.replace(/\D/g, "")
+  // Handle paste of full number: 09XXXXXXXXX or 639XXXXXXXXX
   if (digits.startsWith("63") && digits.length >= 11) return digits.slice(2, 12)
   if (digits.startsWith("0") && digits.length >= 11) return digits.slice(1, 11)
   return digits.slice(0, 10)
@@ -47,12 +48,42 @@ function PhonePHInput({
   "aria-invalid": ariaInvalid,
   ...props
 }: PhonePHInputProps) {
+  const inputRef = React.useRef<HTMLInputElement>(null)
+
   const local = localFromStoredPhonePH(value)
   const display = formatLocal(local)
 
   const handleChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
-    const newLocal = extractLocalDigits(e.target.value)
+    const input = e.currentTarget
+    // Count digits strictly before the caret in the raw input value
+    const caretPos = input.selectionStart ?? input.value.length
+    const digitsBeforeCaret = input.value.slice(0, caretPos).replace(/\D/g, "").length
+
+    const newLocal = extractLocalDigits(input.value)
+    const newDisplay = formatLocal(newLocal)
+
+    // Find caret position in the new formatted string:
+    // advance through newDisplay counting digits until we've seen digitsBeforeCaret of them
+    let newCaret = 0
+    let seen = 0
+    for (let i = 0; i < newDisplay.length; i++) {
+      if (/\d/.test(newDisplay[i])) seen++
+      if (seen === digitsBeforeCaret) {
+        newCaret = i + 1
+        break
+      }
+    }
+    // If digitsBeforeCaret is 0, caret stays at 0
+    if (digitsBeforeCaret === 0) newCaret = 0
+
     onChange(toStoredPhonePH(newLocal))
+
+    // Restore caret after React re-renders with the new value
+    requestAnimationFrame(() => {
+      if (inputRef.current === input) {
+        input.setSelectionRange(newCaret, newCaret)
+      }
+    })
   }
 
   return (
@@ -67,20 +98,23 @@ function PhonePHInput({
         wrapperClassName,
       )}
     >
-      <span className="select-none pl-3 pr-2 text-base text-muted-foreground md:text-sm">
+      <span className="select-none pl-3 pr-1.5 text-sm leading-none text-muted-foreground">
         +63
       </span>
+      <span className="mr-2 h-4 w-px shrink-0 bg-border" />
       <input
+        ref={inputRef}
         type="tel"
         inputMode="numeric"
-        autoComplete="tel-national"
+        autoComplete="off"
         data-slot="input"
         value={display}
         onChange={handleChange}
         disabled={disabled}
         placeholder={placeholder}
+        maxLength={12}
         className={cn(
-          "h-full min-w-0 flex-1 bg-transparent py-1 pr-3 text-base outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed md:text-sm",
+          "min-w-0 flex-1 bg-transparent pr-3 text-sm leading-none outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed",
           className,
         )}
         {...props}
