@@ -6,6 +6,20 @@ import { db } from "@/lib/db"
 import { BreakoutDetail } from "./breakout-detail"
 import { GroupActions } from "./group-actions"
 
+const ledGroupsSelect = {
+  select: {
+    id: true,
+    name: true,
+    lifeStageId: true,
+    genderFocus: true,
+    language: true,
+    ageRangeMin: true,
+    ageRangeMax: true,
+    meetingFormat: true,
+    locationCity: true,
+  },
+} as const
+
 async function getBreakoutGroup(groupId: string, eventId: string) {
   return db.breakoutGroup.findFirst({
     where: { id: groupId, eventId },
@@ -103,7 +117,7 @@ async function getEventContext(eventId: string) {
               id: true,
               firstName: true,
               lastName: true,
-              ledGroups: { select: { id: true, name: true } },
+              ledGroups: ledGroupsSelect,
             },
           },
         },
@@ -120,7 +134,7 @@ async function getEventContext(eventId: string) {
                       id: true,
                       firstName: true,
                       lastName: true,
-                      ledGroups: { select: { id: true, name: true } },
+                      ledGroups: ledGroupsSelect,
                     },
                   },
                 },
