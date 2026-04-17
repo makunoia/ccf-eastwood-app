@@ -1,8 +1,14 @@
 import { PrismaClient } from "@/app/generated/prisma/client"
 import { PrismaPg } from "@prisma/adapter-pg"
 
+function buildConnectionString(host: string) {
+  const { PGUSER, PGPASSWORD, PGDATABASE } = process.env
+  return `postgresql://${PGUSER}:${PGPASSWORD}@${host}/${PGDATABASE}?sslmode=require`
+}
+
 function createPrismaClient() {
-  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! })
+  const connectionString = buildConnectionString(process.env.PGHOST!)
+  const adapter = new PrismaPg({ connectionString })
   return new PrismaClient({ adapter })
 }
 
