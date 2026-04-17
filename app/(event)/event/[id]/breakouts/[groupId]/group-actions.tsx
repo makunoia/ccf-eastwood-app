@@ -38,6 +38,9 @@ type LedGroup = {
   ageRangeMax: number | null
   meetingFormat: string | null
   locationCity: string | null
+  scheduleDayOfWeek: number | null
+  scheduleTimeStart: string | null
+  scheduleTimeEnd: string | null
 }
 
 type Volunteer = {
@@ -58,10 +61,21 @@ export type EditableGroupData = {
   ageRangeMax: number | null
   meetingFormat: string | null
   locationCity: string | null
+  schedule: { dayOfWeek: number; timeStart: string; timeEnd: string } | null
 }
 
 const GENDER_FOCUS_LABELS: Record<string, string> = { Male: "Male", Female: "Female", Mixed: "Mixed" }
 const MEETING_FORMAT_LABELS: Record<string, string> = { Online: "Online", Hybrid: "Hybrid", InPerson: "In-Person" }
+
+const DAY_OPTIONS = [
+  { value: "0", label: "Sunday" },
+  { value: "1", label: "Monday" },
+  { value: "2", label: "Tuesday" },
+  { value: "3", label: "Wednesday" },
+  { value: "4", label: "Thursday" },
+  { value: "5", label: "Friday" },
+  { value: "6", label: "Saturday" },
+]
 
 function deriveProfileFromGroup(g: LedGroup) {
   return {
@@ -72,6 +86,9 @@ function deriveProfileFromGroup(g: LedGroup) {
     ageRangeMax: g.ageRangeMax != null ? String(g.ageRangeMax) : "",
     meetingFormat: g.meetingFormat ?? "",
     locationCity: g.locationCity ?? "",
+    scheduleDayOfWeek: g.scheduleDayOfWeek != null ? String(g.scheduleDayOfWeek) : "",
+    scheduleTimeStart: g.scheduleTimeStart ?? "",
+    scheduleTimeEnd: g.scheduleTimeEnd ?? "",
   }
 }
 
@@ -101,6 +118,9 @@ function EditDialog({
     ageRangeMax: "",
     meetingFormat: "",
     locationCity: "",
+    scheduleDayOfWeek: "",
+    scheduleTimeStart: "",
+    scheduleTimeEnd: "",
   })
   const [sourceGroupId, setSourceGroupId] = React.useState("")
   const [saving, setSaving] = React.useState(false)
@@ -119,6 +139,9 @@ function EditDialog({
         ageRangeMax: group.ageRangeMax?.toString() ?? "",
         meetingFormat: group.meetingFormat ?? "",
         locationCity: group.locationCity ?? "",
+        scheduleDayOfWeek: group.schedule?.dayOfWeek != null ? String(group.schedule.dayOfWeek) : "",
+        scheduleTimeStart: group.schedule?.timeStart ?? "",
+        scheduleTimeEnd: group.schedule?.timeEnd ?? "",
       })
     }
   }, [open, group])
@@ -157,6 +180,7 @@ function EditDialog({
   async function handleSave() {
     if (!form.name.trim()) { toast.error("Group name is required"); return }
     setSaving(true)
+    const hasSchedule = form.scheduleDayOfWeek !== "" && form.scheduleTimeStart && form.scheduleTimeEnd
     const result = await updateBreakoutGroup(group.id, eventId, {
       name: form.name.trim(),
       facilitatorId: form.facilitatorId || null,
@@ -169,6 +193,9 @@ function EditDialog({
       ageRangeMax: form.ageRangeMax ? Number(form.ageRangeMax) : null,
       meetingFormat: (form.meetingFormat as "Online" | "Hybrid" | "InPerson") || null,
       locationCity: form.locationCity || null,
+      schedule: hasSchedule
+        ? { dayOfWeek: Number(form.scheduleDayOfWeek), timeStart: form.scheduleTimeStart, timeEnd: form.scheduleTimeEnd }
+        : null,
     })
     setSaving(false)
     if (result.success) {
@@ -225,7 +252,10 @@ function EditDialog({
 
           <Separator />
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-            Matching Profile <span className="normal-case font-normal">(optional)</span>
+            {form.facilitatorId && ledGroups.length === 0
+              ? <>Future Small Group Profile <span className="normal-case font-normal">(Timothy — set before their first member is confirmed)</span></>
+              : <>Matching Profile <span className="normal-case font-normal">(optional)</span></>
+            }
           </p>
 
           <div className="space-y-1.5">
@@ -290,6 +320,21 @@ function EditDialog({
                 {CITY_OPTIONS.map((city) => <SelectItem key={city} value={city}>{city}</SelectItem>)}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Meeting Schedule</Label>
+            <div className="grid grid-cols-[1fr_auto_auto] gap-2 items-center">
+              <Select value={form.scheduleDayOfWeek} onValueChange={(v) => setForm((f) => ({ ...f, scheduleDayOfWeek: v === "_none" ? "" : v }))}>
+                <SelectTrigger><SelectValue placeholder="Day" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">No day</SelectItem>
+                  {DAY_OPTIONS.map((d) => <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Input type="time" className="w-28" {...field("scheduleTimeStart")} />
+              <Input type="time" className="w-28" {...field("scheduleTimeEnd")} />
+            </div>
           </div>
         </div>
 

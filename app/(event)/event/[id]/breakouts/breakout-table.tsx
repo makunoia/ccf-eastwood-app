@@ -63,6 +63,9 @@ type LedGroup = {
   ageRangeMax: number | null
   meetingFormat: string | null
   locationCity: string | null
+  scheduleDayOfWeek: number | null
+  scheduleTimeStart: string | null
+  scheduleTimeEnd: string | null
 }
 
 type Volunteer = {
@@ -89,6 +92,7 @@ export type BreakoutGroupRow = {
   ageRangeMax: number | null
   meetingFormat: string | null
   locationCity: string | null
+  schedules: { dayOfWeek: number; timeStart: string; timeEnd: string }[]
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
@@ -106,11 +110,23 @@ function deriveProfileFromGroup(g: LedGroup) {
     ageRangeMax: g.ageRangeMax != null ? String(g.ageRangeMax) : "",
     meetingFormat: g.meetingFormat ?? "",
     locationCity: g.locationCity ?? "",
+    scheduleDayOfWeek: g.scheduleDayOfWeek != null ? String(g.scheduleDayOfWeek) : "",
+    scheduleTimeStart: g.scheduleTimeStart ?? "",
+    scheduleTimeEnd: g.scheduleTimeEnd ?? "",
   }
 }
 
 const GENDER_FOCUS_LABELS: Record<string, string> = { Male: "Male", Female: "Female", Mixed: "Mixed" }
 const MEETING_FORMAT_LABELS: Record<string, string> = { Online: "Online", Hybrid: "Hybrid", InPerson: "In-Person" }
+const DAY_OPTIONS = [
+  { value: "0", label: "Sunday" },
+  { value: "1", label: "Monday" },
+  { value: "2", label: "Tuesday" },
+  { value: "3", label: "Wednesday" },
+  { value: "4", label: "Thursday" },
+  { value: "5", label: "Friday" },
+  { value: "6", label: "Saturday" },
+]
 
 // ─── Group form dialog (create / edit) ─────────────────────────────────────────
 
@@ -125,6 +141,9 @@ const EMPTY_FORM = {
   ageRangeMax: "",
   meetingFormat: "",
   locationCity: "",
+  scheduleDayOfWeek: "",
+  scheduleTimeStart: "",
+  scheduleTimeEnd: "",
 }
 
 type GroupFormDialogProps = {
@@ -145,6 +164,7 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
   React.useEffect(() => {
     if (open) {
       setSourceGroupId(group?.linkedSmallGroupId ?? "")
+      const existingSchedule = group?.schedules?.[0] ?? null
       setForm(
         group
           ? {
@@ -158,6 +178,9 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
               ageRangeMax: group.ageRangeMax?.toString() ?? "",
               meetingFormat: group.meetingFormat ?? "",
               locationCity: group.locationCity ?? "",
+              scheduleDayOfWeek: existingSchedule?.dayOfWeek != null ? String(existingSchedule.dayOfWeek) : "",
+              scheduleTimeStart: existingSchedule?.timeStart ?? "",
+              scheduleTimeEnd: existingSchedule?.timeEnd ?? "",
             }
           : EMPTY_FORM
       )
@@ -198,6 +221,7 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
   async function handleSubmit() {
     if (!form.name.trim()) { toast.error("Group name is required"); return }
     setSaving(true)
+    const hasSchedule = form.scheduleDayOfWeek !== "" && form.scheduleTimeStart && form.scheduleTimeEnd
     const data = {
       name: form.name.trim(),
       facilitatorId: form.facilitatorId || null,
@@ -210,6 +234,9 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
       ageRangeMax: form.ageRangeMax ? Number(form.ageRangeMax) : null,
       meetingFormat: (form.meetingFormat as "Online" | "Hybrid" | "InPerson") || null,
       locationCity: form.locationCity || null,
+      schedule: hasSchedule
+        ? { dayOfWeek: Number(form.scheduleDayOfWeek), timeStart: form.scheduleTimeStart, timeEnd: form.scheduleTimeEnd }
+        : null,
     }
     const result = isEdit
       ? await updateBreakoutGroup(group.id, eventId, data)
@@ -274,14 +301,17 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
           )}
 
           {form.facilitatorId && ledGroups.length === 0 && (
-            <p className="text-xs text-muted-foreground">
-              This volunteer does not lead any small group — set the matching profile manually.
+            <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5">
+              This volunteer does not lead a small group yet (Timothy). Set the profile below — it will be used to create their small group when their first member is confirmed.
             </p>
           )}
 
           <Separator />
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-            Matching Profile <span className="normal-case font-normal">(optional — used for auto-assign)</span>
+            {form.facilitatorId && ledGroups.length === 0
+              ? <>Future Small Group Profile <span className="normal-case font-normal">(Timothy)</span></>
+              : <>Matching Profile <span className="normal-case font-normal">(optional — used for auto-assign)</span></>
+            }
           </p>
 
           <div className="space-y-1.5">
@@ -346,6 +376,21 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
                 {CITY_OPTIONS.map((city) => <SelectItem key={city} value={city}>{city}</SelectItem>)}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Meeting Schedule</Label>
+            <div className="grid grid-cols-[1fr_auto_auto] gap-2 items-center">
+              <Select value={form.scheduleDayOfWeek} onValueChange={(v) => setForm((f) => ({ ...f, scheduleDayOfWeek: v === "_none" ? "" : v }))}>
+                <SelectTrigger><SelectValue placeholder="Day" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">No day</SelectItem>
+                  {DAY_OPTIONS.map((d) => <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Input type="time" className="w-28" value={form.scheduleTimeStart} onChange={(e) => setForm((f) => ({ ...f, scheduleTimeStart: e.target.value }))} />
+              <Input type="time" className="w-28" value={form.scheduleTimeEnd} onChange={(e) => setForm((f) => ({ ...f, scheduleTimeEnd: e.target.value }))} />
+            </div>
           </div>
         </div>
 
