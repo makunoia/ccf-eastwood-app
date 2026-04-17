@@ -223,7 +223,7 @@ export async function importEventRegistrants(
       })
       if (!guest) {
         guest = await db.guest.create({
-          data: { firstName, lastName, email, phone: mobile },
+          data: { firstName, lastName, email, phone: mobile, language: [] },
           select: { id: true },
         })
       }
