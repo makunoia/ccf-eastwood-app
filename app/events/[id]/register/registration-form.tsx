@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { PhonePHInput } from "@/components/ui/phone-ph-input"
 import {
   Select,
   SelectContent,
@@ -258,12 +259,10 @@ export function RegistrationForm({ eventId, isRecurring = false, lifeStages = []
             <Label htmlFor="mobileNumber">
               Mobile Number <span className="text-destructive">*</span>
             </Label>
-            <Input
+            <PhonePHInput
               id="mobileNumber"
-              type="tel"
               value={form.mobileNumber}
-              onChange={(e) => set("mobileNumber", e.target.value)}
-              placeholder="+63 917 123 4567"
+              onChange={(v) => set("mobileNumber", v)}
               required
             />
           </div>

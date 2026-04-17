@@ -4,8 +4,8 @@ import * as React from "react"
 import { IconCheck, IconHeart } from "@tabler/icons-react"
 
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { PhonePHInput } from "@/components/ui/phone-ph-input"
 import {
   Select,
   SelectContent,
@@ -124,12 +124,10 @@ export function VolunteerSignUpForm({ contextName, ministryId, eventId, committe
           <form onSubmit={handleLookup} className="space-y-5">
             <div className="space-y-2">
               <Label htmlFor="mobile">Your mobile number</Label>
-              <Input
+              <PhonePHInput
                 id="mobile"
-                type="tel"
                 value={mobile}
-                onChange={(e) => setMobile(e.target.value)}
-                placeholder="+63 9XX XXX XXXX"
+                onChange={setMobile}
                 required
                 autoFocus
               />

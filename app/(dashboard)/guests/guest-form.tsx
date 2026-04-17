@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { PhonePHInput } from "@/components/ui/phone-ph-input"
 import { MultiSelect } from "@/components/ui/multi-select"
 import {
   Select,
@@ -253,11 +254,10 @@ export function GuestForm({ lifeStages, guest, eventHistory, matchSection }: Pro
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="phone">Phone</Label>
-                  <Input
+                  <PhonePHInput
                     id="phone"
                     value={form.phone}
-                    onChange={(e) => set("phone", e.target.value)}
-                    placeholder="+63 917 123 4567"
+                    onChange={(v) => set("phone", v)}
                     disabled={isPromoted}
                   />
                 </div>
