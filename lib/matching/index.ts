@@ -2,6 +2,7 @@ import { db } from "@/lib/db"
 import { MatchingContext } from "@/app/generated/prisma/client"
 import { DEFAULT_WEIGHTS } from "@/lib/validations/matching-weights"
 import { scoreGroup } from "./engine"
+import { scoreGender, scoreLifeStage, scoreSchedule } from "./scorers"
 import { EMPTY_CANDIDATE } from "./types"
 import type { CandidateProfile, GroupProfile, MatchResult, WeightConfig, EscalationLevel } from "./types"
 
@@ -140,6 +141,7 @@ export async function matchSmallGroups(
 ): Promise<MatchResult[]> {
   let candidate: CandidateProfile
   let currentGroupId: string | null | undefined
+  let ledGroupIds = new Set<string>()
 
   if ("guestId" in params) {
     const guest = await db.guest.findUnique({
@@ -172,6 +174,7 @@ export async function matchSmallGroups(
         workIndustry: true,
         meetingPreference: true,
         smallGroupId: true,
+        ledGroups: { select: { id: true } },
         schedulePreferences: {
           select: { dayOfWeek: true, timeStart: true, timeEnd: true },
         },
@@ -180,6 +183,7 @@ export async function matchSmallGroups(
     if (!member) return []
     candidate = buildCandidateFromMember(member)
     currentGroupId = member.smallGroupId
+    ledGroupIds = new Set(member.ledGroups.map((g) => g.id))
   }
 
   const groups = await db.smallGroup.findMany({
@@ -192,7 +196,12 @@ export async function matchSmallGroups(
     if (options?.excludeCurrentGroup && currentGroupId && g.id === currentGroupId) {
       return false
     }
+    if (ledGroupIds.has(g.id)) return false
     if (g.memberLimit !== null && g._count.members >= g.memberLimit) return false
+    const gp = buildSmallGroupProfile(g)
+    if (scoreGender(candidate.gender, gp.genderFocus) === 0.0) return false
+    if (scoreLifeStage(candidate.lifeStageId, gp.lifeStageId) === 0.0) return false
+    if (scoreSchedule(candidate.scheduleSlots, gp.scheduleSlots) === 0.0) return false
     return true
   })
 
@@ -277,9 +286,14 @@ export async function matchSmallGroupsWithEscalation(
     select: SMALL_GROUP_SCORE_SELECT,
   })
 
-  const eligible = allGroups.filter(
-    (g) => g.memberLimit === null || g._count.members < g.memberLimit
-  )
+  const eligible = allGroups.filter((g) => {
+    if (g.memberLimit !== null && g._count.members >= g.memberLimit) return false
+    const gp = buildSmallGroupProfile(g)
+    if (scoreGender(candidate.gender, gp.genderFocus) === 0.0) return false
+    if (scoreLifeStage(candidate.lifeStageId, gp.lifeStageId) === 0.0) return false
+    if (scoreSchedule(candidate.scheduleSlots, gp.scheduleSlots) === 0.0) return false
+    return true
+  })
 
   const scored = eligible.map((g) => ({
     result: scoreGroup(candidate, buildSmallGroupProfile(g), weights),
