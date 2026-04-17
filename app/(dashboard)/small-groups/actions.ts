@@ -54,15 +54,11 @@ export async function createSmallGroup(
 
       // Auto-assign leader to parent group when parent is set
       if (parsed.data.parentGroupId) {
-        const firstStatus = await tx.smallGroupStatus.findFirst({
-          orderBy: { order: "asc" },
-          select: { id: true },
-        })
         await tx.member.update({
           where: { id: parsed.data.leaderId },
           data: {
             smallGroupId: parsed.data.parentGroupId,
-            smallGroupStatusId: firstStatus?.id ?? null,
+            groupStatus: "Member",
           },
         })
       }
@@ -162,15 +158,11 @@ export async function updateSmallGroup(
       const parentChanged = parsed.data.parentGroupId !== (current?.parentGroupId ?? null)
       const leaderChanged = parsed.data.leaderId !== current?.leaderId
       if (parsed.data.parentGroupId && (parentChanged || leaderChanged)) {
-        const firstStatus = await tx.smallGroupStatus.findFirst({
-          orderBy: { order: "asc" },
-          select: { id: true },
-        })
         await tx.member.update({
           where: { id: parsed.data.leaderId },
           data: {
             smallGroupId: parsed.data.parentGroupId,
-            smallGroupStatusId: firstStatus?.id ?? null,
+            groupStatus: "Member",
           },
         })
       }
@@ -216,11 +208,6 @@ export async function addMemberToGroup(
       }
     }
 
-    // Default to the first status by order (e.g. "New")
-    const firstStatus = await db.smallGroupStatus.findFirst({
-      orderBy: { order: "asc" },
-      select: { id: true },
-    })
     const actorId = await getActorId()
     const member = await db.member.findUnique({
       where: { id: memberId },
@@ -228,7 +215,7 @@ export async function addMemberToGroup(
     })
     await db.member.update({
       where: { id: memberId },
-      data: { smallGroupId: groupId, smallGroupStatusId: firstStatus?.id ?? null },
+      data: { smallGroupId: groupId, groupStatus: "Member" },
     })
     await db.smallGroupLog.create({
       data: {
@@ -261,7 +248,7 @@ export async function removeMemberFromGroup(
     })
     await db.member.update({
       where: { id: memberId },
-      data: { smallGroupId: null, smallGroupStatusId: null },
+      data: { smallGroupId: null, groupStatus: null },
     })
     await db.smallGroupLog.create({
       data: {
@@ -285,12 +272,12 @@ export async function removeMemberFromGroup(
 export async function updateMemberGroupStatus(
   memberId: string,
   groupId: string,
-  statusId: string
+  status: "Member" | "Timothy" | "Leader"
 ): Promise<ActionResult> {
   try {
     await db.member.update({
       where: { id: memberId },
-      data: { smallGroupStatusId: statusId },
+      data: { groupStatus: status },
     })
     revalidatePath(`/small-groups/${groupId}`)
     return { success: true, data: undefined }

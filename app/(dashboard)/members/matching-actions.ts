@@ -43,14 +43,9 @@ export async function assignMemberToSmallGroup(
       }
     }
 
-    const firstStatus = await db.smallGroupStatus.findFirst({
-      orderBy: { order: "asc" },
-      select: { id: true },
-    })
-
     await db.member.update({
       where: { id: memberId },
-      data: { smallGroupId: groupId, smallGroupStatusId: firstStatus?.id ?? null },
+      data: { smallGroupId: groupId, groupStatus: "Member" },
     })
 
     revalidatePath(`/members/${memberId}`)

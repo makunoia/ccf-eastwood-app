@@ -7,7 +7,7 @@ type GroupMember = {
   id: string
   firstName: string
   lastName: string
-  smallGroupStatusId: string | null
+  groupStatus: "Member" | "Timothy" | "Leader" | null
 }
 
 export type PendingRequest = {
@@ -40,7 +40,7 @@ async function getSmallGroup(id: string): Promise<(SmallGroupRow & {
       parentGroup: { select: { id: true, name: true } },
       lifeStage: { select: { id: true, name: true } },
       members: {
-        select: { id: true, firstName: true, lastName: true, smallGroupStatusId: true },
+        select: { id: true, firstName: true, lastName: true, groupStatus: true },
         orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
       },
       memberRequests: {
@@ -121,7 +121,7 @@ async function getSmallGroup(id: string): Promise<(SmallGroupRow & {
 }
 
 async function getData() {
-  const [members, smallGroups, lifeStages, statuses] = await Promise.all([
+  const [members, smallGroups, lifeStages] = await Promise.all([
     db.member.findMany({
       orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
       select: { id: true, firstName: true, lastName: true, smallGroupId: true },
@@ -134,12 +134,8 @@ async function getData() {
       orderBy: { order: "asc" },
       select: { id: true, name: true },
     }),
-    db.smallGroupStatus.findMany({
-      orderBy: { order: "asc" },
-      select: { id: true, name: true, order: true },
-    }),
   ])
-  return { members, smallGroups, lifeStages, statuses }
+  return { members, smallGroups, lifeStages }
 }
 
 export default async function SmallGroupDetailPage({
@@ -148,7 +144,7 @@ export default async function SmallGroupDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const [group, { members, smallGroups, lifeStages, statuses }] = await Promise.all([
+  const [group, { members, smallGroups, lifeStages }] = await Promise.all([
     getSmallGroup(id),
     getData(),
   ])
@@ -160,7 +156,6 @@ export default async function SmallGroupDetailPage({
       members={members}
       smallGroups={smallGroups}
       lifeStages={lifeStages}
-      statuses={statuses}
       group={group!}
       groupMembers={group!.groupMembers}
       pendingRequests={group!.pendingRequests}

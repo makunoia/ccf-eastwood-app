@@ -1,0 +1,57 @@
+const STAGES = ["Member", "Timothy", "Leader"] as const
+type Stage = (typeof STAGES)[number]
+
+const STAGE_LABEL: Record<Stage, string> = {
+  Member:  "Member",
+  Timothy: "Timothy",
+  Leader:  "Leader",
+}
+
+export function MemberGroupStepper({ status }: { status: Stage }) {
+  const activeIndex = STAGES.indexOf(status)
+  const CHEVRON = 18
+
+  return (
+    <div className="flex overflow-hidden rounded-lg border">
+      {STAGES.map((stage, i) => {
+        const isActive = i === activeIndex
+        const isPast = i < activeIndex
+        const isFirst = i === 0
+        const isLast = i === STAGES.length - 1
+
+        const clipPath = isFirst
+          ? `polygon(0 0, calc(100% - ${CHEVRON}px) 0, 100% 50%, calc(100% - ${CHEVRON}px) 100%, 0 100%)`
+          : isLast
+          ? `polygon(0 0, 100% 0, 100% 100%, 0 100%, ${CHEVRON}px 50%)`
+          : `polygon(0 0, calc(100% - ${CHEVRON}px) 0, 100% 50%, calc(100% - ${CHEVRON}px) 100%, 0 100%, ${CHEVRON}px 50%)`
+
+        return (
+          <div
+            key={stage}
+            className={[
+              "relative flex flex-1 items-center select-none text-xs",
+              isActive
+                ? "bg-foreground text-background"
+                : isPast
+                ? "bg-muted text-foreground/50"
+                : "bg-muted/40 text-muted-foreground/60",
+            ].join(" ")}
+            style={{
+              clipPath,
+              marginLeft: i > 0 ? `-${CHEVRON}px` : undefined,
+              zIndex: STAGES.length - i,
+              paddingTop: 10,
+              paddingBottom: 10,
+              paddingLeft: isFirst ? 16 : CHEVRON + 10,
+              paddingRight: isLast ? 16 : CHEVRON + 10,
+            }}
+          >
+            <span className={isActive ? "font-semibold" : "font-medium"}>
+              {STAGE_LABEL[stage]}
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
