@@ -37,14 +37,14 @@ async function main() {
   await db.user.create({
     data: {
       name: "Super Admin",
-      email: "admin@churchie.app",
+      email: "admin@ccfeastwood.app",
       password: hashedPassword,
       role: "SuperAdmin",
       mustChangePassword: false,
       requiresTotpSetup: false,
     },
   })
-  console.log("✓ Created admin user (admin@churchie.app / admin123)")
+  console.log("✓ Created admin user (admin@ccfeastwood.app / admin123)")
 
   // ─── Members ─────────────────────────────────────────────────────────────
   const [

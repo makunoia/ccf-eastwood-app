@@ -84,7 +84,7 @@ export function AppSidebar({ user, role, permissions, ...props }: AppSidebarProp
             >
               <a href="/">
                 <IconBuildingChurch className="size-5!" />
-                <span className="text-base font-semibold">Churchie</span>
+                <span className="text-base font-semibold">CCF Eastwood Admin App</span>
               </a>
             </SidebarMenuButton>
           </SidebarMenuItem>
