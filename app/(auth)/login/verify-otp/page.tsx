@@ -74,7 +74,7 @@ export default function VerifyOtpPage() {
                   <IconBuildingChurch className="size-8 text-primary-foreground" />
                 </div>
                 <div>
-                  <h2 className="text-2xl font-bold tracking-tight">Churchie</h2>
+                  <h2 className="text-2xl font-bold tracking-tight">CCF Eastwood Admin App</h2>
                   <p className="mt-1 text-sm text-primary-foreground/70 leading-relaxed max-w-[18ch]">
                     Church management for administrators
                   </p>

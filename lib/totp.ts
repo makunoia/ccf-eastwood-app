@@ -14,7 +14,7 @@ export function generateSecret(): string {
  * @param email   user email shown in the authenticator app
  * @param issuer  app/org name shown in the authenticator app
  */
-export function buildTotpUri(secret: string, email: string, issuer = "Churchie"): string {
+export function buildTotpUri(secret: string, email: string, issuer = "CCF Eastwood Admin App"): string {
   return authenticator.keyuri(email, issuer, secret)
 }
 

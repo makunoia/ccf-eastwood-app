@@ -1,4 +1,4 @@
-# Churchie
+# CCF Eastwood Admin App
 
 A church management web application for administrators. Covers members, small groups, ministries, events, and volunteers — with a weighted matching algorithm for automated small group and breakout group assignments.
 

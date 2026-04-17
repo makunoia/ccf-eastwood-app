@@ -30,7 +30,7 @@ export function LoginForm({
               <div className="flex flex-col items-center gap-2 text-center mb-2">
                 <h1 className="text-2xl font-bold tracking-tight">Welcome back</h1>
                 <p className="text-sm text-muted-foreground">
-                  Sign in to your Churchie account
+                  Sign in to your CCF Eastwood Admin App account
                 </p>
               </div>
 
@@ -94,7 +94,7 @@ export function LoginForm({
                 <IconBuildingChurch className="size-8 text-primary-foreground" />
               </div>
               <div>
-                <h2 className="text-2xl font-bold tracking-tight">Churchie</h2>
+                <h2 className="text-2xl font-bold tracking-tight">CCF Eastwood Admin App</h2>
                 <p className="mt-1 text-sm text-primary-foreground/70 leading-relaxed max-w-[18ch]">
                   Church management for administrators
                 </p>
