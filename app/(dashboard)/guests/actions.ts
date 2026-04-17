@@ -140,11 +140,6 @@ export async function promoteGuestToMember(
       }
     }
 
-    const firstStatus = await db.smallGroupStatus.findFirst({
-      orderBy: { order: "asc" },
-      select: { id: true },
-    })
-
     const result = await db.$transaction(async (tx) => {
       const newMember = await tx.member.create({
         data: {
@@ -162,7 +157,7 @@ export async function promoteGuestToMember(
           meetingPreference: guest.meetingPreference ?? null,
           dateJoined: new Date(),
           smallGroupId: groupId,
-          smallGroupStatusId: firstStatus?.id ?? null,
+          groupStatus: "Member",
           ...(guest.scheduleDayOfWeek !== null &&
           guest.scheduleTimeStart !== null &&
           guest.scheduleTimeEnd !== null

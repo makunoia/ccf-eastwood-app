@@ -26,12 +26,6 @@ export async function submitMemberConfirmations(
   }
 
   try {
-    // Load the first SmallGroupStatus for newly promoted members
-    const firstStatus = await db.smallGroupStatus.findFirst({
-      orderBy: { order: "asc" },
-      select: { id: true },
-    })
-
     await db.$transaction(async (tx) => {
       for (const { requestId, confirmed } of decisions) {
         const req = await tx.smallGroupMemberRequest.findUnique({
@@ -103,7 +97,7 @@ export async function submitMemberConfirmations(
                   meetingPreference: guest.meetingPreference ?? null,
                   dateJoined: now,
                   smallGroupId: group.id,
-                  smallGroupStatusId: firstStatus?.id ?? null,
+                  groupStatus: "Member",
                   ...(guest.scheduleDayOfWeek !== null &&
                   guest.scheduleTimeStart !== null &&
                   guest.scheduleTimeEnd !== null
@@ -156,7 +150,7 @@ export async function submitMemberConfirmations(
               where: { id: req.memberId },
               data: {
                 smallGroupId: group.id,
-                smallGroupStatusId: firstStatus?.id ?? null,
+                groupStatus: "Member",
               },
             })
 

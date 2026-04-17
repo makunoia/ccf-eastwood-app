@@ -60,13 +60,11 @@ import { searchGuests, promoteGuestToMember } from "@/app/(dashboard)/guests/act
 import { MobileFormActions } from "@/components/mobile-form-actions"
 import { type SmallGroupRow } from "./columns"
 
-type StatusOption = { id: string; name: string; order: number }
-
 type GroupMember = {
   id: string
   firstName: string
   lastName: string
-  smallGroupStatusId: string | null
+  groupStatus: "Member" | "Timothy" | "Leader" | null
 }
 
 type GuestSearchResult = {
@@ -77,13 +75,16 @@ type GuestSearchResult = {
   phone: string | null
 }
 
-const STATUS_COLOR_PALETTE = [
-  "bg-slate-100 text-slate-700",
-  "bg-blue-100 text-blue-700",
-  "bg-amber-100 text-amber-700",
-  "bg-green-100 text-green-700",
-  "bg-purple-100 text-purple-700",
-  "bg-pink-100 text-pink-700",
+const GROUP_STATUS_COLORS: Record<string, string> = {
+  Member:  "bg-slate-100 text-slate-700",
+  Timothy: "bg-amber-100 text-amber-700",
+  Leader:  "bg-green-100 text-green-700",
+}
+
+const GROUP_STATUS_OPTIONS = [
+  { value: "Member",  label: "Member" },
+  { value: "Timothy", label: "Timothy" },
+  { value: "Leader",  label: "Leader" },
 ]
 
 type PendingRequest = {
@@ -107,7 +108,6 @@ type Props = {
   members: { id: string; firstName: string; lastName: string; smallGroupId: string | null }[]
   smallGroups: { id: string; name: string }[]
   lifeStages: { id: string; name: string }[]
-  statuses: StatusOption[]
   group?: SmallGroupRow
   groupMembers?: GroupMember[]
   pendingRequests?: PendingRequest[]
@@ -171,7 +171,6 @@ export function SmallGroupForm({
   members,
   smallGroups,
   lifeStages,
-  statuses,
   group,
   groupMembers,
   pendingRequests = [],
@@ -246,10 +245,6 @@ export function SmallGroupForm({
     memberLimitNum > 0 &&
     currentMemberCount >= memberLimitNum
 
-  // Map statusId → color class based on sorted order position
-  const statusColorMap = Object.fromEntries(
-    statuses.map((s, i) => [s.id, STATUS_COLOR_PALETTE[i % STATUS_COLOR_PALETTE.length]])
-  )
 
   async function handleAddMember() {
     if (!selectedMemberId || !group) return
@@ -298,9 +293,9 @@ export function SmallGroupForm({
     }
   }
 
-  async function handleStatusChange(memberId: string, statusId: string) {
+  async function handleStatusChange(memberId: string, status: "Member" | "Timothy" | "Leader") {
     if (!group) return
-    const result = await updateMemberGroupStatus(memberId, group.id, statusId)
+    const result = await updateMemberGroupStatus(memberId, group.id, status)
     if (result.success) {
       toast.success("Status updated")
       router.refresh()
@@ -1071,16 +1066,16 @@ export function SmallGroupForm({
                     </span>
                   </Link>
                   <Select
-                    value={m.smallGroupStatusId ?? ""}
-                    onValueChange={(v) => handleStatusChange(m.id, v)}
+                    value={m.groupStatus ?? ""}
+                    onValueChange={(v) => handleStatusChange(m.id, v as "Member" | "Timothy" | "Leader")}
                   >
-                    <SelectTrigger className={`w-28 h-7 text-xs font-medium border-0 ${m.smallGroupStatusId ? statusColorMap[m.smallGroupStatusId] : "bg-slate-100 text-slate-700"}`}>
+                    <SelectTrigger className={`w-28 h-7 text-xs font-medium border-0 ${m.groupStatus ? GROUP_STATUS_COLORS[m.groupStatus] : "bg-slate-100 text-slate-700"}`}>
                       <SelectValue placeholder="—" />
                     </SelectTrigger>
                     <SelectContent>
-                      {statuses.map((s) => (
-                        <SelectItem key={s.id} value={s.id} className="text-xs">
-                          {s.name}
+                      {GROUP_STATUS_OPTIONS.map((s) => (
+                        <SelectItem key={s.value} value={s.value} className="text-xs">
+                          {s.label}
                         </SelectItem>
                       ))}
                     </SelectContent>

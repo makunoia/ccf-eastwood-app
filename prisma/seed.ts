@@ -30,14 +30,7 @@ async function main() {
   ])
   console.log("✓ Created 4 life stages")
 
-  // ─── Small Group Statuses ─────────────────────────────────────────────────
-  await Promise.all([
-    db.smallGroupStatus.create({ data: { name: "New", order: 1 } }),
-    db.smallGroupStatus.create({ data: { name: "Regular", order: 2 } }),
-    db.smallGroupStatus.create({ data: { name: "Timothy", order: 3 } }),
-    db.smallGroupStatus.create({ data: { name: "Leader", order: 4 } }),
-  ])
-  console.log("✓ Created 4 small group statuses")
+  // Small group statuses are now native enum (Member | Timothy | Leader) — no seed needed
 
   // ─── Admin User ───────────────────────────────────────────────────────────
   const hashedPassword = await bcrypt.hash("admin123", 12)
@@ -400,8 +393,8 @@ async function main() {
 
   // Assign top-level leaders to groups (Samuel joins Family Alpha, Caleb joins Young Adults Connect)
   await Promise.all([
-    db.member.update({ where: { id: samuel.id }, data: { smallGroupId: familyAlpha.id } }),
-    db.member.update({ where: { id: caleb.id }, data: { smallGroupId: youngAdultsConnect.id } }),
+    db.member.update({ where: { id: samuel.id }, data: { smallGroupId: familyAlpha.id, groupStatus: "Member" } }),
+    db.member.update({ where: { id: caleb.id }, data: { smallGroupId: youngAdultsConnect.id, groupStatus: "Member" } }),
   ])
 
   // Child groups (parentGroupId references the group their leader is a member of)
@@ -453,19 +446,19 @@ async function main() {
   // ─── Assign Members to Small Groups ──────────────────────────────────────
   await Promise.all([
     // Family Alpha: Grace, Lydia (Samuel already assigned above)
-    db.member.update({ where: { id: grace.id }, data: { smallGroupId: familyAlpha.id } }),
-    db.member.update({ where: { id: lydia.id }, data: { smallGroupId: familyAlpha.id } }),
+    db.member.update({ where: { id: grace.id }, data: { smallGroupId: familyAlpha.id, groupStatus: "Member" } }),
+    db.member.update({ where: { id: lydia.id }, data: { smallGroupId: familyAlpha.id, groupStatus: "Member" } }),
     // Family Beta: (Samuel leads — no additional members seeded)
     // Young Adults Connect: Elijah, Hannah, Nathan (Caleb already assigned above)
-    db.member.update({ where: { id: elijah.id }, data: { smallGroupId: youngAdultsConnect.id } }),
-    db.member.update({ where: { id: hannah.id }, data: { smallGroupId: youngAdultsConnect.id } }),
-    db.member.update({ where: { id: nathan.id }, data: { smallGroupId: youngAdultsConnect.id } }),
+    db.member.update({ where: { id: elijah.id }, data: { smallGroupId: youngAdultsConnect.id, groupStatus: "Member" } }),
+    db.member.update({ where: { id: hannah.id }, data: { smallGroupId: youngAdultsConnect.id, groupStatus: "Member" } }),
+    db.member.update({ where: { id: nathan.id }, data: { smallGroupId: youngAdultsConnect.id, groupStatus: "Member" } }),
     // Youth Crew: Joshua, Aaron
-    db.member.update({ where: { id: joshua.id }, data: { smallGroupId: youthCrew.id } }),
-    db.member.update({ where: { id: aaron.id }, data: { smallGroupId: youthCrew.id } }),
+    db.member.update({ where: { id: joshua.id }, data: { smallGroupId: youthCrew.id, groupStatus: "Member" } }),
+    db.member.update({ where: { id: aaron.id }, data: { smallGroupId: youthCrew.id, groupStatus: "Member" } }),
     // Seniors Fellowship: Esther, Miriam
-    db.member.update({ where: { id: esther.id }, data: { smallGroupId: seniorsFellowship.id } }),
-    db.member.update({ where: { id: miriam.id }, data: { smallGroupId: seniorsFellowship.id } }),
+    db.member.update({ where: { id: esther.id }, data: { smallGroupId: seniorsFellowship.id, groupStatus: "Member" } }),
+    db.member.update({ where: { id: miriam.id }, data: { smallGroupId: seniorsFellowship.id, groupStatus: "Member" } }),
   ])
   console.log("✓ Assigned members to small groups")
 

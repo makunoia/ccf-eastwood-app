@@ -48,7 +48,7 @@ async function getMemberSmallGroupInfo(memberId: string) {
     where: { id: memberId },
     select: {
       smallGroup: { select: { id: true, name: true } },
-      smallGroupStatus: { select: { name: true } },
+      groupStatus: true,
       ledGroups: {
         select: {
           id: true,
@@ -65,7 +65,7 @@ async function getMemberSmallGroupInfo(memberId: string) {
       ? {
           id: m.smallGroup.id,
           name: m.smallGroup.name,
-          statusName: m.smallGroupStatus?.name ?? null,
+          groupStatus: m.groupStatus ?? null,
         }
       : null,
     ledGroups: m.ledGroups.map((g: { id: string; name: string; _count: { members: number } }) => ({

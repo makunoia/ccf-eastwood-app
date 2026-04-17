@@ -58,6 +58,13 @@ enum MatchingContext {
 enum EventModuleType {
   Baptism
   Embarkation
+  CatchMech
+}
+
+enum MemberGroupStatus {
+  Member
+  Timothy
+  Leader
 }
 
 enum BusDirection {
@@ -205,8 +212,7 @@ model Member {
 
   smallGroupId        String?
   smallGroup          SmallGroup?         @relation("SmallGroupMembers", fields: [smallGroupId], references: [id])
-  smallGroupStatusId  String?
-  smallGroupStatus    SmallGroupStatus?   @relation(fields: [smallGroupStatusId], references: [id])
+  groupStatus         MemberGroupStatus?  // null when not in a group; set when member joins
 
   // Matching fields
   gender              Gender?
@@ -317,17 +323,6 @@ model SmallGroup {
   linkedBreakoutGroups BreakoutGroup[]  @relation("BreakoutLinkedGroup")
 }
 
-model SmallGroupStatus {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  order     Int
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  members   Member[]
-}
-
-
 model Ministry {
   id          String     @id @default(cuid())
   name        String     @unique
@@ -367,8 +362,9 @@ model Event {
   volunteers     Volunteer[]
   modules        EventModule[]
   baptismOptIns  BaptismOptIn[]
-  buses          Bus[]
-  userAccess     UserEventAccess[]
+  buses             Bus[]
+  userAccess        UserEventAccess[]
+  catchMechSessions CatchMechSession[]
 }
 
 model EventMinistry {
@@ -465,8 +461,9 @@ model BreakoutGroup {
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
-  members   BreakoutGroupMember[]
-  schedules BreakoutGroupSchedule[]
+  members           BreakoutGroupMember[]
+  schedules         BreakoutGroupSchedule[]
+  catchMechSessions CatchMechSession[]
 }
 
 model BreakoutGroupSchedule {
@@ -540,6 +537,7 @@ model Volunteer {
   facilitatedGroups   BreakoutGroup[] @relation("FacilitatedGroups")
   coFacilitatedGroups BreakoutGroup[] @relation("CoFacilitatedGroups")
   busPassengers       BusPassenger[]
+  catchMechSessions   CatchMechSession[]
 }
 
 model MatchingWeightConfig {
@@ -659,4 +657,18 @@ model SmallGroupLog {
 
   description  String?
   createdAt    DateTime            @default(now())
+}
+
+// ─── Catch Mech ──────────────────────────────────────────────────────────────
+
+model CatchMechSession {
+  id                     String        @id @default(cuid())
+  token                  String        @unique @default(cuid())
+  eventId                String
+  event                  Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  breakoutGroupId        String
+  breakoutGroup          BreakoutGroup @relation(fields: [breakoutGroupId], references: [id], onDelete: Cascade)
+  facilitatorVolunteerId String
+  facilitator            Volunteer     @relation(fields: [facilitatorVolunteerId], references: [id], onDelete: Cascade)
+  createdAt              DateTime      @default(now())
 }

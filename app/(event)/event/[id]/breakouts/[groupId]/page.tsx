@@ -93,7 +93,7 @@ async function getBreakoutGroup(groupId: string, eventId: string) {
                   firstName: true,
                   lastName: true,
                   smallGroup: { select: { id: true, name: true } },
-                  smallGroupStatus: { select: { id: true, name: true } },
+                  groupStatus: true,
                 },
               },
               guest: { select: { id: true, firstName: true, lastName: true } },

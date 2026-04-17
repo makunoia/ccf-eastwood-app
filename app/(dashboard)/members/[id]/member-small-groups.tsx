@@ -1,13 +1,13 @@
 import Link from "next/link"
 import { IconUsers } from "@tabler/icons-react"
 
-import { Badge } from "@/components/ui/badge"
+import { MemberGroupStepper } from "./member-group-stepper"
 
 type Props = {
   memberOf: {
     id: string
     name: string
-    statusName: string | null
+    groupStatus: "Member" | "Timothy" | "Leader" | null
   } | null
   ledGroups: {
     id: string
@@ -22,15 +22,17 @@ export function MemberSmallGroups({ memberOf, ledGroups }: Props) {
       <section className="space-y-3">
         <h3 className="text-sm font-medium text-muted-foreground">Member Of</h3>
         {memberOf ? (
-          <div className="flex items-center justify-between rounded-lg border p-3">
-            <Link
-              href={`/small-groups/${memberOf.id}`}
-              className="text-sm font-medium hover:underline"
-            >
-              {memberOf.name}
-            </Link>
-            {memberOf.statusName && (
-              <Badge variant="secondary">{memberOf.statusName}</Badge>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <Link
+                href={`/small-groups/${memberOf.id}`}
+                className="text-sm font-medium hover:underline"
+              >
+                {memberOf.name}
+              </Link>
+            </div>
+            {memberOf.groupStatus && (
+              <MemberGroupStepper status={memberOf.groupStatus} />
             )}
           </div>
         ) : (

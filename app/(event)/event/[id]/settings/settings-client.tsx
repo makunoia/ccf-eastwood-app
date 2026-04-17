@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { IconBus, IconCross, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react"
+import { IconBus, IconCross, IconFish, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -168,8 +168,8 @@ export function EventSettingsClient({ eventId, enabledModules, buses, committees
     setTogglingModule(type)
     const enabled = modules.has(type)
     const result = enabled
-      ? await disableModule(eventId, type as "Baptism" | "Embarkation")
-      : await enableModule(eventId, type as "Baptism" | "Embarkation")
+      ? await disableModule(eventId, type as "Baptism" | "Embarkation" | "CatchMech")
+      : await enableModule(eventId, type as "Baptism" | "Embarkation" | "CatchMech")
     setTogglingModule(null)
     if (result.success) {
       setModules((prev) => {
@@ -310,6 +310,27 @@ export function EventSettingsClient({ eventId, enabledModules, buses, committees
                 )}
               </Card>
             )}
+            {/* Catch Mech */}
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <IconFish className="size-5 text-muted-foreground" />
+                    <div>
+                      <CardTitle className="text-base">Catch Mech</CardTitle>
+                      <CardDescription className="mt-0.5">
+                        Enable facilitators to confirm breakout group members into their small groups via a weekly link.
+                      </CardDescription>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={modules.has("CatchMech")}
+                    onCheckedChange={() => handleToggleModule("CatchMech")}
+                    disabled={togglingModule === "CatchMech"}
+                  />
+                </div>
+              </CardHeader>
+            </Card>
           </section>
         </TabsContent>
 

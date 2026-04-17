@@ -8,6 +8,7 @@ import {
   IconCalendarWeek,
   IconCalendarEvent,
   IconCross,
+  IconFish,
   IconLayoutDashboard,
   IconSettings,
   IconUsersGroup,
@@ -98,6 +99,12 @@ export function EventSidebar({
       url: `${base}/embarkation`,
       icon: IconBus,
       show: modules.includes("Embarkation"),
+    },
+    {
+      title: "Catch Mech",
+      url: `${base}/catch-mech`,
+      icon: IconFish,
+      show: modules.includes("CatchMech"),
     },
   ]
 

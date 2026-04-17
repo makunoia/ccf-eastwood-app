@@ -2,7 +2,7 @@ import { db } from "@/lib/db"
 import { SmallGroupForm } from "../small-group-form"
 
 async function getData() {
-  const [members, smallGroups, lifeStages, statuses] = await Promise.all([
+  const [members, smallGroups, lifeStages] = await Promise.all([
     db.member.findMany({
       orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
       select: { id: true, firstName: true, lastName: true, smallGroupId: true },
@@ -15,22 +15,17 @@ async function getData() {
       orderBy: { order: "asc" },
       select: { id: true, name: true },
     }),
-    db.smallGroupStatus.findMany({
-      orderBy: { order: "asc" },
-      select: { id: true, name: true, order: true },
-    }),
   ])
-  return { members, smallGroups, lifeStages, statuses }
+  return { members, smallGroups, lifeStages }
 }
 
 export default async function NewSmallGroupPage() {
-  const { members, smallGroups, lifeStages, statuses } = await getData()
+  const { members, smallGroups, lifeStages } = await getData()
   return (
     <SmallGroupForm
       members={members}
       smallGroups={smallGroups}
       lifeStages={lifeStages}
-      statuses={statuses}
     />
   )
 }

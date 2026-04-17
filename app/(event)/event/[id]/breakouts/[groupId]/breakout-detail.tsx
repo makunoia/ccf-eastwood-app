@@ -76,7 +76,7 @@ type RegistrantMember = {
   firstName: string
   lastName: string
   smallGroup: { id: string; name: string } | null
-  smallGroupStatus: { id: string; name: string } | null
+  groupStatus: "Member" | "Timothy" | "Leader" | null
 }
 
 type BreakoutMemberRow = {
@@ -520,9 +520,9 @@ function MembersTable({
                       )}
                     </TableCell>
                     <TableCell>
-                      {r.member?.smallGroupStatus ? (
+                      {r.member?.groupStatus ? (
                         <Badge variant="secondary" className="text-xs">
-                          {r.member.smallGroupStatus.name}
+                          {r.member.groupStatus}
                         </Badge>
                       ) : (
                         <span className="text-muted-foreground">—</span>
