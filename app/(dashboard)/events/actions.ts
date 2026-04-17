@@ -152,6 +152,7 @@ export async function createRegistrant(
               lastName: parsed.data.lastName,
               email: parsed.data.email ?? null,
               phone: parsed.data.mobileNumber,
+              language: [],
             },
             select: { id: true },
           })).id
@@ -540,6 +541,7 @@ export async function walkInCheckin(
               lastName: parsed.data.lastName,
               email: parsed.data.email ?? null,
               phone: parsed.data.mobileNumber,
+              language: [],
             },
             select: { id: true },
           })
