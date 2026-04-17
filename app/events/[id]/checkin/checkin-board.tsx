@@ -19,6 +19,7 @@ import {
   checkInToOccurrence,
   walkInCheckin,
 } from "@/app/(dashboard)/events/actions"
+import { autoAssignRegistrantToBreakout } from "@/app/(dashboard)/events/breakout-actions"
 import {
   saveGuestMatchingProfile,
   saveGuestClaimedGroup,
@@ -172,6 +173,11 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurri
     if (!result.success) {
       setError(result.error)
       return
+    }
+
+    // Silently auto-assign to best breakout group in the background
+    if (occurrenceId !== null) {
+      void autoAssignRegistrantToBreakout(matched.registrantId, eventId)
     }
 
     // If this guest should be asked about a small group, show prompt first
