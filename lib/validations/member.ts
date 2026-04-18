@@ -13,10 +13,14 @@ const nullableEmail = z
     message: "Invalid email address",
   })
 
-const nullableDate = z
-  .string()
+const nullableInt = z
+  .union([z.string(), z.number()])
   .optional()
-  .transform((v) => (v === "" || v == null ? null : new Date(v)))
+  .transform((v) => {
+    if (v === "" || v == null) return null
+    const n = Number(v)
+    return isNaN(n) ? null : n
+  })
 
 export const memberSchema = z.object({
   firstName: z.string().min(1, "First name is required").trim(),
@@ -35,7 +39,8 @@ export const memberSchema = z.object({
     z.enum(["Male", "Female"]).optional().nullable()
   ),
   language: z.string().array().default([]),
-  birthDate: nullableDate,
+  birthMonth: nullableInt,
+  birthYear: nullableInt,
   workCity: nullableString,
   workIndustry: nullableString,
   meetingPreference: z.preprocess(
@@ -58,7 +63,8 @@ export type MemberFormValues = {
   lifeStageId: string
   gender: string
   language: string[]
-  birthDate: string
+  birthMonth: string
+  birthYear: string
   workCity: string
   workIndustry: string
   meetingPreference: string
@@ -75,7 +81,8 @@ export const defaultMemberForm: MemberFormValues = {
   lifeStageId: "",
   gender: "",
   language: [],
-  birthDate: "",
+  birthMonth: "",
+  birthYear: "",
   workCity: "",
   workIndustry: "",
   meetingPreference: "",

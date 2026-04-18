@@ -24,7 +24,7 @@ export async function createBreakoutGroup(
   if (!parsed.success) {
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
   }
-  const { name, facilitatorId, coFacilitatorId, memberLimit, linkedSmallGroupId, ...profile } = parsed.data
+  const { name, facilitatorId, coFacilitatorId, memberLimit, linkedSmallGroupId, schedule, ...profile } = parsed.data
   try {
     const group = await db.breakoutGroup.create({
       data: {
@@ -41,6 +41,17 @@ export async function createBreakoutGroup(
         ageRangeMax: profile.ageRangeMax ?? null,
         meetingFormat: profile.meetingFormat ?? null,
         locationCity: profile.locationCity ?? null,
+        ...(schedule
+          ? {
+              schedules: {
+                create: {
+                  dayOfWeek: schedule.dayOfWeek,
+                  timeStart: schedule.timeStart,
+                  timeEnd: schedule.timeEnd,
+                },
+              },
+            }
+          : {}),
       },
       select: { id: true },
     })
@@ -60,7 +71,7 @@ export async function updateBreakoutGroup(
   if (!parsed.success) {
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
   }
-  const { name, facilitatorId, coFacilitatorId, memberLimit, linkedSmallGroupId, ...profile } = parsed.data
+  const { name, facilitatorId, coFacilitatorId, memberLimit, linkedSmallGroupId, schedule, ...profile } = parsed.data
   try {
     await db.breakoutGroup.update({
       where: { id: groupId },
@@ -77,6 +88,18 @@ export async function updateBreakoutGroup(
         ageRangeMax: profile.ageRangeMax ?? null,
         meetingFormat: profile.meetingFormat ?? null,
         locationCity: profile.locationCity ?? null,
+        schedules: {
+          deleteMany: {},
+          ...(schedule
+            ? {
+                create: {
+                  dayOfWeek: schedule.dayOfWeek,
+                  timeStart: schedule.timeStart,
+                  timeEnd: schedule.timeEnd,
+                },
+              }
+            : {}),
+        },
       },
     })
     revalidatePath(`/events/${eventId}`)
@@ -149,6 +172,44 @@ export async function removeRegistrantFromBreakout(
 
 // ─── Facilitator assignment ───────────────────────────────────────────────────
 
+// ─── Auto-assign on check-in ─────────────────────────────────────────────────
+
+/**
+ * Called after a registrant checks in to an occurrence.
+ * Silently assigns them to the best-matching breakout group if they're not
+ * already assigned to one. Never throws — failures are swallowed so they
+ * never block the check-in flow.
+ */
+export async function autoAssignRegistrantToBreakout(
+  registrantId: string,
+  eventId: string
+): Promise<void> {
+  try {
+    const alreadyAssigned = await db.breakoutGroupMember.findFirst({
+      where: { registrantId, breakoutGroup: { eventId } },
+      select: { breakoutGroupId: true },
+    })
+    if (alreadyAssigned) return
+
+    const matches = await matchBreakoutGroups(registrantId, eventId, {
+      excludeAssigned: true,
+      limit: 1,
+    })
+    if (matches.length === 0) return
+
+    const topMatch = matches[0]
+
+    await db.breakoutGroupMember.create({
+      data: { breakoutGroupId: topMatch.groupId, registrantId },
+    })
+    await tryCreateSmallGroupRequestFromBreakout(topMatch.groupId, registrantId)
+
+    revalidatePath(`/event/${eventId}/breakouts`)
+  } catch {
+    // Swallow — auto-assign is best-effort and must not interrupt check-in
+  }
+}
+
 // ─── Auto-assign ─────────────────────────────────────────────────────────────
 
 export async function autoAssignBreakouts(
@@ -207,7 +268,13 @@ export async function setFacilitator(
   // Validate the volunteer belongs to this event (if assigning, not clearing)
   if (volunteerId !== null) {
     const volunteer = await db.volunteer.findFirst({
-      where: { id: volunteerId, eventId },
+      where: {
+        id: volunteerId,
+        OR: [
+          { eventId },
+          { ministry: { events: { some: { eventId } } } },
+        ],
+      },
       select: { id: true },
     })
     if (!volunteer) {

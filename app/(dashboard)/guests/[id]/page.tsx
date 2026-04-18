@@ -22,7 +22,28 @@ async function getGuest(id: string) {
           select: {
             attendedAt: true,
             occurrenceAttendances: { select: { id: true } },
-            breakoutGroupMemberships: { select: { breakoutGroupId: true } },
+            breakoutGroupMemberships: {
+              select: {
+                breakoutGroupId: true,
+                breakoutGroup: {
+                  select: {
+                    name: true,
+                    event: { select: { name: true } },
+                    facilitator: {
+                      select: {
+                        member: { select: { firstName: true, lastName: true } },
+                      },
+                    },
+                    linkedSmallGroup: {
+                      select: {
+                        name: true,
+                        leader: { select: { firstName: true, lastName: true } },
+                      },
+                    },
+                  },
+                },
+              },
+            },
           },
         },
       },
@@ -33,6 +54,32 @@ async function getGuest(id: string) {
     }),
   ])
   if (!g) return null
+
+  let matchedBreakout: {
+    eventName: string
+    breakoutGroupName: string
+    facilitatorName: string | null
+    linkedSmallGroup: {
+      name: string
+      leader: { firstName: string; lastName: string } | null
+    } | null
+  } | null = null
+  for (const reg of g.eventRegistrations) {
+    const m = reg.breakoutGroupMemberships[0]
+    if (m) {
+      const faci = m.breakoutGroup.facilitator
+      matchedBreakout = {
+        eventName: m.breakoutGroup.event.name,
+        breakoutGroupName: m.breakoutGroup.name,
+        facilitatorName: faci?.member
+          ? `${faci.member.firstName} ${faci.member.lastName}`
+          : null,
+        linkedSmallGroup: m.breakoutGroup.linkedSmallGroup,
+      }
+      break
+    }
+  }
+
   return {
     id: g.id,
     firstName: g.firstName,
@@ -43,7 +90,8 @@ async function getGuest(id: string) {
     lifeStageId: g.lifeStageId,
     gender: g.gender as string | null,
     language: g.language,
-    birthDate: g.birthDate ? g.birthDate.toISOString().split("T")[0] : null,
+    birthMonth: g.birthMonth,
+    birthYear: g.birthYear,
     workCity: g.workCity,
     workIndustry: g.workIndustry,
     meetingPreference: g.meetingPreference as string | null,
@@ -51,6 +99,7 @@ async function getGuest(id: string) {
     claimedSmallGroup: g.claimedSmallGroup,
     eventRegistrations: g.eventRegistrations,
     pendingGroupName: pendingRequest?.smallGroup?.name ?? null,
+    matchedBreakout,
   }
 }
 
@@ -106,6 +155,7 @@ export default async function GuestDetailPage({
           pipelineStatus={pipelineStatus}
           claimedGroup={guest.claimedSmallGroup}
           pendingGroupName={guest.pendingGroupName}
+          matchedBreakout={guest.matchedBreakout}
         />
       }
     />

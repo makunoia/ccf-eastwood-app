@@ -8,12 +8,12 @@ import { NavigationLoader } from "@/components/navigation-loader"
 import "./globals.css"
 
 export const metadata: Metadata = {
-  title: "Churchie",
+  title: "CCF Eastwood Admin App",
   description: "Church management for administrators",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Churchie",
+    title: "CCF Eastwood Admin App",
   },
   formatDetection: {
     telephone: false,

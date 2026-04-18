@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { PhonePHInput } from "@/components/ui/phone-ph-input"
 import { MultiSelect } from "@/components/ui/multi-select"
 import {
   Select,
@@ -46,7 +47,8 @@ type GuestDetail = {
   lifeStageId: string | null
   gender: string | null
   language: string[]
-  birthDate: string | null
+  birthMonth: number | null
+  birthYear: number | null
   workCity: string | null
   workIndustry: string | null
   meetingPreference: string | null
@@ -70,7 +72,8 @@ function toFormValues(guest: GuestDetail): GuestFormValues {
     lifeStageId: guest.lifeStageId ?? "",
     gender: guest.gender ?? "",
     language: guest.language,
-    birthDate: guest.birthDate ?? "",
+    birthMonth: guest.birthMonth != null ? String(guest.birthMonth) : "",
+    birthYear: guest.birthYear != null ? String(guest.birthYear) : "",
     workCity: guest.workCity ?? "",
     workIndustry: guest.workIndustry ?? "",
     meetingPreference: guest.meetingPreference ?? "",
@@ -253,23 +256,42 @@ export function GuestForm({ lifeStages, guest, eventHistory, matchSection }: Pro
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="phone">Phone</Label>
-                  <Input
+                  <PhonePHInput
                     id="phone"
                     value={form.phone}
-                    onChange={(e) => set("phone", e.target.value)}
-                    placeholder="+63 917 123 4567"
+                    onChange={(v) => set("phone", v)}
                     disabled={isPromoted}
                   />
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="birthDate">Birth Date</Label>
+                <Label>Birth Month</Label>
+                <Select
+                  value={form.birthMonth}
+                  onValueChange={(v) => set("birthMonth", v)}
+                  disabled={isPromoted}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Month" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {["January","February","March","April","May","June","July","August","September","October","November","December"].map((name, i) => (
+                      <SelectItem key={i + 1} value={String(i + 1)}>{name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="birthYear">Birth Year</Label>
                 <Input
-                  id="birthDate"
-                  type="date"
-                  value={form.birthDate}
-                  onChange={(e) => set("birthDate", e.target.value)}
+                  id="birthYear"
+                  type="number"
+                  min={1900}
+                  max={new Date().getFullYear()}
+                  placeholder="e.g. 1990"
+                  value={form.birthYear}
+                  onChange={(e) => set("birthYear", e.target.value)}
                   disabled={isPromoted}
                 />
               </div>

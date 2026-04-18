@@ -208,9 +208,49 @@ export async function importEventRegistrants(
         continue
       }
 
-      // No existing match — find or create Guest + EventRegistrant
+      // No existing match — but first check if a Member with this contact is already registered
+      // (handles reimport after a member was linked on first import, or phone format mismatch)
       const email  = mapped.email?.trim() || null
       const mobile = mapped.mobileNumber ? formatPhilippinePhone(mapped.mobileNumber) : null
+      const rawPhone = mapped.mobileNumber?.trim() || null
+
+      if (email || mobile || rawPhone) {
+        const phoneConditions = [
+          mobile ? { phone: mobile } : undefined,
+          rawPhone && rawPhone !== mobile ? { phone: rawPhone } : undefined,
+        ].filter(Boolean) as Prisma.MemberWhereInput[]
+        const matchedMember = await db.member.findFirst({
+          where: {
+            OR: [
+              email ? { email } : undefined,
+              ...phoneConditions,
+            ].filter(Boolean) as Prisma.MemberWhereInput[],
+          },
+          select: { id: true },
+        })
+        if (matchedMember) {
+          const memberRegistrant = await db.eventRegistrant.findFirst({
+            where: { eventId, memberId: matchedMember.id },
+            select: { id: true },
+          })
+          if (memberRegistrant) {
+            result.skipped++
+            continue
+          }
+          // Member found but not yet registered — link them
+          await db.eventRegistrant.create({
+            data: {
+              eventId,
+              memberId:         matchedMember.id,
+              isPaid:           mapped.isPaid ? parseBool(mapped.isPaid) : false,
+              paymentReference: mapped.paymentReference?.trim() || null,
+            },
+          })
+          result.linked++
+          continue
+        }
+      }
+
       let guest = await db.guest.findFirst({
         where: {
           memberId: null,
@@ -223,7 +263,7 @@ export async function importEventRegistrants(
       })
       if (!guest) {
         guest = await db.guest.create({
-          data: { firstName, lastName, email, phone: mobile },
+          data: { firstName, lastName, email, phone: mobile, language: [] },
           select: { id: true },
         })
       }
@@ -256,4 +296,90 @@ export async function importEventRegistrants(
 
   revalidatePath(`/event/${eventId}/registrants`)
   return { success: true, data: result }
+}
+
+// ─── Manual add registrant ────────────────────────────────────────────────────
+
+type AddRegistrantInput = {
+  firstName: string
+  lastName: string
+  email?: string
+  mobileNumber?: string
+  nickname?: string
+}
+
+export async function addEventRegistrant(
+  eventId: string,
+  input: AddRegistrantInput
+): Promise<ActionResult<{ id: string }>> {
+  try {
+    const firstName = toTitleCase(input.firstName.trim())
+    const lastName  = toTitleCase(input.lastName.trim())
+    if (!firstName || !lastName)
+      return { success: false, error: "First name and last name are required" }
+
+    const email  = input.email?.trim() || null
+    const mobile = input.mobileNumber ? formatPhilippinePhone(input.mobileNumber) : null
+    const rawPhone = input.mobileNumber?.trim() || null
+
+    // Look up existing member by phone/email
+    const phoneConditions = [
+      mobile ? { phone: mobile } : undefined,
+      rawPhone && rawPhone !== mobile ? { phone: rawPhone } : undefined,
+    ].filter(Boolean) as Prisma.MemberWhereInput[]
+    const member = (email || mobile || rawPhone) ? await db.member.findFirst({
+      where: {
+        OR: [
+          email ? { email } : undefined,
+          ...phoneConditions,
+        ].filter(Boolean) as Prisma.MemberWhereInput[],
+      },
+      select: { id: true },
+    }) : null
+
+    if (member) {
+      const existing = await db.eventRegistrant.findFirst({
+        where: { eventId, memberId: member.id },
+        select: { id: true },
+      })
+      if (existing) return { success: false, error: "This member is already registered for this event" }
+      const reg = await db.eventRegistrant.create({
+        data: { eventId, memberId: member.id, nickname: input.nickname?.trim() || null },
+        select: { id: true },
+      })
+      revalidatePath(`/event/${eventId}/registrants`)
+      return { success: true, data: { id: reg.id } }
+    }
+
+    // No member — find or create Guest
+    const guest = await db.guest.findFirst({
+      where: {
+        memberId: null,
+        OR: [
+          email  ? { email }  : undefined,
+          mobile ? { phone: mobile } : undefined,
+          rawPhone && rawPhone !== mobile ? { phone: rawPhone } : undefined,
+        ].filter(Boolean) as Prisma.GuestWhereInput[],
+      },
+      select: { id: true },
+    }) ?? await db.guest.create({
+      data: { firstName, lastName, email, phone: mobile ?? rawPhone, language: [] },
+      select: { id: true },
+    })
+
+    const existingReg = await db.eventRegistrant.findFirst({
+      where: { eventId, guestId: guest.id },
+      select: { id: true },
+    })
+    if (existingReg) return { success: false, error: "This person is already registered for this event" }
+
+    const reg = await db.eventRegistrant.create({
+      data: { eventId, guestId: guest.id, nickname: input.nickname?.trim() || null },
+      select: { id: true },
+    })
+    revalidatePath(`/event/${eventId}/registrants`)
+    return { success: true, data: { id: reg.id } }
+  } catch {
+    return { success: false, error: "Failed to add registrant" }
+  }
 }

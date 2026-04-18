@@ -100,6 +100,13 @@ const STAGE_LABEL: Record<GuestPipelineStatus, string> = {
   Pending: "Pending",
   Member: "Member",
 }
+const STAGE_DESCRIPTION: Record<GuestPipelineStatus, string> = {
+  New: "Registered but has not yet attended an event.",
+  EventAttendee: "Has attended at least one event but hasn't been placed in a breakout group yet.",
+  Matched: "Was placed in a breakout group at an event and is ready to be connected to a small group.",
+  Pending: "Has a pending small group assignment — awaiting confirmation from the group leader.",
+  Member: "Has joined a small group and been promoted to a full member.",
+}
 
 function PipelineStepper({ status }: { status: GuestPipelineStatus }) {
   const activeIndex = PIPELINE_STAGES.indexOf(status)
@@ -107,50 +114,55 @@ function PipelineStepper({ status }: { status: GuestPipelineStatus }) {
   const CHEVRON = 18
 
   return (
-    <div className="flex overflow-hidden rounded-lg border">
-      {PIPELINE_STAGES.map((stage, i) => {
-        const isActive = i === activeIndex
-        const isPast = i < activeIndex
-        const isFirst = i === 0
-        const isLast = i === PIPELINE_STAGES.length - 1
+    <div className="overflow-hidden rounded-lg border">
+      <div className="flex">
+        {PIPELINE_STAGES.map((stage, i) => {
+          const isActive = i === activeIndex
+          const isPast = i < activeIndex
+          const isFirst = i === 0
+          const isLast = i === PIPELINE_STAGES.length - 1
 
-        // Chevron polygon: right edge points right; left edge indents inward (except first)
-        const clipPath = isFirst
-          ? `polygon(0 0, calc(100% - ${CHEVRON}px) 0, 100% 50%, calc(100% - ${CHEVRON}px) 100%, 0 100%)`
-          : isLast
-          ? `polygon(0 0, 100% 0, 100% 100%, 0 100%, ${CHEVRON}px 50%)`
-          : `polygon(0 0, calc(100% - ${CHEVRON}px) 0, 100% 50%, calc(100% - ${CHEVRON}px) 100%, 0 100%, ${CHEVRON}px 50%)`
+          // Chevron polygon: right edge points right; left edge indents inward (except first)
+          const clipPath = isFirst
+            ? `polygon(0 0, calc(100% - ${CHEVRON}px) 0, 100% 50%, calc(100% - ${CHEVRON}px) 100%, 0 100%)`
+            : isLast
+            ? `polygon(0 0, 100% 0, 100% 100%, 0 100%, ${CHEVRON}px 50%)`
+            : `polygon(0 0, calc(100% - ${CHEVRON}px) 0, 100% 50%, calc(100% - ${CHEVRON}px) 100%, 0 100%, ${CHEVRON}px 50%)`
 
-        return (
-          <div
-            key={stage}
-            className={[
-              "relative flex flex-1 items-center select-none text-xs",
-              isActive
-                ? "bg-foreground text-background"
-                : isPast
-                ? "bg-muted text-foreground/50"
-                : "bg-muted/40 text-muted-foreground/60",
-            ].join(" ")}
-            style={{
-              clipPath,
-              // Pull each segment left so the previous arrow overlaps this indent
-              marginLeft: i > 0 ? `-${CHEVRON}px` : undefined,
-              // Left segments sit on top so arrows are visible
-              zIndex: PIPELINE_STAGES.length - i,
-              // Inner padding: compensate for the indent on the left side
-              paddingTop: 10,
-              paddingBottom: 10,
-              paddingLeft: isFirst ? 16 : CHEVRON + 10,
-              paddingRight: isLast ? 16 : CHEVRON + 10,
-            }}
-          >
-            <span className={isActive ? "font-semibold" : "font-medium"}>
-              {STAGE_LABEL[stage]}
-            </span>
-          </div>
-        )
-      })}
+          return (
+            <div
+              key={stage}
+              className={[
+                "relative flex flex-1 items-center select-none text-xs",
+                isActive
+                  ? "bg-foreground text-background"
+                  : isPast
+                  ? "bg-muted text-foreground/50"
+                  : "bg-muted/40 text-muted-foreground/60",
+              ].join(" ")}
+              style={{
+                clipPath,
+                // Pull each segment left so the previous arrow overlaps this indent
+                marginLeft: i > 0 ? `-${CHEVRON}px` : undefined,
+                // Left segments sit on top so arrows are visible
+                zIndex: PIPELINE_STAGES.length - i,
+                // Inner padding: compensate for the indent on the left side
+                paddingTop: 10,
+                paddingBottom: 10,
+                paddingLeft: isFirst ? 16 : CHEVRON + 10,
+                paddingRight: isLast ? 16 : CHEVRON + 10,
+              }}
+            >
+              <span className={isActive ? "font-semibold" : "font-medium"}>
+                {STAGE_LABEL[stage]}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+      <div className="border-t bg-muted/30 px-4 py-2.5">
+        <p className="text-xs text-muted-foreground">{STAGE_DESCRIPTION[status]}</p>
+      </div>
     </div>
   )
 }
@@ -171,16 +183,28 @@ type ClaimedGroup = {
   leader: { id: string; firstName: string; lastName: string } | null
 } | null
 
+type MatchedBreakout = {
+  eventName: string
+  breakoutGroupName: string
+  facilitatorName: string | null
+  linkedSmallGroup: {
+    name: string
+    leader: { firstName: string; lastName: string } | null
+  } | null
+} | null
+
 export function GuestMatchSection({
   guestId,
   pipelineStatus,
   claimedGroup,
   pendingGroupName,
+  matchedBreakout,
 }: {
   guestId: string
   pipelineStatus: GuestPipelineStatus
   claimedGroup: ClaimedGroup
   pendingGroupName: string | null
+  matchedBreakout: MatchedBreakout
 }) {
   const router = useRouter()
   const [state, setState] = React.useState<"idle" | "loading" | "done">("idle")
@@ -231,11 +255,8 @@ export function GuestMatchSection({
 
   if (pipelineStatus === "Member") {
     return (
-      <div className="max-w-2xl space-y-4">
+      <div className="max-w-2xl">
         <PipelineStepper status={pipelineStatus} />
-        <p className="text-sm text-muted-foreground">
-          This guest has been promoted to a member and is already in a small group.
-        </p>
       </div>
     )
   }
@@ -244,15 +265,63 @@ export function GuestMatchSection({
     return (
       <div className="max-w-2xl space-y-4">
         <PipelineStepper status={pipelineStatus} />
-        <div className="rounded-lg border bg-muted/40 p-4">
-          <p className="text-sm font-medium">Awaiting leader confirmation</p>
-          <p className="text-sm text-muted-foreground">
-            {pendingGroupName
-              ? <>This guest has been temporarily assigned to <span className="font-medium text-foreground">{pendingGroupName}</span>.</>
-              : "This guest has a pending small group assignment."}{" "}
-            They will be promoted to a member once the group leader confirms via the link.
-          </p>
-        </div>
+        {pendingGroupName && (
+          <div className="rounded-lg border bg-muted/40 p-4">
+            <p className="text-sm font-medium">Awaiting leader confirmation</p>
+            <p className="text-sm text-muted-foreground">
+              Temporarily assigned to{" "}
+              <span className="font-medium text-foreground">{pendingGroupName}</span>.
+            </p>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  if (pipelineStatus === "Matched") {
+    return (
+      <div className="max-w-2xl space-y-4">
+        <PipelineStepper status={pipelineStatus} />
+        {matchedBreakout && (
+          <div className="rounded-lg border p-4 space-y-3">
+            <h3 className="text-sm font-medium">Breakout Group Assignment</h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex gap-2">
+                <span className="text-muted-foreground w-32 shrink-0">Event</span>
+                <span>{matchedBreakout.eventName}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="text-muted-foreground w-32 shrink-0">Breakout Group</span>
+                <span>{matchedBreakout.breakoutGroupName}</span>
+              </div>
+              {matchedBreakout.linkedSmallGroup ? (
+                <>
+                  <div className="flex gap-2">
+                    <span className="text-muted-foreground w-32 shrink-0">Small Group</span>
+                    <span>{matchedBreakout.linkedSmallGroup.name}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="text-muted-foreground w-32 shrink-0">Leader</span>
+                    <span>
+                      {matchedBreakout.linkedSmallGroup.leader
+                        ? `${matchedBreakout.linkedSmallGroup.leader.firstName} ${matchedBreakout.linkedSmallGroup.leader.lastName}`
+                        : <span className="text-muted-foreground">—</span>}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <div className="flex gap-2">
+                  <span className="text-muted-foreground w-32 shrink-0">Volunteer</span>
+                  <span>
+                    {matchedBreakout.facilitatorName ?? (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     )
   }

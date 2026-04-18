@@ -4,7 +4,7 @@ import { IconArrowLeft } from "@tabler/icons-react"
 
 import { db } from "@/lib/db"
 import { Badge } from "@/components/ui/badge"
-import { BreakoutMatchSection } from "./breakout-match-section"
+import { BreakoutSection } from "./breakout-match-section"
 
 async function getRegistrant(registrantId: string, eventId: string) {
   return db.eventRegistrant.findFirst({
@@ -36,6 +36,52 @@ async function getRegistrant(registrantId: string, eventId: string) {
   })
 }
 
+/** Returns the breakout group this member facilitates or co-facilitates in this event, if any. */
+async function getFacilitatedGroup(memberId: string, eventId: string) {
+  return db.breakoutGroup.findFirst({
+    where: {
+      eventId,
+      OR: [
+        {
+          facilitator: {
+            memberId,
+            OR: [
+              { eventId },
+              { ministry: { events: { some: { eventId } } } },
+            ],
+          },
+        },
+        {
+          coFacilitator: {
+            memberId,
+            OR: [
+              { eventId },
+              { ministry: { events: { some: { eventId } } } },
+            ],
+          },
+        },
+      ],
+    },
+    select: { id: true, name: true },
+  })
+}
+
+async function getAllEventGroups(eventId: string, excludeIds: string[]) {
+  const groups = await db.breakoutGroup.findMany({
+    where: { eventId },
+    select: {
+      id: true,
+      name: true,
+      memberLimit: true,
+      _count: { select: { members: true } },
+    },
+    orderBy: { name: "asc" },
+  })
+  return groups
+    .filter((g) => !excludeIds.includes(g.id))
+    .map((g) => ({ id: g.id, name: g.name, memberLimit: g.memberLimit, currentCount: g._count.members }))
+}
+
 function resolveDisplayName(r: NonNullable<Awaited<ReturnType<typeof getRegistrant>>>) {
   if (r.member) return `${r.member.firstName} ${r.member.lastName}`
   if (r.guest) return `${r.guest.firstName} ${r.guest.lastName}`
@@ -58,9 +104,16 @@ export default async function RegistrantDetailPage({
   const registrant = await getRegistrant(registrantId, eventId)
   if (!registrant) notFound()
 
+  const assignedGroupIds = registrant.breakoutGroupMemberships.map((m) => m.breakoutGroup.id)
+  const isAssigned = assignedGroupIds.length > 0
+
+  const [facilitatedGroup, allEventGroups] = await Promise.all([
+    registrant.memberId ? getFacilitatedGroup(registrant.memberId, eventId) : null,
+    getAllEventGroups(eventId, assignedGroupIds),
+  ])
+
   const name = resolveDisplayName(registrant)
   const contact = resolveContact(registrant)
-  const isAssigned = registrant.breakoutGroupMemberships.length > 0
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">
@@ -95,7 +148,7 @@ export default async function RegistrantDetailPage({
           </div>
         </section>
 
-        {/* Breakout group */}
+        {/* Breakout group section */}
         <section className="space-y-3">
           {isAssigned ? (
             <div className="space-y-3">
@@ -109,7 +162,12 @@ export default async function RegistrantDetailPage({
               </div>
             </div>
           ) : (
-            <BreakoutMatchSection registrantId={registrantId} eventId={eventId} />
+            <BreakoutSection
+              registrantId={registrantId}
+              eventId={eventId}
+              facilitatedGroup={facilitatedGroup ?? null}
+              allEventGroups={allEventGroups}
+            />
           )}
         </section>
       </div>

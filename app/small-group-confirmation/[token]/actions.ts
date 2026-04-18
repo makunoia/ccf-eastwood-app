@@ -47,7 +47,8 @@ export async function submitMemberConfirmations(
                 lifeStageId: true,
                 gender: true,
                 language: true,
-                birthDate: true,
+                birthMonth: true,
+                birthYear: true,
                 workCity: true,
                 workIndustry: true,
                 meetingPreference: true,
@@ -91,7 +92,8 @@ export async function submitMemberConfirmations(
                   lifeStageId: guest.lifeStageId ?? null,
                   gender: guest.gender ?? null,
                   language: guest.language,
-                  birthDate: guest.birthDate ?? null,
+                  birthMonth: guest.birthMonth ?? null,
+                  birthYear: guest.birthYear ?? null,
                   workCity: guest.workCity ?? null,
                   workIndustry: guest.workIndustry ?? null,
                   meetingPreference: guest.meetingPreference ?? null,
@@ -216,6 +218,7 @@ export async function submitMemberConfirmations(
     })
 
     revalidatePath(`/small-groups`)
+    revalidatePath(`/small-groups/${group.id}`)
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to submit confirmations. Please try again." }

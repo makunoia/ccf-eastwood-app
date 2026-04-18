@@ -6,6 +6,7 @@ import { IconCheck, IconLoader2, IconUserQuestion, IconArrowLeft } from "@tabler
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { PhonePHInput } from "@/components/ui/phone-ph-input"
 import {
   Select,
   SelectContent,
@@ -19,6 +20,7 @@ import {
   checkInToOccurrence,
   walkInCheckin,
 } from "@/app/(dashboard)/events/actions"
+import { autoAssignRegistrantToBreakout } from "@/app/(dashboard)/events/breakout-actions"
 import {
   saveGuestMatchingProfile,
   saveGuestClaimedGroup,
@@ -172,6 +174,11 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurri
     if (!result.success) {
       setError(result.error)
       return
+    }
+
+    // Silently auto-assign to best breakout group in the background
+    if (occurrenceId !== null) {
+      void autoAssignRegistrantToBreakout(matched.registrantId, eventId)
     }
 
     // If this guest should be asked about a small group, show prompt first
@@ -561,12 +568,11 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurri
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="walkin-mobile">Mobile number</Label>
-                  <Input
+                  <PhonePHInput
                     id="walkin-mobile"
                     value={walkInForm.mobileNumber}
-                    onChange={(e) => setWalkInForm((p) => ({ ...p, mobileNumber: e.target.value }))}
-                    placeholder="+63 917 123 4567"
-                    className="h-11"
+                    onChange={(v) => setWalkInForm((p) => ({ ...p, mobileNumber: v }))}
+                    wrapperClassName="h-11"
                     required
                   />
                 </div>

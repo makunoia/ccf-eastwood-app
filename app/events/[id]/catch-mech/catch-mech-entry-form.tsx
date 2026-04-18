@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
+import { PhonePHInput } from "@/components/ui/phone-ph-input"
 import { verifyCatchMechFaci } from "./actions"
 
 type Group = { id: string; name: string }
@@ -83,15 +84,12 @@ export function CatchMechEntryForm({ eventId, groups }: Props) {
         <label htmlFor="mobile" className="text-sm font-medium">
           Enter your mobile number
         </label>
-        <input
+        <PhonePHInput
           id="mobile"
-          type="tel"
           value={mobile}
-          onChange={(e) => setMobile(e.target.value)}
+          onChange={setMobile}
           onKeyDown={(e) => e.key === "Enter" && handleVerify()}
-          placeholder="+63 9XX XXX XXXX"
           autoFocus
-          className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
         />
       </div>
 

@@ -79,6 +79,7 @@ function buildGuestData(mapped: Record<string, string>) {
     email:     mapped.email?.trim() || null,
     phone:     mapped.phone ? formatPhilippinePhone(mapped.phone) : null,
     notes:     mapped.notes?.trim() || null,
+    language:  [] as string[],
   }
 }
 

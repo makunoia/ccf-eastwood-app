@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { PhonePHInput } from "@/components/ui/phone-ph-input"
 import { MultiSelect } from "@/components/ui/multi-select"
 import {
   Select,
@@ -55,7 +56,8 @@ function toFormValues(member: MemberRow): MemberFormValues {
     lifeStageId: member.lifeStageId ?? "",
     gender: member.gender ?? "",
     language: member.language,
-    birthDate: member.birthDate ?? "",
+    birthMonth: member.birthMonth != null ? String(member.birthMonth) : "",
+    birthYear: member.birthYear != null ? String(member.birthYear) : "",
     workCity: member.workCity ?? "",
     workIndustry: member.workIndustry ?? "",
     meetingPreference: member.meetingPreference ?? "",
@@ -217,11 +219,10 @@ export function MemberForm({ lifeStages, member, eventHistory, smallGroups }: Pr
             </div>
             <div className="space-y-2">
               <Label htmlFor="phone">Phone</Label>
-              <Input
+              <PhonePHInput
                 id="phone"
                 value={form.phone}
-                onChange={(e) => set("phone", e.target.value)}
-                placeholder="+63 917 123 4567"
+                onChange={(v) => set("phone", v)}
               />
             </div>
           </div>
@@ -249,12 +250,31 @@ export function MemberForm({ lifeStages, member, eventHistory, smallGroups }: Pr
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="birthDate">Birth Date</Label>
+            <Label>Birth Month</Label>
+            <Select
+              value={form.birthMonth}
+              onValueChange={(v) => set("birthMonth", v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Month" />
+              </SelectTrigger>
+              <SelectContent>
+                {["January","February","March","April","May","June","July","August","September","October","November","December"].map((name, i) => (
+                  <SelectItem key={i + 1} value={String(i + 1)}>{name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="birthYear">Birth Year</Label>
             <Input
-              id="birthDate"
-              type="date"
-              value={form.birthDate}
-              onChange={(e) => set("birthDate", e.target.value)}
+              id="birthYear"
+              type="number"
+              min={1900}
+              max={new Date().getFullYear()}
+              placeholder="e.g. 1990"
+              value={form.birthYear}
+              onChange={(e) => set("birthYear", e.target.value)}
             />
           </div>
         </section>

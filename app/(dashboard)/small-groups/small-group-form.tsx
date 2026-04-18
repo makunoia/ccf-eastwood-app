@@ -12,6 +12,8 @@ import {
   IconClock,
   IconChevronDown,
   IconLink,
+  IconCopy,
+  IconRefresh,
 } from "@tabler/icons-react"
 import { toast } from "sonner"
 
@@ -56,6 +58,7 @@ import {
   assignGuestToGroupTemporarily,
   assignMemberTransferTemporarily,
   cancelTempAssignment,
+  generateGroupConfirmationToken,
 } from "./actions"
 import { searchGuests, promoteGuestToMember } from "@/app/(dashboard)/guests/actions"
 import { MobileFormActions } from "@/components/mobile-form-actions"
@@ -212,6 +215,15 @@ export function SmallGroupForm({
   const [assigningTempMember, setAssigningTempMember] = React.useState(false)
 
   const [cancellingRequestId, setCancellingRequestId] = React.useState<string | null>(null)
+
+  const [token, setToken] = React.useState<string | null | undefined>(leaderConfirmationToken)
+  const [generatingToken, setGeneratingToken] = React.useState(false)
+  const confirmationUrl =
+    token && typeof window !== "undefined"
+      ? `${window.location.origin}/small-group-confirmation/${token}`
+      : token
+        ? `/small-group-confirmation/${token}`
+        : null
 
   function set(field: keyof SmallGroupFormValues, value: string | string[]) {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -379,10 +391,23 @@ export function SmallGroupForm({
   }
 
   async function handleCopyLeaderLink() {
-    if (!leaderConfirmationToken) return
-    const url = `${window.location.origin}/small-group-confirmation/${leaderConfirmationToken}`
-    await navigator.clipboard.writeText(url)
+    if (!confirmationUrl) return
+    await navigator.clipboard.writeText(confirmationUrl)
     toast.success("Leader link copied to clipboard")
+  }
+
+  async function handleGenerateToken() {
+    if (!group) return
+    setGeneratingToken(true)
+    const result = await generateGroupConfirmationToken(group.id)
+    setGeneratingToken(false)
+    if (result.success) {
+      const newToken = result.data.url.split("/").pop()!
+      setToken(newToken)
+      toast.success("Leader link generated")
+    } else {
+      toast.error(result.error)
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -862,17 +887,6 @@ export function SmallGroupForm({
                   )}
                 </div>
                 <div className="flex gap-2">
-                  {leaderConfirmationToken && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={handleCopyLeaderLink}
-                    >
-                      <IconLink className="size-4" />
-                      Leader link
-                    </Button>
-                  )}
                   <Button
                     type="button"
                     variant="outline"
@@ -896,6 +910,49 @@ export function SmallGroupForm({
               <p className="text-xs text-muted-foreground">
                 Temporarily assigned people appear here until the group leader confirms or declines via the leader link.
               </p>
+              <div className="rounded-md border bg-muted/40 p-3 space-y-2">
+                <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                  <IconLink className="size-3.5" />
+                  Leader confirmation link
+                </p>
+                {confirmationUrl ? (
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 truncate rounded bg-muted px-3 py-2 text-xs">
+                      {confirmationUrl}
+                    </code>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleCopyLeaderLink}
+                    >
+                      <IconCopy className="size-4" />
+                      Copy
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleGenerateToken}
+                      disabled={generatingToken}
+                      title="Regenerate link"
+                    >
+                      <IconRefresh className="size-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleGenerateToken}
+                    disabled={generatingToken}
+                  >
+                    <IconLink className="size-4" />
+                    {generatingToken ? "Generating…" : "Generate link"}
+                  </Button>
+                )}
+              </div>
               {pendingRequests.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No pending assignments.</p>
               ) : (

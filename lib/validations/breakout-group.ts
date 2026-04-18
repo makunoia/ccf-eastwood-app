@@ -15,6 +15,14 @@ export const breakoutGroupSchema = z
     meetingFormat: z.enum(["Online", "Hybrid", "InPerson"]).nullable().optional(),
     locationCity: z.string().nullable().optional(),
     linkedSmallGroupId: z.string().nullable().optional(),
+    schedule: z
+      .object({
+        dayOfWeek: z.coerce.number().int().min(0).max(6),
+        timeStart: z.string().min(1, "Start time required"),
+        timeEnd: z.string().min(1, "End time required"),
+      })
+      .nullable()
+      .optional(),
   })
   .refine(
     (data) => {

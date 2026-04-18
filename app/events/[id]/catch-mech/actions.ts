@@ -122,7 +122,7 @@ export async function submitCatchMechConfirmations(
 
   await resolveConfirmations(smallGroup.id, decisions, session.breakoutGroupId)
 
-  revalidatePath(`/event/${session.breakoutGroupId}`)
+  revalidatePath(`/small-groups/${smallGroup.id}`)
   return { success: true, requiresGroupName: false }
 }
 
@@ -209,8 +209,6 @@ async function resolveConfirmations(
 ): Promise<void> {
   await db.$transaction(async (tx) => {
     for (const { registrantId, confirmed } of decisions) {
-      if (!confirmed) continue
-
       const registrant = await tx.eventRegistrant.findUnique({
         where: { id: registrantId },
         select: {
@@ -228,7 +226,8 @@ async function resolveConfirmations(
               lifeStageId: true,
               gender: true,
               language: true,
-              birthDate: true,
+              birthMonth: true,
+              birthYear: true,
               workCity: true,
               workIndustry: true,
               meetingPreference: true,
@@ -240,8 +239,43 @@ async function resolveConfirmations(
         },
       })
       if (!registrant) continue
+      if (!registrant.memberId && !registrant.guestId) continue
 
       const now = new Date()
+
+      if (!confirmed) {
+        const pendingRequest = await tx.smallGroupMemberRequest.findFirst({
+          where: {
+            smallGroupId,
+            status: "Pending",
+            ...(registrant.memberId
+              ? { memberId: registrant.memberId }
+              : { guestId: registrant.guestId! }),
+          },
+          select: { id: true },
+        })
+        if (pendingRequest) {
+          const personName = registrant.member
+            ? `${registrant.member.firstName} ${registrant.member.lastName}`
+            : registrant.guest
+              ? `${registrant.guest.firstName} ${registrant.guest.lastName}`
+              : "Unknown"
+          await tx.smallGroupMemberRequest.update({
+            where: { id: pendingRequest.id },
+            data: { status: "Rejected", resolvedAt: now },
+          })
+          await tx.smallGroupLog.create({
+            data: {
+              smallGroupId,
+              action: "TempAssignmentRejected",
+              guestId: registrant.guestId ?? null,
+              memberId: registrant.memberId ?? null,
+              description: `${personName}'s membership was declined via Catch Mech`,
+            },
+          })
+        }
+        continue
+      }
 
       if (registrant.guestId && registrant.guest && !registrant.guest.memberId) {
         const guest = registrant.guest
@@ -262,7 +296,8 @@ async function resolveConfirmations(
             lifeStageId: guest.lifeStageId ?? null,
             gender: guest.gender ?? null,
             language: guest.language,
-            birthDate: guest.birthDate ?? null,
+            birthMonth: guest.birthMonth ?? null,
+            birthYear: guest.birthYear ?? null,
             workCity: guest.workCity ?? null,
             workIndustry: guest.workIndustry ?? null,
             meetingPreference: guest.meetingPreference ?? null,
