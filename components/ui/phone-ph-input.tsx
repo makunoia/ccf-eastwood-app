@@ -35,7 +35,13 @@ export function toStoredPhonePH(local: string): string {
 }
 
 export function localFromStoredPhonePH(stored: string): string {
-  return extractLocalDigits(stored ?? "")
+  if (!stored) return ""
+  // Stored format is "+63 XXX XXX XXXX". Strip the "+63" prefix literally so
+  // partial values (e.g. "+63 9") round-trip to "9" instead of being parsed
+  // as "639" — otherwise the country-code digits leak into the displayed
+  // number as the user types.
+  const withoutCountryPrefix = stored.replace(/^\+63\s*/, "")
+  return extractLocalDigits(withoutCountryPrefix)
 }
 
 function PhonePHInput({
