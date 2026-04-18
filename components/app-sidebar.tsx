@@ -1,10 +1,10 @@
 "use client"
 
 import * as React from "react"
+import Image from "next/image"
 import {
   IconBuilding,
   IconCalendar,
-  IconBuildingChurch,
   IconHeart,
   IconHelp,
   IconLayoutDashboard,
@@ -24,9 +24,6 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
 } from "@/components/ui/sidebar"
 
 type NavItem = { title: string; url: string; icon: Icon; feature?: FeatureArea }
@@ -76,19 +73,10 @@ export function AppSidebar({ user, role, permissions, ...props }: AppSidebarProp
   return (
     <Sidebar collapsible="offcanvas" {...props}>
       <SidebarHeader>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              asChild
-              className="data-[slot=sidebar-menu-button]:p-1.5!"
-            >
-              <a href="/">
-                <IconBuildingChurch className="size-5!" />
-                <span className="text-base font-semibold">CCF Eastwood Admin App</span>
-              </a>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+        <a href="/" className="flex flex-col items-center gap-1.5 py-4">
+          <Image src="/ccf-logo.png" alt="CCF Eastwood" width={64} height={64} />
+          <span className="text-sm font-semibold">CCF Eastwood Admin</span>
+        </a>
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={filteredNav} />

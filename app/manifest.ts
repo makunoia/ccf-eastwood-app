@@ -2,7 +2,7 @@ import type { MetadataRoute } from "next"
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "CCF Eastwood Admin App",
+    name: "CCF Eastwood Admin",
     short_name: "CCF Eastwood",
     description: "Church management for administrators",
     start_url: "/",
