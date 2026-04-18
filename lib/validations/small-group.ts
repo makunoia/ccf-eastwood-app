@@ -27,23 +27,31 @@ export const smallGroupSchema = z.object({
   name: z.string().min(1, "Group name is required").trim(),
   leaderId: z.string().min(1, "Leader is required"),
   parentGroupId: nullableString,
-  lifeStageId: nullableString,
-  genderFocus: z.preprocess(
-    (v) => (v === "" ? undefined : v),
-    z.enum(["Male", "Female", "Mixed"]).optional().nullable()
-  ),
+  lifeStageId: z.string().min(1, "Life stage is required").trim(),
+  genderFocus: z.enum(["Male", "Female", "Mixed"], {
+    errorMap: () => ({ message: "Gender focus is required" }),
+  }),
   language: z.array(z.string()).default([]),
   ageRangeMin: nullableInt,
   ageRangeMax: nullableInt,
-  meetingFormat: z.preprocess(
-    (v) => (v === "" ? undefined : v),
-    z.enum(["Online", "Hybrid", "InPerson"]).optional().nullable()
-  ),
+  meetingFormat: z.enum(["Online", "Hybrid", "InPerson"], {
+    errorMap: () => ({ message: "Meeting format is required" }),
+  }),
   locationCity: nullableString,
   memberLimit: nullableInt,
-  scheduleDayOfWeek: nullableDay,
-  scheduleTimeStart: nullableTime,
-  scheduleTimeEnd: nullableTime,
+  scheduleDayOfWeek: z
+    .string()
+    .min(1, "Meeting day is required")
+    .transform((v) => parseInt(v, 10))
+    .pipe(z.number().int().min(0).max(6)),
+  scheduleTimeStart: z
+    .string()
+    .min(1, "Start time is required")
+    .regex(/^\d{2}:\d{2}$/, "Invalid time format"),
+  scheduleTimeEnd: z
+    .string()
+    .min(1, "End time is required")
+    .regex(/^\d{2}:\d{2}$/, "Invalid time format"),
 })
 
 export type SmallGroupInput = z.infer<typeof smallGroupSchema>
