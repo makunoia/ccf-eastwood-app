@@ -22,7 +22,23 @@ async function getGuest(id: string) {
           select: {
             attendedAt: true,
             occurrenceAttendances: { select: { id: true } },
-            breakoutGroupMemberships: { select: { breakoutGroupId: true } },
+            breakoutGroupMemberships: {
+              select: {
+                breakoutGroupId: true,
+                breakoutGroup: {
+                  select: {
+                    name: true,
+                    event: { select: { name: true } },
+                    linkedSmallGroup: {
+                      select: {
+                        name: true,
+                        leader: { select: { firstName: true, lastName: true } },
+                      },
+                    },
+                  },
+                },
+              },
+            },
           },
         },
       },
@@ -33,6 +49,27 @@ async function getGuest(id: string) {
     }),
   ])
   if (!g) return null
+
+  let matchedBreakout: {
+    eventName: string
+    breakoutGroupName: string
+    linkedSmallGroup: {
+      name: string
+      leader: { firstName: string; lastName: string } | null
+    } | null
+  } | null = null
+  for (const reg of g.eventRegistrations) {
+    const m = reg.breakoutGroupMemberships[0]
+    if (m) {
+      matchedBreakout = {
+        eventName: m.breakoutGroup.event.name,
+        breakoutGroupName: m.breakoutGroup.name,
+        linkedSmallGroup: m.breakoutGroup.linkedSmallGroup,
+      }
+      break
+    }
+  }
+
   return {
     id: g.id,
     firstName: g.firstName,
@@ -51,6 +88,7 @@ async function getGuest(id: string) {
     claimedSmallGroup: g.claimedSmallGroup,
     eventRegistrations: g.eventRegistrations,
     pendingGroupName: pendingRequest?.smallGroup?.name ?? null,
+    matchedBreakout,
   }
 }
 
@@ -106,6 +144,7 @@ export default async function GuestDetailPage({
           pipelineStatus={pipelineStatus}
           claimedGroup={guest.claimedSmallGroup}
           pendingGroupName={guest.pendingGroupName}
+          matchedBreakout={guest.matchedBreakout}
         />
       }
     />
