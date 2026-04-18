@@ -12,7 +12,8 @@ function buildCandidateFromMember(m: {
   lifeStageId: string | null
   gender: "Male" | "Female" | null
   language: string[]
-  birthDate: Date | null
+  birthMonth: number | null
+  birthYear: number | null
   workCity: string | null
   workIndustry: string | null
   meetingPreference: "Online" | "Hybrid" | "InPerson" | null
@@ -22,7 +23,8 @@ function buildCandidateFromMember(m: {
     lifeStageId: m.lifeStageId,
     gender: m.gender,
     language: m.language,
-    birthDate: m.birthDate,
+    birthMonth: m.birthMonth,
+    birthYear: m.birthYear,
     workCity: m.workCity,
     workIndustry: m.workIndustry,
     meetingPreference: m.meetingPreference,
@@ -34,7 +36,8 @@ function buildCandidateFromGuest(g: {
   lifeStageId: string | null
   gender: "Male" | "Female" | null
   language: string[]
-  birthDate: Date | null
+  birthMonth: number | null
+  birthYear: number | null
   workCity: string | null
   workIndustry: string | null
   meetingPreference: "Online" | "Hybrid" | "InPerson" | null
@@ -46,7 +49,8 @@ function buildCandidateFromGuest(g: {
     lifeStageId: g.lifeStageId,
     gender: g.gender,
     language: g.language,
-    birthDate: g.birthDate,
+    birthMonth: g.birthMonth,
+    birthYear: g.birthYear,
     workCity: g.workCity,
     workIndustry: g.workIndustry,
     meetingPreference: g.meetingPreference,
@@ -150,7 +154,8 @@ export async function matchSmallGroups(
         lifeStageId: true,
         gender: true,
         language: true,
-        birthDate: true,
+        birthMonth: true,
+        birthYear: true,
         workCity: true,
         workIndustry: true,
         meetingPreference: true,
@@ -169,7 +174,8 @@ export async function matchSmallGroups(
         lifeStageId: true,
         gender: true,
         language: true,
-        birthDate: true,
+        birthMonth: true,
+        birthYear: true,
         workCity: true,
         workIndustry: true,
         meetingPreference: true,
@@ -231,7 +237,8 @@ export async function matchSmallGroupsWithEscalation(
       lifeStageId: true,
       gender: true,
       language: true,
-      birthDate: true,
+      birthMonth: true,
+      birthYear: true,
       workCity: true,
       workIndustry: true,
       meetingPreference: true,
@@ -340,7 +347,8 @@ export async function matchBreakoutGroups(
           lifeStageId: true,
           gender: true,
           language: true,
-          birthDate: true,
+          birthMonth: true,
+        birthYear: true,
           workCity: true,
           workIndustry: true,
           meetingPreference: true,
@@ -354,7 +362,8 @@ export async function matchBreakoutGroups(
           lifeStageId: true,
           gender: true,
           language: true,
-          birthDate: true,
+          birthMonth: true,
+        birthYear: true,
           workCity: true,
           workIndustry: true,
           meetingPreference: true,

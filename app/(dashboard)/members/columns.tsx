@@ -40,7 +40,8 @@ export type MemberRow = {
   lifeStageId: string | null
   gender: string | null
   language: string[]
-  birthDate: string | null
+  birthMonth: number | null
+  birthYear: number | null
   workCity: string | null
   workIndustry: string | null
   meetingPreference: string | null

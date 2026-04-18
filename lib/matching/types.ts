@@ -8,7 +8,8 @@ export type CandidateProfile = {
   lifeStageId: string | null
   gender: "Male" | "Female" | null
   language: string[]
-  birthDate: Date | null
+  birthMonth: number | null
+  birthYear: number | null
   workCity: string | null
   workIndustry: string | null
   meetingPreference: "Online" | "Hybrid" | "InPerson" | null
@@ -19,7 +20,8 @@ export const EMPTY_CANDIDATE: CandidateProfile = {
   lifeStageId: null,
   gender: null,
   language: [],
-  birthDate: null,
+  birthMonth: null,
+  birthYear: null,
   workCity: null,
   workIndustry: null,
   meetingPreference: null,

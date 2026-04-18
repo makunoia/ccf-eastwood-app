@@ -44,16 +44,20 @@ export function scoreLanguage(
 }
 
 export function scoreAge(
-  candidateBirthDate: Date | null,
+  candidateBirthMonth: number | null,
+  candidateBirthYear: number | null,
   groupAgeRangeMin: number | null,
   groupAgeRangeMax: number | null
 ): number {
-  if (candidateBirthDate === null) return 0.5
+  if (candidateBirthYear === null) return 0.5
   if (groupAgeRangeMin === null && groupAgeRangeMax === null) return 0.5
 
   const now = new Date()
+  const month = candidateBirthMonth ?? 1
+  // Age in years using year and month (day assumed as 1)
+  const approxBirthDate = new Date(candidateBirthYear, month - 1, 1)
   const age = Math.floor(
-    (now.getTime() - candidateBirthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000)
+    (now.getTime() - approxBirthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000)
   )
 
   const min = groupAgeRangeMin ?? 0
