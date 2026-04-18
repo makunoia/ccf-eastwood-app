@@ -100,6 +100,13 @@ const STAGE_LABEL: Record<GuestPipelineStatus, string> = {
   Pending: "Pending",
   Member: "Member",
 }
+const STAGE_DESCRIPTION: Record<GuestPipelineStatus, string> = {
+  New: "Registered but has not yet attended an event.",
+  EventAttendee: "Has attended at least one event but hasn't been placed in a breakout group yet.",
+  Matched: "Was placed in a breakout group at an event and is ready to be connected to a small group.",
+  Pending: "Has a pending small group assignment — awaiting confirmation from the group leader.",
+  Member: "Has joined a small group and been promoted to a full member.",
+}
 
 function PipelineStepper({ status }: { status: GuestPipelineStatus }) {
   const activeIndex = PIPELINE_STAGES.indexOf(status)
@@ -171,16 +178,27 @@ type ClaimedGroup = {
   leader: { id: string; firstName: string; lastName: string } | null
 } | null
 
+type MatchedBreakout = {
+  eventName: string
+  breakoutGroupName: string
+  linkedSmallGroup: {
+    name: string
+    leader: { firstName: string; lastName: string } | null
+  } | null
+} | null
+
 export function GuestMatchSection({
   guestId,
   pipelineStatus,
   claimedGroup,
   pendingGroupName,
+  matchedBreakout,
 }: {
   guestId: string
   pipelineStatus: GuestPipelineStatus
   claimedGroup: ClaimedGroup
   pendingGroupName: string | null
+  matchedBreakout: MatchedBreakout
 }) {
   const router = useRouter()
   const [state, setState] = React.useState<"idle" | "loading" | "done">("idle")
@@ -233,9 +251,7 @@ export function GuestMatchSection({
     return (
       <div className="max-w-2xl space-y-4">
         <PipelineStepper status={pipelineStatus} />
-        <p className="text-sm text-muted-foreground">
-          This guest has been promoted to a member and is already in a small group.
-        </p>
+        <p className="text-sm text-muted-foreground">{STAGE_DESCRIPTION[pipelineStatus]}</p>
       </div>
     )
   }
@@ -244,15 +260,56 @@ export function GuestMatchSection({
     return (
       <div className="max-w-2xl space-y-4">
         <PipelineStepper status={pipelineStatus} />
-        <div className="rounded-lg border bg-muted/40 p-4">
-          <p className="text-sm font-medium">Awaiting leader confirmation</p>
-          <p className="text-sm text-muted-foreground">
-            {pendingGroupName
-              ? <>This guest has been temporarily assigned to <span className="font-medium text-foreground">{pendingGroupName}</span>.</>
-              : "This guest has a pending small group assignment."}{" "}
-            They will be promoted to a member once the group leader confirms via the link.
-          </p>
-        </div>
+        <p className="text-sm text-muted-foreground">{STAGE_DESCRIPTION[pipelineStatus]}</p>
+        {pendingGroupName && (
+          <div className="rounded-lg border bg-muted/40 p-4">
+            <p className="text-sm font-medium">Awaiting leader confirmation</p>
+            <p className="text-sm text-muted-foreground">
+              Temporarily assigned to{" "}
+              <span className="font-medium text-foreground">{pendingGroupName}</span>.
+            </p>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  if (pipelineStatus === "Matched") {
+    return (
+      <div className="max-w-2xl space-y-4">
+        <PipelineStepper status={pipelineStatus} />
+        <p className="text-sm text-muted-foreground">{STAGE_DESCRIPTION[pipelineStatus]}</p>
+        {matchedBreakout && (
+          <div className="rounded-lg border p-4 space-y-3">
+            <h3 className="text-sm font-medium">Breakout Group Assignment</h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex gap-2">
+                <span className="text-muted-foreground w-32 shrink-0">Event</span>
+                <span>{matchedBreakout.eventName}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="text-muted-foreground w-32 shrink-0">Breakout Group</span>
+                <span>{matchedBreakout.breakoutGroupName}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="text-muted-foreground w-32 shrink-0">Small Group</span>
+                <span>
+                  {matchedBreakout.linkedSmallGroup?.name ?? (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <span className="text-muted-foreground w-32 shrink-0">Leader</span>
+                <span>
+                  {matchedBreakout.linkedSmallGroup?.leader
+                    ? `${matchedBreakout.linkedSmallGroup.leader.firstName} ${matchedBreakout.linkedSmallGroup.leader.lastName}`
+                    : <span className="text-muted-foreground">—</span>}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     )
   }
@@ -261,6 +318,7 @@ export function GuestMatchSection({
     <div className="max-w-2xl space-y-4">
       {/* Pipeline stepper */}
       <PipelineStepper status={pipelineStatus} />
+      <p className="text-sm text-muted-foreground">{STAGE_DESCRIPTION[pipelineStatus]}</p>
 
       {/* Claimed group banner */}
       {localClaimedGroup && (
