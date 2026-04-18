@@ -186,6 +186,7 @@ type ClaimedGroup = {
 type MatchedBreakout = {
   eventName: string
   breakoutGroupName: string
+  facilitatorName: string | null
   linkedSmallGroup: {
     name: string
     leader: { firstName: string; lastName: string } | null
@@ -293,22 +294,31 @@ export function GuestMatchSection({
                 <span className="text-muted-foreground w-32 shrink-0">Breakout Group</span>
                 <span>{matchedBreakout.breakoutGroupName}</span>
               </div>
-              <div className="flex gap-2">
-                <span className="text-muted-foreground w-32 shrink-0">Small Group</span>
-                <span>
-                  {matchedBreakout.linkedSmallGroup?.name ?? (
-                    <span className="text-muted-foreground">—</span>
-                  )}
-                </span>
-              </div>
-              <div className="flex gap-2">
-                <span className="text-muted-foreground w-32 shrink-0">Leader</span>
-                <span>
-                  {matchedBreakout.linkedSmallGroup?.leader
-                    ? `${matchedBreakout.linkedSmallGroup.leader.firstName} ${matchedBreakout.linkedSmallGroup.leader.lastName}`
-                    : <span className="text-muted-foreground">—</span>}
-                </span>
-              </div>
+              {matchedBreakout.linkedSmallGroup ? (
+                <>
+                  <div className="flex gap-2">
+                    <span className="text-muted-foreground w-32 shrink-0">Small Group</span>
+                    <span>{matchedBreakout.linkedSmallGroup.name}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="text-muted-foreground w-32 shrink-0">Leader</span>
+                    <span>
+                      {matchedBreakout.linkedSmallGroup.leader
+                        ? `${matchedBreakout.linkedSmallGroup.leader.firstName} ${matchedBreakout.linkedSmallGroup.leader.lastName}`
+                        : <span className="text-muted-foreground">—</span>}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <div className="flex gap-2">
+                  <span className="text-muted-foreground w-32 shrink-0">Volunteer</span>
+                  <span>
+                    {matchedBreakout.facilitatorName ?? (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         )}
