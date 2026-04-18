@@ -114,50 +114,55 @@ function PipelineStepper({ status }: { status: GuestPipelineStatus }) {
   const CHEVRON = 18
 
   return (
-    <div className="flex overflow-hidden rounded-lg border">
-      {PIPELINE_STAGES.map((stage, i) => {
-        const isActive = i === activeIndex
-        const isPast = i < activeIndex
-        const isFirst = i === 0
-        const isLast = i === PIPELINE_STAGES.length - 1
+    <div className="overflow-hidden rounded-lg border">
+      <div className="flex">
+        {PIPELINE_STAGES.map((stage, i) => {
+          const isActive = i === activeIndex
+          const isPast = i < activeIndex
+          const isFirst = i === 0
+          const isLast = i === PIPELINE_STAGES.length - 1
 
-        // Chevron polygon: right edge points right; left edge indents inward (except first)
-        const clipPath = isFirst
-          ? `polygon(0 0, calc(100% - ${CHEVRON}px) 0, 100% 50%, calc(100% - ${CHEVRON}px) 100%, 0 100%)`
-          : isLast
-          ? `polygon(0 0, 100% 0, 100% 100%, 0 100%, ${CHEVRON}px 50%)`
-          : `polygon(0 0, calc(100% - ${CHEVRON}px) 0, 100% 50%, calc(100% - ${CHEVRON}px) 100%, 0 100%, ${CHEVRON}px 50%)`
+          // Chevron polygon: right edge points right; left edge indents inward (except first)
+          const clipPath = isFirst
+            ? `polygon(0 0, calc(100% - ${CHEVRON}px) 0, 100% 50%, calc(100% - ${CHEVRON}px) 100%, 0 100%)`
+            : isLast
+            ? `polygon(0 0, 100% 0, 100% 100%, 0 100%, ${CHEVRON}px 50%)`
+            : `polygon(0 0, calc(100% - ${CHEVRON}px) 0, 100% 50%, calc(100% - ${CHEVRON}px) 100%, 0 100%, ${CHEVRON}px 50%)`
 
-        return (
-          <div
-            key={stage}
-            className={[
-              "relative flex flex-1 items-center select-none text-xs",
-              isActive
-                ? "bg-foreground text-background"
-                : isPast
-                ? "bg-muted text-foreground/50"
-                : "bg-muted/40 text-muted-foreground/60",
-            ].join(" ")}
-            style={{
-              clipPath,
-              // Pull each segment left so the previous arrow overlaps this indent
-              marginLeft: i > 0 ? `-${CHEVRON}px` : undefined,
-              // Left segments sit on top so arrows are visible
-              zIndex: PIPELINE_STAGES.length - i,
-              // Inner padding: compensate for the indent on the left side
-              paddingTop: 10,
-              paddingBottom: 10,
-              paddingLeft: isFirst ? 16 : CHEVRON + 10,
-              paddingRight: isLast ? 16 : CHEVRON + 10,
-            }}
-          >
-            <span className={isActive ? "font-semibold" : "font-medium"}>
-              {STAGE_LABEL[stage]}
-            </span>
-          </div>
-        )
-      })}
+          return (
+            <div
+              key={stage}
+              className={[
+                "relative flex flex-1 items-center select-none text-xs",
+                isActive
+                  ? "bg-foreground text-background"
+                  : isPast
+                  ? "bg-muted text-foreground/50"
+                  : "bg-muted/40 text-muted-foreground/60",
+              ].join(" ")}
+              style={{
+                clipPath,
+                // Pull each segment left so the previous arrow overlaps this indent
+                marginLeft: i > 0 ? `-${CHEVRON}px` : undefined,
+                // Left segments sit on top so arrows are visible
+                zIndex: PIPELINE_STAGES.length - i,
+                // Inner padding: compensate for the indent on the left side
+                paddingTop: 10,
+                paddingBottom: 10,
+                paddingLeft: isFirst ? 16 : CHEVRON + 10,
+                paddingRight: isLast ? 16 : CHEVRON + 10,
+              }}
+            >
+              <span className={isActive ? "font-semibold" : "font-medium"}>
+                {STAGE_LABEL[stage]}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+      <div className="border-t bg-muted/30 px-4 py-2.5">
+        <p className="text-xs text-muted-foreground">{STAGE_DESCRIPTION[status]}</p>
+      </div>
     </div>
   )
 }
@@ -249,9 +254,8 @@ export function GuestMatchSection({
 
   if (pipelineStatus === "Member") {
     return (
-      <div className="max-w-2xl space-y-4">
+      <div className="max-w-2xl">
         <PipelineStepper status={pipelineStatus} />
-        <p className="text-sm text-muted-foreground">{STAGE_DESCRIPTION[pipelineStatus]}</p>
       </div>
     )
   }
@@ -260,7 +264,6 @@ export function GuestMatchSection({
     return (
       <div className="max-w-2xl space-y-4">
         <PipelineStepper status={pipelineStatus} />
-        <p className="text-sm text-muted-foreground">{STAGE_DESCRIPTION[pipelineStatus]}</p>
         {pendingGroupName && (
           <div className="rounded-lg border bg-muted/40 p-4">
             <p className="text-sm font-medium">Awaiting leader confirmation</p>
@@ -278,7 +281,6 @@ export function GuestMatchSection({
     return (
       <div className="max-w-2xl space-y-4">
         <PipelineStepper status={pipelineStatus} />
-        <p className="text-sm text-muted-foreground">{STAGE_DESCRIPTION[pipelineStatus]}</p>
         {matchedBreakout && (
           <div className="rounded-lg border p-4 space-y-3">
             <h3 className="text-sm font-medium">Breakout Group Assignment</h3>
@@ -318,7 +320,6 @@ export function GuestMatchSection({
     <div className="max-w-2xl space-y-4">
       {/* Pipeline stepper */}
       <PipelineStepper status={pipelineStatus} />
-      <p className="text-sm text-muted-foreground">{STAGE_DESCRIPTION[pipelineStatus]}</p>
 
       {/* Claimed group banner */}
       {localClaimedGroup && (
