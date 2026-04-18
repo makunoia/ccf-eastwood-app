@@ -29,6 +29,11 @@ async function getGuest(id: string) {
                   select: {
                     name: true,
                     event: { select: { name: true } },
+                    facilitator: {
+                      select: {
+                        member: { select: { firstName: true, lastName: true } },
+                      },
+                    },
                     linkedSmallGroup: {
                       select: {
                         name: true,
@@ -53,6 +58,7 @@ async function getGuest(id: string) {
   let matchedBreakout: {
     eventName: string
     breakoutGroupName: string
+    facilitatorName: string | null
     linkedSmallGroup: {
       name: string
       leader: { firstName: string; lastName: string } | null
@@ -61,9 +67,13 @@ async function getGuest(id: string) {
   for (const reg of g.eventRegistrations) {
     const m = reg.breakoutGroupMemberships[0]
     if (m) {
+      const faci = m.breakoutGroup.facilitator
       matchedBreakout = {
         eventName: m.breakoutGroup.event.name,
         breakoutGroupName: m.breakoutGroup.name,
+        facilitatorName: faci?.member
+          ? `${faci.member.firstName} ${faci.member.lastName}`
+          : null,
         linkedSmallGroup: m.breakoutGroup.linkedSmallGroup,
       }
       break
