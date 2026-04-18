@@ -229,15 +229,6 @@ export function SmallGroupForm({
     setForm((prev) => ({ ...prev, [field]: value }))
   }
 
-  function clearSchedule() {
-    setForm((prev) => ({
-      ...prev,
-      scheduleDayOfWeek: "",
-      scheduleTimeStart: "",
-      scheduleTimeEnd: "",
-    }))
-  }
-
   function handleRevert() {
     setForm(initialForm.current)
   }
@@ -539,6 +530,105 @@ export function SmallGroupForm({
                   </Select>
                 </div>
 
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="lifeStageId">
+                      Life Stage <span className="text-destructive">*</span>
+                    </Label>
+                    <Select
+                      value={form.lifeStageId}
+                      onValueChange={(v) => set("lifeStageId", v)}
+                    >
+                      <SelectTrigger id="lifeStageId">
+                        <SelectValue placeholder="Select life stage" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {lifeStages.map((ls) => (
+                          <SelectItem key={ls.id} value={ls.id}>
+                            {ls.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="genderFocus">
+                      Gender Focus <span className="text-destructive">*</span>
+                    </Label>
+                    <Select
+                      value={form.genderFocus}
+                      onValueChange={(v) => set("genderFocus", v)}
+                    >
+                      <SelectTrigger id="genderFocus">
+                        <SelectValue placeholder="Select gender focus" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Male">Male</SelectItem>
+                        <SelectItem value="Female">Female</SelectItem>
+                        <SelectItem value="Mixed">Mixed</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="meetingFormat">
+                    Meeting Format <span className="text-destructive">*</span>
+                  </Label>
+                  <Select
+                    value={form.meetingFormat}
+                    onValueChange={(v) => set("meetingFormat", v)}
+                  >
+                    <SelectTrigger id="meetingFormat">
+                      <SelectValue placeholder="Select meeting format" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Online">Online</SelectItem>
+                      <SelectItem value="Hybrid">Hybrid</SelectItem>
+                      <SelectItem value="InPerson">In Person</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>
+                    Meeting Schedule <span className="text-destructive">*</span>
+                  </Label>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Select
+                      value={form.scheduleDayOfWeek}
+                      onValueChange={(v) => set("scheduleDayOfWeek", v)}
+                    >
+                      <SelectTrigger className="w-36">
+                        <SelectValue placeholder="Day" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {DAYS_OF_WEEK.map((d) => (
+                          <SelectItem key={d.value} value={d.value}>
+                            {d.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      type="time"
+                      value={form.scheduleTimeStart}
+                      onChange={(e) => set("scheduleTimeStart", e.target.value)}
+                      className="w-32"
+                      required
+                    />
+                    <span className="text-sm text-muted-foreground">to</span>
+                    <Input
+                      type="time"
+                      value={form.scheduleTimeEnd}
+                      onChange={(e) => set("scheduleTimeEnd", e.target.value)}
+                      className="w-32"
+                      required
+                    />
+                  </div>
+                </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="parentGroupId">Parent Group</Label>
                   <Select
@@ -567,50 +657,6 @@ export function SmallGroupForm({
                 <h3 className="text-sm font-medium text-muted-foreground">
                   Matching Information
                 </h3>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="lifeStageId">Life Stage</Label>
-                    <Select
-                      value={form.lifeStageId}
-                      onValueChange={(v) =>
-                        set("lifeStageId", v === "none" ? "" : v)
-                      }
-                    >
-                      <SelectTrigger id="lifeStageId">
-                        <SelectValue placeholder="Any" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Any</SelectItem>
-                        {lifeStages.map((ls) => (
-                          <SelectItem key={ls.id} value={ls.id}>
-                            {ls.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="genderFocus">Gender Focus</Label>
-                    <Select
-                      value={form.genderFocus}
-                      onValueChange={(v) =>
-                        set("genderFocus", v === "none" ? "" : v)
-                      }
-                    >
-                      <SelectTrigger id="genderFocus">
-                        <SelectValue placeholder="Mixed" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Mixed</SelectItem>
-                        <SelectItem value="Male">Male</SelectItem>
-                        <SelectItem value="Female">Female</SelectItem>
-                        <SelectItem value="Mixed">Mixed</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
 
                 <div className="space-y-2">
                   <Label>Language</Label>
@@ -648,26 +694,6 @@ export function SmallGroupForm({
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="meetingFormat">Meeting Format</Label>
-                    <Select
-                      value={form.meetingFormat}
-                      onValueChange={(v) =>
-                        set("meetingFormat", v === "none" ? "" : v)
-                      }
-                    >
-                      <SelectTrigger id="meetingFormat">
-                        <SelectValue placeholder="No preference" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">No preference</SelectItem>
-                        <SelectItem value="Online">Online</SelectItem>
-                        <SelectItem value="Hybrid">Hybrid</SelectItem>
-                        <SelectItem value="InPerson">In Person</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
                     <Label htmlFor="locationCity">City</Label>
                     <Select
                       value={form.locationCity}
@@ -684,68 +710,18 @@ export function SmallGroupForm({
                       </SelectContent>
                     </Select>
                   </div>
-                </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="memberLimit">Member Limit</Label>
-                  <Input
-                    id="memberLimit"
-                    type="number"
-                    min={1}
-                    value={form.memberLimit}
-                    onChange={(e) => set("memberLimit", e.target.value)}
-                    placeholder="12"
-                  />
-                </div>
-              </section>
-
-              {/* Meeting Schedule */}
-              <section className="space-y-4">
-                <h3 className="text-sm font-medium text-muted-foreground">
-                  Meeting Schedule
-                </h3>
-
-                <div className="space-y-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Select
-                      value={form.scheduleDayOfWeek}
-                      onValueChange={(v) => set("scheduleDayOfWeek", v === "none" ? "" : v)}
-                    >
-                      <SelectTrigger className="w-36">
-                        <SelectValue placeholder="Day" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">No day set</SelectItem>
-                        {DAYS_OF_WEEK.map((d) => (
-                          <SelectItem key={d.value} value={d.value}>
-                            {d.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                  <div className="space-y-2">
+                    <Label htmlFor="memberLimit">Member Limit</Label>
                     <Input
-                      type="time"
-                      value={form.scheduleTimeStart}
-                      onChange={(e) => set("scheduleTimeStart", e.target.value)}
-                      className="w-32"
-                    />
-                    <span className="text-sm text-muted-foreground">to</span>
-                    <Input
-                      type="time"
-                      value={form.scheduleTimeEnd}
-                      onChange={(e) => set("scheduleTimeEnd", e.target.value)}
-                      className="w-32"
+                      id="memberLimit"
+                      type="number"
+                      min={1}
+                      value={form.memberLimit}
+                      onChange={(e) => set("memberLimit", e.target.value)}
+                      placeholder="12"
                     />
                   </div>
-                  {(form.scheduleDayOfWeek || form.scheduleTimeStart || form.scheduleTimeEnd) && (
-                    <button
-                      type="button"
-                      onClick={clearSchedule}
-                      className="text-xs text-muted-foreground underline-offset-2 hover:underline"
-                    >
-                      Clear schedule
-                    </button>
-                  )}
                 </div>
               </section>
             </form>
@@ -1040,6 +1016,105 @@ export function SmallGroupForm({
               </Select>
             </div>
 
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="lifeStageId">
+                  Life Stage <span className="text-destructive">*</span>
+                </Label>
+                <Select
+                  value={form.lifeStageId}
+                  onValueChange={(v) => set("lifeStageId", v)}
+                >
+                  <SelectTrigger id="lifeStageId">
+                    <SelectValue placeholder="Select life stage" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {lifeStages.map((ls) => (
+                      <SelectItem key={ls.id} value={ls.id}>
+                        {ls.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="genderFocus">
+                  Gender Focus <span className="text-destructive">*</span>
+                </Label>
+                <Select
+                  value={form.genderFocus}
+                  onValueChange={(v) => set("genderFocus", v)}
+                >
+                  <SelectTrigger id="genderFocus">
+                    <SelectValue placeholder="Select gender focus" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Male">Male</SelectItem>
+                    <SelectItem value="Female">Female</SelectItem>
+                    <SelectItem value="Mixed">Mixed</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="meetingFormat">
+                Meeting Format <span className="text-destructive">*</span>
+              </Label>
+              <Select
+                value={form.meetingFormat}
+                onValueChange={(v) => set("meetingFormat", v)}
+              >
+                <SelectTrigger id="meetingFormat">
+                  <SelectValue placeholder="Select meeting format" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Online">Online</SelectItem>
+                  <SelectItem value="Hybrid">Hybrid</SelectItem>
+                  <SelectItem value="InPerson">In Person</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>
+                Meeting Schedule <span className="text-destructive">*</span>
+              </Label>
+              <div className="flex flex-wrap items-center gap-2">
+                <Select
+                  value={form.scheduleDayOfWeek}
+                  onValueChange={(v) => set("scheduleDayOfWeek", v)}
+                >
+                  <SelectTrigger className="w-36">
+                    <SelectValue placeholder="Day" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DAYS_OF_WEEK.map((d) => (
+                      <SelectItem key={d.value} value={d.value}>
+                        {d.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  type="time"
+                  value={form.scheduleTimeStart}
+                  onChange={(e) => set("scheduleTimeStart", e.target.value)}
+                  className="w-32"
+                  required
+                />
+                <span className="text-sm text-muted-foreground">to</span>
+                <Input
+                  type="time"
+                  value={form.scheduleTimeEnd}
+                  onChange={(e) => set("scheduleTimeEnd", e.target.value)}
+                  className="w-32"
+                  required
+                />
+              </div>
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="parentGroupId">Parent Group</Label>
               <Select
@@ -1068,50 +1143,6 @@ export function SmallGroupForm({
             <h3 className="text-sm font-medium text-muted-foreground">
               Matching Information
             </h3>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="lifeStageId">Life Stage</Label>
-                <Select
-                  value={form.lifeStageId}
-                  onValueChange={(v) =>
-                    set("lifeStageId", v === "none" ? "" : v)
-                  }
-                >
-                  <SelectTrigger id="lifeStageId">
-                    <SelectValue placeholder="Any" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Any</SelectItem>
-                    {lifeStages.map((ls) => (
-                      <SelectItem key={ls.id} value={ls.id}>
-                        {ls.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="genderFocus">Gender Focus</Label>
-                <Select
-                  value={form.genderFocus}
-                  onValueChange={(v) =>
-                    set("genderFocus", v === "none" ? "" : v)
-                  }
-                >
-                  <SelectTrigger id="genderFocus">
-                    <SelectValue placeholder="Mixed" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Mixed</SelectItem>
-                    <SelectItem value="Male">Male</SelectItem>
-                    <SelectItem value="Female">Female</SelectItem>
-                    <SelectItem value="Mixed">Mixed</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
 
             <div className="space-y-2">
               <Label>Language</Label>
@@ -1149,26 +1180,6 @@ export function SmallGroupForm({
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="meetingFormat">Meeting Format</Label>
-                <Select
-                  value={form.meetingFormat}
-                  onValueChange={(v) =>
-                    set("meetingFormat", v === "none" ? "" : v)
-                  }
-                >
-                  <SelectTrigger id="meetingFormat">
-                    <SelectValue placeholder="No preference" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No preference</SelectItem>
-                    <SelectItem value="Online">Online</SelectItem>
-                    <SelectItem value="Hybrid">Hybrid</SelectItem>
-                    <SelectItem value="InPerson">In Person</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
                 <Label htmlFor="locationCity">City</Label>
                 <Select
                   value={form.locationCity}
@@ -1185,68 +1196,18 @@ export function SmallGroupForm({
                   </SelectContent>
                 </Select>
               </div>
-            </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="memberLimit">Member Limit</Label>
-              <Input
-                id="memberLimit"
-                type="number"
-                min={1}
-                value={form.memberLimit}
-                onChange={(e) => set("memberLimit", e.target.value)}
-                placeholder="12"
-              />
-            </div>
-          </section>
-
-          {/* Meeting Schedule */}
-          <section className="space-y-4">
-            <h3 className="text-sm font-medium text-muted-foreground">
-              Meeting Schedule
-            </h3>
-
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <Select
-                  value={form.scheduleDayOfWeek}
-                  onValueChange={(v) => set("scheduleDayOfWeek", v === "none" ? "" : v)}
-                >
-                  <SelectTrigger className="w-36">
-                    <SelectValue placeholder="Day" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No day set</SelectItem>
-                    {DAYS_OF_WEEK.map((d) => (
-                      <SelectItem key={d.value} value={d.value}>
-                        {d.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="space-y-2">
+                <Label htmlFor="memberLimit">Member Limit</Label>
                 <Input
-                  type="time"
-                  value={form.scheduleTimeStart}
-                  onChange={(e) => set("scheduleTimeStart", e.target.value)}
-                  className="w-32"
-                />
-                <span className="text-sm text-muted-foreground">to</span>
-                <Input
-                  type="time"
-                  value={form.scheduleTimeEnd}
-                  onChange={(e) => set("scheduleTimeEnd", e.target.value)}
-                  className="w-32"
+                  id="memberLimit"
+                  type="number"
+                  min={1}
+                  value={form.memberLimit}
+                  onChange={(e) => set("memberLimit", e.target.value)}
+                  placeholder="12"
                 />
               </div>
-              {(form.scheduleDayOfWeek || form.scheduleTimeStart || form.scheduleTimeEnd) && (
-                <button
-                  type="button"
-                  onClick={clearSchedule}
-                  className="text-xs text-muted-foreground underline-offset-2 hover:underline"
-                >
-                  Clear schedule
-                </button>
-              )}
             </div>
           </section>
         </form>
