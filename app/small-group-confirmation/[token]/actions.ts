@@ -216,6 +216,7 @@ export async function submitMemberConfirmations(
     })
 
     revalidatePath(`/small-groups`)
+    revalidatePath(`/small-groups/${group.id}`)
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to submit confirmations. Please try again." }
