@@ -309,7 +309,6 @@ model SmallGroup {
   // Single meeting schedule (one time slot per group)
   scheduleDayOfWeek Int?     // 0 = Sunday … 6 = Saturday
   scheduleTimeStart String?  // HH:MM
-  scheduleTimeEnd   String?  // HH:MM
 
   // Leader confirmation token for the public confirmation link
   leaderConfirmationToken String?  @unique

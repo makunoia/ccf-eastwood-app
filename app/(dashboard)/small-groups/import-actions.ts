@@ -76,6 +76,23 @@ function parseIntField(v: string): number | null {
   return isNaN(n) ? null : n
 }
 
+function parseDayOfWeek(v: string): number | null {
+  const trimmed = v.trim()
+  const num = parseInt(trimmed, 10)
+  if (!isNaN(num) && num >= 0 && num <= 6) return num
+  const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
+  const lower = trimmed.toLowerCase()
+  const idx = days.findIndex((d) => d.startsWith(lower))
+  return idx >= 0 ? idx : null
+}
+
+function parseTime(v: string): string | null {
+  const trimmed = v.trim()
+  if (/^\d{2}:\d{2}$/.test(trimmed)) return trimmed
+  if (/^\d{1}:\d{2}$/.test(trimmed)) return `0${trimmed}`
+  return null
+}
+
 export async function importSmallGroups(
   rows: ImportRow[]
 ): Promise<ActionResult<ImportResult>> {
@@ -138,17 +155,19 @@ export async function importSmallGroups(
       }
 
       const data = {
-        name:         mapped.name.trim(),
-        leaderId:     leader.id,
+        name:              mapped.name.trim(),
+        leaderId:          leader.id,
         parentGroupId,
         lifeStageId,
-        genderFocus:  mapped.genderFocus  ? parseGenderFocus(mapped.genderFocus)   : null,
-        language:     mapped.language?.trim() ? [mapped.language.trim()]            : [],
-        ageRangeMin:  mapped.ageRangeMin   ? parseIntField(mapped.ageRangeMin)     : null,
-        ageRangeMax:  mapped.ageRangeMax   ? parseIntField(mapped.ageRangeMax)     : null,
-        meetingFormat: mapped.meetingFormat ? parseMeetingFormat(mapped.meetingFormat) : null,
-        locationCity: mapped.locationCity?.trim() || null,
-        memberLimit:  mapped.memberLimit   ? parseIntField(mapped.memberLimit)     : null,
+        genderFocus:       mapped.genderFocus      ? parseGenderFocus(mapped.genderFocus)        : null,
+        language:          mapped.language?.trim() ? [mapped.language.trim()]                    : [],
+        ageRangeMin:       mapped.ageRangeMin      ? parseIntField(mapped.ageRangeMin)           : null,
+        ageRangeMax:       mapped.ageRangeMax      ? parseIntField(mapped.ageRangeMax)           : null,
+        meetingFormat:     mapped.meetingFormat    ? parseMeetingFormat(mapped.meetingFormat)    : null,
+        locationCity:      mapped.locationCity?.trim() || null,
+        memberLimit:       mapped.memberLimit      ? parseIntField(mapped.memberLimit)           : null,
+        scheduleDayOfWeek: mapped.scheduleDayOfWeek ? parseDayOfWeek(mapped.scheduleDayOfWeek)  : null,
+        scheduleTimeStart: mapped.scheduleTime      ? parseTime(mapped.scheduleTime)            : null,
       }
 
       if (existingId && resolution === "use-csv") {
