@@ -1,0 +1,42 @@
+name: Auto-merge claude/* to staging
+
+on:
+  push:
+    branches:
+      - 'claude/**'
+
+permissions:
+  contents: write
+
+jobs:
+  merge-to-staging:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Ensure staging branch exists
+        run: |
+          if git ls-remote --exit-code --heads origin staging; then
+            git checkout staging
+            git pull origin staging
+          else
+            git checkout -b staging
+            git push origin staging
+          fi
+
+      - name: Merge claude branch into staging
+        run: |
+          git merge --no-ff origin/${{ github.ref_name }} \
+            -m "chore: merge ${{ github.ref_name }} into staging"
+
+      - name: Push staging
+        run: git push origin staging
