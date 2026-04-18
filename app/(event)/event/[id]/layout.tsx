@@ -58,9 +58,9 @@ export default async function EventLayout({
         modules={modules}
         showBackLink={showBackLink}
       />
-      <SidebarInset>
+      <SidebarInset className="overflow-hidden">
         <EventHeader eventId={event.id} eventType={event.type} />
-        <div className="flex flex-1 flex-col">
+        <div className="flex flex-1 flex-col overflow-y-auto min-h-0">
           {children}
         </div>
       </SidebarInset>
