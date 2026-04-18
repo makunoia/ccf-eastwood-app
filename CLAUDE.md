@@ -533,6 +533,7 @@ churchie/
 - **Tailwind CSS** for all styling
 - **shadcn/ui** for all component primitives (Button, Dialog, Table, Form, etc.)
 - Do not hand-roll components that shadcn/ui already provides
+- **Table link columns:** The primary identifier column in every table (name, date, title) must be a `<Link>` with this exact className: `"font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"`. Do not use `hover:underline`, a plain `<Button asChild>`, or any other link style in table identifier columns — this applies everywhere in the app including the Event miniapp (`app/(event)/`).
 
 ### Error Handling
 - `try/catch` in all server actions

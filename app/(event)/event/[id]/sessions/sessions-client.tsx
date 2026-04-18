@@ -131,7 +131,12 @@ export function SessionsClient({ eventId, eventType, occurrences }: Props) {
                 <tr key={o.id} className="border-b last:border-0">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium">{formatOccurrenceDate(o.date)}</span>
+                      <Link
+                        href={`/event/${eventId}/sessions/${o.id}`}
+                        className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+                      >
+                        {formatOccurrenceDate(o.date)}
+                      </Link>
                       {o.isOpen && (
                         <Badge variant="default" className="text-xs">Check-in open</Badge>
                       )}
@@ -163,9 +168,6 @@ export function SessionsClient({ eventId, eventType, occurrences }: Props) {
                       <Button variant="ghost" size="sm" onClick={() => copyCheckinLink(o.id)}>
                         <IconCopy className="mr-1.5 size-3.5" />
                         Copy link
-                      </Button>
-                      <Button variant="outline" size="sm" asChild>
-                        <Link href={`/event/${eventId}/sessions/${o.id}`}>View</Link>
                       </Button>
                     </div>
                   </td>
