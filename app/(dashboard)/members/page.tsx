@@ -29,9 +29,8 @@ async function getMembers(where: Prisma.MemberWhereInput): Promise<MemberRow[]> 
     lifeStageId: m.lifeStageId,
     gender: m.gender,
     language: m.language,
-    birthDate: m.birthDate
-      ? m.birthDate.toISOString().split("T")[0]
-      : null,
+    birthMonth: m.birthMonth,
+    birthYear: m.birthYear,
     workCity: m.workCity,
     workIndustry: m.workIndustry,
     meetingPreference: m.meetingPreference,
