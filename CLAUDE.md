@@ -66,7 +66,7 @@ A person who has attended one or more church events but has not yet joined a Sma
 
 **Fields:** `id`, `firstName`, `lastName`, `email`, `phone`, `notes`, `createdAt`, `updatedAt`
 
-**Matching fields** (same set as Member, used for eventual SmallGroup placement): `lifeStageId → LifeStage (nullable)`, `gender`, `language`, `birthDate`, `workCity`, `workIndustry`, `meetingPreference`
+**Matching fields** (same set as Member, used for eventual SmallGroup placement): `lifeStageId → LifeStage (nullable)`, `gender`, `language`, `birthMonth`, `birthYear`, `workCity`, `workIndustry`, `meetingPreference`
 
 **Promotion to Member:**
 When a Guest is added to a Small Group, the system automatically:
@@ -440,7 +440,7 @@ Each candidate (member or event registrant) is scored against every eligible gro
 ### Schema Additions
 
 **Member — matching fields:**
-`lifeStageId → LifeStage (nullable)` — references the shared admin-configurable LifeStage table, `gender (Male|Female)`, `language`, `birthDate`, `workCity`, `workIndustry`, `meetingPreference (Online|Hybrid|InPerson)`, and a related `SchedulePreference[]` table `{ dayOfWeek, timeStart, timeEnd }`
+`lifeStageId → LifeStage (nullable)` — references the shared admin-configurable LifeStage table, `gender (Male|Female)`, `language`, `birthMonth (Int, nullable)`, `birthYear (Int, nullable)`, `workCity`, `workIndustry`, `meetingPreference (Online|Hybrid|InPerson)`, and a related `SchedulePreference[]` table `{ dayOfWeek, timeStart, timeEnd }`
 
 **SmallGroup — matching fields:**
 `lifeStageId → LifeStage (nullable — null means "accepts all life stages")`, `genderFocus (Male|Female|Mixed)`, `language`, `ageRangeMin`, `ageRangeMax`, `meetingFormat (Online|Hybrid|InPerson)`, `locationCity`, `memberLimit`, and a related `GroupMeetingSchedule[]` table `{ dayOfWeek, timeStart, timeEnd }`
