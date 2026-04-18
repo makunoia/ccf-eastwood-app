@@ -46,11 +46,7 @@ export const smallGroupSchema = z.object({
     .pipe(z.number().int().min(0).max(6)),
   scheduleTimeStart: z
     .string()
-    .min(1, "Start time is required")
-    .regex(/^\d{2}:\d{2}$/, "Invalid time format"),
-  scheduleTimeEnd: z
-    .string()
-    .min(1, "End time is required")
+    .min(1, "Meeting time is required")
     .regex(/^\d{2}:\d{2}$/, "Invalid time format"),
 })
 
@@ -71,7 +67,6 @@ export type SmallGroupFormValues = {
   memberLimit: string
   scheduleDayOfWeek: string  // "0"–"6" or ""
   scheduleTimeStart: string  // "HH:MM" or ""
-  scheduleTimeEnd: string    // "HH:MM" or ""
 }
 
 export const defaultSmallGroupForm: SmallGroupFormValues = {
@@ -88,5 +83,4 @@ export const defaultSmallGroupForm: SmallGroupFormValues = {
   memberLimit: "",
   scheduleDayOfWeek: "",
   scheduleTimeStart: "",
-  scheduleTimeEnd: "",
 }

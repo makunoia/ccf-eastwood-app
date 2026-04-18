@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { IconSparkles, IconLoader } from "@tabler/icons-react"
+import { IconSparkles, IconLoader, IconClock } from "@tabler/icons-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -90,12 +90,20 @@ function MatchCard({
   )
 }
 
+type PendingTransfer = {
+  id: string
+  toGroupName: string
+  createdAt: Date
+}
+
 export function MemberMatchSection({
   memberId,
   hasGroup,
+  pendingTransfer,
 }: {
   memberId: string
   hasGroup: boolean
+  pendingTransfer?: PendingTransfer | null
 }) {
   const router = useRouter()
   const [state, setState] = React.useState<"idle" | "loading" | "done">("idle")
@@ -130,6 +138,28 @@ export function MemberMatchSection({
     } else {
       toast.error(res.error)
     }
+  }
+
+  // When there's a pending transfer, show transfer info instead of the matching UI
+  if (pendingTransfer) {
+    return (
+      <div className="max-w-2xl space-y-3">
+        <h3 className="text-sm font-medium">Small Group Matching</h3>
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+          <div className="flex items-start gap-3">
+            <IconClock className="mt-0.5 size-4 shrink-0 text-amber-600" />
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-amber-900">
+                Transfer pending — {pendingTransfer.toGroupName}
+              </p>
+              <p className="text-xs text-amber-700">
+                A transfer request to this group is awaiting leader confirmation. The matching tool is unavailable until the request is resolved.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
