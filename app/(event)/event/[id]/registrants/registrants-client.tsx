@@ -470,10 +470,10 @@ export function RegistrantsClient({
               <tbody>
                 {registrants.map((r) => (
                   <tr key={r.id} className="border-b last:border-0 hover:bg-muted/30">
-                    <td className="px-4 py-3 font-medium whitespace-nowrap">
+                    <td className="px-4 py-3 whitespace-nowrap">
                       <Link
                         href={`/event/${eventId}/registrants/${r.id}`}
-                        className="hover:underline"
+                        className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
                       >
                         {displayName(r)}
                       </Link>

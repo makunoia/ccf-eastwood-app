@@ -203,7 +203,7 @@ function GroupTable({
             return (
               <tr key={v.id} className="border-b last:border-0">
                 <td className="px-4 py-3 font-medium">
-                  <Link href={`/volunteers/${v.id}`} className="hover:underline">
+                  <Link href={`/volunteers/${v.id}`} className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors">
                     {memberName}
                   </Link>
                 </td>
