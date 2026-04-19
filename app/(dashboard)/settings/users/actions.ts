@@ -46,6 +46,7 @@ export async function createUser(
         email,
         name,
         password: hashedPassword,
+        tempPassword: rawPassword,
         role: "Staff",
         mustChangePassword: true,
         requiresTotpSetup: true,

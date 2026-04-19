@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { IconCopy, IconCheck, IconAlertTriangle } from "@tabler/icons-react"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { FEATURE_AREAS, type FeatureAreaValue } from "@/lib/validations/user-management"
 import { createUser, updateUserPermissions } from "./actions"
 import type { UserRow, EventOption } from "./columns"
@@ -43,6 +44,7 @@ export function UserDialog({ open, onOpenChange, user, events }: Props) {
   const [email, setEmail] = React.useState("")
   const [name, setName] = React.useState("")
   const [permissions, setPermissions] = React.useState<FeatureAreaValue[]>([])
+  const [eventScope, setEventScope] = React.useState<"all" | "specific">("all")
   const [eventIds, setEventIds] = React.useState<string[]>([])
   const [saving, setSaving] = React.useState(false)
   const [created, setCreated] = React.useState<CreatedState | null>(null)
@@ -53,22 +55,26 @@ export function UserDialog({ open, onOpenChange, user, events }: Props) {
     if (user) {
       setName(user.name ?? "")
       setPermissions(user.permissions as FeatureAreaValue[])
+      const hasSpecific = user.eventAccess.length > 0
+      setEventScope(hasSpecific ? "specific" : "all")
       setEventIds(user.eventAccess)
     } else {
       setEmail("")
       setName("")
       setPermissions([])
+      setEventScope("all")
       setEventIds([])
     }
     setCreated(null)
   }, [user, open])
 
   function togglePermission(feature: FeatureAreaValue) {
-    setPermissions((prev) =>
-      prev.includes(feature) ? prev.filter((p) => p !== feature) : [...prev, feature]
-    )
-    // Clear event access if Events permission is removed
-    if (feature === "Events" && permissions.includes("Events")) {
+    const next = permissions.includes(feature)
+      ? permissions.filter((p) => p !== feature)
+      : [...permissions, feature]
+    setPermissions(next)
+    if (feature === "Events" && !next.includes("Events")) {
+      setEventScope("all")
       setEventIds([])
     }
   }
@@ -81,8 +87,10 @@ export function UserDialog({ open, onOpenChange, user, events }: Props) {
     e.preventDefault()
     setSaving(true)
 
+    const resolvedEventIds = eventScope === "all" ? [] : eventIds
+
     if (isEdit) {
-      const result = await updateUserPermissions(user!.id, { permissions, eventIds })
+      const result = await updateUserPermissions(user!.id, { permissions, eventIds: resolvedEventIds })
       setSaving(false)
       if (result.success) {
         toast.success("Permissions updated")
@@ -91,7 +99,7 @@ export function UserDialog({ open, onOpenChange, user, events }: Props) {
         toast.error(result.error)
       }
     } else {
-      const result = await createUser({ email, name, permissions, eventIds })
+      const result = await createUser({ email, name, permissions, eventIds: resolvedEventIds })
       setSaving(false)
       if (result.success) {
         setCreated({ generatedPassword: result.data.generatedPassword })
@@ -219,29 +227,44 @@ export function UserDialog({ open, onOpenChange, user, events }: Props) {
               </div>
             </div>
 
-            {/* Event-specific access — only shown when Events is selected */}
-            {hasEventsPermission && events.length > 0 && (
+            {/* Event access — only shown when Events is selected */}
+            {hasEventsPermission && (
               <div className="space-y-3">
-                <div>
-                  <Label>Specific events</Label>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Leave all unchecked to allow access to all events.
-                  </p>
-                </div>
-                <div className="space-y-1.5 max-h-48 overflow-y-auto rounded-md border p-2">
-                  {events.map((event) => (
-                    <label
-                      key={event.id}
-                      className="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer hover:bg-muted/50 transition-colors"
-                    >
-                      <Checkbox
-                        checked={eventIds.includes(event.id)}
-                        onCheckedChange={() => toggleEvent(event.id)}
-                      />
-                      <span className="text-sm">{event.name}</span>
-                    </label>
-                  ))}
-                </div>
+                <Label>Event access</Label>
+                <RadioGroup
+                  value={eventScope}
+                  onValueChange={(v) => {
+                    setEventScope(v as "all" | "specific")
+                    if (v === "all") setEventIds([])
+                  }}
+                  className="grid grid-cols-2 gap-2"
+                >
+                  <label className="flex items-center gap-2 rounded-md border px-3 py-2.5 cursor-pointer hover:bg-muted/50 transition-colors has-data-[state=checked]:border-primary">
+                    <RadioGroupItem value="all" />
+                    <span className="text-sm">All events</span>
+                  </label>
+                  <label className="flex items-center gap-2 rounded-md border px-3 py-2.5 cursor-pointer hover:bg-muted/50 transition-colors has-data-[state=checked]:border-primary">
+                    <RadioGroupItem value="specific" />
+                    <span className="text-sm">Specific events</span>
+                  </label>
+                </RadioGroup>
+
+                {eventScope === "specific" && events.length > 0 && (
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto rounded-md border p-2">
+                    {events.map((event) => (
+                      <label
+                        key={event.id}
+                        className="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer hover:bg-muted/50 transition-colors"
+                      >
+                        <Checkbox
+                          checked={eventIds.includes(event.id)}
+                          onCheckedChange={() => toggleEvent(event.id)}
+                        />
+                        <span className="text-sm">{event.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
