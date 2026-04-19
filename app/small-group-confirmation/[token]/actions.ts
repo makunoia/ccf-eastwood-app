@@ -54,7 +54,6 @@ export async function submitMemberConfirmations(
                 meetingPreference: true,
                 scheduleDayOfWeek: true,
                 scheduleTimeStart: true,
-                scheduleTimeEnd: true,
                 memberId: true,
               },
             },
@@ -101,14 +100,12 @@ export async function submitMemberConfirmations(
                   smallGroupId: group.id,
                   groupStatus: "Member",
                   ...(guest.scheduleDayOfWeek !== null &&
-                  guest.scheduleTimeStart !== null &&
-                  guest.scheduleTimeEnd !== null
+                  guest.scheduleTimeStart !== null
                     ? {
                         schedulePreferences: {
                           create: {
                             dayOfWeek: guest.scheduleDayOfWeek,
                             timeStart: guest.scheduleTimeStart!,
-                            timeEnd: guest.scheduleTimeEnd!,
                           },
                         },
                       }

@@ -331,15 +331,15 @@ async function main() {
   // ─── Schedule Preferences ─────────────────────────────────────────────────
   await db.schedulePreference.createMany({
     data: [
-      { memberId: james.id, dayOfWeek: 6, timeStart: "09:00", timeEnd: "11:00" },
-      { memberId: james.id, dayOfWeek: 3, timeStart: "19:00", timeEnd: "21:00" },
-      { memberId: maria.id, dayOfWeek: 6, timeStart: "14:00", timeEnd: "16:00" },
-      { memberId: maria.id, dayOfWeek: 2, timeStart: "19:00", timeEnd: "21:00" },
-      { memberId: daniel.id, dayOfWeek: 0, timeStart: "15:00", timeEnd: "17:00" },
-      { memberId: samuel.id, dayOfWeek: 6, timeStart: "09:00", timeEnd: "11:00" },
-      { memberId: ruth.id, dayOfWeek: 0, timeStart: "10:00", timeEnd: "12:00" },
-      { memberId: elijah.id, dayOfWeek: 5, timeStart: "20:00", timeEnd: "22:00" },
-      { memberId: caleb.id, dayOfWeek: 6, timeStart: "14:00", timeEnd: "16:00" },
+      { memberId: james.id, dayOfWeek: 6, timeStart: "09:00" },
+      { memberId: james.id, dayOfWeek: 3, timeStart: "19:00" },
+      { memberId: maria.id, dayOfWeek: 6, timeStart: "14:00" },
+      { memberId: maria.id, dayOfWeek: 2, timeStart: "19:00" },
+      { memberId: daniel.id, dayOfWeek: 0, timeStart: "15:00" },
+      { memberId: samuel.id, dayOfWeek: 6, timeStart: "09:00" },
+      { memberId: ruth.id, dayOfWeek: 0, timeStart: "10:00" },
+      { memberId: elijah.id, dayOfWeek: 5, timeStart: "20:00" },
+      { memberId: caleb.id, dayOfWeek: 6, timeStart: "14:00" },
     ],
   })
   console.log("✓ Created schedule preferences")
@@ -449,12 +449,12 @@ async function main() {
 
   // ─── Group Meeting Schedules (one per group) ─────────────────────────────
   await Promise.all([
-    db.smallGroup.update({ where: { id: familyAlpha.id }, data: { scheduleDayOfWeek: 6, scheduleTimeStart: "09:00", scheduleTimeEnd: "11:00" } }),
-    db.smallGroup.update({ where: { id: familyBeta.id }, data: { scheduleDayOfWeek: 6, scheduleTimeStart: "09:00", scheduleTimeEnd: "11:00" } }),
-    db.smallGroup.update({ where: { id: youngAdultsConnect.id }, data: { scheduleDayOfWeek: 6, scheduleTimeStart: "14:00", scheduleTimeEnd: "16:00" } }),
-    db.smallGroup.update({ where: { id: youngProfessionals.id }, data: { scheduleDayOfWeek: 5, scheduleTimeStart: "19:00", scheduleTimeEnd: "21:00" } }),
-    db.smallGroup.update({ where: { id: youthCrew.id }, data: { scheduleDayOfWeek: 0, scheduleTimeStart: "15:00", scheduleTimeEnd: "17:00" } }),
-    db.smallGroup.update({ where: { id: seniorsFellowship.id }, data: { scheduleDayOfWeek: 0, scheduleTimeStart: "10:00", scheduleTimeEnd: "12:00" } }),
+    db.smallGroup.update({ where: { id: familyAlpha.id }, data: { scheduleDayOfWeek: 6, scheduleTimeStart: "09:00" } }),
+    db.smallGroup.update({ where: { id: familyBeta.id }, data: { scheduleDayOfWeek: 6, scheduleTimeStart: "09:00" } }),
+    db.smallGroup.update({ where: { id: youngAdultsConnect.id }, data: { scheduleDayOfWeek: 6, scheduleTimeStart: "14:00" } }),
+    db.smallGroup.update({ where: { id: youngProfessionals.id }, data: { scheduleDayOfWeek: 5, scheduleTimeStart: "19:00" } }),
+    db.smallGroup.update({ where: { id: youthCrew.id }, data: { scheduleDayOfWeek: 0, scheduleTimeStart: "15:00" } }),
+    db.smallGroup.update({ where: { id: seniorsFellowship.id }, data: { scheduleDayOfWeek: 0, scheduleTimeStart: "10:00" } }),
   ])
   console.log("✓ Updated group meeting schedules (one per group)")
 

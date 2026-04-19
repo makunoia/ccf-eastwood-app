@@ -42,7 +42,6 @@ type GuestSmallGroupPrompt = {
     workCity: string | null
     scheduleDayOfWeek: number | null
     scheduleTimeStart: string | null
-    scheduleTimeEnd: string | null
   }
 }
 
@@ -634,7 +633,6 @@ function ProfileForm({ guestId, existingProfile, lifeStages, onSave, onSkip, onB
     workCity: existingProfile.workCity ?? "",
     scheduleDayOfWeek: existingProfile.scheduleDayOfWeek != null ? String(existingProfile.scheduleDayOfWeek) : "",
     scheduleTimeStart: existingProfile.scheduleTimeStart ?? "",
-    scheduleTimeEnd: existingProfile.scheduleTimeEnd ?? "",
   })
 
   function toggleLanguage(lang: string) {
@@ -657,7 +655,6 @@ function ProfileForm({ guestId, existingProfile, lifeStages, onSave, onSkip, onB
       workCity: form.workCity || null,
       scheduleDayOfWeek: form.scheduleDayOfWeek !== "" ? parseInt(form.scheduleDayOfWeek, 10) : null,
       scheduleTimeStart: form.scheduleTimeStart || null,
-      scheduleTimeEnd: form.scheduleTimeEnd || null,
     }
     const result = await saveGuestMatchingProfile(guestId, data)
     setSaving(false)
@@ -789,13 +786,6 @@ function ProfileForm({ guestId, existingProfile, lifeStages, onSave, onSkip, onB
                 type="time"
                 value={form.scheduleTimeStart}
                 onChange={(e) => setForm((p) => ({ ...p, scheduleTimeStart: e.target.value }))}
-                className="w-28"
-              />
-              <span className="text-sm text-muted-foreground">to</span>
-              <Input
-                type="time"
-                value={form.scheduleTimeEnd}
-                onChange={(e) => setForm((p) => ({ ...p, scheduleTimeEnd: e.target.value }))}
                 className="w-28"
               />
             </div>

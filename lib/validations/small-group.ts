@@ -27,23 +27,23 @@ export const smallGroupSchema = z.object({
   name: z.string().min(1, "Group name is required").trim(),
   leaderId: z.string().min(1, "Leader is required"),
   parentGroupId: nullableString,
-  lifeStageId: nullableString,
-  genderFocus: z.preprocess(
-    (v) => (v === "" ? undefined : v),
-    z.enum(["Male", "Female", "Mixed"]).optional().nullable()
-  ),
+  lifeStageId: z.string().min(1, "Life stage is required").trim(),
+  genderFocus: z.enum(["Male", "Female", "Mixed"]),
   language: z.array(z.string()).default([]),
   ageRangeMin: nullableInt,
   ageRangeMax: nullableInt,
-  meetingFormat: z.preprocess(
-    (v) => (v === "" ? undefined : v),
-    z.enum(["Online", "Hybrid", "InPerson"]).optional().nullable()
-  ),
+  meetingFormat: z.enum(["Online", "Hybrid", "InPerson"]),
   locationCity: nullableString,
   memberLimit: nullableInt,
-  scheduleDayOfWeek: nullableDay,
-  scheduleTimeStart: nullableTime,
-  scheduleTimeEnd: nullableTime,
+  scheduleDayOfWeek: z
+    .string()
+    .min(1, "Meeting day is required")
+    .transform((v) => parseInt(v, 10))
+    .pipe(z.number().int().min(0).max(6)),
+  scheduleTimeStart: z
+    .string()
+    .min(1, "Meeting time is required")
+    .regex(/^\d{2}:\d{2}$/, "Invalid time format"),
 })
 
 export type SmallGroupInput = z.infer<typeof smallGroupSchema>
@@ -63,7 +63,6 @@ export type SmallGroupFormValues = {
   memberLimit: string
   scheduleDayOfWeek: string  // "0"–"6" or ""
   scheduleTimeStart: string  // "HH:MM" or ""
-  scheduleTimeEnd: string    // "HH:MM" or ""
 }
 
 export const defaultSmallGroupForm: SmallGroupFormValues = {
@@ -80,5 +79,4 @@ export const defaultSmallGroupForm: SmallGroupFormValues = {
   memberLimit: "",
   scheduleDayOfWeek: "",
   scheduleTimeStart: "",
-  scheduleTimeEnd: "",
 }

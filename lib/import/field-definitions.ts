@@ -47,17 +47,19 @@ export const GUEST_FIELDS: FieldDefinition[] = [
 ]
 
 export const SMALL_GROUP_FIELDS: FieldDefinition[] = [
-  { key: "name",            label: "Group Name",      required: true },
-  { key: "leaderEmail",     label: "Leader Email",    required: true,  hint: "Must match an existing member's email" },
-  { key: "parentGroupName", label: "Parent Group",    required: false, hint: "Must match an existing group's name" },
-  { key: "lifeStage",       label: "Life Stage",      required: false, hint: "Must match an existing life stage name" },
-  { key: "genderFocus",     label: "Gender Focus",    required: false, hint: "Male, Female, or Mixed" },
-  { key: "language",        label: "Language",        required: false },
-  { key: "ageRangeMin",     label: "Min Age",         required: false },
-  { key: "ageRangeMax",     label: "Max Age",         required: false },
-  { key: "meetingFormat",   label: "Meeting Format",  required: false, hint: "Online, Hybrid, or InPerson" },
-  { key: "locationCity",    label: "Location City",   required: false },
-  { key: "memberLimit",     label: "Member Limit",    required: false },
+  { key: "name",             label: "Group Name",      required: true },
+  { key: "leaderEmail",      label: "Leader Email",    required: true,  hint: "Must match an existing member's email" },
+  { key: "parentGroupName",  label: "Parent Group",    required: false, hint: "Must match an existing group's name" },
+  { key: "lifeStage",        label: "Life Stage",      required: false, hint: "Must match an existing life stage name" },
+  { key: "genderFocus",      label: "Gender Focus",    required: false, hint: "Male, Female, or Mixed" },
+  { key: "language",         label: "Language",        required: false },
+  { key: "ageRangeMin",      label: "Min Age",         required: false },
+  { key: "ageRangeMax",      label: "Max Age",         required: false },
+  { key: "meetingFormat",    label: "Meeting Format",  required: false, hint: "Online, Hybrid, or InPerson" },
+  { key: "locationCity",     label: "Location City",   required: false },
+  { key: "memberLimit",      label: "Member Limit",    required: false },
+  { key: "scheduleDayOfWeek",label: "Meeting Day",     required: false, hint: "Sunday–Saturday or 0–6" },
+  { key: "scheduleTime",     label: "Meeting Time",    required: false, hint: "HH:MM (24-hour)" },
 ]
 
 export function getFieldsForEntity(entity: ImportEntity): FieldDefinition[] {

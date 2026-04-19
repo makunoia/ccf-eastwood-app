@@ -45,21 +45,32 @@ async function getLifeStages() {
 }
 
 async function getMemberSmallGroupInfo(memberId: string) {
-  const m = await db.member.findUnique({
-    where: { id: memberId },
-    select: {
-      smallGroup: { select: { id: true, name: true } },
-      groupStatus: true,
-      ledGroups: {
-        select: {
-          id: true,
-          name: true,
-          _count: { select: { members: true } },
+  const [m, pendingTransferReq] = await Promise.all([
+    db.member.findUnique({
+      where: { id: memberId },
+      select: {
+        smallGroup: { select: { id: true, name: true } },
+        groupStatus: true,
+        ledGroups: {
+          select: {
+            id: true,
+            name: true,
+            _count: { select: { members: true } },
+          },
+          orderBy: { name: "asc" },
         },
-        orderBy: { name: "asc" },
       },
-    },
-  })
+    }),
+    db.smallGroupMemberRequest.findFirst({
+      where: { memberId, status: "Pending" },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        smallGroup: { select: { name: true } },
+        createdAt: true,
+      },
+    }),
+  ])
   if (!m) return null
   return {
     memberOf: m.smallGroup
@@ -74,6 +85,13 @@ async function getMemberSmallGroupInfo(memberId: string) {
       name: g.name,
       memberCount: g._count.members,
     })),
+    pendingTransfer: pendingTransferReq
+      ? {
+          id: pendingTransferReq.id,
+          toGroupName: pendingTransferReq.smallGroup.name,
+          createdAt: pendingTransferReq.createdAt,
+        }
+      : null,
   }
 }
 
@@ -122,6 +140,7 @@ export default async function MemberDetailPage({
             <MemberMatchSection
               memberId={id}
               hasGroup={!!smallGroupInfo.memberOf}
+              pendingTransfer={smallGroupInfo.pendingTransfer}
             />
           </div>
         ) : undefined
