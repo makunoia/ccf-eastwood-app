@@ -451,7 +451,7 @@ function DeleteGroupDialog({
 
 function RowActions({
   row,
-  eventId,
+  eventId: _eventId,
   onEdit,
   onDelete,
 }: {

@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import Image from "next/image"
+import Link from "next/link"
 import {
   IconBuilding,
   IconCalendar,
@@ -73,10 +74,10 @@ export function AppSidebar({ user, role, permissions, ...props }: AppSidebarProp
   return (
     <Sidebar collapsible="offcanvas" {...props}>
       <SidebarHeader>
-        <a href="/" className="flex flex-col items-center gap-1.5 py-4">
+        <Link href="/" className="flex flex-col items-center gap-1.5 py-4">
           <Image src="/ccf-logo.png" alt="CCF Eastwood" width={64} height={64} />
           <span className="text-sm font-semibold">CCF Eastwood Admin</span>
-        </a>
+        </Link>
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={filteredNav} />

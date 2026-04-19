@@ -17,7 +17,7 @@ type Props = {
   pendingRequests: PendingRequest[]
 }
 
-export function ConfirmationClient({ token, groupName, pendingRequests }: Props) {
+export function ConfirmationClient({ token, groupName: _groupName, pendingRequests }: Props) {
   const [checked, setChecked] = React.useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {}
     for (const r of pendingRequests) initial[r.id] = true

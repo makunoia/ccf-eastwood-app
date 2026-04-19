@@ -174,7 +174,7 @@ export function EventSettingsClient({ eventId, enabledModules, buses, committees
     if (result.success) {
       setModules((prev) => {
         const next = new Set(prev)
-        enabled ? next.delete(type) : next.add(type)
+        if (enabled) { next.delete(type) } else { next.add(type) }
         return next
       })
     } else {

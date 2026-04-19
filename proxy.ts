@@ -1,6 +1,7 @@
 import NextAuth from "next-auth"
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
+import type { Session } from "next-auth"
 import { authConfig } from "./auth.config"
 import type { FeatureArea } from "@/app/generated/prisma/client"
 
@@ -41,7 +42,7 @@ const ROUTE_PERMISSIONS: [string, FeatureArea][] = [
   ["/volunteers", "Volunteers"],
 ]
 
-export default auth(function middleware(req: NextRequest & { auth: any }) {
+export default auth(function proxy(req: NextRequest & { auth: Session | null }) {
   const { pathname } = req.nextUrl
   const session = req.auth
 
@@ -60,7 +61,7 @@ export default auth(function middleware(req: NextRequest & { auth: any }) {
     return NextResponse.redirect(new URL("/login", req.url))
   }
 
-  const user = session.user as any
+  const user = session.user
 
   // ── First-login setup flow ─────────────────────────────────────────────────
   if (user.requiresTotpSetup || user.mustChangePassword) {

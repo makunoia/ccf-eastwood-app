@@ -20,7 +20,9 @@ export function SearchInput({
 }: SearchInputProps) {
   const [value, setValue] = React.useState(defaultValue)
   const onChangeFn = React.useRef(onChange)
-  onChangeFn.current = onChange
+  React.useLayoutEffect(() => {
+    onChangeFn.current = onChange
+  })
 
   React.useEffect(() => {
     const timer = setTimeout(() => {

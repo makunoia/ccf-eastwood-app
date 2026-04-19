@@ -205,7 +205,7 @@ export async function createSmallGroupForTimothy(
 async function resolveConfirmations(
   smallGroupId: string,
   decisions: ConfirmDecision[],
-  breakoutGroupId: string
+  _breakoutGroupId: string
 ): Promise<void> {
   await db.$transaction(async (tx) => {
     for (const { registrantId, confirmed } of decisions) {

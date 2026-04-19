@@ -58,7 +58,7 @@ export function VolunteerImportTrigger({ ministries, events }: Props) {
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Import Volunteers</DialogTitle>
-            <DialogDescription>Select whether you're importing volunteers for a ministry or an event.</DialogDescription>
+            <DialogDescription>Select whether you&apos;re importing volunteers for a ministry or an event.</DialogDescription>
           </DialogHeader>
 
           <div className="flex flex-col gap-4">

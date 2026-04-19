@@ -49,11 +49,13 @@ export function DataTable<TData, TValue>({
   data,
   emptyState,
 }: DataTableProps<TData, TValue>) {
+  "use no memo"
   const [sorting, setSorting] = React.useState<SortingState>([])
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
   const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({})
   const [pagination, setPagination] = React.useState({ pageIndex: 0, pageSize: 10 })
 
+  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data,
     columns,

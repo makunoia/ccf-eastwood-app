@@ -12,6 +12,7 @@ export function NavigationLoader() {
   // Navigation complete → hide loader
   useEffect(() => {
     clearTimeout(timerRef.current)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(false)
   }, [pathname, searchParams])
 

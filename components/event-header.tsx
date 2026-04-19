@@ -24,7 +24,7 @@ type EventHeaderProps = {
   eventType: "OneTime" | "MultiDay" | "Recurring"
 }
 
-export function EventHeader({ eventId, eventType }: EventHeaderProps) {
+export function EventHeader({ eventId, eventType: _eventType }: EventHeaderProps) {
   const pathname = usePathname()
   // pathname is like /event/[id]/section or /event/[id]/sessions/[occurrenceId]
   const parts = pathname.split("/")
