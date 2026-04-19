@@ -40,3 +40,6 @@ jobs:
 
       - name: Push staging
         run: git push origin staging
+
+      - name: Trigger Vercel preview deployment
+        run: curl -X POST "${{ secrets.VERCEL_DEPLOY_HOOK_URL }}"
