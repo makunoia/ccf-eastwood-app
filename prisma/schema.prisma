@@ -257,7 +257,6 @@ model Guest {
   // Single schedule preference (one time slot per guest — mirrors SmallGroup pattern)
   scheduleDayOfWeek Int?     // 0 = Sunday … 6 = Saturday
   scheduleTimeStart String?  // HH:MM
-  scheduleTimeEnd   String?  // HH:MM
 
   // Self-reported small group from check-in prompt
   claimedSmallGroupId String?
@@ -281,7 +280,6 @@ model SchedulePreference {
   member    Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
   dayOfWeek Int      // 0 = Sunday, 6 = Saturday
   timeStart String   // HH:MM
-  timeEnd   String   // HH:MM
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -473,7 +471,6 @@ model BreakoutGroupSchedule {
   breakoutGroup   BreakoutGroup @relation(fields: [breakoutGroupId], references: [id], onDelete: Cascade)
   dayOfWeek       Int           // 0 = Sunday, 6 = Saturday
   timeStart       String        // HH:MM
-  timeEnd         String        // HH:MM
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 }

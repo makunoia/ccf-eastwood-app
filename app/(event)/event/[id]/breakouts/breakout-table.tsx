@@ -65,7 +65,6 @@ type LedGroup = {
   locationCity: string | null
   scheduleDayOfWeek: number | null
   scheduleTimeStart: string | null
-  scheduleTimeEnd: string | null
 }
 
 type Volunteer = {
@@ -92,7 +91,7 @@ export type BreakoutGroupRow = {
   ageRangeMax: number | null
   meetingFormat: string | null
   locationCity: string | null
-  schedules: { dayOfWeek: number; timeStart: string; timeEnd: string }[]
+  schedules: { dayOfWeek: number; timeStart: string }[]
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
@@ -112,7 +111,6 @@ function deriveProfileFromGroup(g: LedGroup) {
     locationCity: g.locationCity ?? "",
     scheduleDayOfWeek: g.scheduleDayOfWeek != null ? String(g.scheduleDayOfWeek) : "",
     scheduleTimeStart: g.scheduleTimeStart ?? "",
-    scheduleTimeEnd: g.scheduleTimeEnd ?? "",
   }
 }
 
@@ -143,7 +141,6 @@ const EMPTY_FORM = {
   locationCity: "",
   scheduleDayOfWeek: "",
   scheduleTimeStart: "",
-  scheduleTimeEnd: "",
 }
 
 type GroupFormDialogProps = {
@@ -180,7 +177,6 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
               locationCity: group.locationCity ?? "",
               scheduleDayOfWeek: existingSchedule?.dayOfWeek != null ? String(existingSchedule.dayOfWeek) : "",
               scheduleTimeStart: existingSchedule?.timeStart ?? "",
-              scheduleTimeEnd: existingSchedule?.timeEnd ?? "",
             }
           : EMPTY_FORM
       )
@@ -221,7 +217,7 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
   async function handleSubmit() {
     if (!form.name.trim()) { toast.error("Group name is required"); return }
     setSaving(true)
-    const hasSchedule = form.scheduleDayOfWeek !== "" && form.scheduleTimeStart && form.scheduleTimeEnd
+    const hasSchedule = form.scheduleDayOfWeek !== "" && form.scheduleTimeStart
     const data = {
       name: form.name.trim(),
       facilitatorId: form.facilitatorId || null,
@@ -235,7 +231,7 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
       meetingFormat: (form.meetingFormat as "Online" | "Hybrid" | "InPerson") || null,
       locationCity: form.locationCity || null,
       schedule: hasSchedule
-        ? { dayOfWeek: Number(form.scheduleDayOfWeek), timeStart: form.scheduleTimeStart, timeEnd: form.scheduleTimeEnd }
+        ? { dayOfWeek: Number(form.scheduleDayOfWeek), timeStart: form.scheduleTimeStart }
         : null,
     }
     const result = isEdit
@@ -380,7 +376,7 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
 
           <div className="space-y-1.5">
             <Label>Meeting Schedule</Label>
-            <div className="grid grid-cols-[1fr_auto_auto] gap-2 items-center">
+            <div className="grid grid-cols-[1fr_auto] gap-2 items-center">
               <Select value={form.scheduleDayOfWeek} onValueChange={(v) => setForm((f) => ({ ...f, scheduleDayOfWeek: v === "_none" ? "" : v }))}>
                 <SelectTrigger><SelectValue placeholder="Day" /></SelectTrigger>
                 <SelectContent>
@@ -389,7 +385,6 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
                 </SelectContent>
               </Select>
               <Input type="time" className="w-28" value={form.scheduleTimeStart} onChange={(e) => setForm((f) => ({ ...f, scheduleTimeStart: e.target.value }))} />
-              <Input type="time" className="w-28" value={form.scheduleTimeEnd} onChange={(e) => setForm((f) => ({ ...f, scheduleTimeEnd: e.target.value }))} />
             </div>
           </div>
         </div>

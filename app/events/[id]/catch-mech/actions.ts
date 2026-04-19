@@ -233,7 +233,6 @@ async function resolveConfirmations(
               meetingPreference: true,
               scheduleDayOfWeek: true,
               scheduleTimeStart: true,
-              scheduleTimeEnd: true,
             },
           },
         },
@@ -305,14 +304,12 @@ async function resolveConfirmations(
             smallGroupId,
             groupStatus: "Member",
             ...(guest.scheduleDayOfWeek !== null &&
-            guest.scheduleTimeStart !== null &&
-            guest.scheduleTimeEnd !== null
+            guest.scheduleTimeStart !== null
               ? {
                   schedulePreferences: {
                     create: {
                       dayOfWeek: guest.scheduleDayOfWeek,
                       timeStart: guest.scheduleTimeStart!,
-                      timeEnd: guest.scheduleTimeEnd!,
                     },
                   },
                 }
