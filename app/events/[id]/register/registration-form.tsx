@@ -45,7 +45,6 @@ type FormValues = {
   workCity: string
   scheduleDayOfWeek: string
   scheduleTimeStart: string
-  scheduleTimeEnd: string
 }
 
 type MatchedMember = {
@@ -69,7 +68,6 @@ const defaultForm: FormValues = {
   workCity: "",
   scheduleDayOfWeek: "",
   scheduleTimeStart: "",
-  scheduleTimeEnd: "",
 }
 
 const DAYS_OF_WEEK = [
@@ -138,7 +136,6 @@ export function RegistrationForm({ eventId, isRecurring = false, lifeStages = []
       workCity: form.workCity || null,
       scheduleDayOfWeek: form.scheduleDayOfWeek !== "" ? parseInt(form.scheduleDayOfWeek, 10) : null,
       scheduleTimeStart: form.scheduleTimeStart || null,
-      scheduleTimeEnd: form.scheduleTimeEnd || null,
     }, confirmedMemberId)
     setSubmitting(false)
 
@@ -399,13 +396,6 @@ export function RegistrationForm({ eventId, isRecurring = false, lifeStages = []
                     type="time"
                     value={form.scheduleTimeStart}
                     onChange={(e) => set("scheduleTimeStart", e.target.value)}
-                    className="w-28"
-                  />
-                  <span className="text-sm text-muted-foreground">to</span>
-                  <Input
-                    type="time"
-                    value={form.scheduleTimeEnd}
-                    onChange={(e) => set("scheduleTimeEnd", e.target.value)}
                     className="w-28"
                   />
                 </div>

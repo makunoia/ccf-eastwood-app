@@ -19,7 +19,6 @@ const registrantSchema = z.object({
   workCity: z.string().optional().nullable().transform((v) => v || null),
   scheduleDayOfWeek: z.number().int().min(0).max(6).optional().nullable(),
   scheduleTimeStart: z.string().optional().nullable().transform((v) => v || null),
-  scheduleTimeEnd: z.string().optional().nullable().transform((v) => v || null),
 })
 
 type ActionResult<T = void> =
@@ -157,7 +156,6 @@ export async function createRegistrant(
         workCity: parsed.data.workCity ?? null,
         scheduleDayOfWeek: parsed.data.scheduleDayOfWeek ?? null,
         scheduleTimeStart: parsed.data.scheduleTimeStart ?? null,
-        scheduleTimeEnd: parsed.data.scheduleTimeEnd ?? null,
       }
 
       const existingGuest = await db.guest.findFirst({
@@ -180,7 +178,6 @@ export async function createRegistrant(
             ...(matchingProfile.scheduleDayOfWeek !== null && {
               scheduleDayOfWeek: matchingProfile.scheduleDayOfWeek,
               scheduleTimeStart: matchingProfile.scheduleTimeStart,
-              scheduleTimeEnd: matchingProfile.scheduleTimeEnd,
             }),
           },
         })
@@ -198,7 +195,6 @@ export async function createRegistrant(
             workCity: matchingProfile.workCity,
             scheduleDayOfWeek: matchingProfile.scheduleDayOfWeek,
             scheduleTimeStart: matchingProfile.scheduleTimeStart,
-            scheduleTimeEnd: matchingProfile.scheduleTimeEnd,
           },
           select: { id: true },
         })
@@ -406,7 +402,6 @@ type GuestSmallGroupPrompt = {
     workCity: string | null
     scheduleDayOfWeek: number | null
     scheduleTimeStart: string | null
-    scheduleTimeEnd: string | null
   }
 }
 
@@ -453,7 +448,6 @@ export async function lookupCheckinRegistrant(
             workCity: true,
             scheduleDayOfWeek: true,
             scheduleTimeStart: true,
-            scheduleTimeEnd: true,
             claimedSmallGroupId: true,
           },
         },
@@ -511,7 +505,6 @@ export async function lookupCheckinRegistrant(
               workCity: g.workCity,
               scheduleDayOfWeek: g.scheduleDayOfWeek,
               scheduleTimeStart: g.scheduleTimeStart,
-              scheduleTimeEnd: g.scheduleTimeEnd,
             },
           }
         }

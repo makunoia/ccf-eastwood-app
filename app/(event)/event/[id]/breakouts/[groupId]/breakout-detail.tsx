@@ -61,7 +61,6 @@ type LedGroup = {
   locationCity: string | null
   scheduleDayOfWeek: number | null
   scheduleTimeStart: string | null
-  scheduleTimeEnd: string | null
 }
 
 type FacilitatorVolunteer = {
@@ -136,7 +135,7 @@ export type BreakoutDetailData = {
   locationCity: string | null
   memberLimit: number | null
   members: BreakoutMemberRow[]
-  schedules: { dayOfWeek: number; timeStart: string; timeEnd: string }[]
+  schedules: { dayOfWeek: number; timeStart: string }[]
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
@@ -189,8 +188,8 @@ function SmallGroupCard({ group }: { group: LedGroup }) {
   if (group.locationCity) parts.push(group.locationCity)
 
   const schedule =
-    group.scheduleDayOfWeek != null && group.scheduleTimeStart && group.scheduleTimeEnd
-      ? `${DAY_LABELS[group.scheduleDayOfWeek]} ${formatTime(group.scheduleTimeStart)}–${formatTime(group.scheduleTimeEnd)}`
+    group.scheduleDayOfWeek != null && group.scheduleTimeStart
+      ? `${DAY_LABELS[group.scheduleDayOfWeek]} ${formatTime(group.scheduleTimeStart)}`
       : null
 
   return (
@@ -637,7 +636,7 @@ export function BreakoutDetail({
             <div className="flex flex-wrap gap-2">
               {group.schedules.map((s, i) => (
                 <span key={i} className="inline-flex items-center rounded-md border bg-muted/30 px-2.5 py-1 text-sm">
-                  {DAY_LABELS[s.dayOfWeek]} {formatTime(s.timeStart)}–{formatTime(s.timeEnd)}
+                  {DAY_LABELS[s.dayOfWeek]} {formatTime(s.timeStart)}
                 </span>
               ))}
             </div>

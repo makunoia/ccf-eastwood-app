@@ -40,7 +40,6 @@ type LedGroup = {
   locationCity: string | null
   scheduleDayOfWeek: number | null
   scheduleTimeStart: string | null
-  scheduleTimeEnd: string | null
 }
 
 type Volunteer = {
@@ -61,7 +60,7 @@ export type EditableGroupData = {
   ageRangeMax: number | null
   meetingFormat: string | null
   locationCity: string | null
-  schedule: { dayOfWeek: number; timeStart: string; timeEnd: string } | null
+  schedule: { dayOfWeek: number; timeStart: string } | null
 }
 
 const GENDER_FOCUS_LABELS: Record<string, string> = { Male: "Male", Female: "Female", Mixed: "Mixed" }
@@ -88,7 +87,6 @@ function deriveProfileFromGroup(g: LedGroup) {
     locationCity: g.locationCity ?? "",
     scheduleDayOfWeek: g.scheduleDayOfWeek != null ? String(g.scheduleDayOfWeek) : "",
     scheduleTimeStart: g.scheduleTimeStart ?? "",
-    scheduleTimeEnd: g.scheduleTimeEnd ?? "",
   }
 }
 
@@ -120,7 +118,6 @@ function EditDialog({
     locationCity: "",
     scheduleDayOfWeek: "",
     scheduleTimeStart: "",
-    scheduleTimeEnd: "",
   })
   const [sourceGroupId, setSourceGroupId] = React.useState("")
   const [saving, setSaving] = React.useState(false)
@@ -141,7 +138,6 @@ function EditDialog({
         locationCity: group.locationCity ?? "",
         scheduleDayOfWeek: group.schedule?.dayOfWeek != null ? String(group.schedule.dayOfWeek) : "",
         scheduleTimeStart: group.schedule?.timeStart ?? "",
-        scheduleTimeEnd: group.schedule?.timeEnd ?? "",
       })
     }
   }, [open, group])
@@ -180,7 +176,7 @@ function EditDialog({
   async function handleSave() {
     if (!form.name.trim()) { toast.error("Group name is required"); return }
     setSaving(true)
-    const hasSchedule = form.scheduleDayOfWeek !== "" && form.scheduleTimeStart && form.scheduleTimeEnd
+    const hasSchedule = form.scheduleDayOfWeek !== "" && form.scheduleTimeStart
     const result = await updateBreakoutGroup(group.id, eventId, {
       name: form.name.trim(),
       facilitatorId: form.facilitatorId || null,
@@ -194,7 +190,7 @@ function EditDialog({
       meetingFormat: (form.meetingFormat as "Online" | "Hybrid" | "InPerson") || null,
       locationCity: form.locationCity || null,
       schedule: hasSchedule
-        ? { dayOfWeek: Number(form.scheduleDayOfWeek), timeStart: form.scheduleTimeStart, timeEnd: form.scheduleTimeEnd }
+        ? { dayOfWeek: Number(form.scheduleDayOfWeek), timeStart: form.scheduleTimeStart }
         : null,
     })
     setSaving(false)
@@ -324,7 +320,7 @@ function EditDialog({
 
           <div className="space-y-1.5">
             <Label>Meeting Schedule</Label>
-            <div className="grid grid-cols-[1fr_auto_auto] gap-2 items-center">
+            <div className="grid grid-cols-[1fr_auto] gap-2 items-center">
               <Select value={form.scheduleDayOfWeek} onValueChange={(v) => setForm((f) => ({ ...f, scheduleDayOfWeek: v === "_none" ? "" : v }))}>
                 <SelectTrigger><SelectValue placeholder="Day" /></SelectTrigger>
                 <SelectContent>
@@ -333,7 +329,6 @@ function EditDialog({
                 </SelectContent>
               </Select>
               <Input type="time" className="w-28" {...field("scheduleTimeStart")} />
-              <Input type="time" className="w-28" {...field("scheduleTimeEnd")} />
             </div>
           </div>
         </div>

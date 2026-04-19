@@ -47,7 +47,6 @@ export async function createBreakoutGroup(
                 create: {
                   dayOfWeek: schedule.dayOfWeek,
                   timeStart: schedule.timeStart,
-                  timeEnd: schedule.timeEnd,
                 },
               },
             }
@@ -95,7 +94,6 @@ export async function updateBreakoutGroup(
                 create: {
                   dayOfWeek: schedule.dayOfWeek,
                   timeStart: schedule.timeStart,
-                  timeEnd: schedule.timeEnd,
                 },
               }
             : {}),
