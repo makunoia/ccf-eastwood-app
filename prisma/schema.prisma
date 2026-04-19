@@ -332,9 +332,7 @@ model Ministry {
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
-  events     EventMinistry[]
-  committees VolunteerCommittee[]
-  volunteers Volunteer[]
+  events EventMinistry[]
 }
 
 model Event {
@@ -487,14 +485,12 @@ model BreakoutGroupMember {
 }
 
 model VolunteerCommittee {
-  id         String    @id @default(cuid())
-  name       String
-  ministryId String?
-  ministry   Ministry? @relation(fields: [ministryId], references: [id])
-  eventId    String?
-  event      Event?    @relation(fields: [eventId], references: [id])
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  id        String   @id @default(cuid())
+  name      String
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   roles      CommitteeRole[]
   volunteers Volunteer[]
@@ -516,10 +512,8 @@ model Volunteer {
   id              String             @id @default(cuid())
   memberId        String
   member          Member             @relation(fields: [memberId], references: [id])
-  ministryId      String?
-  ministry        Ministry?          @relation(fields: [ministryId], references: [id])
-  eventId         String?
-  event           Event?             @relation(fields: [eventId], references: [id])
+  eventId         String
+  event           Event              @relation(fields: [eventId], references: [id])
   committeeId     String
   committee       VolunteerCommittee @relation(fields: [committeeId], references: [id])
   preferredRoleId String
