@@ -286,12 +286,15 @@ export function GuestForm({ lifeStages, guest, eventHistory, matchSection }: Pro
                 <Label htmlFor="birthYear">Birth Year</Label>
                 <Input
                   id="birthYear"
-                  type="number"
-                  min={1900}
-                  max={new Date().getFullYear()}
-                  placeholder="e.g. 1990"
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={4}
+                  placeholder="0000"
                   value={form.birthYear}
-                  onChange={(e) => set("birthYear", e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/\D/g, "").slice(0, 4);
+                    set("birthYear", val);
+                  }}
                   disabled={isPromoted}
                 />
               </div>
