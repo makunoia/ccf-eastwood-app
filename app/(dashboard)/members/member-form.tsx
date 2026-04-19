@@ -67,10 +67,9 @@ function toFormValues(member: MemberRow): MemberFormValues {
 export function MemberForm({ lifeStages, member, eventHistory, smallGroups }: Props) {
   const router = useRouter()
   const isEdit = !!member
-  const initialForm = React.useRef<MemberFormValues>(
-    member ? toFormValues(member) : defaultMemberForm
+  const [form, setForm] = React.useState<MemberFormValues>(
+    () => member ? toFormValues(member) : defaultMemberForm
   )
-  const [form, setForm] = React.useState<MemberFormValues>(initialForm.current)
   const [saving, setSaving] = React.useState(false)
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
@@ -80,7 +79,7 @@ export function MemberForm({ lifeStages, member, eventHistory, smallGroups }: Pr
   }
 
   function handleRevert() {
-    setForm(initialForm.current)
+    setForm(member ? toFormValues(member) : defaultMemberForm)
   }
 
   async function handleSubmit(e: React.FormEvent) {

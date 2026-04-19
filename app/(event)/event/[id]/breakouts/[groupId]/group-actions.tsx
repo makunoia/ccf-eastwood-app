@@ -207,7 +207,7 @@ function EditDialog({
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Edit breakout group</DialogTitle>
-          <DialogDescription>Update the group's details and matching profile.</DialogDescription>
+          <DialogDescription>Update the group&apos;s details and matching profile.</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">

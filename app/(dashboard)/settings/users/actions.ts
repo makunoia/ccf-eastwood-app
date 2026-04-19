@@ -20,7 +20,7 @@ type ActionResult<T = void> =
 async function requireSuperAdmin(): Promise<{ error: string } | null> {
   const session = await auth()
   if (!session?.user) return { error: "Not authenticated." }
-  if ((session.user as any).role !== "SuperAdmin") return { error: "Unauthorized." }
+  if (session.user.role !== "SuperAdmin") return { error: "Unauthorized." }
   return null
 }
 

@@ -4,7 +4,7 @@ import { auth } from "@/lib/auth"
 
 async function getActorId(): Promise<string | null> {
   const session = await auth()
-  return (session?.user as any)?.id ?? null
+  return session?.user?.id ?? null
 }
 
 // Resolves which small group should receive temporary membership when a

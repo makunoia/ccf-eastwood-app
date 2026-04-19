@@ -58,10 +58,9 @@ function toFormValues(ministry: MinistryRow): MinistryFormValues {
 export function MinistryForm({ lifeStages, ministry, committees = [] }: Props) {
   const router = useRouter()
   const isEdit = !!ministry
-  const initialForm = React.useRef<MinistryFormValues>(
-    ministry ? toFormValues(ministry) : defaultMinistryForm
+  const [form, setForm] = React.useState<MinistryFormValues>(
+    () => ministry ? toFormValues(ministry) : defaultMinistryForm
   )
-  const [form, setForm] = React.useState<MinistryFormValues>(initialForm.current)
   const [saving, setSaving] = React.useState(false)
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
@@ -72,7 +71,7 @@ export function MinistryForm({ lifeStages, ministry, committees = [] }: Props) {
   }
 
   function handleRevert() {
-    setForm(initialForm.current)
+    setForm(ministry ? toFormValues(ministry) : defaultMinistryForm)
   }
 
   async function handleSubmit(e: React.FormEvent) {

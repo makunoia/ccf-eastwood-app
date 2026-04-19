@@ -161,7 +161,7 @@ export default async function CatchMechAdminPage({
   const data = await getCatchMechData(id)
   if (!data) notFound()
 
-  const { event, groupRows, stats, weeklyProgress } = data
+  const { event: _event, groupRows, stats, weeklyProgress } = data
   const publicUrl = `/events/${id}/catch-mech`
 
   return (

@@ -4,6 +4,7 @@ import { PrismaAdapter } from "@auth/prisma-adapter"
 import bcrypt from "bcryptjs"
 import { db } from "@/lib/db"
 import { verifyPreAuthToken } from "@/lib/auth-tokens"
+import type { UserRole, FeatureArea } from "@/app/generated/prisma/client"
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(db),
@@ -86,12 +87,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // On sign-in, embed user data into the token
       if (user) {
         token.id = user.id!
-        token.role = (user as any).role ?? "Staff"
-        token.permissions = (user as any).permissions ?? []
-        token.eventAccess = (user as any).eventAccess ?? []
-        token.totpEnabled = (user as any).totpEnabled ?? false
-        token.mustChangePassword = (user as any).mustChangePassword ?? false
-        token.requiresTotpSetup = (user as any).requiresTotpSetup ?? false
+        token.role = user.role ?? "Staff"
+        token.permissions = user.permissions ?? []
+        token.eventAccess = user.eventAccess ?? []
+        token.totpEnabled = user.totpEnabled ?? false
+        token.mustChangePassword = user.mustChangePassword ?? false
+        token.requiresTotpSetup = user.requiresTotpSetup ?? false
       }
 
       // On explicit session update, refresh flags from DB
@@ -118,8 +119,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string
-        session.user.role = token.role as any
-        session.user.permissions = (token.permissions ?? []) as any
+        session.user.role = token.role as UserRole
+        session.user.permissions = (token.permissions ?? []) as FeatureArea[]
         session.user.eventAccess = (token.eventAccess ?? []) as string[]
         session.user.totpEnabled = (token.totpEnabled ?? false) as boolean
         session.user.mustChangePassword = (token.mustChangePassword ?? false) as boolean

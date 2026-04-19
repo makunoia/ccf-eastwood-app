@@ -15,7 +15,7 @@ type ActionResult<T = void> =
 
 async function getActorId(): Promise<string | null> {
   const session = await auth()
-  return (session?.user as any)?.id ?? null
+  return session?.user?.id ?? null
 }
 
 export async function createSmallGroup(

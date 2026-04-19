@@ -29,8 +29,8 @@ export default async function DashboardLayout({
           email: session.user?.email ?? "",
           avatar: session.user?.image ?? "",
         }}
-        role={(session.user as any)?.role}
-        permissions={(session.user as any)?.permissions}
+        role={session.user.role}
+        permissions={session.user.permissions}
       />
       <SidebarInset className="overflow-hidden">
         <SiteHeader />

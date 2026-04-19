@@ -702,7 +702,7 @@ async function main() {
   console.log("✓ Created 2 events")
 
   // ─── Event Registrants ────────────────────────────────────────────────────
-  const [jamesReg, graceReg, danielReg, joshuaReg] = await Promise.all([
+  const [jamesReg, graceReg] = await Promise.all([
     // Family Camp registrants (members)
     db.eventRegistrant.create({
       data: { eventId: familyCamp.id, memberId: james.id, isPaid: true, attendedAt: null },

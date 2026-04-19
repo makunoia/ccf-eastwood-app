@@ -80,7 +80,7 @@ async function getSmallGroup(id: string): Promise<(SmallGroupRow & {
       : req.member
         ? `${req.member.firstName} ${req.member.lastName}`
         : "Unknown",
-    fromGroupName: (req as any).fromGroup?.name ?? null,
+    fromGroupName: (req as { fromGroup?: { name: string } | null }).fromGroup?.name ?? null,
     assignedByName: req.assignedByUser?.name ?? null,
     createdAt: req.createdAt,
   }))

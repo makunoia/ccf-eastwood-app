@@ -5,8 +5,6 @@ import Link from "next/link"
 import {
   IconCheck,
   IconPencil,
-  IconPlus,
-  IconTrash,
   IconUser,
   IconUserPlus,
   IconX,

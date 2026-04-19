@@ -21,7 +21,7 @@ type Props = {
   rows: RowData[]
 }
 
-export function CatchMechConfirmClient({ token, groupName, isTimothy, rows }: Props) {
+export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy: _isTimothy, rows }: Props) {
   const pendingRows = rows.filter((r) => !r.isConfirmed)
   const alreadyConfirmed = rows.filter((r) => r.isConfirmed)
 
@@ -48,7 +48,7 @@ export function CatchMechConfirmClient({ token, groupName, isTimothy, rows }: Pr
         <p className="font-semibold text-lg">Done!</p>
         {createdGroupName ? (
           <p className="text-sm text-muted-foreground">
-            Your small group <span className="font-medium text-foreground">"{createdGroupName}"</span> has been created and your members are in.
+            Your small group <span className="font-medium text-foreground">&quot;{createdGroupName}&quot;</span> has been created and your members are in.
           </p>
         ) : (
           <p className="text-sm text-muted-foreground">
@@ -66,7 +66,7 @@ export function CatchMechConfirmClient({ token, groupName, isTimothy, rows }: Pr
           <div className="text-3xl">🎊</div>
           <p className="font-semibold">You confirmed your first member!</p>
           <p className="text-sm text-muted-foreground">
-            Let's set up your small group. Give it a name to get started.
+            Let&apos;s set up your small group. Give it a name to get started.
           </p>
         </div>
 

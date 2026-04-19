@@ -182,10 +182,9 @@ export function SmallGroupForm({
 }: Props) {
   const router = useRouter()
   const isEdit = !!group
-  const initialForm = React.useRef<SmallGroupFormValues>(
-    group ? toFormValues(group) : defaultSmallGroupForm
+  const [form, setForm] = React.useState<SmallGroupFormValues>(
+    () => group ? toFormValues(group) : defaultSmallGroupForm
   )
-  const [form, setForm] = React.useState<SmallGroupFormValues>(initialForm.current)
   const [saving, setSaving] = React.useState(false)
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
@@ -229,7 +228,7 @@ export function SmallGroupForm({
   }
 
   function handleRevert() {
-    setForm(initialForm.current)
+    setForm(group ? toFormValues(group) : defaultSmallGroupForm)
   }
 
   // For edit mode, exclude self from parent group options to prevent trivial cycles

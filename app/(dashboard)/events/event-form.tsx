@@ -75,10 +75,9 @@ function toFormValues(event: EventRow): EventFormValues {
 export function EventForm({ ministries, event }: Props) {
   const router = useRouter()
   const isEdit = !!event
-  const initialForm = React.useRef<EventFormValues>(
-    event ? toFormValues(event) : defaultEventForm
+  const [form, setForm] = React.useState<EventFormValues>(
+    () => event ? toFormValues(event) : defaultEventForm
   )
-  const [form, setForm] = React.useState<EventFormValues>(initialForm.current)
   const [saving, setSaving] = React.useState(false)
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
@@ -90,7 +89,7 @@ export function EventForm({ ministries, event }: Props) {
   }
 
   function handleRevert() {
-    setForm(initialForm.current)
+    setForm(event ? toFormValues(event) : defaultEventForm)
   }
 
   async function handleSubmit(e: React.FormEvent) {

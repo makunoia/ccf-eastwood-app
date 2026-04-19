@@ -90,10 +90,9 @@ function toFormValues(v: NonNullable<Props["volunteer"]>): VolunteerFormValues {
 export function VolunteerForm({ members, ministries, events, volunteer }: Props) {
   const router = useRouter()
   const isEdit = !!volunteer
-  const initialForm = React.useRef<VolunteerFormValues>(
-    volunteer ? toFormValues(volunteer) : defaultVolunteerForm
+  const [form, setForm] = React.useState<VolunteerFormValues>(
+    () => volunteer ? toFormValues(volunteer) : defaultVolunteerForm
   )
-  const [form, setForm] = React.useState<VolunteerFormValues>(initialForm.current)
   const [saving, setSaving] = React.useState(false)
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
@@ -103,7 +102,7 @@ export function VolunteerForm({ members, ministries, events, volunteer }: Props)
   }
 
   function handleRevert() {
-    setForm(initialForm.current)
+    setForm(volunteer ? toFormValues(volunteer) : defaultVolunteerForm)
   }
 
   // ── Cascading data ────────────────────────────────────────────────────────

@@ -84,10 +84,9 @@ export function GuestForm({ lifeStages, guest, eventHistory, matchSection }: Pro
   const router = useRouter()
   const isEdit = !!guest
   const isPromoted = !!guest?.memberId
-  const initialForm = React.useRef<GuestFormValues>(
-    guest ? toFormValues(guest) : defaultGuestForm
+  const [form, setForm] = React.useState<GuestFormValues>(
+    () => guest ? toFormValues(guest) : defaultGuestForm
   )
-  const [form, setForm] = React.useState<GuestFormValues>(initialForm.current)
   const [saving, setSaving] = React.useState(false)
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
@@ -97,7 +96,7 @@ export function GuestForm({ lifeStages, guest, eventHistory, matchSection }: Pro
   }
 
   function handleRevert() {
-    setForm(initialForm.current)
+    setForm(guest ? toFormValues(guest) : defaultGuestForm)
   }
 
   async function handleSubmit(e: React.FormEvent) {
