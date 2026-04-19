@@ -11,6 +11,7 @@ async function getUsers(): Promise<UserRow[]> {
       name: true,
       email: true,
       role: true,
+      tempPassword: true,
       totpEnabled: true,
       mustChangePassword: true,
       requiresTotpSetup: true,
@@ -31,6 +32,7 @@ async function getUsers(): Promise<UserRow[]> {
     createdAt: u.createdAt,
     permissions: u.permissions.map((p) => p.feature),
     eventAccess: u.eventAccess.map((e) => e.eventId),
+    tempPassword: u.tempPassword,
   }))
 }
 
