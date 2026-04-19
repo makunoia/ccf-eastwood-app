@@ -28,15 +28,11 @@ export const smallGroupSchema = z.object({
   leaderId: z.string().min(1, "Leader is required"),
   parentGroupId: nullableString,
   lifeStageId: z.string().min(1, "Life stage is required").trim(),
-  genderFocus: z.enum(["Male", "Female", "Mixed"], {
-    errorMap: () => ({ message: "Gender focus is required" }),
-  }),
+  genderFocus: z.enum(["Male", "Female", "Mixed"]),
   language: z.array(z.string()).default([]),
   ageRangeMin: nullableInt,
   ageRangeMax: nullableInt,
-  meetingFormat: z.enum(["Online", "Hybrid", "InPerson"], {
-    errorMap: () => ({ message: "Meeting format is required" }),
-  }),
+  meetingFormat: z.enum(["Online", "Hybrid", "InPerson"]),
   locationCity: nullableString,
   memberLimit: nullableInt,
   scheduleDayOfWeek: z
