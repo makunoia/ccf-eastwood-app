@@ -268,10 +268,7 @@ export async function setFacilitator(
     const volunteer = await db.volunteer.findFirst({
       where: {
         id: volunteerId,
-        OR: [
-          { eventId },
-          { ministry: { events: { some: { eventId } } } },
-        ],
+        eventId,
       },
       select: { id: true },
     })

@@ -35,8 +35,6 @@ function MinistryCard({ ministry }: { ministry: MinistryRow }) {
               <span className="text-muted-foreground">—</span>
             )}
           </span>
-          <span className="text-muted-foreground">Volunteers</span>
-          <span>{ministry.volunteerCount}</span>
           <span className="text-muted-foreground">Events</span>
           <span>{ministry.eventCount}</span>
         </div>

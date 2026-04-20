@@ -10,8 +10,6 @@ type ActionResult<T = void> =
   | { success: true; data: T }
   | { success: false; error: string }
 
-// ─── Duplicate check (against Member table) ───────────────────────────────────
-
 export async function checkVolunteerDuplicates(
   rows: { email?: string; phone?: string }[]
 ): Promise<ActionResult<DuplicateMatch[]>> {
@@ -37,13 +35,14 @@ export async function checkVolunteerDuplicates(
     const matches: DuplicateMatch[] = []
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i]
-      const match = (row.email && byEmail.get(row.email)) || (row.phone && byPhone.get(row.phone))
+      const match =
+        (row.email && byEmail.get(row.email)) || (row.phone && byPhone.get(row.phone))
       if (match) {
         matches.push({
-          rowIndex:      i,
-          existingId:    match.id,
-          existingType:  "member",
-          existingName:  `${match.firstName} ${match.lastName}`,
+          rowIndex: i,
+          existingId: match.id,
+          existingType: "member",
+          existingName: `${match.firstName} ${match.lastName}`,
           existingEmail: match.email,
           existingPhone: match.phone,
         })
@@ -55,8 +54,6 @@ export async function checkVolunteerDuplicates(
   }
 }
 
-// ─── Import ───────────────────────────────────────────────────────────────────
-
 type ImportRow = {
   mapped: Record<string, string>
   resolution: RowResolution
@@ -64,8 +61,7 @@ type ImportRow = {
 }
 
 type VolunteerContext = {
-  ministryId?: string
-  eventId?: string
+  eventId: string
 }
 
 function parseGender(v: string): Gender | null {
@@ -86,7 +82,7 @@ function parseMeetingPreference(v: string): MeetingPreference | null {
 function parseVolunteerStatus(v: string): VolunteerStatus {
   const n = v.toLowerCase()
   if (n === "confirmed") return VolunteerStatus.Confirmed
-  if (n === "rejected")  return VolunteerStatus.Rejected
+  if (n === "rejected") return VolunteerStatus.Rejected
   return VolunteerStatus.Pending
 }
 
@@ -94,29 +90,31 @@ export async function importVolunteers(
   context: VolunteerContext,
   rows: ImportRow[]
 ): Promise<ActionResult<ImportResult>> {
-  if (!context.ministryId && !context.eventId) {
-    return { success: false, error: "A ministry or event context is required" }
+  if (!context.eventId) {
+    return { success: false, error: "An event context is required" }
   }
 
-  const result: ImportResult = { total: rows.length, created: 0, linked: 0, updated: 0, skipped: 0, errors: [] }
+  const result: ImportResult = {
+    total: rows.length,
+    created: 0,
+    linked: 0,
+    updated: 0,
+    skipped: 0,
+    errors: [],
+  }
 
-  // Pre-load committees + roles for this context (resolve by name later)
   const committees = await db.volunteerCommittee.findMany({
-    where: context.ministryId
-      ? { ministryId: context.ministryId }
-      : { eventId: context.eventId },
+    where: { eventId: context.eventId },
     include: { roles: { select: { id: true, name: true } } },
   })
 
-  const committeeByName = new Map(
-    committees.map((c) => [c.name.toLowerCase(), c])
-  )
+  const committeeByName = new Map(committees.map((c) => [c.name.toLowerCase(), c]))
 
   for (let i = 0; i < rows.length; i++) {
     const { mapped, resolution, existingId } = rows[i]
     try {
       const firstName = mapped.firstName ? toTitleCase(mapped.firstName) : ""
-      const lastName  = mapped.lastName  ? toTitleCase(mapped.lastName)  : ""
+      const lastName = mapped.lastName ? toTitleCase(mapped.lastName) : ""
 
       if (!firstName || !lastName) {
         result.errors.push({ row: i, message: "First name and last name are required" })
@@ -124,7 +122,6 @@ export async function importVolunteers(
         continue
       }
 
-      // Resolve committee
       const committeeName = mapped.committeeName?.trim()
       if (!committeeName) {
         result.errors.push({ row: i, message: "Committee name is required" })
@@ -138,53 +135,58 @@ export async function importVolunteers(
         continue
       }
 
-      // Resolve role
       const roleName = mapped.roleName?.trim()
       if (!roleName) {
         result.errors.push({ row: i, message: "Role name is required" })
         result.skipped++
         continue
       }
-      const role = committee.roles.find((r) => r.name.toLowerCase() === roleName.toLowerCase())
+      const role = committee.roles.find(
+        (r) => r.name.toLowerCase() === roleName.toLowerCase()
+      )
       if (!role) {
-        result.errors.push({ row: i, message: `Role not found: "${roleName}" in committee "${committeeName}"` })
+        result.errors.push({
+          row: i,
+          message: `Role not found: "${roleName}" in committee "${committeeName}"`,
+        })
         result.skipped++
         continue
       }
 
-      // Resolve or create Member
       let memberId: string
 
       if (existingId && resolution === "use-existing") {
         memberId = existingId
       } else if (existingId && resolution === "use-csv") {
-        // Update existing Member with CSV data
         await db.member.update({
           where: { id: existingId },
           data: {
             firstName,
             lastName,
-            email:             mapped.email?.trim() || null,
-            phone:             mapped.phone ? formatPhilippinePhone(mapped.phone) : null,
-            gender:            mapped.gender ? parseGender(mapped.gender) : undefined,
-            language:          mapped.language?.trim() ? [mapped.language.trim()] : [],
-            meetingPreference: mapped.meetingPreference ? parseMeetingPreference(mapped.meetingPreference) : undefined,
+            email: mapped.email?.trim() || null,
+            phone: mapped.phone ? formatPhilippinePhone(mapped.phone) : null,
+            gender: mapped.gender ? parseGender(mapped.gender) : undefined,
+            language: mapped.language?.trim() ? [mapped.language.trim()] : [],
+            meetingPreference: mapped.meetingPreference
+              ? parseMeetingPreference(mapped.meetingPreference)
+              : undefined,
           },
         })
         memberId = existingId
       } else {
-        // No match — create new Member
         const member = await db.member.create({
           data: {
             firstName,
             lastName,
-            email:             mapped.email?.trim() || null,
-            phone:             mapped.phone ? formatPhilippinePhone(mapped.phone) : null,
-            dateJoined:        new Date(),
-            gender:            mapped.gender ? parseGender(mapped.gender) : null,
-            language:          mapped.language?.trim() ? [mapped.language.trim()] : [],
-            meetingPreference: mapped.meetingPreference ? parseMeetingPreference(mapped.meetingPreference) : null,
-            notes:             mapped.notes?.trim() || null,
+            email: mapped.email?.trim() || null,
+            phone: mapped.phone ? formatPhilippinePhone(mapped.phone) : null,
+            dateJoined: new Date(),
+            gender: mapped.gender ? parseGender(mapped.gender) : null,
+            language: mapped.language?.trim() ? [mapped.language.trim()] : [],
+            meetingPreference: mapped.meetingPreference
+              ? parseMeetingPreference(mapped.meetingPreference)
+              : null,
+            notes: mapped.notes?.trim() || null,
           },
           select: { id: true },
         })
@@ -192,7 +194,6 @@ export async function importVolunteers(
         result.created++
       }
 
-      // Check if volunteer record already exists for this member + committee
       const alreadyVolunteer = await db.volunteer.findFirst({
         where: { memberId, committeeId: committee.id },
         select: { id: true },
@@ -202,35 +203,31 @@ export async function importVolunteers(
         continue
       }
 
-      // Create Volunteer record
       await db.volunteer.create({
         data: {
           memberId,
-          ministryId:     context.ministryId ?? null,
-          eventId:        context.eventId ?? null,
-          committeeId:    committee.id,
-          preferredRoleId:role.id,
-          status:         mapped.status ? parseVolunteerStatus(mapped.status) : VolunteerStatus.Pending,
-          notes:          mapped.notes?.trim() || null,
+          eventId: context.eventId,
+          committeeId: committee.id,
+          preferredRoleId: role.id,
+          status: mapped.status ? parseVolunteerStatus(mapped.status) : VolunteerStatus.Pending,
+          notes: mapped.notes?.trim() || null,
         },
       })
 
       if (existingId) {
         result.linked++
       }
-      // If we just created a Member above, result.created was already incremented
-      // If existingId was set (linked or updated), do NOT double-count
     } catch (e) {
-      const msg = e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002"
-        ? "Duplicate record"
-        : "Failed to save record"
+      const msg =
+        e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002"
+          ? "Duplicate record"
+          : "Failed to save record"
       result.errors.push({ row: i, message: msg })
       result.skipped++
     }
   }
 
-  if (context.ministryId) revalidatePath(`/ministries/${context.ministryId}`)
-  if (context.eventId)    revalidatePath(`/event/${context.eventId}/volunteers`)
+  revalidatePath(`/event/${context.eventId}/volunteers`)
   revalidatePath("/volunteers")
 
   return { success: true, data: result }

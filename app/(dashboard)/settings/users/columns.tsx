@@ -33,6 +33,7 @@ export type UserRow = {
   role: "SuperAdmin" | "Staff"
   permissions: FeatureArea[]
   eventAccess: string[]
+  tempPassword: string | null
   totpEnabled: boolean
   mustChangePassword: boolean
   requiresTotpSetup: boolean
@@ -128,14 +129,22 @@ function RowActions({ row, events }: { row: UserRow; events: EventOption[] }) {
   )
 }
 
-export function buildColumns(events: EventOption[]): ColumnDef<UserRow>[] {
+export function buildColumns(
+  events: EventOption[],
+  onViewUser: (user: UserRow) => void
+): ColumnDef<UserRow>[] {
   return [
     {
       accessorKey: "name",
       header: "Name",
       cell: ({ row }) => (
         <div>
-          <p className="font-medium">{row.original.name ?? "—"}</p>
+          <button
+            onClick={() => onViewUser(row.original)}
+            className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors text-left"
+          >
+            {row.original.name ?? row.original.email}
+          </button>
           <p className="text-xs text-muted-foreground">{row.original.email}</p>
         </div>
       ),

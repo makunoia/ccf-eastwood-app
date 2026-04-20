@@ -3,12 +3,11 @@ import { db } from "@/lib/db"
 import { VolunteerForm } from "../volunteer-form"
 
 async function getData(id: string) {
-  const [volunteer, members, ministries, events] = await Promise.all([
+  const [volunteer, members, events] = await Promise.all([
     db.volunteer.findUnique({
       where: { id },
       include: {
         member: { select: { firstName: true, lastName: true } },
-        ministry: { select: { name: true } },
         event: { select: { name: true } },
         committee: { select: { name: true } },
         preferredRole: { select: { name: true } },
@@ -18,24 +17,6 @@ async function getData(id: string) {
     db.member.findMany({
       orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
       select: { id: true, firstName: true, lastName: true },
-    }),
-    db.ministry.findMany({
-      orderBy: { name: "asc" },
-      select: {
-        id: true,
-        name: true,
-        committees: {
-          orderBy: { createdAt: "asc" },
-          select: {
-            id: true,
-            name: true,
-            roles: {
-              orderBy: { createdAt: "asc" },
-              select: { id: true, name: true },
-            },
-          },
-        },
-      },
     }),
     db.event.findMany({
       orderBy: { startDate: "desc" },
@@ -53,31 +34,10 @@ async function getData(id: string) {
             },
           },
         },
-        ministries: {
-          include: {
-            ministry: {
-              select: {
-                id: true,
-                name: true,
-                committees: {
-                  orderBy: { createdAt: "asc" },
-                  select: {
-                    id: true,
-                    name: true,
-                    roles: {
-                      orderBy: { createdAt: "asc" },
-                      select: { id: true, name: true },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
       },
     }),
   ])
-  return { volunteer, members, ministries, events }
+  return { volunteer, members, events }
 }
 
 export default async function EditVolunteerPage({
@@ -86,25 +46,19 @@ export default async function EditVolunteerPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const { volunteer, members, ministries, events } = await getData(id)
+  const { volunteer, members, events } = await getData(id)
 
   if (!volunteer) notFound()
-
-  const scopeType: "ministry" | "event" = volunteer.ministryId ? "ministry" : "event"
 
   const volunteerProp = {
     id: volunteer.id,
     memberName: `${volunteer.member.firstName} ${volunteer.member.lastName}`,
-    scope: volunteer.ministry
-      ? `Ministry: ${volunteer.ministry.name}`
-      : `Event: ${volunteer.event?.name ?? ""}`,
+    eventName: volunteer.event.name,
     committee: volunteer.committee.name,
     preferredRole: volunteer.preferredRole.name,
     assignedRole: volunteer.assignedRole?.name ?? null,
     status: volunteer.status as "Pending" | "Confirmed" | "Rejected",
     memberId: volunteer.memberId,
-    scopeType,
-    ministryId: volunteer.ministryId,
     eventId: volunteer.eventId,
     committeeId: volunteer.committeeId,
     preferredRoleId: volunteer.preferredRoleId,
@@ -114,19 +68,5 @@ export default async function EditVolunteerPage({
     leaderNotes: volunteer.leaderNotes,
   }
 
-  const mappedEvents = events.map((e) => ({
-    id: e.id,
-    name: e.name,
-    committees: e.committees,
-    affiliatedMinistries: e.ministries.map((em) => em.ministry),
-  }))
-
-  return (
-    <VolunteerForm
-      members={members}
-      ministries={ministries}
-      events={mappedEvents}
-      volunteer={volunteerProp}
-    />
-  )
+  return <VolunteerForm members={members} events={events} volunteer={volunteerProp} />
 }

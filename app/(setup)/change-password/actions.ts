@@ -30,7 +30,7 @@ export async function changePassword(
 
   await db.user.update({
     where: { id: session.user.id },
-    data: { password: hashed, mustChangePassword: false },
+    data: { password: hashed, tempPassword: null, mustChangePassword: false },
   })
 
   // Force a fresh login so the new JWT reflects mustChangePassword: false

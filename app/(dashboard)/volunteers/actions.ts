@@ -13,8 +13,6 @@ type ActionResult<T = void> =
   | { success: true; data: T }
   | { success: false; error: string }
 
-// ─── Member lookup (used by public sign-up form) ──────────────────────────────
-
 export async function lookupMemberByMobile(mobile: string): Promise<{
   id: string
   firstName: string
@@ -28,8 +26,6 @@ export async function lookupMemberByMobile(mobile: string): Promise<{
   return member
 }
 
-// ─── Create ───────────────────────────────────────────────────────────────────
-
 export async function createVolunteer(
   raw: VolunteerFormValues
 ): Promise<ActionResult<{ id: string }>> {
@@ -38,28 +34,15 @@ export async function createVolunteer(
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
   }
 
-  const { scopeType, ministryId, eventId, committeeId, preferredRoleId, memberId, notes } =
-    parsed.data
+  const { memberId, eventId, committeeId, preferredRoleId, notes } = parsed.data
 
-  // Enforce scope constraint
-  if (scopeType === "ministry" && !ministryId) {
-    return { success: false, error: "Ministry is required" }
-  }
-  if (scopeType === "event" && !eventId) {
-    return { success: false, error: "Event is required" }
-  }
-
-  // Check for duplicate
   const existing = await db.volunteer.findFirst({
-    where: {
-      memberId,
-      ...(scopeType === "ministry" ? { ministryId } : { eventId }),
-    },
+    where: { memberId, eventId },
   })
   if (existing) {
     return {
       success: false,
-      error: "This member is already registered as a volunteer here",
+      error: "This member is already registered as a volunteer for this event",
     }
   }
 
@@ -67,8 +50,7 @@ export async function createVolunteer(
     const volunteer = await db.volunteer.create({
       data: {
         memberId,
-        ministryId: scopeType === "ministry" ? ministryId : null,
-        eventId: scopeType === "event" ? eventId : null,
+        eventId,
         committeeId,
         preferredRoleId,
         notes: notes ?? null,
@@ -80,13 +62,14 @@ export async function createVolunteer(
     return { success: true, data: { id: volunteer.id } }
   } catch (e: unknown) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-      return { success: false, error: "This member is already registered as a volunteer here" }
+      return {
+        success: false,
+        error: "This member is already registered as a volunteer for this event",
+      }
     }
     return { success: false, error: "Failed to create volunteer" }
   }
 }
-
-// ─── Update ───────────────────────────────────────────────────────────────────
 
 export async function updateVolunteer(
   id: string,
@@ -97,32 +80,15 @@ export async function updateVolunteer(
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
   }
 
-  const {
-    scopeType,
-    ministryId,
-    eventId,
-    committeeId,
-    preferredRoleId,
-    assignedRoleId,
-    memberId,
-    status,
-    notes,
-  } = parsed.data
-
-  if (scopeType === "ministry" && !ministryId) {
-    return { success: false, error: "Ministry is required" }
-  }
-  if (scopeType === "event" && !eventId) {
-    return { success: false, error: "Event is required" }
-  }
+  const { memberId, eventId, committeeId, preferredRoleId, assignedRoleId, status, notes } =
+    parsed.data
 
   try {
     await db.volunteer.update({
       where: { id },
       data: {
         memberId,
-        ministryId: scopeType === "ministry" ? ministryId : null,
-        eventId: scopeType === "event" ? eventId : null,
+        eventId,
         committeeId,
         preferredRoleId,
         assignedRoleId: assignedRoleId ?? null,
@@ -137,8 +103,6 @@ export async function updateVolunteer(
     return { success: false, error: "Failed to update volunteer" }
   }
 }
-
-// ─── Delete ───────────────────────────────────────────────────────────────────
 
 export async function deleteVolunteer(id: string): Promise<ActionResult> {
   try {

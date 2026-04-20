@@ -130,27 +130,6 @@ async function getEventContext(eventId: string) {
           },
         },
       },
-      ministries: {
-        include: {
-          ministry: {
-            select: {
-              volunteers: {
-                where: { status: "Confirmed" },
-                include: {
-                  member: {
-                    select: {
-                      id: true,
-                      firstName: true,
-                      lastName: true,
-                      ledGroups: ledGroupsSelect,
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
       registrants: {
         orderBy: { createdAt: "asc" },
         where: { breakoutGroupMemberships: { none: {} } },
@@ -184,10 +163,7 @@ export default async function BreakoutGroupDetailPage({
 
   if (!group || !eventData) notFound()
 
-  const confirmedVolunteers = [
-    ...eventData.volunteers,
-    ...eventData.ministries.flatMap((em) => em.ministry.volunteers),
-  ]
+  const confirmedVolunteers = [...eventData.volunteers]
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">

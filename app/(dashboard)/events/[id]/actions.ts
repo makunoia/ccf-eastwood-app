@@ -13,7 +13,7 @@ export async function deleteEventVolunteer(
 ): Promise<ActionResult> {
   try {
     await db.volunteer.delete({ where: { id: volunteerId } })
-    revalidatePath(`/events/${eventId}`)
+    revalidatePath(`/event/${eventId}/volunteers`)
     revalidatePath("/volunteers")
     return { success: true, data: undefined }
   } catch {

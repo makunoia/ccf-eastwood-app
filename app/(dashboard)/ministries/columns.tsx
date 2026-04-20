@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { type ColumnDef } from "@tanstack/react-table"
-import { IconDots, IconPencil, IconTrash } from "@tabler/icons-react"
+import { IconCopy, IconDots, IconPencil, IconTrash } from "@tabler/icons-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -30,7 +30,6 @@ export type MinistryRow = {
   name: string
   lifeStage: string | null
   description: string | null
-  volunteerCount: number
   eventCount: number
   // For edit form pre-fill
   lifeStageId: string | null
@@ -53,6 +52,12 @@ export function RowActions({ row }: { row: MinistryRow }) {
     }
   }
 
+  async function copyVolunteerLink() {
+    const url = `${window.location.origin}/ministries/${row.id}/volunteer`
+    await navigator.clipboard.writeText(url)
+    toast.success("Volunteer link copied")
+  }
+
   return (
     <>
       <DropdownMenu>
@@ -66,6 +71,10 @@ export function RowActions({ row }: { row: MinistryRow }) {
           <DropdownMenuItem onSelect={() => router.push(`/ministries/${row.id}`)}>
             <IconPencil className="mr-2 size-4" />
             Edit
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={copyVolunteerLink}>
+            <IconCopy className="mr-2 size-4" />
+            Copy volunteer link
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
@@ -139,10 +148,6 @@ export function buildColumns(): ColumnDef<MinistryRow>[] {
         row.original.description ?? (
           <span className="text-muted-foreground">—</span>
         ),
-    },
-    {
-      accessorKey: "volunteerCount",
-      header: "Volunteers",
     },
     {
       accessorKey: "eventCount",
