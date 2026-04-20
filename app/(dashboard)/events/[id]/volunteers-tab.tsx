@@ -36,12 +36,6 @@ export type EventVolunteer = {
   assignedRole: { id: string; name: string } | null
 }
 
-export type VolunteerGroup = {
-  label: string
-  source: "event" | "ministry"
-  volunteers: EventVolunteer[]
-}
-
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive"> = {
   Pending: "secondary",
   Confirmed: "default",
@@ -51,11 +45,9 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive"> = 
 function VolunteerRowActions({
   volunteer,
   eventId,
-  canDelete,
 }: {
   volunteer: EventVolunteer
   eventId: string
-  canDelete: boolean
 }) {
   const router = useRouter()
   const [deleteOpen, setDeleteOpen] = React.useState(false)
@@ -90,43 +82,37 @@ function VolunteerRowActions({
             <IconPencil className="mr-2 size-4" />
             Edit
           </DropdownMenuItem>
-          {canDelete && (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onSelect={() => setDeleteOpen(true)}
-                className="text-destructive focus:text-destructive"
-              >
-                <IconTrash className="mr-2 size-4" />
-                Remove
-              </DropdownMenuItem>
-            </>
-          )}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onSelect={() => setDeleteOpen(true)}
+            className="text-destructive focus:text-destructive"
+          >
+            <IconTrash className="mr-2 size-4" />
+            Remove
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {canDelete && (
-        <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Remove volunteer</DialogTitle>
-              <DialogDescription>
-                Are you sure you want to remove{" "}
-                <span className="font-medium">{memberName}</span> as a volunteer? This action
-                cannot be undone.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={deleting}>
-                Cancel
-              </Button>
-              <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
-                {deleting ? "Removing…" : "Remove"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove volunteer</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to remove{" "}
+              <span className="font-medium">{memberName}</span> as a volunteer? This action
+              cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+              {deleting ? "Removing…" : "Remove"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
@@ -134,11 +120,9 @@ function VolunteerRowActions({
 function VolunteerCard({
   volunteer,
   eventId,
-  canDelete,
 }: {
   volunteer: EventVolunteer
   eventId: string
-  canDelete: boolean
 }) {
   const router = useRouter()
   const memberName = `${volunteer.member.firstName} ${volunteer.member.lastName}`
@@ -154,7 +138,7 @@ function VolunteerCard({
           <p className="font-medium leading-tight">{memberName}</p>
           <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
             <Badge variant={statusVariant}>{volunteer.status}</Badge>
-            <VolunteerRowActions volunteer={volunteer} eventId={eventId} canDelete={canDelete} />
+            <VolunteerRowActions volunteer={volunteer} eventId={eventId} />
           </div>
         </div>
         <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
@@ -174,14 +158,12 @@ function VolunteerCard({
   )
 }
 
-function GroupTable({
+function VolunteersDesktopTable({
   volunteers,
   eventId,
-  canDelete,
 }: {
   volunteers: EventVolunteer[]
   eventId: string
-  canDelete: boolean
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border">
@@ -202,21 +184,26 @@ function GroupTable({
             const statusVariant = STATUS_VARIANT[v.status] ?? "secondary"
             return (
               <tr key={v.id} className="border-b last:border-0">
-                <td className="px-4 py-3 font-medium">
-                  <Link href={`/volunteers/${v.id}`} className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors">
+                <td className="px-4 py-3">
+                  <Link
+                    href={`/volunteers/${v.id}`}
+                    className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+                  >
                     {memberName}
                   </Link>
                 </td>
                 <td className="px-4 py-3">{v.committee.name}</td>
                 <td className="px-4 py-3">{v.preferredRole.name}</td>
                 <td className="px-4 py-3">
-                  {v.assignedRole?.name ?? <span className="text-muted-foreground">—</span>}
+                  {v.assignedRole?.name ?? (
+                    <span className="text-muted-foreground">—</span>
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   <Badge variant={statusVariant}>{v.status}</Badge>
                 </td>
                 <td className="px-4 py-3">
-                  <VolunteerRowActions volunteer={v} eventId={eventId} canDelete={canDelete} />
+                  <VolunteerRowActions volunteer={v} eventId={eventId} />
                 </td>
               </tr>
             )
@@ -228,63 +215,41 @@ function GroupTable({
 }
 
 export function VolunteersTab({
-  groups,
+  volunteers,
   eventId,
 }: {
-  groups: VolunteerGroup[]
+  volunteers: EventVolunteer[]
   eventId: string
 }) {
-  const totalCount = groups.reduce((sum, g) => sum + g.volunteers.length, 0)
-  // Show section headers whenever there are ministry groups (or multiple groups)
-  const showHeaders = groups.some((g) => g.source === "ministry") || groups.length > 1
-
   return (
     <div className="flex flex-col gap-4">
       <div className="flex justify-end">
         <Button size="sm" asChild>
-          <Link href="/volunteers/new">
+          <Link href={`/event/${eventId}/volunteers/new`}>
             <IconPlus className="mr-2 size-4" />
             Add Volunteer
           </Link>
         </Button>
       </div>
 
-      {totalCount === 0 ? (
+      {volunteers.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
           <IconHeart className="size-8" />
           <p className="text-sm">No volunteers yet</p>
         </div>
       ) : (
-        <div className="flex flex-col gap-6">
-          {groups.map((group) => {
-            if (group.volunteers.length === 0) return null
-            const canDelete = group.source === "event"
-            return (
-              <div key={group.label} className="flex flex-col gap-3">
-                {showHeaders && (
-                  <div className="flex items-center gap-2 border-b pb-2">
-                    <h3 className="text-sm font-semibold">{group.label}</h3>
-                    <span className="text-xs text-muted-foreground">
-                      ({group.volunteers.length})
-                    </span>
-                  </div>
-                )}
-
-                {/* Mobile */}
-                <div className="flex flex-col gap-2 md:hidden">
-                  {group.volunteers.map((v) => (
-                    <VolunteerCard key={v.id} volunteer={v} eventId={eventId} canDelete={canDelete} />
-                  ))}
-                </div>
-
-                {/* Desktop */}
-                <div className="hidden md:block">
-                  <GroupTable volunteers={group.volunteers} eventId={eventId} canDelete={canDelete} />
-                </div>
-              </div>
-            )
-          })}
-        </div>
+        <>
+          {/* Mobile */}
+          <div className="flex flex-col gap-2 md:hidden">
+            {volunteers.map((v) => (
+              <VolunteerCard key={v.id} volunteer={v} eventId={eventId} />
+            ))}
+          </div>
+          {/* Desktop */}
+          <div className="hidden md:block">
+            <VolunteersDesktopTable volunteers={volunteers} eventId={eventId} />
+          </div>
+        </>
       )}
     </div>
   )
