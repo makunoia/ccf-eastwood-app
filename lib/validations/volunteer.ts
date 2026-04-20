@@ -9,9 +9,7 @@ const nullableString = z
 
 export const createVolunteerSchema = z.object({
   memberId: z.string().min(1, "Member is required"),
-  scopeType: z.enum(["ministry", "event"]),
-  ministryId: nullableString,
-  eventId: nullableString,
+  eventId: z.string().min(1, "Event is required"),
   committeeId: z.string().min(1, "Committee is required"),
   preferredRoleId: z.string().min(1, "Preferred role is required"),
   notes: nullableString,
@@ -21,9 +19,7 @@ export const createVolunteerSchema = z.object({
 
 export const updateVolunteerSchema = z.object({
   memberId: z.string().min(1, "Member is required"),
-  scopeType: z.enum(["ministry", "event"]),
-  ministryId: nullableString,
-  eventId: nullableString,
+  eventId: z.string().min(1, "Event is required"),
   committeeId: z.string().min(1, "Committee is required"),
   preferredRoleId: z.string().min(1, "Preferred role is required"),
   assignedRoleId: nullableString,
@@ -46,11 +42,8 @@ export const roleSchema = z.object({
 export type CreateVolunteerInput = z.infer<typeof createVolunteerSchema>
 export type UpdateVolunteerInput = z.infer<typeof updateVolunteerSchema>
 
-// Raw form values (before transform) — used as form state
 export type VolunteerFormValues = {
   memberId: string
-  scopeType: "ministry" | "event" | ""
-  ministryId: string
   eventId: string
   committeeId: string
   preferredRoleId: string
@@ -61,8 +54,6 @@ export type VolunteerFormValues = {
 
 export const defaultVolunteerForm: VolunteerFormValues = {
   memberId: "",
-  scopeType: "",
-  ministryId: "",
   eventId: "",
   committeeId: "",
   preferredRoleId: "",
