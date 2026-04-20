@@ -1,13 +1,10 @@
 "use client"
 
 import * as React from "react"
-import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { type ColumnDef } from "@tanstack/react-table"
 import { IconDots, IconPencil, IconTrash } from "@tabler/icons-react"
 import { toast } from "sonner"
 
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -26,34 +23,43 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { deleteVolunteer } from "./actions"
 
-export type VolunteerRow = {
+export type VolunteerRecord = {
   id: string
-  memberName: string
-  scope: string        // "Ministry: Elevate" or "Event: Camp 2025"
+  eventId: string
+  eventName: string
   committee: string
   preferredRole: string
   assignedRole: string | null
   status: "Pending" | "Confirmed" | "Rejected"
 }
 
-const STATUS_VARIANT = {
-  Pending: "secondary",
-  Confirmed: "default",
-  Rejected: "destructive",
-} as const
+export type MemberVolunteerRow = {
+  memberId: string
+  memberName: string
+  totalEvents: number
+  aggregatedStatus: "Pending" | "Confirmed" | "Rejected"
+  records: VolunteerRecord[]
+}
 
-export function RowActions({ row }: { row: VolunteerRow }) {
+export function RowActions({
+  volunteerId,
+  memberName,
+}: {
+  volunteerId: string
+  memberName: string
+}) {
   const router = useRouter()
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
 
   async function handleDelete() {
     setDeleting(true)
-    const result = await deleteVolunteer(row.id)
+    const result = await deleteVolunteer(volunteerId)
     setDeleting(false)
     if (result.success) {
-      toast.success("Volunteer deleted")
+      toast.success("Volunteer record deleted")
       setDeleteOpen(false)
+      router.refresh()
     } else {
       toast.error(result.error)
     }
@@ -69,7 +75,7 @@ export function RowActions({ row }: { row: VolunteerRow }) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onSelect={() => router.push(`/volunteers/${row.id}`)}>
+          <DropdownMenuItem onSelect={() => router.push(`/volunteers/${volunteerId}`)}>
             <IconPencil className="mr-2 size-4" />
             Edit
           </DropdownMenuItem>
@@ -87,15 +93,18 @@ export function RowActions({ row }: { row: VolunteerRow }) {
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete volunteer</DialogTitle>
+            <DialogTitle>Delete volunteer record</DialogTitle>
             <DialogDescription>
-              Are you sure you want to remove{" "}
-              <span className="font-medium">{row.memberName}</span> as a volunteer? This action
-              cannot be undone.
+              Remove <span className="font-medium">{memberName}</span> from this event&apos;s
+              volunteers? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={deleting}>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteOpen(false)}
+              disabled={deleting}
+            >
               Cancel
             </Button>
             <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
@@ -106,54 +115,4 @@ export function RowActions({ row }: { row: VolunteerRow }) {
       </Dialog>
     </>
   )
-}
-
-export function buildColumns(): ColumnDef<VolunteerRow>[] {
-  return [
-    {
-      accessorKey: "memberName",
-      header: "Member",
-      cell: ({ row }) => (
-        <Link
-          href={`/volunteers/${row.original.id}`}
-          className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-        >
-          {row.original.memberName}
-        </Link>
-      ),
-    },
-    {
-      accessorKey: "scope",
-      header: "Ministry / Event",
-    },
-    {
-      accessorKey: "committee",
-      header: "Committee",
-    },
-    {
-      accessorKey: "preferredRole",
-      header: "Preferred Role",
-    },
-    {
-      accessorKey: "assignedRole",
-      header: "Assigned Role",
-      cell: ({ row }) =>
-        row.original.assignedRole ?? (
-          <span className="text-muted-foreground">—</span>
-        ),
-    },
-    {
-      accessorKey: "status",
-      header: "Status",
-      cell: ({ row }) => (
-        <Badge variant={STATUS_VARIANT[row.original.status]}>
-          {row.original.status}
-        </Badge>
-      ),
-    },
-    {
-      id: "actions",
-      cell: ({ row }) => <RowActions row={row.original} />,
-    },
-  ]
 }
