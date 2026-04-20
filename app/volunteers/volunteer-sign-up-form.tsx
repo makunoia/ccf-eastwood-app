@@ -20,9 +20,8 @@ type CommitteeRole = { id: string; name: string }
 type Committee = { id: string; name: string; roles: CommitteeRole[] }
 
 type Props = {
-  contextName: string       // e.g. "Elevate Ministry" or "Camp 2025"
-  ministryId?: string
-  eventId?: string
+  contextName: string
+  eventId: string
   committees: Committee[]
 }
 
@@ -35,7 +34,7 @@ type FoundMember = {
   email: string | null
 }
 
-export function VolunteerSignUpForm({ contextName, ministryId, eventId, committees }: Props) {
+export function VolunteerSignUpForm({ contextName, eventId, committees }: Props) {
   const [step, setStep] = React.useState<Step>("lookup")
 
   // Step 1 — mobile lookup
@@ -89,7 +88,6 @@ export function VolunteerSignUpForm({ contextName, ministryId, eventId, committe
     setSubmitting(true)
     const result = await submitVolunteerSignUp({
       memberId: foundMember.id,
-      ministryId,
       eventId,
       committeeId,
       preferredRoleId,
@@ -187,8 +185,7 @@ export function VolunteerSignUpForm({ contextName, ministryId, eventId, committe
             {committees.length === 0 ? (
               <div className="rounded-lg border border-dashed p-6 text-center">
                 <p className="text-sm text-muted-foreground">
-                  No committees are set up for this{" "}
-                  {ministryId ? "ministry" : "event"} yet. Please check back
+                  No committees are set up for this event yet. Please check back
                   later or contact the church office.
                 </p>
               </div>

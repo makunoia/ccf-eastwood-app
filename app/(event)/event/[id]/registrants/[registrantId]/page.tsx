@@ -45,19 +45,13 @@ async function getFacilitatedGroup(memberId: string, eventId: string) {
         {
           facilitator: {
             memberId,
-            OR: [
-              { eventId },
-              { ministry: { events: { some: { eventId } } } },
-            ],
+            eventId,
           },
         },
         {
           coFacilitator: {
             memberId,
-            OR: [
-              { eventId },
-              { ministry: { events: { some: { eventId } } } },
-            ],
+            eventId,
           },
         },
       ],

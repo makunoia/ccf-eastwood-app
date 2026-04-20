@@ -14,20 +14,9 @@ export async function createMinistryCommittee(
   ministryId: string,
   raw: { name: string }
 ): Promise<ActionResult<{ id: string }>> {
-  const parsed = committeeSchema.safeParse(raw)
-  if (!parsed.success) {
-    return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
-  }
-
-  try {
-    const committee = await db.volunteerCommittee.create({
-      data: { name: parsed.data.name, ministryId },
-      select: { id: true },
-    })
-    revalidatePath(`/ministries/${ministryId}`)
-    return { success: true, data: { id: committee.id } }
-  } catch {
-    return { success: false, error: "Failed to create committee" }
+  return {
+    success: false,
+    error: "Ministry-level volunteer committees are no longer supported.",
   }
 }
 

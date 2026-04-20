@@ -1,8 +1,5 @@
-import Link from "next/link"
-import { IconPlus } from "@tabler/icons-react"
 import { Prisma, VolunteerStatus } from "@/app/generated/prisma/client"
 
-import { Button } from "@/components/ui/button"
 import { db } from "@/lib/db"
 import { type MemberVolunteerRow } from "./columns"
 import { VolunteersTable } from "./volunteers-table"
@@ -111,12 +108,6 @@ export default async function VolunteersPage({
         </div>
         <div className="flex items-center gap-2">
           <VolunteerImportTrigger events={events} />
-          <Button asChild>
-            <Link href="/volunteers/new">
-              <IconPlus />
-              <span className="hidden sm:inline">Add Volunteer</span>
-            </Link>
-          </Button>
         </div>
       </div>
 
