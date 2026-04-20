@@ -12,50 +12,36 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 
-type ScopeOption = { id: string; name: string }
-
 type VolunteersFiltersProps = {
-  ministries: ScopeOption[]
-  events: ScopeOption[]
+  events: { id: string; name: string }[]
   search: string
   status: string
-  ministryId: string
   eventId: string
 }
 
 export function VolunteersFilters({
-  ministries,
   events,
   search,
   status,
-  ministryId,
   eventId,
 }: VolunteersFiltersProps) {
   const router = useRouter()
   const pathname = usePathname()
 
-  const hasFilters = search || status || ministryId || eventId
+  const hasFilters = search || status || eventId
 
   function buildUrl(overrides: Record<string, string>) {
     const params = new URLSearchParams()
-    const current = { search, status, ministryId, eventId, ...overrides }
+    const current = { search, status, eventId, ...overrides }
     if (current.search) params.set("search", current.search)
     if (current.status) params.set("status", current.status)
-    if (current.ministryId) params.set("ministryId", current.ministryId)
     if (current.eventId) params.set("eventId", current.eventId)
     const qs = params.toString()
     return qs ? `${pathname}?${qs}` : pathname
   }
 
   function setFilter(key: string, value: string) {
-    // Selecting a ministry clears eventId and vice versa
-    if (key === "ministryId" && value) {
-      router.replace(buildUrl({ ministryId: value, eventId: "" }))
-    } else if (key === "eventId" && value) {
-      router.replace(buildUrl({ eventId: value, ministryId: "" }))
-    } else {
-      router.replace(buildUrl({ [key]: value }))
-    }
+    router.replace(buildUrl({ [key]: value }))
   }
 
   return (
@@ -79,23 +65,6 @@ export function VolunteersFilters({
           <SelectItem value="Pending">Pending</SelectItem>
           <SelectItem value="Confirmed">Confirmed</SelectItem>
           <SelectItem value="Rejected">Rejected</SelectItem>
-        </SelectContent>
-      </Select>
-
-      <Select
-        value={ministryId || "all"}
-        onValueChange={(v) => setFilter("ministryId", v === "all" ? "" : v)}
-      >
-        <SelectTrigger className="w-40">
-          <SelectValue placeholder="Ministry" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All Ministries</SelectItem>
-          {ministries.map((m) => (
-            <SelectItem key={m.id} value={m.id}>
-              {m.name}
-            </SelectItem>
-          ))}
         </SelectContent>
       </Select>
 
