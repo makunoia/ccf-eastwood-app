@@ -107,44 +107,6 @@ async function getEventBreakouts(id: string) {
           assignedRole: { select: { id: true, name: true } },
         },
       },
-      ministries: {
-        include: {
-          ministry: {
-            select: {
-              volunteers: {
-                where: { status: "Confirmed" },
-                include: {
-                  member: {
-                    select: {
-                      id: true,
-                      firstName: true,
-                      lastName: true,
-                      ledGroups: {
-                        select: {
-                          id: true,
-                          name: true,
-                          lifeStageId: true,
-                          genderFocus: true,
-                          language: true,
-                          ageRangeMin: true,
-                          ageRangeMax: true,
-                          meetingFormat: true,
-                          locationCity: true,
-                          scheduleDayOfWeek: true,
-                          scheduleTimeStart: true,
-                        },
-                      },
-                    },
-                  },
-                  committee: { select: { id: true, name: true } },
-                  preferredRole: { select: { id: true, name: true } },
-                  assignedRole: { select: { id: true, name: true } },
-                },
-              },
-            },
-          },
-        },
-      },
       breakoutGroups: breakoutGroupsInclude,
     },
   })
@@ -162,10 +124,7 @@ export default async function BreakoutsPage({
   ])
   if (!event) notFound()
 
-  const confirmedVolunteers = [
-    ...event.volunteers,
-    ...event.ministries.flatMap((em) => em.ministry.volunteers),
-  ]
+  const confirmedVolunteers = [...event.volunteers]
 
   const breakoutGroupRows = event.breakoutGroups.map((g) => ({
     ...g,
