@@ -10,7 +10,6 @@ async function getVolunteer(token: string) {
       status: true,
       notes: true,
       member: { select: { firstName: true, lastName: true } },
-      ministry: { select: { name: true } },
       event: { select: { name: true } },
       committee: { select: { name: true } },
       preferredRole: { select: { name: true } },
@@ -26,11 +25,7 @@ export default async function LeaderApprovalPage({
   const { token } = await params
   const volunteer = await getVolunteer(token)
 
-  const scope = volunteer?.ministry
-    ? `${volunteer.ministry.name} Ministry`
-    : volunteer?.event
-      ? volunteer.event.name
-      : "—"
+  const scope = volunteer?.event?.name ?? "—"
 
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6">

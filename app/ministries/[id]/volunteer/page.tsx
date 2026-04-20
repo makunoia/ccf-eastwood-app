@@ -1,6 +1,5 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
-import { format } from "date-fns"
 import { db } from "@/lib/db"
 
 async function getData(ministryId: string) {
@@ -55,7 +54,11 @@ export default async function MinistryVolunteerPage({
                 <div>
                   <p className="font-medium">{event.name}</p>
                   <p className="text-sm text-muted-foreground">
-                    {format(new Date(event.startDate), "MMMM d, yyyy")}
+                    {new Date(event.startDate).toLocaleDateString("en-US", {
+                      month: "long",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
                   </p>
                 </div>
                 <span className="text-sm text-muted-foreground">Volunteer →</span>
