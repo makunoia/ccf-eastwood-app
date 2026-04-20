@@ -16,7 +16,6 @@ async function getMinistries(where: Prisma.MinistryWhereInput): Promise<Ministry
       lifeStage: { select: { id: true, name: true } },
       _count: {
         select: {
-          volunteers: true,
           events: true,
         },
       },
@@ -29,7 +28,6 @@ async function getMinistries(where: Prisma.MinistryWhereInput): Promise<Ministry
     lifeStage: m.lifeStage?.name ?? null,
     lifeStageId: m.lifeStageId ?? null,
     description: m.description ?? null,
-    volunteerCount: m._count.volunteers,
     eventCount: m._count.events,
   }))
 }
