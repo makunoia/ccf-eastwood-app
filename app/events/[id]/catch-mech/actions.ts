@@ -1,5 +1,6 @@
 "use server"
 
+import { type Prisma } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import { revalidatePath } from "next/cache"
 
@@ -120,7 +121,9 @@ export async function submitCatchMechConfirmations(
     return { success: false, error: "Could not find your small group" }
   }
 
-  await resolveConfirmations(smallGroup.id, decisions, session.breakoutGroupId)
+  await db.$transaction(async (tx) => {
+    await resolveConfirmations(smallGroup.id, decisions, session.breakoutGroupId, tx)
+  })
 
   revalidatePath(`/small-groups/${smallGroup.id}`)
   return { success: true, requiresGroupName: false }
@@ -167,7 +170,7 @@ export async function createSmallGroupForTimothy(
   }
 
   try {
-    const newGroup = await db.$transaction(async (tx) => {
+    await db.$transaction(async (tx) => {
       // Create the small group
       const created = await tx.smallGroup.create({
         data: { name: groupName.trim(), leaderId: faciMember.id },
@@ -188,10 +191,8 @@ export async function createSmallGroupForTimothy(
         data: { groupStatus: "Leader" },
       })
 
-      return created
+      await resolveConfirmations(created.id, decisions, session.breakoutGroupId, tx)
     })
-
-    await resolveConfirmations(newGroup.id, decisions, session.breakoutGroupId)
 
     revalidatePath("/small-groups")
     return { success: true, data: undefined }
@@ -205,165 +206,164 @@ export async function createSmallGroupForTimothy(
 async function resolveConfirmations(
   smallGroupId: string,
   decisions: ConfirmDecision[],
-  _breakoutGroupId: string
+  _breakoutGroupId: string,
+  tx: Prisma.TransactionClient
 ): Promise<void> {
-  await db.$transaction(async (tx) => {
-    for (const { registrantId, confirmed } of decisions) {
-      const registrant = await tx.eventRegistrant.findUnique({
-        where: { id: registrantId },
-        select: {
-          memberId: true,
-          guestId: true,
-          member: { select: { firstName: true, lastName: true, smallGroupId: true } },
-          guest: {
-            select: {
-              firstName: true,
-              lastName: true,
-              memberId: true,
-              email: true,
-              phone: true,
-              notes: true,
-              lifeStageId: true,
-              gender: true,
-              language: true,
-              birthMonth: true,
-              birthYear: true,
-              workCity: true,
-              workIndustry: true,
-              meetingPreference: true,
-              scheduleDayOfWeek: true,
-              scheduleTimeStart: true,
-            },
+  for (const { registrantId, confirmed } of decisions) {
+    const registrant = await tx.eventRegistrant.findUnique({
+      where: { id: registrantId },
+      select: {
+        memberId: true,
+        guestId: true,
+        member: { select: { firstName: true, lastName: true, smallGroupId: true } },
+        guest: {
+          select: {
+            firstName: true,
+            lastName: true,
+            memberId: true,
+            email: true,
+            phone: true,
+            notes: true,
+            lifeStageId: true,
+            gender: true,
+            language: true,
+            birthMonth: true,
+            birthYear: true,
+            workCity: true,
+            workIndustry: true,
+            meetingPreference: true,
+            scheduleDayOfWeek: true,
+            scheduleTimeStart: true,
           },
         },
+      },
+    })
+    if (!registrant) continue
+    if (!registrant.memberId && !registrant.guestId) continue
+
+    const now = new Date()
+
+    if (!confirmed) {
+      const pendingRequest = await tx.smallGroupMemberRequest.findFirst({
+        where: {
+          smallGroupId,
+          status: "Pending",
+          ...(registrant.memberId
+            ? { memberId: registrant.memberId }
+            : { guestId: registrant.guestId! }),
+        },
+        select: { id: true },
       })
-      if (!registrant) continue
-      if (!registrant.memberId && !registrant.guestId) continue
-
-      const now = new Date()
-
-      if (!confirmed) {
-        const pendingRequest = await tx.smallGroupMemberRequest.findFirst({
-          where: {
-            smallGroupId,
-            status: "Pending",
-            ...(registrant.memberId
-              ? { memberId: registrant.memberId }
-              : { guestId: registrant.guestId! }),
-          },
-          select: { id: true },
+      if (pendingRequest) {
+        const personName = registrant.member
+          ? `${registrant.member.firstName} ${registrant.member.lastName}`
+          : registrant.guest
+            ? `${registrant.guest.firstName} ${registrant.guest.lastName}`
+            : "Unknown"
+        await tx.smallGroupMemberRequest.update({
+          where: { id: pendingRequest.id },
+          data: { status: "Rejected", resolvedAt: now },
         })
-        if (pendingRequest) {
-          const personName = registrant.member
-            ? `${registrant.member.firstName} ${registrant.member.lastName}`
-            : registrant.guest
-              ? `${registrant.guest.firstName} ${registrant.guest.lastName}`
-              : "Unknown"
-          await tx.smallGroupMemberRequest.update({
-            where: { id: pendingRequest.id },
-            data: { status: "Rejected", resolvedAt: now },
-          })
-          await tx.smallGroupLog.create({
-            data: {
-              smallGroupId,
-              action: "TempAssignmentRejected",
-              guestId: registrant.guestId ?? null,
-              memberId: registrant.memberId ?? null,
-              description: `${personName}'s membership was declined via Catch Mech`,
-            },
-          })
-        }
-        continue
-      }
-
-      if (registrant.guestId && registrant.guest && !registrant.guest.memberId) {
-        const guest = registrant.guest
-        // Check capacity
-        const sg = await tx.smallGroup.findUnique({
-          where: { id: smallGroupId },
-          select: { memberLimit: true, _count: { select: { members: true } } },
-        })
-        if (sg?.memberLimit !== null && sg!._count.members >= sg!.memberLimit!) continue
-
-        const newMember = await tx.member.create({
-          data: {
-            firstName: guest.firstName,
-            lastName: guest.lastName,
-            email: guest.email ?? null,
-            phone: guest.phone ?? null,
-            notes: guest.notes ?? null,
-            lifeStageId: guest.lifeStageId ?? null,
-            gender: guest.gender ?? null,
-            language: guest.language,
-            birthMonth: guest.birthMonth ?? null,
-            birthYear: guest.birthYear ?? null,
-            workCity: guest.workCity ?? null,
-            workIndustry: guest.workIndustry ?? null,
-            meetingPreference: guest.meetingPreference ?? null,
-            dateJoined: now,
-            smallGroupId,
-            groupStatus: "Member",
-            ...(guest.scheduleDayOfWeek !== null &&
-            guest.scheduleTimeStart !== null
-              ? {
-                  schedulePreferences: {
-                    create: {
-                      dayOfWeek: guest.scheduleDayOfWeek,
-                      timeStart: guest.scheduleTimeStart!,
-                    },
-                  },
-                }
-              : {}),
-          },
-          select: { id: true },
-        })
-
-        await tx.guest.update({
-          where: { id: registrant.guestId },
-          data: { memberId: newMember.id },
-        })
-        await tx.eventRegistrant.updateMany({
-          where: { guestId: registrant.guestId },
-          data: { memberId: newMember.id, guestId: null },
-        })
-
         await tx.smallGroupLog.create({
           data: {
             smallGroupId,
-            action: "MemberAdded",
-            memberId: newMember.id,
-            description: `${guest.firstName} ${guest.lastName} confirmed via Catch Mech and joined the group`,
+            action: "TempAssignmentRejected",
+            guestId: registrant.guestId ?? null,
+            memberId: registrant.memberId ?? null,
+            description: `${personName}'s membership was declined via Catch Mech`,
           },
-        })
-
-        // Resolve any existing SmallGroupMemberRequest
-        await tx.smallGroupMemberRequest.updateMany({
-          where: { guestId: registrant.guestId, smallGroupId, status: "Pending" },
-          data: { status: "Confirmed", resolvedAt: now },
-        })
-      } else if (registrant.memberId && registrant.member) {
-        const member = registrant.member
-        if (member.smallGroupId === smallGroupId) continue
-
-        await tx.member.update({
-          where: { id: registrant.memberId },
-          data: { smallGroupId, groupStatus: "Member" },
-        })
-
-        await tx.smallGroupLog.create({
-          data: {
-            smallGroupId,
-            action: "MemberAdded",
-            memberId: registrant.memberId,
-            description: `${member.firstName} ${member.lastName} confirmed via Catch Mech and joined the group`,
-          },
-        })
-
-        await tx.smallGroupMemberRequest.updateMany({
-          where: { memberId: registrant.memberId, smallGroupId, status: "Pending" },
-          data: { status: "Confirmed", resolvedAt: now },
         })
       }
+      continue
     }
-  })
+
+    if (registrant.guestId && registrant.guest && !registrant.guest.memberId) {
+      const guest = registrant.guest
+      // Check capacity
+      const sg = await tx.smallGroup.findUnique({
+        where: { id: smallGroupId },
+        select: { memberLimit: true, _count: { select: { members: true } } },
+      })
+      if (sg?.memberLimit !== null && sg!._count.members >= sg!.memberLimit!) continue
+
+      const newMember = await tx.member.create({
+        data: {
+          firstName: guest.firstName,
+          lastName: guest.lastName,
+          email: guest.email ?? null,
+          phone: guest.phone ?? null,
+          notes: guest.notes ?? null,
+          lifeStageId: guest.lifeStageId ?? null,
+          gender: guest.gender ?? null,
+          language: guest.language,
+          birthMonth: guest.birthMonth ?? null,
+          birthYear: guest.birthYear ?? null,
+          workCity: guest.workCity ?? null,
+          workIndustry: guest.workIndustry ?? null,
+          meetingPreference: guest.meetingPreference ?? null,
+          dateJoined: now,
+          smallGroupId,
+          groupStatus: "Member",
+          ...(guest.scheduleDayOfWeek !== null &&
+          guest.scheduleTimeStart !== null
+            ? {
+                schedulePreferences: {
+                  create: {
+                    dayOfWeek: guest.scheduleDayOfWeek,
+                    timeStart: guest.scheduleTimeStart!,
+                  },
+                },
+              }
+            : {}),
+        },
+        select: { id: true },
+      })
+
+      await tx.guest.update({
+        where: { id: registrant.guestId },
+        data: { memberId: newMember.id },
+      })
+      await tx.eventRegistrant.updateMany({
+        where: { guestId: registrant.guestId },
+        data: { memberId: newMember.id, guestId: null },
+      })
+
+      await tx.smallGroupLog.create({
+        data: {
+          smallGroupId,
+          action: "MemberAdded",
+          memberId: newMember.id,
+          description: `${guest.firstName} ${guest.lastName} confirmed via Catch Mech and joined the group`,
+        },
+      })
+
+      // Resolve any existing SmallGroupMemberRequest
+      await tx.smallGroupMemberRequest.updateMany({
+        where: { guestId: registrant.guestId, smallGroupId, status: "Pending" },
+        data: { status: "Confirmed", resolvedAt: now },
+      })
+    } else if (registrant.memberId && registrant.member) {
+      const member = registrant.member
+      if (member.smallGroupId === smallGroupId) continue
+
+      await tx.member.update({
+        where: { id: registrant.memberId },
+        data: { smallGroupId, groupStatus: "Member" },
+      })
+
+      await tx.smallGroupLog.create({
+        data: {
+          smallGroupId,
+          action: "MemberAdded",
+          memberId: registrant.memberId,
+          description: `${member.firstName} ${member.lastName} confirmed via Catch Mech and joined the group`,
+        },
+      })
+
+      await tx.smallGroupMemberRequest.updateMany({
+        where: { memberId: registrant.memberId, smallGroupId, status: "Pending" },
+        data: { status: "Confirmed", resolvedAt: now },
+      })
+    }
+  }
 }
