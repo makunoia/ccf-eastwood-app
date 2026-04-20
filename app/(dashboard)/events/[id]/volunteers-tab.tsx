@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { IconDots, IconHeart, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react"
+import { IconDots, IconHeart, IconPencil, IconTrash } from "@tabler/icons-react"
 import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
@@ -223,15 +223,6 @@ export function VolunteersTab({
 }) {
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex justify-end">
-        <Button size="sm" asChild>
-          <Link href={`/event/${eventId}/volunteers/new`}>
-            <IconPlus className="mr-2 size-4" />
-            Add Volunteer
-          </Link>
-        </Button>
-      </div>
-
       {volunteers.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
           <IconHeart className="size-8" />
