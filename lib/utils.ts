@@ -17,13 +17,15 @@ export function toTitleCase(str: string): string {
 
 /**
  * Normalizes a Philippine mobile number to "+63 9XX XXX XXXX" format.
- * Accepts: 09XXXXXXXXX, 639XXXXXXXXX, or already-formatted +63 numbers.
+ * Accepts: 9XXXXXXXXX, 09XXXXXXXXX, 639XXXXXXXXX, or already-formatted +63 numbers.
  * Returns the original string unchanged if the format is unrecognized.
  */
 export function formatPhilippinePhone(phone: string): string {
   const digits = phone.replace(/\D/g, "")
   let local: string
-  if (digits.startsWith("0") && digits.length === 11) {
+  if (digits.startsWith("9") && digits.length === 10) {
+    local = digits // already 9XXXXXXXXX
+  } else if (digits.startsWith("0") && digits.length === 11) {
     local = digits.slice(1) // drop leading 0 → 9XXXXXXXXX
   } else if (digits.startsWith("63") && digits.length === 12) {
     local = digits.slice(2) // drop country code → 9XXXXXXXXX
