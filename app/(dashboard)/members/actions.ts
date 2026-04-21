@@ -103,3 +103,35 @@ export async function deleteMember(id: string): Promise<ActionResult> {
     return { success: false, error: "Failed to delete member" }
   }
 }
+
+type MemberMatchingPrefs = {
+  lifeStageId: string
+  gender: string
+  language: string[]
+  workCity: string
+  workIndustry: string
+  meetingPreference: string
+}
+
+export async function saveMemberMatchingPreferences(
+  memberId: string,
+  prefs: MemberMatchingPrefs
+): Promise<ActionResult> {
+  try {
+    await db.member.update({
+      where: { id: memberId },
+      data: {
+        lifeStageId: prefs.lifeStageId || null,
+        gender: (prefs.gender as "Male" | "Female") || null,
+        language: prefs.language,
+        workCity: prefs.workCity || null,
+        workIndustry: prefs.workIndustry || null,
+        meetingPreference: (prefs.meetingPreference as "Online" | "Hybrid" | "InPerson") || null,
+      },
+    })
+    revalidatePath("/members")
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to save matching preferences" }
+  }
+}

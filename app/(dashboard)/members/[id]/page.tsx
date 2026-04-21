@@ -126,7 +126,6 @@ export default async function MemberDetailPage({
 
   return (
     <MemberForm
-      lifeStages={lifeStages}
       member={member}
       eventHistory={<MemberEventHistory registrations={registrations} />}
       smallGroups={
@@ -141,6 +140,15 @@ export default async function MemberDetailPage({
               memberId={id}
               hasGroup={!!smallGroupInfo.memberOf}
               pendingTransfer={smallGroupInfo.pendingTransfer}
+              initialPrefs={{
+                lifeStageId: member.lifeStageId ?? "",
+                gender: member.gender ?? "",
+                language: member.language,
+                workCity: member.workCity ?? "",
+                workIndustry: member.workIndustry ?? "",
+                meetingPreference: member.meetingPreference ?? "",
+              }}
+              lifeStages={lifeStages}
             />
           </div>
         ) : undefined

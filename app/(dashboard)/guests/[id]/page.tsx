@@ -146,7 +146,6 @@ export default async function GuestDetailPage({
 
   return (
     <GuestForm
-      lifeStages={lifeStages}
       guest={guest}
       eventHistory={<GuestEventHistory registrations={registrations} />}
       matchSection={
@@ -156,6 +155,15 @@ export default async function GuestDetailPage({
           claimedGroup={guest.claimedSmallGroup}
           pendingGroupName={guest.pendingGroupName}
           matchedBreakout={guest.matchedBreakout}
+          initialPrefs={{
+            lifeStageId: guest.lifeStageId ?? "",
+            gender: guest.gender ?? "",
+            language: guest.language,
+            workCity: guest.workCity ?? "",
+            workIndustry: guest.workIndustry ?? "",
+            meetingPreference: guest.meetingPreference ?? "",
+          }}
+          lifeStages={lifeStages}
         />
       }
     />

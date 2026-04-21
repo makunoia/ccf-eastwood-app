@@ -6,6 +6,16 @@ import { IconSparkles, IconLoader, IconClock } from "@tabler/icons-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { MultiSelect } from "@/components/ui/multi-select"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   Dialog,
   DialogContent,
@@ -14,8 +24,10 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog"
 import { WEIGHT_FIELDS } from "@/lib/validations/matching-weights"
+import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
 import { findSmallGroupMatchesForMember, assignMemberToSmallGroup } from "../matching-actions"
 import { assignMemberTransferTemporarily } from "@/app/(dashboard)/small-groups/actions"
+import { saveMemberMatchingPreferences } from "../actions"
 import type { MatchResult, ScoreBreakdown } from "@/lib/matching/types"
 
 function ScoreBar({ value }: { value: number }) {
@@ -96,22 +108,53 @@ type PendingTransfer = {
   createdAt: Date
 }
 
+type MatchingPrefs = {
+  lifeStageId: string
+  gender: string
+  language: string[]
+  workCity: string
+  workIndustry: string
+  meetingPreference: string
+}
+
 export function MemberMatchSection({
   memberId,
   hasGroup,
   pendingTransfer,
+  initialPrefs,
+  lifeStages,
 }: {
   memberId: string
   hasGroup: boolean
   pendingTransfer?: PendingTransfer | null
+  initialPrefs: MatchingPrefs
+  lifeStages: { id: string; name: string }[]
 }) {
   const router = useRouter()
   const [state, setState] = React.useState<"idle" | "loading" | "done">("idle")
   const [results, setResults] = React.useState<MatchResult[]>([])
   const [assigningId, setAssigningId] = React.useState<string | null>(null)
 
+  const [prefs, setPrefs] = React.useState<MatchingPrefs>(initialPrefs)
+  function setPref<K extends keyof MatchingPrefs>(key: K, value: MatchingPrefs[K]) {
+    setPrefs((prev) => ({ ...prev, [key]: value }))
+  }
+
   async function handleSearch() {
+    if (!prefs.lifeStageId) { toast.error("Life Stage is required"); return }
+    if (!prefs.gender) { toast.error("Gender is required"); return }
+    if (prefs.language.length === 0) { toast.error("Language is required"); return }
+    if (!prefs.meetingPreference) { toast.error("Meeting Preference is required"); return }
+
     setState("loading")
+
+    const saveRes = await saveMemberMatchingPreferences(memberId, prefs)
+    if (!saveRes.success) {
+      setState("idle")
+      toast.error(saveRes.error)
+      return
+    }
+
     const res = await findSmallGroupMatchesForMember(memberId)
     setState("done")
     if (res.success) {
@@ -140,7 +183,6 @@ export function MemberMatchSection({
     }
   }
 
-  // When there's a pending transfer, show transfer info instead of the matching UI
   if (pendingTransfer) {
     return (
       <div className="max-w-2xl space-y-3">
@@ -164,7 +206,7 @@ export function MemberMatchSection({
 
   return (
     <div className="max-w-2xl space-y-4">
-      <div className="flex items-center justify-between">
+      <section className="space-y-4">
         <div>
           <h3 className="text-sm font-medium">Small Group Matching</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
@@ -173,10 +215,118 @@ export function MemberMatchSection({
               : "Find the best-fit small group based on this member's profile."}
           </p>
         </div>
+
+        {/* Required: Life Stage + Gender */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label>
+              Life Stage <span className="text-destructive">*</span>
+            </Label>
+            <Select
+              value={prefs.lifeStageId}
+              onValueChange={(v) => setPref("lifeStageId", v === "none" ? "" : v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select life stage" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None</SelectItem>
+                {lifeStages.map((ls) => (
+                  <SelectItem key={ls.id} value={ls.id}>
+                    {ls.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>
+              Gender <span className="text-destructive">*</span>
+            </Label>
+            <Select
+              value={prefs.gender}
+              onValueChange={(v) => setPref("gender", v === "none" ? "" : v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select gender" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Not specified</SelectItem>
+                <SelectItem value="Male">Male</SelectItem>
+                <SelectItem value="Female">Female</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        {/* Required: Language */}
+        <div className="space-y-2">
+          <Label>
+            Primary Language <span className="text-destructive">*</span>
+          </Label>
+          <MultiSelect
+            options={LANGUAGE_OPTIONS}
+            value={prefs.language}
+            onChange={(v) => setPref("language", v)}
+            placeholder="Select language(s)"
+          />
+        </div>
+
+        {/* Required: Meeting Preference */}
+        <div className="space-y-2">
+          <Label>
+            Meeting Preference <span className="text-destructive">*</span>
+          </Label>
+          <Select
+            value={prefs.meetingPreference}
+            onValueChange={(v) => setPref("meetingPreference", v === "none" ? "" : v)}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select preference" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">No preference</SelectItem>
+              <SelectItem value="Online">Online</SelectItem>
+              <SelectItem value="Hybrid">Hybrid</SelectItem>
+              <SelectItem value="InPerson">In Person</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Optional: Work City + Industry */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label>Work / Home City</Label>
+            <Select
+              value={prefs.workCity || "_none"}
+              onValueChange={(v) => setPref("workCity", v === "_none" ? "" : v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select city" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_none">No preference</SelectItem>
+                {CITY_OPTIONS.map((city) => (
+                  <SelectItem key={city} value={city}>
+                    {city}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Industry</Label>
+            <Input
+              value={prefs.workIndustry}
+              onChange={(e) => setPref("workIndustry", e.target.value)}
+              placeholder="Technology"
+            />
+          </div>
+        </div>
+
+        {/* Find Best Match — end of form */}
         <Button
-          variant="outline"
-          size="sm"
-          onClick={handleSearch}
+          onClick={() => { void handleSearch() }}
           disabled={state === "loading"}
         >
           {state === "loading" ? (
@@ -186,7 +336,7 @@ export function MemberMatchSection({
           )}
           {state === "loading" ? "Searching…" : "Find Best Match"}
         </Button>
-      </div>
+      </section>
 
       {state === "done" && (
         <>
