@@ -280,7 +280,6 @@ export function MemberForm({ member, eventHistory, smallGroups }: Props) {
 
         {/* Notes */}
         <section className="space-y-4">
-          <h3 className="text-sm font-medium text-muted-foreground">Notes</h3>
           <div className="space-y-2">
             <Label htmlFor="notes">Notes</Label>
             <Textarea

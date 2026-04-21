@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { IconSparkles, IconLoader, IconX } from "@tabler/icons-react"
 import { toast } from "sonner"
@@ -391,6 +392,7 @@ export function GuestMatchSection({
   pipelineStatus,
   claimedGroup,
   pendingGroupName,
+  pendingGroupId,
   matchedBreakout,
   initialPrefs,
   lifeStages,
@@ -399,6 +401,7 @@ export function GuestMatchSection({
   pipelineStatus: GuestPipelineStatus
   claimedGroup: ClaimedGroup
   pendingGroupName: string | null
+  pendingGroupId: string | null
   matchedBreakout: MatchedBreakout
   initialPrefs: MatchingPrefs
   lifeStages: { id: string; name: string }[]
@@ -494,7 +497,16 @@ export function GuestMatchSection({
             <p className="text-sm font-medium">Awaiting leader confirmation</p>
             <p className="text-sm text-muted-foreground">
               Temporarily assigned to{" "}
-              <span className="font-medium text-foreground">{pendingGroupName}</span>.
+              {pendingGroupId ? (
+                <Link
+                  href={`/small-groups/${pendingGroupId}`}
+                  className="font-medium text-foreground underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+                >
+                  {pendingGroupName}
+                </Link>
+              ) : (
+                <span className="font-medium text-foreground">{pendingGroupName}</span>
+              )}.
             </p>
           </div>
         )}
