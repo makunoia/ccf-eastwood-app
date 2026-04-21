@@ -1,8 +1,15 @@
 import { notFound } from "next/navigation"
 import Link from "next/link"
 import { db } from "@/lib/db"
-import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import { CatchMechTable, type GroupRow } from "./catch-mech-table"
 
 function getISOWeekLabel(date: Date): string {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
@@ -28,7 +35,6 @@ async function getCatchMechData(eventId: string) {
           id: true,
           name: true,
           facilitatorId: true,
-          coFacilitatorId: true,
           facilitator: {
             select: {
               member: {
@@ -36,19 +42,19 @@ async function getCatchMechData(eventId: string) {
                   id: true,
                   firstName: true,
                   lastName: true,
-                  ledGroups: { select: { id: true }, take: 1 },
+                  ledGroups: { select: { id: true, name: true }, take: 1 },
                 },
               },
             },
           },
           members: {
             select: {
-              registrantId: true,
               registrant: {
                 select: {
                   memberId: true,
                   guestId: true,
-                  guest: { select: { memberId: true } },
+                  member: { select: { firstName: true, lastName: true } },
+                  guest: { select: { firstName: true, lastName: true } },
                 },
               },
             },
@@ -61,93 +67,101 @@ async function getCatchMechData(eventId: string) {
   if (!event) return null
   if (!event.modules.some((m) => m.type === "CatchMech")) return null
 
-  // Get the IDs of all breakout groups in this event for weekly progress query
   const breakoutGroupIds = event.breakoutGroups.map((bg) => bg.id)
 
-  // Weekly progress: count SmallGroupMemberRequests confirmed this week from these breakout groups
-  const confirmedRequests = await db.smallGroupMemberRequest.findMany({
-    where: {
-      breakoutGroupId: { in: breakoutGroupIds },
-      status: "Confirmed",
-      resolvedAt: { not: null },
+  // Fetch all requests for these breakout groups (single query)
+  const allRequests = await db.smallGroupMemberRequest.findMany({
+    where: { breakoutGroupId: { in: breakoutGroupIds } },
+    select: {
+      breakoutGroupId: true,
+      memberId: true,
+      guestId: true,
+      status: true,
+      resolvedAt: true,
     },
-    select: { resolvedAt: true },
   })
 
-  // Group by ISO week
+  // Weekly progress: confirmed requests grouped by ISO week
   const weeklyMap: Record<string, number> = {}
-  for (const req of confirmedRequests) {
-    if (!req.resolvedAt) continue
+  for (const req of allRequests) {
+    if (req.status !== "Confirmed" || !req.resolvedAt) continue
     const label = getISOWeekLabel(req.resolvedAt)
     weeklyMap[label] = (weeklyMap[label] ?? 0) + 1
   }
   const weeklyProgress = Object.entries(weeklyMap)
     .sort(([a], [b]) => a.localeCompare(b))
-    .slice(-8) // last 8 weeks
+    .slice(-8)
 
-  // Build per-group stats
-  type GroupRow = {
-    id: string
-    name: string
-    faciName: string | null
-    isTimothy: boolean
-    totalMembers: number
-    confirmedCount: number
-  }
-
+  // Build per-group rows
   const groupRows: GroupRow[] = []
   let totalConfirmed = 0
+  let totalRejected = 0
   let totalPending = 0
 
   for (const bg of event.breakoutGroups) {
     const faciMember = bg.facilitator?.member ?? null
     const isTimothy = faciMember ? faciMember.ledGroups.length === 0 : false
-    const leadingGroupId = faciMember && !isTimothy ? faciMember.ledGroups[0]?.id : null
+    const ledGroupName = !isTimothy ? (faciMember?.ledGroups[0]?.name ?? null) : null
+
+    const groupRequests = allRequests.filter((r) => r.breakoutGroupId === bg.id)
 
     let confirmed = 0
+    let rejected = 0
+    const members: GroupRow["members"] = []
+
     for (const m of bg.members) {
       const r = m.registrant
       if (!r.memberId && !r.guestId) continue
-      if (r.guestId && r.guest?.memberId) {
-        // Was promoted — check if they ended up in faci's group
-        confirmed++
-        continue
+
+      // Resolve display name
+      let name = "Unknown"
+      if (r.memberId && r.member) {
+        name = `${r.member.firstName} ${r.member.lastName}`
+      } else if (r.guestId && r.guest) {
+        name = `${r.guest.firstName} ${r.guest.lastName}`
       }
-      if (r.memberId && leadingGroupId) {
-        const member = await db.member.findUnique({
-          where: { id: r.memberId },
-          select: { smallGroupId: true },
-        })
-        if (member?.smallGroupId === leadingGroupId) confirmed++
-      }
+
+      // Match to a request record
+      const req = groupRequests.find(
+        (rq) =>
+          (r.memberId && rq.memberId === r.memberId) ||
+          (r.guestId && rq.guestId === r.guestId)
+      )
+
+      let status: GroupRow["members"][number]["status"] = "Pending"
+      if (req?.status === "Confirmed") { status = "Confirmed"; confirmed++ }
+      else if (req?.status === "Rejected") { status = "Rejected"; rejected++ }
+
+      members.push({ name, status })
     }
 
-    const total = bg.members.filter(
-      (m) => m.registrant.memberId || m.registrant.guestId
-    ).length
-    const pending = total - confirmed
+    const total = members.length
+    const pending = total - confirmed - rejected
 
     totalConfirmed += confirmed
+    totalRejected += rejected
     totalPending += pending
 
     groupRows.push({
       id: bg.id,
       name: bg.name,
-      faciName: faciMember
-        ? `${faciMember.firstName} ${faciMember.lastName}`
-        : null,
+      faciName: faciMember ? `${faciMember.firstName} ${faciMember.lastName}` : null,
+      faciMemberId: faciMember?.id ?? null,
       isTimothy,
+      ledGroupName,
       totalMembers: total,
       confirmedCount: confirmed,
+      rejectedCount: rejected,
+      pendingCount: pending,
+      members,
     })
   }
 
-  const totalMembers = totalConfirmed + totalPending
+  const totalMembers = totalConfirmed + totalRejected + totalPending
 
   return {
-    event,
     groupRows,
-    stats: { totalMembers, totalConfirmed, totalPending },
+    stats: { totalMembers, totalConfirmed, totalRejected, totalPending },
     weeklyProgress,
   }
 }
@@ -161,15 +175,18 @@ export default async function CatchMechAdminPage({
   const data = await getCatchMechData(id)
   if (!data) notFound()
 
-  const { event: _event, groupRows, stats, weeklyProgress } = data
+  const { groupRows, stats, weeklyProgress } = data
   const publicUrl = `/events/${id}/catch-mech`
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">
+      {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-xl font-semibold">Catch Mech</h2>
-          <p className="text-sm text-muted-foreground">Track small group confirmations from breakout groups</p>
+          <p className="text-sm text-muted-foreground">
+            Track small group confirmations from breakout groups
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">Faci link:</span>
@@ -183,110 +200,65 @@ export default async function CatchMechAdminPage({
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-4 max-w-2xl">
-        <Card>
-          <CardHeader className="pb-1">
-            <CardTitle className="text-xs font-medium text-muted-foreground">Total Members</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{stats.totalMembers}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-1">
-            <CardTitle className="text-xs font-medium text-muted-foreground">Confirmed</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-green-600">{stats.totalConfirmed}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-1">
-            <CardTitle className="text-xs font-medium text-muted-foreground">Pending</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-amber-600">{stats.totalPending}</p>
-          </CardContent>
-        </Card>
+      {/* Stats + weekly progress on the same row */}
+      <div className="flex items-stretch gap-3">
+        {/* Stat cards */}
+        <div className="grid grid-cols-4 gap-3 flex-1">
+          {[
+            { label: "Total Members", value: stats.totalMembers, color: "", pct: null },
+            { label: "Confirmed", value: stats.totalConfirmed, color: "text-green-600", pct: stats.totalMembers > 0 ? Math.round((stats.totalConfirmed / stats.totalMembers) * 100) : 0 },
+            { label: "Rejected", value: stats.totalRejected, color: "text-red-600", pct: stats.totalMembers > 0 ? Math.round((stats.totalRejected / stats.totalMembers) * 100) : 0 },
+            { label: "Pending", value: stats.totalPending, color: "text-amber-600", pct: stats.totalMembers > 0 ? Math.round((stats.totalPending / stats.totalMembers) * 100) : 0 },
+          ].map(({ label, value, color, pct }) => (
+            <div
+              key={label}
+              className="rounded-lg border px-5 py-4 flex flex-col justify-between"
+            >
+              <div className="flex flex-col gap-2">
+                <p className="text-[11px] font-semibold tracking-[0.15em] uppercase text-muted-foreground">
+                  {label}
+                </p>
+                <p className={`text-3xl font-semibold tabular-nums tracking-tight ${color || "text-foreground"}`}>
+                  {value}
+                </p>
+              </div>
+              {pct !== null && (
+                <p className="text-xs text-muted-foreground">{pct}% of total</p>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Weekly progress */}
+        {weeklyProgress.length > 0 && (
+          <div className="rounded-lg border overflow-hidden shrink-0 flex flex-col">
+            <div className="overflow-y-auto flex-1">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="sticky top-0 bg-background z-10">Week</TableHead>
+                    <TableHead className="sticky top-0 bg-background z-10 text-right">Confirmations</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {weeklyProgress.map(([label, count]) => (
+                    <TableRow key={label}>
+                      <TableCell>{label}</TableCell>
+                      <TableCell className="text-right font-medium">{count}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Per-group table */}
-      <section className="space-y-3 max-w-3xl">
+      <section className="space-y-3">
         <h3 className="text-sm font-medium text-muted-foreground">Breakout Groups</h3>
-        <div className="border rounded-lg overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50">
-              <tr>
-                <th className="text-left px-4 py-2 font-medium text-xs text-muted-foreground">Group</th>
-                <th className="text-left px-4 py-2 font-medium text-xs text-muted-foreground">Facilitator</th>
-                <th className="text-right px-4 py-2 font-medium text-xs text-muted-foreground">Members</th>
-                <th className="text-right px-4 py-2 font-medium text-xs text-muted-foreground">Confirmed</th>
-                <th className="text-right px-4 py-2 font-medium text-xs text-muted-foreground">Pending</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {groupRows.map((row) => (
-                <tr key={row.id} className="hover:bg-muted/20">
-                  <td className="px-4 py-3 font-medium">{row.name}</td>
-                  <td className="px-4 py-3">
-                    {row.faciName ? (
-                      <div className="flex items-center gap-2">
-                        <span>{row.faciName}</span>
-                        <Badge
-                          variant="secondary"
-                          className={`text-xs ${row.isTimothy ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}
-                        >
-                          {row.isTimothy ? "Timothy" : "Leader"}
-                        </Badge>
-                      </div>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-right">{row.totalMembers}</td>
-                  <td className="px-4 py-3 text-right font-medium text-green-600">{row.confirmedCount}</td>
-                  <td className="px-4 py-3 text-right text-amber-600">
-                    {row.totalMembers - row.confirmedCount}
-                  </td>
-                </tr>
-              ))}
-              {groupRows.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-4 py-6 text-center text-muted-foreground text-sm">
-                    No breakout groups yet
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        <CatchMechTable groupRows={groupRows} />
       </section>
-
-      {/* Weekly progress */}
-      {weeklyProgress.length > 0 && (
-        <section className="space-y-3 max-w-md">
-          <h3 className="text-sm font-medium text-muted-foreground">Weekly Progress</h3>
-          <div className="border rounded-lg overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/50">
-                <tr>
-                  <th className="text-left px-4 py-2 font-medium text-xs text-muted-foreground">Week</th>
-                  <th className="text-right px-4 py-2 font-medium text-xs text-muted-foreground">New Confirmations</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {weeklyProgress.map(([label, count]) => (
-                  <tr key={label}>
-                    <td className="px-4 py-2">{label}</td>
-                    <td className="px-4 py-2 text-right font-medium">{count}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
     </div>
   )
 }

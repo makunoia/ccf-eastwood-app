@@ -1,6 +1,10 @@
--- Delete ministry-scoped volunteer records before removing columns
-DELETE FROM "Volunteer" WHERE "ministryId" IS NOT NULL AND "eventId" IS NULL;
-DELETE FROM "VolunteerCommittee" WHERE "ministryId" IS NOT NULL AND "eventId" IS NULL;
+-- Delete all records without an eventId before enforcing NOT NULL
+-- First remove volunteers that belong to committees with no eventId
+DELETE FROM "Volunteer" WHERE "committeeId" IN (SELECT "id" FROM "VolunteerCommittee" WHERE "eventId" IS NULL);
+-- Then remove any remaining volunteers without an eventId
+DELETE FROM "Volunteer" WHERE "eventId" IS NULL;
+-- Finally remove committees without an eventId
+DELETE FROM "VolunteerCommittee" WHERE "eventId" IS NULL;
 
 -- (Prisma-generated ALTER TABLE statements follow below)
 

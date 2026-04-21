@@ -21,7 +21,7 @@ type StatCardProps = {
 
 function StatCard({ label, value, delta, sub, icon }: StatCardProps) {
   return (
-    <div className="rounded-xl border border-border/50 bg-card px-5 py-5 flex flex-col gap-3">
+    <div className="rounded-lg border px-5 py-5 flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <p className="text-[11px] font-semibold tracking-[0.15em] uppercase text-muted-foreground">
           {label}
