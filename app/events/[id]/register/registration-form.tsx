@@ -275,6 +275,27 @@ export function RegistrationForm({ eventId, isRecurring = false, lifeStages = []
             />
           </div>
 
+          {/* Gender */}
+          <div className="space-y-2">
+            <Label>Gender</Label>
+            <div className="flex gap-3">
+              {["Male", "Female"].map((g) => (
+                <button
+                  key={g}
+                  type="button"
+                  onClick={() => set("gender", form.gender === g ? "" : g)}
+                  className={`flex-1 rounded-lg border py-2.5 text-sm font-medium transition-colors ${
+                    form.gender === g
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border bg-background hover:bg-muted"
+                  }`}
+                >
+                  {g}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {isRecurring && (
             <>
               <div className="pt-2 border-t">
@@ -304,27 +325,6 @@ export function RegistrationForm({ eventId, isRecurring = false, lifeStages = []
                   </Select>
                 </div>
               )}
-
-              {/* Gender */}
-              <div className="space-y-2">
-                <Label>Gender</Label>
-                <div className="flex gap-3">
-                  {["Male", "Female"].map((g) => (
-                    <button
-                      key={g}
-                      type="button"
-                      onClick={() => set("gender", form.gender === g ? "" : g)}
-                      className={`flex-1 rounded-lg border py-2.5 text-sm font-medium transition-colors ${
-                        form.gender === g
-                          ? "border-primary bg-primary text-primary-foreground"
-                          : "border-border bg-background hover:bg-muted"
-                      }`}
-                    >
-                      {g}
-                    </button>
-                  ))}
-                </div>
-              </div>
 
               {/* Language */}
               <div className="space-y-2">

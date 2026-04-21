@@ -205,15 +205,12 @@ export default async function CatchMechAdminPage({
         {/* Stat cards */}
         <div className="grid grid-cols-4 gap-3 flex-1">
           {[
-            { label: "Total Members", value: stats.totalMembers, color: "", pct: null },
-            { label: "Confirmed", value: stats.totalConfirmed, color: "text-green-600", pct: stats.totalMembers > 0 ? Math.round((stats.totalConfirmed / stats.totalMembers) * 100) : 0 },
-            { label: "Rejected", value: stats.totalRejected, color: "text-red-600", pct: stats.totalMembers > 0 ? Math.round((stats.totalRejected / stats.totalMembers) * 100) : 0 },
-            { label: "Pending", value: stats.totalPending, color: "text-amber-600", pct: stats.totalMembers > 0 ? Math.round((stats.totalPending / stats.totalMembers) * 100) : 0 },
-          ].map(({ label, value, color, pct }) => (
-            <div
-              key={label}
-              className="rounded-lg border px-5 py-4 flex flex-col justify-between"
-            >
+            { label: "Total Members", value: stats.totalMembers, color: "", pct: null, slug: null },
+            { label: "Confirmed", value: stats.totalConfirmed, color: "text-green-600", pct: stats.totalMembers > 0 ? Math.round((stats.totalConfirmed / stats.totalMembers) * 100) : 0, slug: "confirmed" },
+            { label: "Rejected", value: stats.totalRejected, color: "text-red-600", pct: stats.totalMembers > 0 ? Math.round((stats.totalRejected / stats.totalMembers) * 100) : 0, slug: "rejected" },
+            { label: "Pending", value: stats.totalPending, color: "text-amber-600", pct: stats.totalMembers > 0 ? Math.round((stats.totalPending / stats.totalMembers) * 100) : 0, slug: "pending" },
+          ].map(({ label, value, color, pct, slug }) => {
+            const inner = (
               <div className="flex flex-col gap-2">
                 <p className="text-[11px] font-semibold tracking-[0.15em] uppercase text-muted-foreground">
                   {label}
@@ -222,11 +219,27 @@ export default async function CatchMechAdminPage({
                   {value}
                 </p>
               </div>
-              {pct !== null && (
-                <p className="text-xs text-muted-foreground">{pct}% of total</p>
-              )}
-            </div>
-          ))}
+            )
+            return slug ? (
+              <Link
+                key={label}
+                href={`/event/${id}/catch-mech/${slug}`}
+                className="rounded-lg border px-5 py-4 flex flex-col justify-between hover:bg-muted/40 transition-colors"
+              >
+                {inner}
+                {pct !== null && (
+                  <p className="text-xs text-muted-foreground">{pct}% of total</p>
+                )}
+              </Link>
+            ) : (
+              <div
+                key={label}
+                className="rounded-lg border px-5 py-4 flex flex-col justify-between"
+              >
+                {inner}
+              </div>
+            )
+          })}
         </div>
 
         {/* Weekly progress */}

@@ -24,7 +24,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import {
   defaultMinistryForm,
@@ -134,13 +133,7 @@ export function MinistryForm({ lifeStages, ministry }: Props) {
         </div>
       </div>
 
-      <Tabs defaultValue="details" className="w-full">
-        <TabsList>
-          <TabsTrigger value="details">Details</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="details" className="mt-6">
-          <form
+      <form
             id="ministry-form"
             onSubmit={handleSubmit}
             className="max-w-2xl space-y-6"
@@ -189,8 +182,6 @@ export function MinistryForm({ lifeStages, ministry }: Props) {
               />
             </div>
           </form>
-        </TabsContent>
-      </Tabs>
 
       <MobileFormActions
         formId="ministry-form"

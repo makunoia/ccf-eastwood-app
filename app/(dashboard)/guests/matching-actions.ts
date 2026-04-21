@@ -8,6 +8,72 @@ type ActionResult<T> =
   | { success: true; data: T }
   | { success: false; error: string }
 
+type SmallGroupDetails = {
+  id: string
+  name: string
+  leader: { firstName: string; lastName: string } | null
+  lifeStage: { name: string } | null
+  genderFocus: "Male" | "Female" | "Mixed" | null
+  language: string[]
+  locationCity: string | null
+  meetingFormat: "Online" | "Hybrid" | "InPerson" | null
+  memberLimit: number | null
+  scheduleDayOfWeek: number | null
+  scheduleTimeStart: string | null
+  members: {
+    id: string
+    firstName: string
+    lastName: string
+    groupStatus: "Member" | "Timothy" | "Leader" | null
+  }[]
+  currentCount: number
+}
+
+export async function getSmallGroupDetails(
+  groupId: string
+): Promise<ActionResult<SmallGroupDetails>> {
+  try {
+    const group = await db.smallGroup.findUnique({
+      where: { id: groupId },
+      select: {
+        id: true,
+        name: true,
+        leader: { select: { firstName: true, lastName: true } },
+        lifeStage: { select: { name: true } },
+        genderFocus: true,
+        language: true,
+        locationCity: true,
+        meetingFormat: true,
+        memberLimit: true,
+        scheduleDayOfWeek: true,
+        scheduleTimeStart: true,
+        members: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            groupStatus: true,
+          },
+        },
+      },
+    })
+
+    if (!group) {
+      return { success: false, error: "Small group not found" }
+    }
+
+    return {
+      success: true,
+      data: {
+        ...group,
+        currentCount: group.members.length,
+      },
+    }
+  } catch {
+    return { success: false, error: "Failed to load small group details" }
+  }
+}
+
 export async function findSmallGroupMatchesForGuest(
   guestId: string
 ): Promise<ActionResult<MatchResult[]>> {

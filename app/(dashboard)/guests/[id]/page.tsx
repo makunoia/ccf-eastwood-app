@@ -50,7 +50,7 @@ async function getGuest(id: string) {
     }),
     db.smallGroupMemberRequest.findFirst({
       where: { guestId: id, status: "Pending" },
-      select: { smallGroup: { select: { name: true } } },
+      select: { smallGroup: { select: { id: true, name: true } } },
     }),
   ])
   if (!g) return null
@@ -99,6 +99,7 @@ async function getGuest(id: string) {
     claimedSmallGroup: g.claimedSmallGroup,
     eventRegistrations: g.eventRegistrations,
     pendingGroupName: pendingRequest?.smallGroup?.name ?? null,
+    pendingGroupId: pendingRequest?.smallGroup?.id ?? null,
     matchedBreakout,
   }
 }
@@ -146,7 +147,6 @@ export default async function GuestDetailPage({
 
   return (
     <GuestForm
-      lifeStages={lifeStages}
       guest={guest}
       eventHistory={<GuestEventHistory registrations={registrations} />}
       matchSection={
@@ -155,7 +155,17 @@ export default async function GuestDetailPage({
           pipelineStatus={pipelineStatus}
           claimedGroup={guest.claimedSmallGroup}
           pendingGroupName={guest.pendingGroupName}
+          pendingGroupId={guest.pendingGroupId}
           matchedBreakout={guest.matchedBreakout}
+          initialPrefs={{
+            lifeStageId: guest.lifeStageId ?? "",
+            gender: guest.gender ?? "",
+            language: guest.language,
+            workCity: guest.workCity ?? "",
+            workIndustry: guest.workIndustry ?? "",
+            meetingPreference: guest.meetingPreference ?? "",
+          }}
+          lifeStages={lifeStages}
         />
       }
     />

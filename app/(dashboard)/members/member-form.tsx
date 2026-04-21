@@ -18,7 +18,6 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { PhonePHInput } from "@/components/ui/phone-ph-input"
-import { MultiSelect } from "@/components/ui/multi-select"
 import {
   Select,
   SelectContent,
@@ -35,10 +34,8 @@ import {
 import { createMember, updateMember, deleteMember } from "./actions"
 import { type MemberRow } from "./columns"
 import { MobileFormActions } from "@/components/mobile-form-actions"
-import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
 
 type Props = {
-  lifeStages: { id: string; name: string }[]
   member?: MemberRow
   eventHistory?: React.ReactNode
   smallGroups?: React.ReactNode
@@ -64,7 +61,7 @@ function toFormValues(member: MemberRow): MemberFormValues {
   }
 }
 
-export function MemberForm({ lifeStages, member, eventHistory, smallGroups }: Props) {
+export function MemberForm({ member, eventHistory, smallGroups }: Props) {
   const router = useRouter()
   const isEdit = !!member
   const [form, setForm] = React.useState<MemberFormValues>(
@@ -227,6 +224,23 @@ export function MemberForm({ lifeStages, member, eventHistory, smallGroups }: Pr
           </div>
 
           <div className="space-y-2">
+            <Label>Gender</Label>
+            <Select
+              value={form.gender}
+              onValueChange={(v) => set("gender", v === "none" ? "" : v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select gender" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Not specified</SelectItem>
+                <SelectItem value="Male">Male</SelectItem>
+                <SelectItem value="Female">Female</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
             <Label htmlFor="address">Address</Label>
             <Input
               id="address"
@@ -248,151 +262,43 @@ export function MemberForm({ lifeStages, member, eventHistory, smallGroups }: Pr
               required
             />
           </div>
-          <div className="space-y-2">
-            <Label>Birth Month</Label>
-            <Select
-              value={form.birthMonth}
-              onValueChange={(v) => set("birthMonth", v)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Month" />
-              </SelectTrigger>
-              <SelectContent>
-                {["January","February","March","April","May","June","July","August","September","October","November","December"].map((name, i) => (
-                  <SelectItem key={i + 1} value={String(i + 1)}>{name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="birthYear">Birth Year</Label>
-            <Input
-              id="birthYear"
-              type="text"
-              inputMode="numeric"
-              maxLength={4}
-              placeholder="0000"
-              value={form.birthYear}
-              onChange={(e) => {
-                const val = e.target.value.replace(/\D/g, "").slice(0, 4);
-                set("birthYear", val);
-              }}
-            />
-          </div>
-        </section>
-
-        {/* Profile */}
-        <section className="space-y-4">
-          <h3 className="text-sm font-medium text-muted-foreground">
-            Profile
-          </h3>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid sm:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="lifeStage">Life Stage</Label>
+              <Label>Birth Month</Label>
               <Select
-                value={form.lifeStageId}
-                onValueChange={(v) => set("lifeStageId", v === "none" ? "" : v)}
+                value={form.birthMonth}
+                onValueChange={(v) => set("birthMonth", v)}
               >
-                <SelectTrigger id="lifeStage">
-                  <SelectValue placeholder="Select life stage" />
+                <SelectTrigger>
+                  <SelectValue placeholder="Month" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
-                  {lifeStages.map((ls) => (
-                    <SelectItem key={ls.id} value={ls.id}>
-                      {ls.name}
-                    </SelectItem>
+                  {["January","February","March","April","May","June","July","August","September","October","November","December"].map((name, i) => (
+                    <SelectItem key={i + 1} value={String(i + 1)}>{name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="gender">Gender</Label>
-              <Select
-                value={form.gender}
-                onValueChange={(v) => set("gender", v === "none" ? "" : v)}
-              >
-                <SelectTrigger id="gender">
-                  <SelectValue placeholder="Select gender" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Not specified</SelectItem>
-                  <SelectItem value="Male">Male</SelectItem>
-                  <SelectItem value="Female">Female</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label>Primary Language</Label>
-            <MultiSelect
-              options={LANGUAGE_OPTIONS}
-              value={form.language}
-              onChange={(v) => set("language", v)}
-              placeholder="Select language(s)"
-            />
-          </div>
-        </section>
-
-        {/* Matching Info */}
-        <section className="space-y-4">
-          <h3 className="text-sm font-medium text-muted-foreground">
-            Matching Information
-          </h3>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="workCity">Work / Home City</Label>
-              <Select
-                value={form.workCity || "_none"}
-                onValueChange={(v) => set("workCity", v === "_none" ? "" : v)}
-              >
-                <SelectTrigger id="workCity">
-                  <SelectValue placeholder="Select city" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="_none">No preference</SelectItem>
-                  {CITY_OPTIONS.map((city) => (
-                    <SelectItem key={city} value={city}>
-                      {city}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="workIndustry">Industry</Label>
+              <Label htmlFor="birthYear">Birth Year</Label>
               <Input
-                id="workIndustry"
-                value={form.workIndustry}
-                onChange={(e) => set("workIndustry", e.target.value)}
-                placeholder="Technology"
+                id="birthYear"
+                type="text"
+                inputMode="numeric"
+                maxLength={4}
+                placeholder="0000"
+                value={form.birthYear}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\D/g, "").slice(0, 4);
+                  set("birthYear", val);
+                }}
               />
             </div>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="meetingPreference">Meeting Preference</Label>
-            <Select
-              value={form.meetingPreference}
-              onValueChange={(v) =>
-                set("meetingPreference", v === "none" ? "" : v)
-              }
-            >
-              <SelectTrigger id="meetingPreference">
-                <SelectValue placeholder="Select preference" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">No preference</SelectItem>
-                <SelectItem value="Online">Online</SelectItem>
-                <SelectItem value="Hybrid">Hybrid</SelectItem>
-                <SelectItem value="InPerson">In Person</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
         </section>
 
         {/* Notes */}
         <section className="space-y-4">
-          <h3 className="text-sm font-medium text-muted-foreground">Notes</h3>
           <div className="space-y-2">
             <Label htmlFor="notes">Notes</Label>
             <Textarea

@@ -1,11 +1,23 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { IconSparkles, IconLoader, IconX } from "@tabler/icons-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { MultiSelect } from "@/components/ui/multi-select"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   Dialog,
   DialogContent,
@@ -13,12 +25,180 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog"
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet"
+import { Skeleton } from "@/components/ui/skeleton"
 import { WEIGHT_FIELDS } from "@/lib/validations/matching-weights"
-import { findSmallGroupMatchesWithEscalation } from "../matching-actions"
-import { clearGuestClaimedGroup } from "../actions"
+import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
+import { findSmallGroupMatchesWithEscalation, getSmallGroupDetails } from "../matching-actions"
+import { clearGuestClaimedGroup, saveGuestMatchingProfile } from "../actions"
 import { assignGuestToGroupTemporarily } from "../../small-groups/actions"
 import type { MatchResult, ScoreBreakdown, EscalationLevel } from "@/lib/matching/types"
 import type { GuestPipelineStatus } from "@/lib/guest-utils"
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+
+function formatTime(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number)
+  const period = h < 12 ? "AM" : "PM"
+  const hour = h % 12 || 12
+  return `${hour}:${String(m).padStart(2, "0")} ${period}`
+}
+
+// ─── SmallGroupDetailSheet ───────────────────────────────────────────────────
+
+type SmallGroupDetails = {
+  id: string
+  name: string
+  leader: { firstName: string; lastName: string } | null
+  lifeStage: { name: string } | null
+  genderFocus: "Male" | "Female" | "Mixed" | null
+  language: string[]
+  locationCity: string | null
+  meetingFormat: "Online" | "Hybrid" | "InPerson" | null
+  memberLimit: number | null
+  scheduleDayOfWeek: number | null
+  scheduleTimeStart: string | null
+  members: {
+    id: string
+    firstName: string
+    lastName: string
+    groupStatus: "Member" | "Timothy" | "Leader" | null
+  }[]
+  currentCount: number
+}
+
+function SmallGroupDetailSheet({
+  groupId,
+  open,
+  onOpenChange,
+}: {
+  groupId: string | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const [data, setData] = React.useState<SmallGroupDetails | null>(null)
+  const [loading, setLoading] = React.useState(false)
+
+  React.useEffect(() => {
+    if (!open || !groupId) return
+    setData(null)
+    setLoading(true)
+    getSmallGroupDetails(groupId).then((res) => {
+      setLoading(false)
+      if (res.success) setData(res.data)
+      else toast.error(res.error)
+    })
+  }, [open, groupId])
+
+  const meetingFormatLabel: Record<string, string> = {
+    Online: "Online",
+    Hybrid: "Hybrid",
+    InPerson: "In Person",
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="w-full sm:max-w-md overflow-y-auto">
+        {loading || !data ? (
+          <SheetHeader>
+            <Skeleton className="h-5 w-48" />
+            <Skeleton className="h-4 w-32 mt-1" />
+          </SheetHeader>
+        ) : (
+          <>
+            <SheetHeader>
+              <SheetTitle>{data.name}</SheetTitle>
+              <SheetDescription>
+                {data.leader
+                  ? `Led by ${data.leader.firstName} ${data.leader.lastName}`
+                  : "No leader assigned"}
+              </SheetDescription>
+            </SheetHeader>
+
+            <div className="px-4 space-y-6">
+              {/* Basic Info */}
+              <div className="space-y-2">
+                <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Details
+                </h3>
+                <div className="grid grid-cols-[120px_1fr] gap-y-1.5 text-sm">
+                  <span className="text-muted-foreground">Life Stage</span>
+                  <span>{data.lifeStage?.name ?? "—"}</span>
+                  <span className="text-muted-foreground">Gender Focus</span>
+                  <span>{data.genderFocus ?? "—"}</span>
+                  <span className="text-muted-foreground">Language</span>
+                  <span>{data.language.length > 0 ? data.language.join(", ") : "—"}</span>
+                  <span className="text-muted-foreground">Location</span>
+                  <span>{data.locationCity ?? "—"}</span>
+                  <span className="text-muted-foreground">Format</span>
+                  <span>
+                    {data.meetingFormat ? (meetingFormatLabel[data.meetingFormat] ?? data.meetingFormat) : "—"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Schedule */}
+              <div className="space-y-2">
+                <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Schedule
+                </h3>
+                {data.scheduleDayOfWeek != null && data.scheduleTimeStart ? (
+                  <p className="text-sm">
+                    {DAY_NAMES[data.scheduleDayOfWeek]} · {formatTime(data.scheduleTimeStart)}
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No schedule set</p>
+                )}
+              </div>
+
+              {/* Capacity */}
+              <div className="space-y-2">
+                <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Capacity
+                </h3>
+                <p className="text-sm">
+                  {data.currentCount} / {data.memberLimit != null ? data.memberLimit : "No limit"}{" "}
+                  members
+                </p>
+              </div>
+
+              {/* Members */}
+              <div className="space-y-2">
+                <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Members
+                </h3>
+                {data.members.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No members yet</p>
+                ) : (
+                  <ul className="space-y-1.5">
+                    {data.members.map((m) => (
+                      <li key={m.id} className="flex items-center justify-between text-sm">
+                        <span>{m.firstName} {m.lastName}</span>
+                        {m.groupStatus && (
+                          <Badge variant="secondary" className="text-xs">
+                            {m.groupStatus}
+                          </Badge>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </SheetContent>
+    </Sheet>
+  )
+}
 
 // ─── Score components ─────────────────────────────────────────────────────────
 
@@ -37,10 +217,12 @@ function MatchCard({
   result,
   onAssign,
   assigning,
+  onGroupClick,
 }: {
   result: MatchResult
   onAssign: () => void
   assigning: boolean
+  onGroupClick: () => void
 }) {
   const score = Math.round(result.totalScore * 100)
   const [detailsOpen, setDetailsOpen] = React.useState(false)
@@ -50,7 +232,13 @@ function MatchCard({
       <div className="rounded-lg border p-4">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="font-medium">{result.groupName}</p>
+            <button
+              type="button"
+              onClick={onGroupClick}
+              className="font-medium text-left underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors cursor-pointer"
+            >
+              {result.groupName}
+            </button>
             <p className="text-sm text-muted-foreground">{score}% match</p>
           </div>
           <div className="flex items-center gap-2">
@@ -110,7 +298,6 @@ const STAGE_DESCRIPTION: Record<GuestPipelineStatus, string> = {
 
 function PipelineStepper({ status }: { status: GuestPipelineStatus }) {
   const activeIndex = PIPELINE_STAGES.indexOf(status)
-  // px depth of the chevron point
   const CHEVRON = 18
 
   return (
@@ -122,7 +309,6 @@ function PipelineStepper({ status }: { status: GuestPipelineStatus }) {
           const isFirst = i === 0
           const isLast = i === PIPELINE_STAGES.length - 1
 
-          // Chevron polygon: right edge points right; left edge indents inward (except first)
           const clipPath = isFirst
             ? `polygon(0 0, calc(100% - ${CHEVRON}px) 0, 100% 50%, calc(100% - ${CHEVRON}px) 100%, 0 100%)`
             : isLast
@@ -142,11 +328,8 @@ function PipelineStepper({ status }: { status: GuestPipelineStatus }) {
               ].join(" ")}
               style={{
                 clipPath,
-                // Pull each segment left so the previous arrow overlaps this indent
                 marginLeft: i > 0 ? `-${CHEVRON}px` : undefined,
-                // Left segments sit on top so arrows are visible
                 zIndex: PIPELINE_STAGES.length - i,
-                // Inner padding: compensate for the indent on the left side
                 paddingTop: 10,
                 paddingBottom: 10,
                 paddingLeft: isFirst ? 16 : CHEVRON + 10,
@@ -175,7 +358,7 @@ const LEVEL_LABEL: Record<1 | 2 | 3, string> = {
   3: "All small groups",
 }
 
-// ─── Main section ─────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type ClaimedGroup = {
   id: string
@@ -193,18 +376,35 @@ type MatchedBreakout = {
   } | null
 } | null
 
+type MatchingPrefs = {
+  lifeStageId: string
+  gender: string
+  language: string[]
+  workCity: string
+  workIndustry: string
+  meetingPreference: string
+}
+
+// ─── Main section ─────────────────────────────────────────────────────────────
+
 export function GuestMatchSection({
   guestId,
   pipelineStatus,
   claimedGroup,
   pendingGroupName,
+  pendingGroupId,
   matchedBreakout,
+  initialPrefs,
+  lifeStages,
 }: {
   guestId: string
   pipelineStatus: GuestPipelineStatus
   claimedGroup: ClaimedGroup
   pendingGroupName: string | null
+  pendingGroupId: string | null
   matchedBreakout: MatchedBreakout
+  initialPrefs: MatchingPrefs
+  lifeStages: { id: string; name: string }[]
 }) {
   const router = useRouter()
   const [state, setState] = React.useState<"idle" | "loading" | "done">("idle")
@@ -212,9 +412,35 @@ export function GuestMatchSection({
   const [assigningId, setAssigningId] = React.useState<string | null>(null)
   const [clearingClaimed, setClearingClaimed] = React.useState(false)
   const [localClaimedGroup, setLocalClaimedGroup] = React.useState<ClaimedGroup>(claimedGroup)
+  const [selectedGroupId, setSelectedGroupId] = React.useState<string | null>(null)
+  const [sheetOpen, setSheetOpen] = React.useState(false)
+
+  const [prefs, setPrefs] = React.useState<MatchingPrefs>(initialPrefs)
+  function setPref<K extends keyof MatchingPrefs>(key: K, value: MatchingPrefs[K]) {
+    setPrefs((prev) => ({ ...prev, [key]: value }))
+  }
 
   async function handleSearch() {
+    if (!prefs.lifeStageId) { toast.error("Life Stage is required"); return }
+    if (prefs.language.length === 0) { toast.error("Language is required"); return }
+    if (!prefs.meetingPreference) { toast.error("Meeting Preference is required"); return }
+
     setState("loading")
+
+    const saveRes = await saveGuestMatchingProfile(guestId, {
+      lifeStageId: prefs.lifeStageId || null,
+      gender: (prefs.gender as "Male" | "Female") || null,
+      language: prefs.language,
+      workCity: prefs.workCity || null,
+      workIndustry: prefs.workIndustry || null,
+      meetingPreference: (prefs.meetingPreference as "Online" | "Hybrid" | "InPerson") || null,
+    })
+    if (!saveRes.success) {
+      setState("idle")
+      toast.error(saveRes.error)
+      return
+    }
+
     const res = await findSmallGroupMatchesWithEscalation(guestId)
     setState("done")
     if (res.success) {
@@ -270,7 +496,16 @@ export function GuestMatchSection({
             <p className="text-sm font-medium">Awaiting leader confirmation</p>
             <p className="text-sm text-muted-foreground">
               Temporarily assigned to{" "}
-              <span className="font-medium text-foreground">{pendingGroupName}</span>.
+              {pendingGroupId ? (
+                <Link
+                  href={`/small-groups/${pendingGroupId}`}
+                  className="font-medium text-foreground underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+                >
+                  {pendingGroupName}
+                </Link>
+              ) : (
+                <span className="font-medium text-foreground">{pendingGroupName}</span>
+              )}.
             </p>
           </div>
         )}
@@ -365,17 +600,105 @@ export function GuestMatchSection({
       )}
 
       {/* Matching section */}
-      <div className="flex items-center justify-between">
+      <section className="space-y-4">
         <div>
           <h3 className="text-sm font-medium">Small Group Matching</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Find the best-fit small group based on this guest&apos;s profile.
+            Fill in the required fields, then click Find Best Match.
             Assigning creates a pending request — the leader confirms via their link.
           </p>
         </div>
+
+        {/* Required: Life Stage + Language */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label>
+              Life Stage <span className="text-destructive">*</span>
+            </Label>
+            <Select
+              value={prefs.lifeStageId}
+              onValueChange={(v) => setPref("lifeStageId", v === "none" ? "" : v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select life stage" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None</SelectItem>
+                {lifeStages.map((ls) => (
+                  <SelectItem key={ls.id} value={ls.id}>
+                    {ls.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>
+              Primary Language <span className="text-destructive">*</span>
+            </Label>
+            <MultiSelect
+              options={LANGUAGE_OPTIONS}
+              value={prefs.language}
+              onChange={(v) => setPref("language", v)}
+              placeholder="Select language(s)"
+            />
+          </div>
+        </div>
+
+        {/* Required: Meeting Preference */}
+        <div className="space-y-2">
+          <Label>
+            Meeting Preference <span className="text-destructive">*</span>
+          </Label>
+          <Select
+            value={prefs.meetingPreference}
+            onValueChange={(v) => setPref("meetingPreference", v === "none" ? "" : v)}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select preference" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">No preference</SelectItem>
+              <SelectItem value="Online">Online</SelectItem>
+              <SelectItem value="Hybrid">Hybrid</SelectItem>
+              <SelectItem value="InPerson">In Person</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Optional: Work City + Industry */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label>Work / Home City</Label>
+            <Select
+              value={prefs.workCity || "_none"}
+              onValueChange={(v) => setPref("workCity", v === "_none" ? "" : v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select city" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_none">No preference</SelectItem>
+                {CITY_OPTIONS.map((city) => (
+                  <SelectItem key={city} value={city}>
+                    {city}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Industry</Label>
+            <Input
+              value={prefs.workIndustry}
+              onChange={(e) => setPref("workIndustry", e.target.value)}
+              placeholder="Technology"
+            />
+          </div>
+        </div>
+
+        {/* Find Best Match — end of form */}
         <Button
-          variant="outline"
-          size="sm"
           onClick={() => { void handleSearch() }}
           disabled={state === "loading"}
         >
@@ -386,8 +709,9 @@ export function GuestMatchSection({
           )}
           {state === "loading" ? "Searching…" : "Find Best Match"}
         </Button>
-      </div>
+      </section>
 
+      {/* Results */}
       {state === "done" && (
         <>
           {levels.length === 0 ? (
@@ -407,6 +731,10 @@ export function GuestMatchSection({
                       result={r}
                       onAssign={() => { void handleAssign(r.groupId) }}
                       assigning={assigningId === r.groupId}
+                      onGroupClick={() => {
+                        setSelectedGroupId(r.groupId)
+                        setSheetOpen(true)
+                      }}
                     />
                   ))}
                 </div>
@@ -415,6 +743,12 @@ export function GuestMatchSection({
           )}
         </>
       )}
+
+      <SmallGroupDetailSheet
+        groupId={selectedGroupId}
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+      />
     </div>
   )
 }

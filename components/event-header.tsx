@@ -17,6 +17,7 @@ const SECTION_TITLES: Record<string, string> = {
   baptism: "Baptism",
   embarkation: "Embarkation",
   settings: "Settings",
+  "catch-mech": "Catch Mech",
 }
 
 type EventHeaderProps = {
