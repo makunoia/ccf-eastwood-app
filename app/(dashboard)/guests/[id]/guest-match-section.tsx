@@ -422,7 +422,6 @@ export function GuestMatchSection({
 
   async function handleSearch() {
     if (!prefs.lifeStageId) { toast.error("Life Stage is required"); return }
-    if (!prefs.gender) { toast.error("Gender is required"); return }
     if (prefs.language.length === 0) { toast.error("Language is required"); return }
     if (!prefs.meetingPreference) { toast.error("Meeting Preference is required"); return }
 
@@ -610,7 +609,7 @@ export function GuestMatchSection({
           </p>
         </div>
 
-        {/* Required: Life Stage + Gender */}
+        {/* Required: Life Stage + Language */}
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>
@@ -635,35 +634,15 @@ export function GuestMatchSection({
           </div>
           <div className="space-y-2">
             <Label>
-              Gender <span className="text-destructive">*</span>
+              Primary Language <span className="text-destructive">*</span>
             </Label>
-            <Select
-              value={prefs.gender}
-              onValueChange={(v) => setPref("gender", v === "none" ? "" : v)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select gender" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Not specified</SelectItem>
-                <SelectItem value="Male">Male</SelectItem>
-                <SelectItem value="Female">Female</SelectItem>
-              </SelectContent>
-            </Select>
+            <MultiSelect
+              options={LANGUAGE_OPTIONS}
+              value={prefs.language}
+              onChange={(v) => setPref("language", v)}
+              placeholder="Select language(s)"
+            />
           </div>
-        </div>
-
-        {/* Required: Language */}
-        <div className="space-y-2">
-          <Label>
-            Primary Language <span className="text-destructive">*</span>
-          </Label>
-          <MultiSelect
-            options={LANGUAGE_OPTIONS}
-            value={prefs.language}
-            onChange={(v) => setPref("language", v)}
-            placeholder="Select language(s)"
-          />
         </div>
 
         {/* Required: Meeting Preference */}

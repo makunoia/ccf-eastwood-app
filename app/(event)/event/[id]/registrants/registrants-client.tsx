@@ -32,6 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { PhonePHInput } from "@/components/ui/phone-ph-input"
 import { SearchInput } from "@/components/search-input"
 import { ImportWizard } from "@/components/import/import-wizard"
 import {
@@ -190,7 +191,7 @@ function AddRegistrantDialog({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="add-mobile">Mobile Number</Label>
-            <Input id="add-mobile" value={mobile} onChange={(e) => setMobile(e.target.value)} placeholder="09XXXXXXXXX" />
+            <PhonePHInput id="add-mobile" value={mobile} onChange={setMobile} />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="add-email">Email</Label>

@@ -224,6 +224,23 @@ export function MemberForm({ member, eventHistory, smallGroups }: Props) {
           </div>
 
           <div className="space-y-2">
+            <Label>Gender</Label>
+            <Select
+              value={form.gender}
+              onValueChange={(v) => set("gender", v === "none" ? "" : v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select gender" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Not specified</SelectItem>
+                <SelectItem value="Male">Male</SelectItem>
+                <SelectItem value="Female">Female</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
             <Label htmlFor="address">Address</Label>
             <Input
               id="address"
@@ -245,36 +262,38 @@ export function MemberForm({ member, eventHistory, smallGroups }: Props) {
               required
             />
           </div>
-          <div className="space-y-2">
-            <Label>Birth Month</Label>
-            <Select
-              value={form.birthMonth}
-              onValueChange={(v) => set("birthMonth", v)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Month" />
-              </SelectTrigger>
-              <SelectContent>
-                {["January","February","March","April","May","June","July","August","September","October","November","December"].map((name, i) => (
-                  <SelectItem key={i + 1} value={String(i + 1)}>{name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="birthYear">Birth Year</Label>
-            <Input
-              id="birthYear"
-              type="text"
-              inputMode="numeric"
-              maxLength={4}
-              placeholder="0000"
-              value={form.birthYear}
-              onChange={(e) => {
-                const val = e.target.value.replace(/\D/g, "").slice(0, 4);
-                set("birthYear", val);
-              }}
-            />
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Birth Month</Label>
+              <Select
+                value={form.birthMonth}
+                onValueChange={(v) => set("birthMonth", v)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Month" />
+                </SelectTrigger>
+                <SelectContent>
+                  {["January","February","March","April","May","June","July","August","September","October","November","December"].map((name, i) => (
+                    <SelectItem key={i + 1} value={String(i + 1)}>{name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="birthYear">Birth Year</Label>
+              <Input
+                id="birthYear"
+                type="text"
+                inputMode="numeric"
+                maxLength={4}
+                placeholder="0000"
+                value={form.birthYear}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\D/g, "").slice(0, 4);
+                  set("birthYear", val);
+                }}
+              />
+            </div>
           </div>
         </section>
 
