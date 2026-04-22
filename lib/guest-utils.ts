@@ -1,8 +1,9 @@
-export type GuestPipelineStatus = "New" | "EventAttendee" | "Matched" | "Pending" | "Member"
+export type GuestPipelineStatus = "New" | "EventAttendee" | "Matched" | "Declined" | "Pending" | "Member"
 
 export function computeGuestStatus(g: {
   memberId: string | null
   hasPendingSmallGroupRequest: boolean
+  hasRejectedBreakoutRequest: boolean
   eventRegistrations: {
     attendedAt: Date | null
     occurrenceAttendances: { id: string }[]
@@ -13,7 +14,9 @@ export function computeGuestStatus(g: {
   if (g.hasPendingSmallGroupRequest) return "Pending"
 
   for (const r of g.eventRegistrations) {
-    if (r.breakoutGroupMemberships.length > 0) return "Matched"
+    if (r.breakoutGroupMemberships.length > 0) {
+      return g.hasRejectedBreakoutRequest ? "Declined" : "Matched"
+    }
   }
 
   for (const r of g.eventRegistrations) {

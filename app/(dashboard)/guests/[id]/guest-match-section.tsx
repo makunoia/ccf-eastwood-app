@@ -6,8 +6,8 @@ import { useRouter } from "next/navigation"
 import { IconSparkles, IconLoader, IconX } from "@tabler/icons-react"
 import { toast } from "sonner"
 
-import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { MultiSelect } from "@/components/ui/multi-select"
@@ -25,180 +25,14 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog"
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from "@/components/ui/sheet"
-import { Skeleton } from "@/components/ui/skeleton"
 import { WEIGHT_FIELDS } from "@/lib/validations/matching-weights"
 import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
-import { findSmallGroupMatchesWithEscalation, getSmallGroupDetails } from "../matching-actions"
+import { SmallGroupDetailSheet } from "@/components/small-group-detail-sheet"
+import { findSmallGroupMatchesWithEscalation } from "../matching-actions"
 import { clearGuestClaimedGroup, saveGuestMatchingProfile } from "../actions"
 import { assignGuestToGroupTemporarily } from "../../small-groups/actions"
 import type { MatchResult, ScoreBreakdown, EscalationLevel } from "@/lib/matching/types"
 import type { GuestPipelineStatus } from "@/lib/guest-utils"
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
-
-function formatTime(hhmm: string): string {
-  const [h, m] = hhmm.split(":").map(Number)
-  const period = h < 12 ? "AM" : "PM"
-  const hour = h % 12 || 12
-  return `${hour}:${String(m).padStart(2, "0")} ${period}`
-}
-
-// ─── SmallGroupDetailSheet ───────────────────────────────────────────────────
-
-type SmallGroupDetails = {
-  id: string
-  name: string
-  leader: { firstName: string; lastName: string } | null
-  lifeStage: { name: string } | null
-  genderFocus: "Male" | "Female" | "Mixed" | null
-  language: string[]
-  locationCity: string | null
-  meetingFormat: "Online" | "Hybrid" | "InPerson" | null
-  memberLimit: number | null
-  scheduleDayOfWeek: number | null
-  scheduleTimeStart: string | null
-  members: {
-    id: string
-    firstName: string
-    lastName: string
-    groupStatus: "Member" | "Timothy" | "Leader" | null
-  }[]
-  currentCount: number
-}
-
-function SmallGroupDetailSheet({
-  groupId,
-  open,
-  onOpenChange,
-}: {
-  groupId: string | null
-  open: boolean
-  onOpenChange: (open: boolean) => void
-}) {
-  const [data, setData] = React.useState<SmallGroupDetails | null>(null)
-  const [loading, setLoading] = React.useState(false)
-
-  React.useEffect(() => {
-    if (!open || !groupId) return
-    setData(null)
-    setLoading(true)
-    getSmallGroupDetails(groupId).then((res) => {
-      setLoading(false)
-      if (res.success) setData(res.data)
-      else toast.error(res.error)
-    })
-  }, [open, groupId])
-
-  const meetingFormatLabel: Record<string, string> = {
-    Online: "Online",
-    Hybrid: "Hybrid",
-    InPerson: "In Person",
-  }
-
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full sm:max-w-md overflow-y-auto">
-        {loading || !data ? (
-          <SheetHeader>
-            <Skeleton className="h-5 w-48" />
-            <Skeleton className="h-4 w-32 mt-1" />
-          </SheetHeader>
-        ) : (
-          <>
-            <SheetHeader>
-              <SheetTitle>{data.name}</SheetTitle>
-              <SheetDescription>
-                {data.leader
-                  ? `Led by ${data.leader.firstName} ${data.leader.lastName}`
-                  : "No leader assigned"}
-              </SheetDescription>
-            </SheetHeader>
-
-            <div className="px-4 space-y-6">
-              {/* Basic Info */}
-              <div className="space-y-2">
-                <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Details
-                </h3>
-                <div className="grid grid-cols-[120px_1fr] gap-y-1.5 text-sm">
-                  <span className="text-muted-foreground">Life Stage</span>
-                  <span>{data.lifeStage?.name ?? "—"}</span>
-                  <span className="text-muted-foreground">Gender Focus</span>
-                  <span>{data.genderFocus ?? "—"}</span>
-                  <span className="text-muted-foreground">Language</span>
-                  <span>{data.language.length > 0 ? data.language.join(", ") : "—"}</span>
-                  <span className="text-muted-foreground">Location</span>
-                  <span>{data.locationCity ?? "—"}</span>
-                  <span className="text-muted-foreground">Format</span>
-                  <span>
-                    {data.meetingFormat ? (meetingFormatLabel[data.meetingFormat] ?? data.meetingFormat) : "—"}
-                  </span>
-                </div>
-              </div>
-
-              {/* Schedule */}
-              <div className="space-y-2">
-                <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Schedule
-                </h3>
-                {data.scheduleDayOfWeek != null && data.scheduleTimeStart ? (
-                  <p className="text-sm">
-                    {DAY_NAMES[data.scheduleDayOfWeek]} · {formatTime(data.scheduleTimeStart)}
-                  </p>
-                ) : (
-                  <p className="text-sm text-muted-foreground">No schedule set</p>
-                )}
-              </div>
-
-              {/* Capacity */}
-              <div className="space-y-2">
-                <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Capacity
-                </h3>
-                <p className="text-sm">
-                  {data.currentCount} / {data.memberLimit != null ? data.memberLimit : "No limit"}{" "}
-                  members
-                </p>
-              </div>
-
-              {/* Members */}
-              <div className="space-y-2">
-                <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Members
-                </h3>
-                {data.members.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No members yet</p>
-                ) : (
-                  <ul className="space-y-1.5">
-                    {data.members.map((m) => (
-                      <li key={m.id} className="flex items-center justify-between text-sm">
-                        <span>{m.firstName} {m.lastName}</span>
-                        {m.groupStatus && (
-                          <Badge variant="secondary" className="text-xs">
-                            {m.groupStatus}
-                          </Badge>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
-          </>
-        )}
-      </SheetContent>
-    </Sheet>
-  )
-}
 
 // ─── Score components ─────────────────────────────────────────────────────────
 
@@ -280,11 +114,15 @@ function MatchCard({
 
 // ─── Pipeline stepper ────────────────────────────────────────────────────────
 
-const PIPELINE_STAGES: GuestPipelineStatus[] = ["New", "EventAttendee", "Matched", "Pending", "Member"]
+// "Declined" replaces "Matched" in the stepper when the guest has been rejected
+const PIPELINE_STAGES_DEFAULT: GuestPipelineStatus[] = ["New", "EventAttendee", "Matched", "Pending", "Member"]
+const PIPELINE_STAGES_DECLINED: GuestPipelineStatus[] = ["New", "EventAttendee", "Declined", "Pending", "Member"]
+
 const STAGE_LABEL: Record<GuestPipelineStatus, string> = {
   New: "New",
   EventAttendee: "Event Attendee",
   Matched: "Matched",
+  Declined: "Declined",
   Pending: "Pending",
   Member: "Member",
 }
@@ -292,22 +130,25 @@ const STAGE_DESCRIPTION: Record<GuestPipelineStatus, string> = {
   New: "Registered but has not yet attended an event.",
   EventAttendee: "Has attended at least one event but hasn't been placed in a breakout group yet.",
   Matched: "Was placed in a breakout group at an event and is ready to be connected to a small group.",
+  Declined: "Was placed in a breakout group but membership was declined by the group leader. Assign to another small group.",
   Pending: "Has a pending small group assignment — awaiting confirmation from the group leader.",
   Member: "Has joined a small group and been promoted to a full member.",
 }
 
 function PipelineStepper({ status }: { status: GuestPipelineStatus }) {
-  const activeIndex = PIPELINE_STAGES.indexOf(status)
+  const isDeclined = status === "Declined"
+  const stages = isDeclined ? PIPELINE_STAGES_DECLINED : PIPELINE_STAGES_DEFAULT
+  const activeIndex = stages.indexOf(status)
   const CHEVRON = 18
 
   return (
     <div className="overflow-hidden rounded-lg border">
       <div className="flex">
-        {PIPELINE_STAGES.map((stage, i) => {
+        {stages.map((stage, i) => {
           const isActive = i === activeIndex
           const isPast = i < activeIndex
           const isFirst = i === 0
-          const isLast = i === PIPELINE_STAGES.length - 1
+          const isLast = i === stages.length - 1
 
           const clipPath = isFirst
             ? `polygon(0 0, calc(100% - ${CHEVRON}px) 0, 100% 50%, calc(100% - ${CHEVRON}px) 100%, 0 100%)`
@@ -320,7 +161,9 @@ function PipelineStepper({ status }: { status: GuestPipelineStatus }) {
               key={stage}
               className={[
                 "relative flex flex-1 items-center select-none text-xs",
-                isActive
+                isActive && isDeclined
+                  ? "bg-destructive text-destructive-foreground"
+                  : isActive
                   ? "bg-foreground text-background"
                   : isPast
                   ? "bg-muted text-foreground/50"
@@ -329,7 +172,7 @@ function PipelineStepper({ status }: { status: GuestPipelineStatus }) {
               style={{
                 clipPath,
                 marginLeft: i > 0 ? `-${CHEVRON}px` : undefined,
-                zIndex: PIPELINE_STAGES.length - i,
+                zIndex: stages.length - i,
                 paddingTop: 10,
                 paddingBottom: 10,
                 paddingLeft: isFirst ? 16 : CHEVRON + 10,
@@ -549,13 +392,19 @@ export const GuestMatchSection = React.forwardRef<
     )
   }
 
-  if (pipelineStatus === "Matched") {
+  if (pipelineStatus === "Matched" || pipelineStatus === "Declined") {
+    const isDeclined = pipelineStatus === "Declined"
     return (
       <div className="max-w-2xl space-y-4">
         <PipelineStepper status={pipelineStatus} />
         {matchedBreakout && (
-          <div className="rounded-lg border p-4 space-y-3">
-            <h3 className="text-sm font-medium">Breakout Group Assignment</h3>
+          <div className={["rounded-lg border p-4 space-y-3", isDeclined ? "border-destructive/40 bg-destructive/5" : ""].join(" ")}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-medium">Breakout Group Assignment</h3>
+              {isDeclined && (
+                <Badge variant="destructive" className="text-xs">Membership Declined</Badge>
+              )}
+            </div>
             <div className="space-y-2 text-sm">
               <div className="flex gap-2">
                 <span className="text-muted-foreground w-32 shrink-0">Event</span>
@@ -593,6 +442,167 @@ export const GuestMatchSection = React.forwardRef<
             </div>
           </div>
         )}
+        {isDeclined && (
+          <section className="space-y-4">
+            <div>
+              <h3 className="text-sm font-medium">Small Group Matching</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Fill in the required fields, then click Find Best Match.
+                Assigning creates a pending request — the leader confirms via their link.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>
+                  Life Stage <span className="text-destructive">*</span>
+                </Label>
+                <Select
+                  value={prefs.lifeStageId}
+                  onValueChange={(v) => setPref("lifeStageId", v === "none" ? "" : v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select life stage" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {lifeStages.map((ls) => (
+                      <SelectItem key={ls.id} value={ls.id}>
+                        {ls.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>
+                  Primary Language <span className="text-destructive">*</span>
+                </Label>
+                <MultiSelect
+                  options={LANGUAGE_OPTIONS}
+                  value={prefs.language}
+                  onChange={(v) => setPref("language", v)}
+                  placeholder="Select language(s)"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>
+                Meeting Preference <span className="text-destructive">*</span>
+              </Label>
+              <Select
+                value={prefs.meetingPreference}
+                onValueChange={(v) => setPref("meetingPreference", v === "none" ? "" : v)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select preference" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No preference</SelectItem>
+                  <SelectItem value="Online">Online</SelectItem>
+                  <SelectItem value="Hybrid">Hybrid</SelectItem>
+                  <SelectItem value="InPerson">In Person</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Gender</Label>
+                <Select
+                  value={prefs.gender}
+                  onValueChange={(v) => setPref("gender", v === "none" ? "" : v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select gender" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Not specified</SelectItem>
+                    <SelectItem value="Male">Male</SelectItem>
+                    <SelectItem value="Female">Female</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Work City</Label>
+                <Select
+                  value={prefs.workCity || "_none"}
+                  onValueChange={(v) => setPref("workCity", v === "_none" ? "" : v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select city" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">No preference</SelectItem>
+                    {CITY_OPTIONS.map((city) => (
+                      <SelectItem key={city} value={city}>{city}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Work Industry</Label>
+              <Input
+                placeholder="Technology"
+                value={prefs.workIndustry}
+                onChange={(e) => setPref("workIndustry", e.target.value)}
+              />
+            </div>
+
+            <Button
+              onClick={() => { void handleSearch() }}
+              disabled={state === "loading"}
+            >
+              {state === "loading" ? (
+                <IconLoader className="size-4 animate-spin" />
+              ) : (
+                <IconSparkles className="size-4" />
+              )}
+              {state === "loading" ? "Searching…" : "Find Best Match"}
+            </Button>
+          </section>
+        )}
+
+        {isDeclined && state === "done" && (
+          <>
+            {levels.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No eligible groups found. All groups may be at capacity.
+              </p>
+            ) : (
+              <div className="space-y-6">
+                {levels.map((level) => (
+                  <div key={level.level} className="space-y-3">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      {LEVEL_LABEL[level.level]}
+                    </p>
+                    {level.matches.map((r: MatchResult) => (
+                      <MatchCard
+                        key={r.groupId}
+                        result={r}
+                        onAssign={() => { void handleAssign(r.groupId) }}
+                        assigning={assigningId === r.groupId}
+                        onGroupClick={() => {
+                          setSelectedGroupId(r.groupId)
+                          setSheetOpen(true)
+                        }}
+                      />
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        <SmallGroupDetailSheet
+          groupId={selectedGroupId}
+          open={sheetOpen}
+          onOpenChange={setSheetOpen}
+        />
       </div>
     )
   }

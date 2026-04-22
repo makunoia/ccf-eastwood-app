@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/dialog"
 import { WEIGHT_FIELDS } from "@/lib/validations/matching-weights"
 import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
+import { SmallGroupDetailSheet } from "@/components/small-group-detail-sheet"
 import {
   findCatchMechSmallGroupMatches,
   assignCatchMechRegistrantToGroup,
@@ -76,11 +77,13 @@ function MatchCard({
   onAssign,
   assigning,
   showVolunteerInfo,
+  onGroupClick,
 }: {
   result: CatchMechMatchResult
   onAssign: () => void
   assigning: boolean
   showVolunteerInfo: boolean
+  onGroupClick: () => void
 }) {
   const score = Math.round(result.totalScore * 100)
   const [detailsOpen, setDetailsOpen] = React.useState(false)
@@ -88,9 +91,15 @@ function MatchCard({
   return (
     <>
       <div className="rounded-lg border p-4">
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="font-medium">{result.groupName}</p>
+            <button
+              type="button"
+              onClick={onGroupClick}
+              className="font-medium text-left underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors cursor-pointer"
+            >
+              {result.groupName}
+            </button>
             <p className="text-sm text-muted-foreground">{score}% match</p>
             {showVolunteerInfo && result.volunteerInfo && (
               <p className="text-xs text-muted-foreground mt-0.5">
@@ -144,6 +153,8 @@ export const CatchMechMatchSection = React.forwardRef<CatchMechMatchSectionHandl
   const [searchState, setSearchState] = React.useState<"idle" | "loading" | "done">("idle")
   const [levels, setLevels] = React.useState<CatchMechEscalationLevel[]>([])
   const [assigningId, setAssigningId] = React.useState<string | null>(null)
+  const [selectedGroupId, setSelectedGroupId] = React.useState<string | null>(null)
+  const [sheetOpen, setSheetOpen] = React.useState(false)
 
   const prefsRef = React.useRef(initialPrefs)
   const [prefs, setPrefs] = React.useState<MatchingPrefs>(initialPrefs)
@@ -334,6 +345,10 @@ export const CatchMechMatchSection = React.forwardRef<CatchMechMatchSectionHandl
                       onAssign={() => { void handleAssign(r.groupId) }}
                       assigning={assigningId === r.groupId}
                       showVolunteerInfo={scope === "volunteers"}
+                      onGroupClick={() => {
+                        setSelectedGroupId(r.groupId)
+                        setSheetOpen(true)
+                      }}
                     />
                   ))}
                 </div>
@@ -342,6 +357,12 @@ export const CatchMechMatchSection = React.forwardRef<CatchMechMatchSectionHandl
           )}
         </>
       )}
+
+      <SmallGroupDetailSheet
+        groupId={selectedGroupId}
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+      />
     </div>
   )
 }
