@@ -57,6 +57,7 @@ type Props = {
   guest?: GuestDetail
   eventHistory?: React.ReactNode
   matchSection?: React.ReactNode
+  onSaveMatchingProfile?: () => Promise<void>
 }
 
 function toFormValues(guest: GuestDetail): GuestFormValues {
@@ -77,7 +78,7 @@ function toFormValues(guest: GuestDetail): GuestFormValues {
   }
 }
 
-export function GuestForm({ guest, eventHistory, matchSection }: Props) {
+export function GuestForm({ guest, eventHistory, matchSection, onSaveMatchingProfile }: Props) {
   const router = useRouter()
   const isEdit = !!guest
   const isPromoted = !!guest?.memberId
@@ -87,6 +88,7 @@ export function GuestForm({ guest, eventHistory, matchSection }: Props) {
   const [saving, setSaving] = React.useState(false)
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
+  const [activeTab, setActiveTab] = React.useState("profile")
 
   function set<K extends keyof GuestFormValues>(field: K, value: GuestFormValues[K]) {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -109,6 +111,13 @@ export function GuestForm({ guest, eventHistory, matchSection }: Props) {
     } else {
       toast.error(result.error)
     }
+  }
+
+  async function handleSaveMatchingProfile() {
+    if (!onSaveMatchingProfile) return
+    setSaving(true)
+    await onSaveMatchingProfile()
+    setSaving(false)
   }
 
   async function handleDelete() {
@@ -148,7 +157,7 @@ export function GuestForm({ guest, eventHistory, matchSection }: Props) {
           </p>
         </div>
         <div className="hidden shrink-0 items-center gap-2 sm:flex">
-          {isEdit && !isPromoted && (
+          {isEdit && !isPromoted && activeTab !== "small-group" && (
             <Button
               type="button"
               variant="destructive"
@@ -159,9 +168,19 @@ export function GuestForm({ guest, eventHistory, matchSection }: Props) {
             </Button>
           )}
           {isEdit ? (
-            <Button type="submit" form="guest-form" disabled={saving || isPromoted}>
-              {saving ? "Saving…" : "Save changes"}
-            </Button>
+            activeTab === "small-group" && onSaveMatchingProfile ? (
+              <Button
+                type="button"
+                onClick={() => { void handleSaveMatchingProfile() }}
+                disabled={saving || isPromoted}
+              >
+                {saving ? "Saving…" : "Save changes"}
+              </Button>
+            ) : (
+              <Button type="submit" form="guest-form" disabled={saving || isPromoted}>
+                {saving ? "Saving…" : "Save changes"}
+              </Button>
+            )
           ) : (
             <Button type="submit" form="guest-form" disabled={saving}>
               {saving ? "Adding…" : "Add Guest"}
@@ -185,7 +204,7 @@ export function GuestForm({ guest, eventHistory, matchSection }: Props) {
         </div>
       )}
 
-      <Tabs defaultValue="profile" className="flex flex-col gap-4">
+      <Tabs defaultValue="profile" className="flex flex-col gap-4" onValueChange={setActiveTab}>
         {hasTabs && (
           <TabsList className="w-fit">
             <TabsTrigger value="profile">Profile</TabsTrigger>

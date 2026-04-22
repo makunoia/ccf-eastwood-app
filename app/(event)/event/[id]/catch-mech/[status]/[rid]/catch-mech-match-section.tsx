@@ -31,6 +31,7 @@ import {
   type CatchMechEscalationLevel,
   type CatchMechMatchResult,
 } from "../../matching-actions"
+import { saveGuestMatchingProfile } from "@/app/(dashboard)/guests/actions"
 import type { ScoreBreakdown } from "@/lib/matching/types"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -43,9 +44,14 @@ type MatchingPrefs = {
   workIndustry: string
 }
 
+export type CatchMechMatchSectionHandle = {
+  save: () => Promise<boolean>
+}
+
 type Props = {
   registrantId: string
   eventId: string
+  guestId: string
   initialPrefs: MatchingPrefs
   lifeStages: { id: string; name: string }[]
 }
@@ -131,16 +137,42 @@ function MatchCard({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function CatchMechMatchSection({ registrantId, eventId, initialPrefs, lifeStages }: Props) {
+export const CatchMechMatchSection = React.forwardRef<CatchMechMatchSectionHandle, Props>(
+  function CatchMechMatchSection({ registrantId, eventId, guestId, initialPrefs, lifeStages }, ref) {
   const router = useRouter()
   const [scope, setScope] = React.useState<"volunteers" | "all">("volunteers")
   const [searchState, setSearchState] = React.useState<"idle" | "loading" | "done">("idle")
   const [levels, setLevels] = React.useState<CatchMechEscalationLevel[]>([])
   const [assigningId, setAssigningId] = React.useState<string | null>(null)
+
+  const prefsRef = React.useRef(initialPrefs)
   const [prefs, setPrefs] = React.useState<MatchingPrefs>(initialPrefs)
 
+  React.useImperativeHandle(ref, () => ({
+    async save(): Promise<boolean> {
+      const res = await saveGuestMatchingProfile(guestId, {
+        lifeStageId: prefsRef.current.lifeStageId || null,
+        language: prefsRef.current.language,
+        meetingPreference: (prefsRef.current.meetingPreference as "Online" | "Hybrid" | "InPerson") || null,
+        workCity: prefsRef.current.workCity || null,
+        workIndustry: prefsRef.current.workIndustry || null,
+      })
+      if (res.success) {
+        toast.success("Matching profile saved")
+        return true
+      } else {
+        toast.error(res.error)
+        return false
+      }
+    },
+  }))
+
   function setPref<K extends keyof MatchingPrefs>(key: K, value: MatchingPrefs[K]) {
-    setPrefs((prev) => ({ ...prev, [key]: value }))
+    setPrefs((prev) => {
+      const next = { ...prev, [key]: value }
+      prefsRef.current = next
+      return next
+    })
   }
 
   async function handleSearch() {
@@ -164,7 +196,8 @@ export function CatchMechMatchSection({ registrantId, eventId, initialPrefs, lif
     setAssigningId(null)
     if (res.success) {
       toast.success("Assigned — awaiting leader confirmation")
-      router.refresh()
+      // Redirect to pending page
+      router.push(`/event/${eventId}/catch-mech/pending/${registrantId}`)
     } else {
       toast.error(res.error)
     }
@@ -312,3 +345,4 @@ export function CatchMechMatchSection({ registrantId, eventId, initialPrefs, lif
     </div>
   )
 }
+)

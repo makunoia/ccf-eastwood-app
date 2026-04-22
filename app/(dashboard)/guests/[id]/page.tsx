@@ -1,8 +1,7 @@
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
-import { GuestForm } from "../guest-form"
 import { GuestEventHistory } from "./guest-event-history"
-import { GuestMatchSection } from "./guest-match-section"
+import { GuestDetailContent } from "./guest-detail-content"
 import { computeGuestStatus } from "@/lib/guest-utils"
 
 async function getGuest(id: string) {
@@ -146,28 +145,11 @@ export default async function GuestDetailPage({
   })
 
   return (
-    <GuestForm
+    <GuestDetailContent
       guest={guest}
+      lifeStages={lifeStages}
+      pipelineStatus={pipelineStatus}
       eventHistory={<GuestEventHistory registrations={registrations} />}
-      matchSection={
-        <GuestMatchSection
-          guestId={id}
-          pipelineStatus={pipelineStatus}
-          claimedGroup={guest.claimedSmallGroup}
-          pendingGroupName={guest.pendingGroupName}
-          pendingGroupId={guest.pendingGroupId}
-          matchedBreakout={guest.matchedBreakout}
-          initialPrefs={{
-            lifeStageId: guest.lifeStageId ?? "",
-            gender: guest.gender ?? "",
-            language: guest.language,
-            workCity: guest.workCity ?? "",
-            workIndustry: guest.workIndustry ?? "",
-            meetingPreference: guest.meetingPreference ?? "",
-          }}
-          lifeStages={lifeStages}
-        />
-      }
     />
   )
 }
