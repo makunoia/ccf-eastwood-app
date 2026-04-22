@@ -385,27 +385,37 @@ type MatchingPrefs = {
   meetingPreference: string
 }
 
+export type GuestMatchSectionHandle = {
+  save: () => Promise<boolean>
+}
+
 // ─── Main section ─────────────────────────────────────────────────────────────
 
-export function GuestMatchSection({
-  guestId,
-  pipelineStatus,
-  claimedGroup,
-  pendingGroupName,
-  pendingGroupId,
-  matchedBreakout,
-  initialPrefs,
-  lifeStages,
-}: {
-  guestId: string
-  pipelineStatus: GuestPipelineStatus
-  claimedGroup: ClaimedGroup
-  pendingGroupName: string | null
-  pendingGroupId: string | null
-  matchedBreakout: MatchedBreakout
-  initialPrefs: MatchingPrefs
-  lifeStages: { id: string; name: string }[]
-}) {
+export const GuestMatchSection = React.forwardRef<
+  GuestMatchSectionHandle,
+  {
+    guestId: string
+    pipelineStatus: GuestPipelineStatus
+    claimedGroup: ClaimedGroup
+    pendingGroupName: string | null
+    pendingGroupId: string | null
+    matchedBreakout: MatchedBreakout
+    initialPrefs: MatchingPrefs
+    lifeStages: { id: string; name: string }[]
+  }
+>(function GuestMatchSection(
+  {
+    guestId,
+    pipelineStatus,
+    claimedGroup,
+    pendingGroupName,
+    pendingGroupId,
+    matchedBreakout,
+    initialPrefs,
+    lifeStages,
+  },
+  ref
+) {
   const router = useRouter()
   const [state, setState] = React.useState<"idle" | "loading" | "done">("idle")
   const [levels, setLevels] = React.useState<EscalationLevel[]>([])
@@ -413,11 +423,37 @@ export function GuestMatchSection({
   const [clearingClaimed, setClearingClaimed] = React.useState(false)
   const [localClaimedGroup, setLocalClaimedGroup] = React.useState<ClaimedGroup>(claimedGroup)
   const [selectedGroupId, setSelectedGroupId] = React.useState<string | null>(null)
+
+  const prefsRef = React.useRef(initialPrefs)
+
+  React.useImperativeHandle(ref, () => ({
+    async save(): Promise<boolean> {
+      const res = await saveGuestMatchingProfile(guestId, {
+        lifeStageId: prefsRef.current.lifeStageId || null,
+        gender: (prefsRef.current.gender as "Male" | "Female") || null,
+        language: prefsRef.current.language,
+        workCity: prefsRef.current.workCity || null,
+        workIndustry: prefsRef.current.workIndustry || null,
+        meetingPreference: (prefsRef.current.meetingPreference as "Online" | "Hybrid" | "InPerson") || null,
+      })
+      if (res.success) {
+        toast.success("Matching profile saved")
+        return true
+      } else {
+        toast.error(res.error)
+        return false
+      }
+    },
+  }))
   const [sheetOpen, setSheetOpen] = React.useState(false)
 
   const [prefs, setPrefs] = React.useState<MatchingPrefs>(initialPrefs)
   function setPref<K extends keyof MatchingPrefs>(key: K, value: MatchingPrefs[K]) {
-    setPrefs((prev) => ({ ...prev, [key]: value }))
+    setPrefs((prev) => {
+      const next = { ...prev, [key]: value }
+      prefsRef.current = next
+      return next
+    })
   }
 
   async function handleSearch() {
@@ -751,4 +787,4 @@ export function GuestMatchSection({
       />
     </div>
   )
-}
+})

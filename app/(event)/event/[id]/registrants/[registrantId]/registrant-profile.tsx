@@ -59,7 +59,7 @@ function toFormValues(guest: GuestData): GuestFormValues {
   }
 }
 
-export function RegistrantGuestProfile({ guest }: { guest: GuestData }) {
+export function RegistrantGuestProfile({ guest, showViewProfileButton = true, formRef }: { guest: GuestData; showViewProfileButton?: boolean; formRef?: React.RefObject<HTMLFormElement | null> }) {
   const [form, setForm] = React.useState<GuestFormValues>(() => toFormValues(guest))
   const [saving, setSaving] = React.useState(false)
 
@@ -82,7 +82,7 @@ export function RegistrantGuestProfile({ guest }: { guest: GuestData }) {
   return (
     <section className="space-y-4">
       <h3 className="text-sm font-medium text-muted-foreground">Profile</h3>
-      <form id="registrant-guest-form" onSubmit={handleSubmit} className="space-y-4">
+      <form ref={formRef} id="registrant-guest-form" onSubmit={handleSubmit} className="space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label htmlFor="rg-firstName">
@@ -191,11 +191,13 @@ export function RegistrantGuestProfile({ guest }: { guest: GuestData }) {
           />
         </div>
 
-        <div className="flex justify-end">
-          <Button type="submit" disabled={saving}>
-            {saving ? "Saving…" : "Save changes"}
-          </Button>
-        </div>
+        {showViewProfileButton && (
+          <div className="flex justify-end">
+            <Button type="submit" disabled={saving}>
+              {saving ? "Saving…" : "Save changes"}
+            </Button>
+          </div>
+        )}
       </form>
     </section>
   )
