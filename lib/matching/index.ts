@@ -4,7 +4,7 @@ import { DEFAULT_WEIGHTS } from "@/lib/validations/matching-weights"
 import { scoreGroup } from "./engine"
 import { scoreGender, scoreLifeStage, scoreSchedule } from "./scorers"
 import { EMPTY_CANDIDATE } from "./types"
-import type { CandidateProfile, GroupProfile, MatchResult, WeightConfig, EscalationLevel } from "./types"
+import type { CandidateProfile, GroupProfile, MatchResult, WeightConfig, EscalationLevel, TimeSlot } from "./types"
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -147,7 +147,7 @@ async function loadBreakoutWeights(): Promise<WeightConfig> {
 
 export async function matchSmallGroups(
   params: { guestId: string } | { memberId: string },
-  options?: { excludeCurrentGroup?: boolean; limit?: number }
+  options?: { excludeCurrentGroup?: boolean; limit?: number; candidateScheduleSlot?: TimeSlot }
 ): Promise<MatchResult[]> {
   let candidate: CandidateProfile
   let currentGroupId: string | null | undefined
@@ -197,6 +197,13 @@ export async function matchSmallGroups(
     ledGroupIds = new Set(member.ledGroups.map((g) => g.id))
   }
 
+  if (options?.candidateScheduleSlot) {
+    candidate = {
+      ...candidate,
+      scheduleSlots: [options.candidateScheduleSlot],
+    }
+  }
+
   const groups = await db.smallGroup.findMany({
     select: SMALL_GROUP_SCORE_SELECT,
   })
@@ -234,7 +241,8 @@ export async function matchSmallGroups(
  */
 export async function matchSmallGroupsWithEscalation(
   guestId: string,
-  eventId: string
+  eventId: string,
+  candidateScheduleSlot?: TimeSlot
 ): Promise<EscalationLevel[]> {
   const guest = await db.guest.findUnique({
     where: { id: guestId },
@@ -253,7 +261,12 @@ export async function matchSmallGroupsWithEscalation(
   })
   if (!guest) return []
 
-  const candidate = buildCandidateFromGuest(guest)
+  const candidate: CandidateProfile = candidateScheduleSlot
+    ? {
+        ...buildCandidateFromGuest(guest),
+        scheduleSlots: [candidateScheduleSlot],
+      }
+    : buildCandidateFromGuest(guest)
   const weights = await loadSmallGroupWeights()
 
   // ── Collect Level 1 group IDs (breakout facilitators' small groups) ───────

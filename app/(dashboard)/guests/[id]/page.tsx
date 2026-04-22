@@ -98,6 +98,8 @@ async function getGuest(id: string) {
     workCity: g.workCity,
     workIndustry: g.workIndustry,
     meetingPreference: g.meetingPreference as string | null,
+    scheduleDayOfWeek: g.scheduleDayOfWeek,
+    scheduleTimeStart: g.scheduleTimeStart,
     memberId: g.memberId,
     claimedSmallGroup: g.claimedSmallGroup,
     eventRegistrations: g.eventRegistrations,

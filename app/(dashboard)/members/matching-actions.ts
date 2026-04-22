@@ -10,12 +10,19 @@ type ActionResult<T> =
   | { success: false; error: string }
 
 export async function findSmallGroupMatchesForMember(
-  memberId: string
+  memberId: string,
+  options?: {
+    scheduleSlot?: { dayOfWeek: number; timeStart: string; timeEnd: string } | null
+  }
 ): Promise<ActionResult<MatchResult[]>> {
   try {
     const results = await matchSmallGroups(
       { memberId },
-      { excludeCurrentGroup: true, limit: 10 }
+      {
+        excludeCurrentGroup: true,
+        limit: 10,
+        candidateScheduleSlot: options?.scheduleSlot ?? undefined,
+      }
     )
     return { success: true, data: results }
   } catch {

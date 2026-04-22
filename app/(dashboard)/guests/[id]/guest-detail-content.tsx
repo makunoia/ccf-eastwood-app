@@ -20,6 +20,8 @@ type GuestData = {
   workCity: string | null
   workIndustry: string | null
   meetingPreference: string | null
+  scheduleDayOfWeek: number | null
+  scheduleTimeStart: string | null
   memberId: string | null
   claimedSmallGroup: {
     id: string
@@ -37,6 +39,11 @@ type GuestData = {
       leader: { firstName: string; lastName: string } | null
     } | null
   } | null
+}
+
+function addOneHour(time: string): string {
+  const [h, m] = time.split(":").map(Number)
+  return `${String((h + 1) % 24).padStart(2, "0")}:${String(m).padStart(2, "0")}`
 }
 
 type Props = {
@@ -73,6 +80,10 @@ export function GuestDetailContent({ guest, lifeStages, pipelineStatus, eventHis
             workCity: guest.workCity ?? "",
             workIndustry: guest.workIndustry ?? "",
             meetingPreference: guest.meetingPreference ?? "",
+            scheduleDayOfWeek:
+              guest.scheduleDayOfWeek != null ? String(guest.scheduleDayOfWeek) : "",
+            scheduleTimeStart: guest.scheduleTimeStart ?? "",
+            scheduleTimeEnd: guest.scheduleTimeStart ? addOneHour(guest.scheduleTimeStart) : "",
           }}
           lifeStages={lifeStages}
         />
