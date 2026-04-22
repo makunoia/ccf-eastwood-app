@@ -5,7 +5,7 @@ import { GuestDetailContent } from "./guest-detail-content"
 import { computeGuestStatus } from "@/lib/guest-utils"
 
 async function getGuest(id: string) {
-  const [g, pendingRequest] = await Promise.all([
+  const [g, pendingRequest, rejectedBreakoutRequest] = await Promise.all([
     db.guest.findUnique({
       where: { id },
       include: {
@@ -50,6 +50,10 @@ async function getGuest(id: string) {
     db.smallGroupMemberRequest.findFirst({
       where: { guestId: id, status: "Pending" },
       select: { smallGroup: { select: { id: true, name: true } } },
+    }),
+    db.smallGroupMemberRequest.findFirst({
+      where: { guestId: id, status: "Rejected", breakoutGroupId: { not: null } },
+      select: { id: true },
     }),
   ])
   if (!g) return null
@@ -99,6 +103,7 @@ async function getGuest(id: string) {
     eventRegistrations: g.eventRegistrations,
     pendingGroupName: pendingRequest?.smallGroup?.name ?? null,
     pendingGroupId: pendingRequest?.smallGroup?.id ?? null,
+    hasRejectedBreakoutRequest: !!rejectedBreakoutRequest,
     matchedBreakout,
   }
 }
@@ -141,6 +146,7 @@ export default async function GuestDetailPage({
   const pipelineStatus = computeGuestStatus({
     memberId: guest.memberId,
     hasPendingSmallGroupRequest: guest.pendingGroupName !== null,
+    hasRejectedBreakoutRequest: guest.hasRejectedBreakoutRequest,
     eventRegistrations: guest.eventRegistrations,
   })
 
