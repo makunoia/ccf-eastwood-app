@@ -6,12 +6,22 @@ import { MemberSmallGroups } from "./member-small-groups"
 import { MemberMatchSection } from "./member-match-section"
 import { type MemberRow } from "../columns"
 
+function addOneHour(time: string): string {
+  const [h, m] = time.split(":").map(Number)
+  return `${String((h + 1) % 24).padStart(2, "0")}:${String(m).padStart(2, "0")}`
+}
+
 async function getMember(id: string): Promise<MemberRow | null> {
   const m = await db.member.findUnique({
     where: { id },
     include: {
       lifeStage: { select: { id: true, name: true } },
       smallGroup: { select: { name: true } },
+      schedulePreferences: {
+        select: { dayOfWeek: true, timeStart: true },
+        orderBy: { createdAt: "asc" },
+        take: 1,
+      },
     },
   })
   if (!m) return null
@@ -34,6 +44,8 @@ async function getMember(id: string): Promise<MemberRow | null> {
     workCity: m.workCity,
     workIndustry: m.workIndustry,
     meetingPreference: m.meetingPreference,
+    scheduleDayOfWeek: m.schedulePreferences[0]?.dayOfWeek ?? null,
+    scheduleTimeStart: m.schedulePreferences[0]?.timeStart ?? null,
   }
 }
 
@@ -147,6 +159,10 @@ export default async function MemberDetailPage({
                 workCity: member.workCity ?? "",
                 workIndustry: member.workIndustry ?? "",
                 meetingPreference: member.meetingPreference ?? "",
+                scheduleDayOfWeek:
+                  member.scheduleDayOfWeek != null ? String(member.scheduleDayOfWeek) : "",
+                scheduleTimeStart: member.scheduleTimeStart ?? "",
+                scheduleTimeEnd: member.scheduleTimeStart ? addOneHour(member.scheduleTimeStart) : "",
               }}
               lifeStages={lifeStages}
             />

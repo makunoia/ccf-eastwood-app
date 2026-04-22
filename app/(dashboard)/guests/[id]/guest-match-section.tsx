@@ -25,26 +25,59 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog"
-import { WEIGHT_FIELDS } from "@/lib/validations/matching-weights"
 import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
 import { SmallGroupDetailSheet } from "@/components/small-group-detail-sheet"
 import { findSmallGroupMatchesWithEscalation } from "../matching-actions"
 import { clearGuestClaimedGroup, saveGuestMatchingProfile } from "../actions"
 import { assignGuestToGroupTemporarily } from "../../small-groups/actions"
-import type { MatchResult, ScoreBreakdown, EscalationLevel } from "@/lib/matching/types"
+import type { MatchResult, EscalationLevel } from "@/lib/matching/types"
 import type { GuestPipelineStatus } from "@/lib/guest-utils"
 
 // ─── Score components ─────────────────────────────────────────────────────────
 
-function ScoreBar({ value }: { value: number }) {
-  return (
-    <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-      <div
-        className="h-full rounded-full bg-primary transition-all"
-        style={{ width: `${Math.round(value * 100)}%` }}
-      />
-    </div>
-  )
+const DAYS_OF_WEEK = [
+  { value: "0", label: "Sunday" },
+  { value: "1", label: "Monday" },
+  { value: "2", label: "Tuesday" },
+  { value: "3", label: "Wednesday" },
+  { value: "4", label: "Thursday" },
+  { value: "5", label: "Friday" },
+  { value: "6", label: "Saturday" },
+]
+
+function buildScheduleSlot(prefs: MatchingPrefs): { dayOfWeek: number; timeStart: string; timeEnd: string } | null {
+  if (!prefs.scheduleDayOfWeek || !prefs.scheduleTimeStart || !prefs.scheduleTimeEnd) {
+    return null
+  }
+  if (prefs.scheduleTimeStart >= prefs.scheduleTimeEnd) {
+    return null
+  }
+  return {
+    dayOfWeek: Number(prefs.scheduleDayOfWeek),
+    timeStart: prefs.scheduleTimeStart,
+    timeEnd: prefs.scheduleTimeEnd,
+  }
+}
+
+function buildFitReasons(result: MatchResult): string[] {
+  const reasons: string[] = []
+  const score = result.breakdown
+
+  if (score.lifeStage >= 1) reasons.push("Life stage aligns with this group.")
+  if (score.language >= 1) reasons.push("Language preferences overlap strongly.")
+  if (score.schedule >= 1) reasons.push("Schedule overlaps with the selected day and time range.")
+  if (score.mode >= 1) reasons.push("Meeting format matches preferred style.")
+  if (score.gender >= 1) reasons.push("Gender focus is compatible.")
+  if (score.location >= 1) reasons.push("Location preference is a direct match.")
+  if (score.age >= 0.9) reasons.push("Age profile fits the group range.")
+  if (score.career >= 0.6) reasons.push("Career/industry profile is similar to current members.")
+  if (score.capacity > 0.5) reasons.push("Group has healthy remaining capacity.")
+
+  if (reasons.length === 0) {
+    reasons.push("Overall compatibility is high across multiple profile factors.")
+  }
+
+  return reasons
 }
 
 function MatchCard({
@@ -60,6 +93,7 @@ function MatchCard({
 }) {
   const score = Math.round(result.totalScore * 100)
   const [detailsOpen, setDetailsOpen] = React.useState(false)
+  const reasons = buildFitReasons(result)
 
   return (
     <>
@@ -90,21 +124,19 @@ function MatchCard({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{result.groupName}</DialogTitle>
-            <DialogDescription>{score}% overall match</DialogDescription>
+            <DialogDescription>
+              {score === 100 ? "Perfect fit based on the current profile" : `${score}% overall match`}
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2 py-2">
-            {WEIGHT_FIELDS.map((field) => {
-              const raw = result.breakdown[field.key as keyof ScoreBreakdown]
-              return (
-                <div key={field.key} className="grid grid-cols-[120px_1fr_32px] items-center gap-2">
-                  <span className="text-xs text-muted-foreground truncate">{field.label}</span>
-                  <ScoreBar value={raw} />
-                  <span className="text-xs tabular-nums text-right">
-                    {Math.round(raw * 100)}%
-                  </span>
-                </div>
-              )
-            })}
+          <div className="space-y-3 py-2">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Why this group is a good fit
+            </p>
+            <ul className="space-y-1.5 text-sm text-muted-foreground">
+              {reasons.map((reason) => (
+                <li key={reason}>• {reason}</li>
+              ))}
+            </ul>
           </div>
         </DialogContent>
       </Dialog>
@@ -226,6 +258,9 @@ type MatchingPrefs = {
   workCity: string
   workIndustry: string
   meetingPreference: string
+  scheduleDayOfWeek: string
+  scheduleTimeStart: string
+  scheduleTimeEnd: string
 }
 
 export type GuestMatchSectionHandle = {
@@ -278,6 +313,8 @@ export const GuestMatchSection = React.forwardRef<
         workCity: prefsRef.current.workCity || null,
         workIndustry: prefsRef.current.workIndustry || null,
         meetingPreference: (prefsRef.current.meetingPreference as "Online" | "Hybrid" | "InPerson") || null,
+        scheduleDayOfWeek: prefsRef.current.scheduleDayOfWeek ? Number(prefsRef.current.scheduleDayOfWeek) : null,
+        scheduleTimeStart: prefsRef.current.scheduleTimeStart || null,
       })
       if (res.success) {
         toast.success("Matching profile saved")
@@ -303,6 +340,15 @@ export const GuestMatchSection = React.forwardRef<
     if (!prefs.lifeStageId) { toast.error("Life Stage is required"); return }
     if (prefs.language.length === 0) { toast.error("Language is required"); return }
     if (!prefs.meetingPreference) { toast.error("Meeting Preference is required"); return }
+    if (!prefs.scheduleDayOfWeek) { toast.error("Schedule day is required"); return }
+    if (!prefs.scheduleTimeStart || !prefs.scheduleTimeEnd) {
+      toast.error("Schedule time range is required")
+      return
+    }
+    if (prefs.scheduleTimeStart >= prefs.scheduleTimeEnd) {
+      toast.error("Schedule end time must be after start time")
+      return
+    }
 
     setState("loading")
 
@@ -313,6 +359,8 @@ export const GuestMatchSection = React.forwardRef<
       workCity: prefs.workCity || null,
       workIndustry: prefs.workIndustry || null,
       meetingPreference: (prefs.meetingPreference as "Online" | "Hybrid" | "InPerson") || null,
+      scheduleDayOfWeek: prefs.scheduleDayOfWeek ? Number(prefs.scheduleDayOfWeek) : null,
+      scheduleTimeStart: prefs.scheduleTimeStart || null,
     })
     if (!saveRes.success) {
       setState("idle")
@@ -320,7 +368,8 @@ export const GuestMatchSection = React.forwardRef<
       return
     }
 
-    const res = await findSmallGroupMatchesWithEscalation(guestId)
+    const scheduleSlot = buildScheduleSlot(prefs)
+    const res = await findSmallGroupMatchesWithEscalation(guestId, { scheduleSlot })
     setState("done")
     if (res.success) {
       setLevels(res.data)
@@ -505,6 +554,38 @@ export const GuestMatchSection = React.forwardRef<
                   <SelectItem value="InPerson">In Person</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>
+                Schedule <span className="text-destructive">*</span>
+              </Label>
+              <div className="grid grid-cols-3 gap-3">
+                <Select
+                  value={prefs.scheduleDayOfWeek || "none"}
+                  onValueChange={(v) => setPref("scheduleDayOfWeek", v === "none" ? "" : v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Day" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Select day</SelectItem>
+                    {DAYS_OF_WEEK.map((day) => (
+                      <SelectItem key={day.value} value={day.value}>{day.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  type="time"
+                  value={prefs.scheduleTimeStart}
+                  onChange={(e) => setPref("scheduleTimeStart", e.target.value)}
+                />
+                <Input
+                  type="time"
+                  value={prefs.scheduleTimeEnd}
+                  onChange={(e) => setPref("scheduleTimeEnd", e.target.value)}
+                />
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -710,6 +791,38 @@ export const GuestMatchSection = React.forwardRef<
               <SelectItem value="InPerson">In Person</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+
+        <div className="space-y-2">
+          <Label>
+            Schedule <span className="text-destructive">*</span>
+          </Label>
+          <div className="grid grid-cols-3 gap-3">
+            <Select
+              value={prefs.scheduleDayOfWeek || "none"}
+              onValueChange={(v) => setPref("scheduleDayOfWeek", v === "none" ? "" : v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Day" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Select day</SelectItem>
+                {DAYS_OF_WEEK.map((day) => (
+                  <SelectItem key={day.value} value={day.value}>{day.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input
+              type="time"
+              value={prefs.scheduleTimeStart}
+              onChange={(e) => setPref("scheduleTimeStart", e.target.value)}
+            />
+            <Input
+              type="time"
+              value={prefs.scheduleTimeEnd}
+              onChange={(e) => setPref("scheduleTimeEnd", e.target.value)}
+            />
+          </div>
         </div>
 
         {/* Optional: Work City + Industry */}

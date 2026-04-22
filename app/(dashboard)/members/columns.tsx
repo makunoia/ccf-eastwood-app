@@ -45,6 +45,8 @@ export type MemberRow = {
   workCity: string | null
   workIndustry: string | null
   meetingPreference: string | null
+  scheduleDayOfWeek?: number | null
+  scheduleTimeStart?: string | null
 }
 
 export function RowActions({ row }: { row: MemberRow }) {

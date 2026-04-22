@@ -111,6 +111,9 @@ type MemberMatchingPrefs = {
   workCity: string
   workIndustry: string
   meetingPreference: string
+  scheduleDayOfWeek: string
+  scheduleTimeStart: string
+  scheduleTimeEnd: string
 }
 
 export async function saveMemberMatchingPreferences(
@@ -118,6 +121,12 @@ export async function saveMemberMatchingPreferences(
   prefs: MemberMatchingPrefs
 ): Promise<ActionResult> {
   try {
+    const hasSchedule =
+      prefs.scheduleDayOfWeek !== "" &&
+      prefs.scheduleTimeStart !== "" &&
+      prefs.scheduleTimeEnd !== "" &&
+      prefs.scheduleTimeStart < prefs.scheduleTimeEnd
+
     await db.member.update({
       where: { id: memberId },
       data: {
@@ -127,6 +136,17 @@ export async function saveMemberMatchingPreferences(
         workCity: prefs.workCity || null,
         workIndustry: prefs.workIndustry || null,
         meetingPreference: (prefs.meetingPreference as "Online" | "Hybrid" | "InPerson") || null,
+        schedulePreferences: {
+          deleteMany: {},
+          ...(hasSchedule
+            ? {
+                create: {
+                  dayOfWeek: Number(prefs.scheduleDayOfWeek),
+                  timeStart: prefs.scheduleTimeStart,
+                },
+              }
+            : {}),
+        },
       },
     })
     revalidatePath("/members")

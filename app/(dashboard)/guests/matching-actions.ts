@@ -86,7 +86,10 @@ export async function findSmallGroupMatchesForGuest(
 }
 
 export async function findSmallGroupMatchesWithEscalation(
-  guestId: string
+  guestId: string,
+  options?: {
+    scheduleSlot?: { dayOfWeek: number; timeStart: string; timeEnd: string } | null
+  }
 ): Promise<ActionResult<EscalationLevel[]>> {
   try {
     // Find the most recent event where this guest has a breakout group assignment
@@ -100,12 +103,19 @@ export async function findSmallGroupMatchesWithEscalation(
 
     if (breakoutMembership) {
       const eventId = breakoutMembership.registrant.eventId
-      const levels = await matchSmallGroupsWithEscalation(guestId, eventId)
+      const levels = await matchSmallGroupsWithEscalation(
+        guestId,
+        eventId,
+        options?.scheduleSlot ?? undefined
+      )
       return { success: true, data: levels }
     }
 
     // No breakout assignment — fall back to flat match wrapped as Level 3
-    const results = await matchSmallGroups({ guestId }, { limit: 10 })
+    const results = await matchSmallGroups(
+      { guestId },
+      { limit: 10, candidateScheduleSlot: options?.scheduleSlot ?? undefined }
+    )
     if (results.length === 0) return { success: true, data: [] }
     return {
       success: true,
