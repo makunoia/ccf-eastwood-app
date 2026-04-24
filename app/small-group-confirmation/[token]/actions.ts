@@ -27,6 +27,7 @@ export async function submitMemberConfirmations(
 
   try {
     const affectedGuestIds = new Set<string>()
+    const affectedBreakoutGroupIds = new Set<string>()
 
     await db.$transaction(async (tx) => {
       for (const { requestId, confirmed } of decisions) {
@@ -38,6 +39,7 @@ export async function submitMemberConfirmations(
             guestId: true,
             memberId: true,
             fromGroupId: true,
+            breakoutGroupId: true,
             status: true,
             guest: {
               select: {
@@ -67,6 +69,9 @@ export async function submitMemberConfirmations(
 
         if (req.guestId) {
           affectedGuestIds.add(req.guestId)
+        }
+        if (req.breakoutGroupId) {
+          affectedBreakoutGroupIds.add(req.breakoutGroupId)
         }
 
         const now = new Date()
@@ -226,6 +231,18 @@ export async function submitMemberConfirmations(
     for (const guestId of affectedGuestIds) {
       revalidatePath(`/guests/${guestId}`)
     }
+
+    if (affectedBreakoutGroupIds.size > 0) {
+      const breakoutGroups = await db.breakoutGroup.findMany({
+        where: { id: { in: Array.from(affectedBreakoutGroupIds) } },
+        select: { eventId: true },
+      })
+      const affectedEventIds = new Set(breakoutGroups.map((bg) => bg.eventId))
+      for (const eventId of affectedEventIds) {
+        revalidatePath(`/event/${eventId}/dashboard`)
+      }
+    }
+
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to submit confirmations. Please try again." }

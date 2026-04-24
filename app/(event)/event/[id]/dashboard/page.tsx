@@ -86,7 +86,16 @@ async function getEventDashboard(id: string, period: PeriodFilter, roleFilter: L
       volunteers: {
         select: {
           status: true,
-          member: { select: { id: true, firstName: true, lastName: true } },
+          member: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              groupStatus: true,
+              smallGroupId: true,
+              updatedAt: true,
+            },
+          },
         },
       },
     },
@@ -218,6 +227,24 @@ async function getEventDashboard(id: string, period: PeriodFilter, roleFilter: L
         smallGroupId: promoted.smallGroupId,
         updatedAt: promoted.updatedAt,
       })
+    }
+  }
+
+  // Also include confirmed volunteers — a Timothy facilitator who becomes a
+  // Leader via Catch Mech may not have an EventRegistrant record.
+  for (const volunteer of event.volunteers) {
+    if (volunteer.status === "Confirmed" && volunteer.member) {
+      const m = volunteer.member
+      // Only add if not already tracked via a registrant record
+      if (!participantMembers.has(m.id)) {
+        participantMembers.set(m.id, {
+          id: m.id,
+          fullName: `${m.firstName} ${m.lastName}`,
+          groupStatus: m.groupStatus,
+          smallGroupId: m.smallGroupId,
+          updatedAt: m.updatedAt,
+        })
+      }
     }
   }
 

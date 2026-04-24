@@ -88,6 +88,7 @@ export async function submitCatchMechConfirmations(
     select: {
       facilitatorVolunteerId: true,
       breakoutGroupId: true,
+      eventId: true,
       facilitator: {
         select: {
           memberId: true,
@@ -125,10 +126,11 @@ export async function submitCatchMechConfirmations(
   const { registrantMap, takenEmails } = await prefetchRegistrantData(decisions)
 
   await db.$transaction(async (tx) => {
-    await resolveConfirmations(smallGroup.id, decisions, registrantMap, takenEmails, tx)
+    await resolveConfirmations(smallGroup.id, decisions, registrantMap, takenEmails, tx, session.breakoutGroupId)
   }, { timeout: 30000 })
 
   revalidatePath(`/small-groups/${smallGroup.id}`)
+  revalidatePath(`/event/${session.eventId}/dashboard`)
   return { success: true, requiresGroupName: false }
 }
 
@@ -148,6 +150,7 @@ export async function createSmallGroupForTimothy(
     select: {
       facilitatorVolunteerId: true,
       breakoutGroupId: true,
+      eventId: true,
       facilitator: {
         select: {
           memberId: true,
@@ -197,10 +200,11 @@ export async function createSmallGroupForTimothy(
         data: { groupStatus: "Leader" },
       })
 
-      await resolveConfirmations(created.id, decisions, registrantMap, takenEmails, tx)
+      await resolveConfirmations(created.id, decisions, registrantMap, takenEmails, tx, session.breakoutGroupId)
     }, { timeout: 30000 })
 
     revalidatePath("/small-groups")
+    revalidatePath(`/event/${session.eventId}/dashboard`)
     return { success: true, data: undefined }
   } catch (err) {
     console.error("[createSmallGroupForTimothy]", err)
@@ -276,7 +280,8 @@ async function resolveConfirmations(
   decisions: ConfirmDecision[],
   registrantMap: Map<string, FetchedRegistrant>,
   takenEmails: Set<string>,
-  tx: Prisma.TransactionClient
+  tx: Prisma.TransactionClient,
+  breakoutGroupId?: string | null
 ): Promise<void> {
   const now = new Date()
 
@@ -376,10 +381,29 @@ async function resolveConfirmations(
           description: `${guest.firstName} ${guest.lastName} confirmed via Catch Mech and joined the group`,
         },
       })
-      await tx.smallGroupMemberRequest.updateMany({
+      // Confirm any pre-existing pending request, or create a new Confirmed
+      // record (needed for the Timothy flow where no pending request exists
+      // because the group was just created).
+      const existingReq = await tx.smallGroupMemberRequest.findFirst({
         where: { guestId: registrant.guestId, smallGroupId, status: "Pending" },
-        data: { status: "Confirmed", resolvedAt: now },
+        select: { id: true },
       })
+      if (existingReq) {
+        await tx.smallGroupMemberRequest.update({
+          where: { id: existingReq.id },
+          data: { status: "Confirmed", resolvedAt: now },
+        })
+      } else {
+        await tx.smallGroupMemberRequest.create({
+          data: {
+            smallGroupId,
+            guestId: registrant.guestId,
+            breakoutGroupId: breakoutGroupId ?? null,
+            status: "Confirmed",
+            resolvedAt: now,
+          },
+        })
+      }
     } else if (registrant.memberId && registrant.member) {
       const member = registrant.member
       if (member.smallGroupId === smallGroupId) continue
