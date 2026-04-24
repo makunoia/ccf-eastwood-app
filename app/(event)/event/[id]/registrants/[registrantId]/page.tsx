@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { YearInput } from "@/components/ui/year-input"
 import { Textarea } from "@/components/ui/textarea"
 import { BreakoutSection } from "./breakout-match-section"
 import { RegistrantGuestProfile } from "./registrant-profile"
@@ -264,7 +265,7 @@ function MemberReadOnly({ member, memberId }: { member: MemberData; memberId: st
             {member.birthYear && (
               <div className="space-y-2">
                 <Label>Birth Year</Label>
-                <Input value={String(member.birthYear)} readOnly />
+                <YearInput value={String(member.birthYear)} readOnly />
               </div>
             )}
           </div>

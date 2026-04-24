@@ -53,6 +53,7 @@ export function UserDialog({ open, onOpenChange, user, events }: Props) {
   // Populate form when editing
   React.useEffect(() => {
     if (user) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setName(user.name ?? "")
       setPermissions(user.permissions as FeatureAreaValue[])
       const hasSpecific = user.eventAccess.length > 0

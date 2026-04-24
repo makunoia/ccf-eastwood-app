@@ -126,11 +126,12 @@ type MemberLookupResult = {
   email: string | null
   phone: string | null
   matchedBy: "mobile" | "email" | "nameBirthday"
+  recordType: "member" | "guest"
 }
 
-// Returns matched member info if found, null otherwise.
-// Used by the public registration form for member resolution.
-// Priority: mobile number → email → last name + birthday
+// Returns matched member/guest info if found, null otherwise.
+// Used by the public registration form for member/guest resolution.
+// Priority (Members first, then Guests): mobile number → email → last name + birthday
 export async function lookupMemberForRegistration(params: {
   mobileNumber?: string | null
   email?: string | null
@@ -145,7 +146,7 @@ export async function lookupMemberForRegistration(params: {
       where: { phone: params.mobileNumber.trim() },
       select,
     })
-    if (member) return { ...member, matchedBy: "mobile" }
+    if (member) return { ...member, matchedBy: "mobile", recordType: "member" }
   }
 
   if (params.email) {
@@ -153,7 +154,7 @@ export async function lookupMemberForRegistration(params: {
       where: { email: params.email.trim() },
       select,
     })
-    if (member) return { ...member, matchedBy: "email" }
+    if (member) return { ...member, matchedBy: "email", recordType: "member" }
   }
 
   if (params.lastName && params.birthMonth != null && params.birthYear != null) {
@@ -165,7 +166,37 @@ export async function lookupMemberForRegistration(params: {
       },
       select,
     })
-    if (member) return { ...member, matchedBy: "nameBirthday" }
+    if (member) return { ...member, matchedBy: "nameBirthday", recordType: "member" }
+  }
+
+  // No Member found — fall back to Guest records (only active guests, not yet promoted to members)
+  if (params.mobileNumber) {
+    const guest = await db.guest.findFirst({
+      where: { phone: params.mobileNumber.trim(), memberId: null },
+      select,
+    })
+    if (guest) return { ...guest, matchedBy: "mobile", recordType: "guest" }
+  }
+
+  if (params.email) {
+    const guest = await db.guest.findFirst({
+      where: { email: params.email.trim(), memberId: null },
+      select,
+    })
+    if (guest) return { ...guest, matchedBy: "email", recordType: "guest" }
+  }
+
+  if (params.lastName && params.birthMonth != null && params.birthYear != null) {
+    const guest = await db.guest.findFirst({
+      where: {
+        lastName: { equals: params.lastName.trim(), mode: "insensitive" },
+        birthMonth: params.birthMonth,
+        birthYear: params.birthYear,
+        memberId: null,
+      },
+      select,
+    })
+    if (guest) return { ...guest, matchedBy: "nameBirthday", recordType: "guest" }
   }
 
   return null
@@ -184,7 +215,9 @@ export async function lookupMemberByMobile(
 export async function createRegistrant(
   eventId: string,
   raw: z.infer<typeof registrantSchema>,
-  confirmedMemberId: string | null
+  confirmedMemberId: string | null,
+  confirmedGuestId?: string | null,
+  skipDeduplication?: boolean
 ): Promise<ActionResult<{ id: string }>> {
   const parsed = registrantSchema.safeParse(raw)
   if (!parsed.success) {
@@ -196,6 +229,13 @@ export async function createRegistrant(
       // Member confirmed — link to member, leave personal fields null
       const registrant = await db.eventRegistrant.create({
         data: { eventId, memberId: confirmedMemberId },
+        select: { id: true },
+      })
+      return { success: true, data: { id: registrant.id } }
+    } else if (confirmedGuestId) {
+      // User confirmed an existing Guest record — link directly
+      const registrant = await db.eventRegistrant.create({
+        data: { eventId, guestId: confirmedGuestId },
         select: { id: true },
       })
       return { success: true, data: { id: registrant.id } }
@@ -212,33 +252,36 @@ export async function createRegistrant(
       }
 
       // Deduplicate guests: try phone first, then email, then last name + birthday
+      // Skip deduplication when user explicitly said "That's not me" to a guest match
       let existingGuest: { id: string } | null = null
-      if (parsed.data.mobileNumber) {
-        existingGuest = await db.guest.findFirst({
-          where: { phone: parsed.data.mobileNumber },
-          select: { id: true },
-        })
-      }
-      if (!existingGuest && parsed.data.email) {
-        existingGuest = await db.guest.findFirst({
-          where: { email: parsed.data.email },
-          select: { id: true },
-        })
-      }
-      if (
-        !existingGuest &&
-        parsed.data.lastName &&
-        parsed.data.birthMonth != null &&
-        parsed.data.birthYear != null
-      ) {
-        existingGuest = await db.guest.findFirst({
-          where: {
-            lastName: { equals: parsed.data.lastName.trim(), mode: "insensitive" },
-            birthMonth: parsed.data.birthMonth,
-            birthYear: parsed.data.birthYear,
-          },
-          select: { id: true },
-        })
+      if (!skipDeduplication) {
+        if (parsed.data.mobileNumber) {
+          existingGuest = await db.guest.findFirst({
+            where: { phone: parsed.data.mobileNumber },
+            select: { id: true },
+          })
+        }
+        if (!existingGuest && parsed.data.email) {
+          existingGuest = await db.guest.findFirst({
+            where: { email: parsed.data.email },
+            select: { id: true },
+          })
+        }
+        if (
+          !existingGuest &&
+          parsed.data.lastName &&
+          parsed.data.birthMonth != null &&
+          parsed.data.birthYear != null
+        ) {
+          existingGuest = await db.guest.findFirst({
+            where: {
+              lastName: { equals: parsed.data.lastName.trim(), mode: "insensitive" },
+              birthMonth: parsed.data.birthMonth,
+              birthYear: parsed.data.birthYear,
+            },
+            select: { id: true },
+          })
+        }
       }
 
       let guestId: string

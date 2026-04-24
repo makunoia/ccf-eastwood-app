@@ -198,6 +198,7 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
 
   React.useEffect(() => {
     if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSourceGroupId(group?.linkedSmallGroupId ?? "")
       setForm(
         group
@@ -510,6 +511,7 @@ function AssignFacilitatorDialog({
 
   React.useEffect(() => {
     if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSelectedId(currentId ?? "")
       setLinkedGroupId(role === "facilitator" ? (group?.linkedSmallGroupId ?? "") : "")
     }
@@ -517,6 +519,7 @@ function AssignFacilitatorDialog({
 
   // Auto-resolve linked group when selected volunteer changes
   React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (ledGroups.length === 1) setLinkedGroupId(ledGroups[0].id)
     else if (ledGroups.length !== 1) setLinkedGroupId("")
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -624,6 +627,7 @@ function AssignRegistrantDialog({
   const [search, setSearch] = React.useState("")
   const [assigning, setAssigning] = React.useState<string | null>(null)
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   React.useEffect(() => { if (open) setSearch("") }, [open])
 
   const filtered = unassignedRegistrants.filter((r) => {

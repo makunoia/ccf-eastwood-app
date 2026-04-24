@@ -233,12 +233,14 @@ function FacilitatorSection({
 
   React.useEffect(() => {
     if (dialogOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSelectedId(volunteer?.id ?? "")
       setLinkedGroupId("")
     }
   }, [dialogOpen, volunteer])
 
   React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (ledGroups.length === 1) setLinkedGroupId(ledGroups[0].id)
     else setLinkedGroupId("")
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -371,6 +373,7 @@ function AddRegistrantDialog({
   const [search, setSearch] = React.useState("")
   const [assigning, setAssigning] = React.useState<string | null>(null)
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   React.useEffect(() => { if (open) setSearch("") }, [open])
 
   const filtered = unassignedRegistrants.filter((r) => {

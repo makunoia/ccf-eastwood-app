@@ -57,6 +57,7 @@ type MatchedMember = {
   email: string | null
   phone: string | null
   matchedBy: "mobile" | "email" | "nameBirthday"
+  recordType: "member" | "guest"
 }
 
 const defaultForm: FormValues = {
@@ -142,7 +143,11 @@ export function RegistrationForm({ eventId, isRecurring = false, lifeStages = []
     await register(null)
   }
 
-  async function register(confirmedMemberId: string | null) {
+  async function register(
+    confirmedMemberId: string | null,
+    confirmedGuestId?: string | null,
+    skipDeduplication?: boolean
+  ) {
     setSubmitting(true)
     const result = await createRegistrant(eventId, {
       firstName: form.firstName,
@@ -159,7 +164,7 @@ export function RegistrationForm({ eventId, isRecurring = false, lifeStages = []
       workCity: form.workCity || null,
       scheduleDayOfWeek: form.scheduleDayOfWeek !== "" ? parseInt(form.scheduleDayOfWeek, 10) : null,
       scheduleTimeStart: form.scheduleTimeStart || null,
-    }, confirmedMemberId)
+    }, confirmedMemberId, confirmedGuestId, skipDeduplication)
     setSubmitting(false)
 
     if (result.success) {
@@ -213,7 +218,11 @@ export function RegistrationForm({ eventId, isRecurring = false, lifeStages = []
           <div className="flex gap-2">
             <Button
               className="flex-1"
-              onClick={() => register(matchedMember.id)}
+              onClick={() =>
+                matchedMember.recordType === "guest"
+                  ? register(null, matchedMember.id)
+                  : register(matchedMember.id)
+              }
               disabled={submitting}
             >
               {submitting ? "Registering…" : "Yes, that's me"}
@@ -221,7 +230,11 @@ export function RegistrationForm({ eventId, isRecurring = false, lifeStages = []
             <Button
               variant="outline"
               className="flex-1"
-              onClick={() => register(null)}
+              onClick={() =>
+                matchedMember.recordType === "guest"
+                  ? register(null, null, true)
+                  : register(null)
+              }
               disabled={submitting}
             >
               {submitting ? "Registering…" : "That's not me"}

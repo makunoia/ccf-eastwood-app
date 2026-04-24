@@ -42,6 +42,7 @@ export function LifeStageDialog({ open, onOpenChange, lifeStage }: Props) {
   const [saving, setSaving] = React.useState(false)
 
   React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setForm(lifeStage ? toFormValues(lifeStage) : defaultLifeStageForm)
   }, [lifeStage])
 
