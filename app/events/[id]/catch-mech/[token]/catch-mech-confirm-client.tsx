@@ -137,8 +137,7 @@ export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy
       return
     }
     if (result.requiresGroupName) {
-      // Only pass the confirmed ones to the group creation step
-      setPendingDecisions(decisions.filter((d) => d.confirmed))
+      setPendingDecisions(decisions)
       setNeedsGroupName(true)
       return
     }

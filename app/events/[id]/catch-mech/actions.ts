@@ -86,6 +86,7 @@ export async function submitCatchMechConfirmations(
   const session = await db.catchMechSession.findUnique({
     where: { token },
     select: {
+      eventId: true,
       facilitatorVolunteerId: true,
       breakoutGroupId: true,
       eventId: true,
@@ -126,11 +127,11 @@ export async function submitCatchMechConfirmations(
   const { registrantMap, takenEmails } = await prefetchRegistrantData(decisions)
 
   await db.$transaction(async (tx) => {
-    await resolveConfirmations(smallGroup.id, decisions, registrantMap, takenEmails, tx, session.breakoutGroupId)
+    await resolveConfirmations(smallGroup.id, session.breakoutGroupId, decisions, registrantMap, takenEmails, tx)
   }, { timeout: 30000 })
 
   revalidatePath(`/small-groups/${smallGroup.id}`)
-  revalidatePath(`/event/${session.eventId}/dashboard`)
+  revalidatePath(`/event/${session.eventId}/catch-mech`)
   return { success: true, requiresGroupName: false }
 }
 
@@ -148,6 +149,7 @@ export async function createSmallGroupForTimothy(
   const session = await db.catchMechSession.findUnique({
     where: { token },
     select: {
+      eventId: true,
       facilitatorVolunteerId: true,
       breakoutGroupId: true,
       eventId: true,
@@ -194,17 +196,24 @@ export async function createSmallGroupForTimothy(
         },
       })
 
+      // Link the breakout group to the newly created small group
+      await tx.breakoutGroup.update({
+        where: { id: session.breakoutGroupId },
+        data: { linkedSmallGroupId: created.id },
+      })
+
       // Promote the faci's status to Leader in their home group
       await tx.member.update({
         where: { id: faciMember.id },
         data: { groupStatus: "Leader" },
       })
 
-      await resolveConfirmations(created.id, decisions, registrantMap, takenEmails, tx, session.breakoutGroupId)
+      await resolveConfirmations(created.id, session.breakoutGroupId, decisions, registrantMap, takenEmails, tx)
     }, { timeout: 30000 })
 
     revalidatePath("/small-groups")
-    revalidatePath(`/event/${session.eventId}/dashboard`)
+    revalidatePath(`/event/${session.eventId}/catch-mech`)
+    revalidatePath(`/event/${session.eventId}/breakouts/${session.breakoutGroupId}`)
     return { success: true, data: undefined }
   } catch (err) {
     console.error("[createSmallGroupForTimothy]", err)
@@ -277,11 +286,11 @@ async function prefetchRegistrantData(decisions: ConfirmDecision[]): Promise<{
 
 async function resolveConfirmations(
   smallGroupId: string,
+  breakoutGroupId: string,
   decisions: ConfirmDecision[],
   registrantMap: Map<string, FetchedRegistrant>,
   takenEmails: Set<string>,
-  tx: Prisma.TransactionClient,
-  breakoutGroupId?: string | null
+  tx: Prisma.TransactionClient
 ): Promise<void> {
   const now = new Date()
 
@@ -291,6 +300,11 @@ async function resolveConfirmations(
     if (!registrant.memberId && !registrant.guestId) continue
 
     if (!confirmed) {
+      const personName = registrant.member
+        ? `${registrant.member.firstName} ${registrant.member.lastName}`
+        : registrant.guest
+          ? `${registrant.guest.firstName} ${registrant.guest.lastName}`
+          : "Unknown"
       const pendingRequest = await tx.smallGroupMemberRequest.findFirst({
         where: {
           smallGroupId,
@@ -302,25 +316,33 @@ async function resolveConfirmations(
         select: { id: true },
       })
       if (pendingRequest) {
-        const personName = registrant.member
-          ? `${registrant.member.firstName} ${registrant.member.lastName}`
-          : registrant.guest
-            ? `${registrant.guest.firstName} ${registrant.guest.lastName}`
-            : "Unknown"
         await tx.smallGroupMemberRequest.update({
           where: { id: pendingRequest.id },
-          data: { status: "Rejected", resolvedAt: now },
+          data: { status: "Rejected", resolvedAt: now, breakoutGroupId },
         })
-        await tx.smallGroupLog.create({
+      } else {
+        // No pre-existing request (e.g. Timothy's group didn't exist yet at assignment time)
+        await tx.smallGroupMemberRequest.create({
           data: {
             smallGroupId,
-            action: "TempAssignmentRejected",
-            guestId: registrant.guestId ?? null,
-            memberId: registrant.memberId ?? null,
-            description: `${personName}'s membership was declined via Catch Mech`,
+            breakoutGroupId,
+            status: "Rejected",
+            resolvedAt: now,
+            ...(registrant.memberId
+              ? { memberId: registrant.memberId }
+              : { guestId: registrant.guestId! }),
           },
         })
       }
+      await tx.smallGroupLog.create({
+        data: {
+          smallGroupId,
+          action: "TempAssignmentRejected",
+          guestId: registrant.guestId ?? null,
+          memberId: registrant.memberId ?? null,
+          description: `${personName}'s membership was declined via Catch Mech`,
+        },
+      })
       continue
     }
 
@@ -381,24 +403,17 @@ async function resolveConfirmations(
           description: `${guest.firstName} ${guest.lastName} confirmed via Catch Mech and joined the group`,
         },
       })
-      // Confirm any pre-existing pending request, or create a new Confirmed
-      // record (needed for the Timothy flow where no pending request exists
-      // because the group was just created).
-      const existingReq = await tx.smallGroupMemberRequest.findFirst({
+      const updated = await tx.smallGroupMemberRequest.updateMany({
         where: { guestId: registrant.guestId, smallGroupId, status: "Pending" },
-        select: { id: true },
+        data: { status: "Confirmed", resolvedAt: now, memberId: newMember.id, guestId: null, breakoutGroupId },
       })
-      if (existingReq) {
-        await tx.smallGroupMemberRequest.update({
-          where: { id: existingReq.id },
-          data: { status: "Confirmed", resolvedAt: now },
-        })
-      } else {
+      if (updated.count === 0) {
+        // No pre-existing request — create a confirmed record so the admin page tracks it
         await tx.smallGroupMemberRequest.create({
           data: {
             smallGroupId,
-            guestId: registrant.guestId,
-            breakoutGroupId: breakoutGroupId ?? null,
+            breakoutGroupId,
+            memberId: newMember.id,
             status: "Confirmed",
             resolvedAt: now,
           },
@@ -420,10 +435,22 @@ async function resolveConfirmations(
           description: `${member.firstName} ${member.lastName} confirmed via Catch Mech and joined the group`,
         },
       })
-      await tx.smallGroupMemberRequest.updateMany({
+      const updated = await tx.smallGroupMemberRequest.updateMany({
         where: { memberId: registrant.memberId, smallGroupId, status: "Pending" },
-        data: { status: "Confirmed", resolvedAt: now },
+        data: { status: "Confirmed", resolvedAt: now, breakoutGroupId },
       })
+      if (updated.count === 0) {
+        // No pre-existing request — create a confirmed record so the admin page tracks it
+        await tx.smallGroupMemberRequest.create({
+          data: {
+            smallGroupId,
+            breakoutGroupId,
+            memberId: registrant.memberId,
+            status: "Confirmed",
+            resolvedAt: now,
+          },
+        })
+      }
     }
   }
 }

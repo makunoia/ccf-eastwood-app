@@ -15,7 +15,7 @@ export async function submitMemberConfirmations(
 ): Promise<ActionResult> {
   const group = await db.smallGroup.findUnique({
     where: { leaderConfirmationToken: token },
-    select: { id: true, name: true },
+    select: { id: true, name: true, leaderId: true },
   })
   if (!group) {
     return { success: false, error: "Confirmation link not found or has expired." }
@@ -76,6 +76,7 @@ export async function submitMemberConfirmations(
 
         const now = new Date()
         const resolvedStatus = confirmed ? "Confirmed" : "Rejected"
+        let promotedMemberId: string | null = null
 
         if (confirmed) {
           if (req.guestId && req.guest) {
@@ -152,6 +153,10 @@ export async function submitMemberConfirmations(
                   description: `${guest.firstName} ${guest.lastName} joined the group`,
                 },
               })
+              promotedMemberId = newMember.id
+            } else {
+              // Guest already promoted externally — track the existing member ID
+              promotedMemberId = guest.memberId
             }
           } else if (req.memberId && req.member) {
             const memberName = `${req.member.firstName} ${req.member.lastName}`
@@ -220,7 +225,13 @@ export async function submitMemberConfirmations(
         // Mark request resolved
         await tx.smallGroupMemberRequest.update({
           where: { id: req.id },
-          data: { status: resolvedStatus, resolvedAt: now },
+          data: {
+            status: resolvedStatus,
+            resolvedAt: now,
+            // When a guest was promoted, update FK to point to the new member
+            // so the catch mech admin page can match the request by memberId
+            ...(req.guestId && promotedMemberId ? { memberId: promotedMemberId, guestId: null } : {}),
+          },
         })
       }
     })
@@ -232,14 +243,44 @@ export async function submitMemberConfirmations(
       revalidatePath(`/guests/${guestId}`)
     }
 
-    if (affectedBreakoutGroupIds.size > 0) {
+    // If this leader was previously a Timothy facilitating breakout groups,
+    // link those groups to this small group now that they've become a leader
+    const updatedBreakouts = await db.breakoutGroup.findMany({
+      where: {
+        linkedSmallGroupId: null,
+        OR: [
+          { facilitator: { memberId: group.leaderId } },
+          { coFacilitator: { memberId: group.leaderId } },
+        ],
+      },
+      select: { id: true, eventId: true },
+    })
+    if (updatedBreakouts.length > 0) {
+      await db.breakoutGroup.updateMany({
+        where: { id: { in: updatedBreakouts.map((b) => b.id) } },
+        data: { linkedSmallGroupId: group.id },
+      })
+      const eventIds = [...new Set(updatedBreakouts.map((b) => b.eventId))]
+      for (const eventId of eventIds) {
+        revalidatePath(`/event/${eventId}/breakouts`)
+      }
+    }
+
+    // Revalidate catch-mech admin pages for any requests linked to a breakout group
+    const requestIds = decisions.map((d) => d.requestId)
+    const linked = await db.smallGroupMemberRequest.findMany({
+      where: { id: { in: requestIds }, breakoutGroupId: { not: null } },
+      select: { breakoutGroupId: true },
+    })
+    if (linked.length > 0) {
+      const bgIds = [...new Set(linked.map((r) => r.breakoutGroupId!))]
       const breakoutGroups = await db.breakoutGroup.findMany({
-        where: { id: { in: Array.from(affectedBreakoutGroupIds) } },
+        where: { id: { in: bgIds } },
         select: { eventId: true },
       })
-      const affectedEventIds = new Set(breakoutGroups.map((bg) => bg.eventId))
-      for (const eventId of affectedEventIds) {
-        revalidatePath(`/event/${eventId}/dashboard`)
+      const eventIds = [...new Set(breakoutGroups.map((bg) => bg.eventId))]
+      for (const eventId of eventIds) {
+        revalidatePath(`/event/${eventId}/catch-mech`)
       }
     }
 
