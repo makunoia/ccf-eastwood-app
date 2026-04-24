@@ -17,7 +17,8 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { PhonePHInput } from "@/components/ui/phone-ph-input"
+import { OptionalEmailInput } from "@/components/ui/optional-email-input"
+import { OptionalPhonePHInput } from "@/components/ui/optional-phone-ph-input"
 import {
   Select,
   SelectContent,
@@ -67,6 +68,8 @@ export function MemberForm({ member, eventHistory, smallGroups }: Props) {
   const [form, setForm] = React.useState<MemberFormValues>(
     () => member ? toFormValues(member) : defaultMemberForm
   )
+  const [noPhone, setNoPhone] = React.useState(() => !!member && !member.phone)
+  const [noEmail, setNoEmail] = React.useState(() => !!member && !member.email)
   const [saving, setSaving] = React.useState(false)
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
@@ -77,6 +80,8 @@ export function MemberForm({ member, eventHistory, smallGroups }: Props) {
 
   function handleRevert() {
     setForm(member ? toFormValues(member) : defaultMemberForm)
+    setNoPhone(!!member && !member.phone)
+    setNoEmail(!!member && !member.email)
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -205,20 +210,23 @@ export function MemberForm({ member, eventHistory, smallGroups }: Props) {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
-              <Input
+              <OptionalEmailInput
                 id="email"
-                type="email"
                 value={form.email}
                 onChange={(e) => set("email", e.target.value)}
                 placeholder="james@email.com"
+                noEmail={noEmail}
+                onNoEmailChange={setNoEmail}
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="phone">Phone</Label>
-              <PhonePHInput
+              <OptionalPhonePHInput
                 id="phone"
                 value={form.phone}
                 onChange={(v) => set("phone", v)}
+                noNumber={noPhone}
+                onNoNumberChange={setNoPhone}
               />
             </div>
           </div>

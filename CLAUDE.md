@@ -25,9 +25,9 @@ Church management web app for administrators. Six domains: **Members**, **Guests
 | Role | Access |
 |---|---|
 | **Super Admin** | Full access to all data and settings |
-| **Ministry Admin** | Scoped to assigned ministry's events, volunteers, and data |
+| **Staff** | Scoped access — granted per `FeatureArea` (Members, Guests, SmallGroups, Ministries, Events, Volunteers) and per `UserEventAccess` (specific events) |
 
-No member self-service portal. **Event workspace sidebar:** Super Admins see "← Events" back link; Ministry Admins do not. Controlled by `showBackLink` prop on `EventSidebar` in `app/(event)/[id]/layout.tsx` — currently defaults to `true` for all users pending role implementation.
+No member self-service portal. Staff users see only permitted nav items; Settings is Super Admin only. Access controlled via `UserPermission { userId, feature: FeatureArea }` and `UserEventAccess { userId, eventId }`.
 
 ---
 
@@ -43,7 +43,7 @@ Created when a Guest joins a Small Group (auto-promoted) or added directly by ad
 **Relationships:**
 - Leads one or more `SmallGroup` (`SmallGroup.leaderId`)
 - Belongs to **at most one** SmallGroup via `Member.smallGroupId`
-- `smallGroupStatusId → SmallGroupStatus?` — auto-assigned to first status (by `order`) on join; cleared on removal
+- `groupStatus MemberGroupStatus? (Member|Timothy|Leader)` — null when not in a group; set on join
 - `lifeStageId → LifeStage?`
 - `eventRegistrations EventRegistrant[]`
 - `guest Guest?` — set if promoted from a Guest
@@ -57,7 +57,9 @@ Non-member who attended an event. Entry point into the discipleship pipeline. **
 
 **Matching fields:** same set as Member (see above, minus address/dateJoined).
 
-**Promotion to Member:** When added to a Small Group → creates `Member` (`dateJoined = today`), sets `Member.smallGroupId` + first `SmallGroupStatus`, sets `Guest.memberId`, updates all `EventRegistrant` records to point to new Member. Guest record is retained for history; promoted guests leave the active guest list.
+**Additional fields:** `scheduleDayOfWeek Int?` (0=Sun…6=Sat), `scheduleTimeStart String?` (HH:MM — single schedule slot), `claimedSmallGroupId → SmallGroup?` — self-reported group from check-in prompt.
+
+**Promotion to Member:** When added to a Small Group → creates `Member` (`dateJoined = today`), sets `Member.smallGroupId`, sets `Guest.memberId`, updates all `EventRegistrant` records to point to new Member. Guest record is retained for history; promoted guests leave the active guest list.
 
 **Relationships:** `eventRegistrations EventRegistrant[]`, `memberId → Member? (unique)` — null = still active guest.
 
@@ -68,14 +70,25 @@ Unlimited-depth network of member-led groups. A leader is simultaneously a membe
 
 **Fields:** `id`, `name`, `leaderId → Member`, `parentGroupId → SmallGroup?`, `createdAt`, `updatedAt`
 
-**Matching fields:** `lifeStageId → LifeStage?` (null = accepts all), `genderFocus (Male|Female|Mixed)?`, `language[]`, `ageRangeMin Int?`, `ageRangeMax Int?`, `meetingFormat (Online|Hybrid|InPerson)?`, `locationCity?`, `memberLimit Int?`, `GroupMeetingSchedule[] { dayOfWeek, timeStart, timeEnd }`
+**Matching fields:** `lifeStageId → LifeStage?` (null = accepts all), `genderFocus (Male|Female|Mixed)?`, `language[]`, `ageRangeMin Int?`, `ageRangeMax Int?`, `meetingFormat (Online|Hybrid|InPerson)?`, `locationCity?`, `memberLimit Int?`, `scheduleDayOfWeek Int?` (0=Sun…6=Sat), `scheduleTimeStart String?` (HH:MM — single meeting slot)
+
+**Other fields:** `leaderConfirmationToken String? (unique)` — public confirmation link token for the group leader.
 
 **Rules:** One SmallGroup per member at a time. `parentGroupId` links leader's own membership upward. No max depth. Prevent circular refs at app layer.
 
 ---
 
-### SmallGroupStatus
-Admin-configurable integration stages. **Fields:** `id`, `name`, `order`, `createdAt`, `updatedAt`. Managed in **Settings → Small Group Statuses**.
+### SmallGroupMemberRequest
+Tracks pending/confirmed/rejected requests to add a Guest or Member to a SmallGroup (including transfers between groups).
+
+**Fields:** `id`, `smallGroupId → SmallGroup`, `guestId → Guest?`, `memberId → Member?` (exactly one set), `fromGroupId → SmallGroup?` (set on transfers), `status (Pending|Confirmed|Rejected)`, `notes?`, `assignedByUserId → User?`, `breakoutGroupId?` (links to originating breakout — cleared on removal), `resolvedAt?`, `createdAt`
+
+---
+
+### SmallGroupLog
+Append-only audit trail for all SmallGroup membership changes.
+
+**Fields:** `id`, `smallGroupId → SmallGroup`, `action (GroupCreated|MemberAdded|MemberRemoved|MemberTransferred|TempAssignmentCreated|TempAssignmentConfirmed|TempAssignmentRejected)`, `memberId?`, `guestId?`, `fromGroupId?`, `toGroupId?`, `performedByUserId?`, `description?`, `createdAt`
 
 ---
 
@@ -90,7 +103,7 @@ Sub-operation targeting a life stage. **Fields:** `id`, `name`, `lifeStageId →
 
 Members serving in a Ministry or Event. Each Ministry/Event has its own independent committees and roles.
 
-**VolunteerCommittee:** `id`, `name`, `ministryId → Ministry?`, `eventId → Event?` — exactly one must be set.
+**VolunteerCommittee:** `id`, `name`, `eventId → Event` — scoped to events only (no ministry-level committees).
 
 **CommitteeRole:** `id`, `name`, `committeeId → VolunteerCommittee`.
 
@@ -152,14 +165,14 @@ Admin manually marks `isPaid = true` and must enter `paymentReference`. Stored o
 
 #### MultiDay & Recurring Occurrences
 
-**EventOccurrence:** `id`, `eventId`, `date DateTime`, `notes?`, `createdAt`, `updatedAt`, `@@unique([eventId, date])`
+**EventOccurrence:** `id`, `eventId`, `date DateTime`, `notes?`, `isOpen Boolean` (whether check-in is currently open), `createdAt`, `updatedAt`, `@@unique([eventId, date])`
 
 **OccurrenceAttendee:** `id`, `occurrenceId`, `registrantId → EventRegistrant`, `checkedInAt`, `@@unique([occurrenceId, registrantId])`
 
 MultiDay: occurrences auto-generated for every day in date range (`ensureMultiDayOccurrences()`). Recurring: occurrences created on-demand when check-in page is opened. Walk-ins auto-create an `EventRegistrant` at check-in time.
 
 #### BreakoutGroup
-Sub-groups within an event. Same matching fields as SmallGroup. `id`, `eventId`, `name`, `facilitatorId → Volunteer?`, `lifeStageId?`, `genderFocus?`, `language?`, `ageRangeMin?`, `ageRangeMax?`, `meetingFormat?`, `locationCity?`, `memberLimit?`, `BreakoutGroupSchedule[] { dayOfWeek, timeStart, timeEnd }`, `createdAt`
+Sub-groups within an event. Same matching fields as SmallGroup. `id`, `eventId`, `name`, `facilitatorId → Volunteer?`, `coFacilitatorId → Volunteer?`, `linkedSmallGroupId → SmallGroup?` (temp membership target), `lifeStageId?`, `genderFocus?`, `language?`, `ageRangeMin?`, `ageRangeMax?`, `meetingFormat?`, `locationCity?`, `memberLimit?`, `BreakoutGroupSchedule[] { dayOfWeek, timeStart, timeEnd }`, `createdAt`
 
 **BreakoutGroupMember:** `breakoutGroupId`, `registrantId → EventRegistrant`, `assignedAt`
 
@@ -167,7 +180,7 @@ Sub-groups within an event. Same matching fields as SmallGroup. `id`, `eventId`,
 
 ## Event Add-on Modules
 
-Toggled per-event in **Event Settings → Modules**. Tracked in `EventModule { id, eventId, type (Baptism|Embarkation), createdAt, @@unique([eventId, type]) }`.
+Toggled per-event in **Event Settings → Modules**. Tracked in `EventModule { id, eventId, type (Baptism|Embarkation|CatchMech), createdAt, @@unique([eventId, type]) }`.
 
 ### Baptism
 Admin-managed opt-in (not on public form). `BaptismOptIn { id, eventId, registrantId (@unique globally), createdAt }`
@@ -178,6 +191,24 @@ Bus assignments for registrants and volunteers. Bus manifest PDF at `/events/[id
 `Bus { id, eventId, name, capacity Int?, direction (ToVenue|FromVenue|Both), createdAt, updatedAt }`
 
 `BusPassenger { id, busId, registrantId?, volunteerId? — exactly one set, createdAt }`
+
+---
+
+### Catch Mech
+Facilitator-led confirmation flow that converts breakout group attendees into SmallGroup member requests.
+
+**How it works:**
+1. Admin enables the CatchMech module on an event
+2. Public entry at `/events/[id]/catch-mech` — facilitator verifies identity via mobile number, receives a unique token link
+3. Facilitator opens their token URL (`/events/[id]/catch-mech/[token]`) — no login; shows their breakout group members with checkboxes to confirm attendance/interest
+4. Confirmed members generate `SmallGroupMemberRequest` records targeting the breakout's `linkedSmallGroupId`
+5. Admin tracks all requests in the event workspace at `/event/[id]/catch-mech` (filterable by Pending/Confirmed/Rejected status), with per-registrant matching UI
+
+`CatchMechSession { id, token (unique cuid), eventId, breakoutGroupId, facilitatorVolunteerId, createdAt }`
+
+**Event workspace routes:** `/event/[id]/catch-mech`, `/event/[id]/catch-mech/[status]`, `/event/[id]/catch-mech/[status]/[rid]`
+
+**Public routes:** `/events/[id]/catch-mech`, `/events/[id]/catch-mech/[token]` (no login required)
 
 ---
 
@@ -237,3 +268,63 @@ Weighted scoring engine for SmallGroup suggestions and Breakout auto-assignment.
 
 ### TypeScript
 - Strict mode. Prefer `type` over `interface` for plain data shapes. Derive types from Prisma where possible.
+
+---
+
+## Testing
+
+### Setup
+- **Test runner:** Vitest (unit + ticket tests), Playwright (e2e)
+- **Test database:** local PostgreSQL 16 (`ccf_test`) — separate from staging. Started via `brew services start postgresql@16`.
+- **Env:** `.env.test` at project root sets `DATABASE_URL=postgresql://marknoya@localhost/ccf_test`. Vitest loads this automatically via `vitest.config.ts`.
+- **`next/cache`** (`revalidatePath`, `revalidateTag`) is globally mocked in `tests/setup.ts` — required for any test that imports a server action.
+
+### Commands
+
+| Command | Purpose |
+|---|---|
+| `pnpm ticket:test:new CCF-NNN` | Scaffold `tests/tickets/ccf-nnn.test.ts` with unit/integration/regression stubs |
+| `pnpm verify:ticket CCF-NNN` | Run just that ticket's test file |
+| `pnpm test:tickets` | Run all ticket verification files |
+| `pnpm test:unit` | Run unit tests only (`tests/unit/`) |
+| `pnpm test` | Run all Vitest tests |
+| `pnpm test:e2e` | Run Playwright e2e tests (auto-starts dev server) |
+| `pnpm qa:gate` | Full CI gate: lint → vitest → verify:all → build |
+
+### Workflow for a ticket
+1. `pnpm ticket:test:new CCF-NNN` — creates the test file with stubs
+2. Read the Jira ticket, implement the feature/fix
+3. Replace `it.todo` stubs with real assertions
+4. `pnpm verify:ticket CCF-NNN` — confirm green
+5. `pnpm qa:gate` before merging
+
+### Integration test pattern
+Tests that call server actions or touch the DB follow this pattern:
+
+```ts
+import { db } from "@/lib/db"
+import { myAction } from "@/app/.../actions"
+
+beforeEach(async () => {
+  await db.$executeRaw`TRUNCATE "TableA", "TableB" RESTART IDENTITY CASCADE`
+})
+afterAll(async () => {
+  await db.$disconnect()
+})
+
+it("...", async () => {
+  // 1. Seed minimum required data
+  const record = await db.someModel.create({ data: { ... } })
+  // 2. Call the action
+  const result = await myAction(args)
+  // 3. Assert DB state
+  expect(result.success).toBe(true)
+  const updated = await db.someModel.findUnique({ where: { id: record.id } })
+  expect(updated?.field).toBe("expected")
+})
+```
+
+- The test DB is empty between runs — each test seeds its own data.
+- `Member.dateJoined` is required — always pass `dateJoined: new Date()` when seeding.
+- Truncate all tables touched by the test (use CASCADE freely — it won't drop the schema).
+- No shared fixtures. Tests must be fully self-contained.

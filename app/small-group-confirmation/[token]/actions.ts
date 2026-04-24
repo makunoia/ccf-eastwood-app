@@ -26,6 +26,9 @@ export async function submitMemberConfirmations(
   }
 
   try {
+    const affectedGuestIds = new Set<string>()
+    const affectedBreakoutGroupIds = new Set<string>()
+
     await db.$transaction(async (tx) => {
       for (const { requestId, confirmed } of decisions) {
         const req = await tx.smallGroupMemberRequest.findUnique({
@@ -36,6 +39,7 @@ export async function submitMemberConfirmations(
             guestId: true,
             memberId: true,
             fromGroupId: true,
+            breakoutGroupId: true,
             status: true,
             guest: {
               select: {
@@ -62,6 +66,13 @@ export async function submitMemberConfirmations(
         })
 
         if (!req || req.status !== "Pending" || req.smallGroupId !== group.id) continue
+
+        if (req.guestId) {
+          affectedGuestIds.add(req.guestId)
+        }
+        if (req.breakoutGroupId) {
+          affectedBreakoutGroupIds.add(req.breakoutGroupId)
+        }
 
         const now = new Date()
         const resolvedStatus = confirmed ? "Confirmed" : "Rejected"
@@ -227,6 +238,10 @@ export async function submitMemberConfirmations(
 
     revalidatePath(`/small-groups`)
     revalidatePath(`/small-groups/${group.id}`)
+    revalidatePath("/guests")
+    for (const guestId of affectedGuestIds) {
+      revalidatePath(`/guests/${guestId}`)
+    }
 
     // If this leader was previously a Timothy facilitating breakout groups,
     // link those groups to this small group now that they've become a leader

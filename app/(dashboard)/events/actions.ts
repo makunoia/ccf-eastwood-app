@@ -8,9 +8,12 @@ import { eventSchema, type EventFormValues } from "@/lib/validations/event"
 const registrantSchema = z.object({
   firstName: z.string().min(1, "First name is required").trim(),
   lastName: z.string().min(1, "Last name is required").trim(),
-  nickname: z.string().optional().transform((v) => (v === "" || v == null ? null : v.trim())),
-  email: z.string().optional().transform((v) => (v === "" || v == null ? null : v.trim())),
-  mobileNumber: z.string().min(1, "Mobile number is required").trim(),
+  nickname: z.string().nullish().transform((v) => (v === "" || v == null ? null : v.trim())),
+  email: z.string().nullish().transform((v) => (v === "" || v == null ? null : v.trim())),
+  mobileNumber: z.string().nullish().transform((v) => (v === "" || v == null ? null : v.trim())),
+  // Birthday — used as fallback matching field when no mobile or email
+  birthMonth: z.number().int().min(1).max(12).optional().nullable(),
+  birthYear: z.number().int().min(1900).max(2100).optional().nullable(),
   // Optional matching fields — collected on recurring event registration forms
   lifeStageId: z.string().optional().nullable().transform((v) => v || null),
   gender: z.enum(["Male", "Female"]).optional().nullable(),
@@ -116,16 +119,66 @@ export async function deleteEvent(id: string): Promise<ActionResult> {
   }
 }
 
+type MemberLookupResult = {
+  id: string
+  firstName: string
+  lastName: string
+  email: string | null
+  phone: string | null
+  matchedBy: "mobile" | "email" | "nameBirthday"
+}
+
 // Returns matched member info if found, null otherwise.
 // Used by the public registration form for member resolution.
+// Priority: mobile number → email → last name + birthday
+export async function lookupMemberForRegistration(params: {
+  mobileNumber?: string | null
+  email?: string | null
+  lastName?: string | null
+  birthMonth?: number | null
+  birthYear?: number | null
+}): Promise<MemberLookupResult | null> {
+  const select = { id: true, firstName: true, lastName: true, email: true, phone: true }
+
+  if (params.mobileNumber) {
+    const member = await db.member.findFirst({
+      where: { phone: params.mobileNumber.trim() },
+      select,
+    })
+    if (member) return { ...member, matchedBy: "mobile" }
+  }
+
+  if (params.email) {
+    const member = await db.member.findFirst({
+      where: { email: params.email.trim() },
+      select,
+    })
+    if (member) return { ...member, matchedBy: "email" }
+  }
+
+  if (params.lastName && params.birthMonth != null && params.birthYear != null) {
+    const member = await db.member.findFirst({
+      where: {
+        lastName: { equals: params.lastName.trim(), mode: "insensitive" },
+        birthMonth: params.birthMonth,
+        birthYear: params.birthYear,
+      },
+      select,
+    })
+    if (member) return { ...member, matchedBy: "nameBirthday" }
+  }
+
+  return null
+}
+
+// Kept for backward compatibility — delegates to lookupMemberForRegistration
 export async function lookupMemberByMobile(
   mobileNumber: string
 ): Promise<{ id: string; firstName: string; lastName: string; email: string | null; phone: string | null } | null> {
-  const member = await db.member.findFirst({
-    where: { phone: mobileNumber.trim() },
-    select: { id: true, firstName: true, lastName: true, email: true, phone: true },
-  })
-  return member ?? null
+  const result = await lookupMemberForRegistration({ mobileNumber })
+  if (!result) return null
+  const { matchedBy: _, ...member } = result
+  return member
 }
 
 export async function createRegistrant(
@@ -158,10 +211,35 @@ export async function createRegistrant(
         scheduleTimeStart: parsed.data.scheduleTimeStart ?? null,
       }
 
-      const existingGuest = await db.guest.findFirst({
-        where: { phone: parsed.data.mobileNumber },
-        select: { id: true },
-      })
+      // Deduplicate guests: try phone first, then email, then last name + birthday
+      let existingGuest: { id: string } | null = null
+      if (parsed.data.mobileNumber) {
+        existingGuest = await db.guest.findFirst({
+          where: { phone: parsed.data.mobileNumber },
+          select: { id: true },
+        })
+      }
+      if (!existingGuest && parsed.data.email) {
+        existingGuest = await db.guest.findFirst({
+          where: { email: parsed.data.email },
+          select: { id: true },
+        })
+      }
+      if (
+        !existingGuest &&
+        parsed.data.lastName &&
+        parsed.data.birthMonth != null &&
+        parsed.data.birthYear != null
+      ) {
+        existingGuest = await db.guest.findFirst({
+          where: {
+            lastName: { equals: parsed.data.lastName.trim(), mode: "insensitive" },
+            birthMonth: parsed.data.birthMonth,
+            birthYear: parsed.data.birthYear,
+          },
+          select: { id: true },
+        })
+      }
 
       let guestId: string
       if (existingGuest) {
@@ -170,6 +248,8 @@ export async function createRegistrant(
         await db.guest.update({
           where: { id: guestId },
           data: {
+            ...(parsed.data.birthMonth != null && { birthMonth: parsed.data.birthMonth }),
+            ...(parsed.data.birthYear != null && { birthYear: parsed.data.birthYear }),
             ...(matchingProfile.lifeStageId !== null && { lifeStageId: matchingProfile.lifeStageId }),
             ...(matchingProfile.gender !== null && { gender: matchingProfile.gender }),
             ...(matchingProfile.language !== undefined && { language: matchingProfile.language }),
@@ -188,6 +268,8 @@ export async function createRegistrant(
             lastName: parsed.data.lastName,
             email: parsed.data.email ?? null,
             phone: parsed.data.mobileNumber,
+            birthMonth: parsed.data.birthMonth ?? null,
+            birthYear: parsed.data.birthYear ?? null,
             language: matchingProfile.language ?? [],
             lifeStageId: matchingProfile.lifeStageId,
             gender: matchingProfile.gender,

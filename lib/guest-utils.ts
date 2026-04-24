@@ -3,7 +3,7 @@ export type GuestPipelineStatus = "New" | "EventAttendee" | "Matched" | "Decline
 export function computeGuestStatus(g: {
   memberId: string | null
   hasPendingSmallGroupRequest: boolean
-  hasRejectedBreakoutRequest: boolean
+  hasRejectedSmallGroupRequest: boolean
   eventRegistrations: {
     attendedAt: Date | null
     occurrenceAttendances: { id: string }[]
@@ -15,9 +15,11 @@ export function computeGuestStatus(g: {
 
   for (const r of g.eventRegistrations) {
     if (r.breakoutGroupMemberships.length > 0) {
-      return g.hasRejectedBreakoutRequest ? "Declined" : "Matched"
+      return g.hasRejectedSmallGroupRequest ? "Declined" : "Matched"
     }
   }
+
+  if (g.hasRejectedSmallGroupRequest) return "Declined"
 
   for (const r of g.eventRegistrations) {
     if (r.attendedAt !== null || r.occurrenceAttendances.length > 0) return "EventAttendee"

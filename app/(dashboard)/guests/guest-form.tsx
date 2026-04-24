@@ -17,7 +17,8 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { PhonePHInput } from "@/components/ui/phone-ph-input"
+import { OptionalEmailInput } from "@/components/ui/optional-email-input"
+import { OptionalPhonePHInput } from "@/components/ui/optional-phone-ph-input"
 import {
   Select,
   SelectContent,
@@ -56,6 +57,7 @@ type GuestDetail = {
 type Props = {
   guest?: GuestDetail
   eventHistory?: React.ReactNode
+  activityHistory?: React.ReactNode
   matchSection?: React.ReactNode
   onSaveMatchingProfile?: () => Promise<void>
 }
@@ -78,13 +80,15 @@ function toFormValues(guest: GuestDetail): GuestFormValues {
   }
 }
 
-export function GuestForm({ guest, eventHistory, matchSection, onSaveMatchingProfile }: Props) {
+export function GuestForm({ guest, eventHistory, activityHistory, matchSection, onSaveMatchingProfile }: Props) {
   const router = useRouter()
   const isEdit = !!guest
   const isPromoted = !!guest?.memberId
   const [form, setForm] = React.useState<GuestFormValues>(
     () => guest ? toFormValues(guest) : defaultGuestForm
   )
+  const [noPhone, setNoPhone] = React.useState(() => !!guest && !guest.phone)
+  const [noEmail, setNoEmail] = React.useState(() => !!guest && !guest.email)
   const [saving, setSaving] = React.useState(false)
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
@@ -96,6 +100,8 @@ export function GuestForm({ guest, eventHistory, matchSection, onSaveMatchingPro
 
   function handleRevert() {
     setForm(guest ? toFormValues(guest) : defaultGuestForm)
+    setNoPhone(!!guest && !guest.phone)
+    setNoEmail(!!guest && !guest.email)
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -133,7 +139,7 @@ export function GuestForm({ guest, eventHistory, matchSection, onSaveMatchingPro
     }
   }
 
-  const hasTabs = isEdit && (matchSection || eventHistory)
+  const hasTabs = isEdit && (matchSection || eventHistory || activityHistory)
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-6 pb-24 sm:pb-6">
@@ -214,6 +220,9 @@ export function GuestForm({ guest, eventHistory, matchSection, onSaveMatchingPro
             {eventHistory && (
               <TabsTrigger value="events">Events</TabsTrigger>
             )}
+            {activityHistory && (
+              <TabsTrigger value="activity">Activity</TabsTrigger>
+            )}
           </TabsList>
         )}
 
@@ -260,21 +269,24 @@ export function GuestForm({ guest, eventHistory, matchSection, onSaveMatchingPro
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
-                  <Input
+                  <OptionalEmailInput
                     id="email"
-                    type="email"
                     value={form.email}
                     onChange={(e) => set("email", e.target.value)}
                     placeholder="maria@email.com"
+                    noEmail={noEmail}
+                    onNoEmailChange={setNoEmail}
                     disabled={isPromoted}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="phone">Phone</Label>
-                  <PhonePHInput
+                  <OptionalPhonePHInput
                     id="phone"
                     value={form.phone}
                     onChange={(v) => set("phone", v)}
+                    noNumber={noPhone}
+                    onNoNumberChange={setNoPhone}
                     disabled={isPromoted}
                   />
                 </div>
@@ -361,6 +373,12 @@ export function GuestForm({ guest, eventHistory, matchSection, onSaveMatchingPro
         {isEdit && eventHistory && (
           <TabsContent value="events" className="mt-0 max-w-2xl">
             {eventHistory}
+          </TabsContent>
+        )}
+
+        {isEdit && activityHistory && (
+          <TabsContent value="activity" className="mt-0 max-w-2xl">
+            {activityHistory}
           </TabsContent>
         )}
       </Tabs>

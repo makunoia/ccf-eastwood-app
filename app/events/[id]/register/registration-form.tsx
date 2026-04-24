@@ -14,7 +14,8 @@ import {
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { PhonePHInput } from "@/components/ui/phone-ph-input"
+import { OptionalEmailInput } from "@/components/ui/optional-email-input"
+import { OptionalPhonePHInput } from "@/components/ui/optional-phone-ph-input"
 import {
   Select,
   SelectContent,
@@ -24,7 +25,7 @@ import {
 } from "@/components/ui/select"
 import {
   createRegistrant,
-  lookupMemberByMobile,
+  lookupMemberForRegistration,
 } from "@/app/(dashboard)/events/actions"
 import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
 
@@ -38,6 +39,8 @@ type FormValues = {
   nickname: string
   email: string
   mobileNumber: string
+  birthMonth: string
+  birthYear: string
   lifeStageId: string
   gender: string
   language: string[]
@@ -53,6 +56,7 @@ type MatchedMember = {
   lastName: string
   email: string | null
   phone: string | null
+  matchedBy: "mobile" | "email" | "nameBirthday"
 }
 
 const defaultForm: FormValues = {
@@ -61,6 +65,8 @@ const defaultForm: FormValues = {
   nickname: "",
   email: "",
   mobileNumber: "",
+  birthMonth: "",
+  birthYear: "",
   lifeStageId: "",
   gender: "",
   language: [],
@@ -89,6 +95,8 @@ type Props = {
 export function RegistrationForm({ eventId, isRecurring = false, lifeStages = [] }: Props) {
   const [step, setStep] = React.useState<Step>("form")
   const [form, setForm] = React.useState<FormValues>(defaultForm)
+  const [noMobile, setNoMobile] = React.useState(false)
+  const [noEmail, setNoEmail] = React.useState(false)
   const [submitting, setSubmitting] = React.useState(false)
   const [matchedMember, setMatchedMember] = React.useState<MatchedMember | null>(null)
 
@@ -109,16 +117,29 @@ export function RegistrationForm({ eventId, isRecurring = false, lifeStages = []
     e.preventDefault()
     setSubmitting(true)
 
-    // Check for existing member by mobile
-    const match = await lookupMemberByMobile(form.mobileNumber)
-    setSubmitting(false)
+    const hasMobile = !noMobile && !!form.mobileNumber
+    const hasEmail = !noEmail && !!form.email
+    const hasBirthday = !!form.birthMonth && !!form.birthYear
 
-    if (match) {
-      setMatchedMember(match)
-      setStep("confirm")
+    if (hasMobile || hasEmail || hasBirthday) {
+      const match = await lookupMemberForRegistration({
+        mobileNumber: hasMobile ? form.mobileNumber : null,
+        email: hasEmail ? form.email : null,
+        lastName: hasBirthday ? form.lastName : null,
+        birthMonth: hasBirthday ? parseInt(form.birthMonth, 10) : null,
+        birthYear: hasBirthday ? parseInt(form.birthYear, 10) : null,
+      })
+      setSubmitting(false)
+      if (match) {
+        setMatchedMember(match)
+        setStep("confirm")
+        return
+      }
     } else {
-      await register(null)
+      setSubmitting(false)
     }
+
+    await register(null)
   }
 
   async function register(confirmedMemberId: string | null) {
@@ -129,6 +150,8 @@ export function RegistrationForm({ eventId, isRecurring = false, lifeStages = []
       nickname: form.nickname,
       email: form.email,
       mobileNumber: form.mobileNumber,
+      birthMonth: form.birthMonth ? parseInt(form.birthMonth, 10) : null,
+      birthYear: form.birthYear ? parseInt(form.birthYear, 10) : null,
       lifeStageId: form.lifeStageId || null,
       gender: (form.gender || null) as "Male" | "Female" | null,
       language: form.language,
@@ -170,7 +193,9 @@ export function RegistrationForm({ eventId, isRecurring = false, lifeStages = []
         <CardHeader>
           <CardTitle>Is this you?</CardTitle>
           <CardDescription>
-            We found an existing record matching your mobile number.
+            {matchedMember.matchedBy === "mobile" && "We found an existing record matching your mobile number."}
+            {matchedMember.matchedBy === "email" && "We found an existing record matching your email address."}
+            {matchedMember.matchedBy === "nameBirthday" && "We found an existing record matching your name and birthday."}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -253,26 +278,59 @@ export function RegistrationForm({ eventId, isRecurring = false, lifeStages = []
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="mobileNumber">
-              Mobile Number <span className="text-destructive">*</span>
-            </Label>
-            <PhonePHInput
+            <Label htmlFor="mobileNumber">Mobile Number</Label>
+            <OptionalPhonePHInput
               id="mobileNumber"
               value={form.mobileNumber}
               onChange={(v) => set("mobileNumber", v)}
-              required
+              noNumber={noMobile}
+              onNoNumberChange={setNoMobile}
             />
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
-            <Input
+            <OptionalEmailInput
               id="email"
-              type="email"
               value={form.email}
               onChange={(e) => set("email", e.target.value)}
               placeholder="juan@email.com"
+              noEmail={noEmail}
+              onNoEmailChange={setNoEmail}
             />
+          </div>
+
+          {/* Birthday */}
+          <div className="space-y-2">
+            <Label>Birthday</Label>
+            <div className="flex gap-2">
+              <Select
+                value={form.birthMonth}
+                onValueChange={(v) => set("birthMonth", v === "_none" ? "" : v)}
+              >
+                <SelectTrigger className="flex-1">
+                  <SelectValue placeholder="Month" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">Month</SelectItem>
+                  {[
+                    "January", "February", "March", "April", "May", "June",
+                    "July", "August", "September", "October", "November", "December",
+                  ].map((name, i) => (
+                    <SelectItem key={i + 1} value={String(i + 1)}>{name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input
+                type="number"
+                min={1900}
+                max={new Date().getFullYear()}
+                placeholder="Year"
+                value={form.birthYear}
+                onChange={(e) => set("birthYear", e.target.value)}
+                className="w-24"
+              />
+            </div>
           </div>
 
           {/* Gender */}

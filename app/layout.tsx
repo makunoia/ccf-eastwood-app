@@ -38,7 +38,12 @@ export default function RootLayout({
       <body className={`${GeistSans.variable} ${GeistMono.variable} antialiased`}>
         <TooltipProvider>
           {children}
-          <Toaster richColors position="top-right" />
+          <Toaster
+            richColors
+            position="top-right"
+            offset="calc(env(safe-area-inset-top) + 16px)"
+            mobileOffset="calc(env(safe-area-inset-top) + 16px)"
+          />
           <Suspense>
             <NavigationLoader />
           </Suspense>
