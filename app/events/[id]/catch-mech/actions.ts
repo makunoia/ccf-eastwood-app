@@ -89,7 +89,6 @@ export async function submitCatchMechConfirmations(
       eventId: true,
       facilitatorVolunteerId: true,
       breakoutGroupId: true,
-      eventId: true,
       facilitator: {
         select: {
           memberId: true,
@@ -152,7 +151,6 @@ export async function createSmallGroupForTimothy(
       eventId: true,
       facilitatorVolunteerId: true,
       breakoutGroupId: true,
-      eventId: true,
       facilitator: {
         select: {
           memberId: true,
