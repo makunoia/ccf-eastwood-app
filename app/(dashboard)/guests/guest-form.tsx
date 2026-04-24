@@ -17,7 +17,8 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { PhonePHInput } from "@/components/ui/phone-ph-input"
+import { OptionalEmailInput } from "@/components/ui/optional-email-input"
+import { OptionalPhonePHInput } from "@/components/ui/optional-phone-ph-input"
 import {
   Select,
   SelectContent,
@@ -86,6 +87,8 @@ export function GuestForm({ guest, eventHistory, activityHistory, matchSection, 
   const [form, setForm] = React.useState<GuestFormValues>(
     () => guest ? toFormValues(guest) : defaultGuestForm
   )
+  const [noPhone, setNoPhone] = React.useState(() => !!guest && !guest.phone)
+  const [noEmail, setNoEmail] = React.useState(() => !!guest && !guest.email)
   const [saving, setSaving] = React.useState(false)
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
@@ -97,6 +100,8 @@ export function GuestForm({ guest, eventHistory, activityHistory, matchSection, 
 
   function handleRevert() {
     setForm(guest ? toFormValues(guest) : defaultGuestForm)
+    setNoPhone(!!guest && !guest.phone)
+    setNoEmail(!!guest && !guest.email)
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -264,21 +269,24 @@ export function GuestForm({ guest, eventHistory, activityHistory, matchSection, 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
-                  <Input
+                  <OptionalEmailInput
                     id="email"
-                    type="email"
                     value={form.email}
                     onChange={(e) => set("email", e.target.value)}
                     placeholder="maria@email.com"
+                    noEmail={noEmail}
+                    onNoEmailChange={setNoEmail}
                     disabled={isPromoted}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="phone">Phone</Label>
-                  <PhonePHInput
+                  <OptionalPhonePHInput
                     id="phone"
                     value={form.phone}
                     onChange={(v) => set("phone", v)}
+                    noNumber={noPhone}
+                    onNoNumberChange={setNoPhone}
                     disabled={isPromoted}
                   />
                 </div>

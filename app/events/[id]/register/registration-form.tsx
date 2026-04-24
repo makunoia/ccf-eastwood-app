@@ -14,7 +14,8 @@ import {
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { PhonePHInput } from "@/components/ui/phone-ph-input"
+import { OptionalEmailInput } from "@/components/ui/optional-email-input"
+import { OptionalPhonePHInput } from "@/components/ui/optional-phone-ph-input"
 import {
   Select,
   SelectContent,
@@ -89,6 +90,8 @@ type Props = {
 export function RegistrationForm({ eventId, isRecurring = false, lifeStages = [] }: Props) {
   const [step, setStep] = React.useState<Step>("form")
   const [form, setForm] = React.useState<FormValues>(defaultForm)
+  const [noMobile, setNoMobile] = React.useState(false)
+  const [noEmail, setNoEmail] = React.useState(false)
   const [submitting, setSubmitting] = React.useState(false)
   const [matchedMember, setMatchedMember] = React.useState<MatchedMember | null>(null)
 
@@ -109,16 +112,20 @@ export function RegistrationForm({ eventId, isRecurring = false, lifeStages = []
     e.preventDefault()
     setSubmitting(true)
 
-    // Check for existing member by mobile
-    const match = await lookupMemberByMobile(form.mobileNumber)
-    setSubmitting(false)
-
-    if (match) {
-      setMatchedMember(match)
-      setStep("confirm")
+    // Skip member lookup when no mobile number was provided
+    if (!noMobile && form.mobileNumber) {
+      const match = await lookupMemberByMobile(form.mobileNumber)
+      setSubmitting(false)
+      if (match) {
+        setMatchedMember(match)
+        setStep("confirm")
+        return
+      }
     } else {
-      await register(null)
+      setSubmitting(false)
     }
+
+    await register(null)
   }
 
   async function register(confirmedMemberId: string | null) {
@@ -253,25 +260,25 @@ export function RegistrationForm({ eventId, isRecurring = false, lifeStages = []
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="mobileNumber">
-              Mobile Number <span className="text-destructive">*</span>
-            </Label>
-            <PhonePHInput
+            <Label htmlFor="mobileNumber">Mobile Number</Label>
+            <OptionalPhonePHInput
               id="mobileNumber"
               value={form.mobileNumber}
               onChange={(v) => set("mobileNumber", v)}
-              required
+              noNumber={noMobile}
+              onNoNumberChange={setNoMobile}
             />
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
-            <Input
+            <OptionalEmailInput
               id="email"
-              type="email"
               value={form.email}
               onChange={(e) => set("email", e.target.value)}
               placeholder="juan@email.com"
+              noEmail={noEmail}
+              onNoEmailChange={setNoEmail}
             />
           </div>
 

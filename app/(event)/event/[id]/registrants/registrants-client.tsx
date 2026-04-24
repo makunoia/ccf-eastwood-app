@@ -32,7 +32,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { PhonePHInput } from "@/components/ui/phone-ph-input"
+import { OptionalEmailInput } from "@/components/ui/optional-email-input"
+import { OptionalPhonePHInput } from "@/components/ui/optional-phone-ph-input"
 import { SearchInput } from "@/components/search-input"
 import { ImportWizard } from "@/components/import/import-wizard"
 import {
@@ -137,11 +138,14 @@ function AddRegistrantDialog({
   const [lastName, setLastName]   = React.useState("")
   const [email, setEmail]         = React.useState("")
   const [mobile, setMobile]       = React.useState("")
+  const [noMobile, setNoMobile]   = React.useState(false)
+  const [noEmail, setNoEmail]     = React.useState(false)
   const [nickname, setNickname]   = React.useState("")
   const [saving, setSaving]       = React.useState(false)
 
   function reset() {
     setFirstName(""); setLastName(""); setEmail(""); setMobile(""); setNickname("")
+    setNoMobile(false); setNoEmail(false)
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -191,11 +195,11 @@ function AddRegistrantDialog({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="add-mobile">Mobile Number</Label>
-            <PhonePHInput id="add-mobile" value={mobile} onChange={setMobile} />
+            <OptionalPhonePHInput id="add-mobile" value={mobile} onChange={setMobile} noNumber={noMobile} onNoNumberChange={setNoMobile} />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="add-email">Email</Label>
-            <Input id="add-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <OptionalEmailInput id="add-email" value={email} onChange={(e) => setEmail(e.target.value)} noEmail={noEmail} onNoEmailChange={setNoEmail} />
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => { reset(); onOpenChange(false) }} disabled={saving}>

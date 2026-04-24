@@ -10,7 +10,7 @@ const registrantSchema = z.object({
   lastName: z.string().min(1, "Last name is required").trim(),
   nickname: z.string().optional().transform((v) => (v === "" || v == null ? null : v.trim())),
   email: z.string().optional().transform((v) => (v === "" || v == null ? null : v.trim())),
-  mobileNumber: z.string().min(1, "Mobile number is required").trim(),
+  mobileNumber: z.string().optional().transform((v) => (v === "" || v == null ? null : v.trim())),
   // Optional matching fields — collected on recurring event registration forms
   lifeStageId: z.string().optional().nullable().transform((v) => v || null),
   gender: z.enum(["Male", "Female"]).optional().nullable(),
@@ -158,10 +158,12 @@ export async function createRegistrant(
         scheduleTimeStart: parsed.data.scheduleTimeStart ?? null,
       }
 
-      const existingGuest = await db.guest.findFirst({
-        where: { phone: parsed.data.mobileNumber },
-        select: { id: true },
-      })
+      const existingGuest = parsed.data.mobileNumber
+        ? await db.guest.findFirst({
+            where: { phone: parsed.data.mobileNumber },
+            select: { id: true },
+          })
+        : null
 
       let guestId: string
       if (existingGuest) {
