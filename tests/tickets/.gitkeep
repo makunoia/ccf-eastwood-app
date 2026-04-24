@@ -1,0 +1,4 @@
+# Ticket verification tests
+# One file per Jira ticket: ccf-NNN.test.ts
+# Create with: pnpm ticket:test:new CCF-NNN
+# Run with:    pnpm verify:ticket CCF-NNN

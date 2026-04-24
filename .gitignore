@@ -43,3 +43,6 @@ next-env.d.ts
 /app/generated/prisma
 .env*.local
 /docs/superpowers
+
+# Ticket verification tests are generated per-session — not committed
+tests/tickets/*.test.ts

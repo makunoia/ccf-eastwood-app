@@ -51,9 +51,10 @@ type Props = {
   lifeStages: { id: string; name: string }[]
   pipelineStatus: GuestPipelineStatus
   eventHistory: React.ReactNode
+  activityHistory: React.ReactNode
 }
 
-export function GuestDetailContent({ guest, lifeStages, pipelineStatus, eventHistory }: Props) {
+export function GuestDetailContent({ guest, lifeStages, pipelineStatus, eventHistory, activityHistory }: Props) {
   const matchSectionRef = React.useRef<GuestMatchSectionHandle>(null)
 
   async function handleSaveMatchingProfile() {
@@ -64,6 +65,7 @@ export function GuestDetailContent({ guest, lifeStages, pipelineStatus, eventHis
     <GuestForm
       guest={guest}
       eventHistory={eventHistory}
+      activityHistory={activityHistory}
       matchSection={
         <GuestMatchSection
           ref={matchSectionRef}

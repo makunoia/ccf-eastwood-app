@@ -56,6 +56,7 @@ type GuestDetail = {
 type Props = {
   guest?: GuestDetail
   eventHistory?: React.ReactNode
+  activityHistory?: React.ReactNode
   matchSection?: React.ReactNode
   onSaveMatchingProfile?: () => Promise<void>
 }
@@ -78,7 +79,7 @@ function toFormValues(guest: GuestDetail): GuestFormValues {
   }
 }
 
-export function GuestForm({ guest, eventHistory, matchSection, onSaveMatchingProfile }: Props) {
+export function GuestForm({ guest, eventHistory, activityHistory, matchSection, onSaveMatchingProfile }: Props) {
   const router = useRouter()
   const isEdit = !!guest
   const isPromoted = !!guest?.memberId
@@ -133,7 +134,7 @@ export function GuestForm({ guest, eventHistory, matchSection, onSaveMatchingPro
     }
   }
 
-  const hasTabs = isEdit && (matchSection || eventHistory)
+  const hasTabs = isEdit && (matchSection || eventHistory || activityHistory)
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-6 pb-24 sm:pb-6">
@@ -213,6 +214,9 @@ export function GuestForm({ guest, eventHistory, matchSection, onSaveMatchingPro
             )}
             {eventHistory && (
               <TabsTrigger value="events">Events</TabsTrigger>
+            )}
+            {activityHistory && (
+              <TabsTrigger value="activity">Activity</TabsTrigger>
             )}
           </TabsList>
         )}
@@ -361,6 +365,12 @@ export function GuestForm({ guest, eventHistory, matchSection, onSaveMatchingPro
         {isEdit && eventHistory && (
           <TabsContent value="events" className="mt-0 max-w-2xl">
             {eventHistory}
+          </TabsContent>
+        )}
+
+        {isEdit && activityHistory && (
+          <TabsContent value="activity" className="mt-0 max-w-2xl">
+            {activityHistory}
           </TabsContent>
         )}
       </Tabs>

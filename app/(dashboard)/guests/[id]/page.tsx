@@ -1,11 +1,12 @@
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { GuestEventHistory } from "./guest-event-history"
+import { GuestActivityLog } from "./guest-activity-log"
 import { GuestDetailContent } from "./guest-detail-content"
 import { computeGuestStatus } from "@/lib/guest-utils"
 
 async function getGuest(id: string) {
-  const [g, pendingRequest, rejectedBreakoutRequest] = await Promise.all([
+  const [g, pendingRequest, rejectedRequest] = await Promise.all([
     db.guest.findUnique({
       where: { id },
       include: {
@@ -52,7 +53,7 @@ async function getGuest(id: string) {
       select: { smallGroup: { select: { id: true, name: true } } },
     }),
     db.smallGroupMemberRequest.findFirst({
-      where: { guestId: id, status: "Rejected", breakoutGroupId: { not: null } },
+      where: { guestId: id, status: "Rejected" },
       select: { id: true },
     }),
   ])
@@ -105,9 +106,20 @@ async function getGuest(id: string) {
     eventRegistrations: g.eventRegistrations,
     pendingGroupName: pendingRequest?.smallGroup?.name ?? null,
     pendingGroupId: pendingRequest?.smallGroup?.id ?? null,
-    hasRejectedBreakoutRequest: !!rejectedBreakoutRequest,
+    hasRejectedSmallGroupRequest: !!rejectedRequest,
     matchedBreakout,
   }
+}
+
+async function getGuestActivityLogs(guestId: string) {
+  return db.smallGroupLog.findMany({
+    where: { guestId },
+    orderBy: { createdAt: "desc" },
+    include: {
+      smallGroup: { select: { id: true, name: true } },
+      performedByUser: { select: { name: true } },
+    },
+  })
 }
 
 async function getLifeStages() {
@@ -137,10 +149,11 @@ export default async function GuestDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const [guest, lifeStages, registrations] = await Promise.all([
+  const [guest, lifeStages, registrations, activityLogs] = await Promise.all([
     getGuest(id),
     getLifeStages(),
     getGuestEventRegistrations(id),
+    getGuestActivityLogs(id),
   ])
 
   if (!guest) notFound()
@@ -148,7 +161,7 @@ export default async function GuestDetailPage({
   const pipelineStatus = computeGuestStatus({
     memberId: guest.memberId,
     hasPendingSmallGroupRequest: guest.pendingGroupName !== null,
-    hasRejectedBreakoutRequest: guest.hasRejectedBreakoutRequest,
+    hasRejectedSmallGroupRequest: guest.hasRejectedSmallGroupRequest,
     eventRegistrations: guest.eventRegistrations,
   })
 
@@ -158,6 +171,7 @@ export default async function GuestDetailPage({
       lifeStages={lifeStages}
       pipelineStatus={pipelineStatus}
       eventHistory={<GuestEventHistory registrations={registrations} />}
+      activityHistory={<GuestActivityLog logs={activityLogs} />}
     />
   )
 }
