@@ -182,19 +182,11 @@ export function GuestForm({ guest, sourceEvent, eventHistory, activityHistory, m
             </Button>
           )}
           {isEdit ? (
-            activeTab === "small-group" && onSaveMatchingProfile ? (
-              <Button
-                type="button"
-                onClick={() => { void handleSaveMatchingProfile() }}
-                disabled={saving || isPromoted}
-              >
-                {saving ? "Saving…" : "Save changes"}
-              </Button>
-            ) : (
+            activeTab !== "small-group" ? (
               <Button type="submit" form="guest-form" disabled={saving || isPromoted}>
                 {saving ? "Saving…" : "Save changes"}
               </Button>
-            )
+            ) : null
           ) : (
             <Button type="submit" form="guest-form" disabled={saving}>
               {saving ? "Adding…" : "Add Guest"}
@@ -407,7 +399,7 @@ export function GuestForm({ guest, sourceEvent, eventHistory, activityHistory, m
         )}
       </Tabs>
 
-      {!isPromoted && (
+      {!isPromoted && activeTab !== "small-group" && (
         <MobileFormActions
           formId="guest-form"
           isEdit={isEdit}
