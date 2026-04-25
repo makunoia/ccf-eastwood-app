@@ -88,7 +88,7 @@ function toFormValues(guest: GuestDetail): GuestFormValues {
   }
 }
 
-export function GuestForm({ guest, sourceEvent, eventHistory, activityHistory, matchSection, onSaveMatchingProfile }: Props) {
+export function GuestForm({ guest, sourceEvent, eventHistory, activityHistory, matchSection }: Props) {
   const router = useRouter()
   const isEdit = !!guest
   const isPromoted = !!guest?.memberId
@@ -125,13 +125,6 @@ export function GuestForm({ guest, sourceEvent, eventHistory, activityHistory, m
     } else {
       toast.error(result.error)
     }
-  }
-
-  async function handleSaveMatchingProfile() {
-    if (!onSaveMatchingProfile) return
-    setSaving(true)
-    await onSaveMatchingProfile()
-    setSaving(false)
   }
 
   async function handleDelete() {

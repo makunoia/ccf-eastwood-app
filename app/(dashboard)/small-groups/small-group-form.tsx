@@ -876,6 +876,7 @@ export function SmallGroupForm({
               <p className="text-xs text-muted-foreground">
                 Temporarily assigned people appear here until the group leader confirms or declines via the leader link.
               </p>
+              {pendingRequests.length > 0 && (
               <div className="rounded-md border bg-muted/40 p-3 space-y-2">
                 <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
                   <IconLink className="size-3.5" />
@@ -919,6 +920,7 @@ export function SmallGroupForm({
                   </Button>
                 )}
               </div>
+              )}
               {pendingRequests.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No pending assignments.</p>
               ) : (

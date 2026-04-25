@@ -1,0 +1,293 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-04-25T00:00:00Z",
+  "title": "Design System: CCF Eastwood Admin",
+  "extensions": {
+    "colorMeta": {
+      "reliably-blue": {
+        "role": "primary",
+        "displayName": "Reliably Blue",
+        "canonical": "oklch(0.65 0.17 218)",
+        "tonalRamp": [
+          "oklch(0.15 0.10 218)",
+          "oklch(0.25 0.13 218)",
+          "oklch(0.35 0.15 218)",
+          "oklch(0.45 0.16 218)",
+          "oklch(0.55 0.17 218)",
+          "oklch(0.65 0.17 218)",
+          "oklch(0.75 0.13 218)",
+          "oklch(0.92 0.05 218)"
+        ]
+      },
+      "reliably-blue-surface": {
+        "role": "primary-surface",
+        "displayName": "Reliably Blue Surface",
+        "canonical": "oklch(0.95 0.04 218)",
+        "tonalRamp": [
+          "oklch(0.60 0.04 218)",
+          "oklch(0.68 0.04 218)",
+          "oklch(0.74 0.04 218)",
+          "oklch(0.80 0.04 218)",
+          "oklch(0.86 0.04 218)",
+          "oklch(0.90 0.04 218)",
+          "oklch(0.95 0.04 218)",
+          "oklch(0.98 0.02 218)"
+        ]
+      },
+      "still-water": {
+        "role": "secondary",
+        "displayName": "Still Water",
+        "canonical": "oklch(0.70 0.11 200)",
+        "hex": "#2AB9D0",
+        "tonalRamp": [
+          "oklch(0.15 0.09 200)",
+          "oklch(0.28 0.10 200)",
+          "oklch(0.38 0.10 200)",
+          "oklch(0.50 0.11 200)",
+          "oklch(0.60 0.11 200)",
+          "oklch(0.70 0.11 200)",
+          "oklch(0.81 0.07 200)",
+          "oklch(0.93 0.03 200)"
+        ]
+      },
+      "deep-ink": {
+        "role": "neutral-foreground",
+        "displayName": "Deep Ink",
+        "canonical": "oklch(0.145 0 0)",
+        "tonalRamp": [
+          "oklch(0.10 0 0)",
+          "oklch(0.20 0 0)",
+          "oklch(0.30 0 0)",
+          "oklch(0.40 0 0)",
+          "oklch(0.50 0 0)",
+          "oklch(0.60 0 0)",
+          "oklch(0.75 0 0)",
+          "oklch(0.90 0 0)"
+        ]
+      },
+      "quiet-mid": {
+        "role": "neutral-secondary",
+        "displayName": "Quiet Mid",
+        "canonical": "oklch(0.556 0 0)",
+        "tonalRamp": [
+          "oklch(0.20 0 0)",
+          "oklch(0.30 0 0)",
+          "oklch(0.40 0 0)",
+          "oklch(0.50 0 0)",
+          "oklch(0.556 0 0)",
+          "oklch(0.65 0 0)",
+          "oklch(0.78 0 0)",
+          "oklch(0.90 0 0)"
+        ]
+      },
+      "canvas": {
+        "role": "neutral-background",
+        "displayName": "Canvas",
+        "canonical": "oklch(1 0 0)",
+        "note": "Pure white — future iterations should add chroma 0.005–0.008 at hue 218 for warmth.",
+        "tonalRamp": [
+          "oklch(0.50 0 0)",
+          "oklch(0.62 0 0)",
+          "oklch(0.72 0 0)",
+          "oklch(0.82 0 0)",
+          "oklch(0.90 0 0)",
+          "oklch(0.95 0 0)",
+          "oklch(0.985 0 0)",
+          "oklch(1 0 0)"
+        ]
+      },
+      "hairline": {
+        "role": "neutral-border",
+        "displayName": "Hairline",
+        "canonical": "oklch(0.922 0 0)",
+        "tonalRamp": [
+          "oklch(0.40 0 0)",
+          "oklch(0.55 0 0)",
+          "oklch(0.65 0 0)",
+          "oklch(0.75 0 0)",
+          "oklch(0.82 0 0)",
+          "oklch(0.88 0 0)",
+          "oklch(0.922 0 0)",
+          "oklch(0.96 0 0)"
+        ]
+      },
+      "danger-red": {
+        "role": "semantic-destructive",
+        "displayName": "Danger Red",
+        "canonical": "oklch(0.577 0.245 27.325)",
+        "tonalRamp": [
+          "oklch(0.25 0.18 27)",
+          "oklch(0.35 0.20 27)",
+          "oklch(0.43 0.22 27)",
+          "oklch(0.50 0.23 27)",
+          "oklch(0.577 0.245 27)",
+          "oklch(0.65 0.22 27)",
+          "oklch(0.75 0.16 27)",
+          "oklch(0.90 0.07 27)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "Headline", "purpose": "Page titles, modal headers, view anchors." },
+      "title": { "displayName": "Title", "purpose": "Card titles, panel headers, subsection labels." },
+      "body": { "displayName": "Body", "purpose": "Table data, form values, descriptions, notes. The default reading level." },
+      "label": { "displayName": "Label", "purpose": "Stat card category identifiers, data section markers only. Not for general headings." },
+      "mono": { "displayName": "Mono", "purpose": "IDs, reference numbers, confirmation tokens." }
+    },
+    "shadows": [
+      {
+        "name": "card-rest",
+        "value": "0 1px 3px oklch(0 0 0 / 0.07), 0 1px 2px oklch(0 0 0 / 0.05)",
+        "purpose": "Default state for all Card components. Gives surface presence without lifting it off the page."
+      },
+      {
+        "name": "card-hover",
+        "value": "0 4px 12px oklch(0 0 0 / 0.09), 0 2px 4px oklch(0 0 0 / 0.06)",
+        "purpose": "Card pointer-hover and interactive focus. A small lift to signal responsiveness."
+      },
+      {
+        "name": "dropdown",
+        "value": "0 4px 16px oklch(0 0 0 / 0.10), 0 1px 4px oklch(0 0 0 / 0.06)",
+        "purpose": "Popovers, command menus, select dropdowns."
+      },
+      {
+        "name": "dialog",
+        "value": "0 8px 32px oklch(0 0 0 / 0.14), 0 2px 8px oklch(0 0 0 / 0.07)",
+        "purpose": "Modals and full dialogs. Maximum shadow level in the system."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-out-fast",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "State transitions — hover, focus, active. Snappy with natural deceleration."
+      },
+      {
+        "name": "ease-out-standard",
+        "value": "cubic-bezier(0.25, 1, 0.5, 1)",
+        "purpose": "Layout transitions — sidebar expand/collapse, panel open/close."
+      },
+      {
+        "name": "duration-fast",
+        "value": "150ms",
+        "purpose": "Color, opacity, shadow changes."
+      },
+      {
+        "name": "duration-standard",
+        "value": "200ms",
+        "purpose": "Sidebar collapse, panel transitions."
+      }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px", "note": "Sidebar switches to fixed desktop layout." },
+      { "name": "lg", "value": "1024px" },
+      { "name": "xl", "value": "1280px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Main CTA. Used for form submission and single-primary-action-per-screen.",
+      "html": "<button class=\"ds-btn-primary\">Save Changes</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: oklch(0.65 0.17 218); color: oklch(1 0 0); padding: 9px 16px; height: 36px; border-radius: 8px; border: none; font-family: var(--font-geist-sans, -apple-system, BlinkMacSystemFont, sans-serif); font-size: 14px; font-weight: 500; line-height: 1.4; cursor: pointer; transition: background 150ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 150ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-btn-primary:hover { background: oklch(0.59 0.17 218); box-shadow: 0 2px 8px oklch(0.65 0.17 218 / 0.28); } .ds-btn-primary:focus-visible { outline: none; box-shadow: 0 0 0 3px oklch(0.65 0.17 218 / 0.4); } .ds-btn-primary:active { background: oklch(0.55 0.17 218); }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Secondary actions and cancel paths. Transparent at rest.",
+      "html": "<button class=\"ds-btn-ghost\">Cancel</button>",
+      "css": ".ds-btn-ghost { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: transparent; color: oklch(0.145 0 0); padding: 9px 16px; height: 36px; border-radius: 8px; border: none; font-family: var(--font-geist-sans, -apple-system, BlinkMacSystemFont, sans-serif); font-size: 14px; font-weight: 500; line-height: 1.4; cursor: pointer; transition: background 150ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-btn-ghost:hover { background: oklch(0.95 0.04 218); } .ds-btn-ghost:focus-visible { outline: none; box-shadow: 0 0 0 3px oklch(0.65 0.17 218 / 0.4); } .ds-btn-ghost:active { background: oklch(0.90 0.05 218); }"
+    },
+    {
+      "name": "Destructive Button",
+      "kind": "button",
+      "refersTo": "button-destructive",
+      "description": "Permanent, irreversible actions. Must be preceded by a confirmation dialog.",
+      "html": "<button class=\"ds-btn-destructive\">Delete Member</button>",
+      "css": ".ds-btn-destructive { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: oklch(0.577 0.245 27.325); color: oklch(1 0 0); padding: 9px 16px; height: 36px; border-radius: 8px; border: none; font-family: var(--font-geist-sans, -apple-system, BlinkMacSystemFont, sans-serif); font-size: 14px; font-weight: 500; line-height: 1.4; cursor: pointer; transition: background 150ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 150ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-btn-destructive:hover { background: oklch(0.52 0.245 27.325); box-shadow: 0 2px 8px oklch(0.577 0.245 27.325 / 0.28); } .ds-btn-destructive:focus-visible { outline: none; box-shadow: 0 0 0 3px oklch(0.577 0.245 27.325 / 0.4); }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Primary container surface for grouped content. Always carries card-rest shadow.",
+      "html": "<div class=\"ds-card\"><div class=\"ds-card-header\"><h3 class=\"ds-card-title\">Member Profile</h3><p class=\"ds-card-desc\">Last updated 2 hours ago</p></div><div class=\"ds-card-content\"><p>Card content goes here.</p></div></div>",
+      "css": ".ds-card { background: oklch(1 0 0); border: 1px solid oklch(0.922 0 0); border-radius: 10px; padding: 24px; box-shadow: 0 1px 3px oklch(0 0 0 / 0.07), 0 1px 2px oklch(0 0 0 / 0.05); transition: box-shadow 150ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-card:hover { box-shadow: 0 4px 12px oklch(0 0 0 / 0.09), 0 2px 4px oklch(0 0 0 / 0.06); } .ds-card-header { margin-bottom: 16px; } .ds-card-title { font-family: var(--font-geist-sans, -apple-system, sans-serif); font-size: 16px; font-weight: 600; color: oklch(0.145 0 0); margin: 0 0 4px; } .ds-card-desc { font-family: var(--font-geist-sans, -apple-system, sans-serif); font-size: 14px; color: oklch(0.556 0 0); margin: 0; } .ds-card-content { font-family: var(--font-geist-sans, -apple-system, sans-serif); font-size: 14px; color: oklch(0.145 0 0); line-height: 1.5; }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Standard form field. Labels always above. 36px height.",
+      "html": "<div class=\"ds-field\"><label class=\"ds-label\" for=\"ds-input-demo\">Email address</label><input class=\"ds-input\" id=\"ds-input-demo\" type=\"email\" placeholder=\"member@ccf.org\" /></div>",
+      "css": ".ds-field { display: flex; flex-direction: column; gap: 6px; font-family: var(--font-geist-sans, -apple-system, sans-serif); } .ds-label { font-size: 14px; font-weight: 500; color: oklch(0.145 0 0); } .ds-input { height: 36px; padding: 0 12px; border: 1px solid oklch(0.922 0 0); border-radius: 8px; background: oklch(1 0 0); color: oklch(0.145 0 0); font-size: 14px; font-family: var(--font-geist-sans, -apple-system, sans-serif); transition: border-color 150ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 150ms cubic-bezier(0.16, 1, 0.3, 1); outline: none; } .ds-input::placeholder { color: oklch(0.556 0 0); } .ds-input:hover { border-color: oklch(0.65 0.17 218 / 0.6); } .ds-input:focus { border-color: oklch(0.65 0.17 218); box-shadow: 0 0 0 3px oklch(0.65 0.17 218 / 0.2); }"
+    },
+    {
+      "name": "Sidebar Navigation",
+      "kind": "nav",
+      "refersTo": "nav-item",
+      "description": "Primary navigation. Default, hover, and active states. 16rem wide on desktop.",
+      "html": "<nav class=\"ds-nav\"><a class=\"ds-nav-item ds-nav-item--active\" href=\"#\"><svg class=\"ds-nav-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2\"/><circle cx=\"9\" cy=\"7\" r=\"4\"/><path d=\"M23 21v-2a4 4 0 0 0-3-3.87\"/><path d=\"M16 3.13a4 4 0 0 1 0 7.75\"/></svg>Members</a><a class=\"ds-nav-item\" href=\"#\"><svg class=\"ds-nav-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2\"/><circle cx=\"12\" cy=\"7\" r=\"4\"/></svg>Guests</a><a class=\"ds-nav-item\" href=\"#\"><svg class=\"ds-nav-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M8 12h8M12 8v8\"/></svg>Events</a></nav>",
+      "css": ".ds-nav { display: flex; flex-direction: column; gap: 2px; padding: 4px; } .ds-nav-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; font-family: var(--font-geist-sans, -apple-system, sans-serif); font-size: 14px; font-weight: 500; color: oklch(0.145 0 0); text-decoration: none; transition: background 150ms cubic-bezier(0.16, 1, 0.3, 1), color 150ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-nav-item:hover { background: oklch(0.95 0.04 218); } .ds-nav-item--active { background: oklch(0.95 0.04 218); color: oklch(0.65 0.17 218); } .ds-nav-icon { width: 16px; height: 16px; flex-shrink: 0; }"
+    },
+    {
+      "name": "Stat Card",
+      "kind": "card",
+      "description": "Dashboard metric display. Label/value/delta structure is fixed — do not repurpose as a general card.",
+      "html": "<div class=\"ds-stat\"><div class=\"ds-stat-head\"><span class=\"ds-stat-label\">Total Members</span><svg class=\"ds-stat-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2\"/><circle cx=\"9\" cy=\"7\" r=\"4\"/><path d=\"M23 21v-2a4 4 0 0 0-3-3.87\"/><path d=\"M16 3.13a4 4 0 0 1 0 7.75\"/></svg></div><p class=\"ds-stat-value\">1,248</p><p class=\"ds-stat-delta\">+12 this month</p></div>",
+      "css": ".ds-stat { background: oklch(1 0 0); border: 1px solid oklch(0.922 0 0); border-radius: 10px; padding: 20px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 1px 3px oklch(0 0 0 / 0.07), 0 1px 2px oklch(0 0 0 / 0.05); font-family: var(--font-geist-sans, -apple-system, sans-serif); } .ds-stat-head { display: flex; align-items: center; justify-content: space-between; } .ds-stat-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.15em; color: oklch(0.556 0 0); } .ds-stat-icon { width: 16px; height: 16px; color: oklch(0.556 0 0 / 0.4); } .ds-stat-value { font-size: 30px; font-weight: 600; color: oklch(0.145 0 0); font-variant-numeric: tabular-nums; margin: 0; line-height: 1.1; } .ds-stat-delta { font-size: 12px; font-weight: 500; color: oklch(0.70 0.11 200); margin: 0; }"
+    },
+    {
+      "name": "Table with Identifier Link",
+      "kind": "custom",
+      "description": "The mandatory link treatment on primary identifier columns (name, date, title) across all tables in the app.",
+      "html": "<table class=\"ds-table\"><thead><tr><th class=\"ds-th\">Name</th><th class=\"ds-th\">Group</th><th class=\"ds-th\">Status</th></tr></thead><tbody><tr class=\"ds-tr\"><td class=\"ds-td\"><a class=\"ds-table-link\" href=\"#\">Maria Santos</a></td><td class=\"ds-td ds-td--muted\">Young Adults</td><td class=\"ds-td\">Active</td></tr><tr class=\"ds-tr\"><td class=\"ds-td\"><a class=\"ds-table-link\" href=\"#\">Jose Reyes</a></td><td class=\"ds-td ds-td--muted\">Singles</td><td class=\"ds-td\">Active</td></tr></tbody></table>",
+      "css": ".ds-table { width: 100%; border-collapse: collapse; font-family: var(--font-geist-sans, -apple-system, sans-serif); font-size: 14px; } .ds-th { padding: 8px 12px; text-align: left; font-size: 12px; font-weight: 500; color: oklch(0.556 0 0); border-bottom: 1px solid oklch(0.922 0 0); } .ds-tr { border-bottom: 1px solid oklch(0.922 0 0); transition: background 100ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-tr:hover { background: oklch(0.97 0 0); } .ds-td { padding: 10px 12px; color: oklch(0.145 0 0); } .ds-td--muted { color: oklch(0.556 0 0); } .ds-table-link { font-weight: 500; color: oklch(0.145 0 0); text-decoration: underline; text-decoration-style: dashed; text-underline-offset: 2px; text-decoration-color: oklch(0.145 0 0 / 0.5); transition: text-decoration-color 150ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-table-link:hover { text-decoration-color: oklch(0.145 0 0); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Clear Register",
+    "overview": "Every record in this system is a person at a specific point in their spiritual journey. The interface should be worthy of that fact — not by being ornamental or sentimental, but by being precise, calm, and completely trustworthy. Staff should be able to move through their work without thinking about the UI. The system gets out of the way.\n\nThe aesthetic is structured restraint. Density is moderate: enough information to be productive, not so much that the task becomes crowded. Whitespace is functional. Hierarchy is established through scale and weight — never through decoration. The palette is dominated by neutrals, with one deliberate voice: Reliably Blue, a mid-intensity institutional blue that appears only where there is something actionable or navigable. Still Water, a muted teal, marks positive movement in data; it signals quietly, without demanding attention.\n\nWhat this system explicitly rejects: hero-metric layouts with giant numbers and gradient accents, glassmorphism, identical icon-card grids, gradient text, and every convention that reads as AI-assembled SaaS UI. The interface should not announce that it exists. It should make the work faster, and reflect the care that staff bring to managing a real community.",
+    "keyCharacteristics": [
+      "Moderate-density layout with clear spatial hierarchy",
+      "Single accent color (Reliably Blue) reserved strictly for actionable elements",
+      "Flat-to-subtly-lifted elevation — cards have presence without floating",
+      "Geist Sans: geometric with humanist details — precise without coldness",
+      "Label style (11px uppercase tracked) as a navigational convention, not a general treatment"
+    ],
+    "rules": [
+      { "name": "The One Voice Rule", "body": "Reliably Blue appears on ≤15% of any given screen. When everything is blue, nothing is. Active nav item, primary CTA, and focus ring: three uses, no more.", "section": "colors" },
+      { "name": "The Tint Rule", "body": "The current neutral tokens carry zero chroma — pure oklch(L 0 0) grays. Against a blue accent they read cold. Future iterations should add a chroma of 0.005–0.008 at hue 218 to Canvas, Paper, Surface Muted, and Hairline.", "section": "colors" },
+      { "name": "The Label Overhead Rule", "body": "The 11px uppercase tracked label style is a navigational signal, not a styling option. Restrict it to stat card labels and explicit data category markers.", "section": "typography" },
+      { "name": "The Contrast Floor Rule", "body": "No text rendered below WCAG AA contrast ratio, regardless of size. Verify muted text on muted backgrounds explicitly.", "section": "typography" },
+      { "name": "The Flat-At-Rest Rule", "body": "Sidebar, page background, and table rows are always flat. Cards lift slightly. Dialogs lift further. Nothing exceeds dialog-level shadow.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do use Reliably Blue exclusively for actionable and navigational elements.",
+      "Do apply the mandatory table link style on every primary identifier column: font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors.",
+      "Do restrict the 11px uppercase tracked label style to stat card labels and data category identifiers.",
+      "Do pair all destructive actions with a confirmation dialog before executing.",
+      "Do apply card-rest shadow on all Card components. Apply card-hover on pointer hover.",
+      "Do verify WCAG AA contrast on all text/background pairings.",
+      "Do cap body text at 65–70ch in long-form contexts.",
+      "Do use Geist Mono for IDs, reference numbers, and confirmation tokens.",
+      "Do place form labels above their fields — never inside, never floating."
+    ],
+    "donts": [
+      "Don't use gradient text (background-clip: text with a gradient). Prohibited.",
+      "Don't use glassmorphism: no blur-backed translucent surfaces anywhere.",
+      "Don't build hero-metric layouts: large number, small label, gradient accent.",
+      "Don't use identical icon-card grids.",
+      "Don't use a colored left-border stripe (> 1px) as a card variant or alert pattern.",
+      "Don't rely on color alone to convey meaning.",
+      "Don't use shadows stronger than dialog-level.",
+      "Don't skip the confirmation dialog for delete actions.",
+      "Don't use hover:underline or Button asChild links in table identifier columns.",
+      "Don't use the label style (11px uppercase tracked) outside stat cards and category markers."
+    ]
+  }
+}
