@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { GuestEventHistory } from "./guest-event-history"
-import { GuestActivityLog } from "./guest-activity-log"
+import { GuestActivityLog, type ActivityEntry } from "./guest-activity-log"
 import { GuestDetailContent } from "./guest-detail-content"
 import { computeGuestStatus } from "@/lib/guest-utils"
 
@@ -46,6 +46,7 @@ async function getGuest(id: string) {
             },
           },
         },
+        member: { select: { createdAt: true } },
       },
     }),
     db.smallGroupMemberRequest.findFirst({
@@ -102,6 +103,7 @@ async function getGuest(id: string) {
     scheduleDayOfWeek: g.scheduleDayOfWeek,
     scheduleTimeStart: g.scheduleTimeStart,
     memberId: g.memberId,
+    memberCreatedAt: g.member?.createdAt ?? null,
     claimedSmallGroup: g.claimedSmallGroup,
     eventRegistrations: g.eventRegistrations,
     pendingGroupName: pendingRequest?.smallGroup?.name ?? null,
@@ -165,13 +167,55 @@ export default async function GuestDetailPage({
     eventRegistrations: guest.eventRegistrations,
   })
 
+  // Source event: the first event the guest registered for (oldest by date)
+  const sourceEvent = registrations.length > 0
+    ? {
+        id: registrations[registrations.length - 1].event.id,
+        name: registrations[registrations.length - 1].event.name,
+        date: registrations[registrations.length - 1].event.startDate,
+      }
+    : null
+
+  // Build unified activity entries: small group logs + event registrations + optional promotion
+  const unifiedEntries: ActivityEntry[] = [
+    // SmallGroup log entries
+    ...activityLogs.map((log) => ({
+      kind: "smallGroupLog" as const,
+      id: log.id,
+      action: log.action,
+      description: log.description,
+      smallGroup: log.smallGroup,
+      performedByUser: log.performedByUser,
+      createdAt: log.createdAt,
+    })),
+    // Event registration entries
+    ...registrations.map((r) => ({
+      kind: "eventRegistration" as const,
+      id: r.id,
+      event: { id: r.event.id, name: r.event.name },
+      createdAt: r.createdAt,
+    })),
+    // Promotion entry (if guest has been promoted to a member)
+    ...(guest.memberId && guest.memberCreatedAt
+      ? [
+          {
+            kind: "promotion" as const,
+            memberId: guest.memberId,
+            createdAt: guest.memberCreatedAt,
+          },
+        ]
+      : []),
+  ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+
   return (
     <GuestDetailContent
       guest={guest}
       lifeStages={lifeStages}
       pipelineStatus={pipelineStatus}
+      sourceEvent={sourceEvent}
       eventHistory={<GuestEventHistory registrations={registrations} />}
-      activityHistory={<GuestActivityLog logs={activityLogs} />}
+      activityHistory={<GuestActivityLog entries={unifiedEntries} />}
     />
   )
 }
+

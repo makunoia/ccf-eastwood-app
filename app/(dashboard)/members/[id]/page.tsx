@@ -4,6 +4,7 @@ import { MemberForm } from "../member-form"
 import { MemberEventHistory } from "./member-event-history"
 import { MemberSmallGroups } from "./member-small-groups"
 import { MemberMatchSection } from "./member-match-section"
+import { MemberActivityLog, type MemberActivityEntry } from "./member-activity-log"
 import { type MemberRow } from "../columns"
 
 function addOneHour(time: string): string {
@@ -121,17 +122,104 @@ async function getMemberEventRegistrations(memberId: string) {
   })
 }
 
+async function getMemberActivityData(memberId: string) {
+  // Find the guest linked to this member (if promoted from guest)
+  const guest = await db.guest.findUnique({
+    where: { memberId },
+    select: { id: true, createdAt: true },
+  })
+
+  const [memberLogs, guestLogs, memberRegistrations, guestRegistrations] =
+    await Promise.all([
+      db.smallGroupLog.findMany({
+        where: { memberId },
+        orderBy: { createdAt: "desc" },
+        include: {
+          smallGroup: { select: { id: true, name: true } },
+          performedByUser: { select: { name: true } },
+        },
+      }),
+      guest
+        ? db.smallGroupLog.findMany({
+            where: { guestId: guest.id },
+            orderBy: { createdAt: "desc" },
+            include: {
+              smallGroup: { select: { id: true, name: true } },
+              performedByUser: { select: { name: true } },
+            },
+          })
+        : Promise.resolve([]),
+      db.eventRegistrant.findMany({
+        where: { memberId },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, event: { select: { id: true, name: true } }, createdAt: true },
+      }),
+      guest
+        ? db.eventRegistrant.findMany({
+            where: { guestId: guest.id },
+            orderBy: { createdAt: "desc" },
+            select: { id: true, event: { select: { id: true, name: true } }, createdAt: true },
+          })
+        : Promise.resolve([]),
+    ])
+
+  const entries: MemberActivityEntry[] = [
+    ...memberLogs.map((log) => ({
+      kind: "smallGroupLog" as const,
+      id: log.id,
+      action: log.action,
+      description: log.description,
+      smallGroup: log.smallGroup,
+      performedByUser: log.performedByUser,
+      createdAt: log.createdAt,
+    })),
+    ...guestLogs.map((log) => ({
+      kind: "smallGroupLog" as const,
+      id: `guest-${log.id}`,
+      action: log.action,
+      description: log.description,
+      smallGroup: log.smallGroup,
+      performedByUser: log.performedByUser,
+      createdAt: log.createdAt,
+    })),
+    ...memberRegistrations.map((r) => ({
+      kind: "eventRegistration" as const,
+      id: r.id,
+      event: r.event,
+      createdAt: r.createdAt,
+    })),
+    ...guestRegistrations.map((r) => ({
+      kind: "eventRegistration" as const,
+      id: `guest-reg-${r.id}`,
+      event: r.event,
+      createdAt: r.createdAt,
+    })),
+    ...(guest
+      ? [
+          {
+            kind: "guestOrigin" as const,
+            guestId: guest.id,
+            createdAt: guest.createdAt,
+          },
+        ]
+      : []),
+  ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+
+  return entries
+}
+
 export default async function MemberDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const [member, lifeStages, registrations, smallGroupInfo] = await Promise.all([
+  const [member, lifeStages, registrations, smallGroupInfo, activityEntries] = await Promise.all([
     getMember(id),
     getLifeStages(),
     getMemberEventRegistrations(id),
     getMemberSmallGroupInfo(id),
+    getMemberActivityData(id),
   ])
 
   if (!member) notFound()
@@ -140,6 +228,7 @@ export default async function MemberDetailPage({
     <MemberForm
       member={member}
       eventHistory={<MemberEventHistory registrations={registrations} />}
+      activityHistory={<MemberActivityLog entries={activityEntries} />}
       smallGroups={
         smallGroupInfo ? (
           <div className="space-y-6">
