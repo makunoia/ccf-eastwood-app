@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation"
 import { IconArrowLeft, IconCopy } from "@tabler/icons-react"
 import { toast } from "sonner"
 
+import { IconCircleCheckFilled } from "@tabler/icons-react"
+
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -357,24 +359,33 @@ export function VolunteerForm({ members, events, volunteer }: Props) {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium">Leader Approval</p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Share this link with the volunteer&apos;s Small Group leader to request
-                approval.
-              </p>
+              {volunteer!.status !== "Confirmed" && (
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Share this link with the volunteer&apos;s Small Group leader to request
+                  approval.
+                </p>
+              )}
             </div>
             <Badge variant={STATUS_VARIANT[volunteer!.status]}>{volunteer!.status}</Badge>
           </div>
 
-          {approvalUrl && (
-            <div className="flex items-center gap-2">
-              <code className="flex-1 truncate rounded bg-muted px-3 py-2 text-xs">
-                {approvalUrl}
-              </code>
-              <Button type="button" variant="outline" size="sm" onClick={copyApprovalLink}>
-                <IconCopy className="size-4" />
-                Copy link
-              </Button>
+          {volunteer!.status === "Confirmed" ? (
+            <div className="flex items-center gap-2 text-sm text-emerald-600">
+              <IconCircleCheckFilled className="size-4 shrink-0" />
+              <span>This volunteer has been confirmed by the leader.</span>
             </div>
+          ) : (
+            approvalUrl && (
+              <div className="flex items-center gap-2">
+                <code className="flex-1 truncate rounded bg-muted px-3 py-2 text-xs">
+                  {approvalUrl}
+                </code>
+                <Button type="button" variant="outline" size="sm" onClick={copyApprovalLink}>
+                  <IconCopy className="size-4" />
+                  Copy link
+                </Button>
+              </div>
+            )
           )}
 
           {volunteer?.leaderNotes && (

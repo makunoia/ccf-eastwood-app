@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { YearInput } from "@/components/ui/year-input"
 import { OptionalEmailInput } from "@/components/ui/optional-email-input"
 import { OptionalPhonePHInput } from "@/components/ui/optional-phone-ph-input"
 import {
@@ -289,17 +290,10 @@ export function MemberForm({ member, eventHistory, smallGroups }: Props) {
             </div>
             <div className="space-y-2">
               <Label htmlFor="birthYear">Birth Year</Label>
-              <Input
+              <YearInput
                 id="birthYear"
-                type="text"
-                inputMode="numeric"
-                maxLength={4}
-                placeholder="0000"
                 value={form.birthYear}
-                onChange={(e) => {
-                  const val = e.target.value.replace(/\D/g, "").slice(0, 4);
-                  set("birthYear", val);
-                }}
+                onChange={(val) => set("birthYear", val)}
               />
             </div>
           </div>

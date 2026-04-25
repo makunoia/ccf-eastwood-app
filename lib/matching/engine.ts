@@ -44,5 +44,6 @@ export function scoreGroup(
     groupName:  group.name,
     totalScore,
     breakdown,
+    candidateProfile: candidate,
   }
 }

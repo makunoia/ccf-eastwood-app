@@ -34,6 +34,7 @@ export function MatchingWeightsForm({ context, initial }: Props) {
   const defaults = initial ?? DEFAULT_WEIGHTS
   const [form, setForm] = React.useState(toStringValues(defaults))
   const [saving, setSaving] = React.useState(false)
+  const isFirstRender = React.useRef(true)
 
   const sum = computeSum(form)
   const sumValid = Math.abs(sum - 1) <= 0.001
@@ -42,6 +43,32 @@ export function MatchingWeightsForm({ context, initial }: Props) {
   function set(field: keyof MatchingWeightsFormValues, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }))
   }
+
+  // Auto-save when sum is valid, debounced 800ms
+  React.useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false
+      return
+    }
+    if (!sumValid) return
+
+    const timer = setTimeout(async () => {
+      setSaving(true)
+      const numeric = Object.fromEntries(
+        Object.entries(form).map(([k, v]) => [k, parseFloat(v) || 0])
+      ) as MatchingWeightsFormValues
+      const result = await upsertMatchingWeights(context, numeric)
+      setSaving(false)
+      if (result.success) {
+        toast.success("Weights saved")
+      } else {
+        toast.error(result.error)
+      }
+    }, 800)
+
+    return () => clearTimeout(timer)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form, sumValid])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()

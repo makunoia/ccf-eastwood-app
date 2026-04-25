@@ -72,7 +72,11 @@ export async function verifyCatchMechFaci(
 
 // ─── Submit confirmations ─────────────────────────────────────────────────────
 
-export type ConfirmDecision = { registrantId: string; confirmed: boolean }
+export type ConfirmDecision = {
+  registrantId: string
+  status: "confirmed" | "pending" | "declined"
+  reason?: string
+}
 
 export type ConfirmResult =
   | { success: true; requiresGroupName: false }
@@ -292,12 +296,15 @@ async function resolveConfirmations(
 ): Promise<void> {
   const now = new Date()
 
-  for (const { registrantId, confirmed } of decisions) {
+  for (const { registrantId, status, reason } of decisions) {
     const registrant = registrantMap.get(registrantId)
     if (!registrant) continue
     if (!registrant.memberId && !registrant.guestId) continue
 
-    if (!confirmed) {
+    // "pending" — leave as-is, no DB update
+    if (status === "pending") continue
+
+    if (status === "declined") {
       const personName = registrant.member
         ? `${registrant.member.firstName} ${registrant.member.lastName}`
         : registrant.guest
@@ -316,7 +323,7 @@ async function resolveConfirmations(
       if (pendingRequest) {
         await tx.smallGroupMemberRequest.update({
           where: { id: pendingRequest.id },
-          data: { status: "Rejected", resolvedAt: now, breakoutGroupId },
+          data: { status: "Rejected", resolvedAt: now, breakoutGroupId, notes: reason ?? null },
         })
       } else {
         // No pre-existing request (e.g. Timothy's group didn't exist yet at assignment time)
@@ -326,6 +333,7 @@ async function resolveConfirmations(
             breakoutGroupId,
             status: "Rejected",
             resolvedAt: now,
+            notes: reason ?? null,
             ...(registrant.memberId
               ? { memberId: registrant.memberId }
               : { guestId: registrant.guestId! }),
@@ -344,6 +352,7 @@ async function resolveConfirmations(
       continue
     }
 
+    // status === "confirmed" from here
     if (registrant.guestId && registrant.guest && !registrant.guest.memberId) {
       const guest = registrant.guest
       // Check capacity (must run inside tx to reflect members added earlier in this loop)

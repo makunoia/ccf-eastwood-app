@@ -160,6 +160,7 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
 
   React.useEffect(() => {
     if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSourceGroupId(group?.linkedSmallGroupId ?? "")
       const existingSchedule = group?.schedules?.[0] ?? null
       setForm(

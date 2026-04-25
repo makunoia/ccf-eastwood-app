@@ -16,14 +16,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog"
 import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
+import { SmallGroupMatchCard } from "@/components/small-group-match-card"
 import { findSmallGroupMatchesForMember, assignMemberToSmallGroup } from "../matching-actions"
 import { assignMemberTransferTemporarily } from "@/app/(dashboard)/small-groups/actions"
 import { saveMemberMatchingPreferences } from "../actions"
@@ -51,87 +45,6 @@ function buildScheduleSlot(prefs: MatchingPrefs): { dayOfWeek: number; timeStart
     timeStart: prefs.scheduleTimeStart,
     timeEnd: prefs.scheduleTimeEnd,
   }
-}
-
-function buildFitReasons(result: MatchResult): string[] {
-  const reasons: string[] = []
-  const score = result.breakdown
-
-  if (score.lifeStage >= 1) reasons.push("Life stage aligns with this group.")
-  if (score.language >= 1) reasons.push("Language preferences overlap strongly.")
-  if (score.schedule >= 1) reasons.push("Schedule overlaps with the selected day and time range.")
-  if (score.mode >= 1) reasons.push("Meeting format matches preferred style.")
-  if (score.gender >= 1) reasons.push("Gender focus is compatible.")
-  if (score.location >= 1) reasons.push("Location preference is a direct match.")
-  if (score.age >= 0.9) reasons.push("Age profile fits the group range.")
-  if (score.career >= 0.6) reasons.push("Career/industry profile is similar to current members.")
-  if (score.capacity > 0.5) reasons.push("Group has healthy remaining capacity.")
-
-  if (reasons.length === 0) {
-    reasons.push("Overall compatibility is high across multiple profile factors.")
-  }
-
-  return reasons
-}
-
-function MatchCard({
-  result,
-  onAssign,
-  assigning,
-  isTransfer,
-}: {
-  result: MatchResult
-  onAssign: () => void
-  assigning: boolean
-  isTransfer: boolean
-}) {
-  const score = Math.round(result.totalScore * 100)
-  const [detailsOpen, setDetailsOpen] = React.useState(false)
-  const reasons = buildFitReasons(result)
-
-  return (
-    <>
-      <div className="rounded-lg border p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="font-medium">{result.groupName}</p>
-            <p className="text-sm text-muted-foreground">{score}% match</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button size="sm" variant="ghost" onClick={() => setDetailsOpen(true)}>
-              See Details
-            </Button>
-            <Button size="sm" onClick={onAssign} disabled={assigning}>
-              {assigning
-                ? (isTransfer ? "Transferring…" : "Assigning…")
-                : (isTransfer ? "Transfer" : "Assign")}
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{result.groupName}</DialogTitle>
-            <DialogDescription>
-              {score === 100 ? "Perfect fit based on the current profile" : `${score}% overall match`}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Why this group is a good fit
-            </p>
-            <ul className="space-y-1.5 text-sm text-muted-foreground">
-              {reasons.map((reason) => (
-                <li key={reason}>• {reason}</li>
-              ))}
-            </ul>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </>
-  )
 }
 
 type PendingTransfer = {
@@ -405,12 +318,13 @@ export function MemberMatchSection({
           ) : (
             <div className="space-y-3">
               {results.map((r: MatchResult) => (
-                <MatchCard
+                <SmallGroupMatchCard
                   key={r.groupId}
                   result={r}
                   onAssign={() => { void handleAssign(r.groupId) }}
                   assigning={assigningId === r.groupId}
-                  isTransfer={hasGroup}
+                  assignLabel={hasGroup ? "Transfer" : "Assign"}
+                  assigningLabel={hasGroup ? "Transferring…" : "Assigning…"}
                 />
               ))}
             </div>

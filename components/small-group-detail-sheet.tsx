@@ -64,6 +64,7 @@ export function SmallGroupDetailSheet({
 
   React.useEffect(() => {
     if (!open || !groupId) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setData(null)
     setLoading(true)
     getSmallGroupDetails(groupId).then((res) => {

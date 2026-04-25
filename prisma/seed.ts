@@ -478,7 +478,7 @@ async function main() {
   console.log("✓ Assigned members to small groups")
 
   // ─── Ministries ───────────────────────────────────────────────────────────
-  const [across, elevate, emerge, legacy] = await Promise.all([
+  const [across, elevate, _emerge, _legacy] = await Promise.all([
     db.ministry.create({
       data: {
         name: "Across",

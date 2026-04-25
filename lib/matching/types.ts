@@ -63,6 +63,7 @@ export type MatchResult = {
   groupName: string
   totalScore: number
   breakdown: ScoreBreakdown
+  candidateProfile: CandidateProfile
 }
 
 export type EscalationLevel = {

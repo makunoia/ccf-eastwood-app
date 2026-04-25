@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { YearInput } from "@/components/ui/year-input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { RegistrantGuestProfile } from "@/app/(event)/event/[id]/registrants/[registrantId]/registrant-profile"
@@ -76,7 +77,7 @@ type Props = {
   lifeStages: { id: string; name: string }[]
 }
 
-function MemberReadOnly({ member, memberId }: { member: MemberData; memberId: string }) {
+function MemberReadOnly({ member, memberId: _memberId }: { member: MemberData; memberId: string }) {
   const birthMonthName = member.birthMonth ? MONTHS[member.birthMonth - 1] : null
   const dateJoinedStr = member.dateJoined
     ? new Intl.DateTimeFormat("en-US", { year: "numeric", month: "long", day: "numeric" }).format(member.dateJoined)
@@ -129,7 +130,7 @@ function MemberReadOnly({ member, memberId }: { member: MemberData; memberId: st
             {member.birthYear && (
               <div className="space-y-2">
                 <Label>Birth Year</Label>
-                <Input value={String(member.birthYear)} readOnly />
+                <YearInput value={String(member.birthYear)} readOnly />
               </div>
             )}
           </div>

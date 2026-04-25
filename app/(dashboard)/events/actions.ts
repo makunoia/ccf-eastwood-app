@@ -126,11 +126,12 @@ type MemberLookupResult = {
   email: string | null
   phone: string | null
   matchedBy: "mobile" | "email" | "nameBirthday"
+  recordType: "member" | "guest"
 }
 
-// Returns matched member info if found, null otherwise.
-// Used by the public registration form for member resolution.
-// Priority: mobile number → email → last name + birthday
+// Returns matched member/guest info if found, null otherwise.
+// Used by the public registration form for member/guest resolution.
+// Priority (Members first, then Guests): mobile number → email → last name + birthday
 export async function lookupMemberForRegistration(params: {
   mobileNumber?: string | null
   email?: string | null
@@ -145,7 +146,7 @@ export async function lookupMemberForRegistration(params: {
       where: { phone: params.mobileNumber.trim() },
       select,
     })
-    if (member) return { ...member, matchedBy: "mobile" }
+    if (member) return { ...member, matchedBy: "mobile", recordType: "member" }
   }
 
   if (params.email) {
@@ -153,7 +154,7 @@ export async function lookupMemberForRegistration(params: {
       where: { email: params.email.trim() },
       select,
     })
-    if (member) return { ...member, matchedBy: "email" }
+    if (member) return { ...member, matchedBy: "email", recordType: "member" }
   }
 
   if (params.lastName && params.birthMonth != null && params.birthYear != null) {
@@ -165,7 +166,37 @@ export async function lookupMemberForRegistration(params: {
       },
       select,
     })
-    if (member) return { ...member, matchedBy: "nameBirthday" }
+    if (member) return { ...member, matchedBy: "nameBirthday", recordType: "member" }
+  }
+
+  // No Member found — fall back to Guest records (only active guests, not yet promoted to members)
+  if (params.mobileNumber) {
+    const guest = await db.guest.findFirst({
+      where: { phone: params.mobileNumber.trim(), memberId: null },
+      select,
+    })
+    if (guest) return { ...guest, matchedBy: "mobile", recordType: "guest" }
+  }
+
+  if (params.email) {
+    const guest = await db.guest.findFirst({
+      where: { email: params.email.trim(), memberId: null },
+      select,
+    })
+    if (guest) return { ...guest, matchedBy: "email", recordType: "guest" }
+  }
+
+  if (params.lastName && params.birthMonth != null && params.birthYear != null) {
+    const guest = await db.guest.findFirst({
+      where: {
+        lastName: { equals: params.lastName.trim(), mode: "insensitive" },
+        birthMonth: params.birthMonth,
+        birthYear: params.birthYear,
+        memberId: null,
+      },
+      select,
+    })
+    if (guest) return { ...guest, matchedBy: "nameBirthday", recordType: "guest" }
   }
 
   return null
@@ -184,7 +215,9 @@ export async function lookupMemberByMobile(
 export async function createRegistrant(
   eventId: string,
   raw: z.infer<typeof registrantSchema>,
-  confirmedMemberId: string | null
+  confirmedMemberId: string | null,
+  confirmedGuestId?: string | null,
+  skipDeduplication?: boolean
 ): Promise<ActionResult<{ id: string }>> {
   const parsed = registrantSchema.safeParse(raw)
   if (!parsed.success) {
@@ -193,11 +226,85 @@ export async function createRegistrant(
 
   try {
     if (confirmedMemberId) {
-      // Member confirmed — link to member, leave personal fields null
-      const registrant = await db.eventRegistrant.create({
-        data: { eventId, memberId: confirmedMemberId },
+      // Duplicate check — member already registered for this event
+      const alreadyRegistered = await db.eventRegistrant.findFirst({
+        where: { eventId, memberId: confirmedMemberId },
         select: { id: true },
       })
+      if (alreadyRegistered) {
+        return { success: false, error: "You're already registered for this event." }
+      }
+
+      // Member confirmed — fetch existing record, then fill in only fields that are currently null
+      const existing = await db.member.findUniqueOrThrow({
+        where: { id: confirmedMemberId },
+        select: {
+          email: true, phone: true, birthMonth: true, birthYear: true,
+          lifeStageId: true, gender: true, language: true, meetingPreference: true, workCity: true,
+        },
+      })
+      const memberUpdates: Record<string, unknown> = {}
+      if (!existing.email && parsed.data.email) memberUpdates.email = parsed.data.email
+      if (!existing.phone && parsed.data.mobileNumber) memberUpdates.phone = parsed.data.mobileNumber
+      if (existing.birthMonth == null && parsed.data.birthMonth != null) memberUpdates.birthMonth = parsed.data.birthMonth
+      if (existing.birthYear == null && parsed.data.birthYear != null) memberUpdates.birthYear = parsed.data.birthYear
+      if (!existing.lifeStageId && parsed.data.lifeStageId) memberUpdates.lifeStageId = parsed.data.lifeStageId
+      if (!existing.gender && parsed.data.gender) memberUpdates.gender = parsed.data.gender
+      if (!existing.language?.length && parsed.data.language?.length) memberUpdates.language = parsed.data.language
+      if (!existing.meetingPreference && parsed.data.meetingPreference) memberUpdates.meetingPreference = parsed.data.meetingPreference
+      if (!existing.workCity && parsed.data.workCity) memberUpdates.workCity = parsed.data.workCity
+
+      const [registrant] = await db.$transaction([
+        db.eventRegistrant.create({
+          data: { eventId, memberId: confirmedMemberId },
+          select: { id: true },
+        }),
+        ...(Object.keys(memberUpdates).length > 0
+          ? [db.member.update({ where: { id: confirmedMemberId }, data: memberUpdates })]
+          : []),
+      ])
+      return { success: true, data: { id: registrant.id } }
+    } else if (confirmedGuestId) {
+      // Duplicate check — guest already registered for this event
+      const alreadyRegistered = await db.eventRegistrant.findFirst({
+        where: { eventId, guestId: confirmedGuestId },
+        select: { id: true },
+      })
+      if (alreadyRegistered) {
+        return { success: false, error: "You're already registered for this event." }
+      }
+
+      // Guest confirmed — fetch existing record, then fill in only fields that are currently null
+      const existing = await db.guest.findUniqueOrThrow({
+        where: { id: confirmedGuestId },
+        select: {
+          email: true, phone: true, birthMonth: true, birthYear: true,
+          lifeStageId: true, gender: true, language: true, meetingPreference: true, workCity: true,
+          scheduleDayOfWeek: true, scheduleTimeStart: true,
+        },
+      })
+      const guestUpdates: Record<string, unknown> = {}
+      if (!existing.email && parsed.data.email) guestUpdates.email = parsed.data.email
+      if (!existing.phone && parsed.data.mobileNumber) guestUpdates.phone = parsed.data.mobileNumber
+      if (existing.birthMonth == null && parsed.data.birthMonth != null) guestUpdates.birthMonth = parsed.data.birthMonth
+      if (existing.birthYear == null && parsed.data.birthYear != null) guestUpdates.birthYear = parsed.data.birthYear
+      if (!existing.lifeStageId && parsed.data.lifeStageId) guestUpdates.lifeStageId = parsed.data.lifeStageId
+      if (!existing.gender && parsed.data.gender) guestUpdates.gender = parsed.data.gender
+      if (!existing.language?.length && parsed.data.language?.length) guestUpdates.language = parsed.data.language
+      if (!existing.meetingPreference && parsed.data.meetingPreference) guestUpdates.meetingPreference = parsed.data.meetingPreference
+      if (!existing.workCity && parsed.data.workCity) guestUpdates.workCity = parsed.data.workCity
+      if (existing.scheduleDayOfWeek == null && parsed.data.scheduleDayOfWeek != null) guestUpdates.scheduleDayOfWeek = parsed.data.scheduleDayOfWeek
+      if (!existing.scheduleTimeStart && parsed.data.scheduleTimeStart) guestUpdates.scheduleTimeStart = parsed.data.scheduleTimeStart
+
+      const [registrant] = await db.$transaction([
+        db.eventRegistrant.create({
+          data: { eventId, guestId: confirmedGuestId },
+          select: { id: true },
+        }),
+        ...(Object.keys(guestUpdates).length > 0
+          ? [db.guest.update({ where: { id: confirmedGuestId }, data: guestUpdates })]
+          : []),
+      ])
       return { success: true, data: { id: registrant.id } }
     } else {
       // Non-member — find or create Guest by phone, then link via guestId
@@ -212,33 +319,36 @@ export async function createRegistrant(
       }
 
       // Deduplicate guests: try phone first, then email, then last name + birthday
+      // Skip deduplication when user explicitly said "That's not me" to a guest match
       let existingGuest: { id: string } | null = null
-      if (parsed.data.mobileNumber) {
-        existingGuest = await db.guest.findFirst({
-          where: { phone: parsed.data.mobileNumber },
-          select: { id: true },
-        })
-      }
-      if (!existingGuest && parsed.data.email) {
-        existingGuest = await db.guest.findFirst({
-          where: { email: parsed.data.email },
-          select: { id: true },
-        })
-      }
-      if (
-        !existingGuest &&
-        parsed.data.lastName &&
-        parsed.data.birthMonth != null &&
-        parsed.data.birthYear != null
-      ) {
-        existingGuest = await db.guest.findFirst({
-          where: {
-            lastName: { equals: parsed.data.lastName.trim(), mode: "insensitive" },
-            birthMonth: parsed.data.birthMonth,
-            birthYear: parsed.data.birthYear,
-          },
-          select: { id: true },
-        })
+      if (!skipDeduplication) {
+        if (parsed.data.mobileNumber) {
+          existingGuest = await db.guest.findFirst({
+            where: { phone: parsed.data.mobileNumber },
+            select: { id: true },
+          })
+        }
+        if (!existingGuest && parsed.data.email) {
+          existingGuest = await db.guest.findFirst({
+            where: { email: parsed.data.email },
+            select: { id: true },
+          })
+        }
+        if (
+          !existingGuest &&
+          parsed.data.lastName &&
+          parsed.data.birthMonth != null &&
+          parsed.data.birthYear != null
+        ) {
+          existingGuest = await db.guest.findFirst({
+            where: {
+              lastName: { equals: parsed.data.lastName.trim(), mode: "insensitive" },
+              birthMonth: parsed.data.birthMonth,
+              birthYear: parsed.data.birthYear,
+            },
+            select: { id: true },
+          })
+        }
       }
 
       let guestId: string
@@ -281,6 +391,15 @@ export async function createRegistrant(
           select: { id: true },
         })
         guestId = newGuest.id
+      }
+
+      // Duplicate check — guest already registered for this event
+      const alreadyRegistered = await db.eventRegistrant.findFirst({
+        where: { eventId, guestId },
+        select: { id: true },
+      })
+      if (alreadyRegistered) {
+        return { success: false, error: "You're already registered for this event." }
       }
 
       const registrant = await db.eventRegistrant.create({

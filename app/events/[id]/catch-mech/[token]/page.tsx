@@ -52,6 +52,45 @@ async function getSessionData(token: string) {
   const isTimothy = faciMember.ledGroups.length === 0
   const leadingGroupId = isTimothy ? null : faciMember.ledGroups[0].id
 
+  // Collect IDs for a batch lookup of existing SmallGroupMemberRequests
+  const guestIds = session.breakoutGroup.members
+    .map((m) => m.registrant.guestId)
+    .filter((id): id is string => id !== null)
+  const memberIds = session.breakoutGroup.members
+    .map((m) => m.registrant.memberId)
+    .filter((id): id is string => id !== null)
+
+  // Batch-fetch Confirmed/Rejected requests to avoid N+1 and to filter out rejected registrants
+  const existingRequests = leadingGroupId
+    ? await db.smallGroupMemberRequest.findMany({
+        where: {
+          smallGroupId: leadingGroupId,
+          status: { in: ["Confirmed", "Rejected"] },
+          OR: [
+            ...(guestIds.length > 0 ? [{ guestId: { in: guestIds } }] : []),
+            ...(memberIds.length > 0 ? [{ memberId: { in: memberIds } }] : []),
+          ],
+        },
+        select: { guestId: true, memberId: true, status: true },
+      })
+    : []
+
+  const rejectedGuestIds = new Set(
+    existingRequests
+      .filter((r) => r.status === "Rejected" && r.guestId)
+      .map((r) => r.guestId!)
+  )
+  const confirmedGuestIds = new Set(
+    existingRequests
+      .filter((r) => r.status === "Confirmed" && r.guestId)
+      .map((r) => r.guestId!)
+  )
+  const rejectedMemberIds = new Set(
+    existingRequests
+      .filter((r) => r.status === "Rejected" && r.memberId)
+      .map((r) => r.memberId!)
+  )
+
   type RegistrantRow = {
     registrantId: string
     name: string
@@ -66,6 +105,9 @@ async function getSessionData(token: string) {
     if (!r.memberId && !r.guestId) continue
     // Skip already-promoted guests
     if (r.guestId && r.guest?.memberId) continue
+    // Skip registrants that were previously rejected for the faci's leading group
+    if (r.guestId && rejectedGuestIds.has(r.guestId)) continue
+    if (r.memberId && rejectedMemberIds.has(r.memberId)) continue
 
     let name = "Unknown"
     let isConfirmed = false
@@ -78,14 +120,7 @@ async function getSessionData(token: string) {
     } else if (r.guestId && r.guest) {
       name = `${r.guest.firstName} ${r.guest.lastName}`
       type = "guest"
-      // For guests: confirmed if there's a resolved request for faci's group
-      if (leadingGroupId) {
-        const req = await db.smallGroupMemberRequest.findFirst({
-          where: { guestId: r.guestId, smallGroupId: leadingGroupId, status: "Confirmed" },
-          select: { id: true },
-        })
-        isConfirmed = !!req
-      }
+      isConfirmed = leadingGroupId !== null && confirmedGuestIds.has(r.guestId)
     }
 
     rows.push({ registrantId: r.id, name, type, isConfirmed })
@@ -112,13 +147,13 @@ export default async function CatchMechConfirmPage({
   return (
     <div className="min-h-svh bg-background flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-sm space-y-6">
-        <div className="text-center space-y-1">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">
+        <div className="text-center space-y-2">
+          <p className="text-xs text-muted-foreground uppercase tracking-widest font-medium">
             {data.isTimothy ? "Timothy" : "Leader"} · {data.groupName}
           </p>
-          <h1 className="text-lg font-semibold">Hi, {data.faciName}!</h1>
-          <p className="text-sm text-muted-foreground">
-            Confirm the members from your table who will be joining your small group.
+          <h1 className="text-xl font-bold">Hi, {data.faciName}!</h1>
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            Review the people from your table. Confirm who will join your small group, mark others as pending, or decline with a reason.
           </p>
         </div>
         <CatchMechConfirmClient

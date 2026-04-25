@@ -11,8 +11,8 @@ type ActionResult<T = void> =
 // ─── Committees ───────────────────────────────────────────────────────────────
 
 export async function createMinistryCommittee(
-  ministryId: string,
-  raw: { name: string }
+  _ministryId: string,
+  _raw: { name: string }
 ): Promise<ActionResult<{ id: string }>> {
   return {
     success: false,
