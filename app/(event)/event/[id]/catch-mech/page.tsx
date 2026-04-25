@@ -10,6 +10,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { CatchMechTable, type GroupRow } from "./catch-mech-table"
+import { FaciLinkButton } from "./faci-link-button"
 
 function getISOWeekLabel(date: Date): string {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
@@ -188,16 +189,7 @@ export default async function CatchMechAdminPage({
             Track small group confirmations from breakout groups
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">Faci link:</span>
-          <Link
-            href={publicUrl}
-            target="_blank"
-            className="text-xs font-mono bg-muted px-2 py-1 rounded hover:bg-muted/80 transition-colors"
-          >
-            {publicUrl}
-          </Link>
-        </div>
+        <FaciLinkButton url={publicUrl} />
       </div>
 
       {/* Stats + weekly progress on the same row */}

@@ -16,15 +16,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog"
-import { WEIGHT_FIELDS } from "@/lib/validations/matching-weights"
 import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
+import { SmallGroupMatchCard } from "@/components/small-group-match-card"
 import { SmallGroupDetailSheet } from "@/components/small-group-detail-sheet"
 import {
   findCatchMechSmallGroupMatches,
@@ -33,7 +26,6 @@ import {
   type CatchMechMatchResult,
 } from "../../matching-actions"
 import { saveGuestMatchingProfile } from "@/app/(dashboard)/guests/actions"
-import type { ScoreBreakdown } from "@/lib/matching/types"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -55,93 +47,6 @@ type Props = {
   guestId: string
   initialPrefs: MatchingPrefs
   lifeStages: { id: string; name: string }[]
-}
-
-// ─── Score bar ────────────────────────────────────────────────────────────────
-
-function ScoreBar({ value }: { value: number }) {
-  return (
-    <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-      <div
-        className="h-full rounded-full bg-primary transition-all"
-        style={{ width: `${Math.round(value * 100)}%` }}
-      />
-    </div>
-  )
-}
-
-// ─── Match card ───────────────────────────────────────────────────────────────
-
-function MatchCard({
-  result,
-  onAssign,
-  assigning,
-  showVolunteerInfo,
-  onGroupClick,
-}: {
-  result: CatchMechMatchResult
-  onAssign: () => void
-  assigning: boolean
-  showVolunteerInfo: boolean
-  onGroupClick: () => void
-}) {
-  const score = Math.round(result.totalScore * 100)
-  const [detailsOpen, setDetailsOpen] = React.useState(false)
-
-  return (
-    <>
-      <div className="rounded-lg border p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <button
-              type="button"
-              onClick={onGroupClick}
-              className="font-medium text-left underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors cursor-pointer"
-            >
-              {result.groupName}
-            </button>
-            <p className="text-sm text-muted-foreground">{score}% match</p>
-            {showVolunteerInfo && result.volunteerInfo && (
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {result.volunteerInfo.committeeName} · {result.volunteerInfo.roleName}
-              </p>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <Button size="sm" variant="ghost" onClick={() => setDetailsOpen(true)}>
-              See Details
-            </Button>
-            <Button size="sm" onClick={onAssign} disabled={assigning}>
-              {assigning ? "Assigning…" : "Assign"}
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{result.groupName}</DialogTitle>
-            <DialogDescription>{score}% overall match</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2 py-2">
-            {WEIGHT_FIELDS.map((field) => {
-              const raw = result.breakdown[field.key as keyof ScoreBreakdown]
-              return (
-                <div key={field.key} className="grid grid-cols-[120px_1fr_32px] items-center gap-2">
-                  <span className="text-xs text-muted-foreground truncate">{field.label}</span>
-                  <ScoreBar value={raw} />
-                  <span className="text-xs tabular-nums text-right">
-                    {Math.round(raw * 100)}%
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-        </DialogContent>
-      </Dialog>
-    </>
-  )
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -339,12 +244,14 @@ export const CatchMechMatchSection = React.forwardRef<CatchMechMatchSectionHandl
                     {level.source === "event-volunteers" ? "Volunteers in this event" : "All small groups"}
                   </p>
                   {level.matches.map((r: CatchMechMatchResult) => (
-                    <MatchCard
+                    <SmallGroupMatchCard
                       key={r.groupId}
                       result={r}
                       onAssign={() => { void handleAssign(r.groupId) }}
                       assigning={assigningId === r.groupId}
-                      showVolunteerInfo={scope === "volunteers"}
+                      subtitle={scope === "volunteers" && r.volunteerInfo
+                        ? `${r.volunteerInfo.committeeName} · ${r.volunteerInfo.roleName}`
+                        : undefined}
                       onGroupClick={() => {
                         setSelectedGroupId(r.groupId)
                         setSheetOpen(true)
