@@ -55,8 +55,15 @@ type GuestDetail = {
   memberId: string | null
 }
 
+type SourceEvent = {
+  id: string
+  name: string
+  date: Date
+}
+
 type Props = {
   guest?: GuestDetail
+  sourceEvent?: SourceEvent | null
   eventHistory?: React.ReactNode
   activityHistory?: React.ReactNode
   matchSection?: React.ReactNode
@@ -81,7 +88,7 @@ function toFormValues(guest: GuestDetail): GuestFormValues {
   }
 }
 
-export function GuestForm({ guest, eventHistory, activityHistory, matchSection, onSaveMatchingProfile }: Props) {
+export function GuestForm({ guest, sourceEvent, eventHistory, activityHistory, matchSection }: Props) {
   const router = useRouter()
   const isEdit = !!guest
   const isPromoted = !!guest?.memberId
@@ -118,13 +125,6 @@ export function GuestForm({ guest, eventHistory, activityHistory, matchSection, 
     } else {
       toast.error(result.error)
     }
-  }
-
-  async function handleSaveMatchingProfile() {
-    if (!onSaveMatchingProfile) return
-    setSaving(true)
-    await onSaveMatchingProfile()
-    setSaving(false)
   }
 
   async function handleDelete() {
@@ -175,19 +175,11 @@ export function GuestForm({ guest, eventHistory, activityHistory, matchSection, 
             </Button>
           )}
           {isEdit ? (
-            activeTab === "small-group" && onSaveMatchingProfile ? (
-              <Button
-                type="button"
-                onClick={() => { void handleSaveMatchingProfile() }}
-                disabled={saving || isPromoted}
-              >
-                {saving ? "Saving…" : "Save changes"}
-              </Button>
-            ) : (
+            activeTab !== "small-group" ? (
               <Button type="submit" form="guest-form" disabled={saving || isPromoted}>
                 {saving ? "Saving…" : "Save changes"}
               </Button>
-            )
+            ) : null
           ) : (
             <Button type="submit" form="guest-form" disabled={saving}>
               {saving ? "Adding…" : "Add Guest"}
@@ -233,6 +225,29 @@ export function GuestForm({ guest, eventHistory, activityHistory, matchSection, 
             onSubmit={handleSubmit}
             className="max-w-2xl space-y-8"
           >
+            {/* Source Event */}
+            {isEdit && sourceEvent && (
+              <section className="space-y-1">
+                <h3 className="text-sm font-medium text-muted-foreground">Origin</h3>
+                <p className="text-sm">
+                  First attended{" "}
+                  <Link
+                    href={`/event/${sourceEvent.id}`}
+                    className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+                  >
+                    {sourceEvent.name}
+                  </Link>
+                  {" on "}
+                  {sourceEvent.date.toLocaleDateString("en-PH", {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                    timeZone: "UTC",
+                  })}
+                </p>
+              </section>
+            )}
+
             {/* Personal Info */}
             <section className="space-y-4">
               <h3 className="text-sm font-medium text-muted-foreground">
@@ -377,7 +392,7 @@ export function GuestForm({ guest, eventHistory, activityHistory, matchSection, 
         )}
       </Tabs>
 
-      {!isPromoted && (
+      {!isPromoted && activeTab !== "small-group" && (
         <MobileFormActions
           formId="guest-form"
           isEdit={isEdit}

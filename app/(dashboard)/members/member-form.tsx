@@ -40,6 +40,7 @@ import { MobileFormActions } from "@/components/mobile-form-actions"
 type Props = {
   member?: MemberRow
   eventHistory?: React.ReactNode
+  activityHistory?: React.ReactNode
   smallGroups?: React.ReactNode
 }
 
@@ -63,7 +64,7 @@ function toFormValues(member: MemberRow): MemberFormValues {
   }
 }
 
-export function MemberForm({ member, eventHistory, smallGroups }: Props) {
+export function MemberForm({ member, eventHistory, activityHistory, smallGroups }: Props) {
   const router = useRouter()
   const isEdit = !!member
   const [form, setForm] = React.useState<MemberFormValues>(
@@ -158,7 +159,7 @@ export function MemberForm({ member, eventHistory, smallGroups }: Props) {
       </div>
 
       <Tabs defaultValue="profile" className="flex flex-col gap-4">
-        {isEdit && (eventHistory || smallGroups) && (
+        {isEdit && (eventHistory || activityHistory || smallGroups) && (
           <TabsList className="w-fit">
             <TabsTrigger value="profile">Profile</TabsTrigger>
             {smallGroups && (
@@ -166,6 +167,9 @@ export function MemberForm({ member, eventHistory, smallGroups }: Props) {
             )}
             {eventHistory && (
               <TabsTrigger value="events">Events</TabsTrigger>
+            )}
+            {activityHistory && (
+              <TabsTrigger value="activity">Activity</TabsTrigger>
             )}
           </TabsList>
         )}
@@ -324,6 +328,12 @@ export function MemberForm({ member, eventHistory, smallGroups }: Props) {
         {isEdit && eventHistory && (
           <TabsContent value="events" className="mt-0 max-w-2xl">
             {eventHistory}
+          </TabsContent>
+        )}
+
+        {isEdit && activityHistory && (
+          <TabsContent value="activity" className="mt-0 max-w-2xl">
+            {activityHistory}
           </TabsContent>
         )}
       </Tabs>

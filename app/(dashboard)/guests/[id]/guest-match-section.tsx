@@ -405,9 +405,46 @@ export const GuestMatchSection = React.forwardRef<
             <div>
               <h3 className="text-sm font-medium">Small Group Matching</h3>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Fill in the required fields, then click Find Best Match.
+                Fill in the required fields, then click Save information and find match.
                 Assigning creates a pending request — the leader confirms via their link.
               </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>
+                Schedule <span className="text-destructive">*</span>
+              </Label>
+              <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-2">
+                <span className="text-sm text-muted-foreground">On</span>
+                <Select
+                  value={prefs.scheduleDayOfWeek || "none"}
+                  onValueChange={(v) => setPref("scheduleDayOfWeek", v === "none" ? "" : v)}
+                >
+                  <SelectTrigger className="h-auto w-auto min-w-28 border-0 border-b border-dashed border-foreground/40 rounded-none px-0.5 pb-0.5 shadow-none focus:ring-0 text-sm">
+                    <SelectValue placeholder="day" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Select day</SelectItem>
+                    {DAYS_OF_WEEK.map((day) => (
+                      <SelectItem key={day.value} value={day.value}>{day.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <span className="text-sm text-muted-foreground">from</span>
+                <input
+                  type="time"
+                  value={prefs.scheduleTimeStart}
+                  onChange={(e) => setPref("scheduleTimeStart", e.target.value)}
+                  className="h-auto w-auto border-0 border-b border-dashed border-foreground/40 bg-transparent pb-0.5 px-0.5 text-sm shadow-none outline-none focus:border-foreground/60"
+                />
+                <span className="text-sm text-muted-foreground">to</span>
+                <input
+                  type="time"
+                  value={prefs.scheduleTimeEnd}
+                  onChange={(e) => setPref("scheduleTimeEnd", e.target.value)}
+                  className="h-auto w-auto border-0 border-b border-dashed border-foreground/40 bg-transparent pb-0.5 px-0.5 text-sm shadow-none outline-none focus:border-foreground/60"
+                />
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -465,38 +502,6 @@ export const GuestMatchSection = React.forwardRef<
               </Select>
             </div>
 
-            <div className="space-y-2">
-              <Label>
-                Schedule <span className="text-destructive">*</span>
-              </Label>
-              <div className="grid grid-cols-3 gap-3">
-                <Select
-                  value={prefs.scheduleDayOfWeek || "none"}
-                  onValueChange={(v) => setPref("scheduleDayOfWeek", v === "none" ? "" : v)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Day" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Select day</SelectItem>
-                    {DAYS_OF_WEEK.map((day) => (
-                      <SelectItem key={day.value} value={day.value}>{day.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Input
-                  type="time"
-                  value={prefs.scheduleTimeStart}
-                  onChange={(e) => setPref("scheduleTimeStart", e.target.value)}
-                />
-                <Input
-                  type="time"
-                  value={prefs.scheduleTimeEnd}
-                  onChange={(e) => setPref("scheduleTimeEnd", e.target.value)}
-                />
-              </div>
-            </div>
-
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Gender</Label>
@@ -551,7 +556,7 @@ export const GuestMatchSection = React.forwardRef<
               ) : (
                 <IconSparkles className="size-4" />
               )}
-              {state === "loading" ? "Searching…" : "Find Best Match"}
+              {state === "loading" ? "Searching…" : "Save information and find match"}
             </Button>
           </section>
         )}
@@ -640,9 +645,47 @@ export const GuestMatchSection = React.forwardRef<
         <div>
           <h3 className="text-sm font-medium">Small Group Matching</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Fill in the required fields, then click Find Best Match.
+            Fill in the required fields, then click Save information and find match.
             Assigning creates a pending request — the leader confirms via their link.
           </p>
+        </div>
+
+        {/* Schedule — first field */}
+        <div className="space-y-1.5">
+          <Label>
+            Schedule <span className="text-destructive">*</span>
+          </Label>
+          <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-2">
+            <span className="text-sm text-muted-foreground">On</span>
+            <Select
+              value={prefs.scheduleDayOfWeek || "none"}
+              onValueChange={(v) => setPref("scheduleDayOfWeek", v === "none" ? "" : v)}
+            >
+              <SelectTrigger className="h-auto w-auto min-w-28 border-0 border-b border-dashed border-foreground/40 rounded-none px-0.5 pb-0.5 shadow-none focus:ring-0 text-sm">
+                <SelectValue placeholder="day" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Select day</SelectItem>
+                {DAYS_OF_WEEK.map((day) => (
+                  <SelectItem key={day.value} value={day.value}>{day.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <span className="text-sm text-muted-foreground">from</span>
+            <input
+              type="time"
+              value={prefs.scheduleTimeStart}
+              onChange={(e) => setPref("scheduleTimeStart", e.target.value)}
+              className="h-auto w-auto border-0 border-b border-dashed border-foreground/40 bg-transparent pb-0.5 px-0.5 text-sm shadow-none outline-none focus:border-foreground/60"
+            />
+            <span className="text-sm text-muted-foreground">to</span>
+            <input
+              type="time"
+              value={prefs.scheduleTimeEnd}
+              onChange={(e) => setPref("scheduleTimeEnd", e.target.value)}
+              className="h-auto w-auto border-0 border-b border-dashed border-foreground/40 bg-transparent pb-0.5 px-0.5 text-sm shadow-none outline-none focus:border-foreground/60"
+            />
+          </div>
         </div>
 
         {/* Required: Life Stage + Language */}
@@ -702,38 +745,6 @@ export const GuestMatchSection = React.forwardRef<
           </Select>
         </div>
 
-        <div className="space-y-2">
-          <Label>
-            Schedule <span className="text-destructive">*</span>
-          </Label>
-          <div className="grid grid-cols-3 gap-3">
-            <Select
-              value={prefs.scheduleDayOfWeek || "none"}
-              onValueChange={(v) => setPref("scheduleDayOfWeek", v === "none" ? "" : v)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Day" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Select day</SelectItem>
-                {DAYS_OF_WEEK.map((day) => (
-                  <SelectItem key={day.value} value={day.value}>{day.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Input
-              type="time"
-              value={prefs.scheduleTimeStart}
-              onChange={(e) => setPref("scheduleTimeStart", e.target.value)}
-            />
-            <Input
-              type="time"
-              value={prefs.scheduleTimeEnd}
-              onChange={(e) => setPref("scheduleTimeEnd", e.target.value)}
-            />
-          </div>
-        </div>
-
         {/* Optional: Work City + Industry */}
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
@@ -765,7 +776,7 @@ export const GuestMatchSection = React.forwardRef<
           </div>
         </div>
 
-        {/* Find Best Match — end of form */}
+        {/* Save & find match — end of form */}
         <Button
           onClick={() => { void handleSearch() }}
           disabled={state === "loading"}
@@ -775,7 +786,7 @@ export const GuestMatchSection = React.forwardRef<
           ) : (
             <IconSparkles className="size-4" />
           )}
-          {state === "loading" ? "Searching…" : "Find Best Match"}
+          {state === "loading" ? "Searching…" : "Save information and find match"}
         </Button>
       </section>
 

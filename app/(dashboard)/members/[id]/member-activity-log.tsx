@@ -32,13 +32,16 @@ type EventRegistrationEntry = {
   createdAt: Date
 }
 
-type PromotionEntry = {
-  kind: "promotion"
-  memberId: string
+type GuestOriginEntry = {
+  kind: "guestOrigin"
+  guestId: string
   createdAt: Date
 }
 
-export type ActivityEntry = SmallGroupLogEntry | EventRegistrationEntry | PromotionEntry
+export type MemberActivityEntry =
+  | SmallGroupLogEntry
+  | EventRegistrationEntry
+  | GuestOriginEntry
 
 const ACTION_LABEL: Record<SmallGroupLogEntry["action"], string> = {
   GroupCreated: "Group created",
@@ -83,7 +86,7 @@ function formatDate(date: Date) {
   })
 }
 
-export function GuestActivityLog({ entries }: { entries: ActivityEntry[] }) {
+export function MemberActivityLog({ entries }: { entries: MemberActivityEntry[] }) {
   if (entries.length === 0) {
     return (
       <p className="py-8 text-center text-sm text-muted-foreground">
@@ -95,10 +98,10 @@ export function GuestActivityLog({ entries }: { entries: ActivityEntry[] }) {
   return (
     <div className="space-y-2">
       {entries.map((entry) => {
-        if (entry.kind === "promotion") {
+        if (entry.kind === "guestOrigin") {
           return (
             <div
-              key={`promotion-${entry.memberId}`}
+              key={`guest-origin-${entry.guestId}`}
               className="flex items-start justify-between gap-3 rounded-lg border p-3"
             >
               <div className="min-w-0 space-y-1">
@@ -106,14 +109,14 @@ export function GuestActivityLog({ entries }: { entries: ActivityEntry[] }) {
                   <span className="inline-flex size-5 items-center justify-center rounded-full bg-green-100">
                     <IconUserCheck className="size-3 text-green-700" />
                   </span>
-                  <p className="text-sm font-medium">Promoted to member</p>
+                  <p className="text-sm font-medium">Promoted from guest</p>
                 </div>
                 <p className="pl-7 text-xs text-muted-foreground">
                   <Link
-                    href={`/members/${entry.memberId}`}
+                    href={`/guests/${entry.guestId}`}
                     className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
                   >
-                    View member profile
+                    View guest record
                   </Link>
                   {" · "}
                   {formatDate(entry.createdAt)}

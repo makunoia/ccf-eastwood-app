@@ -129,6 +129,25 @@ const SMALL_GROUP_SCORE_SELECT = {
   members: { select: { workIndustry: true } },
 } as const
 
+async function getDescendantGroupIds(groupId: string): Promise<Set<string>> {
+  const result = new Set<string>()
+  const queue = [groupId]
+  while (queue.length > 0) {
+    const current = queue.shift()!
+    const children = await db.smallGroup.findMany({
+      where: { parentGroupId: current },
+      select: { id: true },
+    })
+    for (const child of children) {
+      if (!result.has(child.id)) {
+        result.add(child.id)
+        queue.push(child.id)
+      }
+    }
+  }
+  return result
+}
+
 async function loadSmallGroupWeights(): Promise<WeightConfig> {
   const config = await db.matchingWeightConfig.findUnique({
     where: { context: MatchingContext.SmallGroup },
@@ -210,11 +229,16 @@ export async function matchSmallGroups(
 
   const weights = await loadSmallGroupWeights()
 
+  const downlineGroupIds = currentGroupId
+    ? await getDescendantGroupIds(currentGroupId)
+    : new Set<string>()
+
   const eligible = groups.filter((g) => {
     if (options?.excludeCurrentGroup && currentGroupId && g.id === currentGroupId) {
       return false
     }
     if (ledGroupIds.has(g.id)) return false
+    if (downlineGroupIds.has(g.id)) return false
     if (g.memberLimit !== null && g._count.members >= g.memberLimit) return false
     const gp = buildSmallGroupProfile(g)
     if (scoreGender(candidate.gender, gp.genderFocus) === 0.0) return false
