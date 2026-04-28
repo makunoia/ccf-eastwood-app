@@ -98,7 +98,7 @@ export function MemberForm({ member, eventHistory, activityHistory, smallGroups 
 
     if (result.success) {
       toast.success(isEdit ? "Member updated" : "Member added")
-      router.push("/members")
+      if (!isEdit) router.push("/members")
     } else {
       toast.error(result.error)
     }
@@ -130,16 +130,25 @@ export function MemberForm({ member, eventHistory, activityHistory, smallGroups 
 
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-xl font-semibold">
+          <h2 className="type-headline">
             {isEdit
               ? `${member!.firstName} ${member!.lastName}`
               : "New Member"}
           </h2>
-          <p className="text-sm text-muted-foreground">
-            {isEdit
-              ? "Edit member details below."
-              : "Fill in the details to add a new member."}
-          </p>
+          {isEdit ? (
+            <p className="text-sm text-muted-foreground">
+              Member since{" "}
+              {new Date(member!.dateJoined + "T00:00:00").toLocaleDateString("en-PH", {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              })}
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Fill in the details to add a new member.
+            </p>
+          )}
         </div>
         <div className="hidden shrink-0 items-center gap-2 sm:flex">
           {isEdit && (
@@ -153,7 +162,7 @@ export function MemberForm({ member, eventHistory, activityHistory, smallGroups 
             </Button>
           )}
           <Button type="submit" form="member-form" disabled={saving}>
-            {saving ? "Saving…" : isEdit ? "Save changes" : "Add member"}
+            {saving ? "Saving…" : isEdit ? "Save changes" : "Add Member"}
           </Button>
         </div>
       </div>
@@ -182,7 +191,7 @@ export function MemberForm({ member, eventHistory, activityHistory, smallGroups 
         >
         {/* Personal Info */}
         <section className="space-y-4">
-          <h3 className="text-sm font-medium text-muted-foreground">
+          <h3 className="type-label text-muted-foreground">
             Personal Information
           </h3>
           <div className="grid grid-cols-2 gap-4">
@@ -342,7 +351,7 @@ export function MemberForm({ member, eventHistory, activityHistory, smallGroups 
         formId="member-form"
         isEdit={isEdit}
         saving={saving}
-        saveLabel={isEdit ? "Save changes" : "Add member"}
+        saveLabel={isEdit ? "Save changes" : "Add Member"}
         onRevert={handleRevert}
         onDelete={isEdit ? () => setDeleteOpen(true) : undefined}
       />

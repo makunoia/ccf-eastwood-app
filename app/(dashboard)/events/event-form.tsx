@@ -143,7 +143,7 @@ export function EventForm({ ministries, event }: Props) {
 
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-xl font-semibold">
+          <h2 className="type-headline">
             {isEdit ? "Edit Event" : "New Event"}
           </h2>
           <p className="text-sm text-muted-foreground">
@@ -176,7 +176,7 @@ export function EventForm({ ministries, event }: Props) {
       >
         {/* Basic Info */}
         <section className="space-y-4">
-          <h3 className="text-sm font-medium text-muted-foreground">
+          <h3 className="type-label text-muted-foreground">
             Basic Information
           </h3>
           <div className="space-y-2">
@@ -265,7 +265,7 @@ export function EventForm({ ministries, event }: Props) {
 
         {/* Dates */}
         <section className="space-y-4">
-          <h3 className="text-sm font-medium text-muted-foreground">
+          <h3 className="type-label text-muted-foreground">
             Event Dates
           </h3>
           {form.type === "MultiDay" ? (
@@ -315,7 +315,7 @@ export function EventForm({ ministries, event }: Props) {
         {/* Recurring Settings */}
         {isRecurring && (
           <section className="space-y-4">
-            <h3 className="text-sm font-medium text-muted-foreground">
+            <h3 className="type-label text-muted-foreground">
               Recurrence Settings
             </h3>
             <div className="grid grid-cols-2 gap-4">
@@ -376,7 +376,7 @@ export function EventForm({ ministries, event }: Props) {
         {/* Registration — not applicable for Recurring events */}
         {!isRecurring && (
           <section className="space-y-4">
-            <h3 className="text-sm font-medium text-muted-foreground">
+            <h3 className="type-label text-muted-foreground">
               Registration Window
             </h3>
             <div className="grid grid-cols-2 gap-4">
@@ -405,7 +405,7 @@ export function EventForm({ ministries, event }: Props) {
         {/* Pricing — not applicable for Recurring events */}
         {!isRecurring && (
           <section className="space-y-4">
-            <h3 className="text-sm font-medium text-muted-foreground">
+            <h3 className="type-label text-muted-foreground">
               Pricing
             </h3>
             <div className="space-y-2">

@@ -158,7 +158,7 @@ export function VolunteerForm({ members, events, volunteer }: Props) {
 
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-xl font-semibold">
+          <h2 className="type-headline">
             {isEdit ? volunteer!.memberName : "New Volunteer"}
           </h2>
           <p className="text-sm text-muted-foreground">

@@ -141,7 +141,7 @@ export default async function RegistrantDetailPage({
       </div>
 
       <div className="flex items-center gap-3">
-        <h2 className="text-xl font-semibold">{name}</h2>
+        <h2 className="type-headline">{name}</h2>
         {registrant.memberId ? (
           <Badge variant="secondary">Member</Badge>
         ) : (
@@ -154,7 +154,7 @@ export default async function RegistrantDetailPage({
         <section className="space-y-3">
           {isAssigned ? (
             <div className="space-y-3">
-              <h3 className="text-sm font-medium text-muted-foreground">Breakout Group</h3>
+              <h3 className="type-label text-muted-foreground">Breakout Group</h3>
               <div className="rounded-lg border p-3">
                 {registrant.breakoutGroupMemberships.map((m) => (
                   <Link
@@ -188,7 +188,7 @@ export default async function RegistrantDetailPage({
 
         {!registrant.guest && !registrant.member && (
           <section className="space-y-3">
-            <h3 className="text-sm font-medium text-muted-foreground">Contact</h3>
+            <h3 className="type-label text-muted-foreground">Contact</h3>
             <div className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
               <span className="text-muted-foreground">Mobile</span>
               <span>{registrant.mobileNumber ?? <span className="text-muted-foreground">—</span>}</span>
@@ -216,7 +216,7 @@ function MemberReadOnly({ member, memberId }: { member: MemberData; memberId: st
 
   return (
     <section className="space-y-4">
-      <h3 className="text-sm font-medium text-muted-foreground">Profile</h3>
+      <h3 className="type-label text-muted-foreground">Profile</h3>
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">

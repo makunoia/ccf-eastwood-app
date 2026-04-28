@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { GuestForm } from "../guest-form"
-import { GuestMatchSection, type GuestMatchSectionHandle } from "./guest-match-section"
+import { GuestMatchSection } from "./guest-match-section"
 import type { GuestPipelineStatus } from "@/lib/guest-utils"
 
 type GuestData = {
@@ -56,12 +56,6 @@ type Props = {
 }
 
 export function GuestDetailContent({ guest, lifeStages, pipelineStatus, sourceEvent, eventHistory, activityHistory }: Props) {
-  const matchSectionRef = React.useRef<GuestMatchSectionHandle>(null)
-
-  async function handleSaveMatchingProfile() {
-    await matchSectionRef.current?.save()
-  }
-
   return (
     <GuestForm
       guest={guest}
@@ -70,7 +64,6 @@ export function GuestDetailContent({ guest, lifeStages, pipelineStatus, sourceEv
       activityHistory={activityHistory}
       matchSection={
         <GuestMatchSection
-          ref={matchSectionRef}
           guestId={guest.id}
           pipelineStatus={pipelineStatus}
           claimedGroup={guest.claimedSmallGroup}
@@ -92,7 +85,6 @@ export function GuestDetailContent({ guest, lifeStages, pipelineStatus, sourceEv
           lifeStages={lifeStages}
         />
       }
-      onSaveMatchingProfile={handleSaveMatchingProfile}
     />
   )
 }

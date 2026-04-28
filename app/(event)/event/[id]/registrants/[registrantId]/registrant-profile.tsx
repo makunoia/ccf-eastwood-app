@@ -82,7 +82,7 @@ export function RegistrantGuestProfile({ guest, showViewProfileButton = true, fo
 
   return (
     <section className="space-y-4">
-      <h3 className="text-sm font-medium text-muted-foreground">Profile</h3>
+      <h3 className="type-label text-muted-foreground">Profile</h3>
       <form ref={formRef} id="registrant-guest-form" onSubmit={handleSubmit} className="space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">

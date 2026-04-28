@@ -20,13 +20,13 @@ export function MemberSmallGroups({ memberOf, ledGroups }: Props) {
   return (
     <div className="max-w-2xl space-y-6">
       <section className="space-y-3">
-        <h3 className="text-sm font-medium text-muted-foreground">Member Of</h3>
+        <h3 className="type-label text-muted-foreground">Member Of</h3>
         {memberOf ? (
           <div className="space-y-2">
             <div className="flex items-center justify-between rounded-lg border p-3">
               <Link
                 href={`/small-groups/${memberOf.id}`}
-                className="text-sm font-medium hover:underline"
+                className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
               >
                 {memberOf.name}
               </Link>
@@ -43,7 +43,7 @@ export function MemberSmallGroups({ memberOf, ledGroups }: Props) {
       </section>
 
       <section className="space-y-3">
-        <h3 className="text-sm font-medium text-muted-foreground">Leading</h3>
+        <h3 className="type-label text-muted-foreground">Leading</h3>
         {ledGroups.length > 0 ? (
           <div className="space-y-2">
             {ledGroups.map((g) => (
@@ -53,7 +53,7 @@ export function MemberSmallGroups({ memberOf, ledGroups }: Props) {
               >
                 <Link
                   href={`/small-groups/${g.id}`}
-                  className="text-sm font-medium hover:underline"
+                  className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
                 >
                   {g.name}
                 </Link>

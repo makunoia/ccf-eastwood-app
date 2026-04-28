@@ -205,6 +205,7 @@ export const GuestMatchSection = React.forwardRef<
 ) {
   const router = useRouter()
   const [state, setState] = React.useState<"idle" | "loading" | "done">("idle")
+  const [dirty, setDirty] = React.useState(false)
   const [levels, setLevels] = React.useState<EscalationLevel[]>([])
   const [assigningId, setAssigningId] = React.useState<string | null>(null)
   const [clearingClaimed, setClearingClaimed] = React.useState(false)
@@ -226,6 +227,7 @@ export const GuestMatchSection = React.forwardRef<
         scheduleTimeStart: prefsRef.current.scheduleTimeStart || null,
       })
       if (res.success) {
+        setDirty(false)
         toast.success("Matching profile saved")
         return true
       } else {
@@ -238,6 +240,7 @@ export const GuestMatchSection = React.forwardRef<
 
   const [prefs, setPrefs] = React.useState<MatchingPrefs>(initialPrefs)
   function setPref<K extends keyof MatchingPrefs>(key: K, value: MatchingPrefs[K]) {
+    setDirty(true)
     setPrefs((prev) => {
       const next = { ...prev, [key]: value }
       prefsRef.current = next
@@ -281,6 +284,7 @@ export const GuestMatchSection = React.forwardRef<
     const res = await findSmallGroupMatchesWithEscalation(guestId, { scheduleSlot })
     setState("done")
     if (res.success) {
+      setDirty(false)
       setLevels(res.data)
     } else {
       toast.error(res.error)
@@ -330,7 +334,7 @@ export const GuestMatchSection = React.forwardRef<
         <PipelineStepper status={pipelineStatus} />
         {pendingGroupName && (
           <div className="rounded-lg border bg-muted/40 p-4">
-            <p className="text-sm font-medium">Awaiting leader confirmation</p>
+            <p className="text-sm font-semibold">Awaiting leader confirmation</p>
             <p className="text-sm text-muted-foreground">
               Temporarily assigned to{" "}
               {pendingGroupId ? (
@@ -358,7 +362,7 @@ export const GuestMatchSection = React.forwardRef<
         {matchedBreakout && (
           <div className={["rounded-lg border p-4 space-y-3", isDeclined ? "border-destructive/40 bg-destructive/5" : ""].join(" ")}>
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium">Breakout Group Assignment</h3>
+              <h3 className="text-sm font-semibold">Breakout Group Assignment</h3>
               {isDeclined && (
                 <Badge variant="destructive" className="text-xs">Membership Declined</Badge>
               )}
@@ -403,9 +407,14 @@ export const GuestMatchSection = React.forwardRef<
         {isDeclined && (
           <section className="space-y-4">
             <div>
-              <h3 className="text-sm font-medium">Small Group Matching</h3>
+              <h3 className="text-sm font-semibold">
+                Small Group Matching
+                {dirty && (
+                  <span className="ml-2 inline-block size-1.5 rounded-full bg-amber-500 align-middle" />
+                )}
+              </h3>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Fill in the required fields, then click Save information and find match.
+                Fill in the required fields and click Find matching groups.
                 Assigning creates a pending request — the leader confirms via their link.
               </p>
             </div>
@@ -556,7 +565,7 @@ export const GuestMatchSection = React.forwardRef<
               ) : (
                 <IconSparkles className="size-4" />
               )}
-              {state === "loading" ? "Searching…" : "Save information and find match"}
+              {state === "loading" ? "Searching…" : "Find matching groups"}
             </Button>
           </section>
         )}
@@ -571,7 +580,7 @@ export const GuestMatchSection = React.forwardRef<
               <div className="space-y-6">
                 {levels.map((level) => (
                   <div key={level.level} className="space-y-3">
-                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    <p className="type-label text-muted-foreground">
                       {LEVEL_LABEL[level.level]}
                     </p>
                     {level.matches.map((r: MatchResult) => (
@@ -611,7 +620,7 @@ export const GuestMatchSection = React.forwardRef<
       {localClaimedGroup && (
         <div className="rounded-lg border bg-muted/40 p-4 space-y-3">
           <div>
-            <p className="text-sm font-medium">Interested in joining a group</p>
+            <p className="text-sm font-semibold">Interested in joining a group</p>
             <p className="text-sm text-muted-foreground">
               {localClaimedGroup.name}
               {localClaimedGroup.leader && (
@@ -643,9 +652,14 @@ export const GuestMatchSection = React.forwardRef<
       {/* Matching section */}
       <section className="space-y-4">
         <div>
-          <h3 className="text-sm font-medium">Small Group Matching</h3>
+          <h3 className="text-sm font-semibold">
+            Small Group Matching
+            {dirty && (
+              <span className="ml-2 inline-block size-1.5 rounded-full bg-amber-500 align-middle" />
+            )}
+          </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Fill in the required fields, then click Save information and find match.
+            Fill in the required fields and click Find matching groups.
             Assigning creates a pending request — the leader confirms via their link.
           </p>
         </div>
@@ -786,7 +800,7 @@ export const GuestMatchSection = React.forwardRef<
           ) : (
             <IconSparkles className="size-4" />
           )}
-          {state === "loading" ? "Searching…" : "Save information and find match"}
+          {state === "loading" ? "Searching…" : "Find matching groups"}
         </Button>
       </section>
 
@@ -801,7 +815,7 @@ export const GuestMatchSection = React.forwardRef<
             <div className="space-y-6">
               {levels.map((level) => (
                 <div key={level.level} className="space-y-3">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  <p className="type-label text-muted-foreground">
                     {LEVEL_LABEL[level.level]}
                   </p>
                   {level.matches.map((r: MatchResult) => (

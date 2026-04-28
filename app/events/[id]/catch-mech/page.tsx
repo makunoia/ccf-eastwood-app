@@ -42,7 +42,7 @@ export default async function CatchMechEntryPage({
     <div className="min-h-svh bg-background flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-sm space-y-6">
         <div className="text-center space-y-1">
-          <h1 className="text-xl font-semibold">{event.name}</h1>
+          <h1 className="type-headline">{event.name}</h1>
           <p className="text-sm text-muted-foreground">Catch Mech — Facilitator Check-in</p>
         </div>
         <CatchMechEntryForm eventId={id} groups={groups} />

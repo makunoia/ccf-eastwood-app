@@ -80,11 +80,13 @@ export function MemberMatchSection({
 }) {
   const router = useRouter()
   const [state, setState] = React.useState<"idle" | "loading" | "done">("idle")
+  const [dirty, setDirty] = React.useState(false)
   const [results, setResults] = React.useState<MatchResult[]>([])
   const [assigningId, setAssigningId] = React.useState<string | null>(null)
 
   const [prefs, setPrefs] = React.useState<MatchingPrefs>(initialPrefs)
   function setPref<K extends keyof MatchingPrefs>(key: K, value: MatchingPrefs[K]) {
+    setDirty(true)
     setPrefs((prev) => ({ ...prev, [key]: value }))
   }
 
@@ -115,6 +117,7 @@ export function MemberMatchSection({
     const res = await findSmallGroupMatchesForMember(memberId, { scheduleSlot })
     setState("done")
     if (res.success) {
+      setDirty(false)
       setResults(res.data)
     } else {
       toast.error(res.error)
@@ -143,7 +146,7 @@ export function MemberMatchSection({
   if (pendingTransfer) {
     return (
       <div className="max-w-2xl space-y-3">
-        <h3 className="text-sm font-medium">Small Group Matching</h3>
+        <h3 className="text-sm font-semibold">Small Group Matching</h3>
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
           <div className="flex items-start gap-3">
             <IconClock className="mt-0.5 size-4 shrink-0 text-amber-600" />
@@ -165,7 +168,12 @@ export function MemberMatchSection({
     <div className="max-w-2xl space-y-4">
       <section className="space-y-4">
         <div>
-          <h3 className="text-sm font-medium">Small Group Matching</h3>
+          <h3 className="text-sm font-semibold">
+            Small Group Matching
+            {dirty && (
+              <span className="ml-2 inline-block size-1.5 rounded-full bg-amber-500 align-middle" />
+            )}
+          </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
             {hasGroup
               ? "Find a better-fit small group for this member. Matching will create a transfer request pending leader confirmation."
@@ -309,7 +317,7 @@ export function MemberMatchSection({
           ) : (
             <IconSparkles className="size-4" />
           )}
-          {state === "loading" ? "Searching…" : "Save information and find match"}
+          {state === "loading" ? "Searching…" : "Find matching groups"}
         </Button>
       </section>
 

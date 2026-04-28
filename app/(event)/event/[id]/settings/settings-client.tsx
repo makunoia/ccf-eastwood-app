@@ -198,7 +198,7 @@ export function EventSettingsClient({ eventId, enabledModules, buses, committees
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">
       <div>
-        <h2 className="text-xl font-semibold">Settings</h2>
+        <h2 className="type-headline">Settings</h2>
         <p className="text-sm text-muted-foreground">Configure modules and options for this event</p>
       </div>
 
@@ -210,7 +210,7 @@ export function EventSettingsClient({ eventId, enabledModules, buses, committees
 
         <TabsContent value="modules" className="mt-6">
           <section className="space-y-4 max-w-2xl">
-            <h3 className="text-sm font-medium text-muted-foreground">Add-on Modules</h3>
+            <h3 className="type-label text-muted-foreground">Add-on Modules</h3>
 
             {/* Baptism */}
             <Card>

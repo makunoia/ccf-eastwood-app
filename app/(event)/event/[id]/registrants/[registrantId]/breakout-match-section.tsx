@@ -99,7 +99,7 @@ export function BreakoutSection({ registrantId, eventId, facilitatedGroup, allEv
   if (facilitatedGroup) {
     return (
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-muted-foreground">Breakout Group</h3>
+        <h3 className="type-label text-muted-foreground">Breakout Group</h3>
         <div className="rounded-lg border p-3 flex items-center justify-between gap-3">
           <p className="text-sm font-medium">{facilitatedGroup.name}</p>
           <Badge variant="secondary">Facilitator</Badge>
@@ -208,7 +208,7 @@ export function BreakoutSection({ registrantId, eventId, facilitatedGroup, allEv
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium text-muted-foreground">Breakout Group</h3>
+        <h3 className="type-label text-muted-foreground">Breakout Group</h3>
         <div className="flex rounded-md border overflow-hidden">
           <button
             className={[

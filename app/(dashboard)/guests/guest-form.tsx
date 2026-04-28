@@ -67,7 +67,6 @@ type Props = {
   eventHistory?: React.ReactNode
   activityHistory?: React.ReactNode
   matchSection?: React.ReactNode
-  onSaveMatchingProfile?: () => Promise<void>
 }
 
 function toFormValues(guest: GuestDetail): GuestFormValues {
@@ -156,12 +155,14 @@ export function GuestForm({ guest, sourceEvent, eventHistory, activityHistory, m
 
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-xl font-semibold">
+          <h2 className="type-headline">
             {isEdit ? `${guest!.firstName} ${guest!.lastName}` : "New Guest"}
           </h2>
-          <p className="text-sm text-muted-foreground">
-            {isEdit ? "Edit guest details below." : "Fill in the details to add a new guest."}
-          </p>
+          {!isEdit && (
+            <p className="text-sm text-muted-foreground">
+              Fill in the details to add a new guest.
+            </p>
+          )}
         </div>
         <div className="hidden shrink-0 items-center gap-2 sm:flex">
           {isEdit && !isPromoted && activeTab !== "small-group" && (
@@ -228,7 +229,7 @@ export function GuestForm({ guest, sourceEvent, eventHistory, activityHistory, m
             {/* Source Event */}
             {isEdit && sourceEvent && (
               <section className="space-y-1">
-                <h3 className="text-sm font-medium text-muted-foreground">Origin</h3>
+                <h3 className="type-label text-muted-foreground">Origin</h3>
                 <p className="text-sm">
                   First attended{" "}
                   <Link
@@ -250,7 +251,7 @@ export function GuestForm({ guest, sourceEvent, eventHistory, activityHistory, m
 
             {/* Personal Info */}
             <section className="space-y-4">
-              <h3 className="text-sm font-medium text-muted-foreground">
+              <h3 className="type-label text-muted-foreground">
                 Personal Information
               </h3>
               <div className="grid grid-cols-2 gap-4">

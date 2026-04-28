@@ -18,7 +18,7 @@ export default async function LifeStagesPage() {
     <div className="flex flex-1 flex-col gap-4 p-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-semibold">Life Stages</h2>
+          <h2 className="type-headline">Life Stages</h2>
           <p className="text-sm text-muted-foreground">
             Configure the life stage categories used for members and ministries
           </p>

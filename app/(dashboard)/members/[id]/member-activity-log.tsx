@@ -56,23 +56,23 @@ const ACTION_LABEL: Record<SmallGroupLogEntry["action"], string> = {
 function iconForSmallGroupAction(action: SmallGroupLogEntry["action"]) {
   if (action === "TempAssignmentRejected" || action === "MemberRemoved") {
     return (
-      <span className="inline-flex size-5 items-center justify-center rounded-full bg-red-100">
-        <IconX className="size-3 text-red-700" />
+      <span className="inline-flex size-5 items-center justify-center rounded-full bg-destructive/10">
+        <IconX className="size-3 text-destructive" />
       </span>
     )
   }
 
   if (action === "MemberAdded" || action === "TempAssignmentConfirmed") {
     return (
-      <span className="inline-flex size-5 items-center justify-center rounded-full bg-green-100">
-        <IconCheck className="size-3 text-green-700" />
+      <span className="inline-flex size-5 items-center justify-center rounded-full bg-emerald-50">
+        <IconCheck className="size-3 text-emerald-700" />
       </span>
     )
   }
 
   return (
-    <span className="inline-flex size-5 items-center justify-center rounded-full bg-blue-100">
-      <IconClock className="size-3 text-blue-700" />
+    <span className="inline-flex size-5 items-center justify-center rounded-full bg-muted">
+      <IconClock className="size-3 text-muted-foreground" />
     </span>
   )
 }

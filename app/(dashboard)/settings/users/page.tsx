@@ -50,7 +50,7 @@ export default async function UsersPage() {
     <div className="flex flex-1 flex-col gap-4 p-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-semibold">Users</h2>
+          <h2 className="type-headline">Users</h2>
           <p className="text-sm text-muted-foreground">
             Manage admin accounts and their feature access
           </p>

@@ -443,7 +443,7 @@ export function SmallGroupForm({
 
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-xl font-semibold">
+          <h2 className="type-headline">
             {isEdit ? group!.name : "New Small Group"}
           </h2>
           {!isEdit && (
@@ -489,7 +489,7 @@ export function SmallGroupForm({
             >
               {/* Basic Info */}
               <section className="space-y-4">
-                <h3 className="text-sm font-medium text-muted-foreground">
+                <h3 className="type-label text-muted-foreground">
                   Group Information
                 </h3>
 
@@ -644,7 +644,7 @@ export function SmallGroupForm({
 
               {/* Matching Info */}
               <section className="space-y-4">
-                <h3 className="text-sm font-medium text-muted-foreground">
+                <h3 className="type-label text-muted-foreground">
                   Matching Information
                 </h3>
 
@@ -757,7 +757,7 @@ export function SmallGroupForm({
             {groupMembers && (
               <section className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-medium text-muted-foreground">
+                  <h3 className="type-label text-muted-foreground">
                     Members (
                     {memberLimitNum !== null && !isNaN(memberLimitNum)
                       ? `${currentMemberCount} / ${memberLimitNum}`
@@ -843,7 +843,7 @@ export function SmallGroupForm({
             <section className="space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-medium text-muted-foreground">
+                  <h3 className="type-label text-muted-foreground">
                     Temporary Members
                   </h3>
                   {pendingRequests.length > 0 && (
@@ -969,7 +969,7 @@ export function SmallGroupForm({
         >
           {/* Basic Info */}
           <section className="space-y-4">
-            <h3 className="text-sm font-medium text-muted-foreground">
+            <h3 className="type-label text-muted-foreground">
               Group Information
             </h3>
 
@@ -1124,7 +1124,7 @@ export function SmallGroupForm({
 
           {/* Matching Info */}
           <section className="space-y-4">
-            <h3 className="text-sm font-medium text-muted-foreground">
+            <h3 className="type-label text-muted-foreground">
               Matching Information
             </h3>
 
