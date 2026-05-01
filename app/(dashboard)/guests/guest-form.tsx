@@ -3,9 +3,19 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { IconArrowLeft } from "@tabler/icons-react"
+import { IconArrowLeft, IconChevronLeft, IconChevronRight } from "@tabler/icons-react"
 import { toast } from "sonner"
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -36,6 +46,7 @@ import {
 } from "@/lib/validations/guest"
 import { createGuest, updateGuest, deleteGuest } from "./actions"
 import { MobileFormActions } from "@/components/mobile-form-actions"
+import { useListNavigation } from "@/lib/hooks/use-list-navigation"
 
 type GuestDetail = {
   id: string
@@ -100,8 +111,13 @@ export function GuestForm({ guest, sourceEvent, eventHistory, activityHistory, m
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
   const [activeTab, setActiveTab] = React.useState("profile")
+  const [dirty, setDirty] = React.useState(false)
+  const [pendingTab, setPendingTab] = React.useState<string | null>(null)
+
+  const { prev, next } = useListNavigation(guest?.id ?? "", "guestListIds")
 
   function set<K extends keyof GuestFormValues>(field: K, value: GuestFormValues[K]) {
+    setDirty(true)
     setForm((prev) => ({ ...prev, [field]: value }))
   }
 
@@ -109,6 +125,7 @@ export function GuestForm({ guest, sourceEvent, eventHistory, activityHistory, m
     setForm(guest ? toFormValues(guest) : defaultGuestForm)
     setNoPhone(!!guest && !guest.phone)
     setNoEmail(!!guest && !guest.email)
+    setDirty(false)
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -119,6 +136,7 @@ export function GuestForm({ guest, sourceEvent, eventHistory, activityHistory, m
       : await createGuest(form)
     setSaving(false)
     if (result.success) {
+      setDirty(false)
       toast.success(isEdit ? "Guest updated" : "Guest added")
       if (!isEdit) router.push("/guests")
     } else {
@@ -139,11 +157,20 @@ export function GuestForm({ guest, sourceEvent, eventHistory, activityHistory, m
     }
   }
 
+  function handleTabChange(newTab: string) {
+    if (dirty && activeTab === "profile" && newTab !== "profile") {
+      setPendingTab(newTab)
+      return
+    }
+    setActiveTab(newTab)
+  }
+
   const hasTabs = isEdit && (matchSection || eventHistory || activityHistory)
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-6 pb-24 sm:pb-6">
-      <div>
+      {/* Breadcrumb + prev/next */}
+      <div className="flex items-center justify-between">
         <Link
           href="/guests"
           className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
@@ -151,32 +178,64 @@ export function GuestForm({ guest, sourceEvent, eventHistory, activityHistory, m
           <IconArrowLeft className="size-4" />
           Guests
         </Link>
+        {isEdit && (prev || next) && (
+          <div className="flex items-center gap-0.5">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              disabled={!prev}
+              onClick={() => prev && router.push(`/guests/${prev}`)}
+            >
+              <IconChevronLeft className="size-4" />
+              <span className="sr-only">Previous guest</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              disabled={!next}
+              onClick={() => next && router.push(`/guests/${next}`)}
+            >
+              <IconChevronRight className="size-4" />
+              <span className="sr-only">Next guest</span>
+            </Button>
+          </div>
+        )}
       </div>
 
+      {/* Page header */}
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="type-headline">
             {isEdit ? `${guest!.firstName} ${guest!.lastName}` : "New Guest"}
           </h2>
-          {!isEdit && (
+          {isEdit && sourceEvent ? (
+            <p className="text-sm text-muted-foreground">
+              First attended{" "}
+              <Link
+                href={`/event/${sourceEvent.id}`}
+                className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors text-foreground"
+              >
+                {sourceEvent.name}
+              </Link>
+              {" on "}
+              {sourceEvent.date.toLocaleDateString("en-PH", {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+                timeZone: "UTC",
+              })}
+            </p>
+          ) : !isEdit ? (
             <p className="text-sm text-muted-foreground">
               Fill in the details to add a new guest.
             </p>
-          )}
+          ) : null}
         </div>
         <div className="hidden shrink-0 items-center gap-2 sm:flex">
-          {isEdit && !isPromoted && activeTab !== "small-group" && (
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() => setDeleteOpen(true)}
-              disabled={saving}
-            >
-              Delete
-            </Button>
-          )}
           {isEdit ? (
-            activeTab !== "small-group" ? (
+            activeTab === "profile" ? (
               <Button type="submit" form="guest-form" disabled={saving || isPromoted}>
                 {saving ? "Saving…" : "Save changes"}
               </Button>
@@ -193,7 +252,7 @@ export function GuestForm({ guest, sourceEvent, eventHistory, activityHistory, m
         <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200">
           <Badge variant="secondary" className="shrink-0">Promoted</Badge>
           <span>
-            This guest is now a member.{" "}
+            This guest is now a member — profile fields are locked.{" "}
             <Link
               href={`/members/${guest!.memberId}`}
               className="font-medium underline underline-offset-2"
@@ -204,7 +263,7 @@ export function GuestForm({ guest, sourceEvent, eventHistory, activityHistory, m
         </div>
       )}
 
-      <Tabs defaultValue="profile" className="flex flex-col gap-4" onValueChange={setActiveTab}>
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="flex flex-col gap-4">
         {hasTabs && (
           <TabsList className="w-fit">
             <TabsTrigger value="profile">Profile</TabsTrigger>
@@ -226,29 +285,6 @@ export function GuestForm({ guest, sourceEvent, eventHistory, activityHistory, m
             onSubmit={handleSubmit}
             className="max-w-2xl space-y-8"
           >
-            {/* Source Event */}
-            {isEdit && sourceEvent && (
-              <section className="space-y-1">
-                <h3 className="type-label text-muted-foreground">Origin</h3>
-                <p className="text-sm">
-                  First attended{" "}
-                  <Link
-                    href={`/event/${sourceEvent.id}`}
-                    className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-                  >
-                    {sourceEvent.name}
-                  </Link>
-                  {" on "}
-                  {sourceEvent.date.toLocaleDateString("en-PH", {
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                    timeZone: "UTC",
-                  })}
-                </p>
-              </section>
-            )}
-
             {/* Personal Info */}
             <section className="space-y-4">
               <h3 className="type-label text-muted-foreground">
@@ -358,20 +394,40 @@ export function GuestForm({ guest, sourceEvent, eventHistory, activityHistory, m
             </section>
 
             {/* Notes */}
-            <section className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="notes">Notes</Label>
-                <Textarea
-                  id="notes"
-                  value={form.notes}
-                  onChange={(e) => set("notes", e.target.value)}
-                  placeholder="Any additional information…"
-                  rows={3}
-                  disabled={isPromoted}
-                />
-              </div>
-            </section>
+            <div className="space-y-2">
+              <Label htmlFor="notes">Notes</Label>
+              <Textarea
+                id="notes"
+                value={form.notes}
+                onChange={(e) => set("notes", e.target.value)}
+                placeholder="Any additional information…"
+                rows={3}
+                disabled={isPromoted}
+              />
+            </div>
           </form>
+
+          {/* Danger zone */}
+          {isEdit && !isPromoted && (
+            <div className="mt-12 max-w-2xl border-t pt-6">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium">Delete guest</p>
+                  <p className="text-xs text-muted-foreground">
+                    Permanently removes this record. This cannot be undone.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={() => setDeleteOpen(true)}
+                  disabled={saving}
+                >
+                  Delete
+                </Button>
+              </div>
+            </div>
+          )}
         </TabsContent>
 
         {isEdit && matchSection && (
@@ -393,7 +449,7 @@ export function GuestForm({ guest, sourceEvent, eventHistory, activityHistory, m
         )}
       </Tabs>
 
-      {!isPromoted && activeTab !== "small-group" && (
+      {!isPromoted && activeTab === "profile" && (
         <MobileFormActions
           formId="guest-form"
           isEdit={isEdit}
@@ -403,6 +459,32 @@ export function GuestForm({ guest, sourceEvent, eventHistory, activityHistory, m
           onDelete={isEdit ? () => setDeleteOpen(true) : undefined}
         />
       )}
+
+      {/* Unsaved changes guard */}
+      <AlertDialog open={pendingTab !== null} onOpenChange={(open) => { if (!open) setPendingTab(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Unsaved changes</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have unsaved changes on the Profile tab. Save them first, or discard and continue.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPendingTab(null)}>
+              Stay and save
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                handleRevert()
+                setActiveTab(pendingTab!)
+                setPendingTab(null)
+              }}
+            >
+              Discard and continue
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent>

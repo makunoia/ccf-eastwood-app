@@ -229,9 +229,34 @@ export async function matchSmallGroups(
 
   const weights = await loadSmallGroupWeights()
 
-  const downlineGroupIds = currentGroupId
-    ? await getDescendantGroupIds(currentGroupId)
-    : new Set<string>()
+  // Downline = descendants of the candidate's current group (moving "down" the
+  // hierarchy is blocked) PLUS descendants of any groups they lead (a leader
+  // should never be placed into a group they are spiritually responsible for).
+  const downlineGroupIds = new Set<string>()
+  if (currentGroupId) {
+    const fromCurrentGroup = await getDescendantGroupIds(currentGroupId)
+    for (const id of fromCurrentGroup) downlineGroupIds.add(id)
+  }
+  for (const ledGroupId of ledGroupIds) {
+    const descendants = await getDescendantGroupIds(ledGroupId)
+    for (const id of descendants) downlineGroupIds.add(id)
+  }
+
+  // Groups that have already rejected this candidate should not be suggested again.
+  const rejectedGroupIds = new Set<string>()
+  if ("guestId" in params) {
+    const rejected = await db.smallGroupMemberRequest.findMany({
+      where: { guestId: params.guestId, status: "Rejected" },
+      select: { smallGroupId: true },
+    })
+    for (const r of rejected) rejectedGroupIds.add(r.smallGroupId)
+  } else {
+    const rejected = await db.smallGroupMemberRequest.findMany({
+      where: { memberId: params.memberId, status: "Rejected" },
+      select: { smallGroupId: true },
+    })
+    for (const r of rejected) rejectedGroupIds.add(r.smallGroupId)
+  }
 
   const eligible = groups.filter((g) => {
     if (options?.excludeCurrentGroup && currentGroupId && g.id === currentGroupId) {
@@ -239,6 +264,7 @@ export async function matchSmallGroups(
     }
     if (ledGroupIds.has(g.id)) return false
     if (downlineGroupIds.has(g.id)) return false
+    if (rejectedGroupIds.has(g.id)) return false
     if (g.memberLimit !== null && g._count.members >= g.memberLimit) return false
     const gp = buildSmallGroupProfile(g)
     if (scoreGender(candidate.gender, gp.genderFocus) === 0.0) return false
@@ -334,7 +360,15 @@ export async function matchSmallGroupsWithEscalation(
     select: SMALL_GROUP_SCORE_SELECT,
   })
 
+  // Groups that already rejected this guest should not be re-suggested.
+  const rejectedRequests = await db.smallGroupMemberRequest.findMany({
+    where: { guestId, status: "Rejected" },
+    select: { smallGroupId: true },
+  })
+  const rejectedGroupIds = new Set(rejectedRequests.map((r) => r.smallGroupId))
+
   const eligible = allGroups.filter((g) => {
+    if (rejectedGroupIds.has(g.id)) return false
     if (g.memberLimit !== null && g._count.members >= g.memberLimit) return false
     const gp = buildSmallGroupProfile(g)
     if (scoreGender(candidate.gender, gp.genderFocus) === 0.0) return false

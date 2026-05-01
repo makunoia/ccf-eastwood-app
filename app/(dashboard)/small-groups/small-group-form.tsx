@@ -80,9 +80,9 @@ type GuestSearchResult = {
 }
 
 const GROUP_STATUS_COLORS: Record<string, string> = {
-  Member:  "bg-slate-100 text-slate-700",
+  Member:  "bg-muted text-muted-foreground",
   Timothy: "bg-amber-100 text-amber-700",
-  Leader:  "bg-green-100 text-green-700",
+  Leader:  "bg-[oklch(0.95_0.04_218)] text-[oklch(0.65_0.17_218)]",
 }
 
 const GROUP_STATUS_OPTIONS = [
@@ -90,6 +90,9 @@ const GROUP_STATUS_OPTIONS = [
   { value: "Timothy", label: "Timothy" },
   { value: "Leader",  label: "Leader" },
 ]
+
+const POSITIVE_LOG_ACTIONS = new Set(["MemberAdded", "TempAssignmentConfirmed", "GroupCreated"])
+const NEGATIVE_LOG_ACTIONS = new Set(["MemberRemoved", "TempAssignmentRejected"])
 
 type PendingRequest = {
   id: string
@@ -216,6 +219,7 @@ export function SmallGroupForm({
 
   const [token, setToken] = React.useState<string | null | undefined>(leaderConfirmationToken)
   const [generatingToken, setGeneratingToken] = React.useState(false)
+  const [activeTab, setActiveTab] = React.useState("details")
   const confirmationUrl =
     token && typeof window !== "undefined"
       ? `${window.location.origin}/small-group-confirmation/${token}`
@@ -431,6 +435,7 @@ export function SmallGroupForm({
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-6 pb-24 sm:pb-6">
+      <div className="max-w-2xl flex flex-col gap-6">
       <div>
         <Link
           href="/small-groups"
@@ -452,29 +457,33 @@ export function SmallGroupForm({
             </p>
           )}
         </div>
-        <div className="hidden shrink-0 items-center gap-2 sm:flex">
-          {isEdit && (
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() => setDeleteOpen(true)}
-              disabled={saving}
-            >
-              Delete
+        {(!isEdit || activeTab === "details") && (
+          <div className="hidden shrink-0 items-center gap-2 sm:flex">
+            {isEdit && (
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => setDeleteOpen(true)}
+                disabled={saving}
+              >
+                Delete
+              </Button>
+            )}
+            <Button type="submit" form="small-group-form" disabled={saving}>
+              {saving ? "Saving…" : isEdit ? "Save changes" : "Create group"}
             </Button>
-          )}
-          <Button type="submit" form="small-group-form" disabled={saving}>
-            {saving ? "Saving…" : isEdit ? "Save changes" : "Create group"}
-          </Button>
-        </div>
+          </div>
+        )}
       </div>
 
       {isEdit ? (
-        <Tabs defaultValue="details" className="max-w-2xl">
+        <Tabs defaultValue="details" onValueChange={setActiveTab}>
           <TabsList>
             <TabsTrigger value="details">Details</TabsTrigger>
             <TabsTrigger value="members">
-              Members{(groupMembers?.length ?? 0) + pendingRequests.length > 0 ? ` (${(groupMembers?.length ?? 0) + pendingRequests.length})` : ""}
+              Members
+              {(groupMembers?.length ?? 0) > 0 && ` (${groupMembers!.length})`}
+              {pendingRequests.length > 0 && ` · ${pendingRequests.length} pending`}
             </TabsTrigger>
             <TabsTrigger value="logs">
               Logs{logs.length > 0 ? ` (${logs.length})` : ""}
@@ -725,17 +734,17 @@ export function SmallGroupForm({
                 {logs.map((log) => (
                   <div key={log.id} className="flex items-start gap-3 px-4 py-3">
                     <div className="mt-0.5 shrink-0">
-                      {(log.action === "MemberAdded" || log.action === "TempAssignmentConfirmed" || log.action === "GroupCreated") ? (
-                        <span className="inline-flex size-5 items-center justify-center rounded-full bg-green-100">
-                          <IconCheck className="size-3 text-green-700" />
+                      {POSITIVE_LOG_ACTIONS.has(log.action) ? (
+                        <span className="inline-flex size-5 items-center justify-center rounded-full bg-[oklch(0.95_0.04_218)]">
+                          <IconCheck className="size-3 text-[oklch(0.65_0.17_218)]" />
                         </span>
-                      ) : log.action === "MemberRemoved" || log.action === "TempAssignmentRejected" ? (
-                        <span className="inline-flex size-5 items-center justify-center rounded-full bg-red-100">
-                          <IconX className="size-3 text-red-700" />
+                      ) : NEGATIVE_LOG_ACTIONS.has(log.action) ? (
+                        <span className="inline-flex size-5 items-center justify-center rounded-full bg-destructive/10">
+                          <IconX className="size-3 text-destructive" />
                         </span>
                       ) : (
-                        <span className="inline-flex size-5 items-center justify-center rounded-full bg-blue-100">
-                          <IconClock className="size-3 text-blue-700" />
+                        <span className="inline-flex size-5 items-center justify-center rounded-full bg-muted">
+                          <IconClock className="size-3 text-muted-foreground" />
                         </span>
                       )}
                     </div>
@@ -965,7 +974,7 @@ export function SmallGroupForm({
         <form
           id="small-group-form"
           onSubmit={handleSubmit}
-          className="max-w-2xl space-y-8"
+          className="space-y-8"
         >
           {/* Basic Info */}
           <section className="space-y-4">
@@ -1196,6 +1205,7 @@ export function SmallGroupForm({
           </section>
         </form>
       )}
+      </div>
 
       {/* Add member dialog */}
       <Dialog open={addMemberOpen} onOpenChange={(open) => { setAddMemberOpen(open); if (!open) setSelectedMemberId("") }}>

@@ -410,7 +410,7 @@ export const GuestMatchSection = React.forwardRef<
               <h3 className="text-sm font-semibold">
                 Small Group Matching
                 {dirty && (
-                  <span className="ml-2 inline-block size-1.5 rounded-full bg-amber-500 align-middle" />
+                  <span className="ml-2 inline-block size-2 rounded-full bg-amber-500 align-middle" />
                 )}
               </h3>
               <p className="text-xs text-muted-foreground mt-0.5">
@@ -634,7 +634,7 @@ export const GuestMatchSection = React.forwardRef<
               onClick={() => { void handleConfirmClaimed() }}
               disabled={assigningId !== null || clearingClaimed}
             >
-              {assigningId === localClaimedGroup.id ? "Assigning…" : "Assign (Pending Leader Confirmation)"}
+              {assigningId === localClaimedGroup.id ? "Assigning…" : "Assign to Group"}
             </Button>
             <Button
               size="sm"
@@ -643,9 +643,12 @@ export const GuestMatchSection = React.forwardRef<
               disabled={clearingClaimed || assigningId !== null}
             >
               {clearingClaimed ? <IconLoader className="size-4 animate-spin" /> : <IconX className="size-4" />}
-              Not in this group
+              Not their group
             </Button>
           </div>
+          <p className="text-xs text-muted-foreground">
+            Assignment creates a pending request — the group leader confirms via their link.
+          </p>
         </div>
       )}
 
@@ -655,7 +658,7 @@ export const GuestMatchSection = React.forwardRef<
           <h3 className="text-sm font-semibold">
             Small Group Matching
             {dirty && (
-              <span className="ml-2 inline-block size-1.5 rounded-full bg-amber-500 align-middle" />
+              <span className="ml-2 inline-block size-2 rounded-full bg-amber-500 align-middle" />
             )}
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">

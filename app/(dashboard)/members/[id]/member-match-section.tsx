@@ -171,7 +171,7 @@ export function MemberMatchSection({
           <h3 className="text-sm font-semibold">
             Small Group Matching
             {dirty && (
-              <span className="ml-2 inline-block size-1.5 rounded-full bg-amber-500 align-middle" />
+              <span className="ml-2 inline-block size-2 rounded-full bg-amber-500 align-middle" />
             )}
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
@@ -308,17 +308,24 @@ export function MemberMatchSection({
         </div>
 
         {/* Save & find match — end of form */}
-        <Button
-          onClick={() => { void handleSearch() }}
-          disabled={state === "loading"}
-        >
-          {state === "loading" ? (
-            <IconLoader className="size-4 animate-spin" />
-          ) : (
-            <IconSparkles className="size-4" />
+        <div className="space-y-1.5">
+          <Button
+            onClick={() => { void handleSearch() }}
+            disabled={state === "loading"}
+          >
+            {state === "loading" ? (
+              <IconLoader className="size-4 animate-spin" />
+            ) : (
+              <IconSparkles className="size-4" />
+            )}
+            {state === "loading" ? "Searching…" : "Find matching groups"}
+          </Button>
+          {hasGroup && (
+            <p className="text-xs text-muted-foreground">
+              Assigning creates a transfer request — the group leader confirms via their link.
+            </p>
           )}
-          {state === "loading" ? "Searching…" : "Find matching groups"}
-        </Button>
+        </div>
       </section>
 
       {state === "done" && (
