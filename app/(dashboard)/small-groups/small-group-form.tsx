@@ -435,7 +435,6 @@ export function SmallGroupForm({
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-6 pb-24 sm:pb-6">
-      <div className="max-w-2xl flex flex-col gap-6">
       <div>
         <Link
           href="/small-groups"
@@ -459,16 +458,6 @@ export function SmallGroupForm({
         </div>
         {(!isEdit || activeTab === "details") && (
           <div className="hidden shrink-0 items-center gap-2 sm:flex">
-            {isEdit && (
-              <Button
-                type="button"
-                variant="destructive"
-                onClick={() => setDeleteOpen(true)}
-                disabled={saving}
-              >
-                Delete
-              </Button>
-            )}
             <Button type="submit" form="small-group-form" disabled={saving}>
               {saving ? "Saving…" : isEdit ? "Save changes" : "Create group"}
             </Button>
@@ -494,7 +483,7 @@ export function SmallGroupForm({
             <form
               id="small-group-form"
               onSubmit={handleSubmit}
-              className="space-y-8"
+              className="max-w-2xl space-y-8"
             >
               {/* Basic Info */}
               <section className="space-y-4">
@@ -724,6 +713,27 @@ export function SmallGroupForm({
                 </div>
               </section>
             </form>
+
+            {isEdit && (
+              <div className="mt-12 max-w-2xl border-t pt-6">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-medium">Delete small group</p>
+                    <p className="text-xs text-muted-foreground">
+                      Permanently removes this group and all associated data. This cannot be undone.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={() => setDeleteOpen(true)}
+                    disabled={saving}
+                  >
+                    Delete
+                  </Button>
+                </div>
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="logs" className="mt-4">
@@ -974,7 +984,7 @@ export function SmallGroupForm({
         <form
           id="small-group-form"
           onSubmit={handleSubmit}
-          className="space-y-8"
+          className="max-w-2xl space-y-8"
         >
           {/* Basic Info */}
           <section className="space-y-4">
@@ -1205,7 +1215,6 @@ export function SmallGroupForm({
           </section>
         </form>
       )}
-      </div>
 
       {/* Add member dialog */}
       <Dialog open={addMemberOpen} onOpenChange={(open) => { setAddMemberOpen(open); if (!open) setSelectedMemberId("") }}>
