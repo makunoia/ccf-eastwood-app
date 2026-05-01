@@ -7,13 +7,20 @@ const STAGE_LABEL: Record<Stage, string> = {
   Leader:  "Leader",
 }
 
+const STAGE_DESCRIPTION: Record<Stage, string> = {
+  Member:  "Active member of this small group.",
+  Timothy: "Being mentored and developed toward a future leadership role.",
+  Leader:  "Leading this small group.",
+}
+
 export function MemberGroupStepper({ status }: { status: Stage }) {
   const activeIndex = STAGES.indexOf(status)
   const CHEVRON = 18
 
   return (
-    <div className="flex overflow-hidden rounded-lg border">
-      {STAGES.map((stage, i) => {
+    <div className="overflow-hidden rounded-lg border">
+      <div className="flex">
+        {STAGES.map((stage, i) => {
         const isActive = i === activeIndex
         const isPast = i < activeIndex
         const isFirst = i === 0
@@ -51,7 +58,11 @@ export function MemberGroupStepper({ status }: { status: Stage }) {
             </span>
           </div>
         )
-      })}
+        })}
+      </div>
+      <div className="border-t bg-muted/30 px-4 py-2.5">
+        <p className="text-xs text-muted-foreground">{STAGE_DESCRIPTION[status]}</p>
+      </div>
     </div>
   )
 }

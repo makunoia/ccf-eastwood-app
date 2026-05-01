@@ -131,14 +131,18 @@ export function buildColumns(): ColumnDef<MemberRow>[] {
       accessorFn: (row) => `${row.firstName} ${row.lastName}`,
       id: "name",
       header: "Name",
-      cell: ({ row }) => (
-        <Link
-          href={`/members/${row.original.id}`}
-          className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-        >
-          {row.original.firstName} {row.original.lastName}
-        </Link>
-      ),
+      cell: ({ row, table }) => {
+        const ids = table.getRowModel().rows.map((r) => (r.original as MemberRow).id)
+        return (
+          <Link
+            href={`/members/${row.original.id}`}
+            onClick={() => sessionStorage.setItem("memberListIds", JSON.stringify(ids))}
+            className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+          >
+            {row.original.firstName} {row.original.lastName}
+          </Link>
+        )
+      },
     },
     {
       accessorKey: "email",

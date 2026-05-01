@@ -80,7 +80,7 @@ export default async function OccurrenceDetailPage({
       </div>
 
       <div className="space-y-1">
-        <h2 className="text-xl font-semibold">{dateLabel}</h2>
+        <h2 className="type-headline">{dateLabel}</h2>
         <p className="text-sm text-muted-foreground">
           {occurrence.event.ministries.map((em) => em.ministry.name).join(" · ")}
           {occurrence.event.ministries.length > 0 && " · "}

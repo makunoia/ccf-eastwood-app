@@ -7,13 +7,16 @@ import { DataTable } from "@/components/ui/data-table"
 import { Card, CardContent } from "@/components/ui/card"
 import { buildColumns, type MemberRow, RowActions } from "./columns"
 
-function MemberCard({ member }: { member: MemberRow }) {
+function MemberCard({ member, allIds }: { member: MemberRow; allIds: string[] }) {
   const router = useRouter()
 
   return (
     <Card
       className="cursor-pointer hover:bg-muted/50 transition-colors py-0"
-      onClick={() => router.push(`/members/${member.id}`)}
+      onClick={() => {
+        sessionStorage.setItem("memberListIds", JSON.stringify(allIds))
+        router.push(`/members/${member.id}`)
+      }}
     >
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-2">
@@ -61,7 +64,9 @@ export function MembersTable({ members }: { members: MemberRow[] }) {
             <p className="text-sm">No members yet</p>
           </div>
         ) : (
-          members.map((member) => <MemberCard key={member.id} member={member} />)
+          members.map((member) => (
+            <MemberCard key={member.id} member={member} allIds={members.map((m) => m.id)} />
+          ))
         )}
       </div>
 

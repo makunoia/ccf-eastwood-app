@@ -7,7 +7,11 @@ type ActionResult<T = void> =
   | { success: true; data: T }
   | { success: false; error: string }
 
-type Decision = { requestId: string; confirmed: boolean }
+type Decision = {
+  requestId: string
+  status: "confirmed" | "pending" | "rejected"
+  notes?: string
+}
 
 export async function submitMemberConfirmations(
   token: string,
@@ -30,7 +34,7 @@ export async function submitMemberConfirmations(
     const affectedBreakoutGroupIds = new Set<string>()
 
     await db.$transaction(async (tx) => {
-      for (const { requestId, confirmed } of decisions) {
+      for (const { requestId, status: decisionStatus, notes: decisionNotes } of decisions) {
         const req = await tx.smallGroupMemberRequest.findUnique({
           where: { id: requestId },
           select: {
@@ -67,6 +71,9 @@ export async function submitMemberConfirmations(
 
         if (!req || req.status !== "Pending" || req.smallGroupId !== group.id) continue
 
+        // "pending" means the leader deferred — leave the request untouched
+        if (decisionStatus === "pending") continue
+
         if (req.guestId) {
           affectedGuestIds.add(req.guestId)
         }
@@ -75,10 +82,10 @@ export async function submitMemberConfirmations(
         }
 
         const now = new Date()
-        const resolvedStatus = confirmed ? "Confirmed" : "Rejected"
+        const resolvedStatus = decisionStatus === "confirmed" ? "Confirmed" : "Rejected"
         let promotedMemberId: string | null = null
 
-        if (confirmed) {
+        if (decisionStatus === "confirmed") {
           if (req.guestId && req.guest) {
             const guest = req.guest
             // Skip if already promoted
@@ -228,6 +235,7 @@ export async function submitMemberConfirmations(
           data: {
             status: resolvedStatus,
             resolvedAt: now,
+            notes: decisionNotes ?? null,
             // When a guest was promoted, update FK to point to the new member
             // so the catch mech admin page can match the request by memberId
             ...(req.guestId && promotedMemberId ? { memberId: promotedMemberId, guestId: null } : {}),

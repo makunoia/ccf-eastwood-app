@@ -7,12 +7,15 @@ import { DataTable } from "@/components/ui/data-table"
 import { Card, CardContent } from "@/components/ui/card"
 import { buildColumns, type GuestRow } from "./columns"
 
-function GuestCard({ guest }: { guest: GuestRow }) {
+function GuestCard({ guest, allIds }: { guest: GuestRow; allIds: string[] }) {
   const router = useRouter()
   return (
     <Card
       className="cursor-pointer py-0 transition-colors hover:bg-muted/50"
-      onClick={() => router.push(`/guests/${guest.id}`)}
+      onClick={() => {
+        sessionStorage.setItem("guestListIds", JSON.stringify(allIds))
+        router.push(`/guests/${guest.id}`)
+      }}
     >
       <CardContent className="p-4">
         <p className="font-medium leading-tight">
@@ -55,7 +58,9 @@ export function GuestsTable({ guests }: { guests: GuestRow[] }) {
             <p className="text-sm">No guests yet</p>
           </div>
         ) : (
-          guests.map((guest) => <GuestCard key={guest.id} guest={guest} />)
+          guests.map((guest) => (
+            <GuestCard key={guest.id} guest={guest} allIds={guests.map((g) => g.id)} />
+          ))
         )}
       </div>
 

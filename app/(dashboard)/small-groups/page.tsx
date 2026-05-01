@@ -76,7 +76,7 @@ export default async function SmallGroupsPage({
     <div className="flex flex-1 flex-col gap-4 p-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-semibold">Small Groups</h2>
+          <h2 className="type-headline">Small Groups</h2>
           <p className="text-sm text-muted-foreground">
             Manage fellowship groups and their hierarchy
           </p>

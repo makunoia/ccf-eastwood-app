@@ -64,7 +64,7 @@ export default async function MinistriesPage({
     <div className="flex flex-1 flex-col gap-4 p-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-semibold">Ministries</h2>
+          <h2 className="type-headline">Ministries</h2>
           <p className="text-sm text-muted-foreground">
             Manage church ministry departments
           </p>

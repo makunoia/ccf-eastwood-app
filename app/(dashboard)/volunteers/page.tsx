@@ -101,7 +101,7 @@ export default async function VolunteersPage({
     <div className="flex flex-1 flex-col gap-4 p-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-semibold">Volunteers</h2>
+          <h2 className="type-headline">Volunteers</h2>
           <p className="text-sm text-muted-foreground">
             Manage volunteer registrations and role assignments
           </p>

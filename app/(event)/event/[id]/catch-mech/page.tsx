@@ -184,7 +184,7 @@ export default async function CatchMechAdminPage({
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-xl font-semibold">Catch Mech</h2>
+          <h2 className="type-headline">Catch Mech</h2>
           <p className="text-sm text-muted-foreground">
             Track small group confirmations from breakout groups
           </p>
@@ -261,7 +261,7 @@ export default async function CatchMechAdminPage({
 
       {/* Per-group table */}
       <section className="space-y-3">
-        <h3 className="text-sm font-medium text-muted-foreground">Breakout Groups</h3>
+        <h3 className="type-label text-muted-foreground">Breakout Groups</h3>
         <CatchMechTable groupRows={groupRows} />
       </section>
     </div>

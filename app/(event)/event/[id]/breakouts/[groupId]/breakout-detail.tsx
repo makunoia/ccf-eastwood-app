@@ -267,7 +267,7 @@ function FacilitatorSection({
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
-        <p className="text-sm font-medium text-muted-foreground">{label}</p>
+        <p className="type-label text-muted-foreground">{label}</p>
         <Button variant="ghost" size="sm" className="h-7 gap-1.5 text-xs" onClick={() => setDialogOpen(true)}>
           <IconPencil className="size-3" />
           Change

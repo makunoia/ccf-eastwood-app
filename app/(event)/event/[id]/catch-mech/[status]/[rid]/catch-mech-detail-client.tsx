@@ -85,7 +85,7 @@ function MemberReadOnly({ member, memberId: _memberId }: { member: MemberData; m
 
   return (
     <section className="space-y-4">
-      <h3 className="text-sm font-medium text-muted-foreground">Profile</h3>
+      <h3 className="type-label text-muted-foreground">Profile</h3>
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
@@ -185,7 +185,7 @@ export function CatchMechDetailClient(props: Props) {
       {/* Name + type badge + actions */}
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <h2 className="text-xl font-semibold">{props.name}</h2>
+          <h2 className="type-headline">{props.name}</h2>
           {props.registrant.memberId ? (
             <Badge variant="secondary">Member</Badge>
           ) : (
@@ -226,7 +226,7 @@ export function CatchMechDetailClient(props: Props) {
             )}
             {!props.registrant.guest && !props.registrant.member && (
               <section className="space-y-3">
-                <h3 className="text-sm font-medium text-muted-foreground">Contact</h3>
+                <h3 className="type-label text-muted-foreground">Contact</h3>
                 <div className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
                   <span className="text-muted-foreground">Mobile</span>
                   <span>{props.registrant.mobileNumber ?? <span className="text-muted-foreground">—</span>}</span>

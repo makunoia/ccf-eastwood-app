@@ -107,7 +107,7 @@ export function MinistryForm({ lifeStages, ministry }: Props) {
 
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-xl font-semibold">
+          <h2 className="type-headline">
             {isEdit ? ministry!.name : "New Ministry"}
           </h2>
           <p className="text-sm text-muted-foreground">

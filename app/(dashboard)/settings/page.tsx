@@ -27,7 +27,7 @@ export default function SettingsPage() {
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">
       <div>
-        <h2 className="text-xl font-semibold">Settings</h2>
+        <h2 className="type-headline">Settings</h2>
         <p className="text-sm text-muted-foreground">Configure application-wide settings</p>
       </div>
 
