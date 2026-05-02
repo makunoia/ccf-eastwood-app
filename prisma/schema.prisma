@@ -124,6 +124,7 @@ model User {
   eventAccess       UserEventAccess[]
   groupRequests     SmallGroupMemberRequest[]
   smallGroupLogs    SmallGroupLog[]
+  catchMechComments CatchMechComment[]
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 }
@@ -624,6 +625,8 @@ model SmallGroupMemberRequest {
   // Tracks which breakout group triggered this request (for auto-cancellation on removal)
   breakoutGroupId  String?
 
+  comments     CatchMechComment[]
+
   resolvedAt   DateTime?
   createdAt    DateTime            @default(now())
 }
@@ -664,4 +667,14 @@ model CatchMechSession {
   facilitatorVolunteerId String
   facilitator            Volunteer     @relation(fields: [facilitatorVolunteerId], references: [id], onDelete: Cascade)
   createdAt              DateTime      @default(now())
+}
+
+model CatchMechComment {
+  id        String                  @id @default(cuid())
+  requestId String
+  request   SmallGroupMemberRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User                    @relation(fields: [authorId], references: [id])
+  text      String
+  createdAt DateTime                @default(now())
 }

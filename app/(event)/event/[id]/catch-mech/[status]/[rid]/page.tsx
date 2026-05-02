@@ -2,6 +2,7 @@ import { notFound } from "next/navigation"
 
 import { db } from "@/lib/db"
 import { CatchMechDetailClient } from "./catch-mech-detail-client"
+import type { CatchMechActivityEntry } from "./catch-mech-activity-log"
 
 const VALID_STATUSES = ["confirmed", "rejected", "pending"] as const
 type Status = (typeof VALID_STATUSES)[number]
@@ -18,7 +19,7 @@ async function getDetailData(registrantId: string, eventId: string, prismaStatus
   })
   const breakoutGroupIds = eventBreakoutGroups.map((bg) => bg.id)
 
-  const [registrant, request, lifeStages] = await Promise.all([
+  const [registrant, request, lifeStages, smallGroupLogs] = await Promise.all([
     db.eventRegistrant.findFirst({
       where: { id: registrantId, eventId },
       select: {
@@ -83,14 +84,40 @@ async function getDetailData(registrantId: string, eventId: string, prismaStatus
             leader: { select: { firstName: true, lastName: true } },
           },
         },
+        comments: {
+          orderBy: { createdAt: "asc" },
+          select: {
+            id: true,
+            text: true,
+            createdAt: true,
+            author: { select: { name: true } },
+          },
+        },
       },
     }),
     db.lifeStage.findMany({ orderBy: { order: "asc" }, select: { id: true, name: true } }),
+    db.smallGroupLog.findMany({
+      where: {
+        OR: [
+          { guest: { eventRegistrations: { some: { id: registrantId } } } },
+          { member: { eventRegistrations: { some: { id: registrantId } } } },
+        ],
+      },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        action: true,
+        description: true,
+        createdAt: true,
+        smallGroup: { select: { id: true, name: true } },
+        performedByUser: { select: { name: true } },
+      },
+    }),
   ])
 
   if (!registrant) return null
 
-  return { registrant, request, lifeStages }
+  return { registrant, request, lifeStages, smallGroupLogs }
 }
 
 export default async function CatchMechDetailPage({
@@ -110,7 +137,7 @@ export default async function CatchMechDetailPage({
   const data = await getDetailData(registrantId, eventId, STATUS_PRISMA[status])
   if (!data) notFound()
 
-  const { registrant, request, lifeStages } = data
+  const { registrant, request, lifeStages, smallGroupLogs } = data
 
   let name: string
   if (registrant.member) {
@@ -135,6 +162,25 @@ export default async function CatchMechDetailPage({
     workIndustry: registrant.guest?.workIndustry ?? "",
   }
 
+  const activityEntries: CatchMechActivityEntry[] = [
+    ...smallGroupLogs.map((log) => ({
+      kind: "smallGroupLog" as const,
+      id: log.id,
+      action: log.action,
+      description: log.description,
+      createdAt: log.createdAt,
+      smallGroup: log.smallGroup,
+      performedByUser: log.performedByUser,
+    })),
+    ...(request?.comments ?? []).map((c) => ({
+      kind: "comment" as const,
+      id: c.id,
+      text: c.text,
+      createdAt: c.createdAt,
+      author: c.author,
+    })),
+  ].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+
   return (
     <CatchMechDetailClient
       registrant={registrant}
@@ -148,7 +194,7 @@ export default async function CatchMechDetailPage({
       lifeStages={lifeStages}
       initialTab={initialTab}
       requestId={request?.id ?? null}
-      requestNotes={request?.notes ?? null}
+      activityEntries={activityEntries}
     />
   )
 }

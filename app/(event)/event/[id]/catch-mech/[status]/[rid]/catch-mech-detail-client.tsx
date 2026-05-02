@@ -10,9 +10,8 @@ import { YearInput } from "@/components/ui/year-input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { RegistrantGuestProfile } from "@/app/(event)/event/[id]/registrants/[registrantId]/registrant-profile"
-import { toast } from "sonner"
 import { CatchMechMatchSection, type CatchMechMatchSectionHandle } from "./catch-mech-match-section"
-import { updateCatchMechRequestNotes } from "../../matching-actions"
+import { CatchMechActivityLog, type CatchMechActivityEntry } from "./catch-mech-activity-log"
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -79,7 +78,7 @@ type Props = {
   lifeStages: { id: string; name: string }[]
   initialTab?: "details" | "small-group"
   requestId: string | null
-  requestNotes: string | null
+  activityEntries: CatchMechActivityEntry[]
 }
 
 function MemberReadOnly({ member, memberId: _memberId }: { member: MemberData; memberId: string }) {
@@ -162,20 +161,6 @@ export function CatchMechDetailClient(props: Props) {
   const matchSectionRef = React.useRef<CatchMechMatchSectionHandle>(null)
   const [activeTab, setActiveTab] = React.useState<string>(props.initialTab ?? "details")
   const [saving, setSaving] = React.useState(false)
-  const [notes, setNotes] = React.useState(props.requestNotes ?? "")
-  const [savingNotes, setSavingNotes] = React.useState(false)
-
-  async function handleSaveNotes() {
-    if (!props.requestId) return
-    setSavingNotes(true)
-    const res = await updateCatchMechRequestNotes(props.requestId, notes)
-    setSavingNotes(false)
-    if (res.success) {
-      toast.success("Notes saved")
-    } else {
-      toast.error(res.error)
-    }
-  }
 
   const handleSaveClick = () => {
     if (activeTab === "small-group" && props.status === "rejected" && props.registrant.guest) {
@@ -225,12 +210,13 @@ export function CatchMechDetailClient(props: Props) {
         </div>
       </div>
 
-      {/* Tabs + Notes */}
-      <div className="max-w-2xl space-y-6">
+      {/* Tabs */}
+      <div className="max-w-2xl">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
             <TabsTrigger value="details">Details</TabsTrigger>
             <TabsTrigger value="small-group">Small Group</TabsTrigger>
+            <TabsTrigger value="activity">Activity</TabsTrigger>
           </TabsList>
 
           <TabsContent value="details" className="mt-4 space-y-4">
@@ -310,27 +296,14 @@ export function CatchMechDetailClient(props: Props) {
               <p className="text-sm text-muted-foreground">No small group assigned.</p>
             )}
           </TabsContent>
-        </Tabs>
 
-        {props.requestId && (
-          <section className="space-y-3">
-            <h3 className="type-label text-muted-foreground">Notes</h3>
-            <Textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Add notes about this request…"
-              rows={4}
+          <TabsContent value="activity" className="mt-4">
+            <CatchMechActivityLog
+              entries={props.activityEntries}
+              requestId={props.requestId}
             />
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => { void handleSaveNotes() }}
-              disabled={savingNotes}
-            >
-              {savingNotes ? "Saving…" : "Save notes"}
-            </Button>
-          </section>
-        )}
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   )
