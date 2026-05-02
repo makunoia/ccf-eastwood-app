@@ -76,7 +76,7 @@ export function SectionCards({ stats }: { stats: DashboardStats }) {
         icon={<IconArrowRight className="size-4" />}
       />
       <StatCard
-        label="SG Leaders"
+        label="Leaders"
         value={stats.totalLeaders}
         delta={`${leaderPercentage}% of total members`}
         sub="Active small group leaders"

@@ -251,6 +251,8 @@ Weighted scoring engine for SmallGroup suggestions and Breakout auto-assignment.
 - **Tailwind CSS** for all styling
 - **shadcn/ui** for all component primitives (Button, Dialog, Table, Form, etc.)
 - Do not hand-roll components that shadcn/ui already provides
+- **Phone inputs:** Always use `PhonePHInput` (`components/ui/phone-ph-input.tsx`) for mobile/phone fields — never a plain `<input type="tel">`. Use `OptionalPhonePHInput` when the field is optional.
+- **Email inputs:** Always use `OptionalEmailInput` (`components/ui/optional-email-input.tsx`) for email fields when the field is optional. Never a plain `<input type="email">` unless the field is strictly required with no opt-out.
 - **Table link columns:** The primary identifier column in every table (name, date, title) must be a `<Link>` with this exact className: `"font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"`. Do not use `hover:underline`, a plain `<Button asChild>`, or any other link style in table identifier columns — this applies everywhere in the app including the Event miniapp (`app/(event)/`).
 
 ### Error Handling
