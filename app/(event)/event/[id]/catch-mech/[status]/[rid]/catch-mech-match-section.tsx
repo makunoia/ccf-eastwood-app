@@ -112,8 +112,7 @@ export const CatchMechMatchSection = React.forwardRef<CatchMechMatchSectionHandl
     setAssigningId(null)
     if (res.success) {
       toast.success("Assigned — awaiting leader confirmation")
-      // Redirect to pending page
-      router.push(`/event/${eventId}/catch-mech/pending/${registrantId}`)
+      router.push(`/event/${eventId}/catch-mech/pending/${registrantId}?tab=small-group`)
     } else {
       toast.error(res.error)
     }

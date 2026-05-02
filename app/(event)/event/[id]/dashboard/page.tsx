@@ -154,7 +154,8 @@ async function getEventDashboard(id: string, period: PeriodFilter, roleFilter: L
       : await db.smallGroupMemberRequest.findMany({
           where: {
             status: "Confirmed",
-            guestId: { not: null },
+            memberId: { not: null },
+            member: { guest: { isNot: null } },
             breakoutGroupId: { in: breakoutGroupIds },
             resolvedAt: {
               not: null,
@@ -167,20 +168,13 @@ async function getEventDashboard(id: string, period: PeriodFilter, roleFilter: L
             id: true,
             resolvedAt: true,
             smallGroup: { select: { name: true } },
-            guest: {
+            member: {
               select: {
                 id: true,
                 firstName: true,
                 lastName: true,
-                member: {
-                  select: {
-                    id: true,
-                    firstName: true,
-                    lastName: true,
-                    groupStatus: true,
-                    smallGroupId: true,
-                  },
-                },
+                groupStatus: true,
+                smallGroupId: true,
               },
             },
           },
@@ -249,15 +243,21 @@ async function getEventDashboard(id: string, period: PeriodFilter, roleFilter: L
   }
 
   const newLeaders = Array.from(participantMembers.values())
-    .filter((member) => member.groupStatus === "Leader" && member.updatedAt >= periodStart)
+    .filter((member) => {
+      const isLeadershipRole = member.groupStatus === "Leader" || member.groupStatus === "Timothy"
+      if (!isLeadershipRole) return false
+      if (member.updatedAt < periodStart) return false
+      if (roleFilter === "all") return true
+      return member.groupStatus === roleFilter
+    })
     .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
 
   const confirmedGuestsNowMembers = confirmedGuestRequests
-    .filter((req) => req.guest?.member && req.guest.member.smallGroupId)
+    .filter((req) => req.member?.smallGroupId)
     .map((req) => ({
       id: req.id,
-      name: `${req.guest!.firstName} ${req.guest!.lastName}`,
-      memberStatus: req.guest!.member!.groupStatus,
+      name: `${req.member!.firstName} ${req.member!.lastName}`,
+      memberStatus: req.member!.groupStatus,
       smallGroupName: req.smallGroup.name,
       resolvedAt: req.resolvedAt!.toISOString(),
     }))
@@ -348,6 +348,7 @@ async function getEventDashboard(id: string, period: PeriodFilter, roleFilter: L
     newLeaders: newLeaders.map((leader) => ({
       id: leader.id,
       name: leader.fullName,
+      groupStatus: leader.groupStatus,
       updatedAt: leader.updatedAt.toISOString(),
     })),
     confirmedGuestsNowMembers,

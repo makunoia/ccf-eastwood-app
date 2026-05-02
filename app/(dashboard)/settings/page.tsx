@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { IconAdjustmentsHorizontal, IconTags, IconUsers } from "@tabler/icons-react"
+import { IconAdjustmentsHorizontal, IconAlertTriangle, IconTags, IconUsers } from "@tabler/icons-react"
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
 const sections = [
@@ -20,6 +20,12 @@ const sections = [
     description: "Tune the scoring weights used to suggest small group and breakout group assignments",
     icon: IconAdjustmentsHorizontal,
     href: "/settings/matching",
+  },
+  {
+    title: "Duplicate Profiles",
+    description: "Find and resolve Guest and Member records sharing the same phone or email address",
+    icon: IconAlertTriangle,
+    href: "/settings/duplicate-profiles",
   },
 ]
 

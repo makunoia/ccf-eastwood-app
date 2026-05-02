@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { Prisma } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import { memberSchema, type MemberFormValues } from "@/lib/validations/member"
+import { checkDuplicateContactInfo } from "@/lib/duplicate-check"
 
 type ActionResult<T = void> =
   | { success: true; data: T }
@@ -21,6 +22,12 @@ export async function createMember(
   }
 
   try {
+    const dup = await checkDuplicateContactInfo({
+      phone: parsed.data.phone,
+      email: parsed.data.email,
+    })
+    if (dup.conflict) return { success: false, error: dup.message }
+
     const member = await db.member.create({
       data: {
         firstName: parsed.data.firstName,
@@ -64,6 +71,13 @@ export async function updateMember(
   }
 
   try {
+    const dup = await checkDuplicateContactInfo({
+      phone: parsed.data.phone,
+      email: parsed.data.email,
+      excludeMemberId: id,
+    })
+    if (dup.conflict) return { success: false, error: dup.message }
+
     await db.member.update({
       where: { id },
       data: {

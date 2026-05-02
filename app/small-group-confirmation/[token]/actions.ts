@@ -271,6 +271,7 @@ export async function submitMemberConfirmations(
       const eventIds = [...new Set(updatedBreakouts.map((b) => b.eventId))]
       for (const eventId of eventIds) {
         revalidatePath(`/event/${eventId}/breakouts`)
+        revalidatePath(`/event/${eventId}/dashboard`)
       }
     }
 
@@ -289,6 +290,7 @@ export async function submitMemberConfirmations(
       const eventIds = [...new Set(breakoutGroups.map((bg) => bg.eventId))]
       for (const eventId of eventIds) {
         revalidatePath(`/event/${eventId}/catch-mech`)
+        revalidatePath(`/event/${eventId}/dashboard`)
       }
     }
 

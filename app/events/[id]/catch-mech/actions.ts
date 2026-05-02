@@ -135,6 +135,7 @@ export async function submitCatchMechConfirmations(
 
   revalidatePath(`/small-groups/${smallGroup.id}`)
   revalidatePath(`/event/${session.eventId}/catch-mech`)
+  revalidatePath(`/event/${session.eventId}/dashboard`)
   return { success: true, requiresGroupName: false }
 }
 
@@ -182,6 +183,8 @@ export async function createSmallGroupForTimothy(
   // Pre-fetch all reads outside the transaction
   const { registrantMap, takenEmails } = await prefetchRegistrantData(decisions)
 
+  let newGroupId: string | null = null
+
   try {
     await db.$transaction(async (tx) => {
       // Create the small group
@@ -189,6 +192,7 @@ export async function createSmallGroupForTimothy(
         data: { name: groupName.trim(), leaderId: faciMember.id },
         select: { id: true },
       })
+      newGroupId = created.id
 
       await tx.smallGroupLog.create({
         data: {
@@ -216,6 +220,35 @@ export async function createSmallGroupForTimothy(
     revalidatePath("/small-groups")
     revalidatePath(`/event/${session.eventId}/catch-mech`)
     revalidatePath(`/event/${session.eventId}/breakouts/${session.breakoutGroupId}`)
+    revalidatePath(`/event/${session.eventId}/dashboard`)
+
+    // Link other breakout groups where this Timothy is a facilitator across all events
+    if (newGroupId) {
+      const otherBreakouts = await db.breakoutGroup.findMany({
+        where: {
+          linkedSmallGroupId: null,
+          id: { not: session.breakoutGroupId },
+          OR: [
+            { facilitator: { memberId: faciMember.id } },
+            { coFacilitator: { memberId: faciMember.id } },
+          ],
+        },
+        select: { id: true, eventId: true },
+      })
+      if (otherBreakouts.length > 0) {
+        await db.breakoutGroup.updateMany({
+          where: { id: { in: otherBreakouts.map((b) => b.id) } },
+          data: { linkedSmallGroupId: newGroupId },
+        })
+        const otherEventIds = [...new Set(otherBreakouts.map((b) => b.eventId))]
+        for (const eid of otherEventIds) {
+          revalidatePath(`/event/${eid}/breakouts`)
+          revalidatePath(`/event/${eid}/catch-mech`)
+          revalidatePath(`/event/${eid}/dashboard`)
+        }
+      }
+    }
+
     return { success: true, data: undefined }
   } catch (err) {
     console.error("[createSmallGroupForTimothy]", err)

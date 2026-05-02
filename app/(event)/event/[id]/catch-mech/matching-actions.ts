@@ -278,6 +278,23 @@ export async function findCatchMechSmallGroupMatches(
   }
 }
 
+// ─── updateCatchMechRequestNotes ─────────────────────────────────────────────
+
+export async function updateCatchMechRequestNotes(
+  requestId: string,
+  notes: string
+): Promise<ActionResult<void>> {
+  try {
+    await db.smallGroupMemberRequest.update({
+      where: { id: requestId },
+      data: { notes: notes.trim() || null },
+    })
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to save notes" }
+  }
+}
+
 // ─── assignCatchMechRegistrantToGroup ────────────────────────────────────────
 
 export async function assignCatchMechRegistrantToGroup(

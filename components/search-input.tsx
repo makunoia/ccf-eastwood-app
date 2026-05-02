@@ -19,36 +19,43 @@ export function SearchInput({
   className,
 }: SearchInputProps) {
   const [value, setValue] = React.useState(defaultValue)
-  const onChangeFn = React.useRef(onChange)
-  React.useLayoutEffect(() => {
-    onChangeFn.current = onChange
-  })
 
-  React.useEffect(() => {
-    const timer = setTimeout(() => {
-      onChangeFn.current(value)
-    }, 300)
-    return () => clearTimeout(timer)
-  }, [value])
+  function clear() {
+    setValue("")
+    onChange("")
+  }
 
   return (
-    <div className={cn("relative flex-1", className)}>
-      <IconSearch className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+    <form
+      className={cn("relative flex-1", className)}
+      onSubmit={(e) => { e.preventDefault(); onChange(value) }}
+    >
+      <IconSearch className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
       <Input
         value={value}
         onChange={(e) => setValue(e.target.value)}
         placeholder={placeholder}
-        className="pl-8 pr-8"
+        className={cn("pl-8", value ? "pr-16" : "pr-3")}
       />
       {value && (
-        <button
-          type="button"
-          onClick={() => setValue("")}
-          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-        >
-          <IconX className="size-4" />
-        </button>
+        <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center">
+          <button
+            type="button"
+            onClick={clear}
+            className="p-1 text-muted-foreground hover:text-foreground"
+            aria-label="Clear search"
+          >
+            <IconX className="size-3.5" />
+          </button>
+          <button
+            type="submit"
+            className="p-1 text-muted-foreground hover:text-foreground"
+            aria-label="Search"
+          >
+            <IconSearch className="size-3.5" />
+          </button>
+        </div>
       )}
-    </div>
+    </form>
   )
 }

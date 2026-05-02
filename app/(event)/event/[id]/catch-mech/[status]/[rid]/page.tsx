@@ -73,6 +73,8 @@ async function getDetailData(registrantId: string, eventId: string, prismaStatus
         ],
       },
       select: {
+        id: true,
+        notes: true,
         smallGroupId: true,
         smallGroup: {
           select: {
@@ -93,10 +95,14 @@ async function getDetailData(registrantId: string, eventId: string, prismaStatus
 
 export default async function CatchMechDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string; status: string; rid: string }>
+  searchParams: Promise<{ tab?: string }>
 }) {
   const { id: eventId, status: rawStatus, rid: registrantId } = await params
+  const { tab } = await searchParams
+  const initialTab = tab === "small-group" ? "small-group" : "details"
 
   if (!VALID_STATUSES.includes(rawStatus as Status)) notFound()
   const status = rawStatus as Status
@@ -140,6 +146,9 @@ export default async function CatchMechDetailPage({
       name={name}
       initialPrefs={initialPrefs}
       lifeStages={lifeStages}
+      initialTab={initialTab}
+      requestId={request?.id ?? null}
+      requestNotes={request?.notes ?? null}
     />
   )
 }

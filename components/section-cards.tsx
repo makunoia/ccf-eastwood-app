@@ -1,4 +1,4 @@
-import { IconUsers, IconUserPlus, IconUsersGroup, IconArrowRight } from "@tabler/icons-react"
+import { IconUsers, IconUserPlus, IconUsersGroup, IconArrowRight, IconUserStar } from "@tabler/icons-react"
 
 type DashboardStats = {
   totalMembers: number
@@ -9,6 +9,7 @@ type DashboardStats = {
   newGroupsThisMonth: number
   connectedThisMonth: number
   membersWithoutGroup: number
+  totalLeaders: number
 }
 
 type StatCardProps = {
@@ -40,8 +41,13 @@ function StatCard({ label, value, delta, sub, icon }: StatCardProps) {
 }
 
 export function SectionCards({ stats }: { stats: DashboardStats }) {
+  const leaderPercentage =
+    stats.totalMembers > 0
+      ? Math.round((stats.totalLeaders / stats.totalMembers) * 100)
+      : 0
+
   return (
-    <div className="grid grid-cols-1 gap-3 px-4 lg:px-6 @xl/main:grid-cols-2 @5xl/main:grid-cols-4">
+    <div className="grid grid-cols-1 gap-3 px-4 lg:px-6 @xl/main:grid-cols-2 @3xl/main:grid-cols-3 @5xl/main:grid-cols-5">
       <StatCard
         label="Members"
         value={stats.totalMembers}
@@ -68,6 +74,13 @@ export function SectionCards({ stats }: { stats: DashboardStats }) {
         delta="Guests → Members"
         sub="Promoted this month"
         icon={<IconArrowRight className="size-4" />}
+      />
+      <StatCard
+        label="SG Leaders"
+        value={stats.totalLeaders}
+        delta={`${leaderPercentage}% of total members`}
+        sub="Active small group leaders"
+        icon={<IconUserStar className="size-4" />}
       />
     </div>
   )

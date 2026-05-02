@@ -129,6 +129,21 @@ type MemberLookupResult = {
   recordType: "member" | "guest"
 }
 
+type AmbiguousLookupCandidate = {
+  id: string
+  firstName: string
+  lastName: string
+  email: string | null
+  phone: string | null
+  recordType: "member" | "guest"
+}
+
+type AmbiguousLookupResult = {
+  matchType: "ambiguous"
+  matchedBy: "mobile" | "email"
+  candidates: AmbiguousLookupCandidate[]
+}
+
 // Returns matched member/guest info if found, null otherwise.
 // Used by the public registration form for member/guest resolution.
 // Priority (Members first, then Guests): mobile number → email → last name + birthday
@@ -138,23 +153,37 @@ export async function lookupMemberForRegistration(params: {
   lastName?: string | null
   birthMonth?: number | null
   birthYear?: number | null
-}): Promise<MemberLookupResult | null> {
+}): Promise<MemberLookupResult | AmbiguousLookupResult | null> {
   const select = { id: true, firstName: true, lastName: true, email: true, phone: true }
 
   if (params.mobileNumber) {
-    const member = await db.member.findFirst({
+    const members = await db.member.findMany({
       where: { phone: params.mobileNumber.trim() },
       select,
     })
-    if (member) return { ...member, matchedBy: "mobile", recordType: "member" }
+    if (members.length > 1) {
+      return {
+        matchType: "ambiguous",
+        matchedBy: "mobile",
+        candidates: members.map((m) => ({ ...m, recordType: "member" as const })),
+      }
+    }
+    if (members.length === 1) return { ...members[0], matchedBy: "mobile", recordType: "member" }
   }
 
   if (params.email) {
-    const member = await db.member.findFirst({
+    const members = await db.member.findMany({
       where: { email: params.email.trim() },
       select,
     })
-    if (member) return { ...member, matchedBy: "email", recordType: "member" }
+    if (members.length > 1) {
+      return {
+        matchType: "ambiguous",
+        matchedBy: "email",
+        candidates: members.map((m) => ({ ...m, recordType: "member" as const })),
+      }
+    }
+    if (members.length === 1) return { ...members[0], matchedBy: "email", recordType: "member" }
   }
 
   if (params.lastName && params.birthMonth != null && params.birthYear != null) {
@@ -171,19 +200,33 @@ export async function lookupMemberForRegistration(params: {
 
   // No Member found — fall back to Guest records (only active guests, not yet promoted to members)
   if (params.mobileNumber) {
-    const guest = await db.guest.findFirst({
+    const guests = await db.guest.findMany({
       where: { phone: params.mobileNumber.trim(), memberId: null },
       select,
     })
-    if (guest) return { ...guest, matchedBy: "mobile", recordType: "guest" }
+    if (guests.length > 1) {
+      return {
+        matchType: "ambiguous",
+        matchedBy: "mobile",
+        candidates: guests.map((g) => ({ ...g, recordType: "guest" as const })),
+      }
+    }
+    if (guests.length === 1) return { ...guests[0], matchedBy: "mobile", recordType: "guest" }
   }
 
   if (params.email) {
-    const guest = await db.guest.findFirst({
+    const guests = await db.guest.findMany({
       where: { email: params.email.trim(), memberId: null },
       select,
     })
-    if (guest) return { ...guest, matchedBy: "email", recordType: "guest" }
+    if (guests.length > 1) {
+      return {
+        matchType: "ambiguous",
+        matchedBy: "email",
+        candidates: guests.map((g) => ({ ...g, recordType: "guest" as const })),
+      }
+    }
+    if (guests.length === 1) return { ...guests[0], matchedBy: "email", recordType: "guest" }
   }
 
   if (params.lastName && params.birthMonth != null && params.birthYear != null) {
@@ -208,6 +251,7 @@ export async function lookupMemberByMobile(
 ): Promise<{ id: string; firstName: string; lastName: string; email: string | null; phone: string | null } | null> {
   const result = await lookupMemberForRegistration({ mobileNumber })
   if (!result) return null
+  if ("matchType" in result) return null
   const { matchedBy: _, ...member } = result
   return member
 }
@@ -615,11 +659,22 @@ type CheckinRegistrantResult = {
   guestSmallGroupPrompt: GuestSmallGroupPrompt | null
 }
 
+type CheckinAmbiguousResult = {
+  matchType: "ambiguous"
+  candidates: Array<{
+    registrantId: string
+    name: string
+    nickname: string | null
+    alreadyCheckedIn: boolean
+    guestSmallGroupPrompt: GuestSmallGroupPrompt | null
+  }>
+}
+
 export async function lookupCheckinRegistrant(
   eventId: string,
   query: string,
   occurrenceId: string | null
-): Promise<ActionResult<CheckinRegistrantResult | null>> {
+): Promise<ActionResult<CheckinRegistrantResult | CheckinAmbiguousResult | null>> {
   const q = query.trim()
   if (!q) return { success: true, data: null }
 
@@ -658,7 +713,7 @@ export async function lookupCheckinRegistrant(
     const lq = q.toLowerCase()
     const qNorm = q.replace(/\s+/g, "")
 
-    const matched = registrants.find((r) => {
+    const allMatched = registrants.filter((r) => {
       const email = r.member?.email ?? r.guest?.email ?? r.email ?? ""
       const phone = r.member?.phone ?? r.guest?.phone ?? r.mobileNumber ?? ""
       return (
@@ -667,61 +722,66 @@ export async function lookupCheckinRegistrant(
       )
     })
 
-    if (!matched) return { success: true, data: null }
+    if (allMatched.length === 0) return { success: true, data: null }
 
-    const firstName = matched.member?.firstName ?? matched.guest?.firstName ?? matched.firstName ?? ""
-    const lastName = matched.member?.lastName ?? matched.guest?.lastName ?? matched.lastName ?? ""
-    const name = `${firstName} ${lastName}`.trim()
+    async function resolveRegistrant(matched: (typeof registrants)[number]) {
+      const firstName = matched.member?.firstName ?? matched.guest?.firstName ?? matched.firstName ?? ""
+      const lastName = matched.member?.lastName ?? matched.guest?.lastName ?? matched.lastName ?? ""
+      const name = `${firstName} ${lastName}`.trim()
 
-    let alreadyCheckedIn: boolean
-    if (occurrenceId !== null) {
-      const existing = await db.occurrenceAttendee.findUnique({
-        where: { occurrenceId_registrantId: { occurrenceId, registrantId: matched.id } },
-        select: { id: true },
-      })
-      alreadyCheckedIn = existing !== null
-    } else {
-      alreadyCheckedIn = matched.attendedAt !== null
-    }
-
-    // Determine if we should prompt about small group interest.
-    // Only for guests on occurrence-based events (recurring/multiday) with 2+ prior check-ins.
-    let guestSmallGroupPrompt: GuestSmallGroupPrompt | null = null
-    if (occurrenceId !== null && matched.guestId && matched.guest) {
-      const g = matched.guest
-      const profileIncomplete = !g.lifeStageId || !g.gender || !g.meetingPreference
-      const noClaimedGroup = !g.claimedSmallGroupId
-      if (profileIncomplete && noClaimedGroup) {
-        const priorCheckInCount = await db.occurrenceAttendee.count({
-          where: { registrantId: matched.id, occurrence: { eventId } },
+      let alreadyCheckedIn: boolean
+      if (occurrenceId !== null) {
+        const existing = await db.occurrenceAttendee.findUnique({
+          where: { occurrenceId_registrantId: { occurrenceId, registrantId: matched.id } },
+          select: { id: true },
         })
-        if (priorCheckInCount >= 1) {
-          guestSmallGroupPrompt = {
-            guestId: matched.guestId,
-            existingProfile: {
-              lifeStageId: g.lifeStageId,
-              gender: g.gender,
-              language: g.language,
-              meetingPreference: g.meetingPreference,
-              workCity: g.workCity,
-              scheduleDayOfWeek: g.scheduleDayOfWeek,
-              scheduleTimeStart: g.scheduleTimeStart,
-            },
+        alreadyCheckedIn = existing !== null
+      } else {
+        alreadyCheckedIn = matched.attendedAt !== null
+      }
+
+      let guestSmallGroupPrompt: GuestSmallGroupPrompt | null = null
+      if (occurrenceId !== null && matched.guestId && matched.guest) {
+        const g = matched.guest
+        const profileIncomplete = !g.lifeStageId || !g.gender || !g.meetingPreference
+        const noClaimedGroup = !g.claimedSmallGroupId
+        if (profileIncomplete && noClaimedGroup) {
+          const priorCheckInCount = await db.occurrenceAttendee.count({
+            where: { registrantId: matched.id, occurrence: { eventId } },
+          })
+          if (priorCheckInCount >= 1) {
+            guestSmallGroupPrompt = {
+              guestId: matched.guestId,
+              existingProfile: {
+                lifeStageId: g.lifeStageId,
+                gender: g.gender,
+                language: g.language,
+                meetingPreference: g.meetingPreference,
+                workCity: g.workCity,
+                scheduleDayOfWeek: g.scheduleDayOfWeek,
+                scheduleTimeStart: g.scheduleTimeStart,
+              },
+            }
           }
         }
       }
-    }
 
-    return {
-      success: true,
-      data: {
+      return {
         registrantId: matched.id,
         name,
         nickname: matched.nickname,
         alreadyCheckedIn,
         guestSmallGroupPrompt,
-      },
+      }
     }
+
+    if (allMatched.length > 1) {
+      const candidates = await Promise.all(allMatched.map(resolveRegistrant))
+      return { success: true, data: { matchType: "ambiguous", candidates } }
+    }
+
+    const data = await resolveRegistrant(allMatched[0])
+    return { success: true, data }
   } catch {
     return { success: false, error: "Lookup failed. Please try again." }
   }

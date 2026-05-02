@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { db } from "@/lib/db"
 import { guestSchema, type GuestFormValues } from "@/lib/validations/guest"
+import { checkDuplicateContactInfo } from "@/lib/duplicate-check"
 
 type ActionResult<T = void> =
   | { success: true; data: T }
@@ -21,6 +22,12 @@ export async function createGuest(
   }
 
   try {
+    const dup = await checkDuplicateContactInfo({
+      phone: parsed.data.phone,
+      email: parsed.data.email,
+    })
+    if (dup.conflict) return { success: false, error: dup.message }
+
     const guest = await db.guest.create({
       data: {
         firstName: parsed.data.firstName,
@@ -59,6 +66,13 @@ export async function updateGuest(
   }
 
   try {
+    const dup = await checkDuplicateContactInfo({
+      phone: parsed.data.phone,
+      email: parsed.data.email,
+      excludeGuestId: id,
+    })
+    if (dup.conflict) return { success: false, error: dup.message }
+
     await db.guest.update({
       where: { id },
       data: {
@@ -127,6 +141,13 @@ export async function promoteGuestToMember(
       return { success: false, error: "Guest has already been promoted to a member" }
     }
 
+    const dup = await checkDuplicateContactInfo({
+      phone: guest.phone,
+      email: guest.email,
+      excludeGuestId: guestId,
+    })
+    if (dup.conflict) return { success: false, error: dup.message }
+
     const group = await db.smallGroup.findUnique({
       where: { id: groupId },
       select: {
@@ -141,6 +162,11 @@ export async function promoteGuestToMember(
         error: `This group has reached its member limit of ${group.memberLimit}`,
       }
     }
+
+    const guestEventIds = await db.eventRegistrant.findMany({
+      where: { guestId },
+      select: { eventId: true },
+    })
 
     const result = await db.$transaction(async (tx) => {
       const newMember = await tx.member.create({
@@ -192,6 +218,9 @@ export async function promoteGuestToMember(
     revalidatePath("/guests")
     revalidatePath("/members")
     revalidatePath(`/small-groups/${groupId}`)
+    for (const { eventId } of guestEventIds) {
+      revalidatePath(`/event/${eventId}/dashboard`)
+    }
 
     return { success: true, data: { memberId: result } }
   } catch {
