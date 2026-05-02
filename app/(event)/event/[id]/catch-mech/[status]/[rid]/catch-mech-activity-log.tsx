@@ -6,6 +6,7 @@ import Link from "next/link"
 import { IconCheck, IconClock, IconMessageCircle, IconX } from "@tabler/icons-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { TimelineEntry } from "@/components/ui/timeline-entry"
 import { toast } from "sonner"
 import { addCatchMechComment } from "../../matching-actions"
 
@@ -111,53 +112,47 @@ export function CatchMechActivityLog({ entries, requestId }: Props) {
 
             if (entry.kind === "comment") {
               return (
-                <div key={`comment-${entry.id}`} className="flex gap-3">
-                  <div className="flex flex-col items-center shrink-0">
-                    <span className="inline-flex size-5 items-center justify-center rounded-full bg-blue-100 mt-0.5">
+                <TimelineEntry
+                  key={`comment-${entry.id}`}
+                  icon={
+                    <span className="inline-flex size-5 items-center justify-center rounded-full bg-blue-100">
                       <IconMessageCircle className="size-3 text-blue-700" />
                     </span>
-                    {!isLast && <div className="w-px flex-1 bg-border mt-1" />}
-                  </div>
-                  <div className={`flex-1 min-w-0 space-y-0.5 ${isLast ? "pb-0" : "pb-5"}`}>
-                    <p className="text-sm">{entry.text}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {entry.author.name ?? "Unknown"} · {formatDate(entry.createdAt)}
-                    </p>
-                  </div>
-                </div>
+                  }
+                  isLast={isLast}
+                >
+                  <p className="text-sm">{entry.text}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {entry.author.name ?? "Unknown"} · {formatDate(entry.createdAt)}
+                  </p>
+                </TimelineEntry>
               )
             }
 
             // SmallGroupLog entry
             return (
-              <div key={`log-${entry.id}`} className="flex gap-3">
-                <div className="flex flex-col items-center shrink-0">
-                  <span className="mt-0.5">{iconForAction(entry.action)}</span>
-                  {!isLast && <div className="w-px flex-1 bg-border mt-1" />}
-                </div>
-                <div className={`flex-1 min-w-0 space-y-0.5 ${isLast ? "pb-0" : "pb-5"}`}>
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="text-sm font-medium">
-                      {entry.description ?? ACTION_LABEL[entry.action]}
-                    </p>
-                    {entry.performedByUser?.name && (
-                      <span className="text-xs text-muted-foreground shrink-0">
-                        {entry.performedByUser.name}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    <Link
-                      href={`/small-groups/${entry.smallGroup.id}`}
-                      className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-                    >
-                      {entry.smallGroup.name}
-                    </Link>
-                    {" · "}
-                    {formatDate(entry.createdAt)}
-                  </p>
-                </div>
-              </div>
+              <TimelineEntry
+                key={`log-${entry.id}`}
+                icon={iconForAction(entry.action)}
+                isLast={isLast}
+              >
+                {entry.performedByUser?.name && (
+                  <p className="text-xs text-muted-foreground">Action by {entry.performedByUser.name}</p>
+                )}
+                <p className="text-sm font-medium">
+                  {entry.description ?? ACTION_LABEL[entry.action]}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  <Link
+                    href={`/small-groups/${entry.smallGroup.id}`}
+                    className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+                  >
+                    {entry.smallGroup.name}
+                  </Link>
+                  {" · "}
+                  {formatDate(entry.createdAt)}
+                </p>
+              </TimelineEntry>
             )
           })}
         </div>
