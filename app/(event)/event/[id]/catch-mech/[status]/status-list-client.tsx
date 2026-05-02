@@ -51,35 +51,43 @@ export function StatusListClient({ rows, status, eventId, breakoutGroups }: Prop
   const label = STATUS_LABEL[status]
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {/* Breadcrumb */}
-      <nav className="flex items-center gap-1 text-sm text-muted-foreground">
+      <nav className="flex items-center gap-1.5 text-sm text-muted-foreground">
         <Link
           href={`/event/${eventId}/catch-mech`}
           className="hover:text-foreground transition-colors"
         >
-          ← Catch Mech
+          Catch Mech
         </Link>
-        <span>/</span>
+        <span className="text-muted-foreground/50">/</span>
         <span className="text-foreground font-medium">{label}</span>
       </nav>
 
-      {/* Filter */}
-      <div className="flex items-center gap-3">
-        <span className="text-sm text-muted-foreground">Breakout Group</span>
-        <Select value={filterGroup} onValueChange={setFilterGroup}>
-          <SelectTrigger className="w-52">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All groups</SelectItem>
-            {breakoutGroups.map((bg) => (
-              <SelectItem key={bg.id} value={bg.name}>
-                {bg.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      {/* Header + filter */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="type-headline">{label}</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {filtered.length} {filtered.length === 1 ? "person" : "people"}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-sm text-muted-foreground">Group</span>
+          <Select value={filterGroup} onValueChange={setFilterGroup}>
+            <SelectTrigger className="w-48">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All groups</SelectItem>
+              {breakoutGroups.map((bg) => (
+                <SelectItem key={bg.id} value={bg.name}>
+                  {bg.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* Table */}

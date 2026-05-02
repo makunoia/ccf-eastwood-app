@@ -124,6 +124,55 @@ async function getGuestActivityLogs(guestId: string) {
   })
 }
 
+async function getGuestCatchMechComments(guestId: string) {
+  const comments = await db.catchMechComment.findMany({
+    where: { request: { guestId } },
+    select: {
+      id: true,
+      text: true,
+      createdAt: true,
+      author: { select: { name: true } },
+      request: { select: { breakoutGroupId: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  })
+
+  if (comments.length === 0) return []
+
+  const bgIds = [
+    ...new Set(
+      comments
+        .map((c) => c.request.breakoutGroupId)
+        .filter((id): id is string => id !== null)
+    ),
+  ]
+
+  const eventByBgId =
+    bgIds.length > 0
+      ? await db.catchMechSession
+          .findMany({
+            where: { breakoutGroupId: { in: bgIds } },
+            select: {
+              breakoutGroupId: true,
+              event: { select: { id: true, name: true } },
+            },
+          })
+          .then((sessions) => new Map(sessions.map((s) => [s.breakoutGroupId, s.event])))
+      : new Map<string, { id: string; name: string }>()
+
+  return comments.map((c) => ({
+    kind: "catchMechComment" as const,
+    id: c.id,
+    text: c.text,
+    createdAt: c.createdAt,
+    author: c.author,
+    event:
+      (c.request.breakoutGroupId
+        ? eventByBgId.get(c.request.breakoutGroupId)
+        : null) ?? null,
+  }))
+}
+
 async function getLifeStages() {
   return db.lifeStage.findMany({
     orderBy: { order: "asc" },
@@ -151,11 +200,12 @@ export default async function GuestDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const [guest, lifeStages, registrations, activityLogs] = await Promise.all([
+  const [guest, lifeStages, registrations, activityLogs, catchMechComments] = await Promise.all([
     getGuest(id),
     getLifeStages(),
     getGuestEventRegistrations(id),
     getGuestActivityLogs(id),
+    getGuestCatchMechComments(id),
   ])
 
   if (!guest) notFound()
@@ -205,6 +255,8 @@ export default async function GuestDetailPage({
           },
         ]
       : []),
+    // Catch mech comment entries
+    ...catchMechComments,
   ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
 
   return (

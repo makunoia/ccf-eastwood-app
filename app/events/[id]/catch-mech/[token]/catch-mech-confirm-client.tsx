@@ -327,26 +327,26 @@ export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy
   return (
     <div className="space-y-5">
       {/* Instructions banner */}
-      <div className="rounded-xl border-2 border-primary/25 bg-primary/5 p-4 space-y-3">
-        <p className="text-sm font-bold leading-none">Mark each person below</p>
+      <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-3">
+        <p className="text-sm font-semibold">Mark each person below</p>
         <div className="space-y-2.5">
           <div className="flex items-center gap-2.5">
             <span className="shrink-0 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold bg-green-600 text-white">
               Confirm
             </span>
-            <p className="text-xs text-foreground/75">They&apos;re joining your small group</p>
+            <p className="text-xs text-foreground/75">Joining your small group</p>
           </div>
           <div className="flex items-center gap-2.5">
             <span className="shrink-0 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold bg-amber-500 text-white">
               Pending
             </span>
-            <p className="text-xs text-foreground/75">Not sure yet — keep their request open</p>
+            <p className="text-xs text-foreground/75">Not sure yet, keep the request open</p>
           </div>
           <div className="flex items-center gap-2.5">
             <span className="shrink-0 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold bg-red-600 text-white">
               Decline
             </span>
-            <p className="text-xs text-foreground/75">Not joining — you&apos;ll be asked for a reason</p>
+            <p className="text-xs text-foreground/75">Not joining, you&apos;ll be asked for a reason</p>
           </div>
         </div>
       </div>
@@ -361,7 +361,7 @@ export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy
         {pendingRows.map((r) => (
           <div key={r.registrantId} className="flex items-center gap-3 p-4">
             <div className="flex-1 min-w-0">
-              <p className="font-medium text-sm">{r.name}</p>
+              <p className="font-medium text-sm truncate">{r.name}</p>
               <p className="text-xs text-muted-foreground">
                 {r.type === "guest" ? "First-time attendee" : "Returning member"}
               </p>
