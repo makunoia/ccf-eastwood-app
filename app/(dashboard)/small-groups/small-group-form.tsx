@@ -11,13 +11,11 @@ import {
   IconX,
   IconClock,
   IconChevronDown,
-  IconLink,
-  IconCopy,
-  IconRefresh,
 } from "@tabler/icons-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
+import { TimelineEntry } from "@/components/ui/timeline-entry"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -58,7 +56,6 @@ import {
   assignGuestToGroupTemporarily,
   assignMemberTransferTemporarily,
   cancelTempAssignment,
-  generateGroupConfirmationToken,
 } from "./actions"
 import { searchGuests, promoteGuestToMember } from "@/app/(dashboard)/guests/actions"
 import { MobileFormActions } from "@/components/mobile-form-actions"
@@ -119,7 +116,6 @@ type Props = {
   groupMembers?: GroupMember[]
   pendingRequests?: PendingRequest[]
   logs?: GroupLogEntry[]
-  leaderConfirmationToken?: string | null
 }
 
 const DAYS_OF_WEEK = [
@@ -173,6 +169,15 @@ function formatRelativeTime(date: Date): string {
   return new Date(date).toLocaleDateString()
 }
 
+function formatDate(date: Date) {
+  return new Date(date).toLocaleDateString("en-PH", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  })
+}
+
 export function SmallGroupForm({
   members,
   smallGroups,
@@ -181,7 +186,6 @@ export function SmallGroupForm({
   groupMembers,
   pendingRequests = [],
   logs = [],
-  leaderConfirmationToken,
 }: Props) {
   const router = useRouter()
   const isEdit = !!group
@@ -217,15 +221,7 @@ export function SmallGroupForm({
 
   const [cancellingRequestId, setCancellingRequestId] = React.useState<string | null>(null)
 
-  const [token, setToken] = React.useState<string | null | undefined>(leaderConfirmationToken)
-  const [generatingToken, setGeneratingToken] = React.useState(false)
   const [activeTab, setActiveTab] = React.useState("details")
-  const confirmationUrl =
-    token && typeof window !== "undefined"
-      ? `${window.location.origin}/small-group-confirmation/${token}`
-      : token
-        ? `/small-group-confirmation/${token}`
-        : null
 
   function set(field: keyof SmallGroupFormValues, value: string | string[]) {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -378,26 +374,6 @@ export function SmallGroupForm({
     if (result.success) {
       toast.success("Assignment cancelled")
       router.refresh()
-    } else {
-      toast.error(result.error)
-    }
-  }
-
-  async function handleCopyLeaderLink() {
-    if (!confirmationUrl) return
-    await navigator.clipboard.writeText(confirmationUrl)
-    toast.success("Leader link copied to clipboard")
-  }
-
-  async function handleGenerateToken() {
-    if (!group) return
-    setGeneratingToken(true)
-    const result = await generateGroupConfirmationToken(group.id)
-    setGeneratingToken(false)
-    if (result.success) {
-      const newToken = result.data.url.split("/").pop()!
-      setToken(newToken)
-      toast.success("Leader link generated")
     } else {
       toast.error(result.error)
     }
@@ -738,35 +714,34 @@ export function SmallGroupForm({
 
           <TabsContent value="logs" className="mt-4">
             {logs.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No activity yet.</p>
+              <p className="py-8 text-center text-sm text-muted-foreground">No activity yet.</p>
             ) : (
-              <div className="rounded-md border divide-y">
-                {logs.map((log) => (
-                  <div key={log.id} className="flex items-start gap-3 px-4 py-3">
-                    <div className="mt-0.5 shrink-0">
-                      {POSITIVE_LOG_ACTIONS.has(log.action) ? (
-                        <span className="inline-flex size-5 items-center justify-center rounded-full bg-[oklch(0.95_0.04_218)]">
-                          <IconCheck className="size-3 text-[oklch(0.65_0.17_218)]" />
-                        </span>
-                      ) : NEGATIVE_LOG_ACTIONS.has(log.action) ? (
-                        <span className="inline-flex size-5 items-center justify-center rounded-full bg-destructive/10">
-                          <IconX className="size-3 text-destructive" />
-                        </span>
-                      ) : (
-                        <span className="inline-flex size-5 items-center justify-center rounded-full bg-muted">
-                          <IconClock className="size-3 text-muted-foreground" />
-                        </span>
+              <div>
+                {logs.map((log, i) => {
+                  const isLast = i === logs.length - 1
+                  const icon = POSITIVE_LOG_ACTIONS.has(log.action) ? (
+                    <span className="inline-flex size-5 items-center justify-center rounded-full bg-emerald-50">
+                      <IconCheck className="size-3 text-emerald-700" />
+                    </span>
+                  ) : NEGATIVE_LOG_ACTIONS.has(log.action) ? (
+                    <span className="inline-flex size-5 items-center justify-center rounded-full bg-destructive/10">
+                      <IconX className="size-3 text-destructive" />
+                    </span>
+                  ) : (
+                    <span className="inline-flex size-5 items-center justify-center rounded-full bg-muted">
+                      <IconClock className="size-3 text-muted-foreground" />
+                    </span>
+                  )
+                  return (
+                    <TimelineEntry key={log.id} icon={icon} isLast={isLast}>
+                      {log.performedByName && (
+                        <p className="text-xs text-muted-foreground">Action by {log.performedByName}</p>
                       )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm">{log.description ?? LOG_ACTION_LABELS[log.action] ?? log.action}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {log.performedByName ? `${log.performedByName} · ` : ""}
-                        {formatRelativeTime(log.createdAt)}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+                      <p className="text-sm font-medium">{log.description ?? LOG_ACTION_LABELS[log.action] ?? log.action}</p>
+                      <p className="text-xs text-muted-foreground">{formatDate(log.createdAt)}</p>
+                    </TimelineEntry>
+                  )
+                })}
               </div>
             )}
           </TabsContent>
@@ -893,53 +868,9 @@ export function SmallGroupForm({
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">
-                Temporarily assigned people appear here until the group leader confirms or declines via the leader link.
+                Temporarily assigned people appear here until the group leader confirms or declines at{" "}
+                <code className="text-xs">/small-group-confirmation</code>.
               </p>
-              {pendingRequests.length > 0 && (
-              <div className="rounded-md border bg-muted/40 p-3 space-y-2">
-                <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                  <IconLink className="size-3.5" />
-                  Leader confirmation link
-                </p>
-                {confirmationUrl ? (
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 truncate rounded bg-muted px-3 py-2 text-xs">
-                      {confirmationUrl}
-                    </code>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={handleCopyLeaderLink}
-                    >
-                      <IconCopy className="size-4" />
-                      Copy
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={handleGenerateToken}
-                      disabled={generatingToken}
-                      title="Regenerate link"
-                    >
-                      <IconRefresh className="size-4" />
-                    </Button>
-                  </div>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={handleGenerateToken}
-                    disabled={generatingToken}
-                  >
-                    <IconLink className="size-4" />
-                    {generatingToken ? "Generating…" : "Generate link"}
-                  </Button>
-                )}
-              </div>
-              )}
               {pendingRequests.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No pending assignments.</p>
               ) : (

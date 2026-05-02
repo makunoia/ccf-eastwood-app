@@ -167,8 +167,7 @@
   input[type="date"]::-webkit-datetime-edit-month-field,
   input[type="date"]::-webkit-datetime-edit-day-field,
   input[type="date"]::-webkit-datetime-edit-year-field {
-    padding-top: 0;
-    padding-bottom: 0;
+    padding: 0;
   }
   input[type="date"]::-webkit-calendar-picker-indicator {
     opacity: 0.5;

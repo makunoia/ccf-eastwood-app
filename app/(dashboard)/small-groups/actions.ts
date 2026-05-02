@@ -1,7 +1,6 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { randomUUID } from "crypto"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import {
@@ -285,22 +284,6 @@ export async function updateMemberGroupStatus(
 }
 
 // ─── Temporary Assignment Actions ────────────────────────────────────────────
-
-export async function generateGroupConfirmationToken(
-  groupId: string
-): Promise<ActionResult<{ url: string }>> {
-  try {
-    const token = randomUUID()
-    await db.smallGroup.update({
-      where: { id: groupId },
-      data: { leaderConfirmationToken: token },
-    })
-    revalidatePath(`/small-groups/${groupId}`)
-    return { success: true, data: { url: `/small-group-confirmation/${token}` } }
-  } catch {
-    return { success: false, error: "Failed to generate confirmation link" }
-  }
-}
 
 export async function assignGuestToGroupTemporarily(
   groupId: string,

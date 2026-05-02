@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation"
 import Link from "next/link"
+import { ChevronRight } from "lucide-react"
 import { db } from "@/lib/db"
 import {
   Table,
@@ -204,25 +205,25 @@ export default async function CatchMechAdminPage({
             { label: "Rejected", value: stats.totalRejected, color: "text-red-600", pct: stats.totalMembers > 0 ? Math.round((stats.totalRejected / stats.totalMembers) * 100) : 0, slug: "rejected" },
             { label: "Pending", value: stats.totalPending, color: "text-amber-600", pct: stats.totalMembers > 0 ? Math.round((stats.totalPending / stats.totalMembers) * 100) : 0, slug: "pending" },
           ].map(({ label, value, color, pct, slug }) => {
-            const inner = (
-              <div className="flex flex-col gap-2">
-                <p className="text-[11px] font-semibold tracking-[0.15em] uppercase text-muted-foreground">
-                  {label}
-                </p>
-                <p className={`text-3xl font-semibold tabular-nums tracking-tight ${color || "text-foreground"}`}>
-                  {value}
-                </p>
-              </div>
-            )
             return slug ? (
               <Link
                 key={label}
                 href={`/event/${id}/catch-mech/${slug}`}
-                className="rounded-lg border px-5 py-4 flex flex-col justify-between hover:bg-muted/40 transition-colors"
+                className="group rounded-lg border px-5 py-4 flex flex-col justify-between hover:bg-muted/60 hover:border-foreground/20 hover:shadow-sm transition-all"
               >
-                {inner}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex flex-col gap-2">
+                    <p className="text-[11px] font-semibold tracking-[0.15em] uppercase text-muted-foreground">
+                      {label}
+                    </p>
+                    <p className={`text-3xl font-semibold tabular-nums tracking-tight ${color || "text-foreground"}`}>
+                      {value}
+                    </p>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground/30 group-hover:text-muted-foreground/70 transition-colors shrink-0 mt-0.5" />
+                </div>
                 {pct !== null && (
-                  <p className="text-xs text-muted-foreground">{pct}% of total</p>
+                  <p className="text-xs text-muted-foreground mt-2">{pct}% of total</p>
                 )}
               </Link>
             ) : (
@@ -230,7 +231,14 @@ export default async function CatchMechAdminPage({
                 key={label}
                 className="rounded-lg border px-5 py-4 flex flex-col justify-between"
               >
-                {inner}
+                <div className="flex flex-col gap-2">
+                  <p className="text-[11px] font-semibold tracking-[0.15em] uppercase text-muted-foreground">
+                    {label}
+                  </p>
+                  <p className="text-3xl font-semibold tabular-nums tracking-tight text-foreground">
+                    {value}
+                  </p>
+                </div>
               </div>
             )
           })}

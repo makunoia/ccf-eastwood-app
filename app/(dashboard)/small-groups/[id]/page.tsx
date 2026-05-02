@@ -29,7 +29,6 @@ export type GroupLogEntry = {
 
 async function getSmallGroup(id: string): Promise<(SmallGroupRow & {
   groupMembers: GroupMember[]
-  leaderConfirmationToken: string | null
   pendingRequests: PendingRequest[]
   logs: GroupLogEntry[]
 }) | null> {
@@ -101,6 +100,7 @@ async function getSmallGroup(id: string): Promise<(SmallGroupRow & {
     parentGroupId: g.parentGroupId,
     parentGroupName: g.parentGroup?.name ?? null,
     memberCount: g.members.length,
+    tempMemberCount: pendingRequests.length,
     lifeStage: g.lifeStage?.name ?? null,
     lifeStageId: g.lifeStageId,
     language: g.language,
@@ -112,7 +112,6 @@ async function getSmallGroup(id: string): Promise<(SmallGroupRow & {
     memberLimit: g.memberLimit,
     scheduleDayOfWeek: g.scheduleDayOfWeek,
     scheduleTimeStart: g.scheduleTimeStart,
-    leaderConfirmationToken: g.leaderConfirmationToken,
     groupMembers: g.members,
     pendingRequests,
     logs,
@@ -159,7 +158,6 @@ export default async function SmallGroupDetailPage({
       groupMembers={group!.groupMembers}
       pendingRequests={group!.pendingRequests}
       logs={group!.logs}
-      leaderConfirmationToken={group!.leaderConfirmationToken}
     />
   )
 }
