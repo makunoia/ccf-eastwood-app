@@ -33,6 +33,7 @@ export type SmallGroupRow = {
   parentGroupId: string | null
   parentGroupName: string | null
   memberCount: number
+  tempMemberCount: number
   lifeStage: string | null
   lifeStageId: string | null
   language: string[]
@@ -161,10 +162,12 @@ export function buildColumns(): ColumnDef<SmallGroupRow>[] {
         ),
     },
     {
-      accessorKey: "language",
-      header: "Language",
+      accessorKey: "tempMemberCount",
+      header: "Temp Members",
       cell: ({ row }) =>
-        row.original.language ?? (
+        row.original.tempMemberCount > 0 ? (
+          row.original.tempMemberCount
+        ) : (
           <span className="text-muted-foreground">—</span>
         ),
     },

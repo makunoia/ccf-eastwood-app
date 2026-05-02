@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { IconPlus, IconUpload } from "@tabler/icons-react"
+import { IconExternalLink, IconPlus, IconUpload } from "@tabler/icons-react"
 import { Button } from "@/components/ui/button"
 import { ImportWizard } from "@/components/import/import-wizard"
 import { checkSmallGroupDuplicates, importSmallGroups } from "./import-actions"
@@ -12,6 +12,13 @@ export function SmallGroupsToolbar() {
 
   return (
     <div className="flex items-center gap-2">
+      <Button variant="outline" asChild>
+        <Link href="/small-group-confirmation" target="_blank">
+          <IconExternalLink className="size-4" />
+          <span className="hidden sm:inline">Confirmation Form</span>
+        </Link>
+      </Button>
+
       <Button variant="outline" onClick={() => setImportOpen(true)}>
         <IconUpload className="size-4" />
         <span className="hidden sm:inline">Import</span>

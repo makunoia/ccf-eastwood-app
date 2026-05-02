@@ -1,4 +1,4 @@
-import { GenderFocus, MeetingFormat, Prisma } from "@/app/generated/prisma/client"
+import { GenderFocus, MeetingFormat, MemberRequestStatus, Prisma } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import { type SmallGroupRow } from "./columns"
 import { SmallGroupsTable } from "./small-groups-table"
@@ -13,7 +13,12 @@ async function getSmallGroups(where: Prisma.SmallGroupWhereInput): Promise<Small
       leader: { select: { id: true, firstName: true, lastName: true } },
       parentGroup: { select: { id: true, name: true } },
       lifeStage: { select: { id: true, name: true } },
-      _count: { select: { members: true } },
+      _count: {
+        select: {
+          members: true,
+          memberRequests: { where: { status: MemberRequestStatus.Pending } },
+        },
+      },
     },
   })
 
@@ -25,6 +30,7 @@ async function getSmallGroups(where: Prisma.SmallGroupWhereInput): Promise<Small
     parentGroupId: g.parentGroupId,
     parentGroupName: g.parentGroup?.name ?? null,
     memberCount: g._count.members,
+    tempMemberCount: g._count.memberRequests,
     lifeStage: g.lifeStage?.name ?? null,
     lifeStageId: g.lifeStageId,
     language: g.language,
