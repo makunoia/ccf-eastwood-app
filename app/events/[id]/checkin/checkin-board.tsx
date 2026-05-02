@@ -48,6 +48,7 @@ type GuestSmallGroupPrompt = {
 type Step =
   | "lookup"
   | "confirm"
+  | "disambiguate"
   | "already-in"
   | "success"
   | "not-found-prompt"
@@ -55,6 +56,16 @@ type Step =
   | "sg-prompt"
   | "sg-profile"
   | "sg-leader-search"
+
+type DisambiguateCandidate = {
+  registrantId: string
+  name: string
+  nickname: string | null
+  alreadyCheckedIn: boolean
+  guestSmallGroupPrompt: GuestSmallGroupPrompt | null
+}
+
+type CheckinRegistrantResult = DisambiguateCandidate
 
 type MatchedState = {
   registrantId: string
@@ -92,6 +103,7 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurri
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [matched, setMatched] = React.useState<MatchedState | null>(null)
+  const [disambiguateCandidates, setDisambiguateCandidates] = React.useState<DisambiguateCandidate[]>([])
   const [walkInForm, setWalkInForm] = React.useState({
     firstName: "",
     lastName: "",
@@ -108,6 +120,7 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurri
     setQuery("")
     setError(null)
     setMatched(null)
+    setDisambiguateCandidates([])
     setWalkInForm({ firstName: "", lastName: "", nickname: "", email: "", mobileNumber: "" })
     setLoading(false)
     setTimeout(() => inputRef.current?.focus(), 50)
@@ -144,14 +157,21 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurri
       return
     }
 
+    if ("matchType" in result.data && result.data.matchType === "ambiguous") {
+      setDisambiguateCandidates(result.data.candidates)
+      setStep("disambiguate")
+      return
+    }
+
+    const checkinResult = result.data as CheckinRegistrantResult
     setMatched({
-      registrantId: result.data.registrantId,
-      name: result.data.name,
-      nickname: result.data.nickname,
-      guestSmallGroupPrompt: result.data.guestSmallGroupPrompt,
+      registrantId: checkinResult.registrantId,
+      name: checkinResult.name,
+      nickname: checkinResult.nickname,
+      guestSmallGroupPrompt: checkinResult.guestSmallGroupPrompt,
     })
 
-    if (result.data.alreadyCheckedIn) {
+    if (checkinResult.alreadyCheckedIn) {
       setStep("already-in")
       scheduleReset()
     } else {
@@ -278,6 +298,54 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurri
               )}
             </Button>
           </form>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Disambiguate ─────────────────────────────────────────────────────────
+  if (step === "disambiguate") {
+    return (
+      <div className="flex min-h-[70svh] flex-col items-center justify-center px-6 py-12">
+        <div className="w-full max-w-sm space-y-6">
+          <div className="space-y-1 text-center">
+            <h2 className="text-2xl font-semibold tracking-tight">Multiple profiles found</h2>
+            <p className="text-sm text-muted-foreground">
+              We found multiple registrations matching{" "}
+              <span className="font-medium">{query}</span>. Select the one that&apos;s you.
+            </p>
+          </div>
+          <div className="flex flex-col gap-3">
+            {disambiguateCandidates.map((c) => (
+              <button
+                key={c.registrantId}
+                type="button"
+                onClick={() => {
+                  setMatched({
+                    registrantId: c.registrantId,
+                    name: c.name,
+                    nickname: c.nickname,
+                    guestSmallGroupPrompt: c.guestSmallGroupPrompt,
+                  })
+                  if (c.alreadyCheckedIn) {
+                    setStep("already-in")
+                    scheduleReset()
+                  } else {
+                    setStep("confirm")
+                  }
+                }}
+                className="w-full rounded-xl border bg-background px-6 py-4 text-left transition-colors hover:bg-muted/50"
+              >
+                <p className="text-lg font-semibold">{c.name}</p>
+                {c.nickname && (
+                  <p className="mt-0.5 text-sm text-muted-foreground">&ldquo;{c.nickname}&rdquo;</p>
+                )}
+              </button>
+            ))}
+            <Button variant="ghost" className="h-11 w-full" onClick={reset}>
+              That&apos;s not me
+            </Button>
+          </div>
         </div>
       </div>
     )

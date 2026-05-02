@@ -54,7 +54,7 @@ async function getCatchMechData(eventId: string) {
                 select: {
                   memberId: true,
                   guestId: true,
-                  member: { select: { firstName: true, lastName: true } },
+                  member: { select: { firstName: true, lastName: true, smallGroupId: true } },
                   guest: { select: { firstName: true, lastName: true } },
                 },
               },
@@ -113,6 +113,8 @@ async function getCatchMechData(eventId: string) {
     for (const m of bg.members) {
       const r = m.registrant
       if (!r.memberId && !r.guestId) continue
+      // Members already in a small group are excluded from catch mech tracking
+      if (r.memberId && r.member?.smallGroupId) continue
 
       // Resolve display name
       let name = "Unknown"

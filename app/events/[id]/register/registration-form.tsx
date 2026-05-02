@@ -29,7 +29,7 @@ import {
 } from "@/app/(dashboard)/events/actions"
 import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
 
-type Step = "form" | "confirm" | "done"
+type Step = "form" | "confirm" | "disambiguate" | "done"
 
 type LifeStage = { id: string; name: string }
 
@@ -57,6 +57,15 @@ type MatchedMember = {
   email: string | null
   phone: string | null
   matchedBy: "mobile" | "email" | "nameBirthday"
+  recordType: "member" | "guest"
+}
+
+type AmbiguousCandidate = {
+  id: string
+  firstName: string
+  lastName: string
+  email: string | null
+  phone: string | null
   recordType: "member" | "guest"
 }
 
@@ -100,6 +109,7 @@ export function RegistrationForm({ eventId, isRecurring = false, lifeStages = []
   const [noEmail, setNoEmail] = React.useState(false)
   const [submitting, setSubmitting] = React.useState(false)
   const [matchedMember, setMatchedMember] = React.useState<MatchedMember | null>(null)
+  const [candidates, setCandidates] = React.useState<{ matchedBy: "mobile" | "email"; items: AmbiguousCandidate[] } | null>(null)
 
   function set(field: keyof FormValues, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -132,7 +142,12 @@ export function RegistrationForm({ eventId, isRecurring = false, lifeStages = []
       })
       setSubmitting(false)
       if (match) {
-        setMatchedMember(match)
+        if ("matchType" in match && match.matchType === "ambiguous") {
+          setCandidates({ matchedBy: match.matchedBy, items: match.candidates })
+          setStep("disambiguate")
+          return
+        }
+        setMatchedMember(match as MatchedMember)
         setStep("confirm")
         return
       }
@@ -187,6 +202,52 @@ export function RegistrationForm({ eventId, isRecurring = false, lifeStages = []
               We&apos;ll see you at the event.
             </p>
           </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (step === "disambiguate" && candidates) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Multiple profiles found</CardTitle>
+          <CardDescription>
+            {candidates.matchedBy === "mobile"
+              ? "We found multiple profiles with this mobile number."
+              : "We found multiple profiles with this email address."}
+            {" "}Select the one that&apos;s you, or choose &quot;That&apos;s not me&quot;.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {candidates.items.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => {
+                setMatchedMember({ ...c, matchedBy: candidates.matchedBy })
+                setStep("confirm")
+              }}
+              className="w-full rounded-lg border p-4 text-left text-sm transition-colors hover:bg-muted/50"
+            >
+              <p className="font-medium">
+                {c.firstName} {c.lastName}
+                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  ({c.recordType})
+                </span>
+              </p>
+              {c.email && <p className="text-muted-foreground">{c.email}</p>}
+              {c.phone && <p className="text-muted-foreground">{c.phone}</p>}
+            </button>
+          ))}
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => register(null)}
+            disabled={submitting}
+          >
+            {submitting ? "Registering…" : "That's not me"}
+          </Button>
         </CardContent>
       </Card>
     )

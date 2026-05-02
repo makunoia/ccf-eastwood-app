@@ -10,7 +10,9 @@ import { YearInput } from "@/components/ui/year-input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { RegistrantGuestProfile } from "@/app/(event)/event/[id]/registrants/[registrantId]/registrant-profile"
+import { toast } from "sonner"
 import { CatchMechMatchSection, type CatchMechMatchSectionHandle } from "./catch-mech-match-section"
+import { updateCatchMechRequestNotes } from "../../matching-actions"
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -61,7 +63,7 @@ type RegistrantData = {
 
 type Props = {
   registrant: RegistrantData
-  request: { smallGroupId: string; smallGroup: { id: string; name: string; leader: { firstName: string; lastName: string } } } | null
+  request: { id: string; notes: string | null; smallGroupId: string; smallGroup: { id: string; name: string; leader: { firstName: string; lastName: string } } } | null
   status: "confirmed" | "rejected" | "pending"
   eventId: string
   registrantId: string
@@ -75,6 +77,9 @@ type Props = {
     workIndustry: string
   }
   lifeStages: { id: string; name: string }[]
+  initialTab?: "details" | "small-group"
+  requestId: string | null
+  requestNotes: string | null
 }
 
 function MemberReadOnly({ member, memberId: _memberId }: { member: MemberData; memberId: string }) {
@@ -155,8 +160,22 @@ const STATUS_LABEL: Record<"confirmed" | "rejected" | "pending", string> = {
 export function CatchMechDetailClient(props: Props) {
   const formRef = React.useRef<HTMLFormElement>(null)
   const matchSectionRef = React.useRef<CatchMechMatchSectionHandle>(null)
-  const [activeTab, setActiveTab] = React.useState("details")
+  const [activeTab, setActiveTab] = React.useState<string>(props.initialTab ?? "details")
   const [saving, setSaving] = React.useState(false)
+  const [notes, setNotes] = React.useState(props.requestNotes ?? "")
+  const [savingNotes, setSavingNotes] = React.useState(false)
+
+  async function handleSaveNotes() {
+    if (!props.requestId) return
+    setSavingNotes(true)
+    const res = await updateCatchMechRequestNotes(props.requestId, notes)
+    setSavingNotes(false)
+    if (res.success) {
+      toast.success("Notes saved")
+    } else {
+      toast.error(res.error)
+    }
+  }
 
   const handleSaveClick = () => {
     if (activeTab === "small-group" && props.status === "rejected" && props.registrant.guest) {
@@ -206,9 +225,9 @@ export function CatchMechDetailClient(props: Props) {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="max-w-2xl">
-        <Tabs defaultValue="details" onValueChange={setActiveTab}>
+      {/* Tabs + Notes */}
+      <div className="max-w-2xl space-y-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
             <TabsTrigger value="details">Details</TabsTrigger>
             <TabsTrigger value="small-group">Small Group</TabsTrigger>
@@ -292,6 +311,26 @@ export function CatchMechDetailClient(props: Props) {
             )}
           </TabsContent>
         </Tabs>
+
+        {props.requestId && (
+          <section className="space-y-3">
+            <h3 className="type-label text-muted-foreground">Notes</h3>
+            <Textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Add notes about this request…"
+              rows={4}
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => { void handleSaveNotes() }}
+              disabled={savingNotes}
+            >
+              {savingNotes ? "Saving…" : "Save notes"}
+            </Button>
+          </section>
+        )}
       </div>
     </div>
   )

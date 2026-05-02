@@ -87,7 +87,7 @@ export async function tryCreateSmallGroupRequestFromBreakout(
         }),
       ])
     } else if (registrant.memberId && registrant.member) {
-      if (registrant.member.smallGroupId === smallGroupId) return // already in this group
+      if (registrant.member.smallGroupId) return // already in a small group — not tracked by catch mech
       const existing = await db.smallGroupMemberRequest.findFirst({
         where: { smallGroupId, memberId: registrant.memberId, status: "Pending" },
       })

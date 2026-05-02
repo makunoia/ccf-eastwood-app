@@ -1,13 +1,14 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { usePathname, useSearchParams } from "next/navigation"
 import {
   IconCalendar,
   IconCalendarRepeat,
+  IconCircleCheck,
+  IconCircleOff,
+  IconClock,
   IconCopy,
-  IconPencil,
-  IconSettings,
   IconUserCheck,
   IconUserQuestion,
   IconUsers,
@@ -49,6 +50,7 @@ type EventDashboardData = {
   newLeaders: Array<{
     id: string
     name: string
+    groupStatus: "Member" | "Timothy" | "Leader" | null
     updatedAt: string
   }>
   confirmedGuestsNowMembers: Array<{
@@ -149,7 +151,6 @@ function formatAverage(value: number) {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function EventDashboardClient({ event }: { event: EventDashboardData }) {
-  const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
 
@@ -158,6 +159,10 @@ export function EventDashboardClient({ event }: { event: EventDashboardData }) {
   const isMultiDay = event.type === "MultiDay"
   const isSeriesEvent = isRecurring || isMultiDay
   const isPaidEvent = event.price != null
+
+  const totalVolunteers = event.confirmedVolunteers.length + event.unconfirmedVolunteers.length
+  const pendingVolunteers = event.unconfirmedVolunteers.filter((v) => v.status === "Pending")
+  const rejectedVolunteers = event.unconfirmedVolunteers.filter((v) => v.status === "Rejected")
 
   function copyLink(path: string) {
     const url = `${window.location.origin}${path}`
@@ -176,63 +181,98 @@ export function EventDashboardClient({ event }: { event: EventDashboardData }) {
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="space-y-1">
-          {event.ministries.length > 0 && (
-            <p className="text-sm text-muted-foreground">
-              {event.ministries.join(" · ")}
-            </p>
-          )}
-          {event.description && (
-            <p className="text-sm text-muted-foreground">{event.description}</p>
-          )}
-          {isRecurring && (
-            <div className="flex items-center gap-2 pt-0.5">
-              <Badge variant="secondary" className="gap-1.5">
-                <IconCalendarRepeat className="size-3" />
-                {formatRecurringSchedule(event.recurrenceDayOfWeek, event.recurrenceFrequency)}
-              </Badge>
-              {event.recurrenceEndDate ? (
-                <span className="text-xs text-muted-foreground">
-                  Ends {formatDate(event.recurrenceEndDate)}
-                </span>
-              ) : (
-                <span className="text-xs text-muted-foreground">Ongoing</span>
-              )}
-            </div>
-          )}
-          {isMultiDay && (
-            <div className="flex items-center gap-2 pt-0.5">
-              <Badge variant="secondary" className="gap-1.5">
-                <IconCalendar className="size-3" />
-                Multi-day event
-              </Badge>
+      <div className="space-y-2">
+        {event.ministries.length > 0 && (
+          <p className="text-sm text-muted-foreground">
+            {event.ministries.join(" · ")}
+          </p>
+        )}
+        {event.description && (
+          <p className="text-sm text-muted-foreground">{event.description}</p>
+        )}
+        {isRecurring && (
+          <div className="flex items-center gap-2 pt-0.5">
+            <Badge variant="secondary" className="gap-1.5">
+              <IconCalendarRepeat className="size-3" />
+              {formatRecurringSchedule(event.recurrenceDayOfWeek, event.recurrenceFrequency)}
+            </Badge>
+            {event.recurrenceEndDate ? (
               <span className="text-xs text-muted-foreground">
-                {formatDate(event.startDate)} – {formatDate(event.endDate)}
+                Ends {formatDate(event.recurrenceEndDate)}
               </span>
-            </div>
-          )}
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Button variant="outline" size="sm" asChild>
-            <Link href={`/event/${event.id}/settings`}>
-              <IconSettings className="mr-2 size-4" />
-              Settings
-            </Link>
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => router.push(`/events/${event.id}/edit`)}>
-            <IconPencil className="mr-2 size-4" />
-            Edit
-          </Button>
-        </div>
+            ) : (
+              <span className="text-xs text-muted-foreground">Ongoing</span>
+            )}
+          </div>
+        )}
+        {isMultiDay && (
+          <div className="flex items-center gap-2 pt-0.5">
+            <Badge variant="secondary" className="gap-1.5">
+              <IconCalendar className="size-3" />
+              Multi-day event
+            </Badge>
+            <span className="text-xs text-muted-foreground">
+              {formatDate(event.startDate)} – {formatDate(event.endDate)}
+            </span>
+          </div>
+        )}
       </div>
 
+      {/* Public links */}
+      {!isRecurring && !isMultiDay && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t pt-4 text-sm">
+          <div className="flex items-center gap-2 text-muted-foreground flex-wrap">
+            <span>
+              {formatDate(event.startDate)}
+              {event.startDate !== event.endDate && <> – {formatDate(event.endDate)}</>}
+            </span>
+            <span>·</span>
+            <span>
+              {isPaidEvent
+                ? `₱${(event.price! / 100).toLocaleString("en-PH", { minimumFractionDigits: 2 })}`
+                : "Free"}
+            </span>
+            {regStatus && (
+              <>
+                <span>·</span>
+                {regStatus === "open" && (
+                  <Badge variant="secondary" className="gap-1">
+                    <IconCircleCheck className="size-3" />
+                    Registration Open
+                  </Badge>
+                )}
+                {regStatus === "upcoming" && (
+                  <Badge variant="outline" className="gap-1">
+                    <IconClock className="size-3" />
+                    Registration Upcoming
+                  </Badge>
+                )}
+                {regStatus === "closed" && (
+                  <Badge variant="outline" className="gap-1 text-muted-foreground">
+                    <IconCircleOff className="size-3" />
+                    Registration Closed
+                  </Badge>
+                )}
+              </>
+            )}
+            {!regStatus && (
+              <>
+                <span>·</span>
+                <span>Registration N/A</span>
+              </>
+            )}
+          </div>
+          <Button variant="outline" size="sm" onClick={() => copyLink(`/events/${event.id}/checkin`)}>
+            <IconCopy className="mr-2 size-3.5" />
+            Check-in link
+          </Button>
+        </div>
+      )}
+
       {/* Filters */}
-      <div className="rounded-lg border p-3">
-        <p className="text-[11px] font-semibold tracking-[0.15em] uppercase text-muted-foreground mb-2">
-          Period
-        </p>
-        <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-lg border px-4 py-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground shrink-0">Period</span>
           {PERIODS.map((period) => (
             <Button
               key={period.value}
@@ -244,6 +284,19 @@ export function EventDashboardClient({ event }: { event: EventDashboardData }) {
             </Button>
           ))}
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground shrink-0">Role</span>
+          {ROLE_FILTERS.map((filter) => (
+            <Button
+              key={filter.value}
+              size="sm"
+              variant={event.roleFilter === filter.value ? "default" : "outline"}
+              asChild
+            >
+              <Link href={withQuery({ roleFilter: filter.value })}>{filter.label}</Link>
+            </Button>
+          ))}
+        </div>
       </div>
 
       {/* KPI cards */}
@@ -251,7 +304,7 @@ export function EventDashboardClient({ event }: { event: EventDashboardData }) {
         <div className="rounded-lg border px-5 py-5 flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <p className="text-[11px] font-semibold tracking-[0.15em] uppercase text-muted-foreground">
-              Average Attendance
+              {isSeriesEvent ? "Average Attendance" : "Total Attended"}
             </p>
             <span className="text-muted-foreground/40">
               <IconUsers className="size-4" />
@@ -260,7 +313,7 @@ export function EventDashboardClient({ event }: { event: EventDashboardData }) {
           <p className="text-3xl font-semibold tabular-nums tracking-tight text-foreground">
             {formatAverage(event.averageAttendance)}
           </p>
-          <p className="text-xs text-muted-foreground/60">
+          <p className="text-xs text-muted-foreground">
             {isSeriesEvent ? "Average check-ins per session" : "Attendees for this event"}
           </p>
         </div>
@@ -277,7 +330,7 @@ export function EventDashboardClient({ event }: { event: EventDashboardData }) {
           <p className="text-3xl font-semibold tabular-nums tracking-tight text-foreground">
             {event.uniqueAttendees.toLocaleString()}
           </p>
-          <p className="text-xs text-muted-foreground/60">Distinct participants in selected period</p>
+          <p className="text-xs text-muted-foreground">Distinct participants in selected period</p>
         </div>
 
         <div className="rounded-lg border px-5 py-5 flex flex-col gap-3">
@@ -289,25 +342,34 @@ export function EventDashboardClient({ event }: { event: EventDashboardData }) {
               <IconUserQuestion className="size-4" />
             </span>
           </div>
-          <p className="text-3xl font-semibold tabular-nums tracking-tight text-foreground">
+          <Link
+            href={`/event/${event.id}/registrants`}
+            className="text-3xl font-semibold tabular-nums tracking-tight text-foreground underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors w-fit"
+          >
             {event.participantsWithoutSmallGroup.length.toLocaleString()}
-          </p>
-          <p className="text-xs text-muted-foreground/60">Members and guests still unassigned</p>
+          </Link>
+          <p className="text-xs text-muted-foreground">Members and guests still unassigned</p>
         </div>
 
         <div className="rounded-lg border px-5 py-5 flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <p className="text-[11px] font-semibold tracking-[0.15em] uppercase text-muted-foreground">
-              Volunteers
+              Confirmed Volunteers
             </p>
             <span className="text-muted-foreground/40">
               <IconUsersGroup className="size-4" />
             </span>
           </div>
           <p className="text-3xl font-semibold tabular-nums tracking-tight text-foreground">
-            {event.confirmedVolunteers.length} / {event.unconfirmedVolunteers.length}
+            {event.confirmedVolunteers.length.toLocaleString()}
           </p>
-          <p className="text-xs text-muted-foreground/60">Confirmed / Unconfirmed</p>
+          <p className="text-xs text-muted-foreground">
+            {totalVolunteers === 0
+              ? "No volunteers yet"
+              : totalVolunteers === event.confirmedVolunteers.length
+                ? `All ${totalVolunteers} confirmed`
+                : `of ${totalVolunteers} total${event.pendingVolunteerCount > 0 ? ` · ${event.pendingVolunteerCount} pending` : ""}${event.rejectedVolunteerCount > 0 ? ` · ${event.rejectedVolunteerCount} rejected` : ""}`}
+          </p>
         </div>
       </div>
 
@@ -325,12 +387,6 @@ export function EventDashboardClient({ event }: { event: EventDashboardData }) {
           <CardContent className="px-2 pt-4 sm:px-6 sm:pt-6">
             <ChartContainer config={attendanceChartConfig} className="aspect-auto h-65 w-full">
               <AreaChart data={event.attendanceSeries}>
-                <defs>
-                  <linearGradient id="fillAttendees" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="var(--color-attendees)" stopOpacity={0.9} />
-                    <stop offset="95%" stopColor="var(--color-attendees)" stopOpacity={0.15} />
-                  </linearGradient>
-                </defs>
                 <CartesianGrid vertical={false} />
                 <XAxis
                   dataKey="date"
@@ -370,7 +426,8 @@ export function EventDashboardClient({ event }: { event: EventDashboardData }) {
                 <Area
                   dataKey="attendees"
                   type="natural"
-                  fill="url(#fillAttendees)"
+                  fill="var(--color-attendees)"
+                  fillOpacity={0.1}
                   stroke="var(--color-attendees)"
                 />
               </AreaChart>
@@ -379,58 +436,53 @@ export function EventDashboardClient({ event }: { event: EventDashboardData }) {
         </Card>
       )}
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 pt-2">
         <Card>
           <CardHeader>
             <CardTitle>New Small Group Leaders</CardTitle>
-            <CardDescription>Leaders identified in selected period</CardDescription>
+            <CardDescription>Leaders and Timothys identified in selected period</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-2">
+          <CardContent>
             {event.newLeaders.length === 0 ? (
               <p className="text-sm text-muted-foreground">No new leaders in this period.</p>
             ) : (
-              event.newLeaders.map((leader) => (
-                <div key={leader.id} className="rounded-md border px-3 py-2">
-                  <p className="text-sm font-medium">{leader.name}</p>
-                  <p className="text-xs text-muted-foreground">Updated {formatDate(leader.updatedAt)}</p>
-                </div>
-              ))
+              <div className="divide-y">
+                {event.newLeaders.map((leader) => (
+                  <div key={leader.id} className="flex items-center justify-between gap-2 py-2.5 first:pt-0 last:pb-0">
+                    <div>
+                      <p className="text-sm font-medium">{leader.name}</p>
+                      <p className="text-xs text-muted-foreground">Updated {formatDate(leader.updatedAt)}</p>
+                    </div>
+                    <Badge variant="secondary">{leader.groupStatus}</Badge>
+                  </div>
+                ))}
+              </div>
             )}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>Guests Confirmed To Small Group</CardTitle>
-            <CardDescription>Guests confirmed and now small group members</CardDescription>
-            <div className="flex flex-wrap gap-2 pt-2">
-              {ROLE_FILTERS.map((filter) => (
-                <Button
-                  key={filter.value}
-                  size="sm"
-                  variant={event.roleFilter === filter.value ? "default" : "outline"}
-                  asChild
-                >
-                  <Link href={withQuery({ roleFilter: filter.value })}>{filter.label}</Link>
-                </Button>
-              ))}
-            </div>
+            <CardTitle>Guests Confirmed to Small Group</CardTitle>
+            <CardDescription>Guests confirmed and joined a small group in this period</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-2">
+          <CardContent>
             {event.confirmedGuestsNowMembers.length === 0 ? (
               <p className="text-sm text-muted-foreground">No confirmed guests matched this filter.</p>
             ) : (
-              event.confirmedGuestsNowMembers.map((guest) => (
-                <div key={guest.id} className="rounded-md border px-3 py-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-medium">{guest.name}</p>
+              <div className="divide-y">
+                {event.confirmedGuestsNowMembers.map((guest) => (
+                  <div key={guest.id} className="flex items-center justify-between gap-2 py-2.5 first:pt-0 last:pb-0">
+                    <div>
+                      <p className="text-sm font-medium">{guest.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {guest.smallGroupName} · Confirmed {formatDate(guest.resolvedAt)}
+                      </p>
+                    </div>
                     <Badge variant="secondary">{guest.memberStatus ?? "Member"}</Badge>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    {guest.smallGroupName} · Confirmed {formatDate(guest.resolvedAt)}
-                  </p>
-                </div>
-              ))
+                ))}
+              </div>
             )}
           </CardContent>
         </Card>
@@ -440,21 +492,33 @@ export function EventDashboardClient({ event }: { event: EventDashboardData }) {
             <CardTitle>Participants Without Small Group</CardTitle>
             <CardDescription>People who still need assignment</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-2">
+          <CardContent>
             {event.participantsWithoutSmallGroup.length === 0 ? (
               <p className="text-sm text-muted-foreground">Everyone is currently assigned.</p>
             ) : (
-              event.participantsWithoutSmallGroup.slice(0, 20).map((person) => (
-                <div key={person.id} className="rounded-md border px-3 py-2 flex items-center justify-between gap-2">
-                  <p className="text-sm font-medium">{person.name}</p>
-                  <Badge variant="outline">{person.type}</Badge>
+              <>
+                <div className="divide-y">
+                  {event.participantsWithoutSmallGroup.slice(0, 20).map((person) => (
+                    <div key={person.id} className="flex items-center justify-between gap-2 py-2.5 first:pt-0 last:pb-0">
+                      <p className="text-sm font-medium">{person.name}</p>
+                      <Badge variant="outline">{person.type}</Badge>
+                    </div>
+                  ))}
                 </div>
-              ))
-            )}
-            {event.participantsWithoutSmallGroup.length > 20 && (
-              <p className="text-xs text-muted-foreground">
-                Showing 20 of {event.participantsWithoutSmallGroup.length} participants.
-              </p>
+                {event.participantsWithoutSmallGroup.length > 20 && (
+                  <div className="flex items-center justify-between pt-3 mt-0.5 border-t">
+                    <p className="text-xs text-muted-foreground">
+                      Showing 20 of {event.participantsWithoutSmallGroup.length}
+                    </p>
+                    <Link
+                      href={`/event/${event.id}/registrants`}
+                      className="text-xs font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+                    >
+                      View all
+                    </Link>
+                  </div>
+                )}
+              </>
             )}
           </CardContent>
         </Card>
@@ -463,68 +527,59 @@ export function EventDashboardClient({ event }: { event: EventDashboardData }) {
           <CardHeader>
             <CardTitle>Volunteer Confirmation</CardTitle>
             <CardDescription>
-              {event.confirmedVolunteers.length} confirmed · {event.unconfirmedVolunteers.length} unconfirmed
+              {event.confirmedVolunteers.length} confirmed
+              {event.pendingVolunteerCount > 0 && ` · ${event.pendingVolunteerCount} pending`}
+              {event.rejectedVolunteerCount > 0 && ` · ${event.rejectedVolunteerCount} rejected`}
             </CardDescription>
           </CardHeader>
           <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Confirmed</p>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.15em] text-muted-foreground mb-2">Confirmed</p>
               {event.confirmedVolunteers.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No confirmed volunteers yet.</p>
               ) : (
-                event.confirmedVolunteers.slice(0, 10).map((volunteer) => (
-                  <div key={volunteer.id} className="rounded-md border px-3 py-2 text-sm font-medium">
-                    {volunteer.name}
-                  </div>
-                ))
+                <div className="divide-y">
+                  {event.confirmedVolunteers.slice(0, 10).map((volunteer) => (
+                    <div key={volunteer.id} className="py-2 first:pt-0 last:pb-0">
+                      <p className="text-sm font-medium">{volunteer.name}</p>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
-            <div className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Unconfirmed</p>
-              {event.unconfirmedVolunteers.length === 0 ? (
-                <p className="text-sm text-muted-foreground">All volunteers are confirmed.</p>
-              ) : (
-                event.unconfirmedVolunteers.slice(0, 10).map((volunteer) => (
-                  <div key={`${volunteer.id}-${volunteer.status}`} className="rounded-md border px-3 py-2">
-                    <p className="text-sm font-medium">{volunteer.name}</p>
-                    <p className="text-xs text-muted-foreground">{volunteer.status}</p>
+            <div className="space-y-4">
+              {pendingVolunteers.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.15em] text-muted-foreground mb-2">Pending</p>
+                  <div className="divide-y">
+                    {pendingVolunteers.slice(0, 5).map((volunteer) => (
+                      <div key={volunteer.id} className="py-2 first:pt-0 last:pb-0">
+                        <p className="text-sm font-medium">{volunteer.name}</p>
+                      </div>
+                    ))}
                   </div>
-                ))
+                </div>
               )}
-              {event.unconfirmedVolunteers.length > 0 && (
-                <p className="text-xs text-muted-foreground">
-                  Pending: {event.pendingVolunteerCount} · Rejected: {event.rejectedVolunteerCount}
-                </p>
+              {rejectedVolunteers.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.15em] text-muted-foreground mb-2">Rejected</p>
+                  <div className="divide-y">
+                    {rejectedVolunteers.slice(0, 5).map((volunteer) => (
+                      <div key={volunteer.id} className="py-2 first:pt-0 last:pb-0">
+                        <p className="text-sm font-medium">{volunteer.name}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {pendingVolunteers.length === 0 && rejectedVolunteers.length === 0 && (
+                <p className="text-sm text-muted-foreground">All volunteers are confirmed.</p>
               )}
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Public links */}
-      {!isRecurring && !isMultiDay && (
-        <div className="flex flex-wrap gap-2">
-          <div className="rounded-lg border p-3 text-sm">
-            <p>
-              {formatDate(event.startDate)}
-              {event.startDate !== event.endDate && <> – {formatDate(event.endDate)}</>}
-              {" · "}
-              {isPaidEvent
-                ? `₱${(event.price! / 100).toLocaleString("en-PH", { minimumFractionDigits: 2 })}`
-                : "Free"}
-              {" · "}
-              {regStatus === "open" && <span className="text-green-600">Registration Open</span>}
-              {regStatus === "upcoming" && <span className="text-yellow-600">Registration Upcoming</span>}
-              {regStatus === "closed" && <span className="text-muted-foreground">Registration Closed</span>}
-              {!regStatus && <span className="text-muted-foreground">Registration N/A</span>}
-            </p>
-          </div>
-          <Button variant="outline" size="sm" onClick={() => copyLink(`/events/${event.id}/checkin`)}>
-            <IconCopy className="mr-2 size-3.5" />
-            Check-in link
-          </Button>
-        </div>
-      )}
     </div>
   )
 }
