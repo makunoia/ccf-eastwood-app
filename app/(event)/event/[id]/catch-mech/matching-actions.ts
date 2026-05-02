@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
+import { auth } from "@/lib/auth"
 import { matchSmallGroups } from "@/lib/matching"
 import { scoreGroup } from "@/lib/matching/engine"
 import { scoreGender, scoreLifeStage, scoreSchedule } from "@/lib/matching/scorers"
@@ -278,20 +279,23 @@ export async function findCatchMechSmallGroupMatches(
   }
 }
 
-// ─── updateCatchMechRequestNotes ─────────────────────────────────────────────
+// ─── addCatchMechComment ─────────────────────────────────────────────────────
 
-export async function updateCatchMechRequestNotes(
+export async function addCatchMechComment(
   requestId: string,
-  notes: string
+  text: string
 ): Promise<ActionResult<void>> {
+  const session = await auth()
+  const authorId = session?.user?.id
+  if (!authorId) return { success: false, error: "Not authenticated" }
+  if (!text.trim()) return { success: false, error: "Comment cannot be empty" }
   try {
-    await db.smallGroupMemberRequest.update({
-      where: { id: requestId },
-      data: { notes: notes.trim() || null },
+    await db.catchMechComment.create({
+      data: { requestId, authorId, text: text.trim() },
     })
     return { success: true, data: undefined }
   } catch {
-    return { success: false, error: "Failed to save notes" }
+    return { success: false, error: "Failed to add comment" }
   }
 }
 
