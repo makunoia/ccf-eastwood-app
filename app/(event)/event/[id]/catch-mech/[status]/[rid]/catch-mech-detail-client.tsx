@@ -173,30 +173,31 @@ export function CatchMechDetailClient(props: Props) {
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">
+      <div className="flex flex-col gap-6 max-w-2xl w-full">
       {/* Breadcrumb */}
-      <nav className="flex items-center gap-1 text-sm text-muted-foreground">
+      <nav className="flex items-center gap-1.5 text-sm text-muted-foreground">
         <Link href={`/event/${props.eventId}/catch-mech`} className="hover:text-foreground transition-colors">
-          ← Catch Mech
+          Catch Mech
         </Link>
-        <span>/</span>
+        <span className="text-muted-foreground/50">/</span>
         <Link href={`/event/${props.eventId}/catch-mech/${props.status}`} className="hover:text-foreground transition-colors">
           {STATUS_LABEL[props.status]}
         </Link>
-        <span>/</span>
-        <span className="text-foreground font-medium">{props.name}</span>
+        <span className="text-muted-foreground/50">/</span>
+        <span className="text-foreground font-medium truncate">{props.name}</span>
       </nav>
 
       {/* Name + type badge + actions */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <h2 className="type-headline">{props.name}</h2>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3 min-w-0">
+          <h2 className="type-headline truncate">{props.name}</h2>
           {props.registrant.memberId ? (
-            <Badge variant="secondary">Member</Badge>
+            <Badge variant="secondary" className="shrink-0">Member</Badge>
           ) : (
-            <Badge variant="outline">Guest</Badge>
+            <Badge variant="outline" className="shrink-0">Guest</Badge>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {props.registrant.guest && props.profileLink && (
             <Button variant="outline" asChild>
               <Link href={props.profileLink}>View full profile</Link>
@@ -211,7 +212,7 @@ export function CatchMechDetailClient(props: Props) {
       </div>
 
       {/* Tabs */}
-      <div className="max-w-2xl">
+      <div>
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
             <TabsTrigger value="details">Details</TabsTrigger>
@@ -304,6 +305,7 @@ export function CatchMechDetailClient(props: Props) {
             />
           </TabsContent>
         </Tabs>
+      </div>
       </div>
     </div>
   )

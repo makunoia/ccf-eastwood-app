@@ -194,10 +194,10 @@ export default async function CatchMechAdminPage({
         <FaciLinkButton url={publicUrl} />
       </div>
 
-      {/* Stats + weekly progress on the same row */}
-      <div className="flex items-stretch gap-3">
+      {/* Stats + weekly progress */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
         {/* Stat cards */}
-        <div className="grid grid-cols-4 gap-3 flex-1">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 flex-1 min-w-0">
           {[
             { label: "Total Members", value: stats.totalMembers, color: "", pct: null, slug: null },
             { label: "Confirmed", value: stats.totalConfirmed, color: "text-green-600", pct: stats.totalMembers > 0 ? Math.round((stats.totalConfirmed / stats.totalMembers) * 100) : 0, slug: "confirmed" },
@@ -238,8 +238,8 @@ export default async function CatchMechAdminPage({
 
         {/* Weekly progress */}
         {weeklyProgress.length > 0 && (
-          <div className="rounded-lg border overflow-hidden shrink-0 flex flex-col">
-            <div className="overflow-y-auto flex-1">
+          <div className="rounded-lg border overflow-hidden shrink-0 flex flex-col lg:w-56">
+            <div className="overflow-y-auto lg:max-h-52">
               <Table>
                 <TableHeader>
                   <TableRow>

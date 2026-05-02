@@ -4,7 +4,6 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { IconCheck, IconClock, IconMessageCircle, IconX } from "@tabler/icons-react"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "sonner"
@@ -106,22 +105,22 @@ export function CatchMechActivityLog({ entries, requestId }: Props) {
       {entries.length === 0 ? (
         <p className="py-8 text-center text-sm text-muted-foreground">No activity yet</p>
       ) : (
-        <div className="space-y-2">
-          {entries.map((entry) => {
+        <div>
+          {entries.map((entry, i) => {
+            const isLast = i === entries.length - 1
+
             if (entry.kind === "comment") {
               return (
-                <div
-                  key={`comment-${entry.id}`}
-                  className="flex items-start justify-between gap-3 rounded-lg border p-3"
-                >
-                  <div className="min-w-0 space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="inline-flex size-5 items-center justify-center rounded-full bg-blue-100">
-                        <IconMessageCircle className="size-3 text-blue-700" />
-                      </span>
-                      <p className="text-sm">{entry.text}</p>
-                    </div>
-                    <p className="pl-7 text-xs text-muted-foreground">
+                <div key={`comment-${entry.id}`} className="flex gap-3">
+                  <div className="flex flex-col items-center shrink-0">
+                    <span className="inline-flex size-5 items-center justify-center rounded-full bg-blue-100 mt-0.5">
+                      <IconMessageCircle className="size-3 text-blue-700" />
+                    </span>
+                    {!isLast && <div className="w-px flex-1 bg-border mt-1" />}
+                  </div>
+                  <div className={`flex-1 min-w-0 space-y-0.5 ${isLast ? "pb-0" : "pb-5"}`}>
+                    <p className="text-sm">{entry.text}</p>
+                    <p className="text-xs text-muted-foreground">
                       {entry.author.name ?? "Unknown"} · {formatDate(entry.createdAt)}
                     </p>
                   </div>
@@ -131,18 +130,23 @@ export function CatchMechActivityLog({ entries, requestId }: Props) {
 
             // SmallGroupLog entry
             return (
-              <div
-                key={`log-${entry.id}`}
-                className="flex items-start justify-between gap-3 rounded-lg border p-3"
-              >
-                <div className="min-w-0 space-y-1">
-                  <div className="flex items-center gap-2">
-                    {iconForAction(entry.action)}
+              <div key={`log-${entry.id}`} className="flex gap-3">
+                <div className="flex flex-col items-center shrink-0">
+                  <span className="mt-0.5">{iconForAction(entry.action)}</span>
+                  {!isLast && <div className="w-px flex-1 bg-border mt-1" />}
+                </div>
+                <div className={`flex-1 min-w-0 space-y-0.5 ${isLast ? "pb-0" : "pb-5"}`}>
+                  <div className="flex items-start justify-between gap-2">
                     <p className="text-sm font-medium">
                       {entry.description ?? ACTION_LABEL[entry.action]}
                     </p>
+                    {entry.performedByUser?.name && (
+                      <span className="text-xs text-muted-foreground shrink-0">
+                        {entry.performedByUser.name}
+                      </span>
+                    )}
                   </div>
-                  <p className="pl-7 text-xs text-muted-foreground">
+                  <p className="text-xs text-muted-foreground">
                     <Link
                       href={`/small-groups/${entry.smallGroup.id}`}
                       className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
@@ -153,11 +157,6 @@ export function CatchMechActivityLog({ entries, requestId }: Props) {
                     {formatDate(entry.createdAt)}
                   </p>
                 </div>
-                {entry.performedByUser?.name && (
-                  <Badge variant="outline" className="shrink-0">
-                    {entry.performedByUser.name}
-                  </Badge>
-                )}
               </div>
             )
           })}

@@ -1,7 +1,5 @@
 import Link from "next/link"
-import { IconCalendar, IconCheck, IconClock, IconUserCheck, IconX } from "@tabler/icons-react"
-
-import { Badge } from "@/components/ui/badge"
+import { IconCalendar, IconCheck, IconClock, IconMessageCircle, IconUserCheck, IconX } from "@tabler/icons-react"
 
 type SmallGroupLogEntry = {
   kind: "smallGroupLog"
@@ -38,7 +36,16 @@ type PromotionEntry = {
   createdAt: Date
 }
 
-export type ActivityEntry = SmallGroupLogEntry | EventRegistrationEntry | PromotionEntry
+type CatchMechCommentEntry = {
+  kind: "catchMechComment"
+  id: string
+  text: string
+  createdAt: Date
+  author: { name: string | null }
+  event: { id: string; name: string } | null
+}
+
+export type ActivityEntry = SmallGroupLogEntry | EventRegistrationEntry | PromotionEntry | CatchMechCommentEntry
 
 const ACTION_LABEL: Record<SmallGroupLogEntry["action"], string> = {
   GroupCreated: "Group created",
@@ -93,22 +100,22 @@ export function GuestActivityLog({ entries }: { entries: ActivityEntry[] }) {
   }
 
   return (
-    <div className="space-y-2">
-      {entries.map((entry) => {
+    <div>
+      {entries.map((entry, i) => {
+        const isLast = i === entries.length - 1
+
         if (entry.kind === "promotion") {
           return (
-            <div
-              key={`promotion-${entry.memberId}`}
-              className="flex items-start justify-between gap-3 rounded-lg border p-3"
-            >
-              <div className="min-w-0 space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex size-5 items-center justify-center rounded-full bg-green-100">
-                    <IconUserCheck className="size-3 text-green-700" />
-                  </span>
-                  <p className="text-sm font-medium">Promoted to member</p>
-                </div>
-                <p className="pl-7 text-xs text-muted-foreground">
+            <div key={`promotion-${entry.memberId}`} className="flex gap-3">
+              <div className="flex flex-col items-center shrink-0">
+                <span className="inline-flex size-5 items-center justify-center rounded-full bg-green-100 mt-0.5">
+                  <IconUserCheck className="size-3 text-green-700" />
+                </span>
+                {!isLast && <div className="w-px flex-1 bg-border mt-1" />}
+              </div>
+              <div className={`flex-1 min-w-0 space-y-0.5 ${isLast ? "pb-0" : "pb-5"}`}>
+                <p className="text-sm font-medium">Promoted to member</p>
+                <p className="text-xs text-muted-foreground">
                   <Link
                     href={`/members/${entry.memberId}`}
                     className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
@@ -125,18 +132,16 @@ export function GuestActivityLog({ entries }: { entries: ActivityEntry[] }) {
 
         if (entry.kind === "eventRegistration") {
           return (
-            <div
-              key={`reg-${entry.id}`}
-              className="flex items-start justify-between gap-3 rounded-lg border p-3"
-            >
-              <div className="min-w-0 space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex size-5 items-center justify-center rounded-full bg-blue-100">
-                    <IconCalendar className="size-3 text-blue-700" />
-                  </span>
-                  <p className="text-sm font-medium">Registered for event</p>
-                </div>
-                <p className="pl-7 text-xs text-muted-foreground">
+            <div key={`reg-${entry.id}`} className="flex gap-3">
+              <div className="flex flex-col items-center shrink-0">
+                <span className="inline-flex size-5 items-center justify-center rounded-full bg-blue-100 mt-0.5">
+                  <IconCalendar className="size-3 text-blue-700" />
+                </span>
+                {!isLast && <div className="w-px flex-1 bg-border mt-1" />}
+              </div>
+              <div className={`flex-1 min-w-0 space-y-0.5 ${isLast ? "pb-0" : "pb-5"}`}>
+                <p className="text-sm font-medium">Registered for event</p>
+                <p className="text-xs text-muted-foreground">
                   <Link
                     href={`/event/${entry.event.id}`}
                     className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
@@ -151,20 +156,57 @@ export function GuestActivityLog({ entries }: { entries: ActivityEntry[] }) {
           )
         }
 
+        if (entry.kind === "catchMechComment") {
+          return (
+            <div key={`cm-comment-${entry.id}`} className="flex gap-3">
+              <div className="flex flex-col items-center shrink-0">
+                <span className="inline-flex size-5 items-center justify-center rounded-full bg-blue-100 mt-0.5">
+                  <IconMessageCircle className="size-3 text-blue-700" />
+                </span>
+                {!isLast && <div className="w-px flex-1 bg-border mt-1" />}
+              </div>
+              <div className={`flex-1 min-w-0 space-y-0.5 ${isLast ? "pb-0" : "pb-5"}`}>
+                <p className="text-sm">{entry.text}</p>
+                <p className="text-xs text-muted-foreground">
+                  {entry.author.name ?? "Unknown"}
+                  {entry.event && (
+                    <>
+                      {" · "}
+                      <Link
+                        href={`/event/${entry.event.id}/catch-mech`}
+                        className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+                      >
+                        {entry.event.name}
+                      </Link>
+                    </>
+                  )}
+                  {" · "}
+                  {formatDate(entry.createdAt)}
+                </p>
+              </div>
+            </div>
+          )
+        }
+
         // SmallGroupLog entry
         return (
-          <div
-            key={entry.id}
-            className="flex items-start justify-between gap-3 rounded-lg border p-3"
-          >
-            <div className="min-w-0 space-y-1">
-              <div className="flex items-center gap-2">
-                {iconForSmallGroupAction(entry.action)}
+          <div key={entry.id} className="flex gap-3">
+            <div className="flex flex-col items-center shrink-0">
+              <span className="mt-0.5">{iconForSmallGroupAction(entry.action)}</span>
+              {!isLast && <div className="w-px flex-1 bg-border mt-1" />}
+            </div>
+            <div className={`flex-1 min-w-0 space-y-0.5 ${isLast ? "pb-0" : "pb-5"}`}>
+              <div className="flex items-start justify-between gap-2">
                 <p className="text-sm font-medium">
                   {entry.description ?? ACTION_LABEL[entry.action]}
                 </p>
+                {entry.performedByUser?.name && (
+                  <span className="text-xs text-muted-foreground shrink-0">
+                    {entry.performedByUser.name}
+                  </span>
+                )}
               </div>
-              <p className="pl-7 text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 <Link
                   href={`/small-groups/${entry.smallGroup.id}`}
                   className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
@@ -175,11 +217,6 @@ export function GuestActivityLog({ entries }: { entries: ActivityEntry[] }) {
                 {formatDate(entry.createdAt)}
               </p>
             </div>
-            {entry.performedByUser?.name && (
-              <Badge variant="outline" className="shrink-0">
-                {entry.performedByUser.name}
-              </Badge>
-            )}
           </div>
         )
       })}

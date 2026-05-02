@@ -122,6 +122,55 @@ async function getMemberEventRegistrations(memberId: string) {
   })
 }
 
+async function fetchCatchMechComments(filter: { memberId?: string; guestId?: string }) {
+  const comments = await db.catchMechComment.findMany({
+    where: { request: filter },
+    select: {
+      id: true,
+      text: true,
+      createdAt: true,
+      author: { select: { name: true } },
+      request: { select: { breakoutGroupId: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  })
+
+  if (comments.length === 0) return []
+
+  const bgIds = [
+    ...new Set(
+      comments
+        .map((c) => c.request.breakoutGroupId)
+        .filter((id): id is string => id !== null)
+    ),
+  ]
+
+  const eventByBgId =
+    bgIds.length > 0
+      ? await db.catchMechSession
+          .findMany({
+            where: { breakoutGroupId: { in: bgIds } },
+            select: {
+              breakoutGroupId: true,
+              event: { select: { id: true, name: true } },
+            },
+          })
+          .then((sessions) => new Map(sessions.map((s) => [s.breakoutGroupId, s.event])))
+      : new Map<string, { id: string; name: string }>()
+
+  return comments.map((c) => ({
+    kind: "catchMechComment" as const,
+    id: c.id,
+    text: c.text,
+    createdAt: c.createdAt,
+    author: c.author,
+    event:
+      (c.request.breakoutGroupId
+        ? eventByBgId.get(c.request.breakoutGroupId)
+        : null) ?? null,
+  }))
+}
+
 async function getMemberActivityData(memberId: string) {
   // Find the guest linked to this member (if promoted from guest)
   const guest = await db.guest.findUnique({
@@ -129,7 +178,7 @@ async function getMemberActivityData(memberId: string) {
     select: { id: true, createdAt: true },
   })
 
-  const [memberLogs, guestLogs, memberRegistrations, guestRegistrations] =
+  const [memberLogs, guestLogs, memberRegistrations, guestRegistrations, memberComments, guestComments] =
     await Promise.all([
       db.smallGroupLog.findMany({
         where: { memberId },
@@ -161,7 +210,16 @@ async function getMemberActivityData(memberId: string) {
             select: { id: true, event: { select: { id: true, name: true } }, createdAt: true },
           })
         : Promise.resolve([]),
+      fetchCatchMechComments({ memberId }),
+      guest ? fetchCatchMechComments({ guestId: guest.id }) : Promise.resolve([]),
     ])
+
+  const seenCommentIds = new Set<string>()
+  const allComments = [...memberComments, ...guestComments].filter((c) => {
+    if (seenCommentIds.has(c.id)) return false
+    seenCommentIds.add(c.id)
+    return true
+  })
 
   const entries: MemberActivityEntry[] = [
     ...memberLogs.map((log) => ({
@@ -203,6 +261,7 @@ async function getMemberActivityData(memberId: string) {
           },
         ]
       : []),
+    ...allComments,
   ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
 
   return entries
