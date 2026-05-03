@@ -1,8 +1,8 @@
 import { notFound } from "next/navigation"
-import Link from "next/link"
-import { IconArrowLeft } from "@tabler/icons-react"
 import { db } from "@/lib/db"
 import { Badge } from "@/components/ui/badge"
+import { DetailPageHeader } from "@/components/detail-page-header"
+import { BreadcrumbOverride } from "@/components/breadcrumb-context"
 
 async function getOccurrence(occurrenceId: string) {
   return db.eventOccurrence.findUnique({
@@ -68,26 +68,23 @@ export default async function OccurrenceDetailPage({
   const backLabel = eventType === "MultiDay" ? "Days" : "Sessions"
 
   return (
-    <div className="flex flex-1 flex-col gap-6 p-6">
-      <div>
-        <Link
-          href={`/event/${id}/sessions`}
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <IconArrowLeft className="size-4" />
-          {backLabel}
-        </Link>
-      </div>
+    <>
+      <BreadcrumbOverride
+        href={`/event/${id}/sessions/${occurrenceId}`}
+        label={dateLabel}
+      />
+      <DetailPageHeader
+        title={dateLabel}
+        subtitle={
+          <p className="text-sm text-muted-foreground">
+            {occurrence.event.ministries.map((em) => em.ministry.name).join(" · ")}
+            {occurrence.event.ministries.length > 0 && " · "}
+            {occurrence.attendees.length} attended
+          </p>
+        }
+      />
 
-      <div className="space-y-1">
-        <h2 className="type-headline">{dateLabel}</h2>
-        <p className="text-sm text-muted-foreground">
-          {occurrence.event.ministries.map((em) => em.ministry.name).join(" · ")}
-          {occurrence.event.ministries.length > 0 && " · "}
-          {occurrence.attendees.length} attended
-        </p>
-      </div>
-
+      <div className="flex flex-1 flex-col gap-6 p-6">
       {occurrence.attendees.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
           <p className="text-sm">No one checked in for this session yet.</p>
@@ -124,6 +121,7 @@ export default async function OccurrenceDetailPage({
           </table>
         </div>
       )}
-    </div>
+      </div>
+    </>
   )
 }

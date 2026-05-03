@@ -36,12 +36,12 @@ export function MemberGroupStepper({ status }: { status: Stage }) {
           <div
             key={stage}
             className={[
-              "relative flex flex-1 items-center select-none text-xs",
+              "relative flex flex-1 items-center select-none text-xs transition-colors",
               isActive
-                ? "bg-foreground text-background"
+                ? "bg-primary/15 text-primary"
                 : isPast
-                ? "bg-muted text-foreground/50"
-                : "bg-muted/40 text-muted-foreground/60",
+                ? "bg-muted/70 text-foreground/45"
+                : "bg-muted/25 text-muted-foreground/50",
             ].join(" ")}
             style={{
               clipPath,
@@ -53,7 +53,10 @@ export function MemberGroupStepper({ status }: { status: Stage }) {
               paddingRight: isLast ? 16 : CHEVRON + 10,
             }}
           >
-            <span className={isActive ? "font-semibold" : "font-medium"}>
+            {isActive && (
+              <span className="mr-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-current animate-pulse" />
+            )}
+            <span className={["whitespace-nowrap", isActive ? "font-semibold" : "font-medium"].join(" ")}>
               {STAGE_LABEL[stage]}
             </span>
           </div>

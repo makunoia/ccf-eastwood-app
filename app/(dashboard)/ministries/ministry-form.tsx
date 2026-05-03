@@ -1,10 +1,10 @@
 "use client"
 
 import * as React from "react"
-import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { IconArrowLeft } from "@tabler/icons-react"
 import { toast } from "sonner"
+import { DetailPageHeader } from "@/components/detail-page-header"
+import { BreadcrumbOverride } from "@/components/breadcrumb-context"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -32,6 +32,7 @@ import {
 import { createMinistry, updateMinistry, deleteMinistry } from "./actions"
 import { type MinistryRow } from "./columns"
 import { MobileFormActions } from "@/components/mobile-form-actions"
+
 type Props = {
   lifeStages: { id: string; name: string }[]
   ministry?: MinistryRow
@@ -54,13 +55,16 @@ export function MinistryForm({ lifeStages, ministry }: Props) {
   const [saving, setSaving] = React.useState(false)
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
+  const [dirty, setDirty] = React.useState(false)
 
   function set(field: keyof MinistryFormValues, value: string) {
+    setDirty(true)
     setForm((prev) => ({ ...prev, [field]: value }))
   }
 
   function handleRevert() {
     setForm(ministry ? toFormValues(ministry) : defaultMinistryForm)
+    setDirty(false)
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -74,8 +78,9 @@ export function MinistryForm({ lifeStages, ministry }: Props) {
     setSaving(false)
 
     if (result.success) {
+      setDirty(false)
       toast.success(isEdit ? "Ministry updated" : "Ministry added")
-      router.push("/ministries")
+      if (!isEdit) router.push("/ministries")
     } else {
       toast.error(result.error)
     }
@@ -94,103 +99,119 @@ export function MinistryForm({ lifeStages, ministry }: Props) {
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-6 p-6 pb-24 sm:pb-6">
-      <div>
-        <Link
-          href="/ministries"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <IconArrowLeft className="size-4" />
-          Ministries
-        </Link>
-      </div>
+    <div className="flex flex-1 flex-col gap-0">
+      {isEdit && (
+        <BreadcrumbOverride
+          href={`/ministries/${ministry!.id}`}
+          label={ministry!.name}
+        />
+      )}
 
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="type-headline">
-            {isEdit ? ministry!.name : "New Ministry"}
-          </h2>
+      <DetailPageHeader
+        title={isEdit ? ministry!.name : "New Ministry"}
+        subtitle={
           <p className="text-sm text-muted-foreground">
             {isEdit
               ? "Edit ministry details below."
               : "Fill in the details to add a new ministry."}
           </p>
-        </div>
-        <div className="hidden shrink-0 items-center gap-2 sm:flex">
-          {isEdit && (
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() => setDeleteOpen(true)}
-              disabled={saving}
-            >
-              Delete
+        }
+        action={
+          !isEdit ? (
+            <Button type="submit" form="ministry-form" disabled={saving}>
+              {saving ? "Adding…" : "Add ministry"}
             </Button>
-          )}
-          <Button type="submit" form="ministry-form" disabled={saving}>
-            {saving ? "Saving…" : isEdit ? "Save changes" : "Add ministry"}
-          </Button>
-        </div>
+          ) : dirty ? (
+            <Button type="submit" form="ministry-form" disabled={saving}>
+              {saving ? "Saving…" : "Save changes"}
+            </Button>
+          ) : null
+        }
+      />
+
+      <div className="p-6 pb-24 sm:pb-6">
+        <form
+          id="ministry-form"
+          onSubmit={handleSubmit}
+          className="max-w-2xl space-y-6"
+        >
+          <div className="space-y-2">
+            <Label htmlFor="name">
+              Name <span className="text-destructive">*</span>
+            </Label>
+            <Input
+              id="name"
+              value={form.name}
+              onChange={(e) => set("name", e.target.value)}
+              placeholder="e.g. Across, Elevate"
+              required
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="lifeStage">Life Stage</Label>
+            <Select
+              value={form.lifeStageId}
+              onValueChange={(v) => set("lifeStageId", v === "none" ? "" : v)}
+            >
+              <SelectTrigger id="lifeStage">
+                <SelectValue placeholder="Select life stage" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None</SelectItem>
+                {lifeStages.map((ls) => (
+                  <SelectItem key={ls.id} value={ls.id}>
+                    {ls.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="description">Description</Label>
+            <Textarea
+              id="description"
+              value={form.description}
+              onChange={(e) => set("description", e.target.value)}
+              placeholder="Brief description of this ministry…"
+              rows={3}
+            />
+          </div>
+        </form>
+
+        {isEdit && (
+          <div className="mt-12 max-w-2xl border-t pt-6">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium">Delete ministry</p>
+                <p className="text-xs text-muted-foreground">
+                  Permanently removes this record. This cannot be undone.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => setDeleteOpen(true)}
+                disabled={saving}
+              >
+                Delete
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
-      <form
-            id="ministry-form"
-            onSubmit={handleSubmit}
-            className="max-w-2xl space-y-6"
-          >
-            <div className="space-y-2">
-              <Label htmlFor="name">
-                Name <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                id="name"
-                value={form.name}
-                onChange={(e) => set("name", e.target.value)}
-                placeholder="e.g. Across, Elevate"
-                required
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="lifeStage">Life Stage</Label>
-              <Select
-                value={form.lifeStageId}
-                onValueChange={(v) => set("lifeStageId", v === "none" ? "" : v)}
-              >
-                <SelectTrigger id="lifeStage">
-                  <SelectValue placeholder="Select life stage" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
-                  {lifeStages.map((ls) => (
-                    <SelectItem key={ls.id} value={ls.id}>
-                      {ls.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
-              <Textarea
-                id="description"
-                value={form.description}
-                onChange={(e) => set("description", e.target.value)}
-                placeholder="Brief description of this ministry…"
-                rows={3}
-              />
-            </div>
-          </form>
-
-      <MobileFormActions
-        formId="ministry-form"
-        isEdit={isEdit}
-        saving={saving}
-        saveLabel={isEdit ? "Save changes" : "Add ministry"}
-        onRevert={handleRevert}
-        onDelete={isEdit ? () => setDeleteOpen(true) : undefined}
-      />
+      {(!isEdit || dirty) && (
+        <MobileFormActions
+          formId="ministry-form"
+          isEdit={isEdit}
+          saving={saving}
+          saveLabel={isEdit ? "Save changes" : "Add ministry"}
+          onRevert={handleRevert}
+          onDelete={isEdit ? () => setDeleteOpen(true) : undefined}
+        />
+      )}
 
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent>
@@ -220,7 +241,6 @@ export function MinistryForm({ lifeStages, ministry }: Props) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
     </div>
   )
 }

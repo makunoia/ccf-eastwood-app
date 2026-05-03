@@ -1,13 +1,14 @@
 "use client"
 
 import * as React from "react"
-import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { IconArrowLeft, IconCopy } from "@tabler/icons-react"
+import { IconCopy } from "@tabler/icons-react"
 import { toast } from "sonner"
 
 import { IconCircleCheckFilled } from "@tabler/icons-react"
 
+import { DetailPageHeader } from "@/components/detail-page-header"
+import { BreadcrumbOverride } from "@/components/breadcrumb-context"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -145,45 +146,31 @@ export function VolunteerForm({ members, events, volunteer }: Props) {
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-6 p-6 pb-24 sm:pb-6">
-      <div>
-        <Link
-          href="/volunteers"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <IconArrowLeft className="size-4" />
-          Volunteers
-        </Link>
-      </div>
+    <div className="flex flex-1 flex-col gap-0">
+      {isEdit && (
+        <BreadcrumbOverride
+          href={`/volunteers/${volunteer!.id}`}
+          label={volunteer!.memberName}
+        />
+      )}
 
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="type-headline">
-            {isEdit ? volunteer!.memberName : "New Volunteer"}
-          </h2>
+      <DetailPageHeader
+        title={isEdit ? volunteer!.memberName : "New Volunteer"}
+        subtitle={
           <p className="text-sm text-muted-foreground">
             {isEdit
               ? "Edit volunteer details and assignment."
               : "Register a member as a volunteer."}
           </p>
-        </div>
-        <div className="hidden shrink-0 items-center gap-2 sm:flex">
-          {isEdit && (
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() => setDeleteOpen(true)}
-              disabled={saving}
-            >
-              Delete
-            </Button>
-          )}
+        }
+        action={
           <Button type="submit" form="volunteer-form" disabled={saving}>
             {saving ? "Saving…" : isEdit ? "Save changes" : "Add volunteer"}
           </Button>
-        </div>
-      </div>
+        }
+      />
 
+      <div className="p-6 pb-24 sm:pb-6">
       <form id="volunteer-form" onSubmit={handleSubmit} className="max-w-2xl space-y-6">
         {/* Member */}
         <div className="space-y-2">
@@ -396,6 +383,7 @@ export function VolunteerForm({ members, events, volunteer }: Props) {
           )}
         </div>
       )}
+      </div>
 
       <MobileFormActions
         formId="volunteer-form"

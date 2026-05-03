@@ -286,6 +286,7 @@ export default async function MemberDetailPage({
   return (
     <MemberForm
       member={member}
+      groupStatus={smallGroupInfo?.memberOf?.groupStatus ?? null}
       eventHistory={<MemberEventHistory registrations={registrations} />}
       activityHistory={<MemberActivityLog entries={activityEntries} />}
       smallGroups={

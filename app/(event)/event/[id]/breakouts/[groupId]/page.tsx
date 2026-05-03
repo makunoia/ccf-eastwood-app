@@ -1,10 +1,10 @@
 import { notFound } from "next/navigation"
-import Link from "next/link"
-import { IconArrowLeft } from "@tabler/icons-react"
 
 import { db } from "@/lib/db"
 import { BreakoutDetail } from "./breakout-detail"
 import { GroupActions } from "./group-actions"
+import { DetailPageHeader } from "@/components/detail-page-header"
+import { BreadcrumbOverride } from "@/components/breadcrumb-context"
 
 const ledGroupsSelect = {
   select: {
@@ -166,27 +166,21 @@ export default async function BreakoutGroupDetailPage({
   const confirmedVolunteers = [...eventData.volunteers]
 
   return (
-    <div className="flex flex-1 flex-col gap-6 p-6">
-      {/* Back link */}
-      <Link
-        href={`/event/${eventId}/breakouts`}
-        className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors w-fit"
-      >
-        <IconArrowLeft className="size-4" />
-        Back to Breakout Groups
-      </Link>
-
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-semibold">{group.name}</h2>
-          {group.memberLimit != null && (
-            <p className="text-sm text-muted-foreground mt-0.5">
+    <>
+      <BreadcrumbOverride
+        href={`/event/${eventId}/breakouts/${groupId}`}
+        label={group.name}
+      />
+      <DetailPageHeader
+        title={group.name}
+        subtitle={
+          group.memberLimit != null ? (
+            <p className="text-sm text-muted-foreground">
               {group.members.length} / {group.memberLimit} members
             </p>
-          )}
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
+          ) : undefined
+        }
+        action={
           <GroupActions
             group={{
               id: group.id,
@@ -207,9 +201,10 @@ export default async function BreakoutGroupDetailPage({
             lifeStages={lifeStages}
             volunteers={confirmedVolunteers}
           />
-        </div>
-      </div>
+        }
+      />
 
+      <div className="flex flex-1 flex-col gap-6 p-6">
       <BreakoutDetail
         group={{
           id: group.id,
@@ -235,6 +230,7 @@ export default async function BreakoutGroupDetailPage({
         unassignedRegistrants={eventData.registrants}
         availableVolunteers={confirmedVolunteers}
       />
-    </div>
+      </div>
+    </>
   )
 }

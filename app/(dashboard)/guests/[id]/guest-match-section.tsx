@@ -27,8 +27,6 @@ import { assignGuestToGroupTemporarily } from "../../small-groups/actions"
 import type { MatchResult, EscalationLevel } from "@/lib/matching/types"
 import type { GuestPipelineStatus } from "@/lib/guest-utils"
 
-// ─── Schedule helpers ────────────────────────────────────────────────────────
-
 const DAYS_OF_WEEK = [
   { value: "0", label: "Sunday" },
   { value: "1", label: "Monday" },
@@ -51,87 +49,6 @@ function buildScheduleSlot(prefs: MatchingPrefs): { dayOfWeek: number; timeStart
     timeStart: prefs.scheduleTimeStart,
     timeEnd: prefs.scheduleTimeEnd,
   }
-}
-
-// ─── Pipeline stepper ────────────────────────────────────────────────────────
-
-// "Declined" replaces "Matched" in the stepper when the guest has been rejected
-const PIPELINE_STAGES_DEFAULT: GuestPipelineStatus[] = ["New", "EventAttendee", "Matched", "Pending", "Member"]
-const PIPELINE_STAGES_DECLINED: GuestPipelineStatus[] = ["New", "EventAttendee", "Declined", "Pending", "Member"]
-
-const STAGE_LABEL: Record<GuestPipelineStatus, string> = {
-  New: "New",
-  EventAttendee: "Event Attendee",
-  Matched: "Matched",
-  Declined: "Declined",
-  Pending: "Pending",
-  Member: "Member",
-}
-const STAGE_DESCRIPTION: Record<GuestPipelineStatus, string> = {
-  New: "Registered but has not yet attended an event.",
-  EventAttendee: "Has attended at least one event but hasn't been placed in a breakout group yet.",
-  Matched: "Was placed in a breakout group at an event and is ready to be connected to a small group.",
-  Declined: "Was placed in a breakout group but membership was declined by the group leader. Assign to another small group.",
-  Pending: "Has a pending small group assignment — awaiting confirmation from the group leader.",
-  Member: "Has joined a small group and been promoted to a full member.",
-}
-
-function PipelineStepper({ status }: { status: GuestPipelineStatus }) {
-  const isDeclined = status === "Declined"
-  const stages = isDeclined ? PIPELINE_STAGES_DECLINED : PIPELINE_STAGES_DEFAULT
-  const activeIndex = stages.indexOf(status)
-  const CHEVRON = 18
-
-  return (
-    <div className="overflow-hidden rounded-lg border">
-      <div className="flex">
-        {stages.map((stage, i) => {
-          const isActive = i === activeIndex
-          const isPast = i < activeIndex
-          const isFirst = i === 0
-          const isLast = i === stages.length - 1
-
-          const clipPath = isFirst
-            ? `polygon(0 0, calc(100% - ${CHEVRON}px) 0, 100% 50%, calc(100% - ${CHEVRON}px) 100%, 0 100%)`
-            : isLast
-            ? `polygon(0 0, 100% 0, 100% 100%, 0 100%, ${CHEVRON}px 50%)`
-            : `polygon(0 0, calc(100% - ${CHEVRON}px) 0, 100% 50%, calc(100% - ${CHEVRON}px) 100%, 0 100%, ${CHEVRON}px 50%)`
-
-          return (
-            <div
-              key={stage}
-              className={[
-                "relative flex flex-1 items-center select-none text-xs",
-                isActive && isDeclined
-                  ? "bg-destructive text-destructive-foreground"
-                  : isActive
-                  ? "bg-foreground text-background"
-                  : isPast
-                  ? "bg-muted text-foreground/50"
-                  : "bg-muted/40 text-muted-foreground/60",
-              ].join(" ")}
-              style={{
-                clipPath,
-                marginLeft: i > 0 ? `-${CHEVRON}px` : undefined,
-                zIndex: stages.length - i,
-                paddingTop: 10,
-                paddingBottom: 10,
-                paddingLeft: isFirst ? 16 : CHEVRON + 10,
-                paddingRight: isLast ? 16 : CHEVRON + 10,
-              }}
-            >
-              <span className={isActive ? "font-semibold" : "font-medium"}>
-                {STAGE_LABEL[stage]}
-              </span>
-            </div>
-          )
-        })}
-      </div>
-      <div className="border-t bg-muted/30 px-4 py-2.5">
-        <p className="text-xs text-muted-foreground">{STAGE_DESCRIPTION[status]}</p>
-      </div>
-    </div>
-  )
 }
 
 // ─── Level labels ─────────────────────────────────────────────────────────────
@@ -321,17 +238,12 @@ export const GuestMatchSection = React.forwardRef<
   }
 
   if (pipelineStatus === "Member") {
-    return (
-      <div className="max-w-2xl">
-        <PipelineStepper status={pipelineStatus} />
-      </div>
-    )
+    return null
   }
 
   if (pipelineStatus === "Pending") {
     return (
       <div className="max-w-2xl space-y-4">
-        <PipelineStepper status={pipelineStatus} />
         {pendingGroupName && (
           <div className="rounded-lg border bg-muted/40 p-4">
             <p className="text-sm font-semibold">Awaiting leader confirmation</p>
@@ -358,7 +270,6 @@ export const GuestMatchSection = React.forwardRef<
     const isDeclined = pipelineStatus === "Declined"
     return (
       <div className="max-w-2xl space-y-4">
-        <PipelineStepper status={pipelineStatus} />
         {matchedBreakout && (
           <div className={["rounded-lg border p-4 space-y-3", isDeclined ? "border-destructive/40 bg-destructive/5" : ""].join(" ")}>
             <div className="flex items-center justify-between">
@@ -613,9 +524,6 @@ export const GuestMatchSection = React.forwardRef<
 
   return (
     <div className="max-w-2xl space-y-4">
-      {/* Pipeline stepper */}
-      <PipelineStepper status={pipelineStatus} />
-
       {/* Claimed group banner */}
       {localClaimedGroup && (
         <div className="rounded-lg border bg-muted/40 p-4 space-y-3">

@@ -1,10 +1,11 @@
 import { notFound } from "next/navigation"
 import Link from "next/link"
-import { IconArrowLeft } from "@tabler/icons-react"
 
 import { db } from "@/lib/db"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { DetailPageHeader } from "@/components/detail-page-header"
+import { BreadcrumbOverride } from "@/components/breadcrumb-context"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { YearInput } from "@/components/ui/year-input"
@@ -129,26 +130,24 @@ export default async function RegistrantDetailPage({
   const name = resolveDisplayName(registrant)
 
   return (
-    <div className="flex flex-1 flex-col gap-6 p-6">
-      <div>
-        <Link
-          href={`/event/${eventId}/registrants`}
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <IconArrowLeft className="size-4" />
-          Registrants
-        </Link>
-      </div>
+    <>
+      <BreadcrumbOverride
+        href={`/event/${eventId}/registrants/${registrantId}`}
+        label={name}
+      />
+      <DetailPageHeader
+        initials={name.split(" ").filter(Boolean).map((n) => n[0]).join("").slice(0, 2)}
+        title={name}
+        subtitle={
+          registrant.memberId ? (
+            <Badge variant="secondary">Member</Badge>
+          ) : (
+            <Badge variant="outline">Guest</Badge>
+          )
+        }
+      />
 
-      <div className="flex items-center gap-3">
-        <h2 className="type-headline">{name}</h2>
-        {registrant.memberId ? (
-          <Badge variant="secondary">Member</Badge>
-        ) : (
-          <Badge variant="outline">Guest</Badge>
-        )}
-      </div>
-
+      <div className="flex flex-1 flex-col gap-6 p-6">
       <div className="max-w-2xl space-y-8">
         {/* Breakout group section — always first */}
         <section className="space-y-3">
@@ -198,7 +197,8 @@ export default async function RegistrantDetailPage({
           </section>
         )}
       </div>
-    </div>
+      </div>
+    </>
   )
 }
 

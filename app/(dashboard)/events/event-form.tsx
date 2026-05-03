@@ -1,10 +1,10 @@
 "use client"
 
 import * as React from "react"
-import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { IconArrowLeft } from "@tabler/icons-react"
 import { toast } from "sonner"
+import { DetailPageHeader } from "@/components/detail-page-header"
+import { BreadcrumbOverride } from "@/components/breadcrumb-context"
 
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -81,15 +81,18 @@ export function EventForm({ ministries, event }: Props) {
   const [saving, setSaving] = React.useState(false)
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
+  const [dirty, setDirty] = React.useState(false)
 
   const isRecurring = form.type === "Recurring"
 
   function set(field: keyof EventFormValues, value: string) {
+    setDirty(true)
     setForm((prev) => ({ ...prev, [field]: value }))
   }
 
   function handleRevert() {
     setForm(event ? toFormValues(event) : defaultEventForm)
+    setDirty(false)
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -100,6 +103,7 @@ export function EventForm({ ministries, event }: Props) {
       const result = await updateEvent(event!.id, form)
       setSaving(false)
       if (result.success) {
+        setDirty(false)
         toast.success("Event updated")
         router.push(`/events/${event!.id}`)
       } else {
@@ -130,149 +134,169 @@ export function EventForm({ ministries, event }: Props) {
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-6 p-6 pb-24 sm:pb-6">
-      <div>
-        <Link
-          href={isEdit ? `/events/${event!.id}` : "/events"}
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <IconArrowLeft className="size-4" />
-          {isEdit ? event!.name : "Events"}
-        </Link>
-      </div>
+    <div className="flex flex-1 flex-col gap-0">
+      {isEdit && (
+        <BreadcrumbOverride
+          href={`/events/${event!.id}`}
+          label={event!.name}
+        />
+      )}
 
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="type-headline">
-            {isEdit ? "Edit Event" : "New Event"}
-          </h2>
+      <DetailPageHeader
+        title={isEdit ? "Edit Event" : "New Event"}
+        subtitle={
           <p className="text-sm text-muted-foreground">
             {isEdit
               ? "Update the event details below."
               : "Fill in the details to create a new event."}
           </p>
-        </div>
-        <div className="hidden shrink-0 items-center gap-2 sm:flex">
-          {isEdit && (
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() => setDeleteOpen(true)}
-              disabled={saving}
-            >
-              Delete
+        }
+        action={
+          !isEdit ? (
+            <Button type="submit" form="event-form" disabled={saving}>
+              {saving ? "Creating…" : "Create event"}
             </Button>
-          )}
-          <Button type="submit" form="event-form" disabled={saving}>
-            {saving ? "Saving…" : isEdit ? "Save changes" : "Create event"}
-          </Button>
-        </div>
-      </div>
+          ) : dirty ? (
+            <Button type="submit" form="event-form" disabled={saving}>
+              {saving ? "Saving…" : "Save changes"}
+            </Button>
+          ) : null
+        }
+      />
 
-      <form
-        id="event-form"
-        onSubmit={handleSubmit}
-        className="max-w-2xl space-y-8"
-      >
-        {/* Basic Info */}
-        <section className="space-y-4">
-          <h3 className="type-label text-muted-foreground">
-            Basic Information
-          </h3>
-          <div className="space-y-2">
-            <Label htmlFor="name">
-              Event Name <span className="text-destructive">*</span>
-            </Label>
-            <Input
-              id="name"
-              value={form.name}
-              onChange={(e) => set("name", e.target.value)}
-              placeholder="Family Camp 2026"
-              required
-            />
-          </div>
+      <div className="p-6 pb-24 sm:pb-6">
+        <form
+          id="event-form"
+          onSubmit={handleSubmit}
+          className="max-w-2xl space-y-8"
+        >
+          {/* Basic Info */}
+          <section className="space-y-4">
+            <h3 className="type-label text-muted-foreground">
+              Basic Information
+            </h3>
+            <div className="space-y-2">
+              <Label htmlFor="name">
+                Event Name <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="name"
+                value={form.name}
+                onChange={(e) => set("name", e.target.value)}
+                placeholder="Family Camp 2026"
+                required
+              />
+            </div>
 
-          <div className="space-y-2">
-            <Label>Ministry</Label>
-            <p className="text-xs text-muted-foreground">
-              Select one or more ministries, or leave blank for a ministry-agnostic event.
-            </p>
-            {ministries.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No ministries configured.</p>
-            ) : (
-              <div className="space-y-2 rounded-md border p-3">
-                {ministries.map((m) => (
-                  <div key={m.id} className="flex items-center gap-2">
-                    <Checkbox
-                      id={`ministry-${m.id}`}
-                      checked={form.ministryIds.includes(m.id)}
-                      onCheckedChange={(checked) => {
-                        setForm((prev) => ({
-                          ...prev,
-                          ministryIds: checked
-                            ? [...prev.ministryIds, m.id]
-                            : prev.ministryIds.filter((id) => id !== m.id),
-                        }))
-                      }}
-                    />
-                    <label
-                      htmlFor={`ministry-${m.id}`}
-                      className="text-sm leading-none cursor-pointer"
-                    >
-                      {m.name}
-                    </label>
-                  </div>
-                ))}
+            <div className="space-y-2">
+              <Label>Ministry</Label>
+              <p className="text-xs text-muted-foreground">
+                Select one or more ministries, or leave blank for a ministry-agnostic event.
+              </p>
+              {ministries.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No ministries configured.</p>
+              ) : (
+                <div className="space-y-2 rounded-md border p-3">
+                  {ministries.map((m) => (
+                    <div key={m.id} className="flex items-center gap-2">
+                      <Checkbox
+                        id={`ministry-${m.id}`}
+                        checked={form.ministryIds.includes(m.id)}
+                        onCheckedChange={(checked) => {
+                          setDirty(true)
+                          setForm((prev) => ({
+                            ...prev,
+                            ministryIds: checked
+                              ? [...prev.ministryIds, m.id]
+                              : prev.ministryIds.filter((id) => id !== m.id),
+                          }))
+                        }}
+                      />
+                      <label
+                        htmlFor={`ministry-${m.id}`}
+                        className="text-sm leading-none cursor-pointer"
+                      >
+                        {m.name}
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="type">
+                Event Type <span className="text-destructive">*</span>
+              </Label>
+              <Select
+                value={form.type}
+                onValueChange={(v) => set("type", v)}
+              >
+                <SelectTrigger id="type">
+                  <SelectValue placeholder="Select type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="OneTime">One-time</SelectItem>
+                  <SelectItem value="MultiDay">Multi-day</SelectItem>
+                  <SelectItem value="Recurring">Recurring</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {form.type === "OneTime" && "Single-date event with optional registration and payment."}
+                {form.type === "MultiDay" && "Spans consecutive days, treated as a date range."}
+                {form.type === "Recurring" && "Repeats on a fixed schedule. First-timers register once; returning attendees check in per occurrence."}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="description">Description</Label>
+              <Textarea
+                id="description"
+                value={form.description}
+                onChange={(e) => set("description", e.target.value)}
+                placeholder="A brief description of the event…"
+                rows={3}
+              />
+            </div>
+          </section>
+
+          {/* Dates */}
+          <section className="space-y-4">
+            <h3 className="type-label text-muted-foreground">
+              Event Dates
+            </h3>
+            {form.type === "MultiDay" ? (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="startDate">
+                    Start Date <span className="text-destructive">*</span>
+                  </Label>
+                  <Input
+                    id="startDate"
+                    type="date"
+                    value={form.startDate}
+                    onChange={(e) => set("startDate", e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="endDate">
+                    End Date <span className="text-destructive">*</span>
+                  </Label>
+                  <Input
+                    id="endDate"
+                    type="date"
+                    value={form.endDate}
+                    onChange={(e) => set("endDate", e.target.value)}
+                    required
+                  />
+                </div>
               </div>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="type">
-              Event Type <span className="text-destructive">*</span>
-            </Label>
-            <Select
-              value={form.type}
-              onValueChange={(v) => set("type", v)}
-            >
-              <SelectTrigger id="type">
-                <SelectValue placeholder="Select type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="OneTime">One-time</SelectItem>
-                <SelectItem value="MultiDay">Multi-day</SelectItem>
-                <SelectItem value="Recurring">Recurring</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              {form.type === "OneTime" && "Single-date event with optional registration and payment."}
-              {form.type === "MultiDay" && "Spans consecutive days, treated as a date range."}
-              {form.type === "Recurring" && "Repeats on a fixed schedule. First-timers register once; returning attendees check in per occurrence."}
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="description">Description</Label>
-            <Textarea
-              id="description"
-              value={form.description}
-              onChange={(e) => set("description", e.target.value)}
-              placeholder="A brief description of the event…"
-              rows={3}
-            />
-          </div>
-        </section>
-
-        {/* Dates */}
-        <section className="space-y-4">
-          <h3 className="type-label text-muted-foreground">
-            Event Dates
-          </h3>
-          {form.type === "MultiDay" ? (
-            <div className="grid grid-cols-2 gap-4">
+            ) : (
               <div className="space-y-2">
                 <Label htmlFor="startDate">
-                  Start Date <span className="text-destructive">*</span>
+                  {isRecurring ? "Series Start Date" : "Date"}{" "}
+                  <span className="text-destructive">*</span>
                 </Label>
                 <Input
                   id="startDate"
@@ -282,159 +306,156 @@ export function EventForm({ ministries, event }: Props) {
                   required
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="endDate">
-                  End Date <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  id="endDate"
-                  type="date"
-                  value={form.endDate}
-                  onChange={(e) => set("endDate", e.target.value)}
-                  required
-                />
+            )}
+          </section>
+
+          {/* Recurring Settings */}
+          {isRecurring && (
+            <section className="space-y-4">
+              <h3 className="type-label text-muted-foreground">
+                Recurrence Settings
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="recurrenceDayOfWeek">
+                    Day of Week <span className="text-destructive">*</span>
+                  </Label>
+                  <Select
+                    value={form.recurrenceDayOfWeek}
+                    onValueChange={(v) => set("recurrenceDayOfWeek", v)}
+                  >
+                    <SelectTrigger id="recurrenceDayOfWeek">
+                      <SelectValue placeholder="Select day" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DAY_OF_WEEK_OPTIONS.map((d) => (
+                        <SelectItem key={d.value} value={d.value}>
+                          {d.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="recurrenceFrequency">
+                    Frequency <span className="text-destructive">*</span>
+                  </Label>
+                  <Select
+                    value={form.recurrenceFrequency}
+                    onValueChange={(v) => set("recurrenceFrequency", v)}
+                  >
+                    <SelectTrigger id="recurrenceFrequency">
+                      <SelectValue placeholder="Select frequency" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Weekly">Weekly</SelectItem>
+                      <SelectItem value="Biweekly">Biweekly</SelectItem>
+                      <SelectItem value="Monthly">Monthly</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <Label htmlFor="startDate">
-                {isRecurring ? "Series Start Date" : "Date"}{" "}
-                <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                id="startDate"
-                type="date"
-                value={form.startDate}
-                onChange={(e) => set("startDate", e.target.value)}
-                required
-              />
-            </div>
+              <div className="space-y-2">
+                <Label htmlFor="recurrenceEndDate">End Date</Label>
+                <Input
+                  id="recurrenceEndDate"
+                  type="date"
+                  value={form.recurrenceEndDate}
+                  onChange={(e) => set("recurrenceEndDate", e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Leave blank if the series runs indefinitely.
+                </p>
+              </div>
+            </section>
           )}
-        </section>
 
-        {/* Recurring Settings */}
-        {isRecurring && (
-          <section className="space-y-4">
-            <h3 className="type-label text-muted-foreground">
-              Recurrence Settings
-            </h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="recurrenceDayOfWeek">
-                  Day of Week <span className="text-destructive">*</span>
-                </Label>
-                <Select
-                  value={form.recurrenceDayOfWeek}
-                  onValueChange={(v) => set("recurrenceDayOfWeek", v)}
-                >
-                  <SelectTrigger id="recurrenceDayOfWeek">
-                    <SelectValue placeholder="Select day" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {DAY_OF_WEEK_OPTIONS.map((d) => (
-                      <SelectItem key={d.value} value={d.value}>
-                        {d.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+          {/* Registration — not applicable for Recurring events */}
+          {!isRecurring && (
+            <section className="space-y-4">
+              <h3 className="type-label text-muted-foreground">
+                Registration Window
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="registrationStart">Opens</Label>
+                  <Input
+                    id="registrationStart"
+                    type="date"
+                    value={form.registrationStart}
+                    onChange={(e) => set("registrationStart", e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="registrationEnd">Closes</Label>
+                  <Input
+                    id="registrationEnd"
+                    type="date"
+                    value={form.registrationEnd}
+                    onChange={(e) => set("registrationEnd", e.target.value)}
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="recurrenceFrequency">
-                  Frequency <span className="text-destructive">*</span>
-                </Label>
-                <Select
-                  value={form.recurrenceFrequency}
-                  onValueChange={(v) => set("recurrenceFrequency", v)}
-                >
-                  <SelectTrigger id="recurrenceFrequency">
-                    <SelectValue placeholder="Select frequency" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Weekly">Weekly</SelectItem>
-                    <SelectItem value="Biweekly">Biweekly</SelectItem>
-                    <SelectItem value="Monthly">Monthly</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="recurrenceEndDate">End Date</Label>
-              <Input
-                id="recurrenceEndDate"
-                type="date"
-                value={form.recurrenceEndDate}
-                onChange={(e) => set("recurrenceEndDate", e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">
-                Leave blank if the series runs indefinitely.
-              </p>
-            </div>
-          </section>
-        )}
+            </section>
+          )}
 
-        {/* Registration — not applicable for Recurring events */}
-        {!isRecurring && (
-          <section className="space-y-4">
-            <h3 className="type-label text-muted-foreground">
-              Registration Window
-            </h3>
-            <div className="grid grid-cols-2 gap-4">
+          {/* Pricing — not applicable for Recurring events */}
+          {!isRecurring && (
+            <section className="space-y-4">
+              <h3 className="type-label text-muted-foreground">
+                Pricing
+              </h3>
               <div className="space-y-2">
-                <Label htmlFor="registrationStart">Opens</Label>
+                <Label htmlFor="price">Price (PHP)</Label>
                 <Input
-                  id="registrationStart"
-                  type="date"
-                  value={form.registrationStart}
-                  onChange={(e) => set("registrationStart", e.target.value)}
+                  id="price"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.price}
+                  onChange={(e) => set("price", e.target.value)}
+                  placeholder="Leave blank for free"
                 />
+                <p className="text-xs text-muted-foreground">
+                  Leave blank if the event is free.
+                </p>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="registrationEnd">Closes</Label>
-                <Input
-                  id="registrationEnd"
-                  type="date"
-                  value={form.registrationEnd}
-                  onChange={(e) => set("registrationEnd", e.target.value)}
-                />
+            </section>
+          )}
+        </form>
+
+        {isEdit && (
+          <div className="mt-12 max-w-2xl border-t pt-6">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium">Delete event</p>
+                <p className="text-xs text-muted-foreground">
+                  Permanently removes this record including all registrants and breakout groups. This cannot be undone.
+                </p>
               </div>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => setDeleteOpen(true)}
+                disabled={saving}
+              >
+                Delete
+              </Button>
             </div>
-          </section>
+          </div>
         )}
+      </div>
 
-        {/* Pricing — not applicable for Recurring events */}
-        {!isRecurring && (
-          <section className="space-y-4">
-            <h3 className="type-label text-muted-foreground">
-              Pricing
-            </h3>
-            <div className="space-y-2">
-              <Label htmlFor="price">Price (PHP)</Label>
-              <Input
-                id="price"
-                type="number"
-                min="0"
-                step="0.01"
-                value={form.price}
-                onChange={(e) => set("price", e.target.value)}
-                placeholder="Leave blank for free"
-              />
-              <p className="text-xs text-muted-foreground">
-                Leave blank if the event is free.
-              </p>
-            </div>
-          </section>
-        )}
-      </form>
-
-      <MobileFormActions
-        formId="event-form"
-        isEdit={isEdit}
-        saving={saving}
-        saveLabel={isEdit ? "Save changes" : "Create event"}
-        onRevert={handleRevert}
-        onDelete={isEdit ? () => setDeleteOpen(true) : undefined}
-      />
+      {(!isEdit || dirty) && (
+        <MobileFormActions
+          formId="event-form"
+          isEdit={isEdit}
+          saving={saving}
+          saveLabel={isEdit ? "Save changes" : "Create event"}
+          onRevert={handleRevert}
+          onDelete={isEdit ? () => setDeleteOpen(true) : undefined}
+        />
+      )}
 
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent>

@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { AppSidebar } from "@/components/app-sidebar"
 import { SiteHeader } from "@/components/site-header"
+import { BreadcrumbProvider } from "@/components/breadcrumb-context"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 
 export default async function DashboardLayout({
@@ -33,10 +34,12 @@ export default async function DashboardLayout({
         permissions={session.user.permissions}
       />
       <SidebarInset className="overflow-hidden">
-        <SiteHeader />
-        <div className="flex flex-1 flex-col overflow-y-auto min-h-0">
-          {children}
-        </div>
+        <BreadcrumbProvider>
+          <SiteHeader />
+          <div className="flex flex-1 flex-col overflow-y-auto min-h-0">
+            {children}
+          </div>
+        </BreadcrumbProvider>
       </SidebarInset>
     </SidebarProvider>
   )

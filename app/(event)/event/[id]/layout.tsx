@@ -5,6 +5,7 @@ import { EventHeader } from "@/components/event-header"
 import { EventSidebar } from "@/components/event-sidebar"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { canAccessEvent, isSuperAdmin } from "@/lib/permissions"
+import { BreadcrumbProvider, BreadcrumbOverride } from "@/components/breadcrumb-context"
 
 async function getEventMeta(id: string) {
   return db.event.findUnique({
@@ -59,10 +60,13 @@ export default async function EventLayout({
         showBackLink={showBackLink}
       />
       <SidebarInset className="overflow-hidden">
-        <EventHeader eventId={event.id} eventType={event.type} />
-        <div className="flex flex-1 flex-col overflow-y-auto min-h-0">
-          {children}
-        </div>
+        <BreadcrumbProvider>
+          <BreadcrumbOverride href={`/event/${id}`} label={event.name} />
+          <EventHeader eventId={event.id} eventType={event.type} />
+          <div className="flex flex-1 flex-col overflow-y-auto min-h-0">
+            {children}
+          </div>
+        </BreadcrumbProvider>
       </SidebarInset>
     </SidebarProvider>
   )

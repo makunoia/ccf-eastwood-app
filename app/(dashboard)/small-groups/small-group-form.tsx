@@ -4,7 +4,6 @@ import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
-  IconArrowLeft,
   IconUserPlus,
   IconUserMinus,
   IconCheck,
@@ -14,6 +13,8 @@ import {
 } from "@tabler/icons-react"
 import { toast } from "sonner"
 
+import { DetailPageHeader } from "@/components/detail-page-header"
+import { BreadcrumbOverride } from "@/components/breadcrumb-context"
 import { Button } from "@/components/ui/button"
 import { TimelineEntry } from "@/components/ui/timeline-entry"
 import {
@@ -410,57 +411,53 @@ export function SmallGroupForm({
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-6 p-6 pb-24 sm:pb-6">
-      <div>
-        <Link
-          href="/small-groups"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <IconArrowLeft className="size-4" />
-          Small Groups
-        </Link>
-      </div>
+    <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-1 flex-col gap-0">
+      {isEdit && (
+        <BreadcrumbOverride
+          href={`/small-groups/${group!.id}`}
+          label={group!.name}
+        />
+      )}
 
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="type-headline">
-            {isEdit ? group!.name : "New Small Group"}
-          </h2>
-          {!isEdit && (
+      <DetailPageHeader
+        title={isEdit ? group!.name : "New Small Group"}
+        subtitle={
+          !isEdit ? (
             <p className="text-sm text-muted-foreground">
               Fill in the details to create a new small group.
             </p>
-          )}
-        </div>
-        {(!isEdit || activeTab === "details") && (
-          <div className="hidden shrink-0 items-center gap-2 sm:flex">
+          ) : undefined
+        }
+        action={
+          !isEdit || activeTab === "details" ? (
             <Button type="submit" form="small-group-form" disabled={saving}>
               {saving ? "Saving…" : isEdit ? "Save changes" : "Create group"}
             </Button>
-          </div>
-        )}
-      </div>
+          ) : null
+        }
+        tabs={
+          isEdit ? (
+            <TabsList variant="line" className="mt-1">
+              <TabsTrigger value="details" className="after:-bottom-px">Details</TabsTrigger>
+              <TabsTrigger value="members" className="after:-bottom-px">
+                Members
+                {(groupMembers?.length ?? 0) > 0 && ` (${groupMembers!.length})`}
+                {pendingRequests.length > 0 && ` · ${pendingRequests.length} pending`}
+              </TabsTrigger>
+              <TabsTrigger value="logs" className="after:-bottom-px">
+                Logs{logs.length > 0 ? ` (${logs.length})` : ""}
+              </TabsTrigger>
+            </TabsList>
+          ) : undefined
+        }
+      />
 
-      {isEdit ? (
-        <Tabs defaultValue="details" onValueChange={setActiveTab}>
-          <TabsList>
-            <TabsTrigger value="details">Details</TabsTrigger>
-            <TabsTrigger value="members">
-              Members
-              {(groupMembers?.length ?? 0) > 0 && ` (${groupMembers!.length})`}
-              {pendingRequests.length > 0 && ` · ${pendingRequests.length} pending`}
-            </TabsTrigger>
-            <TabsTrigger value="logs">
-              Logs{logs.length > 0 ? ` (${logs.length})` : ""}
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="details" className="mt-4">
-            <form
-              id="small-group-form"
-              onSubmit={handleSubmit}
-              className="max-w-2xl space-y-8"
-            >
+      <TabsContent value="details" className="mt-0 p-6 pb-24 sm:pb-6">
+        <form
+          id="small-group-form"
+          onSubmit={handleSubmit}
+          className="max-w-2xl space-y-8"
+        >
               {/* Basic Info */}
               <section className="space-y-4">
                 <h3 className="type-label text-muted-foreground">
@@ -710,9 +707,10 @@ export function SmallGroupForm({
                 </div>
               </div>
             )}
-          </TabsContent>
+        </TabsContent>
 
-          <TabsContent value="logs" className="mt-4">
+      {isEdit && (
+        <TabsContent value="logs" className="mt-0 max-w-2xl p-6">
             {logs.length === 0 ? (
               <p className="py-8 text-center text-sm text-muted-foreground">No activity yet.</p>
             ) : (
@@ -745,8 +743,10 @@ export function SmallGroupForm({
               </div>
             )}
           </TabsContent>
+      )}
 
-          <TabsContent value="members" className="mt-4 space-y-6">
+      {isEdit && (
+        <TabsContent value="members" className="mt-0 p-6 space-y-6">
             {/* Members */}
             {groupMembers && (
               <section className="space-y-3">
@@ -910,241 +910,6 @@ export function SmallGroupForm({
               )}
             </section>
           </TabsContent>
-        </Tabs>
-      ) : (
-        <form
-          id="small-group-form"
-          onSubmit={handleSubmit}
-          className="max-w-2xl space-y-8"
-        >
-          {/* Basic Info */}
-          <section className="space-y-4">
-            <h3 className="type-label text-muted-foreground">
-              Group Information
-            </h3>
-
-            <div className="space-y-2">
-              <Label htmlFor="name">
-                Group Name <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                id="name"
-                value={form.name}
-                onChange={(e) => set("name", e.target.value)}
-                placeholder="Victory Group Alpha"
-                required
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="leaderId">
-                Leader <span className="text-destructive">*</span>
-              </Label>
-              <Select
-                value={form.leaderId}
-                onValueChange={(v) => set("leaderId", v)}
-                required
-              >
-                <SelectTrigger id="leaderId">
-                  <SelectValue placeholder="Select a leader" />
-                </SelectTrigger>
-                <SelectContent>
-                  {members.map((m) => (
-                    <SelectItem key={m.id} value={m.id}>
-                      {m.firstName} {m.lastName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="lifeStageId">
-                  Life Stage <span className="text-destructive">*</span>
-                </Label>
-                <Select
-                  value={form.lifeStageId}
-                  onValueChange={(v) => set("lifeStageId", v)}
-                >
-                  <SelectTrigger id="lifeStageId">
-                    <SelectValue placeholder="Select life stage" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {lifeStages.map((ls) => (
-                      <SelectItem key={ls.id} value={ls.id}>
-                        {ls.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="genderFocus">
-                  Gender Focus <span className="text-destructive">*</span>
-                </Label>
-                <Select
-                  value={form.genderFocus}
-                  onValueChange={(v) => set("genderFocus", v)}
-                >
-                  <SelectTrigger id="genderFocus">
-                    <SelectValue placeholder="Select gender focus" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Male">Male</SelectItem>
-                    <SelectItem value="Female">Female</SelectItem>
-                    <SelectItem value="Mixed">Mixed</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="meetingFormat">
-                Meeting Format <span className="text-destructive">*</span>
-              </Label>
-              <Select
-                value={form.meetingFormat}
-                onValueChange={(v) => set("meetingFormat", v)}
-              >
-                <SelectTrigger id="meetingFormat">
-                  <SelectValue placeholder="Select meeting format" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Online">Online</SelectItem>
-                  <SelectItem value="Hybrid">Hybrid</SelectItem>
-                  <SelectItem value="InPerson">In Person</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label>
-                Meeting Schedule <span className="text-destructive">*</span>
-              </Label>
-              <div className="flex flex-wrap items-center gap-2">
-                <Select
-                  value={form.scheduleDayOfWeek}
-                  onValueChange={(v) => set("scheduleDayOfWeek", v)}
-                >
-                  <SelectTrigger className="w-36">
-                    <SelectValue placeholder="Day" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {DAYS_OF_WEEK.map((d) => (
-                      <SelectItem key={d.value} value={d.value}>
-                        {d.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Input
-                  type="time"
-                  value={form.scheduleTimeStart}
-                  onChange={(e) => set("scheduleTimeStart", e.target.value)}
-                  className="w-32"
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="parentGroupId">Parent Group</Label>
-              <Select
-                value={form.parentGroupId}
-                onValueChange={(v) =>
-                  set("parentGroupId", v === "none" ? "" : v)
-                }
-              >
-                <SelectTrigger id="parentGroupId">
-                  <SelectValue placeholder="No parent (top-level group)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
-                  {parentGroupOptions.map((g) => (
-                    <SelectItem key={g.id} value={g.id}>
-                      {g.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </section>
-
-          {/* Matching Info */}
-          <section className="space-y-4">
-            <h3 className="type-label text-muted-foreground">
-              Matching Information
-            </h3>
-
-            <div className="space-y-2">
-              <Label>Language</Label>
-              <MultiSelect
-                options={LANGUAGE_OPTIONS}
-                value={form.language}
-                onChange={(v) => set("language", v)}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="ageRangeMin">Min Age</Label>
-                <Input
-                  id="ageRangeMin"
-                  type="number"
-                  min={1}
-                  value={form.ageRangeMin}
-                  onChange={(e) => set("ageRangeMin", e.target.value)}
-                  placeholder="18"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="ageRangeMax">Max Age</Label>
-                <Input
-                  id="ageRangeMax"
-                  type="number"
-                  min={1}
-                  value={form.ageRangeMax}
-                  onChange={(e) => set("ageRangeMax", e.target.value)}
-                  placeholder="35"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="locationCity">City</Label>
-                <Select
-                  value={form.locationCity}
-                  onValueChange={(v) => set("locationCity", v === "_none" ? "" : v)}
-                >
-                  <SelectTrigger id="locationCity">
-                    <SelectValue placeholder="Select city" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="_none">No preference</SelectItem>
-                    {CITY_OPTIONS.map((city) => (
-                      <SelectItem key={city} value={city}>{city}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="memberLimit">Member Limit</Label>
-                <Input
-                  id="memberLimit"
-                  type="number"
-                  min={1}
-                  value={form.memberLimit}
-                  onChange={(e) => set("memberLimit", e.target.value)}
-                  placeholder="12"
-                />
-              </div>
-            </div>
-          </section>
-        </form>
       )}
 
       {/* Add member dialog */}
@@ -1378,14 +1143,16 @@ export function SmallGroupForm({
         </DialogContent>
       </Dialog>
 
-      <MobileFormActions
-        formId="small-group-form"
-        isEdit={isEdit}
-        saving={saving}
-        saveLabel={isEdit ? "Save changes" : "Create group"}
-        onRevert={handleRevert}
-        onDelete={isEdit ? () => setDeleteOpen(true) : undefined}
-      />
+      {activeTab === "details" && (
+        <MobileFormActions
+          formId="small-group-form"
+          isEdit={isEdit}
+          saving={saving}
+          saveLabel={isEdit ? "Save changes" : "Create group"}
+          onRevert={handleRevert}
+          onDelete={isEdit ? () => setDeleteOpen(true) : undefined}
+        />
+      )}
 
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent>
@@ -1415,6 +1182,6 @@ export function SmallGroupForm({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </Tabs>
   )
 }
