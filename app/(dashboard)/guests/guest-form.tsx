@@ -3,8 +3,9 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { IconArrowLeft, IconChevronLeft, IconChevronRight } from "@tabler/icons-react"
 import { toast } from "sonner"
+import { DetailPageHeader } from "@/components/detail-page-header"
+import { BreadcrumbOverride } from "@/components/breadcrumb-context"
 
 import {
   AlertDialog,
@@ -45,6 +46,8 @@ import {
   type GuestFormValues,
 } from "@/lib/validations/guest"
 import { createGuest, updateGuest, deleteGuest } from "./actions"
+import { GuestPipelineStepper } from "./guest-pipeline-stepper"
+import type { GuestPipelineStatus } from "@/lib/guest-utils"
 import { MobileFormActions } from "@/components/mobile-form-actions"
 import { useListNavigation } from "@/lib/hooks/use-list-navigation"
 
@@ -78,6 +81,7 @@ type Props = {
   eventHistory?: React.ReactNode
   activityHistory?: React.ReactNode
   matchSection?: React.ReactNode
+  pipelineStatus?: GuestPipelineStatus
 }
 
 function toFormValues(guest: GuestDetail): GuestFormValues {
@@ -98,7 +102,7 @@ function toFormValues(guest: GuestDetail): GuestFormValues {
   }
 }
 
-export function GuestForm({ guest, sourceEvent, eventHistory, activityHistory, matchSection }: Props) {
+export function GuestForm({ guest, sourceEvent, eventHistory, activityHistory, matchSection, pipelineStatus }: Props) {
   const router = useRouter()
   const isEdit = !!guest
   const isPromoted = !!guest?.memberId
@@ -168,49 +172,20 @@ export function GuestForm({ guest, sourceEvent, eventHistory, activityHistory, m
   const hasTabs = isEdit && (matchSection || eventHistory || activityHistory)
 
   return (
-    <div className="flex flex-1 flex-col gap-6 p-6 pb-24 sm:pb-6">
-      {/* Breadcrumb + prev/next */}
-      <div className="flex items-center justify-between">
-        <Link
-          href="/guests"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <IconArrowLeft className="size-4" />
-          Guests
-        </Link>
-        {isEdit && (prev || next) && (
-          <div className="flex items-center gap-0.5">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-7"
-              disabled={!prev}
-              onClick={() => prev && router.push(`/guests/${prev}`)}
-            >
-              <IconChevronLeft className="size-4" />
-              <span className="sr-only">Previous guest</span>
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-7"
-              disabled={!next}
-              onClick={() => next && router.push(`/guests/${next}`)}
-            >
-              <IconChevronRight className="size-4" />
-              <span className="sr-only">Next guest</span>
-            </Button>
-          </div>
-        )}
-      </div>
+    <Tabs value={activeTab} onValueChange={handleTabChange} className="flex flex-1 flex-col gap-0">
+      {isEdit && (
+        <BreadcrumbOverride
+          href={`/guests/${guest!.id}`}
+          label={`${guest!.firstName} ${guest!.lastName}`}
+        />
+      )}
 
-      {/* Page header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="type-headline">
-            {isEdit ? `${guest!.firstName} ${guest!.lastName}` : "New Guest"}
-          </h2>
-          {isEdit && sourceEvent ? (
+      {/* ── Page header ──────────────────────────────────────────────── */}
+      <DetailPageHeader
+        initials={isEdit ? `${guest!.firstName[0]}${guest!.lastName[0]}` : undefined}
+        title={isEdit ? `${guest!.firstName} ${guest!.lastName}` : "New Guest"}
+        subtitle={
+          isEdit && sourceEvent ? (
             <p className="text-sm text-muted-foreground">
               First attended{" "}
               <Link
@@ -231,60 +206,67 @@ export function GuestForm({ guest, sourceEvent, eventHistory, activityHistory, m
             <p className="text-sm text-muted-foreground">
               Fill in the details to add a new guest.
             </p>
-          ) : null}
-        </div>
-        <div className="hidden shrink-0 items-center gap-2 sm:flex">
-          {isEdit ? (
-            activeTab === "profile" ? (
-              <Button type="submit" form="guest-form" disabled={saving || isPromoted}>
-                {saving ? "Saving…" : "Save changes"}
-              </Button>
-            ) : null
-          ) : (
+          ) : null
+        }
+        prevHref={isEdit ? (prev ? `/guests/${prev}` : null) : undefined}
+        nextHref={isEdit ? (next ? `/guests/${next}` : null) : undefined}
+        action={
+          !isEdit ? (
             <Button type="submit" form="guest-form" disabled={saving}>
               {saving ? "Adding…" : "Add Guest"}
             </Button>
-          )}
-        </div>
-      </div>
+          ) : dirty && activeTab === "profile" && !isPromoted ? (
+            <Button type="submit" form="guest-form" disabled={saving}>
+              {saving ? "Saving…" : "Save changes"}
+            </Button>
+          ) : null
+        }
+        status={
+          isEdit && pipelineStatus ? (
+            <div className="space-y-3">
+              <GuestPipelineStepper status={pipelineStatus} />
+              {isPromoted && (
+                <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200 max-w-xl">
+                  <Badge variant="secondary" className="shrink-0">Promoted</Badge>
+                  <span>
+                    This guest is now a member — profile fields are locked.{" "}
+                    <Link
+                      href={`/members/${guest!.memberId}`}
+                      className="font-medium underline underline-offset-2"
+                    >
+                      View member profile →
+                    </Link>
+                  </span>
+                </div>
+              )}
+            </div>
+          ) : undefined
+        }
+        tabs={
+          hasTabs ? (
+            <TabsList variant="line" className="mt-1">
+              <TabsTrigger value="profile" className="after:-bottom-px">Profile</TabsTrigger>
+              {matchSection && (
+                <TabsTrigger value="small-group" className="after:-bottom-px">Small Group</TabsTrigger>
+              )}
+              {eventHistory && (
+                <TabsTrigger value="events" className="after:-bottom-px">Events</TabsTrigger>
+              )}
+              {activityHistory && (
+                <TabsTrigger value="activity" className="after:-bottom-px">Activity</TabsTrigger>
+              )}
+            </TabsList>
+          ) : undefined
+        }
+      />
 
-      {isPromoted && (
-        <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200">
-          <Badge variant="secondary" className="shrink-0">Promoted</Badge>
-          <span>
-            This guest is now a member — profile fields are locked.{" "}
-            <Link
-              href={`/members/${guest!.memberId}`}
-              className="font-medium underline underline-offset-2"
-            >
-              View member profile →
-            </Link>
-          </span>
-        </div>
-      )}
-
-      <Tabs value={activeTab} onValueChange={handleTabChange} className="flex flex-col gap-4">
-        {hasTabs && (
-          <TabsList className="w-fit">
-            <TabsTrigger value="profile">Profile</TabsTrigger>
-            {matchSection && (
-              <TabsTrigger value="small-group">Small Group</TabsTrigger>
-            )}
-            {eventHistory && (
-              <TabsTrigger value="events">Events</TabsTrigger>
-            )}
-            {activityHistory && (
-              <TabsTrigger value="activity">Activity</TabsTrigger>
-            )}
-          </TabsList>
-        )}
-
-        <TabsContent value="profile" className="mt-0">
-          <form
-            id="guest-form"
-            onSubmit={handleSubmit}
-            className="max-w-2xl space-y-8"
-          >
+      {/* ── Tab content ──────────────────────────────────────────────── */}
+      <TabsContent value="profile" className="mt-0 p-6 pb-24 sm:pb-6">
+        <form
+          id="guest-form"
+          onSubmit={handleSubmit}
+          className="max-w-2xl space-y-8"
+        >
             {/* Personal Info */}
             <section className="space-y-4">
               <h3 className="type-label text-muted-foreground">
@@ -430,26 +412,25 @@ export function GuestForm({ guest, sourceEvent, eventHistory, activityHistory, m
           )}
         </TabsContent>
 
-        {isEdit && matchSection && (
-          <TabsContent value="small-group" className="mt-0">
-            {matchSection}
-          </TabsContent>
-        )}
+      {isEdit && matchSection && (
+        <TabsContent value="small-group" className="mt-0 p-6">
+          {matchSection}
+        </TabsContent>
+      )}
 
-        {isEdit && eventHistory && (
-          <TabsContent value="events" className="mt-0 max-w-2xl">
-            {eventHistory}
-          </TabsContent>
-        )}
+      {isEdit && eventHistory && (
+        <TabsContent value="events" className="mt-0 max-w-2xl p-6">
+          {eventHistory}
+        </TabsContent>
+      )}
 
-        {isEdit && activityHistory && (
-          <TabsContent value="activity" className="mt-0 max-w-2xl">
-            {activityHistory}
-          </TabsContent>
-        )}
-      </Tabs>
+      {isEdit && activityHistory && (
+        <TabsContent value="activity" className="mt-0 max-w-2xl p-6">
+          {activityHistory}
+        </TabsContent>
+      )}
 
-      {!isPromoted && activeTab === "profile" && (
+      {!isPromoted && activeTab === "profile" && (!isEdit || dirty) && (
         <MobileFormActions
           formId="guest-form"
           isEdit={isEdit}
@@ -516,6 +497,6 @@ export function GuestForm({ guest, sourceEvent, eventHistory, activityHistory, m
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </Tabs>
   )
 }

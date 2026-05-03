@@ -9,6 +9,8 @@ import { Label } from "@/components/ui/label"
 import { YearInput } from "@/components/ui/year-input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
+import { DetailPageHeader } from "@/components/detail-page-header"
+import { BreadcrumbOverride } from "@/components/breadcrumb-context"
 import { RegistrantGuestProfile } from "@/app/(event)/event/[id]/registrants/[registrantId]/registrant-profile"
 import { CatchMechMatchSection, type CatchMechMatchSectionHandle } from "./catch-mech-match-section"
 import { CatchMechActivityLog, type CatchMechActivityEntry } from "./catch-mech-activity-log"
@@ -150,12 +152,6 @@ function MemberReadOnly({ member, memberId: _memberId }: { member: MemberData; m
   )
 }
 
-const STATUS_LABEL: Record<"confirmed" | "rejected" | "pending", string> = {
-  confirmed: "Confirmed",
-  rejected: "Rejected",
-  pending: "Pending",
-}
-
 export function CatchMechDetailClient(props: Props) {
   const formRef = React.useRef<HTMLFormElement>(null)
   const matchSectionRef = React.useRef<CatchMechMatchSectionHandle>(null)
@@ -172,141 +168,129 @@ export function CatchMechDetailClient(props: Props) {
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-6 p-6">
-      <div className="flex flex-col gap-6 max-w-2xl w-full">
-      {/* Breadcrumb */}
-      <nav className="flex items-center gap-1.5 text-sm text-muted-foreground">
-        <Link href={`/event/${props.eventId}/catch-mech`} className="hover:text-foreground transition-colors">
-          Catch Mech
-        </Link>
-        <span className="text-muted-foreground/50">/</span>
-        <Link href={`/event/${props.eventId}/catch-mech/${props.status}`} className="hover:text-foreground transition-colors">
-          {STATUS_LABEL[props.status]}
-        </Link>
-        <span className="text-muted-foreground/50">/</span>
-        <span className="text-foreground font-medium truncate">{props.name}</span>
-      </nav>
+    <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-1 flex-col gap-0">
+      <BreadcrumbOverride
+        href={`/event/${props.eventId}/catch-mech/${props.status}/${props.registrantId}`}
+        label={props.name}
+      />
 
-      {/* Name + type badge + actions */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3 min-w-0">
-          <h2 className="type-headline truncate">{props.name}</h2>
-          {props.registrant.memberId ? (
-            <Badge variant="secondary" className="shrink-0">Member</Badge>
+      <DetailPageHeader
+        initials={props.name.split(" ").filter(Boolean).map((n) => n[0]).join("").slice(0, 2)}
+        title={props.name}
+        subtitle={
+          props.registrant.memberId ? (
+            <Badge variant="secondary">Member</Badge>
           ) : (
-            <Badge variant="outline" className="shrink-0">Guest</Badge>
-          )}
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {props.registrant.guest && props.profileLink && (
-            <Button variant="outline" asChild>
-              <Link href={props.profileLink}>View full profile</Link>
-            </Button>
-          )}
-          {props.registrant.guest && (
-            <Button onClick={handleSaveClick} disabled={saving}>
-              {saving ? "Saving…" : "Save changes"}
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div>
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList>
-            <TabsTrigger value="details">Details</TabsTrigger>
-            <TabsTrigger value="small-group">Small Group</TabsTrigger>
-            <TabsTrigger value="activity">Activity</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="details" className="mt-4 space-y-4">
+            <Badge variant="outline">Guest</Badge>
+          )
+        }
+        action={
+          <div className="flex items-center gap-2">
+            {props.registrant.guest && props.profileLink && (
+              <Button variant="outline" asChild>
+                <Link href={props.profileLink}>View full profile</Link>
+              </Button>
+            )}
             {props.registrant.guest && (
-              <RegistrantGuestProfile guest={props.registrant.guest} showViewProfileButton={false} formRef={formRef} />
+              <Button onClick={handleSaveClick} disabled={saving}>
+                {saving ? "Saving…" : "Save changes"}
+              </Button>
             )}
-            {props.registrant.member && (
-              <MemberReadOnly
-                member={props.registrant.member}
-                memberId={props.registrant.member.id}
-              />
-            )}
-            {!props.registrant.guest && !props.registrant.member && (
-              <section className="space-y-3">
-                <h3 className="type-label text-muted-foreground">Contact</h3>
-                <div className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
-                  <span className="text-muted-foreground">Mobile</span>
-                  <span>{props.registrant.mobileNumber ?? <span className="text-muted-foreground">—</span>}</span>
-                  <span className="text-muted-foreground">Email</span>
-                  <span>{props.registrant.email ?? <span className="text-muted-foreground">—</span>}</span>
-                </div>
-              </section>
-            )}
-          </TabsContent>
+          </div>
+        }
+        tabs={
+          <TabsList variant="line" className="mt-1">
+            <TabsTrigger value="details" className="after:-bottom-px">Details</TabsTrigger>
+            <TabsTrigger value="small-group" className="after:-bottom-px">Small Group</TabsTrigger>
+            <TabsTrigger value="activity" className="after:-bottom-px">Activity</TabsTrigger>
+          </TabsList>
+        }
+      />
 
-          <TabsContent value="small-group" className="mt-4">
-            {props.status === "confirmed" && props.request?.smallGroup && (
-              <div className="rounded-lg border p-4 space-y-2">
-                <p className="text-sm font-medium">Member of this group</p>
-                <p className="text-sm">
-                  <Link
-                    href={`/small-groups/${props.request.smallGroup.id}`}
-                    className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-                  >
-                    {props.request.smallGroup.name}
-                  </Link>
-                </p>
-                {props.request.smallGroup.leader && (
-                  <p className="text-sm text-muted-foreground">
-                    Led by {props.request.smallGroup.leader.firstName} {props.request.smallGroup.leader.lastName}
-                  </p>
-                )}
-              </div>
-            )}
+      <TabsContent value="details" className="mt-0 p-6 max-w-2xl space-y-4">
+        {props.registrant.guest && (
+          <RegistrantGuestProfile guest={props.registrant.guest} showViewProfileButton={false} formRef={formRef} />
+        )}
+        {props.registrant.member && (
+          <MemberReadOnly
+            member={props.registrant.member}
+            memberId={props.registrant.member.id}
+          />
+        )}
+        {!props.registrant.guest && !props.registrant.member && (
+          <section className="space-y-3">
+            <h3 className="type-label text-muted-foreground">Contact</h3>
+            <div className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
+              <span className="text-muted-foreground">Mobile</span>
+              <span>{props.registrant.mobileNumber ?? <span className="text-muted-foreground">—</span>}</span>
+              <span className="text-muted-foreground">Email</span>
+              <span>{props.registrant.email ?? <span className="text-muted-foreground">—</span>}</span>
+            </div>
+          </section>
+        )}
+      </TabsContent>
 
-            {props.status === "pending" && props.request?.smallGroup && (
-              <div className="rounded-lg border bg-muted/40 p-4 space-y-2">
-                <p className="text-sm font-medium">Awaiting leader confirmation</p>
-                <p className="text-sm">
-                  <Link
-                    href={`/small-groups/${props.request.smallGroup.id}`}
-                    className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-                  >
-                    {props.request.smallGroup.name}
-                  </Link>
-                </p>
-                {props.request.smallGroup.leader && (
-                  <p className="text-sm text-muted-foreground">
-                    Led by {props.request.smallGroup.leader.firstName} {props.request.smallGroup.leader.lastName}
-                  </p>
-                )}
-              </div>
+      <TabsContent value="small-group" className="mt-0 p-6 max-w-2xl">
+        {props.status === "confirmed" && props.request?.smallGroup && (
+          <div className="rounded-lg border p-4 space-y-2">
+            <p className="text-sm font-medium">Member of this group</p>
+            <p className="text-sm">
+              <Link
+                href={`/small-groups/${props.request.smallGroup.id}`}
+                className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+              >
+                {props.request.smallGroup.name}
+              </Link>
+            </p>
+            {props.request.smallGroup.leader && (
+              <p className="text-sm text-muted-foreground">
+                Led by {props.request.smallGroup.leader.firstName} {props.request.smallGroup.leader.lastName}
+              </p>
             )}
+          </div>
+        )}
 
-            {props.status === "rejected" && (
-              <CatchMechMatchSection
-                ref={matchSectionRef}
-                registrantId={props.registrantId}
-                eventId={props.eventId}
-                guestId={props.registrant.guestId ?? ""}
-                initialPrefs={props.initialPrefs}
-                lifeStages={props.lifeStages}
-              />
+        {props.status === "pending" && props.request?.smallGroup && (
+          <div className="rounded-lg border bg-muted/40 p-4 space-y-2">
+            <p className="text-sm font-medium">Awaiting leader confirmation</p>
+            <p className="text-sm">
+              <Link
+                href={`/small-groups/${props.request.smallGroup.id}`}
+                className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+              >
+                {props.request.smallGroup.name}
+              </Link>
+            </p>
+            {props.request.smallGroup.leader && (
+              <p className="text-sm text-muted-foreground">
+                Led by {props.request.smallGroup.leader.firstName} {props.request.smallGroup.leader.lastName}
+              </p>
             )}
+          </div>
+        )}
 
-            {(props.status === "confirmed" || props.status === "pending") && !props.request?.smallGroup && (
-              <p className="text-sm text-muted-foreground">No small group assigned.</p>
-            )}
-          </TabsContent>
+        {props.status === "rejected" && (
+          <CatchMechMatchSection
+            ref={matchSectionRef}
+            registrantId={props.registrantId}
+            eventId={props.eventId}
+            guestId={props.registrant.guestId ?? ""}
+            initialPrefs={props.initialPrefs}
+            lifeStages={props.lifeStages}
+          />
+        )}
 
-          <TabsContent value="activity" className="mt-4">
-            <CatchMechActivityLog
-              entries={props.activityEntries}
-              requestId={props.requestId}
-            />
-          </TabsContent>
-        </Tabs>
-      </div>
-      </div>
-    </div>
+        {(props.status === "confirmed" || props.status === "pending") && !props.request?.smallGroup && (
+          <p className="text-sm text-muted-foreground">No small group assigned.</p>
+        )}
+      </TabsContent>
+
+      <TabsContent value="activity" className="mt-0 p-6 max-w-2xl">
+        <CatchMechActivityLog
+          entries={props.activityEntries}
+          requestId={props.requestId}
+        />
+      </TabsContent>
+    </Tabs>
   )
 }

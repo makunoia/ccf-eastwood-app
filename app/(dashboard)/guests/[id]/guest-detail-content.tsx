@@ -62,6 +62,7 @@ export function GuestDetailContent({ guest, lifeStages, pipelineStatus, sourceEv
       sourceEvent={sourceEvent}
       eventHistory={eventHistory}
       activityHistory={activityHistory}
+      pipelineStatus={pipelineStatus}
       matchSection={
         <GuestMatchSection
           guestId={guest.id}
