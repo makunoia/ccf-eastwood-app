@@ -23,7 +23,7 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: "https",
-        hostname: "www.ccfeastwood.app",
+        hostname: "images.ccfeastwood.app",
       },
     ],
   },
