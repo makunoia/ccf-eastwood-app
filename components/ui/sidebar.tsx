@@ -7,6 +7,7 @@ import { Slot } from "radix-ui"
 
 import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
+import { deriveGradient } from "@/lib/color-utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
@@ -40,6 +41,9 @@ type SidebarContextProps = {
   setOpenMobile: (open: boolean) => void
   isMobile: boolean
   toggleSidebar: () => void
+  brandColor?: string | null
+  brandBackground?: string | null
+  brandAccent?: string | null
 }
 
 const SidebarContext = React.createContext<SidebarContextProps | null>(null)
@@ -60,11 +64,17 @@ function SidebarProvider({
   className,
   style,
   children,
+  brandColor,
+  brandBackground,
+  brandAccent,
   ...props
 }: React.ComponentProps<"div"> & {
   defaultOpen?: boolean
   open?: boolean
   onOpenChange?: (open: boolean) => void
+  brandColor?: string | null
+  brandBackground?: string | null
+  brandAccent?: string | null
 }) {
   const isMobile = useIsMobile()
   const [openMobile, setOpenMobile] = React.useState(false)
@@ -122,8 +132,11 @@ function SidebarProvider({
       openMobile,
       setOpenMobile,
       toggleSidebar,
+      brandColor,
+      brandBackground,
+      brandAccent,
     }),
-    [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar]
+    [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar, brandColor, brandBackground, brandAccent]
   )
 
   return (
@@ -135,6 +148,7 @@ function SidebarProvider({
             {
               "--sidebar-width": SIDEBAR_WIDTH,
               "--sidebar-width-icon": SIDEBAR_WIDTH_ICON,
+              ...(brandBackground ? { backgroundColor: brandBackground } : {}),
               ...style,
             } as React.CSSProperties
           }
@@ -163,7 +177,7 @@ function Sidebar({
   variant?: "sidebar" | "floating" | "inset"
   collapsible?: "offcanvas" | "icon" | "none"
 }) {
-  const { isMobile, state, openMobile, setOpenMobile } = useSidebar()
+  const { isMobile, state, openMobile, setOpenMobile, brandColor, brandAccent } = useSidebar()
 
   if (collapsible === "none") {
     return (
@@ -191,6 +205,10 @@ function Sidebar({
           style={
             {
               "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
+              background: brandColor
+                ? deriveGradient(brandColor)
+                : "linear-gradient(175deg, oklch(0.36 0.14 222) 0%, oklch(0.22 0.12 215) 100%)",
+              ...(brandAccent ? { "--sidebar-accent": `${brandAccent}30`, "--sidebar-accent-foreground": "#ffffff" } : {}),
             } as React.CSSProperties
           }
           side={side}
@@ -246,7 +264,13 @@ function Sidebar({
         <div
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
-          className="flex h-full w-full flex-col bg-sidebar group-data-[variant=floating]:pt-[env(safe-area-inset-top)] group-data-[variant=floating]:pb-[env(safe-area-inset-bottom)] group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow-sm"
+          className="flex h-full w-full flex-col bg-sidebar rounded-2xl group-data-[variant=floating]:pt-[env(safe-area-inset-top)] group-data-[variant=floating]:pb-[env(safe-area-inset-bottom)] group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow-sm"
+          style={{
+            background: brandColor
+              ? deriveGradient(brandColor)
+              : "linear-gradient(175deg, oklch(0.36 0.14 222) 0%, oklch(0.22 0.12 215) 100%)",
+            ...(brandAccent ? { "--sidebar-accent": `${brandAccent}30`, "--sidebar-accent-foreground": "#ffffff" } : {}),
+          } as React.CSSProperties}
         >
           {children}
         </div>

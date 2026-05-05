@@ -29,6 +29,10 @@ async function getMinistries(where: Prisma.MinistryWhereInput): Promise<Ministry
     lifeStageId: m.lifeStageId ?? null,
     description: m.description ?? null,
     eventCount: m._count.events,
+    logoUrl: m.logoUrl ?? null,
+    themeColorPrimary: m.themeColorPrimary ?? null,
+    themeColorSecondary: m.themeColorSecondary ?? null,
+    themeColorAccent: m.themeColorAccent ?? null,
   }))
 }
 

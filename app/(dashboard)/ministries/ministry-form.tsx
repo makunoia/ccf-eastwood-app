@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { DetailPageHeader } from "@/components/detail-page-header"
 import { BreadcrumbOverride } from "@/components/breadcrumb-context"
+import { LogoUploader } from "@/components/logo-uploader"
+import { ColorThemePicker, type ColorTheme } from "@/components/color-theme-picker"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -43,6 +45,10 @@ function toFormValues(ministry: MinistryRow): MinistryFormValues {
     name: ministry.name,
     lifeStageId: ministry.lifeStageId ?? "",
     description: ministry.description ?? "",
+    logoUrl: ministry.logoUrl ?? "",
+    themeColorPrimary: ministry.themeColorPrimary ?? "",
+    themeColorSecondary: ministry.themeColorSecondary ?? "",
+    themeColorAccent: ministry.themeColorAccent ?? "",
   }
 }
 
@@ -60,6 +66,16 @@ export function MinistryForm({ lifeStages, ministry }: Props) {
   function set(field: keyof MinistryFormValues, value: string) {
     setDirty(true)
     setForm((prev) => ({ ...prev, [field]: value }))
+  }
+
+  function setTheme(theme: ColorTheme) {
+    setDirty(true)
+    setForm((prev) => ({
+      ...prev,
+      themeColorPrimary: theme.primary,
+      themeColorSecondary: theme.secondary,
+      themeColorAccent: theme.accent,
+    }))
   }
 
   function handleRevert() {
@@ -96,6 +112,12 @@ export function MinistryForm({ lifeStages, ministry }: Props) {
     } else {
       toast.error(result.error)
     }
+  }
+
+  const colorTheme: ColorTheme = {
+    primary: form.themeColorPrimary,
+    secondary: form.themeColorSecondary,
+    accent: form.themeColorAccent,
   }
 
   return (
@@ -177,6 +199,25 @@ export function MinistryForm({ lifeStages, ministry }: Props) {
               placeholder="Brief description of this ministry…"
               rows={3}
             />
+          </div>
+
+          <div className="border-t pt-6 space-y-6">
+            <div>
+              <p className="text-sm font-medium">Branding</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Logo and color palette used by events linked to this ministry.
+              </p>
+            </div>
+
+            <LogoUploader
+              value={form.logoUrl || null}
+              onChange={(url) => {
+                setDirty(true)
+                setForm((prev) => ({ ...prev, logoUrl: url ?? "" }))
+              }}
+            />
+
+            <ColorThemePicker value={colorTheme} onChange={setTheme} />
           </div>
         </form>
 

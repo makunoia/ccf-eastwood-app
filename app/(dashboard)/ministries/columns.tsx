@@ -33,6 +33,10 @@ export type MinistryRow = {
   eventCount: number
   // For edit form pre-fill
   lifeStageId: string | null
+  logoUrl: string | null
+  themeColorPrimary: string | null
+  themeColorSecondary: string | null
+  themeColorAccent: string | null
 }
 
 export function RowActions({ row }: { row: MinistryRow }) {

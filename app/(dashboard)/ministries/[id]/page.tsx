@@ -36,6 +36,10 @@ export default async function EditMinistryPage({
     lifeStageId: ministry.lifeStageId ?? null,
     description: ministry.description ?? null,
     eventCount: 0,
+    logoUrl: ministry.logoUrl ?? null,
+    themeColorPrimary: ministry.themeColorPrimary ?? null,
+    themeColorSecondary: ministry.themeColorSecondary ?? null,
+    themeColorAccent: ministry.themeColorAccent ?? null,
   }
 
   return (

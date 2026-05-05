@@ -26,6 +26,10 @@ export async function createMinistry(
         name: parsed.data.name,
         lifeStageId: parsed.data.lifeStageId ?? null,
         description: parsed.data.description ?? null,
+        logoUrl: parsed.data.logoUrl ?? null,
+        themeColorPrimary: parsed.data.themeColorPrimary ?? null,
+        themeColorSecondary: parsed.data.themeColorSecondary ?? null,
+        themeColorAccent: parsed.data.themeColorAccent ?? null,
       },
       select: { id: true },
     })
@@ -58,6 +62,10 @@ export async function updateMinistry(
         name: parsed.data.name,
         lifeStageId: parsed.data.lifeStageId ?? null,
         description: parsed.data.description ?? null,
+        logoUrl: parsed.data.logoUrl ?? null,
+        themeColorPrimary: parsed.data.themeColorPrimary ?? null,
+        themeColorSecondary: parsed.data.themeColorSecondary ?? null,
+        themeColorAccent: parsed.data.themeColorAccent ?? null,
       },
     })
     revalidatePath("/ministries")

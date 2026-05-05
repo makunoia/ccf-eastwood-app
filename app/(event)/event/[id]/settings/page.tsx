@@ -9,6 +9,12 @@ async function getEventSettings(id: string) {
       id: true,
       name: true,
       type: true,
+      useMinistryBrand: true,
+      brandMinistryId: true,
+      logoUrl: true,
+      themeColorPrimary: true,
+      themeColorSecondary: true,
+      themeColorAccent: true,
       modules: { select: { id: true, type: true } },
       buses: {
         orderBy: { createdAt: "asc" },
@@ -31,6 +37,20 @@ async function getEventSettings(id: string) {
           },
         },
       },
+      ministries: {
+        select: {
+          ministry: {
+            select: {
+              id: true,
+              name: true,
+              logoUrl: true,
+              themeColorPrimary: true,
+              themeColorSecondary: true,
+              themeColorAccent: true,
+            },
+          },
+        },
+      },
     },
   })
 }
@@ -44,8 +64,9 @@ export default async function EventSettingsPage({
   const event = await getEventSettings(id)
   if (!event) notFound()
 
-  // Embarkation module is only applicable for OneTime/MultiDay events
   const showEmbarkation = event.type !== "Recurring"
+
+  const linkedMinistries = event.ministries.map((em) => em.ministry)
 
   return (
     <EventSettingsClient
@@ -54,6 +75,15 @@ export default async function EventSettingsPage({
       buses={event.buses}
       committees={event.committees}
       showEmbarkation={showEmbarkation}
+      branding={{
+        useMinistryBrand: event.useMinistryBrand,
+        brandMinistryId: event.brandMinistryId ?? "",
+        logoUrl: event.logoUrl ?? "",
+        themeColorPrimary: event.themeColorPrimary ?? "",
+        themeColorSecondary: event.themeColorSecondary ?? "",
+        themeColorAccent: event.themeColorAccent ?? "",
+      }}
+      linkedMinistries={linkedMinistries}
     />
   )
 }

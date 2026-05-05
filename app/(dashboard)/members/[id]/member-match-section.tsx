@@ -71,12 +71,14 @@ export function MemberMatchSection({
   pendingTransfer,
   initialPrefs,
   lifeStages,
+  onSuccess,
 }: {
   memberId: string
   hasGroup: boolean
   pendingTransfer?: PendingTransfer | null
   initialPrefs: MatchingPrefs
   lifeStages: { id: string; name: string }[]
+  onSuccess?: () => void
 }) {
   const router = useRouter()
   const [state, setState] = React.useState<"idle" | "loading" | "done">("idle")
@@ -135,6 +137,7 @@ export function MemberMatchSection({
         ? "Transfer request created — pending leader confirmation"
         : "Member assigned to group"
       )
+      onSuccess?.()
       router.refresh()
       setState("idle")
       setResults([])

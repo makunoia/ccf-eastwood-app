@@ -64,9 +64,6 @@ export default async function OccurrenceDetailPage({
     timeZone: "UTC",
   })
 
-  const eventType = occurrence.event.type
-  const backLabel = eventType === "MultiDay" ? "Days" : "Sessions"
-
   return (
     <>
       <BreadcrumbOverride
