@@ -32,6 +32,9 @@ import {
   deleteBus,
 } from "@/app/(dashboard)/events/module-actions"
 import { CommitteeManager } from "@/app/(dashboard)/events/[id]/committees"
+import { LogoUploader } from "@/components/logo-uploader"
+import { ColorThemePicker, type ColorTheme } from "@/components/color-theme-picker"
+import { updateEventBranding, type EventBrandingValues } from "@/app/(dashboard)/events/branding-actions"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -46,12 +49,23 @@ type BusRow = {
 type CommitteeRole = { id: string; name: string }
 type Committee = { id: string; name: string; roles: CommitteeRole[] }
 
+type LinkedMinistry = {
+  id: string
+  name: string
+  logoUrl: string | null
+  themeColorPrimary: string | null
+  themeColorSecondary: string | null
+  themeColorAccent: string | null
+}
+
 type Props = {
   eventId: string
   enabledModules: string[]
   buses: BusRow[]
   committees: Committee[]
   showEmbarkation: boolean
+  branding: EventBrandingValues
+  linkedMinistries: LinkedMinistry[]
 }
 
 type BusFormValues = { name: string; capacity: string; direction: string }
@@ -153,9 +167,170 @@ function BusDialog({
   )
 }
 
+// ─── Branding tab ─────────────────────────────────────────────────────────────
+
+function BrandingTab({
+  eventId,
+  initial,
+  linkedMinistries,
+}: {
+  eventId: string
+  initial: EventBrandingValues
+  linkedMinistries: LinkedMinistry[]
+}) {
+  const [form, setForm] = React.useState<EventBrandingValues>(initial)
+  const [saving, setSaving] = React.useState(false)
+  const [dirty, setDirty] = React.useState(false)
+
+  function set<K extends keyof EventBrandingValues>(key: K, value: EventBrandingValues[K]) {
+    setDirty(true)
+    setForm((prev) => ({ ...prev, [key]: value }))
+  }
+
+  const selectedMinistry = linkedMinistries.find((m) => m.id === form.brandMinistryId)
+
+  const colorTheme: ColorTheme = {
+    primary: form.themeColorPrimary,
+    secondary: form.themeColorSecondary,
+    accent: form.themeColorAccent,
+  }
+
+  async function handleSave() {
+    setSaving(true)
+    const result = await updateEventBranding(eventId, form)
+    setSaving(false)
+    if (result.success) {
+      setDirty(false)
+      toast.success("Branding saved")
+    } else {
+      toast.error(result.error)
+    }
+  }
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <div className="flex items-center justify-between rounded-lg border p-4">
+        <div>
+          <p className="text-sm font-medium">Use Ministry Brand</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Inherit logo and color theme from a linked ministry.
+          </p>
+        </div>
+        <Switch
+          checked={form.useMinistryBrand}
+          onCheckedChange={(v) => set("useMinistryBrand", v)}
+        />
+      </div>
+
+      {form.useMinistryBrand ? (
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>Ministry</Label>
+            {linkedMinistries.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No ministries linked to this event. Link one in Event Settings → Details first.
+              </p>
+            ) : (
+              <Select
+                value={form.brandMinistryId}
+                onValueChange={(v) => set("brandMinistryId", v)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a ministry" />
+                </SelectTrigger>
+                <SelectContent>
+                  {linkedMinistries.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+
+          {selectedMinistry && (
+            <div className="rounded-lg border p-4 space-y-3">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Preview</p>
+              <div className="flex items-center gap-3">
+                {selectedMinistry.logoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={selectedMinistry.logoUrl}
+                    alt={selectedMinistry.name}
+                    className="size-12 rounded-lg object-contain border bg-muted p-0.5"
+                  />
+                ) : (
+                  <div className="size-12 rounded-lg border bg-muted flex items-center justify-center text-xs text-muted-foreground">
+                    No logo
+                  </div>
+                )}
+                <div>
+                  <p className="text-sm font-medium">{selectedMinistry.name}</p>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    {[selectedMinistry.themeColorPrimary, selectedMinistry.themeColorSecondary, selectedMinistry.themeColorAccent]
+                      .filter(Boolean)
+                      .map((color, i) => (
+                        <div
+                          key={i}
+                          className="size-4 rounded-full border"
+                          style={{ backgroundColor: color! }}
+                          title={color!}
+                        />
+                      ))}
+                    {!selectedMinistry.themeColorPrimary && (
+                      <p className="text-xs text-muted-foreground">No theme colors set</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-6">
+          <LogoUploader
+            value={form.logoUrl || null}
+            onChange={(url) => {
+              setDirty(true)
+              setForm((prev) => ({ ...prev, logoUrl: url ?? "" }))
+            }}
+          />
+          <ColorThemePicker
+            value={colorTheme}
+            onChange={(theme) => {
+              setDirty(true)
+              setForm((prev) => ({
+                ...prev,
+                themeColorPrimary: theme.primary,
+                themeColorSecondary: theme.secondary,
+                themeColorAccent: theme.accent,
+              }))
+            }}
+          />
+        </div>
+      )}
+
+      {dirty && (
+        <Button onClick={handleSave} disabled={saving}>
+          {saving ? "Saving…" : "Save branding"}
+        </Button>
+      )}
+    </div>
+  )
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function EventSettingsClient({ eventId, enabledModules, buses, committees, showEmbarkation }: Props) {
+export function EventSettingsClient({
+  eventId,
+  enabledModules,
+  buses,
+  committees,
+  showEmbarkation,
+  branding,
+  linkedMinistries,
+}: Props) {
   const [modules, setModules] = React.useState<Set<string>>(new Set(enabledModules))
   const [togglingModule, setTogglingModule] = React.useState<string | null>(null)
   const [busDialogOpen, setBusDialogOpen] = React.useState(false)
@@ -206,6 +381,7 @@ export function EventSettingsClient({ eventId, enabledModules, buses, committees
         <TabsList>
           <TabsTrigger value="modules">Modules</TabsTrigger>
           <TabsTrigger value="committees">Committees</TabsTrigger>
+          <TabsTrigger value="branding">Branding</TabsTrigger>
         </TabsList>
 
         <TabsContent value="modules" className="mt-6">
@@ -336,6 +512,14 @@ export function EventSettingsClient({ eventId, enabledModules, buses, committees
 
         <TabsContent value="committees" className="mt-6 max-w-2xl">
           <CommitteeManager eventId={eventId} committees={committees} />
+        </TabsContent>
+
+        <TabsContent value="branding" className="mt-6">
+          <BrandingTab
+            eventId={eventId}
+            initial={branding}
+            linkedMinistries={linkedMinistries}
+          />
         </TabsContent>
       </Tabs>
 

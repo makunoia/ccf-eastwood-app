@@ -325,13 +325,18 @@ model SmallGroup {
 }
 
 model Ministry {
-  id          String     @id @default(cuid())
-  name        String     @unique
-  lifeStageId String?
-  lifeStage   LifeStage? @relation(fields: [lifeStageId], references: [id])
-  description String?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  id                  String     @id @default(cuid())
+  name                String     @unique
+  lifeStageId         String?
+  lifeStage           LifeStage? @relation(fields: [lifeStageId], references: [id])
+  description         String?
+  // Branding
+  logoUrl             String?
+  themeColorPrimary   String?
+  themeColorSecondary String?
+  themeColorAccent    String?
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
 
   events EventMinistry[]
 }
@@ -350,6 +355,13 @@ model Event {
   recurrenceDayOfWeek   Int?                // 0 = Sunday … 6 = Saturday
   recurrenceFrequency   RecurrenceFrequency?
   recurrenceEndDate     DateTime?           // null = runs indefinitely
+  // Branding
+  useMinistryBrand      Boolean             @default(false)
+  brandMinistryId       String?
+  logoUrl               String?
+  themeColorPrimary     String?
+  themeColorSecondary   String?
+  themeColorAccent      String?
   createdAt             DateTime            @default(now())
   updatedAt             DateTime            @updatedAt
 

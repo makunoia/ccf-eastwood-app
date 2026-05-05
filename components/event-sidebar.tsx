@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import Image from "next/image"
 import { usePathname } from "next/navigation"
 import {
   IconArrowLeft,
@@ -14,6 +15,7 @@ import {
   IconUsersGroup,
   IconHeart,
   IconUsers,
+  IconCalendar,
 } from "@tabler/icons-react"
 
 import {
@@ -34,6 +36,7 @@ type EventSidebarProps = React.ComponentProps<typeof Sidebar> & {
   eventType: "OneTime" | "MultiDay" | "Recurring"
   modules: string[]
   showBackLink: boolean
+  logoUrl?: string | null
 }
 
 export function EventSidebar({
@@ -42,6 +45,7 @@ export function EventSidebar({
   eventType,
   modules,
   showBackLink,
+  logoUrl,
   ...props
 }: EventSidebarProps) {
   const pathname = usePathname()
@@ -111,20 +115,24 @@ export function EventSidebar({
   return (
     <Sidebar collapsible="offcanvas" {...props}>
       <SidebarHeader>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              asChild
-              className="data-[slot=sidebar-menu-button]:p-1.5! h-auto"
-            >
-              <span className="flex flex-col items-start gap-0">
-                <span className="text-sm font-semibold leading-snug line-clamp-2">
-                  {eventName}
-                </span>
-              </span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+        <Link href={base} className="flex flex-col items-center gap-1.5 py-4">
+          {logoUrl ? (
+            <Image
+              src={logoUrl}
+              alt={eventName}
+              width={64}
+              height={64}
+              className="rounded-lg object-contain"
+            />
+          ) : (
+            <div className="size-16 rounded-lg bg-muted flex items-center justify-center">
+              <IconCalendar className="size-8 text-muted-foreground" />
+            </div>
+          )}
+          <span className="text-sm font-semibold text-center leading-snug line-clamp-2 px-2">
+            {eventName}
+          </span>
+        </Link>
       </SidebarHeader>
 
       <SidebarContent>

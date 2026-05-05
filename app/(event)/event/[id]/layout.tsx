@@ -14,9 +14,64 @@ async function getEventMeta(id: string) {
       id: true,
       name: true,
       type: true,
+      useMinistryBrand: true,
+      brandMinistryId: true,
+      logoUrl: true,
+      themeColorPrimary: true,
+      themeColorSecondary: true,
+      themeColorAccent: true,
       modules: { select: { type: true } },
+      ministries: {
+        select: {
+          ministry: {
+            select: {
+              id: true,
+              logoUrl: true,
+              themeColorPrimary: true,
+              themeColorSecondary: true,
+              themeColorAccent: true,
+            },
+          },
+        },
+      },
     },
   })
+}
+
+function resolveLogoUrl(event: Awaited<ReturnType<typeof getEventMeta>>): string | null {
+  if (!event) return null
+  if (event.useMinistryBrand && event.brandMinistryId) {
+    const ministry = event.ministries.find((em) => em.ministry.id === event.brandMinistryId)
+    return ministry?.ministry.logoUrl ?? null
+  }
+  return event.logoUrl ?? null
+}
+
+function resolveSidebarBrand(event: Awaited<ReturnType<typeof getEventMeta>>): string | null {
+  if (!event) return null
+  if (event.useMinistryBrand && event.brandMinistryId) {
+    const ministry = event.ministries.find((em) => em.ministry.id === event.brandMinistryId)
+    return ministry?.ministry.themeColorPrimary ?? null
+  }
+  return event.themeColorPrimary ?? null
+}
+
+function resolveBrandBackground(event: Awaited<ReturnType<typeof getEventMeta>>): string | null {
+  if (!event) return null
+  if (event.useMinistryBrand && event.brandMinistryId) {
+    const ministry = event.ministries.find((em) => em.ministry.id === event.brandMinistryId)
+    return ministry?.ministry.themeColorSecondary ?? null
+  }
+  return event.themeColorSecondary ?? null
+}
+
+function resolveBrandAccent(event: Awaited<ReturnType<typeof getEventMeta>>): string | null {
+  if (!event) return null
+  if (event.useMinistryBrand && event.brandMinistryId) {
+    const ministry = event.ministries.find((em) => em.ministry.id === event.brandMinistryId)
+    return ministry?.ministry.themeColorAccent ?? null
+  }
+  return event.themeColorAccent ?? null
 }
 
 export default async function EventLayout({
@@ -33,17 +88,23 @@ export default async function EventLayout({
   const event = await getEventMeta(id)
   if (!event) notFound()
 
-  // Check event-specific access for Staff users
   if (!canAccessEvent(session, id)) {
     redirect("/dashboard")
   }
 
   const modules = event.modules.map((m) => m.type)
   const showBackLink = isSuperAdmin(session)
+  const logoUrl = resolveLogoUrl(event)
+  const sidebarBrand = resolveSidebarBrand(event)
+  const brandBackground = resolveBrandBackground(event)
+  const brandAccent = resolveBrandAccent(event)
 
   return (
     <SidebarProvider
       className="h-svh"
+      brandColor={sidebarBrand}
+      brandBackground={brandBackground}
+      brandAccent={brandAccent}
       style={
         {
           "--sidebar-width": "calc(var(--spacing) * 72)",
@@ -58,6 +119,7 @@ export default async function EventLayout({
         eventType={event.type}
         modules={modules}
         showBackLink={showBackLink}
+        logoUrl={logoUrl}
       />
       <SidebarInset className="overflow-hidden">
         <BreadcrumbProvider>

@@ -4,6 +4,7 @@ import { MemberForm } from "../member-form"
 import { MemberEventHistory } from "./member-event-history"
 import { MemberSmallGroups } from "./member-small-groups"
 import { MemberMatchSection } from "./member-match-section"
+import { MemberTransferControls } from "./member-transfer-controls"
 import { MemberActivityLog, type MemberActivityEntry } from "./member-activity-log"
 import { type MemberRow } from "../columns"
 
@@ -273,12 +274,13 @@ export default async function MemberDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const [member, lifeStages, registrations, smallGroupInfo, activityEntries] = await Promise.all([
+  const [member, lifeStages, registrations, smallGroupInfo, activityEntries, allSmallGroups] = await Promise.all([
     getMember(id),
     getLifeStages(),
     getMemberEventRegistrations(id),
     getMemberSmallGroupInfo(id),
     getMemberActivityData(id),
+    db.smallGroup.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
   ])
 
   if (!member) notFound()
@@ -297,24 +299,46 @@ export default async function MemberDetailPage({
               ledGroups={smallGroupInfo.ledGroups}
             />
             <div className="border-t" />
-            <MemberMatchSection
-              memberId={id}
-              hasGroup={!!smallGroupInfo.memberOf}
-              pendingTransfer={smallGroupInfo.pendingTransfer}
-              initialPrefs={{
-                lifeStageId: member.lifeStageId ?? "",
-                gender: member.gender ?? "",
-                language: member.language,
-                workCity: member.workCity ?? "",
-                workIndustry: member.workIndustry ?? "",
-                meetingPreference: member.meetingPreference ?? "",
-                scheduleDayOfWeek:
-                  member.scheduleDayOfWeek != null ? String(member.scheduleDayOfWeek) : "",
-                scheduleTimeStart: member.scheduleTimeStart ?? "",
-                scheduleTimeEnd: member.scheduleTimeStart ? addOneHour(member.scheduleTimeStart) : "",
-              }}
-              lifeStages={lifeStages}
-            />
+            {smallGroupInfo.memberOf ? (
+              <MemberTransferControls
+                memberId={id}
+                currentGroupId={smallGroupInfo.memberOf.id}
+                pendingTransfer={smallGroupInfo.pendingTransfer}
+                initialPrefs={{
+                  lifeStageId: member.lifeStageId ?? "",
+                  gender: member.gender ?? "",
+                  language: member.language,
+                  workCity: member.workCity ?? "",
+                  workIndustry: member.workIndustry ?? "",
+                  meetingPreference: member.meetingPreference ?? "",
+                  scheduleDayOfWeek:
+                    member.scheduleDayOfWeek != null ? String(member.scheduleDayOfWeek) : "",
+                  scheduleTimeStart: member.scheduleTimeStart ?? "",
+                  scheduleTimeEnd: member.scheduleTimeStart ? addOneHour(member.scheduleTimeStart) : "",
+                }}
+                lifeStages={lifeStages}
+                allGroups={allSmallGroups}
+              />
+            ) : (
+              <MemberMatchSection
+                memberId={id}
+                hasGroup={false}
+                pendingTransfer={null}
+                initialPrefs={{
+                  lifeStageId: member.lifeStageId ?? "",
+                  gender: member.gender ?? "",
+                  language: member.language,
+                  workCity: member.workCity ?? "",
+                  workIndustry: member.workIndustry ?? "",
+                  meetingPreference: member.meetingPreference ?? "",
+                  scheduleDayOfWeek:
+                    member.scheduleDayOfWeek != null ? String(member.scheduleDayOfWeek) : "",
+                  scheduleTimeStart: member.scheduleTimeStart ?? "",
+                  scheduleTimeEnd: member.scheduleTimeStart ? addOneHour(member.scheduleTimeStart) : "",
+                }}
+                lifeStages={lifeStages}
+              />
+            )}
           </div>
         ) : undefined
       }

@@ -9,9 +9,48 @@ async function getEvent(id: string) {
       id: true,
       name: true,
       type: true,
-      ministries: { select: { ministry: { select: { name: true } } } },
+      useMinistryBrand: true,
+      brandMinistryId: true,
+      logoUrl: true,
+      ministries: {
+        select: {
+          ministry: {
+            select: {
+              name: true,
+              logoUrl: true,
+            },
+          },
+        },
+      },
     },
   })
+}
+
+function resolveLogoUrl(event: NonNullable<Awaited<ReturnType<typeof getEvent>>>) {
+  if (event.useMinistryBrand && event.brandMinistryId) {
+    const ministry = event.ministries.find((em) => em.ministry)
+    return ministry?.ministry.logoUrl ?? null
+  }
+  return event.logoUrl ?? null
+}
+
+function CheckinHeader({ logoUrl, name, subtitle }: { logoUrl: string | null; name: string; subtitle: string }) {
+  return (
+    <div className="border-b px-4 py-4 flex items-center gap-3">
+      {logoUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={logoUrl}
+          alt={name}
+          className="size-10 rounded-lg object-contain bg-muted p-0.5"
+        />
+      )}
+      <div>
+        <h1 className="text-lg font-semibold">{name}</h1>
+        <p className="text-sm text-muted-foreground">{subtitle}</p>
+      </div>
+    </div>
+  )
 }
 
 export default async function CheckinPage({
@@ -23,17 +62,14 @@ export default async function CheckinPage({
   const event = await getEvent(id)
   if (!event) notFound()
 
-  // Recurring and MultiDay events use per-occurrence/per-day check-in links
+  const logoUrl = resolveLogoUrl(event)
+  const ministryNames = event.ministries.map((em) => em.ministry.name).join(" · ")
+  const subtitle = `${ministryNames}${ministryNames ? " · " : ""}Check-in`
+
   if (event.type === "Recurring" || event.type === "MultiDay") {
     return (
       <div className="min-h-svh bg-background">
-        <div className="border-b px-4 py-4">
-          <h1 className="text-lg font-semibold">{event.name}</h1>
-          <p className="text-sm text-muted-foreground">
-            {event.ministries.map((em) => em.ministry.name).join(" · ")}
-            {event.ministries.length > 0 ? " · " : ""}Check-in
-          </p>
-        </div>
+        <CheckinHeader logoUrl={logoUrl} name={event.name} subtitle={subtitle} />
         <div className="flex flex-col items-center justify-center gap-2 px-4 py-16 text-center">
           <p className="font-medium text-sm">
             {event.type === "MultiDay" ? "Use the day check-in link" : "Use the session check-in link"}
@@ -48,16 +84,9 @@ export default async function CheckinPage({
     )
   }
 
-  // OneTime
   return (
     <div className="min-h-svh bg-background">
-      <div className="border-b px-4 py-4">
-        <h1 className="text-lg font-semibold">{event.name}</h1>
-        <p className="text-sm text-muted-foreground">
-          {event.ministries.map((em) => em.ministry.name).join(" · ")}
-          {event.ministries.length > 0 ? " · " : ""}Check-in
-        </p>
-      </div>
+      <CheckinHeader logoUrl={logoUrl} name={event.name} subtitle={subtitle} />
       <CheckinBoard eventId={event.id} occurrenceId={null} />
     </div>
   )
