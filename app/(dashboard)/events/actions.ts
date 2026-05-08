@@ -787,6 +787,140 @@ export async function lookupCheckinRegistrant(
   }
 }
 
+export async function lookupCheckinRegistrantByProfile(
+  eventId: string,
+  lastName: string,
+  birthMonth: number,
+  birthYear: number,
+  occurrenceId: string | null
+): Promise<ActionResult<CheckinRegistrantResult | CheckinAmbiguousResult | null>> {
+  const ln = lastName.trim().toLowerCase()
+  if (!ln || !birthMonth || !birthYear) return { success: true, data: null }
+
+  try {
+    const registrants = await db.eventRegistrant.findMany({
+      where: { eventId },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        nickname: true,
+        attendedAt: true,
+        guestId: true,
+        member: {
+          select: {
+            firstName: true,
+            lastName: true,
+            email: true,
+            phone: true,
+            birthMonth: true,
+            birthYear: true,
+          },
+        },
+        guest: {
+          select: {
+            firstName: true,
+            lastName: true,
+            email: true,
+            phone: true,
+            birthMonth: true,
+            birthYear: true,
+            lifeStageId: true,
+            gender: true,
+            language: true,
+            meetingPreference: true,
+            workCity: true,
+            scheduleDayOfWeek: true,
+            scheduleTimeStart: true,
+            claimedSmallGroupId: true,
+          },
+        },
+      },
+    })
+
+    const allMatched = registrants.filter((r) => {
+      if (r.member) {
+        return (
+          r.member.lastName.toLowerCase() === ln &&
+          r.member.birthMonth === birthMonth &&
+          r.member.birthYear === birthYear
+        )
+      }
+      if (r.guest) {
+        return (
+          r.guest.lastName.toLowerCase() === ln &&
+          r.guest.birthMonth === birthMonth &&
+          r.guest.birthYear === birthYear
+        )
+      }
+      return false
+    })
+
+    if (allMatched.length === 0) return { success: true, data: null }
+
+    async function resolveRegistrant(matched: (typeof registrants)[number]) {
+      const firstName = matched.member?.firstName ?? matched.guest?.firstName ?? matched.firstName ?? ""
+      const lastName = matched.member?.lastName ?? matched.guest?.lastName ?? matched.lastName ?? ""
+      const name = `${firstName} ${lastName}`.trim()
+
+      let alreadyCheckedIn: boolean
+      if (occurrenceId !== null) {
+        const existing = await db.occurrenceAttendee.findUnique({
+          where: { occurrenceId_registrantId: { occurrenceId, registrantId: matched.id } },
+          select: { id: true },
+        })
+        alreadyCheckedIn = existing !== null
+      } else {
+        alreadyCheckedIn = matched.attendedAt !== null
+      }
+
+      let guestSmallGroupPrompt: GuestSmallGroupPrompt | null = null
+      if (occurrenceId !== null && matched.guestId && matched.guest) {
+        const g = matched.guest
+        const profileIncomplete = !g.lifeStageId || !g.gender || !g.meetingPreference
+        const noClaimedGroup = !g.claimedSmallGroupId
+        if (profileIncomplete && noClaimedGroup) {
+          const priorCheckInCount = await db.occurrenceAttendee.count({
+            where: { registrantId: matched.id, occurrence: { eventId } },
+          })
+          if (priorCheckInCount >= 1) {
+            guestSmallGroupPrompt = {
+              guestId: matched.guestId,
+              existingProfile: {
+                lifeStageId: g.lifeStageId,
+                gender: g.gender,
+                language: g.language,
+                meetingPreference: g.meetingPreference,
+                workCity: g.workCity,
+                scheduleDayOfWeek: g.scheduleDayOfWeek,
+                scheduleTimeStart: g.scheduleTimeStart,
+              },
+            }
+          }
+        }
+      }
+
+      return {
+        registrantId: matched.id,
+        name,
+        nickname: matched.nickname,
+        alreadyCheckedIn,
+        guestSmallGroupPrompt,
+      }
+    }
+
+    if (allMatched.length > 1) {
+      const candidates = await Promise.all(allMatched.map(resolveRegistrant))
+      return { success: true, data: { matchType: "ambiguous", candidates } }
+    }
+
+    const data = await resolveRegistrant(allMatched[0])
+    return { success: true, data }
+  } catch {
+    return { success: false, error: "Lookup failed. Please try again." }
+  }
+}
+
 const walkInSchema = z.object({
   firstName: z.string().min(1, "First name is required").trim(),
   lastName: z.string().min(1, "Last name is required").trim(),

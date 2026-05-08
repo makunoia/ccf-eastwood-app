@@ -78,7 +78,7 @@ function VolunteerRowActions({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onSelect={() => router.push(`/volunteers/${volunteer.id}`)}>
+          <DropdownMenuItem onSelect={() => router.push(`/event/${eventId}/volunteers/${volunteer.id}`)}>
             <IconPencil className="mr-2 size-4" />
             Edit
           </DropdownMenuItem>
@@ -131,7 +131,7 @@ function VolunteerCard({
   return (
     <Card
       className="cursor-pointer hover:bg-muted/50 transition-colors py-0"
-      onClick={() => router.push(`/volunteers/${volunteer.id}`)}
+      onClick={() => router.push(`/event/${eventId}/volunteers/${volunteer.id}`)}
     >
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-2">
@@ -186,7 +186,7 @@ function VolunteersDesktopTable({
               <tr key={v.id} className="border-b last:border-0">
                 <td className="px-4 py-3">
                   <Link
-                    href={`/volunteers/${v.id}`}
+                    href={`/event/${eventId}/volunteers/${v.id}`}
                     className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
                   >
                     {memberName}
