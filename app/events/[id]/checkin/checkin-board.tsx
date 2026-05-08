@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select"
 import {
   lookupCheckinRegistrant,
+  lookupCheckinRegistrantByProfile,
   markCheckinAttendance,
   checkInToOccurrence,
   walkInCheckin,
@@ -44,6 +45,8 @@ type GuestSmallGroupPrompt = {
     scheduleTimeStart: string | null
   }
 }
+
+type LookupMode = "mobile" | "email" | "name-dob"
 
 type Step =
   | "lookup"
@@ -99,6 +102,7 @@ function queryIsPhone(q: string): boolean {
 
 export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurring = false }: Props) {
   const [step, setStep] = React.useState<Step>("lookup")
+  const [lookupMode, setLookupMode] = React.useState<LookupMode>("mobile")
   const [query, setQuery] = React.useState("")
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
@@ -111,8 +115,24 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurri
     email: "",
     mobileNumber: "",
   })
+  const [nameDobForm, setNameDobForm] = React.useState({
+    lastName: "",
+    birthMonth: "",
+    birthYear: "",
+  })
   const inputRef = React.useRef<HTMLInputElement>(null)
+  const phoneLookupRef = React.useRef<HTMLDivElement>(null)
   const resetTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  function focusLookupInput() {
+    setTimeout(() => {
+      if (lookupMode === "email") {
+        inputRef.current?.focus()
+      } else {
+        phoneLookupRef.current?.querySelector<HTMLInputElement>("input")?.focus()
+      }
+    }, 50)
+  }
 
   function reset() {
     if (resetTimer.current) clearTimeout(resetTimer.current)
@@ -122,8 +142,9 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurri
     setMatched(null)
     setDisambiguateCandidates([])
     setWalkInForm({ firstName: "", lastName: "", nickname: "", email: "", mobileNumber: "" })
+    setNameDobForm({ lastName: "", birthMonth: "", birthYear: "" })
     setLoading(false)
-    setTimeout(() => inputRef.current?.focus(), 50)
+    focusLookupInput()
   }
 
   function scheduleReset() {
@@ -132,7 +153,7 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurri
   }
 
   React.useEffect(() => {
-    inputRef.current?.focus()
+    phoneLookupRef.current?.querySelector<HTMLInputElement>("input")?.focus()
     return () => {
       if (resetTimer.current) clearTimeout(resetTimer.current)
     }
@@ -140,11 +161,26 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurri
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!query.trim()) return
     setError(null)
     setLoading(true)
 
-    const result = await lookupCheckinRegistrant(eventId, query, occurrenceId)
+    let result: Awaited<ReturnType<typeof lookupCheckinRegistrant>>
+    if (lookupMode === "name-dob") {
+      if (!nameDobForm.lastName.trim() || !nameDobForm.birthMonth || !nameDobForm.birthYear) {
+        setLoading(false)
+        return
+      }
+      result = await lookupCheckinRegistrantByProfile(
+        eventId,
+        nameDobForm.lastName,
+        parseInt(nameDobForm.birthMonth, 10),
+        parseInt(nameDobForm.birthYear, 10),
+        occurrenceId
+      )
+    } else {
+      if (!query.trim()) { setLoading(false); return }
+      result = await lookupCheckinRegistrant(eventId, query, occurrenceId)
+    }
     setLoading(false)
 
     if (!result.success) {
@@ -259,34 +295,154 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurri
           <div className="space-y-1 text-center">
             <h2 className="text-2xl font-semibold tracking-tight">Check in</h2>
             <p className="text-sm text-muted-foreground">
-              Enter your email address or mobile number
+              How would you like to look up your registration?
             </p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="checkin-query">Email or mobile number</Label>
-              <Input
-                id="checkin-query"
-                ref={inputRef}
-                value={query}
-                onChange={(e) => {
-                  setQuery(e.target.value)
-                  setError(null)
-                }}
-                placeholder="juan@email.com or +63 917 123 4567"
-                autoComplete="off"
-                autoCorrect="off"
-                spellCheck={false}
-                className="h-12 text-base"
-              />
-              {error && <p className="text-sm text-destructive">{error}</p>}
+          <div className="space-y-2">
+            <div className="flex overflow-hidden rounded-lg border">
+              {(["mobile", "email"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => {
+                    if (lookupMode !== mode) {
+                      setLookupMode(mode)
+                      setQuery("")
+                      setError(null)
+                    }
+                  }}
+                  className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
+                    lookupMode === mode
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-background hover:bg-muted"
+                  }`}
+                >
+                  {mode === "mobile" ? "Mobile Number" : "Email"}
+                </button>
+              ))}
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (lookupMode !== "name-dob") {
+                  setLookupMode("name-dob")
+                  setQuery("")
+                  setError(null)
+                }
+              }}
+              className={`w-full rounded-lg border py-2.5 text-sm font-medium transition-colors ${
+                lookupMode === "name-dob"
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border bg-background hover:bg-muted"
+              }`}
+            >
+              I don&apos;t have either
+            </button>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {lookupMode === "mobile" && (
+              <div className="space-y-2">
+                <Label htmlFor="checkin-query">Mobile number</Label>
+                <div ref={phoneLookupRef}>
+                  <PhonePHInput
+                    id="checkin-query"
+                    value={query}
+                    onChange={(v) => {
+                      setQuery(v)
+                      setError(null)
+                    }}
+                    wrapperClassName="h-12 text-base"
+                  />
+                </div>
+              </div>
+            )}
+
+            {lookupMode === "email" && (
+              <div className="space-y-2">
+                <Label htmlFor="checkin-query">Email address</Label>
+                <Input
+                  id="checkin-query"
+                  ref={inputRef}
+                  type="email"
+                  value={query}
+                  onChange={(e) => {
+                    setQuery(e.target.value)
+                    setError(null)
+                  }}
+                  placeholder="juan@email.com"
+                  autoComplete="email"
+                  className="h-12 text-base"
+                />
+              </div>
+            )}
+
+            {lookupMode === "name-dob" && (
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <Label htmlFor="namedob-lastname">Last name</Label>
+                  <Input
+                    id="namedob-lastname"
+                    value={nameDobForm.lastName}
+                    onChange={(e) => {
+                      setNameDobForm((p) => ({ ...p, lastName: e.target.value }))
+                      setError(null)
+                    }}
+                    placeholder="dela Cruz"
+                    autoComplete="family-name"
+                    className="h-12 text-base"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="namedob-month">Birth month</Label>
+                    <Select
+                      value={nameDobForm.birthMonth}
+                      onValueChange={(v) => setNameDobForm((p) => ({ ...p, birthMonth: v }))}
+                    >
+                      <SelectTrigger id="namedob-month" className="h-12 text-base">
+                        <SelectValue placeholder="Month" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {[
+                          "January", "February", "March", "April",
+                          "May", "June", "July", "August",
+                          "September", "October", "November", "December",
+                        ].map((month, i) => (
+                          <SelectItem key={month} value={String(i + 1)}>{month}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="namedob-year">Birth year</Label>
+                    <Input
+                      id="namedob-year"
+                      type="number"
+                      inputMode="numeric"
+                      min={1900}
+                      max={new Date().getFullYear()}
+                      value={nameDobForm.birthYear}
+                      onChange={(e) => setNameDobForm((p) => ({ ...p, birthYear: e.target.value }))}
+                      placeholder="1990"
+                      className="h-12 text-base"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {error && <p className="text-sm text-destructive">{error}</p>}
 
             <Button
               type="submit"
               className="h-12 w-full text-base"
-              disabled={loading || !query.trim()}
+              disabled={
+                loading ||
+                (lookupMode !== "name-dob" && !query.trim()) ||
+                (lookupMode === "name-dob" && (!nameDobForm.lastName.trim() || !nameDobForm.birthMonth || !nameDobForm.birthYear))
+              }
             >
               {loading ? (
                 <>
