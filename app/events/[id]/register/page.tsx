@@ -22,6 +22,7 @@ async function getEvent(id: string) {
         select: {
           ministry: {
             select: {
+              id: true,
               name: true,
               logoUrl: true,
               themeColorPrimary: true,
@@ -36,7 +37,7 @@ async function getEvent(id: string) {
 
 function resolveEventBrand(event: NonNullable<Awaited<ReturnType<typeof getEvent>>>) {
   if (event.useMinistryBrand && event.brandMinistryId) {
-    const ministry = event.ministries.find((em) => em.ministry)
+    const ministry = event.ministries.find((em) => em.ministry.id === event.brandMinistryId)
     return {
       logoUrl: ministry?.ministry.logoUrl ?? null,
       primaryColor: ministry?.ministry.themeColorPrimary ?? null,

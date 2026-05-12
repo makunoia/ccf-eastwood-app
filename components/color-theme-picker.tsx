@@ -86,8 +86,6 @@ type ColorRowProps = {
 }
 
 function ColorRow({ label, description, value, onChange, preview }: ColorRowProps) {
-  const hex = isValidHex(value) ? value : DEFAULT_THEME.primary
-
   function handleText(v: string) {
     if (/^#[0-9A-Fa-f]{0,6}$/.test(v)) onChange(v)
   }

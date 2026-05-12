@@ -17,6 +17,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { MultiSelect } from "@/components/ui/multi-select"
+import { PersonCombobox } from "@/components/ui/person-combobox"
 import {
   Select,
   SelectContent,
@@ -224,15 +225,14 @@ function EditDialog({
 
           <div className="space-y-1.5">
             <Label>Facilitator</Label>
-            <Select value={form.facilitatorId} onValueChange={(v) => handleVolunteerChange(v === "_none" ? "" : v)}>
-              <SelectTrigger><SelectValue placeholder="Unassigned" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="_none">Unassigned</SelectItem>
-                {volunteers.map((v) => (
-                  <SelectItem key={v.id} value={v.id}>{v.member.firstName} {v.member.lastName}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <PersonCombobox
+              options={volunteers.map((v) => ({ value: v.id, label: `${v.member.firstName} ${v.member.lastName}` }))}
+              value={form.facilitatorId}
+              onValueChange={handleVolunteerChange}
+              placeholder="Unassigned"
+              clearable
+              clearLabel="Unassigned"
+            />
           </div>
 
           {form.facilitatorId && ledGroups.length > 1 && (

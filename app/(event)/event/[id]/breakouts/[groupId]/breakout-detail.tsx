@@ -40,10 +40,31 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet"
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import {
   removeRegistrantFromBreakout,
   addRegistrantToBreakout,
   setFacilitator,
 } from "@/app/(dashboard)/events/breakout-actions"
+
+const UNASSIGNED = "__unassigned__"
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -91,7 +112,7 @@ type BreakoutMemberRow = {
     nickname: string | null
     mobileNumber: string | null
     attendedAt: Date | null
-    _count: { occurrenceAttendances: number }
+    occurrenceAttendances: { occurrence: { date: Date } }[]
     member: RegistrantMember | null
     guest: { id: string; firstName: string; lastName: string } | null
   }
@@ -134,6 +155,8 @@ export type BreakoutDetailData = {
   memberLimit: number | null
   members: BreakoutMemberRow[]
   schedules: { dayOfWeek: number; timeStart: string }[]
+  eventType: string
+  totalOccurrences: number
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
@@ -175,31 +198,55 @@ function formatTime(t: string) {
 // ─── Facilitator small group card ───────────────────────────────────────────────
 
 function SmallGroupCard({ group }: { group: LedGroup }) {
-  const parts: string[] = []
-  if (group.lifeStage) parts.push(group.lifeStage.name)
-  if (group.genderFocus) parts.push(GENDER_FOCUS_LABELS[group.genderFocus] ?? group.genderFocus)
-  if (group.language.length > 0) parts.push(group.language.join(", "))
-  if (group.ageRangeMin != null || group.ageRangeMax != null) {
-    parts.push(`Ages ${group.ageRangeMin ?? "?"}–${group.ageRangeMax ?? "+"}`)
-  }
-  if (group.meetingFormat) parts.push(MEETING_FORMAT_LABELS[group.meetingFormat] ?? group.meetingFormat)
-  if (group.locationCity) parts.push(group.locationCity)
+  const [open, setOpen] = React.useState(false)
 
-  const schedule =
-    group.scheduleDayOfWeek != null && group.scheduleTimeStart
-      ? `${DAY_LABELS[group.scheduleDayOfWeek]} ${formatTime(group.scheduleTimeStart)}`
-      : null
+  const details: { label: string; value: string }[] = []
+  if (group.lifeStage) details.push({ label: "Life Stage", value: group.lifeStage.name })
+  if (group.genderFocus) details.push({ label: "Gender Focus", value: GENDER_FOCUS_LABELS[group.genderFocus] ?? group.genderFocus })
+  if (group.language.length > 0) details.push({ label: "Language", value: group.language.join(", ") })
+  if (group.ageRangeMin != null || group.ageRangeMax != null) {
+    details.push({ label: "Age Range", value: `${group.ageRangeMin ?? "?"}–${group.ageRangeMax ?? "+"}` })
+  }
+  if (group.meetingFormat) details.push({ label: "Format", value: MEETING_FORMAT_LABELS[group.meetingFormat] ?? group.meetingFormat })
+  if (group.locationCity) details.push({ label: "Location", value: group.locationCity })
+  if (group.scheduleDayOfWeek != null && group.scheduleTimeStart) {
+    details.push({ label: "Schedule", value: `${DAY_LABELS[group.scheduleDayOfWeek]} ${formatTime(group.scheduleTimeStart)}` })
+  }
 
   return (
-    <div className="rounded-md border bg-muted/30 px-3 py-2">
-      <p className="text-sm font-medium">{group.name}</p>
-      {parts.length > 0 && (
-        <p className="text-xs text-muted-foreground mt-0.5">{parts.join(" · ")}</p>
-      )}
-      {schedule && (
-        <p className="text-xs text-muted-foreground mt-0.5">{schedule}</p>
-      )}
-    </div>
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="text-sm font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors text-left"
+      >
+        {group.name}
+      </button>
+
+      <Sheet open={open} onOpenChange={setOpen}>
+        <SheetContent side="right" className="overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle>{group.name}</SheetTitle>
+            <SheetDescription>Small group profile</SheetDescription>
+          </SheetHeader>
+
+          {details.length > 0 ? (
+            <div className="px-4 pb-6 space-y-4">
+              <Separator />
+              <dl className="space-y-3">
+                {details.map((d) => (
+                  <div key={d.label} className="flex gap-3">
+                    <dt className="w-28 shrink-0 text-xs text-muted-foreground pt-0.5">{d.label}</dt>
+                    <dd className="text-sm">{d.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          ) : (
+            <p className="px-4 text-sm text-muted-foreground">No profile details set for this group.</p>
+          )}
+        </SheetContent>
+      </Sheet>
+    </>
   )
 }
 
@@ -223,7 +270,7 @@ function FacilitatorSection({
   availableVolunteers: AvailableVolunteer[]
 }) {
   const [dialogOpen, setDialogOpen] = React.useState(false)
-  const [selectedId, setSelectedId] = React.useState(volunteer?.id ?? "")
+  const [selectedId, setSelectedId] = React.useState(volunteer?.id ?? UNASSIGNED)
   const [linkedGroupId, setLinkedGroupId] = React.useState("")
   const [saving, setSaving] = React.useState(false)
 
@@ -234,7 +281,7 @@ function FacilitatorSection({
   React.useEffect(() => {
     if (dialogOpen) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setSelectedId(volunteer?.id ?? "")
+      setSelectedId(volunteer?.id ?? UNASSIGNED)
       setLinkedGroupId("")
     }
   }, [dialogOpen, volunteer])
@@ -249,9 +296,10 @@ function FacilitatorSection({
   async function handleSave() {
     setSaving(true)
     try {
+      const volunteerId = selectedId === UNASSIGNED ? null : selectedId
       const result = await setFacilitator(
         groupId,
-        selectedId || null,
+        volunteerId,
         role,
         eventId,
         role === "facilitator" ? (linkedGroupId || null) : undefined
@@ -324,7 +372,7 @@ function FacilitatorSection({
             <Select value={selectedId} onValueChange={setSelectedId}>
               <SelectTrigger><SelectValue placeholder="Unassigned" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Unassigned</SelectItem>
+                <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>
                 {eligible.map((v) => (
                   <SelectItem key={v.id} value={v.id}>
                     {v.member.firstName} {v.member.lastName}
@@ -333,7 +381,7 @@ function FacilitatorSection({
               </SelectContent>
             </Select>
           </div>
-          {role === "facilitator" && selectedId && ledGroups.length > 1 && (
+          {role === "facilitator" && selectedId !== UNASSIGNED && ledGroups.length > 1 && (
             <div className="space-y-1.5">
               <Label>Linked small group <span className="text-muted-foreground font-normal">(for DGroup assignment)</span></Label>
               <Select value={linkedGroupId} onValueChange={setLinkedGroupId}>
@@ -456,6 +504,54 @@ function AddRegistrantDialog({
   )
 }
 
+// ─── Occurrence attendance cell ─────────────────────────────────────────────────
+
+function OccurrenceAttendanceCell({
+  attendances,
+  total,
+  eventType,
+}: {
+  attendances: { occurrence: { date: Date } }[]
+  total: number
+  eventType: string
+}) {
+  const count = attendances.length
+  const unit = eventType === "MultiDay" ? "day" : "session"
+
+  if (count === 0) {
+    return <span className="text-muted-foreground text-sm">—</span>
+  }
+
+  const dateList = attendances.map((a) =>
+    new Date(a.occurrence.date).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    })
+  )
+
+  return (
+    <TooltipProvider delayDuration={200}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex items-center gap-1 text-sm text-green-600 cursor-default">
+            <IconCheck className="size-4" />
+            {total > 0 ? `${count} / ${total} ${unit}${total !== 1 ? "s" : ""}` : `${count} ${unit}${count !== 1 ? "s" : ""}`}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-48 text-xs">
+          <p className="font-medium mb-1">Attended {unit}s:</p>
+          <ul className="space-y-0.5">
+            {dateList.map((d, i) => (
+              <li key={i}>{d}</li>
+            ))}
+          </ul>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
+
 // ─── Members table ──────────────────────────────────────────────────────────────
 
 function MembersTable({
@@ -508,14 +604,13 @@ function MembersTable({
               <TableHead>Type</TableHead>
               <TableHead>Small Group</TableHead>
               <TableHead>SG Status</TableHead>
-              <TableHead>Attended</TableHead>
               <TableHead className="w-10" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {members.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground text-sm">
+                <TableCell colSpan={5} className="h-24 text-center text-muted-foreground text-sm">
                   No members assigned yet.
                 </TableCell>
               </TableRow>
@@ -557,16 +652,6 @@ function MembersTable({
                       )}
                     </TableCell>
                     <TableCell>
-                      {r.attendedAt || r._count.occurrenceAttendances > 0 ? (
-                        <span className="flex items-center gap-1 text-sm text-green-600">
-                          <IconCheck className="size-4" />
-                          Attended
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground text-sm">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
                       <Button
                         variant="ghost"
                         size="icon"
@@ -595,6 +680,88 @@ function MembersTable({
         memberLimit={memberLimit}
         memberCount={members.length}
       />
+    </div>
+  )
+}
+
+// ─── Attendance table ───────────────────────────────────────────────────────────
+
+function AttendanceTable({
+  members,
+  eventId,
+  eventType,
+  totalOccurrences,
+}: {
+  members: BreakoutMemberRow[]
+  eventId: string
+  eventType: string
+  totalOccurrences: number
+}) {
+  const attendanceHeader =
+    eventType === "OneTime" ? "Attended" : eventType === "MultiDay" ? "Days Attended" : "Sessions Attended"
+
+  return (
+    <div className="rounded-lg border overflow-hidden">
+      <Table>
+        <TableHeader className="bg-muted">
+          <TableRow>
+            <TableHead>Name</TableHead>
+            <TableHead>Type</TableHead>
+            <TableHead>{attendanceHeader}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {members.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={3} className="h-24 text-center text-muted-foreground text-sm">
+                No members assigned yet.
+              </TableCell>
+            </TableRow>
+          ) : (
+            members.map((m) => {
+              const r = m.registrant
+              const isMember = !!r.memberId
+              const name = registrantDisplayName(r)
+
+              return (
+                <TableRow key={m.registrantId}>
+                  <TableCell>
+                    <Link
+                      href={`/event/${eventId}/registrants/${r.id}`}
+                      className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+                    >
+                      {name}
+                    </Link>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="text-xs">
+                      {isMember ? "Member" : "Guest"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {eventType === "OneTime" ? (
+                      r.attendedAt ? (
+                        <span className="flex items-center gap-1 text-sm text-green-600">
+                          <IconCheck className="size-4" />
+                          Attended
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground text-sm">—</span>
+                      )
+                    ) : (
+                      <OccurrenceAttendanceCell
+                        attendances={r.occurrenceAttendances}
+                        total={totalOccurrences}
+                        eventType={eventType}
+                      />
+                    )}
+                  </TableCell>
+                </TableRow>
+              )
+            })
+          )}
+        </TableBody>
+      </Table>
     </div>
   )
 }
@@ -652,14 +819,35 @@ export function BreakoutDetail({
 
       <Separator />
 
-      {/* Members */}
-      <MembersTable
-        members={group.members}
-        groupId={group.id}
-        eventId={group.eventId}
-        unassignedRegistrants={unassignedRegistrants}
-        memberLimit={group.memberLimit}
-      />
+      <Tabs defaultValue="members">
+        <TabsList variant="line">
+          <TabsTrigger value="members" className="after:-bottom-px">
+            Members{group.members.length > 0 ? ` (${group.members.length})` : ""}
+          </TabsTrigger>
+          <TabsTrigger value="attendance" className="after:-bottom-px">
+            Attendance
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="members" className="mt-4">
+          <MembersTable
+            members={group.members}
+            groupId={group.id}
+            eventId={group.eventId}
+            unassignedRegistrants={unassignedRegistrants}
+            memberLimit={group.memberLimit}
+          />
+        </TabsContent>
+
+        <TabsContent value="attendance" className="mt-4">
+          <AttendanceTable
+            members={group.members}
+            eventId={group.eventId}
+            eventType={group.eventType}
+            totalOccurrences={group.totalOccurrences}
+          />
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }
