@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { OptionalEmailInput } from "@/components/ui/optional-email-input"
 import { OptionalPhonePHInput } from "@/components/ui/optional-phone-ph-input"
+import { YearInput } from "@/components/ui/year-input"
 import {
   Select,
   SelectContent,
@@ -395,13 +396,9 @@ export function RegistrationForm({ eventId, isRecurring = false, lifeStages = []
                   ))}
                 </SelectContent>
               </Select>
-              <Input
-                type="number"
-                min={1900}
-                max={new Date().getFullYear()}
-                placeholder="Year"
+              <YearInput
                 value={form.birthYear}
-                onChange={(e) => set("birthYear", e.target.value)}
+                onChange={(v) => set("birthYear", v)}
                 className="w-24"
               />
             </div>

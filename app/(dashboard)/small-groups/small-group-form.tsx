@@ -59,6 +59,7 @@ import {
   cancelTempAssignment,
 } from "./actions"
 import { searchGuests, promoteGuestToMember } from "@/app/(dashboard)/guests/actions"
+import { Badge } from "@/components/ui/badge"
 import { MobileFormActions } from "@/components/mobile-form-actions"
 import { type SmallGroupRow } from "./columns"
 
@@ -177,6 +178,15 @@ function formatDate(date: Date) {
     year: "numeric",
     timeZone: "UTC",
   })
+}
+
+function getInitials(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0].toUpperCase())
+    .join("")
 }
 
 export function SmallGroupForm({
@@ -421,6 +431,7 @@ export function SmallGroupForm({
 
       <DetailPageHeader
         title={isEdit ? group!.name : "New Small Group"}
+        initials={isEdit ? getInitials(group!.name) : undefined}
         subtitle={
           !isEdit ? (
             <p className="text-sm text-muted-foreground">
@@ -442,7 +453,11 @@ export function SmallGroupForm({
               <TabsTrigger value="members" className="after:-bottom-px">
                 Members
                 {(groupMembers?.length ?? 0) > 0 && ` (${groupMembers!.length})`}
-                {pendingRequests.length > 0 && ` · ${pendingRequests.length} pending`}
+                {pendingRequests.length > 0 && (
+                  <Badge className="ml-1.5 bg-amber-100 text-amber-700 border-transparent hover:bg-amber-100">
+                    {pendingRequests.length} pending
+                  </Badge>
+                )}
               </TabsTrigger>
               <TabsTrigger value="logs" className="after:-bottom-px">
                 Logs{logs.length > 0 ? ` (${logs.length})` : ""}

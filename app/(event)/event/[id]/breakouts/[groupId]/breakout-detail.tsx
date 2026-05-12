@@ -248,19 +248,24 @@ function FacilitatorSection({
 
   async function handleSave() {
     setSaving(true)
-    const result = await setFacilitator(
-      groupId,
-      selectedId || null,
-      role,
-      eventId,
-      role === "facilitator" ? (linkedGroupId || null) : undefined
-    )
-    setSaving(false)
-    if (result.success) {
-      toast.success(`${label} updated`)
-      setDialogOpen(false)
-    } else {
-      toast.error(result.error)
+    try {
+      const result = await setFacilitator(
+        groupId,
+        selectedId || null,
+        role,
+        eventId,
+        role === "facilitator" ? (linkedGroupId || null) : undefined
+      )
+      if (result.success) {
+        toast.success(`${label} updated`)
+        setDialogOpen(false)
+      } else {
+        toast.error(result.error)
+      }
+    } catch {
+      toast.error("Failed to update facilitator")
+    } finally {
+      setSaving(false)
     }
   }
 

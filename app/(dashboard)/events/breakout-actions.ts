@@ -54,7 +54,7 @@ export async function createBreakoutGroup(
       },
       select: { id: true },
     })
-    revalidatePath(`/events/${eventId}`)
+    revalidatePath(`/event/${eventId}/breakouts`)
     return { success: true, data: { id: group.id } }
   } catch {
     return { success: false, error: "Failed to create breakout group" }
@@ -100,7 +100,7 @@ export async function updateBreakoutGroup(
         },
       },
     })
-    revalidatePath(`/events/${eventId}`)
+    revalidatePath(`/event/${eventId}/breakouts`)
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to update breakout group" }
@@ -113,7 +113,7 @@ export async function deleteBreakoutGroup(
 ): Promise<ActionResult> {
   try {
     await db.breakoutGroup.delete({ where: { id: groupId } })
-    revalidatePath(`/events/${eventId}`)
+    revalidatePath(`/event/${eventId}/breakouts`)
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to delete breakout group" }
@@ -144,7 +144,7 @@ export async function addRegistrantToBreakout(
     }
     await db.breakoutGroupMember.create({ data: { breakoutGroupId: groupId, registrantId } })
     await tryCreateSmallGroupRequestFromBreakout(groupId, registrantId)
-    revalidatePath(`/events/${eventId}`)
+    revalidatePath(`/event/${eventId}/breakouts`)
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to add registrant to breakout group" }
@@ -161,7 +161,7 @@ export async function removeRegistrantFromBreakout(
       where: { breakoutGroupId_registrantId: { breakoutGroupId: groupId, registrantId } },
     })
     await tryCancelSmallGroupRequestFromBreakout(groupId, registrantId)
-    revalidatePath(`/events/${eventId}`)
+    revalidatePath(`/event/${eventId}/breakouts`)
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to remove registrant from breakout group" }
@@ -263,44 +263,39 @@ export async function setFacilitator(
   eventId: string,
   linkedSmallGroupId?: string | null
 ): Promise<ActionResult> {
-  // Validate the volunteer belongs to this event (if assigning, not clearing)
-  if (volunteerId !== null) {
-    const volunteer = await db.volunteer.findFirst({
-      where: {
-        id: volunteerId,
-        eventId,
-      },
-      select: { id: true },
-    })
-    if (!volunteer) {
-      return { success: false, error: "Volunteer not found for this event" }
-    }
-    // Prevent the same volunteer in both facilitator slots
-    const group = await db.breakoutGroup.findUnique({
-      where: { id: groupId },
-      select: { facilitatorId: true, coFacilitatorId: true },
-    })
-    if (!group) return { success: false, error: "Breakout group not found" }
-    const otherSlot = role === "facilitator" ? group.coFacilitatorId : group.facilitatorId
-    if (otherSlot === volunteerId) {
-      return {
-        success: false,
-        error: "Facilitator and co-facilitator must be different volunteers",
+  try {
+    if (volunteerId !== null) {
+      const volunteer = await db.volunteer.findFirst({
+        where: { id: volunteerId, eventId },
+        select: { id: true },
+      })
+      if (!volunteer) {
+        return { success: false, error: "Volunteer not found for this event" }
+      }
+      const group = await db.breakoutGroup.findUnique({
+        where: { id: groupId },
+        select: { facilitatorId: true, coFacilitatorId: true },
+      })
+      if (!group) return { success: false, error: "Breakout group not found" }
+      const otherSlot = role === "facilitator" ? group.coFacilitatorId : group.facilitatorId
+      if (otherSlot === volunteerId) {
+        return {
+          success: false,
+          error: "Facilitator and co-facilitator must be different volunteers",
+        }
       }
     }
-  }
-  try {
     await db.breakoutGroup.update({
       where: { id: groupId },
       data: role === "facilitator"
         ? {
             facilitatorId: volunteerId,
-            // Update linked group when facilitator changes (only when explicitly provided)
             ...(linkedSmallGroupId !== undefined ? { linkedSmallGroupId } : {}),
           }
         : { coFacilitatorId: volunteerId },
     })
-    revalidatePath(`/events/${eventId}`)
+    revalidatePath(`/event/${eventId}/breakouts/${groupId}`)
+    revalidatePath(`/event/${eventId}/breakouts`)
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to update facilitator" }

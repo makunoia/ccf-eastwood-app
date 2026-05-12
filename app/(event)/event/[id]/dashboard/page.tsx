@@ -37,8 +37,11 @@ async function getEventDashboard(id: string, period: PeriodFilter, roleFilter: L
       recurrenceDayOfWeek: true,
       recurrenceFrequency: true,
       recurrenceEndDate: true,
+      useMinistryBrand: true,
+      brandMinistryId: true,
+      themeColorSecondary: true,
       ministries: {
-        include: { ministry: { select: { name: true } } },
+        include: { ministry: { select: { id: true, name: true, themeColorSecondary: true } } },
       },
       breakoutGroups: {
         select: { id: true },
@@ -322,6 +325,14 @@ async function getEventDashboard(id: string, period: PeriodFilter, roleFilter: L
   const pendingVolunteerCount = event.volunteers.filter((v) => v.status === "Pending").length
   const rejectedVolunteerCount = event.volunteers.filter((v) => v.status === "Rejected").length
 
+  let brandBackground: string | null = null
+  if (event.useMinistryBrand && event.brandMinistryId) {
+    const brandMinistry = event.ministries.find((em) => em.ministry.id === event.brandMinistryId)
+    brandBackground = brandMinistry?.ministry.themeColorSecondary ?? null
+  } else {
+    brandBackground = event.themeColorSecondary ?? null
+  }
+
   return {
     id: event.id,
     name: event.name,
@@ -361,6 +372,7 @@ async function getEventDashboard(id: string, period: PeriodFilter, roleFilter: L
     unconfirmedVolunteers,
     pendingVolunteerCount,
     rejectedVolunteerCount,
+    brandBackground,
   }
 }
 
