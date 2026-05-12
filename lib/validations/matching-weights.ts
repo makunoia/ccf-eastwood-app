@@ -24,15 +24,15 @@ export const WEIGHT_FIELDS: Array<{
   label: string
   description: string
 }> = [
-  { key: "lifeStage", label: "Life Stage", description: "Match by member's life stage" },
-  { key: "gender", label: "Gender", description: "Match by gender focus" },
-  { key: "language", label: "Language", description: "Match by preferred language" },
-  { key: "age", label: "Age", description: "Match by age range" },
-  { key: "schedule", label: "Schedule", description: "Match by availability windows" },
-  { key: "location", label: "Location", description: "Match by work city" },
-  { key: "mode", label: "Meeting Mode", description: "Match by in-person/online preference" },
-  { key: "career", label: "Career", description: "Match by work industry" },
-  { key: "capacity", label: "Capacity", description: "Favour groups with more open slots" },
+  { key: "lifeStage", label: "Life Stage", description: "Young adults, families, seniors, etc." },
+  { key: "gender", label: "Gender Focus", description: "Men's, women's, or mixed groups" },
+  { key: "language", label: "Language", description: "Shared language (Filipino, English…)" },
+  { key: "age", label: "Age Range", description: "Actual age fit within the group's range" },
+  { key: "schedule", label: "Meeting Schedule", description: "Can the person attend the meeting time?" },
+  { key: "location", label: "Work Location", description: "Groups near where they work" },
+  { key: "mode", label: "Meeting Format", description: "In-person, online, or hybrid preference" },
+  { key: "career", label: "Work Industry", description: "People with similar work backgrounds" },
+  { key: "capacity", label: "Group Availability", description: "Prefer groups with open spots" },
 ]
 
 export const DEFAULT_WEIGHTS: MatchingWeightsFormValues = {

@@ -4,6 +4,22 @@ All notable changes to this project are documented here.
 
 ---
 
+## [2026-05-12]
+
+### Added
+- Event branding now carries through registration and check-in headers, with ministry-aware logos and primary colors on public event pages.
+- Check-in and registration flows use a dedicated year input for birth year entry.
+- Matching priorities settings were redesigned with slider presets, clearer labels, and auto-save.
+- Added regression coverage for breakout facilitator assignment and next/cache test passthrough.
+
+### Changed
+- Matching weights are now edited as relative priorities instead of raw values that must sum to 1.000.
+- Event dashboard metadata and filters were tightened up visually, with branded surfaces for one-time events.
+- Small group detail tabs now show pending requests as a badge, and breakout facilitator updates revalidate the event breakout workspace directly.
+
+### Fixed
+- Breakout facilitator updates now revalidate the event breakout route instead of the stale `/events/[id]` path.
+
 ## [2026-05-08]
 
 ### Added

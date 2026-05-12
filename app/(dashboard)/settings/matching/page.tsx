@@ -29,10 +29,10 @@ export default async function MatchingWeightsPage() {
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">
       <div>
-        <h2 className="type-headline">Matching Weights</h2>
+        <h2 className="type-headline">Matching Priorities</h2>
         <p className="text-sm text-muted-foreground">
-          Tune the scoring weights used to suggest small group and breakout group assignments.
-          All weights must sum to <span className="font-mono font-medium">1.000</span>.
+          Set how much each factor matters when suggesting group placements.
+          Drag the sliders to adjust — no maths required.
         </p>
       </div>
 

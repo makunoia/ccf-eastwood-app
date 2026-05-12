@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache"
 import { db } from "@/lib/db"
 import { MatchingContext } from "@/app/generated/prisma/client"
 import { DEFAULT_WEIGHTS } from "@/lib/validations/matching-weights"
@@ -148,19 +149,27 @@ async function getDescendantGroupIds(groupId: string): Promise<Set<string>> {
   return result
 }
 
-async function loadSmallGroupWeights(): Promise<WeightConfig> {
-  const config = await db.matchingWeightConfig.findUnique({
-    where: { context: MatchingContext.SmallGroup },
-  })
-  return config ?? DEFAULT_WEIGHTS
-}
+const loadSmallGroupWeights = unstable_cache(
+  async (): Promise<WeightConfig> => {
+    const config = await db.matchingWeightConfig.findUnique({
+      where: { context: MatchingContext.SmallGroup },
+    })
+    return config ?? DEFAULT_WEIGHTS
+  },
+  ["matching-weights-small-group"],
+  { revalidate: 60 }
+)
 
-async function loadBreakoutWeights(): Promise<WeightConfig> {
-  const config = await db.matchingWeightConfig.findUnique({
-    where: { context: MatchingContext.Breakout },
-  })
-  return config ?? DEFAULT_WEIGHTS
-}
+const loadBreakoutWeights = unstable_cache(
+  async (): Promise<WeightConfig> => {
+    const config = await db.matchingWeightConfig.findUnique({
+      where: { context: MatchingContext.Breakout },
+    })
+    return config ?? DEFAULT_WEIGHTS
+  },
+  ["matching-weights-breakout"],
+  { revalidate: 60 }
+)
 
 // ─── Small Group Matching ─────────────────────────────────────────────────────
 
@@ -496,6 +505,8 @@ export async function matchBreakoutGroups(
   const eligible = groups.filter((g) => {
     if (options?.excludeAssigned && assignedGroupIds.has(g.id)) return false
     if (g.memberLimit !== null && g._count.members >= g.memberLimit) return false
+    if (scoreGender(candidate.gender, g.genderFocus) === 0.0) return false
+    if (scoreLifeStage(candidate.lifeStageId, g.lifeStageId) === 0.0) return false
     return true
   })
 

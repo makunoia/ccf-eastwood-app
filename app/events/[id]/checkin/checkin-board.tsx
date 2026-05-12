@@ -5,6 +5,7 @@ import { IconCheck, IconLoader2, IconUserQuestion, IconArrowLeft } from "@tabler
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { YearInput } from "@/components/ui/year-input"
 import { Label } from "@/components/ui/label"
 import { PhonePHInput } from "@/components/ui/phone-ph-input"
 import {
@@ -417,15 +418,10 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurri
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="namedob-year">Birth year</Label>
-                    <Input
+                    <YearInput
                       id="namedob-year"
-                      type="number"
-                      inputMode="numeric"
-                      min={1900}
-                      max={new Date().getFullYear()}
                       value={nameDobForm.birthYear}
-                      onChange={(e) => setNameDobForm((p) => ({ ...p, birthYear: e.target.value }))}
-                      placeholder="1990"
+                      onChange={(v) => setNameDobForm((p) => ({ ...p, birthYear: v }))}
                       className="h-12 text-base"
                     />
                   </div>

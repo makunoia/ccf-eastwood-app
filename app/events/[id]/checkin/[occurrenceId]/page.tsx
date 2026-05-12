@@ -14,7 +14,21 @@ async function getOccurrenceWithEvent(occurrenceId: string) {
           id: true,
           name: true,
           type: true,
-          ministries: { select: { ministry: { select: { name: true } } } },
+          useMinistryBrand: true,
+          brandMinistryId: true,
+          logoUrl: true,
+          themeColorPrimary: true,
+          ministries: {
+            select: {
+              ministry: {
+                select: {
+                  name: true,
+                  logoUrl: true,
+                  themeColorPrimary: true,
+                },
+              },
+            },
+          },
         },
       },
     },
@@ -26,6 +40,72 @@ async function getLifeStages() {
     orderBy: { order: "asc" },
     select: { id: true, name: true },
   })
+}
+
+type EventBrand = { logoUrl: string | null; primaryColor: string | null }
+
+function resolveEventBrand(
+  event: NonNullable<Awaited<ReturnType<typeof getOccurrenceWithEvent>>>["event"]
+): EventBrand {
+  if (event.useMinistryBrand && event.brandMinistryId) {
+    const ministry = event.ministries.find((em) => em.ministry)
+    return {
+      logoUrl: ministry?.ministry.logoUrl ?? null,
+      primaryColor: ministry?.ministry.themeColorPrimary ?? null,
+    }
+  }
+  return {
+    logoUrl: event.logoUrl ?? null,
+    primaryColor: event.themeColorPrimary ?? null,
+  }
+}
+
+function CheckinHeader({
+  logoUrl,
+  name,
+  subtitle,
+  primaryColor,
+}: {
+  logoUrl: string | null
+  name: string
+  subtitle: string
+  primaryColor?: string | null
+}) {
+  if (primaryColor) {
+    return (
+      <div className="px-6 py-6 text-center" style={{ backgroundColor: primaryColor }}>
+        {logoUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={logoUrl}
+            alt={name}
+            className="mx-auto mb-3 size-16 rounded-2xl object-contain bg-white/20 p-1.5"
+          />
+        )}
+        <h1 className="text-xl font-bold text-white">{name}</h1>
+        <p className="mt-0.5 text-sm text-white/75">{subtitle}</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="border-b px-4 py-4">
+      <div className="flex items-center gap-3">
+        {logoUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={logoUrl}
+            alt={name}
+            className="size-10 rounded-lg object-contain bg-muted p-0.5"
+          />
+        )}
+        <div>
+          <h1 className="text-lg font-semibold">{name}</h1>
+          <p className="text-sm text-muted-foreground">{subtitle}</p>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export default async function OccurrenceCheckinPage({
@@ -43,6 +123,9 @@ export default async function OccurrenceCheckinPage({
     notFound()
   }
 
+  const { logoUrl, primaryColor } = resolveEventBrand(occurrence.event)
+  const ministryNames = occurrence.event.ministries.map((em) => em.ministry.name).join(" · ")
+
   const dateLabel = occurrence.date.toLocaleDateString("en-PH", {
     weekday: "long",
     month: "long",
@@ -51,6 +134,8 @@ export default async function OccurrenceCheckinPage({
     timeZone: "UTC",
   })
 
+  const subtitle = `${ministryNames}${ministryNames ? " · " : ""}Check-in · ${dateLabel}`
+
   // Date gate: only allow check-in on the occurrence's date
   const today = new Date().toISOString().split("T")[0]
   const occurrenceDate = occurrence.date.toISOString().split("T")[0]
@@ -58,13 +143,12 @@ export default async function OccurrenceCheckinPage({
   if (today !== occurrenceDate && !occurrence.isOpen) {
     return (
       <div className="min-h-svh bg-background">
-        <div className="border-b px-4 py-4">
-          <h1 className="text-lg font-semibold">{occurrence.event.name}</h1>
-          <p className="text-sm text-muted-foreground">
-            {occurrence.event.ministries.map((em) => em.ministry.name).join(" · ")}
-            {occurrence.event.ministries.length > 0 ? " · " : ""}Check-in · {dateLabel}
-          </p>
-        </div>
+        <CheckinHeader
+          logoUrl={logoUrl}
+          name={occurrence.event.name}
+          subtitle={subtitle}
+          primaryColor={primaryColor}
+        />
         <div className="flex flex-col items-center justify-center gap-2 px-4 py-16 text-center">
           <p className="font-medium text-sm">Check-in not available</p>
           <p className="text-sm text-muted-foreground">
@@ -77,13 +161,12 @@ export default async function OccurrenceCheckinPage({
 
   return (
     <div className="min-h-svh bg-background">
-      <div className="border-b px-4 py-4">
-        <h1 className="text-lg font-semibold">{occurrence.event.name}</h1>
-        <p className="text-sm text-muted-foreground">
-          {occurrence.event.ministries.map((em) => em.ministry.name).join(" · ")}
-          {occurrence.event.ministries.length > 0 ? " · " : ""}Check-in · {dateLabel}
-        </p>
-      </div>
+      <CheckinHeader
+        logoUrl={logoUrl}
+        name={occurrence.event.name}
+        subtitle={subtitle}
+        primaryColor={primaryColor}
+      />
       <CheckinBoard
         eventId={id}
         occurrenceId={occurrenceId}

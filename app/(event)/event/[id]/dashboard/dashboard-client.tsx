@@ -22,6 +22,8 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 
+import { cn } from "@/lib/utils"
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type EventDashboardData = {
@@ -80,6 +82,7 @@ type EventDashboardData = {
   }>
   pendingVolunteerCount: number
   rejectedVolunteerCount: number
+  brandBackground: string | null
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -181,32 +184,32 @@ export function EventDashboardClient({ event }: { event: EventDashboardData }) {
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">
       {/* Header */}
-      <div className="space-y-2">
-        {event.ministries.length > 0 && (
-          <p className="text-sm text-muted-foreground">
-            {event.ministries.join(" · ")}
-          </p>
-        )}
-        {event.description && (
-          <p className="text-sm text-muted-foreground">{event.description}</p>
+      <div className="space-y-3">
+        {(event.ministries.length > 0 || event.description) && (
+          <div className="space-y-1.5">
+            {event.ministries.length > 0 && (
+              <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">
+                {event.ministries.join(" · ")}
+              </p>
+            )}
+            {event.description && (
+              <p className="text-sm text-muted-foreground max-w-2xl">{event.description}</p>
+            )}
+          </div>
         )}
         {isRecurring && (
-          <div className="flex items-center gap-2 pt-0.5">
+          <div className="flex items-center gap-2">
             <Badge variant="secondary" className="gap-1.5">
               <IconCalendarRepeat className="size-3" />
               {formatRecurringSchedule(event.recurrenceDayOfWeek, event.recurrenceFrequency)}
             </Badge>
-            {event.recurrenceEndDate ? (
-              <span className="text-xs text-muted-foreground">
-                Ends {formatDate(event.recurrenceEndDate)}
-              </span>
-            ) : (
-              <span className="text-xs text-muted-foreground">Ongoing</span>
-            )}
+            <span className="text-xs text-muted-foreground">
+              {event.recurrenceEndDate ? `Ends ${formatDate(event.recurrenceEndDate)}` : "Ongoing"}
+            </span>
           </div>
         )}
         {isMultiDay && (
-          <div className="flex items-center gap-2 pt-0.5">
+          <div className="flex items-center gap-2">
             <Badge variant="secondary" className="gap-1.5">
               <IconCalendar className="size-3" />
               Multi-day event
@@ -218,84 +221,120 @@ export function EventDashboardClient({ event }: { event: EventDashboardData }) {
         )}
       </div>
 
-      {/* Public links */}
+      {/* Event metadata — OneTime */}
       {!isRecurring && !isMultiDay && (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t pt-4 text-sm">
-          <div className="flex items-center gap-2 text-muted-foreground flex-wrap">
-            <span>
-              {formatDate(event.startDate)}
-              {event.startDate !== event.endDate && <> – {formatDate(event.endDate)}</>}
-            </span>
-            <span>·</span>
-            <span>
-              {isPaidEvent
-                ? `₱${(event.price! / 100).toLocaleString("en-PH", { minimumFractionDigits: 2 })}`
-                : "Free"}
-            </span>
-            {regStatus && (
-              <>
-                <span>·</span>
-                {regStatus === "open" && (
-                  <Badge variant="secondary" className="gap-1">
-                    <IconCircleCheck className="size-3" />
-                    Registration Open
-                  </Badge>
-                )}
-                {regStatus === "upcoming" && (
-                  <Badge variant="outline" className="gap-1">
-                    <IconClock className="size-3" />
-                    Registration Upcoming
-                  </Badge>
-                )}
-                {regStatus === "closed" && (
-                  <Badge variant="outline" className="gap-1 text-muted-foreground">
-                    <IconCircleOff className="size-3" />
-                    Registration Closed
-                  </Badge>
-                )}
-              </>
-            )}
-            {!regStatus && (
-              <>
-                <span>·</span>
-                <span>Registration N/A</span>
-              </>
-            )}
+        <div
+          className="flex flex-wrap items-center justify-between gap-4 rounded-lg border px-5 py-4"
+          style={event.brandBackground ? {
+            background: `linear-gradient(135deg, color-mix(in srgb, ${event.brandBackground} 18%, transparent), color-mix(in srgb, ${event.brandBackground} 6%, transparent))`,
+          } : undefined}
+        >
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">
+                Date
+              </span>
+              <span className="text-sm font-medium text-foreground">
+                {formatDate(event.startDate)}
+                {event.startDate !== event.endDate && <> – {formatDate(event.endDate)}</>}
+              </span>
+            </div>
+            <div className="hidden h-7 w-px bg-border sm:block" />
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">
+                Entry
+              </span>
+              <span className="text-sm font-medium text-foreground">
+                {isPaidEvent
+                  ? `₱${(event.price! / 100).toLocaleString("en-PH", { minimumFractionDigits: 2 })}`
+                  : "Free"}
+              </span>
+            </div>
+            <div className="hidden h-7 w-px bg-border sm:block" />
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">
+                Registration
+              </span>
+              {regStatus === "open" && (
+                <span className="flex items-center gap-1 text-sm font-medium text-foreground">
+                  <IconCircleCheck className="size-3.5" />
+                  Open
+                </span>
+              )}
+              {regStatus === "upcoming" && (
+                <span className="flex items-center gap-1 text-sm font-medium text-foreground">
+                  <IconClock className="size-3.5" />
+                  Upcoming
+                </span>
+              )}
+              {regStatus === "closed" && (
+                <span className="flex items-center gap-1 text-sm text-muted-foreground">
+                  <IconCircleOff className="size-3.5" />
+                  Closed
+                </span>
+              )}
+              {!regStatus && (
+                <span className="text-sm text-muted-foreground">N/A</span>
+              )}
+            </div>
           </div>
-          <Button variant="outline" size="sm" onClick={() => copyLink(`/events/${event.id}/checkin`)}>
-            <IconCopy className="mr-2 size-3.5" />
-            Check-in link
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => copyLink(`/events/${event.id}/register`)}>
+              <IconCopy className="mr-1.5 size-3.5" />
+              Registration link
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => copyLink(`/events/${event.id}/checkin`)}>
+              <IconCopy className="mr-1.5 size-3.5" />
+              Check-in link
+            </Button>
+          </div>
         </div>
       )}
 
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-lg border px-4 py-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-muted-foreground shrink-0">Period</span>
-          {PERIODS.map((period) => (
-            <Button
-              key={period.value}
-              size="sm"
-              variant={event.period === period.value ? "default" : "outline"}
-              asChild
-            >
-              <Link href={withQuery({ period: period.value })}>{period.label}</Link>
-            </Button>
-          ))}
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.15em] text-muted-foreground shrink-0">
+            Period
+          </span>
+          <div className="flex flex-wrap items-center gap-0.5">
+            {PERIODS.map((period) => (
+              <Link
+                key={period.value}
+                href={withQuery({ period: period.value })}
+                className={cn(
+                  "rounded-md px-2.5 py-1.5 text-sm transition-colors",
+                  event.period === period.value
+                    ? "bg-muted font-medium text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {period.label}
+              </Link>
+            ))}
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-muted-foreground shrink-0">Role</span>
-          {ROLE_FILTERS.map((filter) => (
-            <Button
-              key={filter.value}
-              size="sm"
-              variant={event.roleFilter === filter.value ? "default" : "outline"}
-              asChild
-            >
-              <Link href={withQuery({ roleFilter: filter.value })}>{filter.label}</Link>
-            </Button>
-          ))}
+        <div className="hidden h-4 w-px bg-border sm:block" />
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.15em] text-muted-foreground shrink-0">
+            Role
+          </span>
+          <div className="flex flex-wrap items-center gap-0.5">
+            {ROLE_FILTERS.map((filter) => (
+              <Link
+                key={filter.value}
+                href={withQuery({ roleFilter: filter.value })}
+                className={cn(
+                  "rounded-md px-2.5 py-1.5 text-sm transition-colors",
+                  event.roleFilter === filter.value
+                    ? "bg-muted font-medium text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {filter.label}
+              </Link>
+            ))}
+          </div>
         </div>
       </div>
 
