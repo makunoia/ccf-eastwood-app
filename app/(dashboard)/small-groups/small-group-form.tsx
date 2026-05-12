@@ -35,6 +35,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { MultiSelect } from "@/components/ui/multi-select"
+import { PersonCombobox } from "@/components/ui/person-combobox"
 import {
   Select,
   SelectContent,
@@ -496,22 +497,13 @@ export function SmallGroupForm({
                   <Label htmlFor="leaderId">
                     Leader <span className="text-destructive">*</span>
                   </Label>
-                  <Select
+                  <PersonCombobox
+                    id="leaderId"
+                    options={members.map((m) => ({ value: m.id, label: `${m.firstName} ${m.lastName}` }))}
                     value={form.leaderId}
                     onValueChange={(v) => set("leaderId", v)}
-                    required
-                  >
-                    <SelectTrigger id="leaderId">
-                      <SelectValue placeholder="Select a leader" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {members.map((m) => (
-                        <SelectItem key={m.id} value={m.id}>
-                          {m.firstName} {m.lastName}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    placeholder="Select a leader"
+                  />
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -941,21 +933,17 @@ export function SmallGroupForm({
             {availableMembers.length === 0 ? (
               <p className="text-sm text-muted-foreground">All members are already in this group.</p>
             ) : (
-              <Select value={selectedMemberId} onValueChange={setSelectedMemberId}>
-                <SelectTrigger id="add-member-select">
-                  <SelectValue placeholder="Select a member" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableMembers.map((m) => (
-                    <SelectItem key={m.id} value={m.id}>
-                      {m.firstName} {m.lastName}
-                      {m.smallGroupId && m.smallGroupId !== group?.id && (
-                        <span className="ml-2 text-muted-foreground text-xs">(in another group)</span>
-                      )}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <PersonCombobox
+                id="add-member-select"
+                options={availableMembers.map((m) => ({
+                  value: m.id,
+                  label: `${m.firstName} ${m.lastName}`,
+                  hint: m.smallGroupId && m.smallGroupId !== group?.id ? "in another group" : undefined,
+                }))}
+                value={selectedMemberId}
+                onValueChange={setSelectedMemberId}
+                placeholder="Select a member"
+              />
             )}
           </div>
           <DialogFooter>
@@ -1129,23 +1117,19 @@ export function SmallGroupForm({
           </DialogHeader>
           <div className="space-y-2 py-2">
             <Label htmlFor="temp-member-select">Member</Label>
-            <Select value={tempSelectedMemberId} onValueChange={setTempSelectedMemberId}>
-              <SelectTrigger id="temp-member-select">
-                <SelectValue placeholder="Select a member" />
-              </SelectTrigger>
-              <SelectContent>
-                {members
-                  .filter((m) => !currentMemberIds.has(m.id))
-                  .map((m) => (
-                    <SelectItem key={m.id} value={m.id}>
-                      {m.firstName} {m.lastName}
-                      {m.smallGroupId && (
-                        <span className="ml-2 text-muted-foreground text-xs">(in a group)</span>
-                      )}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
+            <PersonCombobox
+              id="temp-member-select"
+              options={members
+                .filter((m) => !currentMemberIds.has(m.id))
+                .map((m) => ({
+                  value: m.id,
+                  label: `${m.firstName} ${m.lastName}`,
+                  hint: m.smallGroupId ? "in a group" : undefined,
+                }))}
+              value={tempSelectedMemberId}
+              onValueChange={setTempSelectedMemberId}
+              placeholder="Select a member"
+            />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setTempMemberOpen(false)} disabled={assigningTempMember}>

@@ -94,7 +94,10 @@ async function getBreakoutGroup(groupId: string, eventId: string) {
               nickname: true,
               mobileNumber: true,
               attendedAt: true,
-              _count: { select: { occurrenceAttendances: true } },
+              occurrenceAttendances: {
+                select: { occurrence: { select: { date: true } } },
+                orderBy: { occurrence: { date: "asc" } },
+              },
               member: {
                 select: {
                   id: true,
@@ -117,6 +120,7 @@ async function getEventContext(eventId: string) {
   return db.event.findUnique({
     where: { id: eventId },
     select: {
+      type: true,
       volunteers: {
         where: { status: "Confirmed" },
         include: {
@@ -155,10 +159,11 @@ export default async function BreakoutGroupDetailPage({
   params: Promise<{ id: string; groupId: string }>
 }) {
   const { id: eventId, groupId } = await params
-  const [group, eventData, lifeStages] = await Promise.all([
+  const [group, eventData, lifeStages, totalOccurrences] = await Promise.all([
     getBreakoutGroup(groupId, eventId),
     getEventContext(eventId),
     db.lifeStage.findMany({ orderBy: { order: "asc" }, select: { id: true, name: true } }),
+    db.eventOccurrence.count({ where: { eventId } }),
   ])
 
   if (!group || !eventData) notFound()
@@ -226,6 +231,8 @@ export default async function BreakoutGroupDetailPage({
           memberLimit: group.memberLimit,
           members: group.members,
           schedules: group.schedules,
+          eventType: eventData.type,
+          totalOccurrences,
         }}
         unassignedRegistrants={eventData.registrants}
         availableVolunteers={confirmedVolunteers}

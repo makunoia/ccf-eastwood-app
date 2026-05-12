@@ -27,6 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { PersonCombobox } from "@/components/ui/person-combobox"
 import { Textarea } from "@/components/ui/textarea"
 import {
   defaultVolunteerForm,
@@ -177,18 +178,13 @@ export function VolunteerForm({ members, events, volunteer }: Props) {
           <Label htmlFor="member">
             Member <span className="text-destructive">*</span>
           </Label>
-          <Select value={form.memberId} onValueChange={(v) => set("memberId", v)}>
-            <SelectTrigger id="member">
-              <SelectValue placeholder="Select member" />
-            </SelectTrigger>
-            <SelectContent>
-              {members.map((m) => (
-                <SelectItem key={m.id} value={m.id}>
-                  {m.firstName} {m.lastName}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <PersonCombobox
+            id="member"
+            options={members.map((m) => ({ value: m.id, label: `${m.firstName} ${m.lastName}` }))}
+            value={form.memberId}
+            onValueChange={(v) => set("memberId", v)}
+            placeholder="Select member"
+          />
         </div>
 
         {/* Event */}

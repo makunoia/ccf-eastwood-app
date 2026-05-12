@@ -126,11 +126,14 @@ export async function submitCatchMechConfirmations(
     return { success: false, error: "Could not find your small group" }
   }
 
-  // Pre-fetch all reads outside the transaction
-  const { registrantMap, takenEmails } = await prefetchRegistrantData(decisions)
+  const [event, { registrantMap, takenEmails }] = await Promise.all([
+    db.event.findUnique({ where: { id: session.eventId }, select: { name: true } }),
+    prefetchRegistrantData(decisions),
+  ])
+  const eventName = event?.name ?? null
 
   await db.$transaction(async (tx) => {
-    await resolveConfirmations(smallGroup.id, session.breakoutGroupId, decisions, registrantMap, takenEmails, tx)
+    await resolveConfirmations(smallGroup.id, session.breakoutGroupId, decisions, registrantMap, takenEmails, tx, eventName)
   }, { timeout: 30000 })
 
   revalidatePath(`/small-groups/${smallGroup.id}`)
@@ -181,7 +184,11 @@ export async function createSmallGroupForTimothy(
   }
 
   // Pre-fetch all reads outside the transaction
-  const { registrantMap, takenEmails } = await prefetchRegistrantData(decisions)
+  const [event, { registrantMap, takenEmails }] = await Promise.all([
+    db.event.findUnique({ where: { id: session.eventId }, select: { name: true } }),
+    prefetchRegistrantData(decisions),
+  ])
+  const eventName = event?.name ?? null
 
   let newGroupId: string | null = null
 
@@ -198,7 +205,7 @@ export async function createSmallGroupForTimothy(
         data: {
           smallGroupId: created.id,
           action: "GroupCreated",
-          description: `Group "${groupName.trim()}" was created via Catch Mech`,
+          description: `Group "${groupName.trim()}" was created via Catch Mech${eventName ? ` of ${eventName}` : ""}`,
         },
       })
 
@@ -214,7 +221,7 @@ export async function createSmallGroupForTimothy(
         data: { groupStatus: "Leader" },
       })
 
-      await resolveConfirmations(created.id, session.breakoutGroupId, decisions, registrantMap, takenEmails, tx)
+      await resolveConfirmations(created.id, session.breakoutGroupId, decisions, registrantMap, takenEmails, tx, eventName)
     }, { timeout: 30000 })
 
     revalidatePath("/small-groups")
@@ -325,7 +332,8 @@ async function resolveConfirmations(
   decisions: ConfirmDecision[],
   registrantMap: Map<string, FetchedRegistrant>,
   takenEmails: Set<string>,
-  tx: Prisma.TransactionClient
+  tx: Prisma.TransactionClient,
+  eventName: string | null
 ): Promise<void> {
   const now = new Date()
 
@@ -379,7 +387,7 @@ async function resolveConfirmations(
           action: "TempAssignmentRejected",
           guestId: registrant.guestId ?? null,
           memberId: registrant.memberId ?? null,
-          description: `${personName}'s membership was declined via Catch Mech`,
+          description: `${personName}'s membership was declined via Catch Mech${eventName ? ` of ${eventName}` : ""}`,
         },
       })
       continue
@@ -440,7 +448,7 @@ async function resolveConfirmations(
           smallGroupId,
           action: "MemberAdded",
           memberId: newMember.id,
-          description: `${guest.firstName} ${guest.lastName} confirmed via Catch Mech and joined the group`,
+          description: `${guest.firstName} ${guest.lastName} confirmed via Catch Mech${eventName ? ` of ${eventName}` : ""} and joined the group`,
         },
       })
       const updated = await tx.smallGroupMemberRequest.updateMany({
@@ -472,7 +480,7 @@ async function resolveConfirmations(
           smallGroupId,
           action: "MemberAdded",
           memberId: registrant.memberId,
-          description: `${member.firstName} ${member.lastName} confirmed via Catch Mech and joined the group`,
+          description: `${member.firstName} ${member.lastName} confirmed via Catch Mech${eventName ? ` of ${eventName}` : ""} and joined the group`,
         },
       })
       const updated = await tx.smallGroupMemberRequest.updateMany({

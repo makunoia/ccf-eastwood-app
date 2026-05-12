@@ -33,6 +33,24 @@ export async function submitMemberConfirmations(
     const affectedGuestIds = new Set<string>()
     const affectedBreakoutGroupIds = new Set<string>()
 
+    // Pre-fetch event names for requests linked to catch mech breakout groups
+    const decisionIds = decisions.map((d) => d.requestId)
+    const requestsWithBreakout = await db.smallGroupMemberRequest.findMany({
+      where: { id: { in: decisionIds }, breakoutGroupId: { not: null } },
+      select: { id: true, breakoutGroupId: true },
+    })
+    const breakoutGroupIds = [...new Set(requestsWithBreakout.map((r) => r.breakoutGroupId!))]
+    const breakoutGroups = breakoutGroupIds.length > 0
+      ? await db.breakoutGroup.findMany({
+          where: { id: { in: breakoutGroupIds } },
+          select: { id: true, event: { select: { name: true } } },
+        })
+      : []
+    const eventNameByBreakoutId = new Map(breakoutGroups.map((bg) => [bg.id, bg.event.name]))
+    const eventNameByRequestId = new Map(
+      requestsWithBreakout.map((r) => [r.id, eventNameByBreakoutId.get(r.breakoutGroupId!) ?? null])
+    )
+
     await db.$transaction(async (tx) => {
       for (const { requestId, status: decisionStatus, notes: decisionNotes } of decisions) {
         const req = await tx.smallGroupMemberRequest.findUnique({
@@ -84,6 +102,9 @@ export async function submitMemberConfirmations(
         const now = new Date()
         const resolvedStatus = decisionStatus === "confirmed" ? "Confirmed" : "Rejected"
         let promotedMemberId: string | null = null
+
+        const eventName = eventNameByRequestId.get(req.id) ?? null
+        const catchMechContext = req.breakoutGroupId && eventName ? ` via Catch Mech Link of ${eventName}` : ""
 
         if (decisionStatus === "confirmed") {
           if (req.guestId && req.guest) {
@@ -149,7 +170,7 @@ export async function submitMemberConfirmations(
                   action: "TempAssignmentConfirmed",
                   guestId: req.guestId,
                   memberId: newMember.id,
-                  description: `${guest.firstName} ${guest.lastName} was confirmed by the group leader and promoted to member`,
+                  description: `${guest.firstName} ${guest.lastName} was confirmed by the group leader${catchMechContext} and promoted to member`,
                 },
               })
               await tx.smallGroupLog.create({
@@ -157,7 +178,7 @@ export async function submitMemberConfirmations(
                   smallGroupId: group.id,
                   action: "MemberAdded",
                   memberId: newMember.id,
-                  description: `${guest.firstName} ${guest.lastName} joined the group`,
+                  description: `${guest.firstName} ${guest.lastName} joined the group${catchMechContext}`,
                 },
               })
               promotedMemberId = newMember.id
@@ -183,7 +204,7 @@ export async function submitMemberConfirmations(
                 memberId: req.memberId,
                 fromGroupId: req.fromGroupId ?? null,
                 toGroupId: group.id,
-                description: `${memberName}'s transfer was confirmed by the group leader`,
+                description: `${memberName}'s transfer was confirmed by the group leader${catchMechContext}`,
               },
             })
             await tx.smallGroupLog.create({
@@ -193,7 +214,7 @@ export async function submitMemberConfirmations(
                 memberId: req.memberId,
                 fromGroupId: req.fromGroupId ?? null,
                 toGroupId: group.id,
-                description: `${memberName} transferred into this group`,
+                description: `${memberName} transferred into this group${catchMechContext}`,
               },
             })
 
@@ -224,7 +245,7 @@ export async function submitMemberConfirmations(
               action: "TempAssignmentRejected",
               guestId: req.guestId ?? null,
               memberId: req.memberId ?? null,
-              description: `${personName}'s membership was declined by the group leader`,
+              description: `${personName}'s membership was declined by the group leader${catchMechContext}`,
             },
           })
         }

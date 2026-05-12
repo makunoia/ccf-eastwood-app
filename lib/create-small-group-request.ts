@@ -11,13 +11,14 @@ async function getActorId(): Promise<string | null> {
 // registrant is assigned to a breakout group. Uses the breakout group's
 // explicitly stored linkedSmallGroupId; falls back to auto-resolving only
 // when the facilitator leads exactly one group (unambiguous).
-async function resolveLinkedSmallGroupId(
+async function resolveLinkedSmallGroup(
   breakoutGroupId: string
-): Promise<string | null> {
+): Promise<{ smallGroupId: string; eventName: string } | null> {
   const bg = await db.breakoutGroup.findUnique({
     where: { id: breakoutGroupId },
     select: {
       linkedSmallGroupId: true,
+      event: { select: { name: true } },
       facilitator: {
         select: { member: { select: { id: true } } },
       },
@@ -25,7 +26,9 @@ async function resolveLinkedSmallGroupId(
   })
   if (!bg) return null
 
-  if (bg.linkedSmallGroupId) return bg.linkedSmallGroupId
+  const eventName = bg.event.name
+
+  if (bg.linkedSmallGroupId) return { smallGroupId: bg.linkedSmallGroupId, eventName }
 
   // Fallback: auto-resolve only when facilitator leads exactly 1 group
   const facilitatorMemberId = bg.facilitator?.member?.id
@@ -36,7 +39,7 @@ async function resolveLinkedSmallGroupId(
     select: { id: true },
     take: 2,
   })
-  return groups.length === 1 ? groups[0].id : null
+  return groups.length === 1 ? { smallGroupId: groups[0].id, eventName } : null
 }
 
 export async function tryCreateSmallGroupRequestFromBreakout(
@@ -44,8 +47,9 @@ export async function tryCreateSmallGroupRequestFromBreakout(
   registrantId: string
 ): Promise<void> {
   try {
-    const smallGroupId = await resolveLinkedSmallGroupId(breakoutGroupId)
-    if (!smallGroupId) return
+    const resolved = await resolveLinkedSmallGroup(breakoutGroupId)
+    if (!resolved) return
+    const { smallGroupId, eventName } = resolved
 
     const registrant = await db.eventRegistrant.findUnique({
       where: { id: registrantId },
@@ -82,7 +86,7 @@ export async function tryCreateSmallGroupRequestFromBreakout(
             action: "TempAssignmentCreated",
             guestId: registrant.guestId,
             performedByUserId: actorId,
-            description: `${registrant.guest.firstName} ${registrant.guest.lastName} was temporarily assigned to the group via breakout group placement (pending leader confirmation)`,
+            description: `${registrant.guest.firstName} ${registrant.guest.lastName} was temporarily assigned to the group via ${eventName} breakout placement (pending leader confirmation)`,
           },
         }),
       ])
@@ -110,7 +114,7 @@ export async function tryCreateSmallGroupRequestFromBreakout(
             fromGroupId: registrant.member.smallGroupId ?? null,
             toGroupId: smallGroupId,
             performedByUserId: actorId,
-            description: `${registrant.member.firstName} ${registrant.member.lastName} was temporarily assigned for transfer to this group via breakout group placement (pending leader confirmation)`,
+            description: `${registrant.member.firstName} ${registrant.member.lastName} was temporarily assigned for transfer to this group via ${eventName} breakout placement (pending leader confirmation)`,
           },
         }),
       ])
@@ -134,23 +138,29 @@ export async function tryCancelSmallGroupRequestFromBreakout(
     if (!registrant) return
     if (!registrant.memberId && !registrant.guestId) return
 
-    const request = await db.smallGroupMemberRequest.findFirst({
-      where: {
-        breakoutGroupId,
-        status: "Pending",
-        ...(registrant.memberId
-          ? { memberId: registrant.memberId }
-          : { guestId: registrant.guestId! }),
-      },
-      select: {
-        id: true,
-        smallGroupId: true,
-        guestId: true,
-        memberId: true,
-        guest:  { select: { firstName: true, lastName: true } },
-        member: { select: { firstName: true, lastName: true } },
-      },
-    })
+    const [request, bg] = await Promise.all([
+      db.smallGroupMemberRequest.findFirst({
+        where: {
+          breakoutGroupId,
+          status: "Pending",
+          ...(registrant.memberId
+            ? { memberId: registrant.memberId }
+            : { guestId: registrant.guestId! }),
+        },
+        select: {
+          id: true,
+          smallGroupId: true,
+          guestId: true,
+          memberId: true,
+          guest:  { select: { firstName: true, lastName: true } },
+          member: { select: { firstName: true, lastName: true } },
+        },
+      }),
+      db.breakoutGroup.findUnique({
+        where: { id: breakoutGroupId },
+        select: { event: { select: { name: true } } },
+      }),
+    ])
     if (!request) return
 
     const personName = request.guest
@@ -158,6 +168,8 @@ export async function tryCancelSmallGroupRequestFromBreakout(
       : request.member
         ? `${request.member.firstName} ${request.member.lastName}`
         : "Unknown"
+
+    const eventName = bg?.event?.name
 
     await db.$transaction([
       db.smallGroupMemberRequest.update({
@@ -170,7 +182,7 @@ export async function tryCancelSmallGroupRequestFromBreakout(
           action: "TempAssignmentRejected",
           guestId: request.guestId ?? null,
           memberId: request.memberId ?? null,
-          description: `Temporary assignment for ${personName} was cancelled — removed from breakout group`,
+          description: `Temporary assignment for ${personName} was cancelled — removed from ${eventName ? `${eventName} ` : ''}breakout`,
         },
       }),
     ])
