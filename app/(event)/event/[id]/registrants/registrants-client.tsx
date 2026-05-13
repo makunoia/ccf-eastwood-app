@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation"
 import {
   IconCheck,
   IconClock,
+  IconExternalLink,
   IconPlus,
   IconUpload,
   IconUsers,
@@ -405,6 +406,12 @@ export function RegistrantsClient({
       <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
         <IconUpload className="size-4" />
         <span className="hidden sm:inline">Import</span>
+      </Button>
+      <Button variant="outline" size="sm" asChild>
+        <Link href={`/events/${eventId}/register`} target="_blank" rel="noopener noreferrer">
+          <IconExternalLink className="size-4" />
+          <span className="hidden sm:inline">Registration page</span>
+        </Link>
       </Button>
       <Button size="sm" onClick={() => setAddDialogOpen(true)}>
         <IconPlus className="size-4" />

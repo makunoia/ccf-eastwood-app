@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { RegistrationForm } from "./registration-form"
+import { fetchBreakoutCandidates } from "@/lib/breakout-suggestion-server"
 
 async function getEvent(id: string) {
   const event = await db.event.findUnique({
@@ -18,6 +19,10 @@ async function getEvent(id: string) {
       brandMinistryId: true,
       logoUrl: true,
       themeColorPrimary: true,
+      formIncludeSmallGroup: true,
+      formIncludeDietary: true,
+      formIncludePayment: true,
+      autoAssignBreakout: true,
       ministries: {
         select: {
           ministry: {
@@ -58,13 +63,17 @@ export default async function RegisterPage({
   const event = await getEvent(id)
   if (!event) notFound()
 
-  const isRecurring = event.type === "Recurring"
-  const lifeStages = isRecurring
+  const lifeStages = event.formIncludeSmallGroup
     ? await db.lifeStage.findMany({
         orderBy: { order: "asc" },
         select: { id: true, name: true },
       })
     : []
+
+  // Breakout picker section only renders when not in auto-assign mode AND groups exist.
+  const breakoutCandidates = event.autoAssignBreakout
+    ? []
+    : await fetchBreakoutCandidates(event.id)
 
   const { logoUrl, primaryColor } = resolveEventBrand(event)
   const ministryNames = event.ministries.map((em) => em.ministry.name).join(" · ")
@@ -79,7 +88,7 @@ export default async function RegisterPage({
     <div className="min-h-svh bg-muted">
       {/* Branded header band */}
       <div
-        className={primaryColor ? "px-6 py-8 text-center" : "px-6 pt-12 pb-6 text-center"}
+        className={primaryColor ? "px-6 pt-8 pb-16 text-center" : "px-6 pt-12 pb-16 text-center"}
         style={primaryColor ? { backgroundColor: primaryColor } : undefined}
       >
         {logoUrl && (
@@ -91,7 +100,7 @@ export default async function RegisterPage({
             style={primaryColor ? { backgroundColor: "rgba(255,255,255,0.15)", padding: "0.5rem" } : undefined}
           />
         )}
-        <h1 className={`text-2xl font-bold ${primaryColor ? "text-white" : ""}`}>{event.name}</h1>
+        <h1 className={`text-2xl font-bold ${primaryColor ? "text-white" : ""}`}>{event.name} Registration</h1>
         <p className={`mt-1 text-sm ${primaryColor ? "text-white/75" : "text-muted-foreground"}`}>
           {ministryNames}{ministryNames ? " · " : ""}{dateLabel}
         </p>
@@ -106,9 +115,17 @@ export default async function RegisterPage({
       </div>
 
       {/* Form area */}
-      <div className="flex items-start justify-center p-4 pt-6">
+      <div className="relative z-10 -mt-10 flex items-start justify-center px-4 pb-4">
         <div className="w-full max-w-md">
-          <RegistrationForm eventId={event.id} isRecurring={isRecurring} lifeStages={lifeStages} />
+          <RegistrationForm
+            eventId={event.id}
+            eventName={event.name}
+            includeSmallGroup={event.formIncludeSmallGroup}
+            includeDietary={event.formIncludeDietary}
+            includePayment={event.formIncludePayment}
+            lifeStages={lifeStages}
+            breakoutCandidates={breakoutCandidates}
+          />
         </div>
       </div>
     </div>
