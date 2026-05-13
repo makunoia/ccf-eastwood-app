@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && next build",
+    "build": "prisma migrate deploy && prisma generate && next build",
+    "migrate": "prisma migrate",
     "db:setup": "prisma migrate dev && prisma db seed",
     "db:reset": "prisma migrate reset --force && prisma db seed",
     "start": "next start",
