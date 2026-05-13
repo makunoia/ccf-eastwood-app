@@ -256,6 +256,7 @@ export default async function OccurrenceDetailPage({
 
           <TabsContent value="attendees" className="mt-4">
             <SessionAttendeesTable
+              occurrenceId={occurrenceId}
               attendees={attendeesWithStats}
               breakoutGroups={breakoutGroupOptions}
             />

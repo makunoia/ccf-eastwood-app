@@ -1,4 +1,4 @@
-export type ImportEntity = "member" | "event-registrant" | "volunteer" | "guest" | "small-group"
+export type ImportEntity = "member" | "event-registrant" | "volunteer" | "guest" | "small-group" | "session-attendance"
 
 export type FieldDefinition = {
   key: string

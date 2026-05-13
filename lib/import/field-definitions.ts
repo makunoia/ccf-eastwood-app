@@ -62,22 +62,32 @@ export const SMALL_GROUP_FIELDS: FieldDefinition[] = [
   { key: "scheduleTime",     label: "Meeting Time",    required: false, hint: "HH:MM (24-hour)" },
 ]
 
+export const SESSION_ATTENDANCE_FIELDS: FieldDefinition[] = [
+  { key: "firstName",    label: "First Name",    required: true },
+  { key: "lastName",     label: "Last Name",     required: true },
+  { key: "mobileNumber", label: "Mobile Number", required: false },
+  { key: "email",        label: "Email",         required: false },
+  { key: "checkedInAt",  label: "Checked In At", required: false, hint: "e.g. 10:30 AM or 14:30 — defaults to session date" },
+]
+
 export function getFieldsForEntity(entity: ImportEntity): FieldDefinition[] {
   switch (entity) {
-    case "member":            return MEMBER_FIELDS
-    case "event-registrant":  return EVENT_REGISTRANT_FIELDS
-    case "volunteer":         return VOLUNTEER_FIELDS
-    case "guest":             return GUEST_FIELDS
-    case "small-group":       return SMALL_GROUP_FIELDS
+    case "member":             return MEMBER_FIELDS
+    case "event-registrant":   return EVENT_REGISTRANT_FIELDS
+    case "volunteer":          return VOLUNTEER_FIELDS
+    case "guest":              return GUEST_FIELDS
+    case "small-group":        return SMALL_GROUP_FIELDS
+    case "session-attendance": return SESSION_ATTENDANCE_FIELDS
   }
 }
 
 export function getEntityLabel(entity: ImportEntity): string {
   switch (entity) {
-    case "member":            return "Members"
-    case "event-registrant":  return "Event Registrants"
-    case "volunteer":         return "Volunteers"
-    case "guest":             return "Guests"
-    case "small-group":       return "Small Groups"
+    case "member":             return "Members"
+    case "event-registrant":   return "Event Registrants"
+    case "volunteer":          return "Volunteers"
+    case "guest":              return "Guests"
+    case "small-group":        return "Small Groups"
+    case "session-attendance": return "Session Attendance"
   }
 }

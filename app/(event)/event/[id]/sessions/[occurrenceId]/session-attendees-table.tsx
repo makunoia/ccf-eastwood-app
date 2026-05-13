@@ -1,7 +1,10 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
+import { IconUpload } from "@tabler/icons-react"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import {
   Select,
   SelectContent,
@@ -10,6 +13,11 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { ImportWizard } from "@/components/import/import-wizard"
+import {
+  checkSessionAttendanceDuplicates,
+  importSessionAttendance,
+} from "./import-actions"
 
 export type AttendeeRow = {
   id: string
@@ -29,14 +37,18 @@ export type BreakoutGroupOption = {
 type TypeFilter = "all" | "member" | "guest" | "volunteer"
 
 export function SessionAttendeesTable({
+  occurrenceId,
   attendees,
   breakoutGroups,
 }: {
+  occurrenceId: string
   attendees: AttendeeRow[]
   breakoutGroups: BreakoutGroupOption[]
 }) {
+  const router = useRouter()
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all")
   const [breakoutFilter, setBreakoutFilter] = useState("all")
+  const [importOpen, setImportOpen] = useState(false)
 
   const filtered = attendees.filter((a) => {
     if (typeFilter === "member" && !a.isMember) return false
@@ -61,6 +73,10 @@ export function SessionAttendeesTable({
           )}
         </h2>
         <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>
+            <IconUpload className="mr-1.5 size-3.5" />
+            Import
+          </Button>
           <ToggleGroup
             type="single"
             value={typeFilter}
@@ -150,6 +166,22 @@ export function SessionAttendeesTable({
           </table>
         </div>
       )}
+
+      <ImportWizard
+        config={{
+          entity: "session-attendance",
+          onSuccess: () => router.refresh(),
+        }}
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onCheckDuplicates={(rows) =>
+          checkSessionAttendanceDuplicates(
+            occurrenceId,
+            rows.map((r) => ({ email: r.email, phone: r.phone })),
+          )
+        }
+        onImport={(rows) => importSessionAttendance(occurrenceId, rows)}
+      />
     </section>
   )
 }
