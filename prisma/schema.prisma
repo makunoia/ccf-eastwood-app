@@ -61,6 +61,18 @@ enum EventModuleType {
   CatchMech
 }
 
+enum DietaryPreference {
+  Vegetarian
+  Vegan
+  Halal
+  Kosher
+  GlutenFree
+  DairyFree
+  NutFree
+  Pescatarian
+  Other
+}
+
 enum MemberGroupStatus {
   Member
   Timothy
@@ -362,6 +374,11 @@ model Event {
   themeColorPrimary     String?
   themeColorSecondary   String?
   themeColorAccent      String?
+  // Registration form modules — toggle which optional sections appear on the public form
+  formIncludeSmallGroup       Boolean             @default(false)
+  formIncludeDietary          Boolean             @default(false)
+  formIncludePayment          Boolean             @default(false)
+  autoAssignBreakout          Boolean             @default(false)
   createdAt             DateTime            @default(now())
   updatedAt             DateTime            @updatedAt
 
@@ -434,6 +451,9 @@ model EventRegistrant {
 
   isPaid           Boolean   @default(false)
   paymentReference String?
+  // Dietary restrictions — populated when the event's registration form has the Dietary module enabled
+  dietaryPreference DietaryPreference?
+  dietaryOther      String?
   attendedAt       DateTime?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt

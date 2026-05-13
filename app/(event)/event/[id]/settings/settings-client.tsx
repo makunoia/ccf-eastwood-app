@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { IconBus, IconCross, IconFish, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react"
+import { IconBus, IconCash, IconCross, IconFish, IconPencil, IconPlus, IconSalad, IconSparkles, IconTrash, IconUsers } from "@tabler/icons-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -30,6 +30,8 @@ import {
   createBus,
   updateBus,
   deleteBus,
+  setRegistrationFormModule,
+  type RegistrationFormModule,
 } from "@/app/(dashboard)/events/module-actions"
 import { CommitteeManager } from "@/app/(dashboard)/events/[id]/committees"
 import { LogoUploader } from "@/components/logo-uploader"
@@ -58,6 +60,8 @@ type LinkedMinistry = {
   themeColorAccent: string | null
 }
 
+type FormModules = Record<RegistrationFormModule, boolean>
+
 type Props = {
   eventId: string
   enabledModules: string[]
@@ -65,6 +69,7 @@ type Props = {
   committees: Committee[]
   showEmbarkation: boolean
   branding: EventBrandingValues
+  formModules: FormModules
   linkedMinistries: LinkedMinistry[]
 }
 
@@ -329,10 +334,25 @@ export function EventSettingsClient({
   committees,
   showEmbarkation,
   branding,
+  formModules,
   linkedMinistries,
 }: Props) {
   const [modules, setModules] = React.useState<Set<string>>(new Set(enabledModules))
   const [togglingModule, setTogglingModule] = React.useState<string | null>(null)
+  const [formMods, setFormMods] = React.useState<FormModules>(formModules)
+  const [togglingFormModule, setTogglingFormModule] = React.useState<RegistrationFormModule | null>(null)
+
+  async function handleToggleFormModule(module: RegistrationFormModule) {
+    const next = !formMods[module]
+    setTogglingFormModule(module)
+    const result = await setRegistrationFormModule(eventId, module, next)
+    setTogglingFormModule(null)
+    if (result.success) {
+      setFormMods((prev) => ({ ...prev, [module]: next }))
+    } else {
+      toast.error(result.error)
+    }
+  }
   const [busDialogOpen, setBusDialogOpen] = React.useState(false)
   const [editingBus, setEditingBus] = React.useState<BusRow | undefined>()
   const [deletingBusId, setDeletingBusId] = React.useState<string | null>(null)
@@ -380,6 +400,7 @@ export function EventSettingsClient({
       <Tabs defaultValue="modules">
         <TabsList>
           <TabsTrigger value="modules">Modules</TabsTrigger>
+          <TabsTrigger value="registration-form">Registration Form</TabsTrigger>
           <TabsTrigger value="committees">Committees</TabsTrigger>
           <TabsTrigger value="branding">Branding</TabsTrigger>
         </TabsList>
@@ -392,9 +413,9 @@ export function EventSettingsClient({
             <Card>
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <IconCross className="size-5 text-muted-foreground" />
-                    <div>
+                  <div className="flex items-start gap-3 min-w-0">
+                    <IconCross className="size-5 shrink-0 text-muted-foreground mt-0.5" />
+                    <div className="min-w-0">
                       <CardTitle className="text-base">Baptism</CardTitle>
                       <CardDescription className="mt-0.5">
                         Track registrants who will be baptized at this event. Managed mid-event by admin.
@@ -402,6 +423,7 @@ export function EventSettingsClient({
                     </div>
                   </div>
                   <Switch
+                    className="shrink-0"
                     checked={modules.has("Baptism")}
                     onCheckedChange={() => handleToggleModule("Baptism")}
                     disabled={togglingModule === "Baptism"}
@@ -415,9 +437,9 @@ export function EventSettingsClient({
               <Card>
                 <CardHeader className={modules.has("Embarkation") ? "pb-3" : undefined}>
                   <div className="flex items-start justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                      <IconBus className="size-5 text-muted-foreground" />
-                      <div>
+                    <div className="flex items-start gap-3 min-w-0">
+                      <IconBus className="size-5 shrink-0 text-muted-foreground mt-0.5" />
+                      <div className="min-w-0">
                         <CardTitle className="text-base">Embarkation</CardTitle>
                         <CardDescription className="mt-0.5">
                           Assign registrants and volunteers to buses. Print a manifest per bus.
@@ -425,6 +447,7 @@ export function EventSettingsClient({
                       </div>
                     </div>
                     <Switch
+                      className="shrink-0"
                       checked={modules.has("Embarkation")}
                       onCheckedChange={() => handleToggleModule("Embarkation")}
                       disabled={togglingModule === "Embarkation"}
@@ -490,9 +513,9 @@ export function EventSettingsClient({
             <Card>
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <IconFish className="size-5 text-muted-foreground" />
-                    <div>
+                  <div className="flex items-start gap-3 min-w-0">
+                    <IconFish className="size-5 shrink-0 text-muted-foreground mt-0.5" />
+                    <div className="min-w-0">
                       <CardTitle className="text-base">Catch Mech</CardTitle>
                       <CardDescription className="mt-0.5">
                         Enable facilitators to confirm breakout group members into their small groups via a weekly link.
@@ -500,9 +523,113 @@ export function EventSettingsClient({
                     </div>
                   </div>
                   <Switch
+                    className="shrink-0"
                     checked={modules.has("CatchMech")}
                     onCheckedChange={() => handleToggleModule("CatchMech")}
                     disabled={togglingModule === "CatchMech"}
+                  />
+                </div>
+              </CardHeader>
+            </Card>
+          </section>
+        </TabsContent>
+
+        <TabsContent value="registration-form" className="mt-6">
+          <section className="space-y-4 max-w-2xl">
+            <div>
+              <h3 className="type-label text-muted-foreground">Public registration form</h3>
+              <p className="text-xs text-muted-foreground mt-1">
+                Toggle which optional sections appear on this event&apos;s public registration form.
+              </p>
+            </div>
+
+            {/* Small Group */}
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-start gap-3 min-w-0">
+                    <IconUsers className="size-5 shrink-0 text-muted-foreground mt-0.5" />
+                    <div className="min-w-0">
+                      <CardTitle className="text-base">Small Group</CardTitle>
+                      <CardDescription className="mt-0.5">
+                        Collect matching preferences so registrants can be placed into a Small Group or Breakout.
+                      </CardDescription>
+                    </div>
+                  </div>
+                  <Switch
+                    className="shrink-0"
+                    checked={formMods.SmallGroup}
+                    onCheckedChange={() => handleToggleFormModule("SmallGroup")}
+                    disabled={togglingFormModule === "SmallGroup"}
+                  />
+                </div>
+              </CardHeader>
+            </Card>
+
+            {/* Dietary Restrictions */}
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-start gap-3 min-w-0">
+                    <IconSalad className="size-5 shrink-0 text-muted-foreground mt-0.5" />
+                    <div className="min-w-0">
+                      <CardTitle className="text-base">Dietary Restrictions</CardTitle>
+                      <CardDescription className="mt-0.5">
+                        Ask registrants whether they have dietary preferences (Vegetarian, Vegan, Halal, etc.).
+                      </CardDescription>
+                    </div>
+                  </div>
+                  <Switch
+                    className="shrink-0"
+                    checked={formMods.Dietary}
+                    onCheckedChange={() => handleToggleFormModule("Dietary")}
+                    disabled={togglingFormModule === "Dietary"}
+                  />
+                </div>
+              </CardHeader>
+            </Card>
+
+            {/* Payment */}
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-start gap-3 min-w-0">
+                    <IconCash className="size-5 shrink-0 text-muted-foreground mt-0.5" />
+                    <div className="min-w-0">
+                      <CardTitle className="text-base">Payment Reference</CardTitle>
+                      <CardDescription className="mt-0.5">
+                        Ask registrants for a payment reference (e.g. GCash transaction ID) on submission.
+                      </CardDescription>
+                    </div>
+                  </div>
+                  <Switch
+                    className="shrink-0"
+                    checked={formMods.Payment}
+                    onCheckedChange={() => handleToggleFormModule("Payment")}
+                    disabled={togglingFormModule === "Payment"}
+                  />
+                </div>
+              </CardHeader>
+            </Card>
+
+            {/* Auto-assign Breakout */}
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-start gap-3 min-w-0">
+                    <IconSparkles className="size-5 shrink-0 text-muted-foreground mt-0.5" />
+                    <div className="min-w-0">
+                      <CardTitle className="text-base">Automatically assign breakout groups</CardTitle>
+                      <CardDescription className="mt-0.5">
+                        On submit, place each registrant into the best-fit breakout group based on Gender, Age, and remaining capacity. When off, registrants choose their own group (or skip).
+                      </CardDescription>
+                    </div>
+                  </div>
+                  <Switch
+                    className="shrink-0"
+                    checked={formMods.AutoAssignBreakout}
+                    onCheckedChange={() => handleToggleFormModule("AutoAssignBreakout")}
+                    disabled={togglingFormModule === "AutoAssignBreakout"}
                   />
                 </div>
               </CardHeader>

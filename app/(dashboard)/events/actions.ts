@@ -4,6 +4,103 @@ import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { db } from "@/lib/db"
 import { eventSchema, type EventFormValues } from "@/lib/validations/event"
+import { suggestBreakoutGroup } from "@/lib/breakout-suggestion"
+import { fetchBreakoutCandidates } from "@/lib/breakout-suggestion-server"
+import { tryCreateSmallGroupRequestFromBreakout } from "@/lib/create-small-group-request"
+import type { Gender, MeetingFormat } from "@/app/generated/prisma/client"
+
+type AssignedBreakout =
+  | {
+      id: string
+      name: string
+      meetingFormat: MeetingFormat | null
+      locationCity: string | null
+      schedule: { dayOfWeek: number; timeStart: string } | null
+    }
+  | null
+
+async function fetchAssignedBreakoutDetails(groupId: string): Promise<AssignedBreakout> {
+  const group = await db.breakoutGroup.findUnique({
+    where: { id: groupId },
+    select: {
+      id: true,
+      name: true,
+      meetingFormat: true,
+      locationCity: true,
+      schedules: {
+        select: { dayOfWeek: true, timeStart: true },
+        orderBy: { dayOfWeek: "asc" },
+        take: 1,
+      },
+    },
+  })
+  if (!group) return null
+  return {
+    id: group.id,
+    name: group.name,
+    meetingFormat: group.meetingFormat,
+    locationCity: group.locationCity,
+    schedule: group.schedules[0] ?? null,
+  }
+}
+
+/**
+ * Assign a registrant to a breakout group based on:
+ *  - explicit pick (selectedBreakoutGroupId) — wins if provided & valid & not full
+ *  - else autoAssignBreakout on the event — runs the simple Gender/Age/Capacity matcher
+ *  - else nothing
+ * Best-effort: failures are swallowed and return null.
+ */
+async function assignBreakoutForRegistrant(
+  registrantId: string,
+  eventId: string,
+  selectedBreakoutGroupId: string | null,
+  profile: { gender: Gender | null; birthYear: number | null }
+): Promise<AssignedBreakout> {
+  try {
+    let chosenGroupId: string | null = null
+
+    if (selectedBreakoutGroupId) {
+      const picked = await db.breakoutGroup.findUnique({
+        where: { id: selectedBreakoutGroupId },
+        select: {
+          id: true,
+          eventId: true,
+          memberLimit: true,
+          _count: { select: { members: true } },
+        },
+      })
+      if (
+        picked &&
+        picked.eventId === eventId &&
+        (picked.memberLimit == null || picked._count.members < picked.memberLimit)
+      ) {
+        chosenGroupId = picked.id
+      }
+    } else {
+      const event = await db.event.findUnique({
+        where: { id: eventId },
+        select: { autoAssignBreakout: true },
+      })
+      if (event?.autoAssignBreakout) {
+        const candidates = await fetchBreakoutCandidates(eventId)
+        const best = suggestBreakoutGroup(candidates, profile)
+        if (best) chosenGroupId = best.id
+      }
+    }
+
+    if (!chosenGroupId) return null
+
+    await db.breakoutGroupMember.create({
+      data: { breakoutGroupId: chosenGroupId, registrantId },
+    })
+    await tryCreateSmallGroupRequestFromBreakout(chosenGroupId, registrantId)
+    revalidatePath(`/event/${eventId}/breakouts`)
+    return fetchAssignedBreakoutDetails(chosenGroupId)
+  } catch {
+    return null
+  }
+}
 
 const registrantSchema = z.object({
   firstName: z.string().min(1, "First name is required").trim(),
@@ -14,7 +111,7 @@ const registrantSchema = z.object({
   // Birthday — used as fallback matching field when no mobile or email
   birthMonth: z.number().int().min(1).max(12).optional().nullable(),
   birthYear: z.number().int().min(1900).max(2100).optional().nullable(),
-  // Optional matching fields — collected on recurring event registration forms
+  // Optional matching fields — collected when the event's Small Group registration module is enabled
   lifeStageId: z.string().optional().nullable().transform((v) => v || null),
   gender: z.enum(["Male", "Female"]).optional().nullable(),
   language: z.array(z.string()).optional().default([]),
@@ -22,6 +119,17 @@ const registrantSchema = z.object({
   workCity: z.string().optional().nullable().transform((v) => v || null),
   scheduleDayOfWeek: z.number().int().min(0).max(6).optional().nullable(),
   scheduleTimeStart: z.string().optional().nullable().transform((v) => v || null),
+  // Optional dietary fields — collected when the Dietary registration module is enabled
+  dietaryPreference: z
+    .enum([
+      "Vegetarian", "Vegan", "Halal", "Kosher",
+      "GlutenFree", "DairyFree", "NutFree", "Pescatarian", "Other",
+    ])
+    .optional()
+    .nullable(),
+  dietaryOther: z.string().optional().nullable().transform((v) => v || null),
+  // Optional payment reference — collected when the Payment registration module is enabled
+  paymentReference: z.string().optional().nullable().transform((v) => v || null),
 })
 
 type ActionResult<T = void> =
@@ -261,8 +369,9 @@ export async function createRegistrant(
   raw: z.infer<typeof registrantSchema>,
   confirmedMemberId: string | null,
   confirmedGuestId?: string | null,
-  skipDeduplication?: boolean
-): Promise<ActionResult<{ id: string }>> {
+  skipDeduplication?: boolean,
+  selectedBreakoutGroupId?: string | null
+): Promise<ActionResult<{ id: string; breakoutGroup: AssignedBreakout }>> {
   const parsed = registrantSchema.safeParse(raw)
   if (!parsed.success) {
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
@@ -300,14 +409,29 @@ export async function createRegistrant(
 
       const [registrant] = await db.$transaction([
         db.eventRegistrant.create({
-          data: { eventId, memberId: confirmedMemberId },
+          data: {
+            eventId,
+            memberId: confirmedMemberId,
+            dietaryPreference: parsed.data.dietaryPreference ?? null,
+            dietaryOther: parsed.data.dietaryOther,
+            paymentReference: parsed.data.paymentReference,
+          },
           select: { id: true },
         }),
         ...(Object.keys(memberUpdates).length > 0
           ? [db.member.update({ where: { id: confirmedMemberId }, data: memberUpdates })]
           : []),
       ])
-      return { success: true, data: { id: registrant.id } }
+      const breakoutGroup = await assignBreakoutForRegistrant(
+        registrant.id,
+        eventId,
+        selectedBreakoutGroupId ?? null,
+        {
+          gender: (parsed.data.gender ?? existing.gender) as Gender | null,
+          birthYear: parsed.data.birthYear ?? existing.birthYear,
+        }
+      )
+      return { success: true, data: { id: registrant.id, breakoutGroup } }
     } else if (confirmedGuestId) {
       // Duplicate check — guest already registered for this event
       const alreadyRegistered = await db.eventRegistrant.findFirst({
@@ -342,14 +466,29 @@ export async function createRegistrant(
 
       const [registrant] = await db.$transaction([
         db.eventRegistrant.create({
-          data: { eventId, guestId: confirmedGuestId },
+          data: {
+            eventId,
+            guestId: confirmedGuestId,
+            dietaryPreference: parsed.data.dietaryPreference ?? null,
+            dietaryOther: parsed.data.dietaryOther,
+            paymentReference: parsed.data.paymentReference,
+          },
           select: { id: true },
         }),
         ...(Object.keys(guestUpdates).length > 0
           ? [db.guest.update({ where: { id: confirmedGuestId }, data: guestUpdates })]
           : []),
       ])
-      return { success: true, data: { id: registrant.id } }
+      const breakoutGroup = await assignBreakoutForRegistrant(
+        registrant.id,
+        eventId,
+        selectedBreakoutGroupId ?? null,
+        {
+          gender: (parsed.data.gender ?? existing.gender) as Gender | null,
+          birthYear: parsed.data.birthYear ?? existing.birthYear,
+        }
+      )
+      return { success: true, data: { id: registrant.id, breakoutGroup } }
     } else {
       // Non-member — find or create Guest by phone, then link via guestId
       const matchingProfile = {
@@ -451,10 +590,22 @@ export async function createRegistrant(
           eventId,
           guestId,
           nickname: parsed.data.nickname ?? null,
+          dietaryPreference: parsed.data.dietaryPreference ?? null,
+          dietaryOther: parsed.data.dietaryOther,
+          paymentReference: parsed.data.paymentReference,
         },
         select: { id: true },
       })
-      return { success: true, data: { id: registrant.id } }
+      const breakoutGroup = await assignBreakoutForRegistrant(
+        registrant.id,
+        eventId,
+        selectedBreakoutGroupId ?? null,
+        {
+          gender: (parsed.data.gender ?? null) as Gender | null,
+          birthYear: parsed.data.birthYear ?? null,
+        }
+      )
+      return { success: true, data: { id: registrant.id, breakoutGroup } }
     }
   } catch {
     return { success: false, error: "Failed to register. Please try again." }
@@ -924,16 +1075,21 @@ export async function lookupCheckinRegistrantByProfile(
 const walkInSchema = z.object({
   firstName: z.string().min(1, "First name is required").trim(),
   lastName: z.string().min(1, "Last name is required").trim(),
-  nickname: z.string().optional().transform((v) => (!v?.trim() ? null : v.trim())),
-  email: z.string().optional().transform((v) => (!v?.trim() ? null : v.trim())),
+  nickname: z.string().optional().nullable().transform((v) => (!v?.trim() ? null : v.trim())),
+  email: z.string().optional().nullable().transform((v) => (!v?.trim() ? null : v.trim())),
   mobileNumber: z.string().min(1, "Mobile number is required").trim(),
+  gender: z.enum(["Male", "Female"]).optional().nullable(),
+  birthMonth: z.number().int().min(1).max(12).optional().nullable(),
+  birthYear: z.number().int().min(1900).max(2100).optional().nullable(),
+  paymentReference: z.string().optional().nullable().transform((v) => (!v?.trim() ? null : v.trim())),
 })
 
 export async function walkInCheckin(
   eventId: string,
   raw: z.infer<typeof walkInSchema>,
-  occurrenceId: string | null
-): Promise<ActionResult<{ registrantId: string; name: string }>> {
+  occurrenceId: string | null,
+  selectedBreakoutGroupId?: string | null
+): Promise<ActionResult<{ registrantId: string; name: string; breakoutGroup: AssignedBreakout }>> {
   const parsed = walkInSchema.safeParse(raw)
   if (!parsed.success) {
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
@@ -958,18 +1114,26 @@ export async function walkInCheckin(
         // Find existing Guest by phone, then by email as fallback
         let existingGuest = await tx.guest.findFirst({
           where: { phone: parsed.data.mobileNumber },
-          select: { id: true, firstName: true, lastName: true },
+          select: { id: true, firstName: true, lastName: true, gender: true, birthMonth: true, birthYear: true },
         })
         if (!existingGuest && parsed.data.email) {
           existingGuest = await tx.guest.findFirst({
             where: { email: parsed.data.email },
-            select: { id: true, firstName: true, lastName: true },
+            select: { id: true, firstName: true, lastName: true, gender: true, birthMonth: true, birthYear: true },
           })
         }
 
         if (existingGuest) {
           guestId = existingGuest.id
           displayName = `${existingGuest.firstName} ${existingGuest.lastName}`.trim()
+          // Update matching fields only when not already set
+          const guestUpdates: Record<string, unknown> = {}
+          if (!existingGuest.gender && parsed.data.gender) guestUpdates.gender = parsed.data.gender
+          if (existingGuest.birthMonth == null && parsed.data.birthMonth != null) guestUpdates.birthMonth = parsed.data.birthMonth
+          if (existingGuest.birthYear == null && parsed.data.birthYear != null) guestUpdates.birthYear = parsed.data.birthYear
+          if (Object.keys(guestUpdates).length > 0) {
+            await tx.guest.update({ where: { id: guestId }, data: guestUpdates })
+          }
         } else {
           const newGuest = await tx.guest.create({
             data: {
@@ -977,6 +1141,9 @@ export async function walkInCheckin(
               lastName: parsed.data.lastName,
               email: parsed.data.email ?? null,
               phone: parsed.data.mobileNumber,
+              gender: parsed.data.gender ?? null,
+              birthMonth: parsed.data.birthMonth ?? null,
+              birthYear: parsed.data.birthYear ?? null,
               language: [],
             },
             select: { id: true },
@@ -1000,6 +1167,9 @@ export async function walkInCheckin(
                 eventId,
                 ...(memberId ? { memberId } : { guestId: guestId! }),
                 nickname: parsed.data.nickname ?? null,
+                ...(parsed.data.paymentReference
+                  ? { isPaid: true, paymentReference: parsed.data.paymentReference }
+                  : {}),
               },
               select: { id: true },
             })
@@ -1022,7 +1192,17 @@ export async function walkInCheckin(
       return { registrantId: regId, name: displayName }
     })
 
-    return { success: true, data: { registrantId, name } }
+    const breakoutGroup = await assignBreakoutForRegistrant(
+      registrantId,
+      eventId,
+      selectedBreakoutGroupId ?? null,
+      {
+        gender: parsed.data.gender ?? null,
+        birthYear: parsed.data.birthYear ?? null,
+      }
+    )
+
+    return { success: true, data: { registrantId, name, breakoutGroup } }
   } catch {
     return { success: false, error: "Failed to register. Please try again." }
   }

@@ -8,6 +8,37 @@ type ActionResult<T = void> =
   | { success: true; data: T }
   | { success: false; error: string }
 
+// ─── Registration form modules ───────────────────────────────────────────────
+
+export type RegistrationFormModule = "SmallGroup" | "Dietary" | "Payment" | "AutoAssignBreakout"
+
+const REGISTRATION_FORM_FIELD: Record<RegistrationFormModule, "formIncludeSmallGroup" | "formIncludeDietary" | "formIncludePayment" | "autoAssignBreakout"> = {
+  SmallGroup: "formIncludeSmallGroup",
+  Dietary: "formIncludeDietary",
+  Payment: "formIncludePayment",
+  AutoAssignBreakout: "autoAssignBreakout",
+}
+
+export async function setRegistrationFormModule(
+  eventId: string,
+  module: RegistrationFormModule,
+  enabled: boolean
+): Promise<ActionResult> {
+  const field = REGISTRATION_FORM_FIELD[module]
+  if (!field) return { success: false, error: "Unknown module" }
+  try {
+    await db.event.update({
+      where: { id: eventId },
+      data: { [field]: enabled },
+    })
+    revalidatePath(`/event/${eventId}/settings`)
+    revalidatePath(`/events/${eventId}/register`)
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to update registration form module" }
+  }
+}
+
 // ─── Module toggle ────────────────────────────────────────────────────────────
 
 export async function enableModule(

@@ -7,65 +7,12 @@ import { useRouter } from "next/navigation"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { WEIGHT_FIELDS } from "@/lib/validations/matching-weights"
+import { SmallGroupMatchCard } from "@/components/small-group-match-card"
 import {
   findBreakoutGroupMatches,
   assignRegistrantToBreakout,
 } from "@/app/(dashboard)/events/matching-actions"
-import type { MatchResult, ScoreBreakdown } from "@/lib/matching/types"
-
-// ─── Score bar ────────────────────────────────────────────────────────────────
-
-function ScoreBar({ value }: { value: number }) {
-  return (
-    <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-      <div
-        className="h-full rounded-full bg-primary transition-all"
-        style={{ width: `${Math.round(value * 100)}%` }}
-      />
-    </div>
-  )
-}
-
-// ─── Auto-match card ──────────────────────────────────────────────────────────
-
-function MatchCard({
-  result,
-  onAssign,
-  assigning,
-}: {
-  result: MatchResult
-  onAssign: () => void
-  assigning: boolean
-}) {
-  const score = Math.round(result.totalScore * 100)
-
-  return (
-    <div className="rounded-lg border p-4 space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="font-medium">{result.groupName}</p>
-          <p className="text-sm text-muted-foreground">{score}% match</p>
-        </div>
-        <Button size="sm" onClick={onAssign} disabled={assigning}>
-          {assigning ? "Assigning…" : "Assign"}
-        </Button>
-      </div>
-      <div className="space-y-2">
-        {WEIGHT_FIELDS.map((field) => {
-          const raw = result.breakdown[field.key as keyof ScoreBreakdown]
-          return (
-            <div key={field.key} className="grid grid-cols-[120px_1fr_32px] items-center gap-2">
-              <span className="truncate text-xs text-muted-foreground">{field.label}</span>
-              <ScoreBar value={raw} />
-              <span className="text-right text-xs tabular-nums">{Math.round(raw * 100)}%</span>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
+import type { MatchResult } from "@/lib/matching/types"
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -160,7 +107,7 @@ export function BreakoutSection({ registrantId, eventId, facilitatedGroup, allEv
         ) : (
           <div className="space-y-3">
             {matchResults.map((r) => (
-              <MatchCard
+              <SmallGroupMatchCard
                 key={r.groupId}
                 result={r}
                 onAssign={() => { void handleAssign(r.groupId) }}

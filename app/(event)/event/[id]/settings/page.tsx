@@ -15,6 +15,10 @@ async function getEventSettings(id: string) {
       themeColorPrimary: true,
       themeColorSecondary: true,
       themeColorAccent: true,
+      formIncludeSmallGroup: true,
+      formIncludeDietary: true,
+      formIncludePayment: true,
+      autoAssignBreakout: true,
       modules: { select: { id: true, type: true } },
       buses: {
         orderBy: { createdAt: "asc" },
@@ -82,6 +86,12 @@ export default async function EventSettingsPage({
         themeColorPrimary: event.themeColorPrimary ?? "",
         themeColorSecondary: event.themeColorSecondary ?? "",
         themeColorAccent: event.themeColorAccent ?? "",
+      }}
+      formModules={{
+        SmallGroup: event.formIncludeSmallGroup,
+        Dietary: event.formIncludeDietary,
+        Payment: event.formIncludePayment,
+        AutoAssignBreakout: event.autoAssignBreakout,
       }}
       linkedMinistries={linkedMinistries}
     />

@@ -30,6 +30,10 @@ import {
   type GuestMatchingProfileInput,
 } from "@/app/(dashboard)/guests/actions"
 import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
+import {
+  suggestBreakoutGroup,
+  type BreakoutCandidate,
+} from "@/lib/breakout-suggestion"
 
 type LifeStage = { id: string; name: string }
 type LeaderResult = { id: string; firstName: string; lastName: string; ledGroups: { id: string; name: string }[] }
@@ -76,13 +80,16 @@ type MatchedState = {
   name: string
   nickname: string | null
   guestSmallGroupPrompt: GuestSmallGroupPrompt | null
+  breakoutGroup?: { id: string; name: string } | null
 }
 
 type Props = {
   eventId: string
   occurrenceId: string | null
   lifeStages?: LifeStage[]
-  isRecurring?: boolean
+  autoAssignBreakout?: boolean
+  breakoutCandidates?: BreakoutCandidate[]
+  allowPayment?: boolean
 }
 
 const AUTO_RESET_MS = 4000
@@ -101,7 +108,8 @@ function queryIsPhone(q: string): boolean {
   return !q.includes("@")
 }
 
-export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurring = false }: Props) {
+export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], autoAssignBreakout = false, breakoutCandidates = [], allowPayment = false }: Props) {
+  const showBreakoutPicker = !autoAssignBreakout && breakoutCandidates.length > 0
   const [step, setStep] = React.useState<Step>("lookup")
   const [lookupMode, setLookupMode] = React.useState<LookupMode>("mobile")
   const [query, setQuery] = React.useState("")
@@ -115,7 +123,20 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurri
     nickname: "",
     email: "",
     mobileNumber: "",
+    gender: "" as "Male" | "Female" | "",
+    birthMonth: "",
+    birthYear: "",
+    paymentReference: "",
+    selectedBreakoutGroupId: "",
   })
+
+  const walkInSuggestedBreakout = React.useMemo(() => {
+    if (!showBreakoutPicker) return null
+    return suggestBreakoutGroup(breakoutCandidates, {
+      gender: (walkInForm.gender || null) as "Male" | "Female" | null,
+      birthYear: walkInForm.birthYear ? parseInt(walkInForm.birthYear, 10) : null,
+    })
+  }, [breakoutCandidates, walkInForm.gender, walkInForm.birthYear, showBreakoutPicker])
   const [nameDobForm, setNameDobForm] = React.useState({
     lastName: "",
     birthMonth: "",
@@ -142,7 +163,7 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurri
     setError(null)
     setMatched(null)
     setDisambiguateCandidates([])
-    setWalkInForm({ firstName: "", lastName: "", nickname: "", email: "", mobileNumber: "" })
+    setWalkInForm({ firstName: "", lastName: "", nickname: "", email: "", mobileNumber: "", gender: "", birthMonth: "", birthYear: "", paymentReference: "", selectedBreakoutGroupId: "" })
     setNameDobForm({ lastName: "", birthMonth: "", birthYear: "" })
     setLoading(false)
     focusLookupInput()
@@ -232,8 +253,10 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurri
       return
     }
 
-    // Silently auto-assign to best breakout group in the background
-    if (occurrenceId !== null) {
+    // Silently auto-assign to best breakout group in the background — only when
+    // the event opts in to auto-assignment. Otherwise the registrant either picked
+    // a group at registration or stays unassigned by choice.
+    if (occurrenceId !== null && autoAssignBreakout) {
       void autoAssignRegistrantToBreakout(matched.registrantId, eventId)
     }
 
@@ -267,8 +290,13 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurri
         nickname: walkInForm.nickname || null,
         email: isPhone ? (walkInForm.email || null) : query,
         mobileNumber: isPhone ? query : walkInForm.mobileNumber,
+        gender: (walkInForm.gender || null) as "Male" | "Female" | null,
+        birthMonth: walkInForm.birthMonth ? parseInt(walkInForm.birthMonth, 10) : null,
+        birthYear: walkInForm.birthYear ? parseInt(walkInForm.birthYear, 10) : null,
+        paymentReference: walkInForm.paymentReference || null,
       },
-      occurrenceId
+      occurrenceId,
+      walkInForm.selectedBreakoutGroupId || null
     )
 
     setLoading(false)
@@ -283,6 +311,7 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurri
       name: result.data.name,
       nickname: null,
       guestSmallGroupPrompt: null,
+      breakoutGroup: result.data.breakoutGroup,
     })
     setStep("success")
     scheduleReset()
@@ -291,14 +320,11 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurri
   // ── Lookup ───────────────────────────────────────────────────────────────
   if (step === "lookup") {
     return (
-      <div className="flex min-h-[70svh] flex-col items-center justify-center px-6 py-12">
+      <div className="flex flex-col items-center justify-center px-6 py-8">
         <div className="w-full max-w-sm space-y-6">
-          <div className="space-y-1 text-center">
-            <h2 className="text-2xl font-semibold tracking-tight">Check in</h2>
-            <p className="text-sm text-muted-foreground">
-              How would you like to look up your registration?
-            </p>
-          </div>
+          <p className="text-sm text-muted-foreground text-center">
+            How would you like to look up your registration?
+          </p>
 
           <div className="space-y-2">
             <div className="flex overflow-hidden rounded-lg border">
@@ -402,7 +428,7 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurri
                       value={nameDobForm.birthMonth}
                       onValueChange={(v) => setNameDobForm((p) => ({ ...p, birthMonth: v }))}
                     >
-                      <SelectTrigger id="namedob-month" className="h-12 text-base">
+                      <SelectTrigger id="namedob-month" className="data-[size=default]:h-12 text-base">
                         <SelectValue placeholder="Month" />
                       </SelectTrigger>
                       <SelectContent>
@@ -458,7 +484,7 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurri
   // ── Disambiguate ─────────────────────────────────────────────────────────
   if (step === "disambiguate") {
     return (
-      <div className="flex min-h-[70svh] flex-col items-center justify-center px-6 py-12">
+      <div className="flex flex-col items-center justify-center px-6 py-8">
         <div className="w-full max-w-sm space-y-6">
           <div className="space-y-1 text-center">
             <h2 className="text-2xl font-semibold tracking-tight">Multiple profiles found</h2>
@@ -506,7 +532,7 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurri
   // ── Confirm ──────────────────────────────────────────────────────────────
   if (step === "confirm" && matched) {
     return (
-      <div className="flex min-h-[70svh] flex-col items-center justify-center px-6 py-12">
+      <div className="flex flex-col items-center justify-center px-6 py-8">
         <div className="w-full max-w-sm space-y-6">
           <div className="space-y-1 text-center">
             <h2 className="text-2xl font-semibold tracking-tight">Is this you?</h2>
@@ -558,7 +584,7 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurri
   // ── Small Group Prompt ────────────────────────────────────────────────────
   if (step === "sg-prompt" && matched) {
     return (
-      <div className="flex min-h-[70svh] flex-col items-center justify-center px-6 py-12">
+      <div className="flex flex-col items-center justify-center px-6 py-8">
         <div className="w-full max-w-sm space-y-6">
           <div className="space-y-1 text-center">
             <h2 className="text-2xl font-semibold tracking-tight">One quick question</h2>
@@ -622,7 +648,7 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurri
   // ── Success ──────────────────────────────────────────────────────────────
   if (step === "success" && matched) {
     return (
-      <div className="flex min-h-[70svh] flex-col items-center justify-center px-6 py-12">
+      <div className="flex flex-col items-center justify-center px-6 py-8">
         <div className="w-full max-w-sm space-y-6 text-center">
           <div className="mx-auto flex size-20 items-center justify-center rounded-full bg-green-100">
             <IconCheck className="size-10 text-green-600" />
@@ -633,6 +659,12 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurri
             </h2>
             <p className="text-sm text-muted-foreground">You&apos;re checked in.</p>
           </div>
+          {matched.breakoutGroup && (
+            <div className="rounded-xl border bg-muted/40 px-6 py-4">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Your breakout group</p>
+              <p className="mt-1 text-base font-medium">{matched.breakoutGroup.name}</p>
+            </div>
+          )}
           <p className="text-xs text-muted-foreground">Returning to start in a moment…</p>
         </div>
       </div>
@@ -642,7 +674,7 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurri
   // ── Already checked in ───────────────────────────────────────────────────
   if (step === "already-in" && matched) {
     return (
-      <div className="flex min-h-[70svh] flex-col items-center justify-center px-6 py-12">
+      <div className="flex flex-col items-center justify-center px-6 py-8">
         <div className="w-full max-w-sm space-y-6 text-center">
           <div className="mx-auto flex size-20 items-center justify-center rounded-full bg-green-100">
             <IconCheck className="size-10 text-green-600" />
@@ -664,7 +696,7 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurri
   // ── Not found ────────────────────────────────────────────────────────────
   if (step === "not-found-prompt") {
     return (
-      <div className="flex min-h-[70svh] flex-col items-center justify-center px-6 py-12">
+      <div className="flex flex-col items-center justify-center px-6 py-8">
         <div className="w-full max-w-sm space-y-6 text-center">
           <div className="mx-auto flex size-20 items-center justify-center rounded-full bg-muted">
             <IconUserQuestion className="size-10 text-muted-foreground" />
@@ -674,25 +706,18 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurri
             <p className="text-sm text-muted-foreground">
               We couldn&apos;t find a registration for{" "}
               <span className="font-medium">{query}</span>.
-              {!isRecurring && (
-                <>
-                  <br />
-                  Double-check your email or mobile number, or ask the event team for help.
-                </>
-              )}
+              You can register now or try a different lookup.
             </p>
           </div>
           <div className="flex flex-col gap-3">
-            {isRecurring && (
-              <Button
-                className="h-12 w-full text-base"
-                onClick={() => setStep("walk-in-form")}
-              >
-                Register now
-              </Button>
-            )}
             <Button
-              variant={isRecurring ? "ghost" : "default"}
+              className="h-12 w-full text-base"
+              onClick={() => setStep("walk-in-form")}
+            >
+              Register now
+            </Button>
+            <Button
+              variant="ghost"
               className="h-12 w-full text-base"
               onClick={reset}
             >
@@ -708,7 +733,7 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurri
   if (step === "walk-in-form") {
     const isPhone = queryIsPhone(query)
     return (
-      <div className="flex min-h-[70svh] flex-col items-center justify-center px-6 py-12">
+      <div className="flex flex-col items-center justify-center px-6 py-8">
         <div className="w-full max-w-sm space-y-6">
           <div className="space-y-1 text-center">
             <h2 className="text-2xl font-semibold tracking-tight">Register &amp; check in</h2>
@@ -800,6 +825,125 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], isRecurri
 
             {error && <p className="text-sm text-destructive">{error}</p>}
 
+            {/* Gender */}
+            <div className="space-y-2">
+              <Label>Gender <span className="text-muted-foreground">(optional)</span></Label>
+              <div className="flex gap-3">
+                {(["Male", "Female"] as const).map((g) => (
+                  <button
+                    key={g}
+                    type="button"
+                    onClick={() => setWalkInForm((p) => ({ ...p, gender: p.gender === g ? "" : g }))}
+                    className={`flex-1 rounded-lg border py-2.5 text-sm font-medium transition-colors ${
+                      walkInForm.gender === g
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border bg-background hover:bg-muted"
+                    }`}
+                  >
+                    {g}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Birthday */}
+            <div className="space-y-2">
+              <Label>Birthday <span className="text-muted-foreground">(optional)</span></Label>
+              <div className="grid grid-cols-2 gap-3">
+                <Select
+                  value={walkInForm.birthMonth}
+                  onValueChange={(v) => setWalkInForm((p) => ({ ...p, birthMonth: v === "_none" ? "" : v }))}
+                >
+                  <SelectTrigger className="h-11">
+                    <SelectValue placeholder="Month" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">Month</SelectItem>
+                    {["January","February","March","April","May","June","July","August","September","October","November","December"].map((m, i) => (
+                      <SelectItem key={i + 1} value={String(i + 1)}>{m}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <YearInput
+                  value={walkInForm.birthYear}
+                  onChange={(v) => setWalkInForm((p) => ({ ...p, birthYear: v }))}
+                  className="h-11"
+                />
+              </div>
+            </div>
+
+            {/* Breakout picker — only when event is not in auto-assign mode and groups exist */}
+            {showBreakoutPicker && (
+              <div className="space-y-3">
+                <Label>Breakout Group <span className="text-muted-foreground">(optional)</span></Label>
+                {walkInSuggestedBreakout && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setWalkInForm((p) => ({
+                        ...p,
+                        selectedBreakoutGroupId:
+                          p.selectedBreakoutGroupId === walkInSuggestedBreakout.id
+                            ? ""
+                            : walkInSuggestedBreakout.id,
+                      }))
+                    }
+                    className={`w-full rounded-lg border p-4 text-left transition-colors ${
+                      walkInForm.selectedBreakoutGroupId === walkInSuggestedBreakout.id
+                        ? "border-primary bg-primary/5"
+                        : "border-border bg-background hover:bg-muted/50"
+                    }`}
+                  >
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Suggested for you
+                    </p>
+                    <p className="mt-1 text-sm font-medium">{walkInSuggestedBreakout.name}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {walkInForm.selectedBreakoutGroupId === walkInSuggestedBreakout.id
+                        ? "Selected"
+                        : "Tap to select"}
+                    </p>
+                  </button>
+                )}
+                <Select
+                  value={walkInForm.selectedBreakoutGroupId || "_none"}
+                  onValueChange={(v) =>
+                    setWalkInForm((p) => ({ ...p, selectedBreakoutGroupId: v === "_none" ? "" : v }))
+                  }
+                >
+                  <SelectTrigger className="h-11">
+                    <SelectValue placeholder="Or browse all groups" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">No selection</SelectItem>
+                    {breakoutCandidates.map((g) => {
+                      const isFull = g.memberLimit != null && g.memberCount >= g.memberLimit
+                      return (
+                        <SelectItem key={g.id} value={g.id} disabled={isFull}>
+                          {g.name}
+                          {isFull ? " (full)" : ""}
+                        </SelectItem>
+                      )
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Payment reference */}
+            {allowPayment && (
+              <div className="space-y-2">
+                <Label htmlFor="walkin-payment">Payment reference <span className="text-muted-foreground">(optional)</span></Label>
+                <Input
+                  id="walkin-payment"
+                  value={walkInForm.paymentReference}
+                  onChange={(e) => setWalkInForm((p) => ({ ...p, paymentReference: e.target.value }))}
+                  placeholder="GCash transaction ID"
+                  className="h-11"
+                />
+              </div>
+            )}
+
             <Button
               type="submit"
               className="h-12 w-full text-base"
@@ -886,7 +1030,7 @@ function ProfileForm({ guestId, existingProfile, lifeStages, onSave, onSkip, onB
   }
 
   return (
-    <div className="flex min-h-[70svh] flex-col px-6 py-8">
+    <div className="flex flex-col px-6 py-8">
       <div className="mx-auto w-full max-w-sm space-y-6">
         <div className="space-y-1">
           <h2 className="text-xl font-semibold tracking-tight">Tell us about yourself</h2>
@@ -1104,7 +1248,7 @@ function LeaderSearch({ guestId, onSave, onBack }: LeaderSearchProps) {
   }, [])
 
   return (
-    <div className="flex min-h-[70svh] flex-col px-6 py-8">
+    <div className="flex flex-col px-6 py-8">
       <div className="mx-auto w-full max-w-sm space-y-6">
         <div className="space-y-1">
           <h2 className="text-xl font-semibold tracking-tight">Find your leader</h2>

@@ -3,10 +3,7 @@
 import React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { IconCopy } from "@tabler/icons-react"
-import { toast } from "sonner"
 
-import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import {
@@ -63,15 +60,6 @@ export function EventHeader({ eventId, eventType: _eventType }: EventHeaderProps
     }
   }
 
-  const isRegistrantsPage =
-    segments[2] === "registrants" && segments.length === 3
-
-  function copyRegistrationLink() {
-    const url = `${window.location.origin}/events/${eventId}/register`
-    navigator.clipboard.writeText(url)
-    toast.success("Registration link copied")
-  }
-
   return (
     <header className="flex h-(--header-height) shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-(--header-height)">
       <div className="flex w-full items-center gap-1 px-4 lg:gap-2 lg:px-6">
@@ -102,14 +90,6 @@ export function EventHeader({ eventId, eventType: _eventType }: EventHeaderProps
           </BreadcrumbList>
         </Breadcrumb>
 
-        {isRegistrantsPage && (
-          <div className="ml-auto">
-            <Button variant="outline" size="sm" onClick={copyRegistrationLink}>
-              <IconCopy className="size-3.5" />
-              Registration link
-            </Button>
-          </div>
-        )}
       </div>
     </header>
   )
