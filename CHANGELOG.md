@@ -4,6 +4,23 @@ All notable changes to this project are documented here.
 
 ---
 
+## [2026-05-15]
+
+### Added
+- **List navigation on detail pages** — Registrant, volunteer, and breakout group detail pages now show prev/next arrows to step through the current list without going back. The list order is captured from `sessionStorage` when navigating from the list view.
+- **Guest CSV import: gender and birth fields** — Guest import now accepts optional `gender` (Male/Female/M/F), `birthMonth` (1–12), and `birthYear` columns with hints shown in the import UI.
+- **Breakout members table: attendance column and filters** — The separate Attendance tab in the breakout detail page has been removed; attendance data is now inline in the Members table alongside new search (name/mobile) and filter controls (All/Members/Guests, All/Attended/Not Attended).
+
+### Changed
+- Sessions page breakout-groups tab is now owned by `SessionAttendeesTable` to keep the server page clean and the tab state fully client-side.
+- Prisma config now auto-detects the correct env file (`.env.local`, `.env.production`, or `.env`) and supports a `DATABASE_URL_UNPOOLED` fallback for Neon/Vercel pooled connections.
+
+### Fixed
+- **CCF-80** — Catch Mech form no longer triggers the Small Group setup UI for Timothy volunteers when all their participant decisions are pending or declined. The group-name prompt now only appears when at least one participant is confirmed.
+- Registration page no longer shows a date label for recurring events.
+
+---
+
 ## [2026-05-12]
 
 ### Added
