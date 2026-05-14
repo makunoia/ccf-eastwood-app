@@ -1,11 +1,10 @@
 import type { ReactNode } from "react"
 import { notFound } from "next/navigation"
-import { CheckCircle2, Repeat2, UserCheck, UserPlus, Users, XCircle } from "lucide-react"
+import { Repeat2, UserCheck, UserPlus, Users } from "lucide-react"
 import { db } from "@/lib/db"
 import { isReturner } from "@/lib/session-stats"
 import { BreadcrumbOverride } from "@/components/breadcrumb-context"
 import { DetailPageHeader } from "@/components/detail-page-header"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { SessionAttendeesTable } from "./session-attendees-table"
 
 async function getOccurrenceDetail(occurrenceId: string) {
@@ -244,66 +243,12 @@ export default async function OccurrenceDetailPage({
           />
         </div>
 
-        <Tabs defaultValue="attendees">
-          <TabsList variant="line">
-            <TabsTrigger value="attendees" className="after:-bottom-px">
-              Attendees
-            </TabsTrigger>
-            <TabsTrigger value="breakouts" className="after:-bottom-px">
-              Breakout Groups
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="attendees" className="mt-4">
-            <SessionAttendeesTable
-              occurrenceId={occurrenceId}
-              attendees={attendeesWithStats}
-              breakoutGroups={breakoutGroupOptions}
-            />
-          </TabsContent>
-
-          <TabsContent value="breakouts" className="mt-4">
-            {breakoutStats.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
-                <p className="text-sm">No breakout groups configured for this event.</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto rounded-lg border">
-                <table className="w-full text-sm">
-                  <thead className="border-b bg-muted/50">
-                    <tr>
-                      <th className="px-4 py-3 text-left font-medium">Group</th>
-                      <th className="px-4 py-3 text-left font-medium">Facilitator</th>
-                      <th className="px-4 py-3 text-left font-medium">Co-Facilitator</th>
-                      <th className="px-4 py-3 text-right font-medium">New</th>
-                      <th className="px-4 py-3 text-right font-medium">Returnees</th>
-                      <th className="px-4 py-3 text-right font-medium">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {breakoutStats.map((bg) => (
-                      <tr key={bg.id} className="border-b last:border-0">
-                        <td className="px-4 py-3 font-medium">{bg.name}</td>
-                        <td className="px-4 py-3">
-                          <PresenceCell name={bg.facilitatorName} present={bg.facilitatorPresent} />
-                        </td>
-                        <td className="px-4 py-3">
-                          <PresenceCell
-                            name={bg.coFacilitatorName}
-                            present={bg.coFacilitatorPresent}
-                          />
-                        </td>
-                        <td className="px-4 py-3 text-right tabular-nums">{bg.newCount}</td>
-                        <td className="px-4 py-3 text-right tabular-nums">{bg.returneeCount}</td>
-                        <td className="px-4 py-3 text-right tabular-nums">{bg.totalCheckedIn}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </TabsContent>
-        </Tabs>
+        <SessionAttendeesTable
+          occurrenceId={occurrenceId}
+          attendees={attendeesWithStats}
+          breakoutGroups={breakoutGroupOptions}
+          breakoutStats={breakoutStats}
+        />
       </div>
     </>
   )
@@ -329,20 +274,6 @@ function StatCard({
       <p className="text-3xl font-semibold tabular-nums tracking-tight text-foreground">
         {value.toLocaleString()}
       </p>
-    </div>
-  )
-}
-
-function PresenceCell({ name, present }: { name: string | null; present: boolean }) {
-  if (!name) return <span className="text-xs text-muted-foreground">—</span>
-  return (
-    <div className="flex items-center gap-1.5">
-      {present ? (
-        <CheckCircle2 className="size-3.5 shrink-0 text-green-500" />
-      ) : (
-        <XCircle className="size-3.5 shrink-0 text-muted-foreground/40" />
-      )}
-      <span>{name}</span>
     </div>
   )
 }
