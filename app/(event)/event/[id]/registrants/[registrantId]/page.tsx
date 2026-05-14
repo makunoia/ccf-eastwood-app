@@ -4,7 +4,6 @@ import Link from "next/link"
 import { db } from "@/lib/db"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { DetailPageHeader } from "@/components/detail-page-header"
 import { BreadcrumbOverride } from "@/components/breadcrumb-context"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -12,6 +11,7 @@ import { YearInput } from "@/components/ui/year-input"
 import { Textarea } from "@/components/ui/textarea"
 import { BreakoutSection } from "./breakout-match-section"
 import { RegistrantGuestProfile } from "./registrant-profile"
+import { RegistrantNavHeader } from "./registrant-nav-header"
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -135,7 +135,9 @@ export default async function RegistrantDetailPage({
         href={`/event/${eventId}/registrants/${registrantId}`}
         label={name}
       />
-      <DetailPageHeader
+      <RegistrantNavHeader
+        registrantId={registrantId}
+        eventId={eventId}
         initials={name.split(" ").filter(Boolean).map((n) => n[0]).join("").slice(0, 2)}
         title={name}
         subtitle={
