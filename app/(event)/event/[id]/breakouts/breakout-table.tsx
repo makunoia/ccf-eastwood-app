@@ -493,6 +493,7 @@ function buildColumns(
   eventId: string,
   onEdit: (group: BreakoutGroupRow) => void,
   onDelete: (group: BreakoutGroupRow) => void,
+  onNavigate?: () => void,
 ): ColumnDef<BreakoutGroupRow>[] {
   return [
     {
@@ -501,6 +502,7 @@ function buildColumns(
       cell: ({ row }) => (
         <Link
           href={`/event/${eventId}/breakouts/${row.original.id}`}
+          onClick={onNavigate}
           className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
         >
           {row.original.name}
@@ -613,9 +615,13 @@ export function BreakoutGroupsTable({
     return rows
   }, [breakoutGroups, search, lifeStageFilter])
 
+  const saveBreakoutIds = React.useCallback(() => {
+    sessionStorage.setItem("breakoutListIds", JSON.stringify(filtered.map((g) => g.id)))
+  }, [filtered])
+
   const columns = React.useMemo(
-    () => buildColumns(eventId, setEditingGroup, setDeletingGroup),
-    [eventId]
+    () => buildColumns(eventId, setEditingGroup, setDeletingGroup, saveBreakoutIds),
+    [eventId, saveBreakoutIds]
   )
 
   async function handleAutoAssign() {
@@ -706,6 +712,7 @@ export function BreakoutGroupsTable({
             <Link
               key={group.id}
               href={`/event/${eventId}/breakouts/${group.id}`}
+              onClick={saveBreakoutIds}
               className="rounded-lg border bg-card p-4 hover:bg-muted/50 transition-colors"
             >
               <div className="flex items-start justify-between gap-2">

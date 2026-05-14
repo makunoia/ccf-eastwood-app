@@ -114,8 +114,13 @@ export async function submitCatchMechConfirmations(
   const isTimothy = faciMember.ledGroups.length === 0
 
   if (isTimothy) {
-    // Timothy flow — we'll create the group before confirming
-    return { success: true, requiresGroupName: true }
+    const hasConfirmed = decisions.some((d) => d.status === "confirmed")
+    if (hasConfirmed) {
+      // Timothy has confirmed at least one member — prompt for group name first
+      return { success: true, requiresGroupName: true }
+    }
+    // No confirmed members (all pending/declined) — nothing to persist without a group
+    return { success: true, requiresGroupName: false }
   }
 
   const smallGroup = await db.smallGroup.findFirst({
