@@ -102,7 +102,7 @@ export default async function RegisterPage({
         )}
         <h1 className={`text-2xl font-bold ${primaryColor ? "text-white" : ""}`}>{event.name} Registration</h1>
         <p className={`mt-1 text-sm ${primaryColor ? "text-white/75" : "text-muted-foreground"}`}>
-          {ministryNames}{ministryNames ? " · " : ""}{dateLabel}
+          {ministryNames}{ministryNames && event.type !== "Recurring" ? " · " : ""}{event.type !== "Recurring" ? dateLabel : ""}
         </p>
         {event.price != null && (
           <p className={`mt-1 text-sm font-medium ${primaryColor ? "text-white/90" : ""}`}>
