@@ -3,7 +3,7 @@ import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { BreakoutDetail } from "./breakout-detail"
 import { GroupActions } from "./group-actions"
-import { DetailPageHeader } from "@/components/detail-page-header"
+import { BreakoutNavHeader } from "./breakout-nav-header"
 import { BreadcrumbOverride } from "@/components/breadcrumb-context"
 
 const ledGroupsSelect = {
@@ -176,7 +176,9 @@ export default async function BreakoutGroupDetailPage({
         href={`/event/${eventId}/breakouts/${groupId}`}
         label={group.name}
       />
-      <DetailPageHeader
+      <BreakoutNavHeader
+        groupId={groupId}
+        eventId={eventId}
         title={group.name}
         subtitle={
           group.memberLimit != null ? (

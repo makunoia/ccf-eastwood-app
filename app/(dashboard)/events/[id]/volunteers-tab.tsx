@@ -45,9 +45,11 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive"> = 
 function VolunteerRowActions({
   volunteer,
   eventId,
+  onNavigate,
 }: {
   volunteer: EventVolunteer
   eventId: string
+  onNavigate: () => void
 }) {
   const router = useRouter()
   const [deleteOpen, setDeleteOpen] = React.useState(false)
@@ -78,7 +80,7 @@ function VolunteerRowActions({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onSelect={() => router.push(`/event/${eventId}/volunteers/${volunteer.id}`)}>
+          <DropdownMenuItem onSelect={() => { onNavigate(); router.push(`/event/${eventId}/volunteers/${volunteer.id}`) }}>
             <IconPencil className="mr-2 size-4" />
             Edit
           </DropdownMenuItem>
@@ -120,9 +122,11 @@ function VolunteerRowActions({
 function VolunteerCard({
   volunteer,
   eventId,
+  onNavigate,
 }: {
   volunteer: EventVolunteer
   eventId: string
+  onNavigate: () => void
 }) {
   const router = useRouter()
   const memberName = `${volunteer.member.firstName} ${volunteer.member.lastName}`
@@ -131,14 +135,14 @@ function VolunteerCard({
   return (
     <Card
       className="cursor-pointer hover:bg-muted/50 transition-colors py-0"
-      onClick={() => router.push(`/event/${eventId}/volunteers/${volunteer.id}`)}
+      onClick={() => { onNavigate(); router.push(`/event/${eventId}/volunteers/${volunteer.id}`) }}
     >
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-2">
           <p className="font-medium leading-tight">{memberName}</p>
           <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
             <Badge variant={statusVariant}>{volunteer.status}</Badge>
-            <VolunteerRowActions volunteer={volunteer} eventId={eventId} />
+            <VolunteerRowActions volunteer={volunteer} eventId={eventId} onNavigate={onNavigate} />
           </div>
         </div>
         <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
@@ -161,9 +165,11 @@ function VolunteerCard({
 function VolunteersDesktopTable({
   volunteers,
   eventId,
+  onNavigate,
 }: {
   volunteers: EventVolunteer[]
   eventId: string
+  onNavigate: () => void
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border">
@@ -187,6 +193,7 @@ function VolunteersDesktopTable({
                 <td className="px-4 py-3">
                   <Link
                     href={`/event/${eventId}/volunteers/${v.id}`}
+                    onClick={onNavigate}
                     className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
                   >
                     {memberName}
@@ -203,7 +210,7 @@ function VolunteersDesktopTable({
                   <Badge variant={statusVariant}>{v.status}</Badge>
                 </td>
                 <td className="px-4 py-3">
-                  <VolunteerRowActions volunteer={v} eventId={eventId} />
+                  <VolunteerRowActions volunteer={v} eventId={eventId} onNavigate={onNavigate} />
                 </td>
               </tr>
             )
@@ -221,6 +228,10 @@ export function VolunteersTab({
   volunteers: EventVolunteer[]
   eventId: string
 }) {
+  const saveVolunteerIds = React.useCallback(() => {
+    sessionStorage.setItem("volunteerListIds", JSON.stringify(volunteers.map((v) => v.id)))
+  }, [volunteers])
+
   return (
     <div className="flex flex-col gap-4">
       {volunteers.length === 0 ? (
@@ -233,12 +244,12 @@ export function VolunteersTab({
           {/* Mobile */}
           <div className="flex flex-col gap-2 md:hidden">
             {volunteers.map((v) => (
-              <VolunteerCard key={v.id} volunteer={v} eventId={eventId} />
+              <VolunteerCard key={v.id} volunteer={v} eventId={eventId} onNavigate={saveVolunteerIds} />
             ))}
           </div>
           {/* Desktop */}
           <div className="hidden md:block">
-            <VolunteersDesktopTable volunteers={volunteers} eventId={eventId} />
+            <VolunteersDesktopTable volunteers={volunteers} eventId={eventId} onNavigate={saveVolunteerIds} />
           </div>
         </>
       )}

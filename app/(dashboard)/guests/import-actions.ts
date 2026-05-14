@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
 import type { DuplicateMatch, ImportResult, RowResolution } from "@/lib/import/types"
-import { Prisma } from "@/app/generated/prisma/client"
+import { Gender, Prisma } from "@/app/generated/prisma/client"
 import { toTitleCase, formatPhilippinePhone } from "@/lib/utils"
 
 type ActionResult<T = void> =
@@ -72,14 +72,24 @@ type ImportRow = {
   existingId?: string
 }
 
+function parseGender(v: string): Gender | null {
+  const n = v.toLowerCase()
+  if (n === "male" || n === "m") return Gender.Male
+  if (n === "female" || n === "f") return Gender.Female
+  return null
+}
+
 function buildGuestData(mapped: Record<string, string>) {
   return {
-    firstName: mapped.firstName ? toTitleCase(mapped.firstName) : "",
-    lastName:  mapped.lastName  ? toTitleCase(mapped.lastName)  : "",
-    email:     mapped.email?.trim() || null,
-    phone:     mapped.phone ? formatPhilippinePhone(mapped.phone) : null,
-    notes:     mapped.notes?.trim() || null,
-    language:  [] as string[],
+    firstName:  mapped.firstName ? toTitleCase(mapped.firstName) : "",
+    lastName:   mapped.lastName  ? toTitleCase(mapped.lastName)  : "",
+    email:      mapped.email?.trim() || null,
+    phone:      mapped.phone ? formatPhilippinePhone(mapped.phone) : null,
+    notes:      mapped.notes?.trim() || null,
+    language:   [] as string[],
+    gender:     mapped.gender ? parseGender(mapped.gender) : null,
+    birthMonth: mapped.birthMonth ? parseInt(mapped.birthMonth, 10) || null : null,
+    birthYear:  mapped.birthYear  ? parseInt(mapped.birthYear,  10) || null : null,
   }
 }
 

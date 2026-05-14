@@ -39,11 +39,14 @@ export const VOLUNTEER_FIELDS: FieldDefinition[] = [
 ]
 
 export const GUEST_FIELDS: FieldDefinition[] = [
-  { key: "firstName", label: "First Name", required: true },
-  { key: "lastName",  label: "Last Name",  required: true },
-  { key: "email",     label: "Email",      required: false },
-  { key: "phone",     label: "Phone",      required: false },
-  { key: "notes",     label: "Notes",      required: false },
+  { key: "firstName",  label: "First Name",  required: true },
+  { key: "lastName",   label: "Last Name",   required: true },
+  { key: "email",      label: "Email",       required: false },
+  { key: "phone",      label: "Phone",       required: false },
+  { key: "gender",     label: "Gender",      required: false, hint: "Male or Female" },
+  { key: "birthMonth", label: "Birth Month", required: false, hint: "1–12" },
+  { key: "birthYear",  label: "Birth Year",  required: false, hint: "e.g. 1995" },
+  { key: "notes",      label: "Notes",       required: false },
 ]
 
 export const SMALL_GROUP_FIELDS: FieldDefinition[] = [

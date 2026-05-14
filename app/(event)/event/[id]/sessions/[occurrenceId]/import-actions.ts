@@ -25,8 +25,8 @@ export async function checkSessionAttendanceDuplicates(
     })
     if (!occurrence) return { success: false, error: "Occurrence not found" }
 
-    const emails = rows.map((r) => r.email).filter(Boolean) as string[]
-    const phones = rows
+    const _emails = rows.map((r) => r.email).filter(Boolean) as string[]
+    const _phones = rows
       .map((r) => (r.phone ? formatPhilippinePhone(r.phone) : undefined))
       .filter(Boolean) as string[]
 

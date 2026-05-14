@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { BreadcrumbOverride } from "@/components/breadcrumb-context"
 import { DetailPageHeader } from "@/components/detail-page-header"
+import { useListNavigation } from "@/lib/hooks/use-list-navigation"
 import {
   Dialog,
   DialogContent,
@@ -65,6 +66,7 @@ type FormState = {
 
 export function EventVolunteerDetail({ volunteer }: { volunteer: VolunteerData }) {
   const router = useRouter()
+  const { prev, next } = useListNavigation(volunteer.id, "volunteerListIds")
   const [form, setForm] = React.useState<FormState>({
     committeeId: volunteer.committeeId,
     preferredRoleId: volunteer.preferredRoleId,
@@ -153,6 +155,8 @@ export function EventVolunteerDetail({ volunteer }: { volunteer: VolunteerData }
             {saving ? "Saving…" : "Save changes"}
           </Button>
         }
+        prevHref={prev ? `/event/${volunteer.eventId}/volunteers/${prev}` : null}
+        nextHref={next ? `/event/${volunteer.eventId}/volunteers/${next}` : null}
       />
 
       <div className="p-6 pb-24 sm:pb-6">

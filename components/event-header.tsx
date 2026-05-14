@@ -37,7 +37,7 @@ type EventHeaderProps = {
   eventType: "OneTime" | "MultiDay" | "Recurring"
 }
 
-export function EventHeader({ eventId, eventType: _eventType }: EventHeaderProps) {
+export function EventHeader({ eventId: _eventId, eventType: _eventType }: EventHeaderProps) {
   const pathname = usePathname()
   const { overrides } = useBreadcrumbContext()
   const segments = pathname.split("/").filter(Boolean)

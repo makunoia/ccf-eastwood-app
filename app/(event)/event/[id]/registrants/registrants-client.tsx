@@ -220,7 +220,7 @@ function AddRegistrantDialog({
 
 function RegistrantCard({
   r, eventId, isRecurringOrMultiDay, isPaidEvent,
-  onMarkPaid, onToggleAttendance, toggling,
+  onMarkPaid, onToggleAttendance, toggling, onNavigate,
 }: {
   r: Registrant
   eventId: string
@@ -229,13 +229,14 @@ function RegistrantCard({
   onMarkPaid: (id: string) => void
   onToggleAttendance: (r: Registrant) => void
   toggling: string | null
+  onNavigate: () => void
 }) {
   const router = useRouter()
 
   return (
     <Card
       className="cursor-pointer hover:bg-muted/50 transition-colors py-0"
-      onClick={() => router.push(`/event/${eventId}/registrants/${r.id}`)}
+      onClick={() => { onNavigate(); router.push(`/event/${eventId}/registrants/${r.id}`) }}
     >
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-2">
@@ -381,6 +382,10 @@ export function RegistrantsClient({
 
   const isRecurringOrMultiDay = eventType === "Recurring" || eventType === "MultiDay"
 
+  function saveRegistrantIds() {
+    sessionStorage.setItem("registrantListIds", JSON.stringify(registrants.map((r) => r.id)))
+  }
+
   async function toggleAttendance(r: Registrant) {
     setTogglingAttendance(r.id)
     const result = r.attendedAt
@@ -449,6 +454,7 @@ export function RegistrantsClient({
               onMarkPaid={(id) => { setSelectedId(id); setPaymentDialogOpen(true) }}
               onToggleAttendance={toggleAttendance}
               toggling={togglingAttendance}
+              onNavigate={saveRegistrantIds}
             />
           ))
         )}
@@ -485,6 +491,7 @@ export function RegistrantsClient({
                     <td className="px-4 py-3 whitespace-nowrap">
                       <Link
                         href={`/event/${eventId}/registrants/${r.id}`}
+                        onClick={saveRegistrantIds}
                         className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
                       >
                         {displayName(r)}
