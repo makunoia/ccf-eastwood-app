@@ -46,12 +46,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet"
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import {
   Tooltip,
   TooltipContent,
@@ -559,14 +554,21 @@ function MembersTable({
   groupId,
   eventId,
   unassignedRegistrants,
+  eventType,
+  totalOccurrences,
   memberLimit,
 }: {
   members: BreakoutMemberRow[]
   groupId: string
   eventId: string
   unassignedRegistrants: UnassignedRegistrant[]
+  eventType: string
+  totalOccurrences: number
   memberLimit: number | null
 }) {
+  const [search, setSearch] = React.useState("")
+  const [typeFilter, setTypeFilter] = React.useState<"all" | "member" | "guest">("all")
+  const [attendanceFilter, setAttendanceFilter] = React.useState<"all" | "attended" | "not-attended">("all")
   const [removingId, setRemovingId] = React.useState<string | null>(null)
   const [addOpen, setAddOpen] = React.useState(false)
 
@@ -578,6 +580,31 @@ function MembersTable({
   }
 
   const isFull = memberLimit != null && members.length >= memberLimit
+
+  const filteredMembers = members.filter((m) => {
+    const r = m.registrant
+    const name = registrantDisplayName(r).toLowerCase()
+    const mobile = (r.mobileNumber ?? "").toLowerCase()
+    const query = search.trim().toLowerCase()
+    if (query && !name.includes(query) && !mobile.includes(query)) return false
+
+    const isMember = !!r.memberId
+    if (typeFilter === "member" && !isMember) return false
+    if (typeFilter === "guest" && isMember) return false
+
+    const hasAttendance =
+      eventType === "OneTime"
+        ? !!r.attendedAt
+        : r.occurrenceAttendances.length > 0
+
+    if (attendanceFilter === "attended" && !hasAttendance) return false
+    if (attendanceFilter === "not-attended" && hasAttendance) return false
+
+    return true
+  })
+
+  const attendanceHeader =
+    eventType === "OneTime" ? "Attended" : eventType === "MultiDay" ? "Days Attended" : "Sessions Attended"
 
   return (
     <div className="space-y-3">
@@ -596,26 +623,72 @@ function MembersTable({
         )}
       </div>
 
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <ToggleGroup
+            type="single"
+            value={typeFilter}
+            onValueChange={(v) => setTypeFilter((v || "all") as "all" | "member" | "guest")}
+            className="gap-1"
+          >
+            <ToggleGroupItem value="all" className="h-7 px-2.5 text-xs">
+              All
+            </ToggleGroupItem>
+            <ToggleGroupItem value="member" className="h-7 px-2.5 text-xs">
+              Members
+            </ToggleGroupItem>
+            <ToggleGroupItem value="guest" className="h-7 px-2.5 text-xs">
+              Guests
+            </ToggleGroupItem>
+          </ToggleGroup>
+
+          <ToggleGroup
+            type="single"
+            value={attendanceFilter}
+            onValueChange={(v) => setAttendanceFilter((v || "all") as "all" | "attended" | "not-attended")}
+            className="gap-1"
+          >
+            <ToggleGroupItem value="all" className="h-7 px-2.5 text-xs">
+              All Attendance
+            </ToggleGroupItem>
+            <ToggleGroupItem value="attended" className="h-7 px-2.5 text-xs">
+              Attended
+            </ToggleGroupItem>
+            <ToggleGroupItem value="not-attended" className="h-7 px-2.5 text-xs">
+              Not Attended
+            </ToggleGroupItem>
+          </ToggleGroup>
+        </div>
+
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search name or mobile"
+          className="h-8 w-full max-w-60 text-xs"
+        />
+      </div>
+
       <div className="rounded-lg border overflow-hidden">
         <Table>
           <TableHeader className="bg-muted">
             <TableRow>
               <TableHead>Name</TableHead>
               <TableHead>Type</TableHead>
+              <TableHead>{attendanceHeader}</TableHead>
               <TableHead>Small Group</TableHead>
               <TableHead>SG Status</TableHead>
               <TableHead className="w-10" />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {members.length === 0 ? (
+            {filteredMembers.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center text-muted-foreground text-sm">
-                  No members assigned yet.
+                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground text-sm">
+                  {members.length === 0 ? "No members assigned yet." : "No members match current filters."}
                 </TableCell>
               </TableRow>
             ) : (
-              members.map((m) => {
+              filteredMembers.map((m) => {
                 const r = m.registrant
                 const isMember = !!r.memberId
                 const name = registrantDisplayName(r)
@@ -634,6 +707,24 @@ function MembersTable({
                       <Badge variant="outline" className="text-xs">
                         {isMember ? "Member" : "Guest"}
                       </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {eventType === "OneTime" ? (
+                        r.attendedAt ? (
+                          <span className="flex items-center gap-1 text-sm text-green-600">
+                            <IconCheck className="size-4" />
+                            Attended
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground text-sm">—</span>
+                        )
+                      ) : (
+                        <OccurrenceAttendanceCell
+                          attendances={r.occurrenceAttendances}
+                          total={totalOccurrences}
+                          eventType={eventType}
+                        />
+                      )}
                     </TableCell>
                     <TableCell>
                       {r.member?.smallGroup ? (
@@ -680,88 +771,6 @@ function MembersTable({
         memberLimit={memberLimit}
         memberCount={members.length}
       />
-    </div>
-  )
-}
-
-// ─── Attendance table ───────────────────────────────────────────────────────────
-
-function AttendanceTable({
-  members,
-  eventId,
-  eventType,
-  totalOccurrences,
-}: {
-  members: BreakoutMemberRow[]
-  eventId: string
-  eventType: string
-  totalOccurrences: number
-}) {
-  const attendanceHeader =
-    eventType === "OneTime" ? "Attended" : eventType === "MultiDay" ? "Days Attended" : "Sessions Attended"
-
-  return (
-    <div className="rounded-lg border overflow-hidden">
-      <Table>
-        <TableHeader className="bg-muted">
-          <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Type</TableHead>
-            <TableHead>{attendanceHeader}</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {members.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={3} className="h-24 text-center text-muted-foreground text-sm">
-                No members assigned yet.
-              </TableCell>
-            </TableRow>
-          ) : (
-            members.map((m) => {
-              const r = m.registrant
-              const isMember = !!r.memberId
-              const name = registrantDisplayName(r)
-
-              return (
-                <TableRow key={m.registrantId}>
-                  <TableCell>
-                    <Link
-                      href={`/event/${eventId}/registrants/${r.id}`}
-                      className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-                    >
-                      {name}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className="text-xs">
-                      {isMember ? "Member" : "Guest"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {eventType === "OneTime" ? (
-                      r.attendedAt ? (
-                        <span className="flex items-center gap-1 text-sm text-green-600">
-                          <IconCheck className="size-4" />
-                          Attended
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground text-sm">—</span>
-                      )
-                    ) : (
-                      <OccurrenceAttendanceCell
-                        attendances={r.occurrenceAttendances}
-                        total={totalOccurrences}
-                        eventType={eventType}
-                      />
-                    )}
-                  </TableCell>
-                </TableRow>
-              )
-            })
-          )}
-        </TableBody>
-      </Table>
     </div>
   )
 }
@@ -819,35 +828,15 @@ export function BreakoutDetail({
 
       <Separator />
 
-      <Tabs defaultValue="members">
-        <TabsList variant="line">
-          <TabsTrigger value="members" className="after:-bottom-px">
-            Members{group.members.length > 0 ? ` (${group.members.length})` : ""}
-          </TabsTrigger>
-          <TabsTrigger value="attendance" className="after:-bottom-px">
-            Attendance
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="members" className="mt-4">
-          <MembersTable
-            members={group.members}
-            groupId={group.id}
-            eventId={group.eventId}
-            unassignedRegistrants={unassignedRegistrants}
-            memberLimit={group.memberLimit}
-          />
-        </TabsContent>
-
-        <TabsContent value="attendance" className="mt-4">
-          <AttendanceTable
-            members={group.members}
-            eventId={group.eventId}
-            eventType={group.eventType}
-            totalOccurrences={group.totalOccurrences}
-          />
-        </TabsContent>
-      </Tabs>
+      <MembersTable
+        members={group.members}
+        groupId={group.id}
+        eventId={group.eventId}
+        unassignedRegistrants={unassignedRegistrants}
+        eventType={group.eventType}
+        totalOccurrences={group.totalOccurrences}
+        memberLimit={group.memberLimit}
+      />
     </div>
   )
 }
