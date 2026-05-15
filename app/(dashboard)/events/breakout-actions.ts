@@ -14,6 +14,45 @@ type ActionResult<T = void> =
   | { success: true; data: T }
   | { success: false; error: string }
 
+// ─── Timothy profile validation ───────────────────────────────────────────────
+
+/**
+ * When a facilitator volunteer is a Timothy (has no led small groups),
+ * the breakout group's matching profile must be filled in so that the system
+ * has enough data to set up their future small group.
+ */
+async function validateTimothyProfile(
+  facilitatorId: string | null | undefined,
+  profile: {
+    genderFocus?: string | null
+    language?: string[]
+    meetingFormat?: string | null
+    schedule?: { dayOfWeek: number; timeStart: string } | null
+  }
+): Promise<string | null> {
+  if (!facilitatorId) return null
+
+  const volunteer = await db.volunteer.findUnique({
+    where: { id: facilitatorId },
+    select: { member: { select: { _count: { select: { ledGroups: true } } } } },
+  })
+  if (!volunteer) return null
+
+  const isTimothy = volunteer.member._count.ledGroups === 0
+  if (!isTimothy) return null
+
+  const missing: string[] = []
+  if (!profile.genderFocus) missing.push("Gender Focus")
+  if (!profile.language || profile.language.length === 0) missing.push("Language")
+  if (!profile.meetingFormat) missing.push("Meeting Format")
+  if (!profile.schedule) missing.push("Meeting Schedule")
+
+  if (missing.length > 0) {
+    return `Timothy profile requires: ${missing.join(", ")}`
+  }
+  return null
+}
+
 // ─── Breakout Group CRUD ──────────────────────────────────────────────────────
 
 export async function createBreakoutGroup(
@@ -25,6 +64,10 @@ export async function createBreakoutGroup(
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
   }
   const { name, facilitatorId, coFacilitatorId, memberLimit, linkedSmallGroupId, schedule, ...profile } = parsed.data
+
+  const timothyError = await validateTimothyProfile(facilitatorId, { ...profile, schedule })
+  if (timothyError) return { success: false, error: timothyError }
+
   try {
     const group = await db.breakoutGroup.create({
       data: {
@@ -71,6 +114,10 @@ export async function updateBreakoutGroup(
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
   }
   const { name, facilitatorId, coFacilitatorId, memberLimit, linkedSmallGroupId, schedule, ...profile } = parsed.data
+
+  const timothyError = await validateTimothyProfile(facilitatorId, { ...profile, schedule })
+  if (timothyError) return { success: false, error: timothyError }
+
   try {
     await db.breakoutGroup.update({
       where: { id: groupId },
