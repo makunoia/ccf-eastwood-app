@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { CheckCircle2, XCircle } from "lucide-react"
 import { IconUpload } from "@tabler/icons-react"
@@ -13,6 +14,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { ImportWizard } from "@/components/import/import-wizard"
@@ -49,19 +58,23 @@ export type BreakoutStatRow = {
 }
 
 type TypeFilter = "all" | "member" | "guest" | "volunteer"
+type SessionTab = "attendees" | "breakouts"
 
 export function SessionAttendeesTable({
+  eventId,
   occurrenceId,
   attendees,
   breakoutGroups,
   breakoutStats,
 }: {
+  eventId: string
   occurrenceId: string
   attendees: AttendeeRow[]
   breakoutGroups: BreakoutGroupOption[]
   breakoutStats: BreakoutStatRow[]
 }) {
   const router = useRouter()
+  const [activeTab, setActiveTab] = useState<SessionTab>("attendees")
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all")
   const [breakoutFilter, setBreakoutFilter] = useState("all")
   const [importOpen, setImportOpen] = useState(false)
@@ -75,8 +88,12 @@ export function SessionAttendeesTable({
   })
 
   return (
-    <Tabs defaultValue="attendees" className="flex flex-col gap-0">
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b pb-0">
+    <Tabs
+      value={activeTab}
+      onValueChange={(value) => setActiveTab(value as SessionTab)}
+      className="space-y-3"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <TabsList variant="line">
           <TabsTrigger value="attendees" className="after:-bottom-px">
             Attendees
@@ -86,51 +103,59 @@ export function SessionAttendeesTable({
           </TabsTrigger>
         </TabsList>
 
-        <div className="flex flex-wrap items-center gap-2 pb-1">
-          <ToggleGroup
-            type="single"
-            value={typeFilter}
-            onValueChange={(v) => setTypeFilter((v || "all") as TypeFilter)}
-            className="gap-1"
-          >
-            <ToggleGroupItem value="all" className="h-7 px-3 text-xs">
-              All
-            </ToggleGroupItem>
-            <ToggleGroupItem value="member" className="h-7 px-3 text-xs">
-              Members
-            </ToggleGroupItem>
-            <ToggleGroupItem value="guest" className="h-7 px-3 text-xs">
-              Guests
-            </ToggleGroupItem>
-            <ToggleGroupItem value="volunteer" className="h-7 px-3 text-xs">
-              Volunteers
-            </ToggleGroupItem>
-          </ToggleGroup>
-
-          {breakoutGroups.length > 0 && (
-            <Select value={breakoutFilter} onValueChange={setBreakoutFilter}>
-              <SelectTrigger className="h-7 w-[160px] text-xs">
-                <SelectValue placeholder="Breakout group" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All groups</SelectItem>
-                {breakoutGroups.map((bg) => (
-                  <SelectItem key={bg.id} value={bg.id}>
-                    {bg.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-
-          <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>
-            <IconUpload className="mr-1.5 size-3.5" />
-            Import
-          </Button>
-        </div>
+        <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>
+          <IconUpload className="mr-1.5 size-3.5" />
+          Import
+        </Button>
       </div>
 
-      <TabsContent value="attendees" className="mt-4">
+      {activeTab === "attendees" && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <ToggleGroup
+              type="single"
+              value={typeFilter}
+              onValueChange={(v) => setTypeFilter((v || "all") as TypeFilter)}
+              className="gap-1"
+            >
+              <ToggleGroupItem value="all" className="h-7 px-3 text-xs">
+                All
+              </ToggleGroupItem>
+              <ToggleGroupItem value="member" className="h-7 px-3 text-xs">
+                Members
+              </ToggleGroupItem>
+              <ToggleGroupItem value="guest" className="h-7 px-3 text-xs">
+                Guests
+              </ToggleGroupItem>
+              <ToggleGroupItem value="volunteer" className="h-7 px-3 text-xs">
+                Volunteers
+              </ToggleGroupItem>
+            </ToggleGroup>
+
+            {breakoutGroups.length > 0 && (
+              <Select value={breakoutFilter} onValueChange={setBreakoutFilter}>
+                <SelectTrigger className="h-7 w-[160px] text-xs">
+                  <SelectValue placeholder="Breakout group" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All groups</SelectItem>
+                  {breakoutGroups.map((bg) => (
+                    <SelectItem key={bg.id} value={bg.id}>
+                      {bg.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            {filtered.length} of {attendees.length} attendee{attendees.length === 1 ? "" : "s"}
+          </p>
+        </div>
+      )}
+
+      <TabsContent value="attendees" className="mt-0">
         {attendees.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
             <p className="text-sm">No one checked in for this session yet.</p>
@@ -141,27 +166,27 @@ export function SessionAttendeesTable({
           </div>
         ) : (
           <div className="overflow-x-auto rounded-lg border">
-            <table className="w-full text-sm">
-              <thead className="border-b bg-muted/50">
-                <tr>
-                  <th className="px-4 py-3 text-left font-medium">Name</th>
-                  <th className="px-4 py-3 text-left font-medium">Status</th>
-                  <th className="px-4 py-3 text-left font-medium">Type</th>
-                  <th className="px-4 py-3 text-left font-medium">Checked in at</th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table>
+              <TableHeader className="bg-muted/50">
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Checked in at</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {filtered.map((a) => (
-                  <tr key={a.id} className="border-b last:border-0">
-                    <td className="px-4 py-3 font-medium">{a.name}</td>
-                    <td className="px-4 py-3">
+                  <TableRow key={a.id}>
+                    <TableCell className="font-medium">{a.name}</TableCell>
+                    <TableCell>
                       {a.isReturner ? (
                         <Badge variant="secondary">Returning</Badge>
                       ) : (
                         <Badge>New</Badge>
                       )}
-                    </td>
-                    <td className="px-4 py-3">
+                    </TableCell>
+                    <TableCell>
                       <div className="flex flex-wrap gap-1">
                         {a.isMember ? (
                           <Badge variant="secondary">Member</Badge>
@@ -174,54 +199,67 @@ export function SessionAttendeesTable({
                           </Badge>
                         )}
                       </div>
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">{a.checkedInAtFormatted}</td>
-                  </tr>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {a.checkedInAtFormatted}
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         )}
       </TabsContent>
 
-      <TabsContent value="breakouts" className="mt-4">
+      <TabsContent value="breakouts" className="mt-0">
         {breakoutStats.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
             <p className="text-sm">No breakout groups configured for this event.</p>
           </div>
         ) : (
           <div className="overflow-x-auto rounded-lg border">
-            <table className="w-full text-sm">
-              <thead className="border-b bg-muted/50">
-                <tr>
-                  <th className="px-4 py-3 text-left font-medium">Group</th>
-                  <th className="px-4 py-3 text-left font-medium">Facilitator</th>
-                  <th className="px-4 py-3 text-left font-medium">Co-Facilitator</th>
-                  <th className="px-4 py-3 text-right font-medium">New</th>
-                  <th className="px-4 py-3 text-right font-medium">Returnees</th>
-                  <th className="px-4 py-3 text-right font-medium">Total</th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table>
+              <TableHeader className="bg-muted/50">
+                <TableRow>
+                  <TableHead>Group</TableHead>
+                  <TableHead>Facilitator</TableHead>
+                  <TableHead>Co-Facilitator</TableHead>
+                  <TableHead className="text-right">New</TableHead>
+                  <TableHead className="text-right">Returnees</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {breakoutStats.map((bg) => (
-                  <tr key={bg.id} className="border-b last:border-0">
-                    <td className="px-4 py-3 font-medium">{bg.name}</td>
-                    <td className="px-4 py-3">
+                  <TableRow key={bg.id}>
+                    <TableCell>
+                      <Link
+                        href={`/event/${eventId}/breakouts/${bg.id}`}
+                        className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+                      >
+                        {bg.name}
+                      </Link>
+                    </TableCell>
+                    <TableCell>
                       <PresenceCell name={bg.facilitatorName} present={bg.facilitatorPresent} />
-                    </td>
-                    <td className="px-4 py-3">
+                    </TableCell>
+                    <TableCell>
                       <PresenceCell
                         name={bg.coFacilitatorName}
                         present={bg.coFacilitatorPresent}
                       />
-                    </td>
-                    <td className="px-4 py-3 text-right tabular-nums">{bg.newCount}</td>
-                    <td className="px-4 py-3 text-right tabular-nums">{bg.returneeCount}</td>
-                    <td className="px-4 py-3 text-right tabular-nums">{bg.totalCheckedIn}</td>
-                  </tr>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{bg.newCount}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {bg.returneeCount}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {bg.totalCheckedIn}
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         )}
       </TabsContent>
