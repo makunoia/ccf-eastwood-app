@@ -415,6 +415,29 @@ export async function matchSmallGroupsWithEscalation(
 
 // ─── Breakout Group Matching ──────────────────────────────────────────────────
 
+/**
+ * Derives an effective genderFocus for a breakout group.
+ * If an explicit genderFocus is set on the group, that takes precedence.
+ * Otherwise, infer from the facilitator(s)' gender:
+ *   - Single gender across all present facilitators → that gender
+ *   - Mixed genders → "Mixed"
+ *   - No facilitators or no gender data → null
+ */
+function deriveEffectiveGenderFocus(
+  explicitFocus: "Male" | "Female" | "Mixed" | null,
+  facilitatorGender: "Male" | "Female" | null | undefined,
+  coFacilitatorGender: "Male" | "Female" | null | undefined
+): "Male" | "Female" | "Mixed" | null {
+  if (explicitFocus !== null) return explicitFocus
+
+  const genders = [facilitatorGender, coFacilitatorGender].filter(
+    (g): g is "Male" | "Female" => g === "Male" || g === "Female"
+  )
+  if (genders.length === 0) return null
+  const unique = [...new Set(genders)]
+  return unique.length > 1 ? "Mixed" : unique[0]
+}
+
 export async function matchBreakoutGroups(
   registrantId: string,
   eventId: string,
@@ -432,7 +455,7 @@ export async function matchBreakoutGroups(
           gender: true,
           language: true,
           birthMonth: true,
-        birthYear: true,
+          birthYear: true,
           workCity: true,
           workIndustry: true,
           meetingPreference: true,
@@ -447,7 +470,7 @@ export async function matchBreakoutGroups(
           gender: true,
           language: true,
           birthMonth: true,
-        birthYear: true,
+          birthYear: true,
           workCity: true,
           workIndustry: true,
           meetingPreference: true,
@@ -497,6 +520,12 @@ export async function matchBreakoutGroups(
       schedules: {
         select: { dayOfWeek: true, timeStart: true },
       },
+      facilitator: {
+        select: { member: { select: { gender: true } } },
+      },
+      coFacilitator: {
+        select: { member: { select: { gender: true } } },
+      },
     },
   })
 
@@ -505,7 +534,12 @@ export async function matchBreakoutGroups(
   const eligible = groups.filter((g) => {
     if (options?.excludeAssigned && assignedGroupIds.has(g.id)) return false
     if (g.memberLimit !== null && g._count.members >= g.memberLimit) return false
-    if (scoreGender(candidate.gender, g.genderFocus) === 0.0) return false
+    const effectiveGenderFocus = deriveEffectiveGenderFocus(
+      g.genderFocus,
+      g.facilitator?.member.gender,
+      g.coFacilitator?.member.gender
+    )
+    if (scoreGender(candidate.gender, effectiveGenderFocus) === 0.0) return false
     if (scoreLifeStage(candidate.lifeStageId, g.lifeStageId) === 0.0) return false
     return true
   })
@@ -519,11 +553,17 @@ export async function matchBreakoutGroups(
         )
         .filter((i): i is string => i != null)
 
+      const effectiveGenderFocus = deriveEffectiveGenderFocus(
+        g.genderFocus,
+        g.facilitator?.member.gender,
+        g.coFacilitator?.member.gender
+      )
+
       const profile: GroupProfile = {
         id: g.id,
         name: g.name,
         lifeStageId: g.lifeStageId,
-        genderFocus: g.genderFocus,
+        genderFocus: effectiveGenderFocus,
         language: g.language,
         ageRangeMin: g.ageRangeMin,
         ageRangeMax: g.ageRangeMax,

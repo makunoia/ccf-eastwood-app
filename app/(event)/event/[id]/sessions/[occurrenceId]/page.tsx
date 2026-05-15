@@ -244,6 +244,7 @@ export default async function OccurrenceDetailPage({
         </div>
 
         <SessionAttendeesTable
+          eventId={id}
           occurrenceId={occurrenceId}
           attendees={attendeesWithStats}
           breakoutGroups={breakoutGroupOptions}

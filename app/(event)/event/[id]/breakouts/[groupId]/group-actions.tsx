@@ -166,6 +166,7 @@ function EditDialog({
 
   const selectedVol = volunteers.find((v) => v.id === form.facilitatorId) ?? null
   const ledGroups = selectedVol?.member.ledGroups ?? []
+  const isFacilitatorTimothy = !!form.facilitatorId && ledGroups.length === 0
 
   function field(key: string) {
     return {
@@ -177,6 +178,17 @@ function EditDialog({
 
   async function handleSave() {
     if (!form.name.trim()) { toast.error("Group name is required"); return }
+    if (isFacilitatorTimothy) {
+      const missing: string[] = []
+      if (!form.genderFocus) missing.push("Gender Focus")
+      if (form.language.length === 0) missing.push("Language")
+      if (!form.meetingFormat) missing.push("Meeting Format")
+      if (!form.scheduleDayOfWeek || !form.scheduleTimeStart) missing.push("Meeting Schedule")
+      if (missing.length > 0) {
+        toast.error(`Timothy profile requires: ${missing.join(", ")}`)
+        return
+      }
+    }
     setSaving(true)
     const hasSchedule = form.scheduleDayOfWeek !== "" && form.scheduleTimeStart
     const result = await updateBreakoutGroup(group.id, eventId, {
@@ -249,8 +261,8 @@ function EditDialog({
 
           <Separator />
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-            {form.facilitatorId && ledGroups.length === 0
-              ? <>Future Small Group Profile <span className="normal-case font-normal">(Timothy — set before their first member is confirmed)</span></>
+            {isFacilitatorTimothy
+              ? <>Future Small Group Profile <span className="normal-case font-normal text-destructive">(Timothy — required)</span></>
               : <>Matching Profile <span className="normal-case font-normal">(optional)</span></>
             }
           </p>
@@ -267,7 +279,7 @@ function EditDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label>Gender Focus</Label>
+            <Label>Gender Focus {isFacilitatorTimothy && <span className="text-destructive">*</span>}</Label>
             <Select value={form.genderFocus} onValueChange={(v) => setForm((f) => ({ ...f, genderFocus: v === "_none" ? "" : v }))}>
               <SelectTrigger><SelectValue placeholder="Any" /></SelectTrigger>
               <SelectContent>
@@ -280,7 +292,7 @@ function EditDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label>Language</Label>
+            <Label>Language {isFacilitatorTimothy && <span className="text-destructive">*</span>}</Label>
             <MultiSelect options={LANGUAGE_OPTIONS} value={form.language} onChange={(v) => setForm((f) => ({ ...f, language: v }))} />
           </div>
 
@@ -296,7 +308,7 @@ function EditDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label>Meeting Format</Label>
+            <Label>Meeting Format {isFacilitatorTimothy && <span className="text-destructive">*</span>}</Label>
             <Select value={form.meetingFormat} onValueChange={(v) => setForm((f) => ({ ...f, meetingFormat: v === "_none" ? "" : v }))}>
               <SelectTrigger><SelectValue placeholder="Any" /></SelectTrigger>
               <SelectContent>
@@ -320,7 +332,7 @@ function EditDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label>Meeting Schedule</Label>
+            <Label>Meeting Schedule {isFacilitatorTimothy && <span className="text-destructive">*</span>}</Label>
             <div className="grid grid-cols-[1fr_auto] gap-2 items-center">
               <Select value={form.scheduleDayOfWeek} onValueChange={(v) => setForm((f) => ({ ...f, scheduleDayOfWeek: v === "_none" ? "" : v }))}>
                 <SelectTrigger><SelectValue placeholder="Day" /></SelectTrigger>
