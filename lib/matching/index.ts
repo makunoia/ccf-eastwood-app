@@ -423,7 +423,7 @@ export async function matchSmallGroupsWithEscalation(
  *   - Mixed genders → "Mixed"
  *   - No facilitators or no gender data → null
  */
-function deriveEffectiveGenderFocus(
+export function deriveEffectiveGenderFocus(
   explicitFocus: "Male" | "Female" | "Mixed" | null,
   facilitatorGender: "Male" | "Female" | null | undefined,
   coFacilitatorGender: "Male" | "Female" | null | undefined

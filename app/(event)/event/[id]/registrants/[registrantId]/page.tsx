@@ -2,6 +2,7 @@ import { notFound } from "next/navigation"
 import Link from "next/link"
 
 import { db } from "@/lib/db"
+import { deriveEffectiveGenderFocus } from "@/lib/matching"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { BreadcrumbOverride } from "@/components/breadcrumb-context"
@@ -45,6 +46,7 @@ async function getRegistrant(registrantId: string, eventId: string) {
           notes: true,
           birthMonth: true,
           birthYear: true,
+          gender: true,
         },
       },
       guest: {
@@ -88,19 +90,36 @@ async function getFacilitatedGroup(memberId: string, eventId: string) {
   })
 }
 
-async function getAllEventGroups(eventId: string, excludeIds: string[]) {
+async function getAllEventGroups(
+  eventId: string,
+  excludeIds: string[],
+  registrantGender: "Male" | "Female" | null
+) {
   const groups = await db.breakoutGroup.findMany({
     where: { eventId },
     select: {
       id: true,
       name: true,
+      genderFocus: true,
       memberLimit: true,
       _count: { select: { members: true } },
+      facilitator: { select: { member: { select: { gender: true } } } },
+      coFacilitator: { select: { member: { select: { gender: true } } } },
     },
     orderBy: { name: "asc" },
   })
   return groups
-    .filter((g) => !excludeIds.includes(g.id))
+    .filter((g) => {
+      if (excludeIds.includes(g.id)) return false
+      if (!registrantGender) return true
+      const effectiveFocus = deriveEffectiveGenderFocus(
+        g.genderFocus,
+        g.facilitator?.member.gender ?? null,
+        g.coFacilitator?.member.gender ?? null
+      )
+      if (!effectiveFocus || effectiveFocus === "Mixed") return true
+      return effectiveFocus === registrantGender
+    })
     .map((g) => ({ id: g.id, name: g.name, memberLimit: g.memberLimit, currentCount: g._count.members }))
 }
 
@@ -121,10 +140,11 @@ export default async function RegistrantDetailPage({
 
   const assignedGroupIds = registrant.breakoutGroupMemberships.map((m) => m.breakoutGroup.id)
   const isAssigned = assignedGroupIds.length > 0
+  const registrantGender = registrant.member?.gender ?? registrant.guest?.gender ?? null
 
   const [facilitatedGroup, allEventGroups] = await Promise.all([
     registrant.memberId ? getFacilitatedGroup(registrant.memberId, eventId) : null,
-    getAllEventGroups(eventId, assignedGroupIds),
+    getAllEventGroups(eventId, assignedGroupIds, registrantGender),
   ])
 
   const name = resolveDisplayName(registrant)
