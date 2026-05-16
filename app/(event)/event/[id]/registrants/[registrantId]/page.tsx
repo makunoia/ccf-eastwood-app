@@ -105,6 +105,7 @@ async function getAllEventGroups(
       _count: { select: { members: true } },
       facilitator: { select: { member: { select: { gender: true } } } },
       coFacilitator: { select: { member: { select: { gender: true } } } },
+      linkedSmallGroup: { select: { genderFocus: true } },
     },
     orderBy: { name: "asc" },
   })
@@ -115,7 +116,8 @@ async function getAllEventGroups(
       const effectiveFocus = deriveEffectiveGenderFocus(
         g.genderFocus,
         g.facilitator?.member.gender ?? null,
-        g.coFacilitator?.member.gender ?? null
+        g.coFacilitator?.member.gender ?? null,
+        g.linkedSmallGroup?.genderFocus
       )
       if (!effectiveFocus || effectiveFocus === "Mixed") return true
       return effectiveFocus === registrantGender

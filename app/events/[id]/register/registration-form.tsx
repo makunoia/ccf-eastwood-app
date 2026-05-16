@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
+import { TimeInput } from "@/components/ui/time-input"
 import { Label } from "@/components/ui/label"
 import { MultiSelect } from "@/components/ui/multi-select"
 import { OptionalEmailInput } from "@/components/ui/optional-email-input"
@@ -34,6 +35,7 @@ import {
 import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
 import {
   suggestBreakoutGroup,
+  filterCompatibleCandidates,
   type BreakoutCandidate,
 } from "@/lib/breakout-suggestion"
 
@@ -201,6 +203,13 @@ export function RegistrationForm({
       birthYear: form.birthYear ? parseInt(form.birthYear, 10) : null,
     })
   }, [breakoutCandidates, form.gender, form.birthYear, showBreakoutSection])
+
+  const browsableCandidates = React.useMemo(() => {
+    return filterCompatibleCandidates(breakoutCandidates, {
+      gender: (form.gender || null) as "Male" | "Female" | null,
+      birthYear: form.birthYear ? parseInt(form.birthYear, 10) : null,
+    })
+  }, [breakoutCandidates, form.gender, form.birthYear])
 
   const sections: { key: string; title: string }[] = [
     { key: "personal", title: "Personal Information" },
@@ -764,10 +773,9 @@ export function RegistrationForm({
                           ))}
                         </SelectContent>
                       </Select>
-                      <Input
-                        type="time"
+                      <TimeInput
                         value={form.scheduleTimeStart}
-                        onChange={(e) => set("scheduleTimeStart", e.target.value)}
+                        onChange={(v) => set("scheduleTimeStart", v)}
                         className="w-28"
                       />
                     </div>
@@ -865,7 +873,7 @@ export function RegistrationForm({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="_none">No selection</SelectItem>
-                    {breakoutCandidates.map((g) => {
+                    {browsableCandidates.map((g) => {
                       const isFull = g.memberLimit != null && g.memberCount >= g.memberLimit
                       return (
                         <SelectItem key={g.id} value={g.id} disabled={isFull}>

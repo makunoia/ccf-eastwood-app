@@ -33,6 +33,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { TimeInput } from "@/components/ui/time-input"
 import { Label } from "@/components/ui/label"
 import { MultiSelect } from "@/components/ui/multi-select"
 import { PersonCombobox } from "@/components/ui/person-combobox"
@@ -587,12 +588,10 @@ export function SmallGroupForm({
                         ))}
                       </SelectContent>
                     </Select>
-                    <Input
-                      type="time"
+                    <TimeInput
                       value={form.scheduleTimeStart}
-                      onChange={(e) => set("scheduleTimeStart", e.target.value)}
+                      onChange={(v) => set("scheduleTimeStart", v)}
                       className="w-32"
-                      required
                     />
                   </div>
                 </div>
