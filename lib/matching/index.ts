@@ -426,16 +426,23 @@ export async function matchSmallGroupsWithEscalation(
 export function deriveEffectiveGenderFocus(
   explicitFocus: "Male" | "Female" | "Mixed" | null,
   facilitatorGender: "Male" | "Female" | null | undefined,
-  coFacilitatorGender: "Male" | "Female" | null | undefined
+  coFacilitatorGender: "Male" | "Female" | null | undefined,
+  linkedSmallGroupGenderFocus?: "Male" | "Female" | "Mixed" | null
 ): "Male" | "Female" | "Mixed" | null {
   if (explicitFocus !== null) return explicitFocus
 
   const genders = [facilitatorGender, coFacilitatorGender].filter(
     (g): g is "Male" | "Female" => g === "Male" || g === "Female"
   )
-  if (genders.length === 0) return null
-  const unique = [...new Set(genders)]
-  return unique.length > 1 ? "Mixed" : unique[0]
+  if (genders.length > 0) {
+    const unique = [...new Set(genders)]
+    return unique.length > 1 ? "Mixed" : unique[0]
+  }
+
+  // Fall back to the linked small group's gender focus when facilitator gender is unknown
+  if (linkedSmallGroupGenderFocus != null) return linkedSmallGroupGenderFocus
+
+  return null
 }
 
 export async function matchBreakoutGroups(
@@ -526,6 +533,9 @@ export async function matchBreakoutGroups(
       coFacilitator: {
         select: { member: { select: { gender: true } } },
       },
+      linkedSmallGroup: {
+        select: { genderFocus: true },
+      },
     },
   })
 
@@ -537,7 +547,8 @@ export async function matchBreakoutGroups(
     const effectiveGenderFocus = deriveEffectiveGenderFocus(
       g.genderFocus,
       g.facilitator?.member.gender,
-      g.coFacilitator?.member.gender
+      g.coFacilitator?.member.gender,
+      g.linkedSmallGroup?.genderFocus
     )
     if (scoreGender(candidate.gender, effectiveGenderFocus) === 0.0) return false
     if (scoreLifeStage(candidate.lifeStageId, g.lifeStageId) === 0.0) return false
@@ -556,7 +567,8 @@ export async function matchBreakoutGroups(
       const effectiveGenderFocus = deriveEffectiveGenderFocus(
         g.genderFocus,
         g.facilitator?.member.gender,
-        g.coFacilitator?.member.gender
+        g.coFacilitator?.member.gender,
+        g.linkedSmallGroup?.genderFocus
       )
 
       const profile: GroupProfile = {

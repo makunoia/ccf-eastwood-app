@@ -70,6 +70,25 @@ export async function createSmallGroup(
         },
       })
 
+      // If this leader was a Timothy facilitating breakout groups,
+      // link those breakout groups now that their small group exists
+      const breakoutsToLink = await tx.breakoutGroup.findMany({
+        where: {
+          linkedSmallGroupId: null,
+          OR: [
+            { facilitator: { memberId: parsed.data.leaderId } },
+            { coFacilitator: { memberId: parsed.data.leaderId } },
+          ],
+        },
+        select: { id: true },
+      })
+      if (breakoutsToLink.length > 0) {
+        await tx.breakoutGroup.updateMany({
+          where: { id: { in: breakoutsToLink.map((b) => b.id) } },
+          data: { linkedSmallGroupId: created.id },
+        })
+      }
+
       return created
     })
     revalidatePath("/small-groups")
