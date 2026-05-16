@@ -60,6 +60,25 @@ function score(group: BreakoutCandidate): number {
   return s
 }
 
+/** Returns groups compatible by gender/age, ignoring capacity (for browsable lists). */
+export function filterCompatibleCandidates(
+  groups: BreakoutCandidate[],
+  profile: RegistrantProfile
+): BreakoutCandidate[] {
+  return groups.filter((g) => {
+    if (g.genderFocus && g.genderFocus !== "Mixed") {
+      if (!profile.gender || g.genderFocus !== profile.gender) return false
+    }
+    const age = ageFromBirthYear(profile.birthYear)
+    if (g.ageRangeMin != null || g.ageRangeMax != null) {
+      if (age == null) return false
+      if (g.ageRangeMin != null && age < g.ageRangeMin) return false
+      if (g.ageRangeMax != null && age > g.ageRangeMax) return false
+    }
+    return true
+  })
+}
+
 export function suggestBreakoutGroup(
   groups: BreakoutCandidate[],
   profile: RegistrantProfile

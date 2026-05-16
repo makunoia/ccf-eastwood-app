@@ -7,6 +7,7 @@ import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { TimeInput } from "@/components/ui/time-input"
 import { Label } from "@/components/ui/label"
 import { MultiSelect } from "@/components/ui/multi-select"
 import {
@@ -206,18 +207,16 @@ export function MemberMatchSection({
               </SelectContent>
             </Select>
             <span className="text-sm text-muted-foreground">from</span>
-            <input
-              type="time"
+            <TimeInput
+              variant="inline"
               value={prefs.scheduleTimeStart}
-              onChange={(e) => setPref("scheduleTimeStart", e.target.value)}
-              className="h-auto w-auto border-0 border-b border-dashed border-foreground/40 bg-transparent pb-0.5 px-0.5 text-sm shadow-none outline-none focus:border-foreground/60"
+              onChange={(v) => setPref("scheduleTimeStart", v)}
             />
             <span className="text-sm text-muted-foreground">to</span>
-            <input
-              type="time"
+            <TimeInput
+              variant="inline"
               value={prefs.scheduleTimeEnd}
-              onChange={(e) => setPref("scheduleTimeEnd", e.target.value)}
-              className="h-auto w-auto border-0 border-b border-dashed border-foreground/40 bg-transparent pb-0.5 px-0.5 text-sm shadow-none outline-none focus:border-foreground/60"
+              onChange={(v) => setPref("scheduleTimeEnd", v)}
             />
           </div>
         </div>

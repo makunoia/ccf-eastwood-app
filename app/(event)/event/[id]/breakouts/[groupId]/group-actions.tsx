@@ -25,8 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Separator } from "@/components/ui/separator"
-import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
+import { LANGUAGE_OPTIONS } from "@/lib/constants/group-options"
 import { updateBreakoutGroup, deleteBreakoutGroup } from "@/app/(dashboard)/events/breakout-actions"
 
 type LedGroup = {
@@ -65,17 +64,6 @@ export type EditableGroupData = {
 }
 
 const GENDER_FOCUS_LABELS: Record<string, string> = { Male: "Male", Female: "Female", Mixed: "Mixed" }
-const MEETING_FORMAT_LABELS: Record<string, string> = { Online: "Online", Hybrid: "Hybrid", InPerson: "In-Person" }
-
-const DAY_OPTIONS = [
-  { value: "0", label: "Sunday" },
-  { value: "1", label: "Monday" },
-  { value: "2", label: "Tuesday" },
-  { value: "3", label: "Wednesday" },
-  { value: "4", label: "Thursday" },
-  { value: "5", label: "Friday" },
-  { value: "6", label: "Saturday" },
-]
 
 function deriveProfileFromGroup(g: LedGroup) {
   return {
@@ -84,10 +72,6 @@ function deriveProfileFromGroup(g: LedGroup) {
     language: g.language,
     ageRangeMin: g.ageRangeMin != null ? String(g.ageRangeMin) : "",
     ageRangeMax: g.ageRangeMax != null ? String(g.ageRangeMax) : "",
-    meetingFormat: g.meetingFormat ?? "",
-    locationCity: g.locationCity ?? "",
-    scheduleDayOfWeek: g.scheduleDayOfWeek != null ? String(g.scheduleDayOfWeek) : "",
-    scheduleTimeStart: g.scheduleTimeStart ?? "",
   }
 }
 
@@ -115,10 +99,6 @@ function EditDialog({
     language: [] as string[],
     ageRangeMin: "",
     ageRangeMax: "",
-    meetingFormat: "",
-    locationCity: "",
-    scheduleDayOfWeek: "",
-    scheduleTimeStart: "",
   })
   const [sourceGroupId, setSourceGroupId] = React.useState("")
   const [saving, setSaving] = React.useState(false)
@@ -136,10 +116,6 @@ function EditDialog({
         language: group.language ?? [],
         ageRangeMin: group.ageRangeMin?.toString() ?? "",
         ageRangeMax: group.ageRangeMax?.toString() ?? "",
-        meetingFormat: group.meetingFormat ?? "",
-        locationCity: group.locationCity ?? "",
-        scheduleDayOfWeek: group.schedule?.dayOfWeek != null ? String(group.schedule.dayOfWeek) : "",
-        scheduleTimeStart: group.schedule?.timeStart ?? "",
       })
     }
   }, [open, group])
@@ -182,15 +158,12 @@ function EditDialog({
       const missing: string[] = []
       if (!form.genderFocus) missing.push("Gender Focus")
       if (form.language.length === 0) missing.push("Language")
-      if (!form.meetingFormat) missing.push("Meeting Format")
-      if (!form.scheduleDayOfWeek || !form.scheduleTimeStart) missing.push("Meeting Schedule")
       if (missing.length > 0) {
         toast.error(`Timothy profile requires: ${missing.join(", ")}`)
         return
       }
     }
     setSaving(true)
-    const hasSchedule = form.scheduleDayOfWeek !== "" && form.scheduleTimeStart
     const result = await updateBreakoutGroup(group.id, eventId, {
       name: form.name.trim(),
       facilitatorId: form.facilitatorId || null,
@@ -201,11 +174,9 @@ function EditDialog({
       language: form.language,
       ageRangeMin: form.ageRangeMin ? Number(form.ageRangeMin) : null,
       ageRangeMax: form.ageRangeMax ? Number(form.ageRangeMax) : null,
-      meetingFormat: (form.meetingFormat as "Online" | "Hybrid" | "InPerson") || null,
-      locationCity: form.locationCity || null,
-      schedule: hasSchedule
-        ? { dayOfWeek: Number(form.scheduleDayOfWeek), timeStart: form.scheduleTimeStart }
-        : null,
+      meetingFormat: null,
+      locationCity: null,
+      schedule: null,
     })
     setSaving(false)
     if (result.success) {
@@ -218,130 +189,106 @@ function EditDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Edit breakout group</DialogTitle>
           <DialogDescription>Update the group&apos;s details and matching profile.</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="edit-bg-name">Name <span className="text-destructive">*</span></Label>
-            <Input id="edit-bg-name" placeholder="e.g. Breakout A" autoFocus {...field("name")} />
-          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+          {/* ── Left: Basic details ── */}
+          <div className="space-y-4">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Group Details
+            </p>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="edit-bg-limit">Member Limit</Label>
-            <Input id="edit-bg-limit" type="number" min={1} placeholder="Leave blank for unlimited" {...field("memberLimit")} />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Facilitator</Label>
-            <PersonCombobox
-              options={volunteers.map((v) => ({ value: v.id, label: `${v.member.firstName} ${v.member.lastName}` }))}
-              value={form.facilitatorId}
-              onValueChange={handleVolunteerChange}
-              placeholder="Unassigned"
-              clearable
-              clearLabel="Unassigned"
-            />
-          </div>
-
-          {form.facilitatorId && ledGroups.length > 1 && (
             <div className="space-y-1.5">
-              <Label>Source small group</Label>
-              <Select value={sourceGroupId} onValueChange={handleSourceGroupChange}>
-                <SelectTrigger><SelectValue placeholder="Select a group…" /></SelectTrigger>
+              <Label htmlFor="edit-bg-name">Name <span className="text-destructive">*</span></Label>
+              <Input id="edit-bg-name" placeholder="e.g. Breakout A" autoFocus {...field("name")} />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-bg-limit">Member Limit</Label>
+              <Input id="edit-bg-limit" type="number" min={1} placeholder="Leave blank for unlimited" {...field("memberLimit")} />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Facilitator</Label>
+              <PersonCombobox
+                options={volunteers.map((v) => ({ value: v.id, label: `${v.member.firstName} ${v.member.lastName}` }))}
+                value={form.facilitatorId}
+                onValueChange={handleVolunteerChange}
+                placeholder="Unassigned"
+                clearable
+                clearLabel="Unassigned"
+              />
+            </div>
+
+            {form.facilitatorId && ledGroups.length > 1 && (
+              <div className="space-y-1.5">
+                <Label>Source small group</Label>
+                <Select value={sourceGroupId} onValueChange={handleSourceGroupChange}>
+                  <SelectTrigger><SelectValue placeholder="Select a group…" /></SelectTrigger>
+                  <SelectContent>
+                    {ledGroups.map((g) => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {form.facilitatorId && ledGroups.length === 0 && (
+              <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5">
+                This volunteer does not lead a small group yet (Timothy). Set the profile on the right — it will be used to create their small group when their first member is confirmed.
+              </p>
+            )}
+          </div>
+
+          {/* ── Right: Matching profile ── */}
+          <div className="space-y-4">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              {isFacilitatorTimothy
+                ? <>Future Small Group Profile <span className="normal-case font-normal text-destructive">(Timothy — required)</span></>
+                : <>Matching Profile <span className="normal-case font-normal">(used for auto-assign)</span></>
+              }
+            </p>
+
+            <div className="space-y-1.5">
+              <Label>Life Stage</Label>
+              <Select value={form.lifeStageId} onValueChange={(v) => setForm((f) => ({ ...f, lifeStageId: v === "_none" ? "" : v }))}>
+                <SelectTrigger><SelectValue placeholder="Any" /></SelectTrigger>
                 <SelectContent>
-                  {ledGroups.map((g) => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
+                  <SelectItem value="_none">Any</SelectItem>
+                  {lifeStages.map((ls) => <SelectItem key={ls.id} value={ls.id}>{ls.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
-          )}
 
-          <Separator />
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-            {isFacilitatorTimothy
-              ? <>Future Small Group Profile <span className="normal-case font-normal text-destructive">(Timothy — required)</span></>
-              : <>Matching Profile <span className="normal-case font-normal">(optional)</span></>
-            }
-          </p>
-
-          <div className="space-y-1.5">
-            <Label>Life Stage</Label>
-            <Select value={form.lifeStageId} onValueChange={(v) => setForm((f) => ({ ...f, lifeStageId: v === "_none" ? "" : v }))}>
-              <SelectTrigger><SelectValue placeholder="Any" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="_none">Any</SelectItem>
-                {lifeStages.map((ls) => <SelectItem key={ls.id} value={ls.id}>{ls.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Gender Focus {isFacilitatorTimothy && <span className="text-destructive">*</span>}</Label>
-            <Select value={form.genderFocus} onValueChange={(v) => setForm((f) => ({ ...f, genderFocus: v === "_none" ? "" : v }))}>
-              <SelectTrigger><SelectValue placeholder="Any" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="_none">Any</SelectItem>
-                {Object.entries(GENDER_FOCUS_LABELS).map(([v, label]) => (
-                  <SelectItem key={v} value={v}>{label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Language {isFacilitatorTimothy && <span className="text-destructive">*</span>}</Label>
-            <MultiSelect options={LANGUAGE_OPTIONS} value={form.language} onChange={(v) => setForm((f) => ({ ...f, language: v }))} />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Min Age</Label>
-              <Input type="number" min={0} placeholder="—" {...field("ageRangeMin")} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Max Age</Label>
-              <Input type="number" min={0} placeholder="—" {...field("ageRangeMax")} />
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Meeting Format {isFacilitatorTimothy && <span className="text-destructive">*</span>}</Label>
-            <Select value={form.meetingFormat} onValueChange={(v) => setForm((f) => ({ ...f, meetingFormat: v === "_none" ? "" : v }))}>
-              <SelectTrigger><SelectValue placeholder="Any" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="_none">Any</SelectItem>
-                {Object.entries(MEETING_FORMAT_LABELS).map(([v, label]) => (
-                  <SelectItem key={v} value={v}>{label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Location City</Label>
-            <Select value={form.locationCity} onValueChange={(v) => setForm((f) => ({ ...f, locationCity: v === "_none" ? "" : v }))}>
-              <SelectTrigger><SelectValue placeholder="Select city" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="_none">No preference</SelectItem>
-                {CITY_OPTIONS.map((city) => <SelectItem key={city} value={city}>{city}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Meeting Schedule {isFacilitatorTimothy && <span className="text-destructive">*</span>}</Label>
-            <div className="grid grid-cols-[1fr_auto] gap-2 items-center">
-              <Select value={form.scheduleDayOfWeek} onValueChange={(v) => setForm((f) => ({ ...f, scheduleDayOfWeek: v === "_none" ? "" : v }))}>
-                <SelectTrigger><SelectValue placeholder="Day" /></SelectTrigger>
+              <Label>Gender Focus {isFacilitatorTimothy && <span className="text-destructive">*</span>}</Label>
+              <Select value={form.genderFocus} onValueChange={(v) => setForm((f) => ({ ...f, genderFocus: v }))}>
+                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="_none">No day</SelectItem>
-                  {DAY_OPTIONS.map((d) => <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>)}
+                  {Object.entries(GENDER_FOCUS_LABELS).map(([v, label]) => (
+                    <SelectItem key={v} value={v}>{label}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
-              <Input type="time" className="w-28" {...field("scheduleTimeStart")} />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Language {isFacilitatorTimothy && <span className="text-destructive">*</span>}</Label>
+              <MultiSelect options={LANGUAGE_OPTIONS} value={form.language} onChange={(v) => setForm((f) => ({ ...f, language: v }))} />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Min Age</Label>
+                <Input type="number" min={0} placeholder="—" {...field("ageRangeMin")} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Max Age</Label>
+                <Input type="number" min={0} placeholder="—" {...field("ageRangeMax")} />
+              </div>
             </div>
           </div>
         </div>

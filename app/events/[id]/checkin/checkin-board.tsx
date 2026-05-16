@@ -5,6 +5,7 @@ import { IconCheck, IconLoader2, IconUserQuestion, IconArrowLeft } from "@tabler
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { TimeInput } from "@/components/ui/time-input"
 import { YearInput } from "@/components/ui/year-input"
 import { Label } from "@/components/ui/label"
 import { PhonePHInput } from "@/components/ui/phone-ph-input"
@@ -1146,10 +1147,9 @@ function ProfileForm({ guestId, existingProfile, lifeStages, onSave, onSkip, onB
                   ))}
                 </SelectContent>
               </Select>
-              <Input
-                type="time"
+              <TimeInput
                 value={form.scheduleTimeStart}
-                onChange={(e) => setForm((p) => ({ ...p, scheduleTimeStart: e.target.value }))}
+                onChange={(v) => setForm((p) => ({ ...p, scheduleTimeStart: v }))}
                 className="w-28"
               />
             </div>
