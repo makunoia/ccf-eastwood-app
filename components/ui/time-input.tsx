@@ -100,16 +100,32 @@ export function TimeInput({
       return
     }
     e.preventDefault()
-    const next = rawDigits + e.key
+
+    let next = rawDigits + e.key
+
+    // Hour validation (12-hour format: 01–12)
+    if (rawDigits.length === 0) {
+      // First hour digit 2–9 → auto-pad to "0X" (13–19 are impossible in 12hr)
+      if (parseInt(e.key) >= 2) next = "0" + e.key
+    } else if (rawDigits.length === 1) {
+      // Second hour digit: reject if hours would be 00 or > 12
+      const hrs = parseInt(rawDigits[0] + e.key)
+      if (hrs === 0 || hrs > 12) return
+    }
+
     setRawDigits(next)
     onChange?.(to24(next, period))
   }
 
   function handlePaste(e: React.ClipboardEvent<HTMLInputElement>) {
     e.preventDefault()
-    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 4)
-    setRawDigits(pasted)
-    onChange?.(to24(pasted, period))
+    const digits = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 4)
+    if (digits.length >= 2) {
+      const hrs = parseInt(digits.slice(0, 2))
+      if (hrs === 0 || hrs > 12) return
+    }
+    setRawDigits(digits)
+    onChange?.(to24(digits, period))
   }
 
   function togglePeriod() {
