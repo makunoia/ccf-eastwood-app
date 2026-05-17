@@ -83,7 +83,7 @@ async function assignBreakoutForRegistrant(
         select: { autoAssignBreakout: true },
       })
       if (event?.autoAssignBreakout) {
-        const candidates = await fetchBreakoutCandidates(eventId)
+        const candidates = await fetchBreakoutCandidates(eventId, null)
         const best = suggestBreakoutGroup(candidates, profile)
         if (best) chosenGroupId = best.id
       }
@@ -235,6 +235,14 @@ type MemberLookupResult = {
   phone: string | null
   matchedBy: "mobile" | "email" | "nameBirthday"
   recordType: "member" | "guest"
+  // Member-only fields (only present when recordType === "member")
+  smallGroupId?: string | null
+  groupStatus?: string | null
+  lifeStageId?: string | null
+  language?: string[]
+  meetingPreference?: string | null
+  workCity?: string | null
+  schedulePreferences?: { dayOfWeek: number; timeStart: string }[]
 }
 
 type AmbiguousLookupCandidate = {
@@ -244,6 +252,14 @@ type AmbiguousLookupCandidate = {
   email: string | null
   phone: string | null
   recordType: "member" | "guest"
+  // Member-only fields
+  smallGroupId?: string | null
+  groupStatus?: string | null
+  lifeStageId?: string | null
+  language?: string[]
+  meetingPreference?: string | null
+  workCity?: string | null
+  schedulePreferences?: { dayOfWeek: number; timeStart: string }[]
 }
 
 type AmbiguousLookupResult = {
@@ -262,12 +278,30 @@ export async function lookupMemberForRegistration(params: {
   birthMonth?: number | null
   birthYear?: number | null
 }): Promise<MemberLookupResult | AmbiguousLookupResult | null> {
-  const select = { id: true, firstName: true, lastName: true, email: true, phone: true }
+  const memberSelect = {
+    id: true,
+    firstName: true,
+    lastName: true,
+    email: true,
+    phone: true,
+    smallGroupId: true,
+    groupStatus: true,
+    lifeStageId: true,
+    language: true,
+    meetingPreference: true,
+    workCity: true,
+    schedulePreferences: {
+      select: { dayOfWeek: true, timeStart: true },
+      orderBy: { createdAt: "asc" as const },
+      take: 1,
+    },
+  }
+  const guestSelect = { id: true, firstName: true, lastName: true, email: true, phone: true }
 
   if (params.mobileNumber) {
     const members = await db.member.findMany({
       where: { phone: params.mobileNumber.trim() },
-      select,
+      select: memberSelect,
     })
     if (members.length > 1) {
       return {
@@ -282,7 +316,7 @@ export async function lookupMemberForRegistration(params: {
   if (params.email) {
     const members = await db.member.findMany({
       where: { email: params.email.trim() },
-      select,
+      select: memberSelect,
     })
     if (members.length > 1) {
       return {
@@ -301,7 +335,7 @@ export async function lookupMemberForRegistration(params: {
         birthMonth: params.birthMonth,
         birthYear: params.birthYear,
       },
-      select,
+      select: memberSelect,
     })
     if (member) return { ...member, matchedBy: "nameBirthday", recordType: "member" }
   }
@@ -310,7 +344,7 @@ export async function lookupMemberForRegistration(params: {
   if (params.mobileNumber) {
     const guests = await db.guest.findMany({
       where: { phone: params.mobileNumber.trim(), memberId: null },
-      select,
+      select: guestSelect,
     })
     if (guests.length > 1) {
       return {
@@ -325,7 +359,7 @@ export async function lookupMemberForRegistration(params: {
   if (params.email) {
     const guests = await db.guest.findMany({
       where: { email: params.email.trim(), memberId: null },
-      select,
+      select: guestSelect,
     })
     if (guests.length > 1) {
       return {
@@ -345,7 +379,7 @@ export async function lookupMemberForRegistration(params: {
         birthYear: params.birthYear,
         memberId: null,
       },
-      select,
+      select: guestSelect,
     })
     if (guest) return { ...guest, matchedBy: "nameBirthday", recordType: "guest" }
   }

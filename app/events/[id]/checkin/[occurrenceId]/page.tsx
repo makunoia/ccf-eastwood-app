@@ -166,7 +166,7 @@ export default async function OccurrenceCheckinPage({
   // Picker shows only when not auto-assigning. Auto-assign mode doesn't need the list client-side.
   const breakoutCandidates = occurrence.event.autoAssignBreakout
     ? []
-    : await fetchBreakoutCandidates(id)
+    : await fetchBreakoutCandidates(id, occurrenceId)
 
   return (
     <div className="min-h-svh bg-muted">

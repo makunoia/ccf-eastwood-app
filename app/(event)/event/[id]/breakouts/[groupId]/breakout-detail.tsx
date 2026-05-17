@@ -810,22 +810,6 @@ export function BreakoutDetail({
         />
       </div>
 
-      {group.schedules.length > 0 && (
-        <>
-          <Separator />
-          <div>
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Schedule</p>
-            <div className="flex flex-wrap gap-2">
-              {group.schedules.map((s, i) => (
-                <span key={i} className="inline-flex items-center rounded-md border bg-muted/30 px-2.5 py-1 text-sm">
-                  {DAY_LABELS[s.dayOfWeek]} {formatTime(s.timeStart)}
-                </span>
-              ))}
-            </div>
-          </div>
-        </>
-      )}
-
       <Separator />
 
       <MembersTable

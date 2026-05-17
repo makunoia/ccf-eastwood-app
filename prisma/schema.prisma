@@ -415,7 +415,8 @@ model EventOccurrence {
   createdAt DateTime             @default(now())
   updatedAt DateTime             @updatedAt
 
-  attendees OccurrenceAttendee[]
+  attendees        OccurrenceAttendee[]
+  subFacilitators  OccurrenceSubFacilitator[]
 
   @@unique([eventId, date])
 }
@@ -429,6 +430,25 @@ model OccurrenceAttendee {
   checkedInAt  DateTime        @default(now())
 
   @@unique([occurrenceId, registrantId])
+}
+
+enum FacilitatorRole {
+  Facilitator
+  CoFacilitator
+}
+
+model OccurrenceSubFacilitator {
+  id              String          @id @default(cuid())
+  occurrenceId    String
+  occurrence      EventOccurrence @relation(fields: [occurrenceId], references: [id], onDelete: Cascade)
+  breakoutGroupId String
+  breakoutGroup   BreakoutGroup   @relation(fields: [breakoutGroupId], references: [id], onDelete: Cascade)
+  role            FacilitatorRole
+  substituteId    String
+  substitute      Volunteer       @relation(fields: [substituteId], references: [id], onDelete: Cascade)
+  createdAt       DateTime        @default(now())
+
+  @@unique([occurrenceId, breakoutGroupId, role])
 }
 
 model EventRegistrant {
@@ -495,6 +515,7 @@ model BreakoutGroup {
   members           BreakoutGroupMember[]
   schedules         BreakoutGroupSchedule[]
   catchMechSessions CatchMechSession[]
+  subFacilitators   OccurrenceSubFacilitator[]
 }
 
 model BreakoutGroupSchedule {
@@ -564,6 +585,7 @@ model Volunteer {
   coFacilitatedGroups BreakoutGroup[] @relation("CoFacilitatedGroups")
   busPassengers       BusPassenger[]
   catchMechSessions   CatchMechSession[]
+  subFacilitatorSlots OccurrenceSubFacilitator[]
 }
 
 model MatchingWeightConfig {

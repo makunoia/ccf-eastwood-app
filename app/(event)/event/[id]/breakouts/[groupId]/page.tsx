@@ -181,11 +181,11 @@ export default async function BreakoutGroupDetailPage({
         eventId={eventId}
         title={group.name}
         subtitle={
-          group.memberLimit != null ? (
-            <p className="text-sm text-muted-foreground">
-              {group.members.length} / {group.memberLimit} members
-            </p>
-          ) : undefined
+          <p className="text-sm text-muted-foreground">
+            {group.memberLimit != null
+              ? `${group.members.length} / ${group.memberLimit} members`
+              : "No member cap"}
+          </p>
         }
         action={
           <GroupActions

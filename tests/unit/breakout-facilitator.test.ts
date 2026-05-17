@@ -103,7 +103,7 @@ describe("setFacilitator", () => {
     const result = await setFacilitator(breakoutGroup.id, vol1.id, "coFacilitator", event.id)
 
     expect(result.success).toBe(false)
-    expect(result.error).toMatch(/different/i)
+    if (!result.success) expect(result.error).toMatch(/different/i)
     const unchanged = await db.breakoutGroup.findUnique({ where: { id: breakoutGroup.id } })
     expect(unchanged?.coFacilitatorId).toBeNull()
   })
@@ -114,7 +114,7 @@ describe("setFacilitator", () => {
     const result = await setFacilitator(breakoutGroup.id, "nonexistent-volunteer-id", "coFacilitator", event.id)
 
     expect(result.success).toBe(false)
-    expect(result.error).toMatch(/volunteer not found/i)
+    if (!result.success) expect(result.error).toMatch(/volunteer not found/i)
   })
 
   it("returns error when breakout group does not exist", async () => {
@@ -123,7 +123,7 @@ describe("setFacilitator", () => {
     const result = await setFacilitator("nonexistent-group-id", vol1.id, "coFacilitator", event.id)
 
     expect(result.success).toBe(false)
-    expect(result.error).toBeDefined()
+    if (!result.success) expect(result.error).toBeDefined()
   })
 
   it("clears facilitator when null is passed", async () => {
