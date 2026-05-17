@@ -83,7 +83,7 @@ export default async function RegisterPage({
 
   const breakoutCandidates = event.autoAssignBreakout
     ? []
-    : await fetchBreakoutCandidates(event.id, breakoutOccurrenceId)
+    : await fetchBreakoutCandidates(event.id, breakoutOccurrenceId, false)
 
   const { logoUrl, primaryColor } = resolveEventBrand(event)
   const ministryNames = event.ministries.map((em) => em.ministry.name).join(" · ")
