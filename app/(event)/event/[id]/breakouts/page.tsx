@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
-import { BreakoutGroupsTable } from "./breakout-table"
+import { BreakoutGroupsTable } from "./breakout-group"
 
 const breakoutGroupsInclude = {
   orderBy: { createdAt: "asc" } as const,

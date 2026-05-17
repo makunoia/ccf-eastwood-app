@@ -71,9 +71,19 @@ export default async function RegisterPage({
     : []
 
   // Breakout picker section only renders when not in auto-assign mode AND groups exist.
+  // For Recurring events, only show groups whose facilitator has checked in to the open session.
+  let breakoutOccurrenceId: string | null = null
+  if (!event.autoAssignBreakout && event.type === "Recurring") {
+    const openOccurrence = await db.eventOccurrence.findFirst({
+      where: { eventId: event.id, isOpen: true },
+      select: { id: true },
+    })
+    breakoutOccurrenceId = openOccurrence?.id ?? null
+  }
+
   const breakoutCandidates = event.autoAssignBreakout
     ? []
-    : await fetchBreakoutCandidates(event.id)
+    : await fetchBreakoutCandidates(event.id, breakoutOccurrenceId)
 
   const { logoUrl, primaryColor } = resolveEventBrand(event)
   const ministryNames = event.ministries.map((em) => em.ministry.name).join(" · ")

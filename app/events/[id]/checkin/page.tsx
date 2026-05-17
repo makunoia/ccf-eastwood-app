@@ -127,7 +127,7 @@ export default async function CheckinPage({
 
   const breakoutCandidates = event.autoAssignBreakout
     ? []
-    : await fetchBreakoutCandidates(id)
+    : await fetchBreakoutCandidates(id, null)
 
   return (
     <div className="min-h-svh bg-muted">

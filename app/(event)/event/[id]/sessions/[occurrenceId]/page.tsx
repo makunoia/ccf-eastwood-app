@@ -49,10 +49,14 @@ async function getOccurrenceDetail(occurrenceId: string) {
 
   if (!occurrence) return null
 
-  const [volunteers, breakoutGroups] = await Promise.all([
+  const [volunteers, breakoutGroups, subFacilitators] = await Promise.all([
     db.volunteer.findMany({
       where: { eventId: occurrence.event.id },
-      select: { memberId: true },
+      select: {
+        id: true,
+        memberId: true,
+        member: { select: { firstName: true, lastName: true } },
+      },
     }),
     db.breakoutGroup.findMany({
       where: { eventId: occurrence.event.id },
@@ -113,9 +117,18 @@ async function getOccurrenceDetail(occurrenceId: string) {
         },
       },
     }),
+    db.occurrenceSubFacilitator.findMany({
+      where: { occurrenceId },
+      select: {
+        breakoutGroupId: true,
+        role: true,
+        substituteId: true,
+        substitute: { include: { member: { select: { firstName: true, lastName: true } } } },
+      },
+    }),
   ])
 
-  return { occurrence, volunteers, breakoutGroups }
+  return { occurrence, volunteers, breakoutGroups, subFacilitators }
 }
 
 function getAttendeeName(registrant: {
@@ -139,7 +152,7 @@ export default async function OccurrenceDetailPage({
   const data = await getOccurrenceDetail(occurrenceId)
   if (!data || data.occurrence.event.id !== id) notFound()
 
-  const { occurrence, volunteers, breakoutGroups } = data
+  const { occurrence, volunteers, breakoutGroups, subFacilitators } = data
 
   const dateLabel = occurrence.date.toLocaleDateString("en-PH", {
     weekday: "long",
@@ -183,6 +196,13 @@ export default async function OccurrenceDetailPage({
         (r) => r.occurrenceAttendances.length > 0,
       ) ?? false
 
+    const subFac = subFacilitators.find(
+      (s) => s.breakoutGroupId === bg.id && s.role === "Facilitator",
+    )
+    const subCoFac = subFacilitators.find(
+      (s) => s.breakoutGroupId === bg.id && s.role === "CoFacilitator",
+    )
+
     const checkedInMembers = bg.members.filter((m) =>
       m.registrant.occurrenceAttendances.some((a) => a.occurrenceId === occurrenceId),
     )
@@ -202,10 +222,18 @@ export default async function OccurrenceDetailPage({
         ? `${bg.facilitator.member.firstName} ${bg.facilitator.member.lastName}`
         : null,
       facilitatorPresent,
+      subFacilitatorId: subFac?.substituteId ?? null,
+      subFacilitatorName: subFac
+        ? `${subFac.substitute.member.firstName} ${subFac.substitute.member.lastName}`
+        : null,
       coFacilitatorName: bg.coFacilitator?.member
         ? `${bg.coFacilitator.member.firstName} ${bg.coFacilitator.member.lastName}`
         : null,
       coFacilitatorPresent,
+      subCoFacilitatorId: subCoFac?.substituteId ?? null,
+      subCoFacilitatorName: subCoFac
+        ? `${subCoFac.substitute.member.firstName} ${subCoFac.substitute.member.lastName}`
+        : null,
       newCount: bgNewCount,
       returneeCount: bgReturneeCount,
       totalCheckedIn: checkedInMembers.length,
@@ -213,6 +241,11 @@ export default async function OccurrenceDetailPage({
   })
 
   const breakoutGroupOptions = breakoutGroups.map((bg) => ({ id: bg.id, name: bg.name }))
+
+  const volunteerOptions = volunteers.map((v) => ({
+    value: v.id,
+    label: `${v.member.firstName} ${v.member.lastName}`,
+  }))
 
   return (
     <>
@@ -249,6 +282,7 @@ export default async function OccurrenceDetailPage({
           attendees={attendeesWithStats}
           breakoutGroups={breakoutGroupOptions}
           breakoutStats={breakoutStats}
+          volunteerOptions={volunteerOptions}
         />
       </div>
     </>

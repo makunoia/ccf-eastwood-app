@@ -1,10 +1,12 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef, useMemo } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { CheckCircle2, XCircle } from "lucide-react"
+import { CheckCircle2, XCircle, ArrowLeftRight, SearchIcon, XIcon } from "lucide-react"
+import { Popover as PopoverPrimitive } from "radix-ui"
 import { IconUpload } from "@tabler/icons-react"
+import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -25,10 +27,19 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { ImportWizard } from "@/components/import/import-wizard"
+import { cn } from "@/lib/utils"
+import type { PersonComboboxOption } from "@/components/ui/person-combobox"
 import {
   checkSessionAttendanceDuplicates,
   importSessionAttendance,
 } from "./import-actions"
+import {
+  assignSubFacilitator,
+  removeSubFacilitator,
+} from "./sub-facilitator-actions"
+// Mirrors the Prisma enum — avoid importing Prisma client in client components (pulls node:module)
+const FacilitatorRole = { Facilitator: "Facilitator", CoFacilitator: "CoFacilitator" } as const
+type FacilitatorRole = (typeof FacilitatorRole)[keyof typeof FacilitatorRole]
 
 export type AttendeeRow = {
   id: string
@@ -50,8 +61,12 @@ export type BreakoutStatRow = {
   name: string
   facilitatorName: string | null
   facilitatorPresent: boolean
+  subFacilitatorId: string | null
+  subFacilitatorName: string | null
   coFacilitatorName: string | null
   coFacilitatorPresent: boolean
+  subCoFacilitatorId: string | null
+  subCoFacilitatorName: string | null
   newCount: number
   returneeCount: number
   totalCheckedIn: number
@@ -66,12 +81,14 @@ export function SessionAttendeesTable({
   attendees,
   breakoutGroups,
   breakoutStats,
+  volunteerOptions,
 }: {
   eventId: string
   occurrenceId: string
   attendees: AttendeeRow[]
   breakoutGroups: BreakoutGroupOption[]
   breakoutStats: BreakoutStatRow[]
+  volunteerOptions: PersonComboboxOption[]
 }) {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<SessionTab>("attendees")
@@ -241,12 +258,29 @@ export function SessionAttendeesTable({
                       </Link>
                     </TableCell>
                     <TableCell>
-                      <PresenceCell name={bg.facilitatorName} present={bg.facilitatorPresent} />
+                      <FacilitatorCell
+                        occurrenceId={occurrenceId}
+                        breakoutGroupId={bg.id}
+                        eventId={eventId}
+                        role={FacilitatorRole.Facilitator}
+                        name={bg.facilitatorName}
+                        present={bg.facilitatorPresent}
+                        subId={bg.subFacilitatorId}
+                        subName={bg.subFacilitatorName}
+                        volunteerOptions={volunteerOptions}
+                      />
                     </TableCell>
                     <TableCell>
-                      <PresenceCell
+                      <FacilitatorCell
+                        occurrenceId={occurrenceId}
+                        breakoutGroupId={bg.id}
+                        eventId={eventId}
+                        role={FacilitatorRole.CoFacilitator}
                         name={bg.coFacilitatorName}
                         present={bg.coFacilitatorPresent}
+                        subId={bg.subCoFacilitatorId}
+                        subName={bg.subCoFacilitatorName}
+                        volunteerOptions={volunteerOptions}
                       />
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{bg.newCount}</TableCell>
@@ -294,5 +328,171 @@ function PresenceCell({ name, present }: { name: string | null; present: boolean
       )}
       <span>{name}</span>
     </div>
+  )
+}
+
+function FacilitatorCell({
+  occurrenceId,
+  breakoutGroupId,
+  eventId,
+  role,
+  name,
+  present,
+  subId,
+  subName,
+  volunteerOptions,
+}: {
+  occurrenceId: string
+  breakoutGroupId: string
+  eventId: string
+  role: FacilitatorRole
+  name: string | null
+  present: boolean
+  subId: string | null
+  subName: string | null
+  volunteerOptions: PersonComboboxOption[]
+}) {
+  const router = useRouter()
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState("")
+  const [loading, setLoading] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return volunteerOptions
+    return volunteerOptions.filter((o) => o.label.toLowerCase().includes(q))
+  }, [volunteerOptions, query])
+
+  // Present facilitator — static, no interaction
+  if (present) {
+    return <PresenceCell name={name} present={present} />
+  }
+
+  async function handleSelect(volunteerId: string) {
+    setLoading(true)
+    const result = await assignSubFacilitator(occurrenceId, breakoutGroupId, role, volunteerId)
+    setLoading(false)
+    if (!result.success) {
+      toast.error(result.error)
+    } else {
+      setOpen(false)
+      setQuery("")
+      router.refresh()
+    }
+  }
+
+  async function handleRemove() {
+    setLoading(true)
+    const result = await removeSubFacilitator(occurrenceId, breakoutGroupId, role, eventId)
+    setLoading(false)
+    if (!result.success) {
+      toast.error(result.error)
+    } else {
+      setOpen(false)
+      setQuery("")
+      router.refresh()
+    }
+  }
+
+  function handleOpenChange(next: boolean) {
+    setOpen(next)
+    if (!next) setQuery("")
+  }
+
+  const trigger = subId ? (
+    // Sub assigned — amber styled cell trigger
+    <button
+      type="button"
+      className="flex items-center gap-1.5 rounded px-1 -mx-1 hover:bg-accent transition-colors text-left"
+      aria-label="Reassign or remove sub-facilitator"
+    >
+      <ArrowLeftRight className="size-3.5 shrink-0 text-amber-500" />
+      <span className="text-sm">{subName}</span>
+      <Badge variant="outline" className="h-4 px-1 text-[10px] border-amber-400 text-amber-600">
+        Sub
+      </Badge>
+    </button>
+  ) : (
+    // Absent, no sub — show original name with ❌ + subtle assign cue
+    <button
+      type="button"
+      className="flex items-center gap-1.5 rounded px-1 -mx-1 hover:bg-accent transition-colors text-left group"
+      aria-label="Assign sub-facilitator"
+    >
+      <XCircle className="size-3.5 shrink-0 text-muted-foreground/40" />
+      <span className="text-sm">{name ?? <span className="text-muted-foreground">No facilitator</span>}</span>
+      <span className="text-[10px] text-muted-foreground/60 group-hover:text-muted-foreground transition-colors ml-0.5">
+        + sub
+      </span>
+    </button>
+  )
+
+  return (
+    <PopoverPrimitive.Root open={open} onOpenChange={handleOpenChange}>
+      <PopoverPrimitive.Trigger asChild>{trigger}</PopoverPrimitive.Trigger>
+      <PopoverPrimitive.Portal>
+        <PopoverPrimitive.Content
+          className="z-50 w-56 rounded-md border bg-popover text-popover-foreground shadow-md outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95"
+          align="start"
+          sideOffset={4}
+          onOpenAutoFocus={(e) => {
+            e.preventDefault()
+            inputRef.current?.focus()
+          }}
+        >
+          <div className="flex items-center border-b px-2">
+            <SearchIcon className="mr-1.5 size-3.5 shrink-0 opacity-50" />
+            <input
+              ref={inputRef}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search volunteer…"
+              className="flex h-9 w-full bg-transparent py-2 text-sm outline-none placeholder:text-muted-foreground"
+            />
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery("")}
+                className="ml-1.5 opacity-50 hover:opacity-100"
+              >
+                <XIcon className="size-3.5" />
+              </button>
+            )}
+          </div>
+
+          <div className="max-h-52 overflow-y-auto p-1">
+            {subId && (
+              <button
+                type="button"
+                onClick={handleRemove}
+                disabled={loading}
+                className="relative flex w-full cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-destructive outline-none hover:bg-accent hover:text-destructive"
+              >
+                Remove sub
+              </button>
+            )}
+            {filtered.length === 0 ? (
+              <p className="py-4 text-center text-sm text-muted-foreground">No volunteers found.</p>
+            ) : (
+              filtered.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => handleSelect(opt.value)}
+                  disabled={loading}
+                  className={cn(
+                    "relative flex w-full cursor-default items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground",
+                    opt.value === subId && "bg-accent/50",
+                  )}
+                >
+                  <span className="truncate">{opt.label}</span>
+                </button>
+              ))
+            )}
+          </div>
+        </PopoverPrimitive.Content>
+      </PopoverPrimitive.Portal>
+    </PopoverPrimitive.Root>
   )
 }

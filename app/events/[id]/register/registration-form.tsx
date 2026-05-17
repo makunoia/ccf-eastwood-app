@@ -62,7 +62,7 @@ function formatTime(time: string): string {
   return `${display}:${m.toString().padStart(2, "0")} ${period}`
 }
 
-type Step = "form" | "confirm" | "disambiguate" | "done"
+type Step = "form" | "confirm" | "disambiguate" | "early-confirm" | "early-disambiguate" | "done"
 
 type LifeStage = { id: string; name: string }
 
@@ -106,6 +106,14 @@ type MatchedMember = {
   phone: string | null
   matchedBy: "mobile" | "email" | "nameBirthday"
   recordType: "member" | "guest"
+  // Member-only extended fields (present when recordType === "member" and early lookup was used)
+  smallGroupId?: string | null
+  groupStatus?: string | null
+  lifeStageId?: string | null
+  language?: string[]
+  meetingPreference?: string | null
+  workCity?: string | null
+  schedulePreferences?: { dayOfWeek: number; timeStart: string }[]
 }
 
 type AmbiguousCandidate = {
@@ -115,6 +123,13 @@ type AmbiguousCandidate = {
   email: string | null
   phone: string | null
   recordType: "member" | "guest"
+  smallGroupId?: string | null
+  groupStatus?: string | null
+  lifeStageId?: string | null
+  language?: string[]
+  meetingPreference?: string | null
+  workCity?: string | null
+  schedulePreferences?: { dayOfWeek: number; timeStart: string }[]
 }
 
 const defaultForm: FormValues = {
@@ -185,6 +200,8 @@ export function RegistrationForm({
   const [wantsSmallGroup, setWantsSmallGroup] = React.useState(false)
   const [submitting, setSubmitting] = React.useState(false)
   const [matchedMember, setMatchedMember] = React.useState<MatchedMember | null>(null)
+  const [confirmedMember, setConfirmedMember] = React.useState<MatchedMember | null>(null)
+  const [skipSmallGroup, setSkipSmallGroup] = React.useState(false)
   const [candidates, setCandidates] = React.useState<{
     matchedBy: "mobile" | "email"
     items: AmbiguousCandidate[]
@@ -213,7 +230,7 @@ export function RegistrationForm({
 
   const sections: { key: string; title: string }[] = [
     { key: "personal", title: "Personal Information" },
-    ...(includeSmallGroup ? [{ key: "smallgroup", title: "Small Group Info" }] : []),
+    ...(includeSmallGroup && !skipSmallGroup ? [{ key: "smallgroup", title: "Small Group Info" }] : []),
     ...(showBreakoutSection ? [{ key: "breakout", title: "Breakout Group" }] : []),
     ...(includeDietary ? [{ key: "dietary", title: "Dietary Preferences" }] : []),
     ...(includePayment ? [{ key: "payment", title: "Payment" }] : []),
@@ -229,7 +246,7 @@ export function RegistrationForm({
     setForm((prev) => ({ ...prev, [field]: value }))
   }
 
-  function handleNext() {
+  async function handleNext() {
     if (formStep === 1) {
       if (!form.firstName.trim()) {
         toast.error("First name is required.")
@@ -239,8 +256,103 @@ export function RegistrationForm({
         toast.error("Last name is required.")
         return
       }
+
+      // Early member lookup before the Small Group step so we can adapt the form
+      if (includeSmallGroup) {
+        const hasMobile = !noMobile && !!form.mobileNumber
+        const hasEmail = !noEmail && !!form.email
+        const hasBirthday = !!form.birthMonth && !!form.birthYear
+
+        if (hasMobile || hasEmail || hasBirthday) {
+          setSubmitting(true)
+          const match = await lookupMemberForRegistration({
+            mobileNumber: hasMobile ? form.mobileNumber : null,
+            email: hasEmail ? form.email : null,
+            lastName: hasBirthday ? form.lastName : null,
+            birthMonth: hasBirthday ? parseInt(form.birthMonth, 10) : null,
+            birthYear: hasBirthday ? parseInt(form.birthYear, 10) : null,
+          })
+          setSubmitting(false)
+
+          if (match) {
+            if ("matchType" in match && match.matchType === "ambiguous") {
+              setCandidates({ matchedBy: match.matchedBy, items: match.candidates })
+              setStep("early-disambiguate")
+              return
+            }
+            setMatchedMember(match as MatchedMember)
+            setStep("early-confirm")
+            return
+          }
+        }
+      }
     }
     setFormStep((s) => s + 1)
+    scrollToTop()
+  }
+
+  function handleEarlyReject() {
+    setMatchedMember(null)
+    setCandidates(null)
+    setStep("form")
+    setFormStep(2)
+    scrollToTop()
+  }
+
+  function handleEarlyConfirm(match: MatchedMember) {
+    setConfirmedMember(match)
+
+    // Pre-fill matching fields from member's existing data
+    if (match.recordType === "member") {
+      setForm((prev) => ({
+        ...prev,
+        lifeStageId: match.lifeStageId || prev.lifeStageId,
+        language: match.language && match.language.length > 0 ? match.language : prev.language,
+        meetingPreference: match.meetingPreference || prev.meetingPreference,
+        workCity: match.workCity || prev.workCity,
+        scheduleDayOfWeek:
+          match.schedulePreferences && match.schedulePreferences.length > 0
+            ? match.schedulePreferences[0].dayOfWeek.toString()
+            : prev.scheduleDayOfWeek,
+        scheduleTimeStart:
+          match.schedulePreferences && match.schedulePreferences.length > 0
+            ? match.schedulePreferences[0].timeStart
+            : prev.scheduleTimeStart,
+      }))
+    }
+
+    const willSkipSmallGroup = match.recordType === "member" && !!match.smallGroupId
+    if (willSkipSmallGroup) {
+      setSkipSmallGroup(true)
+    }
+
+    // Auto-check "wants small group" for confirmed members who don't have one yet
+    if (match.recordType === "member" && !match.smallGroupId) {
+      setWantsSmallGroup(true)
+    }
+
+    setMatchedMember(null)
+    setStep("form")
+
+    // Compute the new section count to decide whether to advance or submit
+    const newSectionsCount = [
+      true,
+      includeSmallGroup && !willSkipSmallGroup,
+      showBreakoutSection,
+      includeDietary,
+      includePayment,
+    ].filter(Boolean).length
+
+    if (newSectionsCount === 1) {
+      // Personal info is the only remaining step — register directly
+      register(
+        match.recordType === "member" ? match.id : null,
+        match.recordType === "guest" ? match.id : null
+      )
+      return
+    }
+
+    setFormStep(2)
     scrollToTop()
   }
 
@@ -260,6 +372,15 @@ export function RegistrationForm({
     }
 
     setSubmitting(true)
+
+    // Fast-path: member was already confirmed in the early lookup step
+    if (confirmedMember) {
+      await register(
+        confirmedMember.recordType === "member" ? confirmedMember.id : null,
+        confirmedMember.recordType === "guest" ? confirmedMember.id : null
+      )
+      return
+    }
 
     const hasMobile = !noMobile && !!form.mobileNumber
     const hasEmail = !noEmail && !!form.email
@@ -367,6 +488,21 @@ export function RegistrationForm({
           displayBreakout.locationCity,
         ].filter(Boolean)
       : []
+    const handleReset = () => {
+      setStep("form")
+      setForm(defaultForm)
+      setNoMobile(false)
+      setNoEmail(false)
+      setWantsSmallGroup(false)
+      setMatchedMember(null)
+      setConfirmedMember(null)
+      setSkipSmallGroup(false)
+      setCandidates(null)
+      setSelectedBreakoutId("")
+      setAssignedBreakout(null)
+      setFormStep(1)
+    }
+
     return (
       <Card>
         <CardContent className="flex flex-col items-center gap-5 pt-10 pb-6">
@@ -394,6 +530,9 @@ export function RegistrationForm({
               </div>
             )}
           </div>
+          <Button className="w-full" onClick={handleReset}>
+            Register another person
+          </Button>
         </CardContent>
       </Card>
     )
@@ -501,6 +640,97 @@ export function RegistrationForm({
     )
   }
 
+  if (step === "early-confirm" && matchedMember) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Is this you?</CardTitle>
+          <CardDescription>
+            {matchedMember.matchedBy === "mobile" &&
+              "We found an existing record matching your mobile number."}
+            {matchedMember.matchedBy === "email" &&
+              "We found an existing record matching your email address."}
+            {matchedMember.matchedBy === "nameBirthday" &&
+              "We found an existing record matching your name and birthday."}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="rounded-lg border p-4 text-sm space-y-1">
+            <p className="font-medium">
+              {matchedMember.firstName} {matchedMember.lastName}
+            </p>
+            {matchedMember.email && (
+              <p className="text-muted-foreground">{matchedMember.email}</p>
+            )}
+            {matchedMember.phone && (
+              <p className="text-muted-foreground">{matchedMember.phone}</p>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Button
+              className="flex-1"
+              onClick={() => handleEarlyConfirm(matchedMember)}
+              disabled={submitting}
+            >
+              {submitting ? "Please wait…" : "Yes, that's me"}
+            </Button>
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={handleEarlyReject}
+              disabled={submitting}
+            >
+              That&apos;s not me
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (step === "early-disambiguate" && candidates) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Multiple profiles found</CardTitle>
+          <CardDescription>
+            {candidates.matchedBy === "mobile"
+              ? "We found multiple profiles with this mobile number."
+              : "We found multiple profiles with this email address."}{" "}
+            Select the one that&apos;s you, or choose &quot;That&apos;s not me&quot;.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {candidates.items.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => handleEarlyConfirm({ ...c, matchedBy: candidates.matchedBy })}
+              className="w-full rounded-lg border p-4 text-left text-sm transition-colors hover:bg-muted/50"
+            >
+              <p className="font-medium">
+                {c.firstName} {c.lastName}
+                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  ({c.recordType})
+                </span>
+              </p>
+              {c.email && <p className="text-muted-foreground">{c.email}</p>}
+              {c.phone && <p className="text-muted-foreground">{c.phone}</p>}
+            </button>
+          ))}
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={handleEarlyReject}
+            disabled={submitting}
+          >
+            That&apos;s not me
+          </Button>
+        </CardContent>
+      </Card>
+    )
+  }
+
   return (
     <Card ref={cardRef} className={cn(isMultiStep && "pt-0")}>
       {isMultiStep ? (
@@ -515,7 +745,7 @@ export function RegistrationForm({
                 <React.Fragment key={s.key}>
                   <div
                     className={cn(
-                      "rounded-full flex-shrink-0 transition-all duration-150",
+                      "rounded-full shrink-0 transition-all duration-150",
                       done
                         ? "size-2 bg-primary/50"
                         : current
@@ -683,6 +913,12 @@ export function RegistrationForm({
                 </div>
               )}
 
+              {confirmedMember?.recordType === "member" && !confirmedMember.smallGroupId && (
+                <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-foreground">
+                  You&apos;re not in a Small Group yet — joining one is a great next step!
+                </div>
+              )}
+
               <div className={cn("flex items-start gap-2", !isMultiStep && "pt-1")}>
                 <Checkbox
                   id="wantsSmallGroup"
@@ -691,7 +927,9 @@ export function RegistrationForm({
                   className="mt-0.5"
                 />
                 <Label htmlFor="wantsSmallGroup" className="text-sm font-normal leading-snug">
-                  I want to join a Small Group
+                  {confirmedMember?.recordType === "member" && !confirmedMember.smallGroupId
+                    ? "Join a Small Group"
+                    : "I want to join a Small Group"}
                 </Label>
               </div>
 
