@@ -5,6 +5,7 @@ import { GeistMono } from "geist/font/mono"
 import { Toaster } from "sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { NavigationLoader } from "@/components/navigation-loader"
+import { PwaSplashScreen } from "@/components/pwa-splash-screen"
 import "./globals.css"
 
 export const metadata: Metadata = {
@@ -37,6 +38,7 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${GeistSans.variable} ${GeistMono.variable} antialiased`}>
         <TooltipProvider>
+          <PwaSplashScreen />
           {children}
           <Toaster
             richColors

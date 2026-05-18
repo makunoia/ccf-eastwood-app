@@ -101,7 +101,7 @@ export default async function EventLayout({
 
   return (
     <SidebarProvider
-      className="h-svh"
+      className="min-h-dvh"
       brandColor={sidebarBrand}
       brandBackground={brandBackground}
       brandAccent={brandAccent}
