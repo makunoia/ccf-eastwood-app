@@ -136,7 +136,21 @@ async function getEventContext(eventId: string) {
       },
       registrants: {
         orderBy: { createdAt: "asc" },
-        where: { breakoutGroupMemberships: { none: {} } },
+        where: {
+          breakoutGroupMemberships: { none: {} },
+          NOT: {
+            member: {
+              volunteers: {
+                some: {
+                  OR: [
+                    { facilitatedGroups: { some: { eventId } } },
+                    { coFacilitatedGroups: { some: { eventId } } },
+                  ],
+                },
+              },
+            },
+          },
+        },
         select: {
           id: true,
           memberId: true,

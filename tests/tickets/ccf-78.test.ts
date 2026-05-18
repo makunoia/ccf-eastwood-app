@@ -96,6 +96,7 @@ describe("CCF-78 — createBreakoutGroup with Timothy facilitator", () => {
     })
 
     expect(result.success).toBe(false)
+    if (result.success) return
     expect(result.error).toMatch(/Timothy profile requires/i)
   })
 
@@ -113,6 +114,7 @@ describe("CCF-78 — createBreakoutGroup with Timothy facilitator", () => {
     })
 
     expect(result.success).toBe(false)
+    if (result.success) return
     expect(result.error).toContain("Language")
   })
 
@@ -130,6 +132,7 @@ describe("CCF-78 — createBreakoutGroup with Timothy facilitator", () => {
     })
 
     expect(result.success).toBe(false)
+    if (result.success) return
     expect(result.error).toContain("Meeting Schedule")
   })
 
@@ -175,6 +178,7 @@ describe("CCF-78 — updateBreakoutGroup with Timothy facilitator", () => {
     })
 
     expect(result.success).toBe(false)
+    if (result.success) return
     expect(result.error).toMatch(/Timothy profile requires/i)
   })
 
@@ -226,6 +230,7 @@ describe("CCF-78 — regression", () => {
     })
 
     expect(result.success).toBe(false)
+    if (result.success) return
     // All 4 required fields mentioned
     expect(result.error).toContain("Gender Focus")
     expect(result.error).toContain("Language")

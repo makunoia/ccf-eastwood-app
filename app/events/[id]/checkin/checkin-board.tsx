@@ -88,6 +88,7 @@ type Props = {
   eventId: string
   occurrenceId: string | null
   lifeStages?: LifeStage[]
+  defaultLifeStageId?: string
   autoAssignBreakout?: boolean
   breakoutCandidates?: BreakoutCandidate[]
   allowPayment?: boolean
@@ -109,7 +110,7 @@ function queryIsPhone(q: string): boolean {
   return !q.includes("@")
 }
 
-export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], autoAssignBreakout = false, breakoutCandidates = [], allowPayment = false }: Props) {
+export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], defaultLifeStageId = "", autoAssignBreakout = false, breakoutCandidates = [], allowPayment = false }: Props) {
   const showBreakoutPicker = !autoAssignBreakout && breakoutCandidates.length > 0
   const [step, setStep] = React.useState<Step>("lookup")
   const [lookupMode, setLookupMode] = React.useState<LookupMode>("mobile")
@@ -628,6 +629,7 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], autoAssig
         guestId={matched.guestSmallGroupPrompt.guestId}
         existingProfile={matched.guestSmallGroupPrompt.existingProfile}
         lifeStages={lifeStages}
+        defaultLifeStageId={defaultLifeStageId}
         onSave={goToSuccess}
         onSkip={goToSuccess}
         onBack={() => setStep("sg-prompt")}
@@ -982,16 +984,17 @@ type ProfileFormProps = {
   guestId: string
   existingProfile: GuestSmallGroupPrompt["existingProfile"]
   lifeStages: LifeStage[]
+  defaultLifeStageId?: string
   onSave: () => void
   onSkip: () => void
   onBack: () => void
 }
 
-function ProfileForm({ guestId, existingProfile, lifeStages, onSave, onSkip, onBack }: ProfileFormProps) {
+function ProfileForm({ guestId, existingProfile, lifeStages, defaultLifeStageId = "", onSave, onSkip, onBack }: ProfileFormProps) {
   const [saving, setSaving] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [form, setForm] = React.useState({
-    lifeStageId: existingProfile.lifeStageId ?? "",
+    lifeStageId: existingProfile.lifeStageId ?? defaultLifeStageId,
     gender: existingProfile.gender ?? "",
     language: existingProfile.language,
     meetingPreference: existingProfile.meetingPreference ?? "",

@@ -71,10 +71,31 @@ async function getEventBreakouts(id: string) {
     where: { id },
     select: {
       id: true,
+      ministries: {
+        select: {
+          ministry: {
+            select: { lifeStageId: true },
+          },
+        },
+      },
       _count: { select: { registrants: true } },
       registrants: {
         select: { id: true },
-        where: { breakoutGroupMemberships: { none: {} } },
+        where: {
+          breakoutGroupMemberships: { none: {} },
+          NOT: {
+            member: {
+              volunteers: {
+                some: {
+                  OR: [
+                    { facilitatedGroups: { some: { eventId: id } } },
+                    { coFacilitatedGroups: { some: { eventId: id } } },
+                  ],
+                },
+              },
+            },
+          },
+        },
       },
       volunteers: {
         where: { status: "Confirmed" },
@@ -124,6 +145,11 @@ export default async function BreakoutsPage({
   ])
   if (!event) notFound()
 
+  const defaultLifeStageId =
+    event.ministries.length === 1 && event.ministries[0].ministry.lifeStageId
+      ? event.ministries[0].ministry.lifeStageId
+      : undefined
+
   const confirmedVolunteers = [...event.volunteers]
 
   const breakoutGroupRows = event.breakoutGroups.map((g) => ({
@@ -141,6 +167,7 @@ export default async function BreakoutsPage({
         unassignedCount={event.registrants.length}
         volunteers={confirmedVolunteers}
         lifeStages={lifeStages}
+        defaultLifeStageId={defaultLifeStageId}
       />
     </div>
   )

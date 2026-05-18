@@ -183,6 +183,7 @@ type Props = {
   includeDietary?: boolean
   includePayment?: boolean
   lifeStages?: LifeStage[]
+  defaultLifeStageId?: string
   breakoutCandidates?: BreakoutCandidate[]
 }
 
@@ -193,10 +194,11 @@ export function RegistrationForm({
   includeDietary = false,
   includePayment = false,
   lifeStages = [],
+  defaultLifeStageId = "",
   breakoutCandidates = [],
 }: Props) {
   const [step, setStep] = React.useState<Step>("form")
-  const [form, setForm] = React.useState<FormValues>(defaultForm)
+  const [form, setForm] = React.useState<FormValues>({ ...defaultForm, lifeStageId: defaultLifeStageId })
   const [noMobile, setNoMobile] = React.useState(false)
   const [noEmail, setNoEmail] = React.useState(false)
   const [wantsSmallGroup, setWantsSmallGroup] = React.useState(false)
@@ -246,7 +248,7 @@ export function RegistrationForm({
 
   function handleReset() {
     setStep("form")
-    setForm(defaultForm)
+    setForm({ ...defaultForm, lifeStageId: defaultLifeStageId })
     setNoMobile(false)
     setNoEmail(false)
     setWantsSmallGroup(false)

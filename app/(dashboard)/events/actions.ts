@@ -445,7 +445,7 @@ async function autoCheckinIfOpenRecurringSession(registrantId: string, eventId: 
 
 export async function createRegistrant(
   eventId: string,
-  raw: z.infer<typeof registrantSchema>,
+  raw: z.input<typeof registrantSchema>,
   confirmedMemberId: string | null,
   confirmedGuestId?: string | null,
   skipDeduplication?: boolean,

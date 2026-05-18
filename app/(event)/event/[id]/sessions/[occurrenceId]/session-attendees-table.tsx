@@ -127,46 +127,47 @@ export function SessionAttendeesTable({
       </div>
 
       {activeTab === "attendees" && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <ToggleGroup
-              type="single"
-              value={typeFilter}
-              onValueChange={(v) => setTypeFilter((v || "all") as TypeFilter)}
-              className="gap-1"
-            >
-              <ToggleGroupItem value="all" className="h-7 px-3 text-xs">
-                All
-              </ToggleGroupItem>
-              <ToggleGroupItem value="member" className="h-7 px-3 text-xs">
-                Members
-              </ToggleGroupItem>
-              <ToggleGroupItem value="guest" className="h-7 px-3 text-xs">
-                Guests
-              </ToggleGroupItem>
-              <ToggleGroupItem value="volunteer" className="h-7 px-3 text-xs">
-                Volunteers
-              </ToggleGroupItem>
-            </ToggleGroup>
+        <div className="space-y-2">
+          <div className="overflow-x-auto rounded-md border bg-muted/30 px-3 py-2">
+            <div className="flex min-w-max items-center gap-2">
+              <ToggleGroup
+                type="single"
+                value={typeFilter}
+                onValueChange={(v) => setTypeFilter((v || "all") as TypeFilter)}
+                className="gap-1"
+              >
+                <ToggleGroupItem value="all" className="h-7 px-3 text-xs">
+                  All
+                </ToggleGroupItem>
+                <ToggleGroupItem value="member" className="h-7 px-3 text-xs">
+                  Members
+                </ToggleGroupItem>
+                <ToggleGroupItem value="guest" className="h-7 px-3 text-xs">
+                  Guests
+                </ToggleGroupItem>
+                <ToggleGroupItem value="volunteer" className="h-7 px-3 text-xs">
+                  Volunteers
+                </ToggleGroupItem>
+              </ToggleGroup>
 
-            {breakoutGroups.length > 0 && (
-              <Select value={breakoutFilter} onValueChange={setBreakoutFilter}>
-                <SelectTrigger className="h-7 w-[160px] text-xs">
-                  <SelectValue placeholder="Breakout group" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All groups</SelectItem>
-                  {breakoutGroups.map((bg) => (
-                    <SelectItem key={bg.id} value={bg.id}>
-                      {bg.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
+              {breakoutGroups.length > 0 && (
+                <Select value={breakoutFilter} onValueChange={setBreakoutFilter}>
+                  <SelectTrigger className="h-7 w-40 text-xs">
+                    <SelectValue placeholder="Breakout group" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All groups</SelectItem>
+                    {breakoutGroups.map((bg) => (
+                      <SelectItem key={bg.id} value={bg.id}>
+                        {bg.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
           </div>
-
-          <p className="text-xs text-muted-foreground">
+          <p className="text-right text-xs text-muted-foreground">
             {filtered.length} of {attendees.length} attendee{attendees.length === 1 ? "" : "s"}
           </p>
         </div>
@@ -182,49 +183,82 @@ export function SessionAttendeesTable({
             <p className="text-sm">No attendees match the current filters.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-lg border">
-            <Table>
-              <TableHeader className="bg-muted/50">
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Checked in at</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.map((a) => (
-                  <TableRow key={a.id}>
-                    <TableCell className="font-medium">{a.name}</TableCell>
-                    <TableCell>
-                      {a.isReturner ? (
-                        <Badge variant="secondary">Returning</Badge>
+          <>
+            {/* Mobile card list */}
+            <div className="sm:hidden divide-y rounded-lg border">
+              {filtered.map((a) => (
+                <div key={a.id} className="flex items-center gap-3 px-4 py-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{a.name}</p>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {a.isMember ? (
+                        <Badge variant="secondary">Member</Badge>
                       ) : (
-                        <Badge>New</Badge>
+                        <Badge variant="outline">Guest</Badge>
                       )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        {a.isMember ? (
-                          <Badge variant="secondary">Member</Badge>
-                        ) : (
-                          <Badge variant="outline">Guest</Badge>
-                        )}
-                        {a.isVolunteer && (
-                          <Badge variant="outline" className="text-amber-600 border-amber-400">
-                            Volunteer
-                          </Badge>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {a.checkedInAtFormatted}
-                    </TableCell>
+                      {a.isVolunteer && (
+                        <Badge variant="outline" className="border-amber-400 text-amber-600">
+                          Volunteer
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    {a.isReturner ? (
+                      <Badge variant="secondary">Returning</Badge>
+                    ) : (
+                      <Badge>New</Badge>
+                    )}
+                    <span className="text-xs text-muted-foreground">{a.checkedInAtFormatted}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {/* Desktop table */}
+            <div className="hidden overflow-x-auto rounded-lg border sm:block">
+              <Table>
+                <TableHeader className="bg-muted/50">
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Checked in at</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {filtered.map((a) => (
+                    <TableRow key={a.id}>
+                      <TableCell className="font-medium">{a.name}</TableCell>
+                      <TableCell>
+                        {a.isReturner ? (
+                          <Badge variant="secondary">Returning</Badge>
+                        ) : (
+                          <Badge>New</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-1">
+                          {a.isMember ? (
+                            <Badge variant="secondary">Member</Badge>
+                          ) : (
+                            <Badge variant="outline">Guest</Badge>
+                          )}
+                          {a.isVolunteer && (
+                            <Badge variant="outline" className="border-amber-400 text-amber-600">
+                              Volunteer
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {a.checkedInAtFormatted}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </>
         )}
       </TabsContent>
 
@@ -234,30 +268,20 @@ export function SessionAttendeesTable({
             <p className="text-sm">No breakout groups configured for this event.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-lg border">
-            <Table>
-              <TableHeader className="bg-muted/50">
-                <TableRow>
-                  <TableHead>Group</TableHead>
-                  <TableHead>Facilitator</TableHead>
-                  <TableHead>Co-Facilitator</TableHead>
-                  <TableHead className="text-right">New</TableHead>
-                  <TableHead className="text-right">Returnees</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {breakoutStats.map((bg) => (
-                  <TableRow key={bg.id}>
-                    <TableCell>
-                      <Link
-                        href={`/event/${eventId}/breakouts/${bg.id}`}
-                        className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-                      >
-                        {bg.name}
-                      </Link>
-                    </TableCell>
-                    <TableCell>
+          <>
+            {/* Mobile card list */}
+            <div className="sm:hidden divide-y rounded-lg border">
+              {breakoutStats.map((bg) => (
+                <div key={bg.id} className="space-y-2.5 px-4 py-3">
+                  <Link
+                    href={`/event/${eventId}/breakouts/${bg.id}`}
+                    className="text-sm font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 transition-colors hover:decoration-foreground"
+                  >
+                    {bg.name}
+                  </Link>
+                  <div className="space-y-1.5">
+                    <div className="grid grid-cols-[4.5rem_1fr] items-start gap-2">
+                      <span className="pt-0.5 text-xs text-muted-foreground">Facilitator</span>
                       <FacilitatorCell
                         occurrenceId={occurrenceId}
                         breakoutGroupId={bg.id}
@@ -269,8 +293,9 @@ export function SessionAttendeesTable({
                         subName={bg.subFacilitatorName}
                         volunteerOptions={volunteerOptions}
                       />
-                    </TableCell>
-                    <TableCell>
+                    </div>
+                    <div className="grid grid-cols-[4.5rem_1fr] items-start gap-2">
+                      <span className="pt-0.5 text-xs text-muted-foreground">Co-Fac</span>
                       <FacilitatorCell
                         occurrenceId={occurrenceId}
                         breakoutGroupId={bg.id}
@@ -282,19 +307,88 @@ export function SessionAttendeesTable({
                         subName={bg.subCoFacilitatorName}
                         volunteerOptions={volunteerOptions}
                       />
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">{bg.newCount}</TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {bg.returneeCount}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {bg.totalCheckedIn}
-                    </TableCell>
+                    </div>
+                  </div>
+                  <div className="flex gap-5">
+                    <div>
+                      <p className="text-xs text-muted-foreground">New</p>
+                      <p className="text-sm font-semibold tabular-nums">{bg.newCount}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Returning</p>
+                      <p className="text-sm font-semibold tabular-nums">{bg.returneeCount}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Total</p>
+                      <p className="text-sm font-semibold tabular-nums">{bg.totalCheckedIn}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {/* Desktop table */}
+            <div className="hidden overflow-x-auto rounded-lg border sm:block">
+              <Table>
+                <TableHeader className="bg-muted/50">
+                  <TableRow>
+                    <TableHead>Group</TableHead>
+                    <TableHead>Facilitator</TableHead>
+                    <TableHead>Co-Facilitator</TableHead>
+                    <TableHead className="text-right">New</TableHead>
+                    <TableHead className="text-right">Returnees</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {breakoutStats.map((bg) => (
+                    <TableRow key={bg.id}>
+                      <TableCell>
+                        <Link
+                          href={`/event/${eventId}/breakouts/${bg.id}`}
+                          className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 transition-colors hover:decoration-foreground"
+                        >
+                          {bg.name}
+                        </Link>
+                      </TableCell>
+                      <TableCell>
+                        <FacilitatorCell
+                          occurrenceId={occurrenceId}
+                          breakoutGroupId={bg.id}
+                          eventId={eventId}
+                          role={FacilitatorRole.Facilitator}
+                          name={bg.facilitatorName}
+                          present={bg.facilitatorPresent}
+                          subId={bg.subFacilitatorId}
+                          subName={bg.subFacilitatorName}
+                          volunteerOptions={volunteerOptions}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <FacilitatorCell
+                          occurrenceId={occurrenceId}
+                          breakoutGroupId={bg.id}
+                          eventId={eventId}
+                          role={FacilitatorRole.CoFacilitator}
+                          name={bg.coFacilitatorName}
+                          present={bg.coFacilitatorPresent}
+                          subId={bg.subCoFacilitatorId}
+                          subName={bg.subCoFacilitatorName}
+                          volunteerOptions={volunteerOptions}
+                        />
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{bg.newCount}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {bg.returneeCount}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {bg.totalCheckedIn}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </>
         )}
       </TabsContent>
 
