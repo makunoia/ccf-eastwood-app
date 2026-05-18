@@ -83,7 +83,7 @@ async function assignBreakoutForRegistrant(
         select: { autoAssignBreakout: true },
       })
       if (event?.autoAssignBreakout) {
-        const candidates = await fetchBreakoutCandidates(eventId, null)
+        const candidates = await fetchBreakoutCandidates(eventId, null, false)
         const best = suggestBreakoutGroup(candidates, profile)
         if (best) chosenGroupId = best.id
       }
@@ -235,6 +235,7 @@ type MemberLookupResult = {
   phone: string | null
   matchedBy: "mobile" | "email" | "nameBirthday"
   recordType: "member" | "guest"
+  isVolunteer: boolean
   // Member-only fields (only present when recordType === "member")
   smallGroupId?: string | null
   groupStatus?: string | null
@@ -252,6 +253,7 @@ type AmbiguousLookupCandidate = {
   email: string | null
   phone: string | null
   recordType: "member" | "guest"
+  isVolunteer: boolean
   // Member-only fields
   smallGroupId?: string | null
   groupStatus?: string | null
@@ -277,6 +279,7 @@ export async function lookupMemberForRegistration(params: {
   lastName?: string | null
   birthMonth?: number | null
   birthYear?: number | null
+  eventId?: string | null
 }): Promise<MemberLookupResult | AmbiguousLookupResult | null> {
   const memberSelect = {
     id: true,
@@ -304,13 +307,26 @@ export async function lookupMemberForRegistration(params: {
       select: memberSelect,
     })
     if (members.length > 1) {
+      const volunteerMemberIds = params.eventId
+        ? new Set(
+            (await db.volunteer.findMany({
+              where: { eventId: params.eventId, memberId: { in: members.map((m) => m.id) } },
+              select: { memberId: true },
+            })).map((v) => v.memberId)
+          )
+        : new Set<string>()
       return {
         matchType: "ambiguous",
         matchedBy: "mobile",
-        candidates: members.map((m) => ({ ...m, recordType: "member" as const })),
+        candidates: members.map((m) => ({ ...m, recordType: "member" as const, isVolunteer: volunteerMemberIds.has(m.id) })),
       }
     }
-    if (members.length === 1) return { ...members[0], matchedBy: "mobile", recordType: "member" }
+    if (members.length === 1) {
+      const isVolunteer = params.eventId
+        ? !!(await db.volunteer.findFirst({ where: { memberId: members[0].id, eventId: params.eventId }, select: { id: true } }))
+        : false
+      return { ...members[0], matchedBy: "mobile", recordType: "member", isVolunteer }
+    }
   }
 
   if (params.email) {
@@ -319,13 +335,26 @@ export async function lookupMemberForRegistration(params: {
       select: memberSelect,
     })
     if (members.length > 1) {
+      const volunteerMemberIds = params.eventId
+        ? new Set(
+            (await db.volunteer.findMany({
+              where: { eventId: params.eventId, memberId: { in: members.map((m) => m.id) } },
+              select: { memberId: true },
+            })).map((v) => v.memberId)
+          )
+        : new Set<string>()
       return {
         matchType: "ambiguous",
         matchedBy: "email",
-        candidates: members.map((m) => ({ ...m, recordType: "member" as const })),
+        candidates: members.map((m) => ({ ...m, recordType: "member" as const, isVolunteer: volunteerMemberIds.has(m.id) })),
       }
     }
-    if (members.length === 1) return { ...members[0], matchedBy: "email", recordType: "member" }
+    if (members.length === 1) {
+      const isVolunteer = params.eventId
+        ? !!(await db.volunteer.findFirst({ where: { memberId: members[0].id, eventId: params.eventId }, select: { id: true } }))
+        : false
+      return { ...members[0], matchedBy: "email", recordType: "member", isVolunteer }
+    }
   }
 
   if (params.lastName && params.birthMonth != null && params.birthYear != null) {
@@ -337,7 +366,12 @@ export async function lookupMemberForRegistration(params: {
       },
       select: memberSelect,
     })
-    if (member) return { ...member, matchedBy: "nameBirthday", recordType: "member" }
+    if (member) {
+      const isVolunteer = params.eventId
+        ? !!(await db.volunteer.findFirst({ where: { memberId: member.id, eventId: params.eventId }, select: { id: true } }))
+        : false
+      return { ...member, matchedBy: "nameBirthday", recordType: "member", isVolunteer }
+    }
   }
 
   // No Member found — fall back to Guest records (only active guests, not yet promoted to members)
@@ -350,10 +384,10 @@ export async function lookupMemberForRegistration(params: {
       return {
         matchType: "ambiguous",
         matchedBy: "mobile",
-        candidates: guests.map((g) => ({ ...g, recordType: "guest" as const })),
+        candidates: guests.map((g) => ({ ...g, recordType: "guest" as const, isVolunteer: false })),
       }
     }
-    if (guests.length === 1) return { ...guests[0], matchedBy: "mobile", recordType: "guest" }
+    if (guests.length === 1) return { ...guests[0], matchedBy: "mobile", recordType: "guest", isVolunteer: false }
   }
 
   if (params.email) {
@@ -365,10 +399,10 @@ export async function lookupMemberForRegistration(params: {
       return {
         matchType: "ambiguous",
         matchedBy: "email",
-        candidates: guests.map((g) => ({ ...g, recordType: "guest" as const })),
+        candidates: guests.map((g) => ({ ...g, recordType: "guest" as const, isVolunteer: false })),
       }
     }
-    if (guests.length === 1) return { ...guests[0], matchedBy: "email", recordType: "guest" }
+    if (guests.length === 1) return { ...guests[0], matchedBy: "email", recordType: "guest", isVolunteer: false }
   }
 
   if (params.lastName && params.birthMonth != null && params.birthYear != null) {
@@ -381,7 +415,7 @@ export async function lookupMemberForRegistration(params: {
       },
       select: guestSelect,
     })
-    if (guest) return { ...guest, matchedBy: "nameBirthday", recordType: "guest" }
+    if (guest) return { ...guest, matchedBy: "nameBirthday", recordType: "guest", isVolunteer: false }
   }
 
   return null
@@ -398,9 +432,20 @@ export async function lookupMemberByMobile(
   return member
 }
 
+async function autoCheckinIfOpenRecurringSession(registrantId: string, eventId: string) {
+  const openOccurrence = await db.eventOccurrence.findFirst({
+    where: { eventId, isOpen: true, event: { type: "Recurring" } },
+    select: { id: true },
+  })
+  if (!openOccurrence) return
+  await db.occurrenceAttendee.create({
+    data: { occurrenceId: openOccurrence.id, registrantId, checkedInAt: new Date() },
+  })
+}
+
 export async function createRegistrant(
   eventId: string,
-  raw: z.infer<typeof registrantSchema>,
+  raw: z.input<typeof registrantSchema>,
   confirmedMemberId: string | null,
   confirmedGuestId?: string | null,
   skipDeduplication?: boolean,
@@ -413,6 +458,15 @@ export async function createRegistrant(
 
   try {
     if (confirmedMemberId) {
+      // Volunteer guard — volunteers don't need to register as attendees
+      const volunteerRecord = await db.volunteer.findFirst({
+        where: { memberId: confirmedMemberId, eventId },
+        select: { id: true },
+      })
+      if (volunteerRecord) {
+        return { success: false, error: "You're serving as a volunteer at this event — you don't need to register as an attendee." }
+      }
+
       // Duplicate check — member already registered for this event
       const alreadyRegistered = await db.eventRegistrant.findFirst({
         where: { eventId, memberId: confirmedMemberId },
@@ -465,6 +519,7 @@ export async function createRegistrant(
           birthYear: parsed.data.birthYear ?? existing.birthYear,
         }
       )
+      await autoCheckinIfOpenRecurringSession(registrant.id, eventId)
       return { success: true, data: { id: registrant.id, breakoutGroup } }
     } else if (confirmedGuestId) {
       // Duplicate check — guest already registered for this event
@@ -522,6 +577,7 @@ export async function createRegistrant(
           birthYear: parsed.data.birthYear ?? existing.birthYear,
         }
       )
+      await autoCheckinIfOpenRecurringSession(registrant.id, eventId)
       return { success: true, data: { id: registrant.id, breakoutGroup } }
     } else {
       // Non-member — find or create Guest by phone, then link via guestId
@@ -639,6 +695,7 @@ export async function createRegistrant(
           birthYear: parsed.data.birthYear ?? null,
         }
       )
+      await autoCheckinIfOpenRecurringSession(registrant.id, eventId)
       return { success: true, data: { id: registrant.id, breakoutGroup } }
     }
   } catch {

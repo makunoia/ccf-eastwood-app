@@ -156,9 +156,10 @@ type GroupFormDialogProps = {
   group?: BreakoutGroupRow
   lifeStages: { id: string; name: string }[]
   volunteers: Volunteer[]
+  defaultLifeStageId?: string
 }
 
-function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volunteers }: GroupFormDialogProps) {
+function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volunteers, defaultLifeStageId = "" }: GroupFormDialogProps) {
   const isEdit = !!group
   const [form, setForm] = React.useState(EMPTY_FORM)
   const [sourceGroupId, setSourceGroupId] = React.useState("")
@@ -183,10 +184,10 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
               scheduleDayOfWeek: group.schedules[0]?.dayOfWeek != null ? String(group.schedules[0].dayOfWeek) : "",
               scheduleTimeStart: group.schedules[0]?.timeStart ?? "",
             }
-          : EMPTY_FORM
+          : { ...EMPTY_FORM, lifeStageId: defaultLifeStageId }
       )
     }
-  }, [open, group])
+  }, [open, group, defaultLifeStageId])
 
   function handleVolunteerChange(volunteerId: string) {
     setSourceGroupId("")
@@ -600,6 +601,7 @@ type Props = {
   unassignedCount: number
   volunteers: Volunteer[]
   lifeStages: { id: string; name: string }[]
+  defaultLifeStageId?: string
 }
 
 export function BreakoutGroupsTable({
@@ -609,6 +611,7 @@ export function BreakoutGroupsTable({
   unassignedCount,
   volunteers,
   lifeStages,
+  defaultLifeStageId = "",
 }: Props) {
   const [search, setSearch] = React.useState("")
   const [lifeStageFilter, setLifeStageFilter] = React.useState("_all")
@@ -766,6 +769,7 @@ export function BreakoutGroupsTable({
         eventId={eventId}
         lifeStages={lifeStages}
         volunteers={volunteers}
+        defaultLifeStageId={defaultLifeStageId}
       />
       <GroupFormDialog
         open={!!editingGroup}
@@ -774,6 +778,7 @@ export function BreakoutGroupsTable({
         group={editingGroup ?? undefined}
         lifeStages={lifeStages}
         volunteers={volunteers}
+        defaultLifeStageId={defaultLifeStageId}
       />
       <DeleteGroupDialog
         group={deletingGroup}

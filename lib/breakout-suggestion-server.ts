@@ -5,10 +5,11 @@ import type { BreakoutCandidate } from "@/lib/breakout-suggestion"
 
 export async function fetchBreakoutCandidates(
   eventId: string,
-  occurrenceId: string | null
+  occurrenceId: string | null,
+  requireCheckedIn = true
 ): Promise<BreakoutCandidate[]> {
-  const checkedInFilter =
-    occurrenceId !== null
+  const checkedInFilter = requireCheckedIn
+    ? occurrenceId !== null
       ? {
           OR: [
             {
@@ -70,6 +71,7 @@ export async function fetchBreakoutCandidates(
             },
           ],
         }
+    : {}
 
   const groups = await db.breakoutGroup.findMany({
     where: { eventId, ...checkedInFilter },

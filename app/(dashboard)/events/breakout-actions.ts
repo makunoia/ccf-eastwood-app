@@ -175,6 +175,29 @@ export async function addRegistrantToBreakout(
   eventId: string
 ): Promise<ActionResult> {
   try {
+    const registrant = await db.eventRegistrant.findUnique({
+      where: { id: registrantId },
+      select: { memberId: true },
+    })
+    if (registrant?.memberId) {
+      const isFacilitator = await db.breakoutGroup.findFirst({
+        where: {
+          eventId,
+          OR: [
+            { facilitator: { memberId: registrant.memberId } },
+            { coFacilitator: { memberId: registrant.memberId } },
+          ],
+        },
+        select: { id: true },
+      })
+      if (isFacilitator) {
+        return {
+          success: false,
+          error: "Facilitators and co-facilitators cannot be added as breakout group members",
+        }
+      }
+    }
+
     const group = await db.breakoutGroup.findUnique({
       where: { id: groupId },
       select: {
@@ -236,6 +259,24 @@ export async function autoAssignRegistrantToBreakout(
     })
     if (alreadyAssigned) return
 
+    const registrant = await db.eventRegistrant.findUnique({
+      where: { id: registrantId },
+      select: { memberId: true },
+    })
+    if (registrant?.memberId) {
+      const isFacilitator = await db.breakoutGroup.findFirst({
+        where: {
+          eventId,
+          OR: [
+            { facilitator: { memberId: registrant.memberId } },
+            { coFacilitator: { memberId: registrant.memberId } },
+          ],
+        },
+        select: { id: true },
+      })
+      if (isFacilitator) return
+    }
+
     const matches = await matchBreakoutGroups(registrantId, eventId, {
       excludeAssigned: true,
       limit: 1,
@@ -265,6 +306,18 @@ export async function autoAssignBreakouts(
       where: {
         eventId,
         breakoutGroupMemberships: { none: {} },
+        NOT: {
+          member: {
+            volunteers: {
+              some: {
+                OR: [
+                  { facilitatedGroups: { some: { eventId } } },
+                  { coFacilitatedGroups: { some: { eventId } } },
+                ],
+              },
+            },
+          },
+        },
       },
       select: { id: true },
     })

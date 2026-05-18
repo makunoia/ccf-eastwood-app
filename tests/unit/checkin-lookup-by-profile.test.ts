@@ -49,13 +49,13 @@ async function seedMember(overrides: {
 
 function isSingleMatch(
   result: Awaited<ReturnType<typeof lookupCheckinRegistrantByProfile>>
-): result is { success: true; data: { registrantId: string; name: string; nickname: string | null; alreadyCheckedIn: boolean; guestSmallGroupPrompt: unknown } } {
+): result is { success: true; data: { registrantId: string; name: string; nickname: string | null; alreadyCheckedIn: boolean; guestSmallGroupPrompt: null } } {
   return result.success && result.data !== null && !("matchType" in (result.data as object))
 }
 
 function isAmbiguousMatch(
   result: Awaited<ReturnType<typeof lookupCheckinRegistrantByProfile>>
-): result is { success: true; data: { matchType: "ambiguous"; candidates: unknown[] } } {
+): result is { success: true; data: { matchType: "ambiguous"; candidates: Array<{ registrantId: string; name: string; nickname: string | null; alreadyCheckedIn: boolean; guestSmallGroupPrompt: null }> } } {
   return result.success && result.data !== null && "matchType" in (result.data as object)
 }
 
@@ -77,6 +77,7 @@ describe("lookupCheckinRegistrantByProfile", () => {
       const event = await seedEvent()
       const result = await lookupCheckinRegistrantByProfile(event.id, "Smith", 5, 1990, null)
       expect(result.success).toBe(true)
+      if (!result.success) return
       expect(result.data).toBeNull()
     })
 
@@ -87,6 +88,7 @@ describe("lookupCheckinRegistrantByProfile", () => {
 
       const result = await lookupCheckinRegistrantByProfile(event.id, "Garcia", 7, 1992, null)
       expect(result.success).toBe(true)
+      if (!result.success) return
       expect(result.data).toBeNull()
     })
 
@@ -97,6 +99,7 @@ describe("lookupCheckinRegistrantByProfile", () => {
 
       const result = await lookupCheckinRegistrantByProfile(event.id, "Garcia", 6, 1993, null)
       expect(result.success).toBe(true)
+      if (!result.success) return
       expect(result.data).toBeNull()
     })
 
@@ -107,6 +110,7 @@ describe("lookupCheckinRegistrantByProfile", () => {
 
       const result = await lookupCheckinRegistrantByProfile(event.id, "Reyes", 3, 1995, null)
       expect(result.success).toBe(true)
+      if (!result.success) return
       expect(result.data).toBeNull()
     })
 
@@ -117,6 +121,7 @@ describe("lookupCheckinRegistrantByProfile", () => {
 
       const result = await lookupCheckinRegistrantByProfile(event.id, "Torres", 1, 1985, null)
       expect(result.success).toBe(true)
+      if (!result.success) return
       expect(result.data).toBeNull()
     })
 
@@ -128,6 +133,7 @@ describe("lookupCheckinRegistrantByProfile", () => {
 
       const result = await lookupCheckinRegistrantByProfile(event1.id, "Torres", 1, 1985, null)
       expect(result.success).toBe(true)
+      if (!result.success) return
       expect(result.data).toBeNull()
     })
   })

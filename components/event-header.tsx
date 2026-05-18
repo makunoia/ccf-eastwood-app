@@ -1,19 +1,10 @@
 "use client"
 
-import React from "react"
-import Link from "next/link"
 import { usePathname } from "next/navigation"
 
 import { Separator } from "@/components/ui/separator"
 import { SidebarTrigger } from "@/components/ui/sidebar"
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb"
+import { BreadcrumbNav } from "@/components/breadcrumb-nav"
 import { useBreadcrumbContext } from "@/components/breadcrumb-context"
 
 const SEGMENT_LABELS: Record<string, string> = {
@@ -68,28 +59,7 @@ export function EventHeader({ eventId: _eventId, eventType: _eventType }: EventH
           orientation="vertical"
           className="mx-2 data-[orientation=vertical]:h-4"
         />
-        <Breadcrumb>
-          <BreadcrumbList>
-            {items.map((item, index) => {
-              const isLast = index === items.length - 1
-              return (
-                <React.Fragment key={item.href}>
-                  {index > 0 && <BreadcrumbSeparator />}
-                  <BreadcrumbItem>
-                    {isLast ? (
-                      <BreadcrumbPage>{item.label}</BreadcrumbPage>
-                    ) : (
-                      <BreadcrumbLink asChild>
-                        <Link href={item.href}>{item.label}</Link>
-                      </BreadcrumbLink>
-                    )}
-                  </BreadcrumbItem>
-                </React.Fragment>
-              )
-            })}
-          </BreadcrumbList>
-        </Breadcrumb>
-
+        <BreadcrumbNav items={items} />
       </div>
     </header>
   )

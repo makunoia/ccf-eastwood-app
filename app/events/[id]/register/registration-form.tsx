@@ -62,7 +62,7 @@ function formatTime(time: string): string {
   return `${display}:${m.toString().padStart(2, "0")} ${period}`
 }
 
-type Step = "form" | "confirm" | "disambiguate" | "early-confirm" | "early-disambiguate" | "done"
+type Step = "form" | "confirm" | "disambiguate" | "early-confirm" | "early-disambiguate" | "done" | "volunteer-blocked"
 
 type LifeStage = { id: string; name: string }
 
@@ -106,6 +106,7 @@ type MatchedMember = {
   phone: string | null
   matchedBy: "mobile" | "email" | "nameBirthday"
   recordType: "member" | "guest"
+  isVolunteer?: boolean
   // Member-only extended fields (present when recordType === "member" and early lookup was used)
   smallGroupId?: string | null
   groupStatus?: string | null
@@ -123,6 +124,7 @@ type AmbiguousCandidate = {
   email: string | null
   phone: string | null
   recordType: "member" | "guest"
+  isVolunteer?: boolean
   smallGroupId?: string | null
   groupStatus?: string | null
   lifeStageId?: string | null
@@ -181,6 +183,7 @@ type Props = {
   includeDietary?: boolean
   includePayment?: boolean
   lifeStages?: LifeStage[]
+  defaultLifeStageId?: string
   breakoutCandidates?: BreakoutCandidate[]
 }
 
@@ -191,10 +194,11 @@ export function RegistrationForm({
   includeDietary = false,
   includePayment = false,
   lifeStages = [],
+  defaultLifeStageId = "",
   breakoutCandidates = [],
 }: Props) {
   const [step, setStep] = React.useState<Step>("form")
-  const [form, setForm] = React.useState<FormValues>(defaultForm)
+  const [form, setForm] = React.useState<FormValues>({ ...defaultForm, lifeStageId: defaultLifeStageId })
   const [noMobile, setNoMobile] = React.useState(false)
   const [noEmail, setNoEmail] = React.useState(false)
   const [wantsSmallGroup, setWantsSmallGroup] = React.useState(false)
@@ -242,6 +246,21 @@ export function RegistrationForm({
     cardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
   }
 
+  function handleReset() {
+    setStep("form")
+    setForm({ ...defaultForm, lifeStageId: defaultLifeStageId })
+    setNoMobile(false)
+    setNoEmail(false)
+    setWantsSmallGroup(false)
+    setMatchedMember(null)
+    setConfirmedMember(null)
+    setSkipSmallGroup(false)
+    setCandidates(null)
+    setSelectedBreakoutId("")
+    setAssignedBreakout(null)
+    setFormStep(1)
+  }
+
   function set(field: keyof FormValues, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }))
   }
@@ -271,6 +290,7 @@ export function RegistrationForm({
             lastName: hasBirthday ? form.lastName : null,
             birthMonth: hasBirthday ? parseInt(form.birthMonth, 10) : null,
             birthYear: hasBirthday ? parseInt(form.birthYear, 10) : null,
+            eventId,
           })
           setSubmitting(false)
 
@@ -300,6 +320,13 @@ export function RegistrationForm({
   }
 
   function handleEarlyConfirm(match: MatchedMember) {
+    if (match.isVolunteer) {
+      setMatchedMember(match)
+      setCandidates(null)
+      setStep("volunteer-blocked")
+      return
+    }
+
     setConfirmedMember(match)
 
     // Pre-fill matching fields from member's existing data
@@ -393,6 +420,7 @@ export function RegistrationForm({
         lastName: hasBirthday ? form.lastName : null,
         birthMonth: hasBirthday ? parseInt(form.birthMonth, 10) : null,
         birthYear: hasBirthday ? parseInt(form.birthYear, 10) : null,
+        eventId,
       })
       setSubmitting(false)
       if (match) {
@@ -488,21 +516,6 @@ export function RegistrationForm({
           displayBreakout.locationCity,
         ].filter(Boolean)
       : []
-    const handleReset = () => {
-      setStep("form")
-      setForm(defaultForm)
-      setNoMobile(false)
-      setNoEmail(false)
-      setWantsSmallGroup(false)
-      setMatchedMember(null)
-      setConfirmedMember(null)
-      setSkipSmallGroup(false)
-      setCandidates(null)
-      setSelectedBreakoutId("")
-      setAssignedBreakout(null)
-      setFormStep(1)
-    }
-
     return (
       <Card>
         <CardContent className="flex flex-col items-center gap-5 pt-10 pb-6">
@@ -531,6 +544,30 @@ export function RegistrationForm({
             )}
           </div>
           <Button className="w-full" onClick={handleReset}>
+            Register another person
+          </Button>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (step === "volunteer-blocked" && matchedMember) {
+    const firstName = matchedMember.firstName
+    return (
+      <Card>
+        <CardContent className="flex flex-col items-center gap-5 pt-10 pb-6">
+          <div className="flex size-16 items-center justify-center rounded-full bg-primary/10">
+            <IconCheck className="size-8 text-primary" />
+          </div>
+          <div className="text-center space-y-1.5">
+            <p className="text-xl font-semibold">
+              You&apos;re already on the list{firstName ? `, ${firstName}` : ""}!
+            </p>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              You&apos;re serving as a volunteer at this event — you&apos;re already included and don&apos;t need to register as an attendee.
+            </p>
+          </div>
+          <Button className="w-full" variant="outline" onClick={handleReset}>
             Register another person
           </Button>
         </CardContent>
@@ -613,11 +650,15 @@ export function RegistrationForm({
           <div className="flex gap-2">
             <Button
               className="flex-1"
-              onClick={() =>
+              onClick={() => {
+                if (matchedMember.isVolunteer) {
+                  setStep("volunteer-blocked")
+                  return
+                }
                 matchedMember.recordType === "guest"
                   ? register(null, matchedMember.id)
                   : register(matchedMember.id)
-              }
+              }}
               disabled={submitting}
             >
               {submitting ? "Registering…" : "Yes, that's me"}
@@ -1223,8 +1264,8 @@ export function RegistrationForm({
                 </Button>
               )}
               {formStep < sections.length ? (
-                <Button type="button" className="flex-1" onClick={handleNext}>
-                  Next
+                <Button type="button" className="flex-1" disabled={submitting} onClick={handleNext}>
+                  {submitting ? "Please wait…" : "Next"}
                 </Button>
               ) : (
                 <Button type="button" className="flex-1" disabled={submitting} onClick={handleSubmit}>

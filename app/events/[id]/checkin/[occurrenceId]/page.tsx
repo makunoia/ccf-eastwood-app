@@ -29,6 +29,7 @@ async function getOccurrenceWithEvent(occurrenceId: string) {
                   name: true,
                   logoUrl: true,
                   themeColorPrimary: true,
+                  lifeStageId: true,
                 },
               },
             },
@@ -125,6 +126,10 @@ export default async function OccurrenceCheckinPage({
 
   const { logoUrl, primaryColor } = resolveEventBrand(occurrence.event)
   const ministryNames = occurrence.event.ministries.map((em) => em.ministry.name).join(" · ")
+  const defaultLifeStageId =
+    occurrence.event.ministries.length === 1 && occurrence.event.ministries[0].ministry.lifeStageId
+      ? occurrence.event.ministries[0].ministry.lifeStageId
+      : undefined
 
   const dateLabel = occurrence.date.toLocaleDateString("en-PH", {
     weekday: "long",
@@ -182,6 +187,7 @@ export default async function OccurrenceCheckinPage({
             eventId={id}
             occurrenceId={occurrenceId}
             lifeStages={lifeStages}
+            defaultLifeStageId={defaultLifeStageId}
             autoAssignBreakout={occurrence.event.autoAssignBreakout}
             breakoutCandidates={breakoutCandidates}
             allowPayment={occurrence.event.formIncludePayment}

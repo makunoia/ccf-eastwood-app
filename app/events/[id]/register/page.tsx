@@ -31,6 +31,7 @@ async function getEvent(id: string) {
               name: true,
               logoUrl: true,
               themeColorPrimary: true,
+              lifeStageId: true,
             },
           },
         },
@@ -70,6 +71,11 @@ export default async function RegisterPage({
       })
     : []
 
+  const defaultLifeStageId =
+    event.ministries.length === 1 && event.ministries[0].ministry.lifeStageId
+      ? event.ministries[0].ministry.lifeStageId
+      : undefined
+
   // Breakout picker section only renders when not in auto-assign mode AND groups exist.
   // For Recurring events, only show groups whose facilitator has checked in to the open session.
   let breakoutOccurrenceId: string | null = null
@@ -83,7 +89,7 @@ export default async function RegisterPage({
 
   const breakoutCandidates = event.autoAssignBreakout
     ? []
-    : await fetchBreakoutCandidates(event.id, breakoutOccurrenceId)
+    : await fetchBreakoutCandidates(event.id, breakoutOccurrenceId, false)
 
   const { logoUrl, primaryColor } = resolveEventBrand(event)
   const ministryNames = event.ministries.map((em) => em.ministry.name).join(" · ")
@@ -134,6 +140,7 @@ export default async function RegisterPage({
             includeDietary={event.formIncludeDietary}
             includePayment={event.formIncludePayment}
             lifeStages={lifeStages}
+            defaultLifeStageId={defaultLifeStageId}
             breakoutCandidates={breakoutCandidates}
           />
         </div>
