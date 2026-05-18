@@ -15,7 +15,7 @@ export default async function DashboardLayout({
 
   return (
     <SidebarProvider
-      className="h-svh"
+      className="min-h-dvh"
       style={
         {
           "--sidebar-width": "calc(var(--spacing) * 72)",
