@@ -104,7 +104,7 @@ function PhonePHInput({
         wrapperClassName,
       )}
     >
-      <span className="select-none pl-3 pr-1.5 text-base md:text-sm leading-none text-muted-foreground">
+      <span className="select-none pl-3 pr-1.5 text-sm leading-none text-muted-foreground">
         +63
       </span>
       <span className="mr-2 h-4 w-px shrink-0 bg-border" />
@@ -120,7 +120,7 @@ function PhonePHInput({
         placeholder={placeholder}
         maxLength={12}
         className={cn(
-          "min-w-0 flex-1 bg-transparent pr-3 text-base md:text-sm leading-none outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed",
+          "min-w-0 flex-1 bg-transparent pr-3 text-sm leading-none outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed",
           className,
         )}
         {...props}

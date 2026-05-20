@@ -175,8 +175,8 @@ export function TimeInput({
       className={cn(
         "min-w-0 bg-transparent outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed font-mono",
         variant === "default"
-          ? "flex-1 pl-3 text-base md:text-sm leading-none tracking-widest"
-          : "w-[4.5ch] text-base md:text-sm tracking-wider",
+          ? "flex-1 pl-3 text-sm leading-none tracking-widest"
+          : "w-[4.5ch] text-sm tracking-wider",
       )}
     />
   )
@@ -188,7 +188,7 @@ export function TimeInput({
       disabled={disabled}
       tabIndex={-1}
       className={cn(
-        "select-none transition-colors text-muted-foreground hover:text-foreground text-base md:text-sm",
+        "select-none transition-colors text-muted-foreground hover:text-foreground text-sm",
         variant === "default" ? "pr-3 pl-1.5 leading-none shrink-0" : "leading-none",
       )}
     >
