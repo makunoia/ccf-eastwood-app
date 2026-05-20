@@ -20,8 +20,8 @@ const GlcBadgeRow = dynamic(
 const PREVIEW_EARNED: Partial<Record<GlcBookNumber, boolean>> = {
   1: true,
   2: true,
-  3: false,
-  4: false,
+  3: true,
+  4: true,
 }
 
 export default function MePage() {
