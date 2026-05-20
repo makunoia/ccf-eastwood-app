@@ -81,6 +81,24 @@ export function TimeInput({
     })
   }
 
+  function appendDigit(key: string) {
+    if (!/^\d$/.test(key) || rawDigits.length >= 4) return
+    let next = rawDigits + key
+    if (rawDigits.length === 0 && parseInt(key) >= 2) next = "0" + key
+    else if (rawDigits.length === 1) {
+      const hrs = parseInt(rawDigits[0] + key)
+      if (hrs === 0 || hrs > 12) return
+    }
+    setRawDigits(next)
+    onChange?.(to24(next, period))
+    requestAnimationFrame(() => {
+      if (inputRef.current) {
+        const pos = getCursorPos(next.length)
+        inputRef.current.setSelectionRange(pos, pos)
+      }
+    })
+  }
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Backspace") {
       e.preventDefault()
@@ -100,21 +118,25 @@ export function TimeInput({
       return
     }
     e.preventDefault()
+    appendDigit(e.key)
+  }
 
-    let next = rawDigits + e.key
-
-    // Hour validation (12-hour format: 01–12)
-    if (rawDigits.length === 0) {
-      // First hour digit 2–9 → auto-pad to "0X" (13–19 are impossible in 12hr)
-      if (parseInt(e.key) >= 2) next = "0" + e.key
-    } else if (rawDigits.length === 1) {
-      // Second hour digit: reject if hours would be 00 or > 12
-      const hrs = parseInt(rawDigits[0] + e.key)
-      if (hrs === 0 || hrs > 12) return
+  // Handles mobile virtual keyboard input (no keydown events for virtual keys)
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const newDigits = e.target.value.replace(/\D/g, "")
+    if (newDigits.length > rawDigits.length) {
+      appendDigit(newDigits[rawDigits.length] ?? newDigits[newDigits.length - 1])
+    } else if (newDigits.length < rawDigits.length) {
+      const next = rawDigits.slice(0, -1)
+      setRawDigits(next)
+      onChange?.(to24(next, period))
+      requestAnimationFrame(() => {
+        if (inputRef.current) {
+          const pos = getCursorPos(next.length)
+          inputRef.current.setSelectionRange(pos, pos)
+        }
+      })
     }
-
-    setRawDigits(next)
-    onChange?.(to24(next, period))
   }
 
   function handlePaste(e: React.ClipboardEvent<HTMLInputElement>) {
@@ -142,10 +164,10 @@ export function TimeInput({
       type="text"
       inputMode="numeric"
       autoComplete="off"
-      readOnly
       value={displayValue}
       placeholder="00:00"
       onKeyDown={handleKeyDown}
+      onChange={handleChange}
       onPaste={handlePaste}
       onClick={moveCursorToEnd}
       onFocus={moveCursorToEnd}
