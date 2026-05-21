@@ -11,4 +11,4 @@ export const r2 = new S3Client({
 
 export const R2_BUCKET = process.env.R2_BUCKET_NAME!
 export const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL!
-export const R2_FOLDER = process.env.NODE_ENV === "production" ? "production" : "staging"
+export const R2_FOLDER = process.env.VERCEL_ENV === "production" ? "production" : "staging"

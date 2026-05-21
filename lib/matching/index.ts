@@ -18,7 +18,7 @@ function buildCandidateFromMember(m: {
   workCity: string | null
   workIndustry: string | null
   meetingPreference: "Online" | "Hybrid" | "InPerson" | null
-  schedulePreferences: { dayOfWeek: number; timeStart: string }[]
+  schedulePreferences: { dayOfWeek: number; timeStart: string; timeEnd: string | null }[]
 }): CandidateProfile {
   return {
     lifeStageId: m.lifeStageId,
@@ -32,7 +32,7 @@ function buildCandidateFromMember(m: {
     scheduleSlots: m.schedulePreferences.map((s) => ({
       dayOfWeek: s.dayOfWeek,
       timeStart: s.timeStart,
-      timeEnd: addOneHour(s.timeStart),
+      timeEnd: s.timeEnd ?? addOneHour(s.timeStart),
     })),
   }
 }
@@ -48,6 +48,7 @@ function buildCandidateFromGuest(g: {
   meetingPreference: "Online" | "Hybrid" | "InPerson" | null
   scheduleDayOfWeek: number | null
   scheduleTimeStart: string | null
+  scheduleTimeEnd: string | null
 }): CandidateProfile {
   return {
     lifeStageId: g.lifeStageId,
@@ -60,7 +61,7 @@ function buildCandidateFromGuest(g: {
     meetingPreference: g.meetingPreference,
     scheduleSlots:
       g.scheduleDayOfWeek !== null && g.scheduleTimeStart !== null
-        ? [{ dayOfWeek: g.scheduleDayOfWeek, timeStart: g.scheduleTimeStart, timeEnd: addOneHour(g.scheduleTimeStart) }]
+        ? [{ dayOfWeek: g.scheduleDayOfWeek, timeStart: g.scheduleTimeStart, timeEnd: g.scheduleTimeEnd ?? addOneHour(g.scheduleTimeStart) }]
         : [],
   }
 }
@@ -84,6 +85,7 @@ function buildSmallGroupProfile(
     memberLimit: number | null
     scheduleDayOfWeek: number | null
     scheduleTimeStart: string | null
+    scheduleTimeEnd: string | null
     _count: { members: number }
     members: { workIndustry: string | null }[]
   },
@@ -107,7 +109,7 @@ function buildSmallGroupProfile(
       (g.members.map((m) => m.workIndustry).filter(Boolean) as string[]),
     scheduleSlots:
       g.scheduleDayOfWeek !== null && g.scheduleTimeStart !== null
-        ? [{ dayOfWeek: g.scheduleDayOfWeek, timeStart: g.scheduleTimeStart, timeEnd: addOneHour(g.scheduleTimeStart) }]
+        ? [{ dayOfWeek: g.scheduleDayOfWeek, timeStart: g.scheduleTimeStart, timeEnd: g.scheduleTimeEnd ?? addOneHour(g.scheduleTimeStart) }]
         : [],
   }
 }
@@ -126,6 +128,7 @@ const SMALL_GROUP_SCORE_SELECT = {
   memberLimit: true,
   scheduleDayOfWeek: true,
   scheduleTimeStart: true,
+  scheduleTimeEnd: true,
   _count: { select: { members: true } },
   members: { select: { workIndustry: true } },
 } as const
@@ -195,6 +198,7 @@ export async function matchSmallGroups(
         meetingPreference: true,
         scheduleDayOfWeek: true,
         scheduleTimeStart: true,
+        scheduleTimeEnd: true,
       },
     })
     if (!guest) return []
@@ -215,7 +219,7 @@ export async function matchSmallGroups(
         smallGroupId: true,
         ledGroups: { select: { id: true } },
         schedulePreferences: {
-          select: { dayOfWeek: true, timeStart: true },
+          select: { dayOfWeek: true, timeStart: true, timeEnd: true },
         },
       },
     })
@@ -316,6 +320,7 @@ export async function matchSmallGroupsWithEscalation(
       meetingPreference: true,
       scheduleDayOfWeek: true,
       scheduleTimeStart: true,
+      scheduleTimeEnd: true,
     },
   })
   if (!guest) return []
@@ -467,7 +472,7 @@ export async function matchBreakoutGroups(
           workIndustry: true,
           meetingPreference: true,
           schedulePreferences: {
-            select: { dayOfWeek: true, timeStart: true },
+            select: { dayOfWeek: true, timeStart: true, timeEnd: true },
           },
         },
       },
@@ -483,6 +488,7 @@ export async function matchBreakoutGroups(
           meetingPreference: true,
           scheduleDayOfWeek: true,
           scheduleTimeStart: true,
+          scheduleTimeEnd: true,
         },
       },
     },
@@ -525,7 +531,7 @@ export async function matchBreakoutGroups(
         },
       },
       schedules: {
-        select: { dayOfWeek: true, timeStart: true },
+        select: { dayOfWeek: true, timeStart: true, timeEnd: true },
       },
       facilitator: {
         select: { member: { select: { gender: true } } },
@@ -587,7 +593,7 @@ export async function matchBreakoutGroups(
         scheduleSlots: g.schedules.map((s) => ({
           dayOfWeek: s.dayOfWeek,
           timeStart: s.timeStart,
-          timeEnd: addOneHour(s.timeStart),
+          timeEnd: s.timeEnd ?? addOneHour(s.timeStart),
         })),
       }
 

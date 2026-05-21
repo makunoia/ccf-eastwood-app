@@ -133,6 +133,7 @@ export async function promoteGuestToMember(
         meetingPreference: true,
         scheduleDayOfWeek: true,
         scheduleTimeStart: true,
+        scheduleTimeEnd: true,
       },
     })
 
@@ -194,6 +195,7 @@ export async function promoteGuestToMember(
                   create: {
                     dayOfWeek: guest.scheduleDayOfWeek,
                     timeStart: guest.scheduleTimeStart,
+                    timeEnd: guest.scheduleTimeEnd ?? null,
                   },
                 },
               }
@@ -241,6 +243,7 @@ const guestMatchingProfileSchema = z.object({
   birthYear: z.number().int().min(1900).nullable().optional(),
   scheduleDayOfWeek: z.number().int().min(0).max(6).nullable().optional(),
   scheduleTimeStart: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
+  scheduleTimeEnd: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
 })
 
 export type GuestMatchingProfileInput = z.infer<typeof guestMatchingProfileSchema>
@@ -267,6 +270,7 @@ export async function saveGuestMatchingProfile(
         birthYear: parsed.data.birthYear ?? null,
         scheduleDayOfWeek: parsed.data.scheduleDayOfWeek ?? null,
         scheduleTimeStart: parsed.data.scheduleTimeStart ?? null,
+        scheduleTimeEnd: parsed.data.scheduleTimeEnd ?? null,
       },
     })
     revalidatePath(`/guests/${guestId}`)

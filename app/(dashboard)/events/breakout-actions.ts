@@ -27,7 +27,7 @@ async function validateTimothyProfile(
     genderFocus?: string | null
     language?: string[]
     meetingFormat?: string | null
-    schedule?: { dayOfWeek: number; timeStart: string } | null
+    schedule?: { dayOfWeek: number; timeStart: string; timeEnd: string } | null
   }
 ): Promise<string | null> {
   if (!facilitatorId) return null
@@ -90,6 +90,7 @@ export async function createBreakoutGroup(
                 create: {
                   dayOfWeek: schedule.dayOfWeek,
                   timeStart: schedule.timeStart,
+                  timeEnd: schedule.timeEnd,
                 },
               },
             }
@@ -141,6 +142,7 @@ export async function updateBreakoutGroup(
                 create: {
                   dayOfWeek: schedule.dayOfWeek,
                   timeStart: schedule.timeStart,
+                  timeEnd: schedule.timeEnd,
                 },
               }
             : {}),

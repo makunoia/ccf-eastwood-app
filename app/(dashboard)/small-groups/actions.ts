@@ -46,6 +46,7 @@ export async function createSmallGroup(
           memberLimit: parsed.data.memberLimit ?? null,
           scheduleDayOfWeek: parsed.data.scheduleDayOfWeek ?? null,
           scheduleTimeStart: parsed.data.scheduleTimeStart ?? null,
+          scheduleTimeEnd: parsed.data.scheduleTimeEnd ?? null,
         },
         select: { id: true },
       })
@@ -167,6 +168,7 @@ export async function updateSmallGroup(
           memberLimit: parsed.data.memberLimit ?? null,
           scheduleDayOfWeek: parsed.data.scheduleDayOfWeek ?? null,
           scheduleTimeStart: parsed.data.scheduleTimeStart ?? null,
+          scheduleTimeEnd: parsed.data.scheduleTimeEnd ?? null,
         },
       })
 

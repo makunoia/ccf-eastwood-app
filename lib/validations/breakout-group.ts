@@ -19,6 +19,7 @@ export const breakoutGroupSchema = z
       .object({
         dayOfWeek: z.coerce.number().int().min(0).max(6),
         timeStart: z.string().min(1, "Start time required"),
+        timeEnd: z.string().min(1, "End time required"),
       })
       .nullable()
       .optional(),
