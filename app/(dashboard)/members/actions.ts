@@ -157,6 +157,7 @@ export async function saveMemberMatchingPreferences(
                 create: {
                   dayOfWeek: Number(prefs.scheduleDayOfWeek),
                   timeStart: prefs.scheduleTimeStart,
+                  timeEnd: prefs.scheduleTimeEnd || null,
                 },
               }
             : {}),

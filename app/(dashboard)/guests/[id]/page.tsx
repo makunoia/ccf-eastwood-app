@@ -102,6 +102,7 @@ async function getGuest(id: string) {
     meetingPreference: g.meetingPreference as string | null,
     scheduleDayOfWeek: g.scheduleDayOfWeek,
     scheduleTimeStart: g.scheduleTimeStart,
+    scheduleTimeEnd: g.scheduleTimeEnd,
     memberId: g.memberId,
     memberCreatedAt: g.member?.createdAt ?? null,
     claimedSmallGroup: g.claimedSmallGroup,

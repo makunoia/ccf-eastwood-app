@@ -143,6 +143,7 @@ export const GuestMatchSection = React.forwardRef<
         meetingPreference: (prefsRef.current.meetingPreference as "Online" | "Hybrid" | "InPerson") || null,
         scheduleDayOfWeek: prefsRef.current.scheduleDayOfWeek ? Number(prefsRef.current.scheduleDayOfWeek) : null,
         scheduleTimeStart: prefsRef.current.scheduleTimeStart || null,
+        scheduleTimeEnd: prefsRef.current.scheduleTimeEnd || null,
       })
       if (res.success) {
         setDirty(false)
@@ -191,6 +192,7 @@ export const GuestMatchSection = React.forwardRef<
       meetingPreference: (prefs.meetingPreference as "Online" | "Hybrid" | "InPerson") || null,
       scheduleDayOfWeek: prefs.scheduleDayOfWeek ? Number(prefs.scheduleDayOfWeek) : null,
       scheduleTimeStart: prefs.scheduleTimeStart || null,
+      scheduleTimeEnd: prefs.scheduleTimeEnd || null,
     })
     if (!saveRes.success) {
       setState("idle")

@@ -20,7 +20,7 @@ async function getMember(id: string): Promise<MemberRow | null> {
       lifeStage: { select: { id: true, name: true } },
       smallGroup: { select: { name: true } },
       schedulePreferences: {
-        select: { dayOfWeek: true, timeStart: true },
+        select: { dayOfWeek: true, timeStart: true, timeEnd: true },
         orderBy: { createdAt: "asc" },
         take: 1,
       },
@@ -48,6 +48,7 @@ async function getMember(id: string): Promise<MemberRow | null> {
     meetingPreference: m.meetingPreference,
     scheduleDayOfWeek: m.schedulePreferences[0]?.dayOfWeek ?? null,
     scheduleTimeStart: m.schedulePreferences[0]?.timeStart ?? null,
+    scheduleTimeEnd: m.schedulePreferences[0]?.timeEnd ?? null,
   }
 }
 
@@ -314,7 +315,7 @@ export default async function MemberDetailPage({
                   scheduleDayOfWeek:
                     member.scheduleDayOfWeek != null ? String(member.scheduleDayOfWeek) : "",
                   scheduleTimeStart: member.scheduleTimeStart ?? "",
-                  scheduleTimeEnd: member.scheduleTimeStart ? addOneHour(member.scheduleTimeStart) : "",
+                  scheduleTimeEnd: member.scheduleTimeEnd ?? (member.scheduleTimeStart ? addOneHour(member.scheduleTimeStart) : ""),
                 }}
                 lifeStages={lifeStages}
                 allGroups={allSmallGroups}
@@ -334,7 +335,7 @@ export default async function MemberDetailPage({
                   scheduleDayOfWeek:
                     member.scheduleDayOfWeek != null ? String(member.scheduleDayOfWeek) : "",
                   scheduleTimeStart: member.scheduleTimeStart ?? "",
-                  scheduleTimeEnd: member.scheduleTimeStart ? addOneHour(member.scheduleTimeStart) : "",
+                  scheduleTimeEnd: member.scheduleTimeEnd ?? (member.scheduleTimeStart ? addOneHour(member.scheduleTimeStart) : ""),
                 }}
                 lifeStages={lifeStages}
               />

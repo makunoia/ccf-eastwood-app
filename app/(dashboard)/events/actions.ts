@@ -15,7 +15,7 @@ type AssignedBreakout =
       name: string
       meetingFormat: MeetingFormat | null
       locationCity: string | null
-      schedule: { dayOfWeek: number; timeStart: string } | null
+      schedule: { dayOfWeek: number; timeStart: string; timeEnd: string | null } | null
     }
   | null
 
@@ -28,7 +28,7 @@ async function fetchAssignedBreakoutDetails(groupId: string): Promise<AssignedBr
       meetingFormat: true,
       locationCity: true,
       schedules: {
-        select: { dayOfWeek: true, timeStart: true },
+        select: { dayOfWeek: true, timeStart: true, timeEnd: true },
         orderBy: { dayOfWeek: "asc" },
         take: 1,
       },
@@ -294,7 +294,7 @@ export async function lookupMemberForRegistration(params: {
     meetingPreference: true,
     workCity: true,
     schedulePreferences: {
-      select: { dayOfWeek: true, timeStart: true },
+      select: { dayOfWeek: true, timeStart: true, timeEnd: true },
       orderBy: { createdAt: "asc" as const },
       take: 1,
     },

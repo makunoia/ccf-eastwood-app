@@ -45,6 +45,7 @@ export type SmallGroupRow = {
   memberLimit: number | null
   scheduleDayOfWeek: number | null
   scheduleTimeStart: string | null
+  scheduleTimeEnd: string | null
 }
 
 export function RowActions({ row }: { row: SmallGroupRow }) {

@@ -73,6 +73,7 @@ type LedGroup = {
   locationCity: string | null
   scheduleDayOfWeek: number | null
   scheduleTimeStart: string | null
+  scheduleTimeEnd: string | null
 }
 
 type Volunteer = {
@@ -99,7 +100,7 @@ export type BreakoutGroupRow = {
   ageRangeMax: number | null
   meetingFormat: string | null
   locationCity: string | null
-  schedules: { dayOfWeek: number; timeStart: string }[]
+  schedules: { dayOfWeek: number; timeStart: string; timeEnd: string | null }[]
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
@@ -118,6 +119,7 @@ function deriveProfileFromGroup(g: LedGroup) {
     meetingFormat: g.meetingFormat ?? "",
     scheduleDayOfWeek: g.scheduleDayOfWeek != null ? String(g.scheduleDayOfWeek) : "",
     scheduleTimeStart: g.scheduleTimeStart ?? "",
+    scheduleTimeEnd: g.scheduleTimeEnd ?? "",
   }
 }
 
@@ -147,6 +149,7 @@ const EMPTY_FORM = {
   meetingFormat: "",
   scheduleDayOfWeek: "",
   scheduleTimeStart: "",
+  scheduleTimeEnd: "",
 }
 
 type GroupFormDialogProps = {
@@ -183,6 +186,7 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
               meetingFormat: group.meetingFormat ?? "",
               scheduleDayOfWeek: group.schedules[0]?.dayOfWeek != null ? String(group.schedules[0].dayOfWeek) : "",
               scheduleTimeStart: group.schedules[0]?.timeStart ?? "",
+              scheduleTimeEnd: group.schedules[0]?.timeEnd ?? "",
             }
           : { ...EMPTY_FORM, lifeStageId: defaultLifeStageId }
       )
@@ -236,8 +240,8 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
     }
     setSaving(true)
     const schedule =
-      form.scheduleDayOfWeek !== "" && form.scheduleTimeStart !== ""
-        ? { dayOfWeek: Number(form.scheduleDayOfWeek), timeStart: form.scheduleTimeStart }
+      form.scheduleDayOfWeek !== "" && form.scheduleTimeStart !== "" && form.scheduleTimeEnd !== ""
+        ? { dayOfWeek: Number(form.scheduleDayOfWeek), timeStart: form.scheduleTimeStart, timeEnd: form.scheduleTimeEnd }
         : null
     const data = {
       name: form.name.trim(),
@@ -402,10 +406,17 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
 
             <div className="space-y-1.5">
               <Label>Meeting Time {isFacilitatorTimothy && <span className="text-destructive">*</span>}</Label>
-              <TimeInput
-                value={form.scheduleTimeStart}
-                onChange={(v) => setForm((f) => ({ ...f, scheduleTimeStart: v }))}
-              />
+              <div className="flex items-center gap-2">
+                <TimeInput
+                  value={form.scheduleTimeStart}
+                  onChange={(v) => setForm((f) => ({ ...f, scheduleTimeStart: v }))}
+                />
+                <span className="text-sm text-muted-foreground">to</span>
+                <TimeInput
+                  value={form.scheduleTimeEnd}
+                  onChange={(v) => setForm((f) => ({ ...f, scheduleTimeEnd: v }))}
+                />
+              </div>
             </div>
           </div>
         </div>

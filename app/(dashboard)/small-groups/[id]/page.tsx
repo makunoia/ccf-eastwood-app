@@ -112,6 +112,7 @@ async function getSmallGroup(id: string): Promise<(SmallGroupRow & {
     memberLimit: g.memberLimit,
     scheduleDayOfWeek: g.scheduleDayOfWeek,
     scheduleTimeStart: g.scheduleTimeStart,
+    scheduleTimeEnd: g.scheduleTimeEnd,
     groupMembers: g.members,
     pendingRequests,
     logs,

@@ -49,6 +49,7 @@ type LedGroup = {
   locationCity: string | null
   scheduleDayOfWeek: number | null
   scheduleTimeStart: string | null
+  scheduleTimeEnd: string | null
 }
 
 type Volunteer = {
@@ -69,7 +70,7 @@ export type EditableGroupData = {
   ageRangeMax: number | null
   meetingFormat: string | null
   locationCity: string | null
-  schedule: { dayOfWeek: number; timeStart: string } | null
+  schedule: { dayOfWeek: number; timeStart: string; timeEnd: string | null } | null
 }
 
 const GENDER_FOCUS_LABELS: Record<string, string> = { Male: "Male", Female: "Female", Mixed: "Mixed" }
@@ -94,6 +95,7 @@ function deriveProfileFromGroup(g: LedGroup) {
     meetingFormat: g.meetingFormat ?? "",
     scheduleDayOfWeek: g.scheduleDayOfWeek != null ? String(g.scheduleDayOfWeek) : "",
     scheduleTimeStart: g.scheduleTimeStart ?? "",
+    scheduleTimeEnd: g.scheduleTimeEnd ?? "",
   }
 }
 
@@ -124,6 +126,7 @@ function EditDialog({
     meetingFormat: "",
     scheduleDayOfWeek: "",
     scheduleTimeStart: "",
+    scheduleTimeEnd: "",
   })
   const [sourceGroupId, setSourceGroupId] = React.useState("")
   const [saving, setSaving] = React.useState(false)
@@ -144,6 +147,7 @@ function EditDialog({
         meetingFormat: group.meetingFormat ?? "",
         scheduleDayOfWeek: group.schedule ? String(group.schedule.dayOfWeek) : "",
         scheduleTimeStart: group.schedule?.timeStart ?? "",
+        scheduleTimeEnd: group.schedule?.timeEnd ?? "",
       })
     }
   }, [open, group])
@@ -195,8 +199,8 @@ function EditDialog({
     }
     setSaving(true)
     const schedule =
-      form.scheduleDayOfWeek !== "" && form.scheduleTimeStart !== ""
-        ? { dayOfWeek: Number(form.scheduleDayOfWeek), timeStart: form.scheduleTimeStart }
+      form.scheduleDayOfWeek !== "" && form.scheduleTimeStart !== "" && form.scheduleTimeEnd !== ""
+        ? { dayOfWeek: Number(form.scheduleDayOfWeek), timeStart: form.scheduleTimeStart, timeEnd: form.scheduleTimeEnd }
         : null
     const result = await updateBreakoutGroup(group.id, eventId, {
       name: form.name.trim(),
@@ -351,10 +355,17 @@ function EditDialog({
 
             <div className="space-y-1.5">
               <Label>Meeting Time {isFacilitatorTimothy && <span className="text-destructive">*</span>}</Label>
-              <TimeInput
-                value={form.scheduleTimeStart}
-                onChange={(v) => setForm((f) => ({ ...f, scheduleTimeStart: v }))}
-              />
+              <div className="flex items-center gap-2">
+                <TimeInput
+                  value={form.scheduleTimeStart}
+                  onChange={(v) => setForm((f) => ({ ...f, scheduleTimeStart: v }))}
+                />
+                <span className="text-sm text-muted-foreground">to</span>
+                <TimeInput
+                  value={form.scheduleTimeEnd}
+                  onChange={(v) => setForm((f) => ({ ...f, scheduleTimeEnd: v }))}
+                />
+              </div>
             </div>
           </div>
         </div>

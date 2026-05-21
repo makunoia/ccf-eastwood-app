@@ -22,6 +22,7 @@ type GuestData = {
   meetingPreference: string | null
   scheduleDayOfWeek: number | null
   scheduleTimeStart: string | null
+  scheduleTimeEnd: string | null
   memberId: string | null
   claimedSmallGroup: {
     id: string
@@ -81,7 +82,7 @@ export function GuestDetailContent({ guest, lifeStages, pipelineStatus, sourceEv
             scheduleDayOfWeek:
               guest.scheduleDayOfWeek != null ? String(guest.scheduleDayOfWeek) : "",
             scheduleTimeStart: guest.scheduleTimeStart ?? "",
-            scheduleTimeEnd: guest.scheduleTimeStart ? addOneHour(guest.scheduleTimeStart) : "",
+            scheduleTimeEnd: guest.scheduleTimeEnd ?? (guest.scheduleTimeStart ? addOneHour(guest.scheduleTimeStart) : ""),
           }}
           lifeStages={lifeStages}
         />

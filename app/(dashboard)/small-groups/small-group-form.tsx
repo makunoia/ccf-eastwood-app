@@ -147,6 +147,7 @@ function toFormValues(group: SmallGroupRow): SmallGroupFormValues {
     memberLimit: group.memberLimit != null ? String(group.memberLimit) : "",
     scheduleDayOfWeek: group.scheduleDayOfWeek != null ? String(group.scheduleDayOfWeek) : "",
     scheduleTimeStart: group.scheduleTimeStart ?? "",
+    scheduleTimeEnd: group.scheduleTimeEnd ?? "",
   }
 }
 
@@ -591,6 +592,12 @@ export function SmallGroupForm({
                     <TimeInput
                       value={form.scheduleTimeStart}
                       onChange={(v) => set("scheduleTimeStart", v)}
+                      className="w-32"
+                    />
+                    <span className="text-sm text-muted-foreground">to</span>
+                    <TimeInput
+                      value={form.scheduleTimeEnd}
+                      onChange={(v) => set("scheduleTimeEnd", v)}
                       className="w-32"
                     />
                   </div>

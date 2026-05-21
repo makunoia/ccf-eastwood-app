@@ -19,6 +19,7 @@ const ledGroupsSelect = {
     locationCity: true,
     scheduleDayOfWeek: true,
     scheduleTimeStart: true,
+    scheduleTimeEnd: true,
   },
 } as const
 
@@ -46,6 +47,7 @@ async function getBreakoutGroup(groupId: string, eventId: string) {
                   locationCity: true,
                   scheduleDayOfWeek: true,
                   scheduleTimeStart: true,
+                  scheduleTimeEnd: true,
                 },
               },
             },
@@ -72,6 +74,7 @@ async function getBreakoutGroup(groupId: string, eventId: string) {
                   locationCity: true,
                   scheduleDayOfWeek: true,
                   scheduleTimeStart: true,
+                  scheduleTimeEnd: true,
                 },
               },
             },
@@ -79,7 +82,7 @@ async function getBreakoutGroup(groupId: string, eventId: string) {
         },
       },
       linkedSmallGroup: { select: { id: true, name: true } },
-      schedules: { select: { dayOfWeek: true, timeStart: true } },
+      schedules: { select: { dayOfWeek: true, timeStart: true, timeEnd: true } },
       lifeStage: { select: { id: true, name: true } },
       members: {
         orderBy: { assignedAt: "asc" },
