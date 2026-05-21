@@ -72,7 +72,7 @@ type Registrant = {
 function displayName(r: Registrant) {
   if (r.member) return `${r.member.firstName} ${r.member.lastName}`
   if (r.guest)  return `${r.guest.firstName} ${r.guest.lastName}`
-  return `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim()
+  return `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim() || null
 }
 
 function displayMobile(r: Registrant) {
@@ -240,7 +240,9 @@ function RegistrantCard({
     >
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-2">
-          <p className="font-medium leading-tight">{displayName(r)}</p>
+          <p className="font-medium leading-tight">
+            {displayName(r) ?? <span className="text-muted-foreground italic">No name</span>}
+          </p>
           <Badge variant={r.memberId ? "secondary" : "outline"}>
             {r.memberId ? "Member" : "Guest"}
           </Badge>
@@ -494,7 +496,7 @@ export function RegistrantsClient({
                         onClick={saveRegistrantIds}
                         className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
                       >
-                        {displayName(r)}
+                        {displayName(r) ?? <span className="text-muted-foreground italic">No name</span>}
                       </Link>
                     </td>
                     <td className="px-4 py-3 text-muted-foreground text-sm whitespace-nowrap">

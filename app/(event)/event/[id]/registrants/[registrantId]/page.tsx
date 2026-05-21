@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { BreakoutSection } from "./breakout-match-section"
 import { RegistrantGuestProfile } from "./registrant-profile"
 import { RegistrantNavHeader } from "./registrant-nav-header"
+import { DeleteRegistrantSection } from "./delete-registrant-section"
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -220,6 +221,12 @@ export default async function RegistrantDetailPage({
             </div>
           </section>
         )}
+
+        <DeleteRegistrantSection
+          registrantId={registrantId}
+          eventId={eventId}
+          name={name}
+        />
       </div>
       </div>
     </>

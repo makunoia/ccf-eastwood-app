@@ -253,19 +253,13 @@ export function EventDashboardClient({ event }: { event: EventDashboardData }) {
           </div>
         </dl>
 
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => copyLink(`/events/${event.id}/register`)}>
+        {/* Check-in link — OneTime only (MultiDay/Recurring check-in is per occurrence via Sessions/Days) */}
+        {!isSeriesEvent && (
+          <Button variant="outline" size="sm" onClick={() => copyLink(`/events/${event.id}/checkin`)}>
             <IconCopy className="mr-1.5 size-3.5" />
-            Registration link
+            Check-in link
           </Button>
-          {/* Check-in link — OneTime only (MultiDay/Recurring check-in is per occurrence via Sessions/Days) */}
-          {!isSeriesEvent && (
-            <Button variant="outline" size="sm" onClick={() => copyLink(`/events/${event.id}/checkin`)}>
-              <IconCopy className="mr-1.5 size-3.5" />
-              Check-in link
-            </Button>
-          )}
-        </div>
+        )}
       </div>
 
       {/* Filters — tight gap to metadata; reads as a toolbar, not a section */}

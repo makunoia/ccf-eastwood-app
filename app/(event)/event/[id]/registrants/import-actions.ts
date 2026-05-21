@@ -298,6 +298,21 @@ export async function importEventRegistrants(
   return { success: true, data: result }
 }
 
+// ─── Delete registrant ───────────────────────────────────────────────────────
+
+export async function deleteEventRegistrant(
+  registrantId: string,
+  eventId: string
+): Promise<ActionResult> {
+  try {
+    await db.eventRegistrant.delete({ where: { id: registrantId } })
+    revalidatePath(`/event/${eventId}/registrants`)
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to delete registrant" }
+  }
+}
+
 // ─── Manual add registrant ────────────────────────────────────────────────────
 
 type AddRegistrantInput = {

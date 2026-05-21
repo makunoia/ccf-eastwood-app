@@ -382,6 +382,10 @@ model Event {
   formIncludeDietary          Boolean             @default(false)
   formIncludePayment          Boolean             @default(false)
   autoAssignBreakout          Boolean             @default(false)
+  // Registration page customization
+  registrationPageTitle       String?
+  registrationPageDescription String?
+  registrationPageBannerUrl   String?
   createdAt             DateTime            @default(now())
   updatedAt             DateTime            @updatedAt
 

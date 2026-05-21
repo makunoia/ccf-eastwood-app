@@ -67,7 +67,7 @@ function parseMeetingFormat(v: string): MeetingFormat | null {
   const n = v.toLowerCase().trim()
   if (n === "online") return MeetingFormat.Online
   if (n === "hybrid") return MeetingFormat.Hybrid
-  if (n === "inperson" || n === "in person" || n === "in-person") return MeetingFormat.InPerson
+  if (n === "inperson" || n === "in person" || n === "in-person" || n === "face to face") return MeetingFormat.InPerson
   return null
 }
 
@@ -91,6 +91,12 @@ function parseTime(v: string): string | null {
   if (/^\d{2}:\d{2}$/.test(trimmed)) return trimmed
   if (/^\d{1}:\d{2}$/.test(trimmed)) return `0${trimmed}`
   return null
+}
+
+function addTwoHours(time: string): string {
+  const [h, m] = time.split(":").map(Number)
+  const newH = Math.min(h + 2, 23)
+  return `${String(newH).padStart(2, "0")}:${String(m).padStart(2, "0")}`
 }
 
 export async function importSmallGroups(
@@ -168,6 +174,11 @@ export async function importSmallGroups(
         memberLimit:       mapped.memberLimit      ? parseIntField(mapped.memberLimit)           : null,
         scheduleDayOfWeek: mapped.scheduleDayOfWeek ? parseDayOfWeek(mapped.scheduleDayOfWeek)  : null,
         scheduleTimeStart: mapped.scheduleTime      ? parseTime(mapped.scheduleTime)            : null,
+        scheduleTimeEnd:   (() => {
+          const end   = mapped.scheduleTimeEnd ? parseTime(mapped.scheduleTimeEnd) : null
+          const start = mapped.scheduleTime    ? parseTime(mapped.scheduleTime)    : null
+          return end ?? (start ? addTwoHours(start) : null)
+        })(),
       }
 
       if (existingId && resolution === "use-csv") {

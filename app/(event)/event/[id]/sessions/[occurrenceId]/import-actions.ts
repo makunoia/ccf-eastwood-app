@@ -25,12 +25,7 @@ export async function checkSessionAttendanceDuplicates(
     })
     if (!occurrence) return { success: false, error: "Occurrence not found" }
 
-    const _emails = rows.map((r) => r.email).filter(Boolean) as string[]
-    const _phones = rows
-      .map((r) => (r.phone ? formatPhilippinePhone(r.phone) : undefined))
-      .filter(Boolean) as string[]
-
-    // Find registrants for this event that already have attendance for this occurrence
+    // ── Pass 1: already checked in to this session ────────────────────────────
     const alreadyAttended = await db.occurrenceAttendee.findMany({
       where: { occurrenceId },
       select: {
@@ -48,15 +43,9 @@ export async function checkSessionAttendanceDuplicates(
       },
     })
 
-    // Build lookup maps keyed by email/phone
-    type AttendedEntry = {
-      registrantId: string
-      name: string
-      email: string | null
-      phone: string | null
-    }
-    const byEmail = new Map<string, AttendedEntry>()
-    const byPhone = new Map<string, AttendedEntry>()
+    type PersonEntry = { id: string; name: string; email: string | null; phone: string | null }
+    const attendedByEmail = new Map<string, PersonEntry>()
+    const attendedByPhone = new Map<string, PersonEntry>()
 
     for (const a of alreadyAttended) {
       const r = a.registrant
@@ -66,28 +55,89 @@ export async function checkSessionAttendanceDuplicates(
         `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim()
       const email = r.member?.email ?? r.guest?.email ?? r.email ?? null
       const phone = r.member?.phone ?? r.guest?.phone ?? r.mobileNumber ?? null
-
-      const entry: AttendedEntry = { registrantId: r.id, name, email, phone }
-      if (email) byEmail.set(email.toLowerCase(), entry)
-      if (phone) byPhone.set(phone, entry)
+      const entry: PersonEntry = { id: r.id, name, email, phone }
+      if (email) attendedByEmail.set(email.toLowerCase(), entry)
+      if (phone) attendedByPhone.set(phone, entry)
     }
 
     const matches: DuplicateMatch[] = []
+    const matchedRowIndices = new Set<number>()
+
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i]
       const normalizedPhone = row.phone ? formatPhilippinePhone(row.phone) : undefined
       const match =
-        (row.email && byEmail.get(row.email.toLowerCase())) ||
-        (normalizedPhone && byPhone.get(normalizedPhone))
+        (row.email && attendedByEmail.get(row.email.toLowerCase())) ||
+        (normalizedPhone && attendedByPhone.get(normalizedPhone))
       if (match) {
         matches.push({
           rowIndex:      i,
-          existingId:    match.registrantId,
-          existingType:  "member", // placeholder — not used by attendance import logic
+          existingId:    match.id,
+          existingType:  "member",
           existingName:  match.name,
           existingEmail: match.email,
           existingPhone: match.phone,
+          // no kind = already checked in (true duplicate)
         })
+        matchedRowIndices.add(i)
+      }
+    }
+
+    // ── Pass 2: exists in system but not yet checked in ───────────────────────
+    const unmatched = rows
+      .map((r, i) => ({ ...r, index: i }))
+      .filter((r) => !matchedRowIndices.has(r.index) && (r.email || r.phone))
+
+    if (unmatched.length > 0) {
+      const uEmails = unmatched.map((r) => r.email?.toLowerCase()).filter(Boolean) as string[]
+      const uPhones = unmatched
+        .map((r) => (r.phone ? formatPhilippinePhone(r.phone) : undefined))
+        .filter(Boolean) as string[]
+
+      const orConditions: Prisma.MemberWhereInput[] = [
+        ...(uEmails.length ? [{ email: { in: uEmails } }] : []),
+        ...(uPhones.length ? [{ phone: { in: uPhones } }] : []),
+      ]
+
+      if (orConditions.length > 0) {
+        const [members, guests] = await Promise.all([
+          db.member.findMany({
+            where: { OR: orConditions },
+            select: { id: true, firstName: true, lastName: true, email: true, phone: true },
+          }),
+          db.guest.findMany({
+            where: { memberId: null, OR: orConditions as Prisma.GuestWhereInput[] },
+            select: { id: true, firstName: true, lastName: true, email: true, phone: true },
+          }),
+        ])
+
+        const memberByEmail = new Map(members.filter((m) => m.email).map((m) => [m.email!.toLowerCase(), m]))
+        const memberByPhone = new Map(members.filter((m) => m.phone).map((m) => [m.phone!, m]))
+        const guestByEmail  = new Map(guests.filter((g) => g.email).map((g) => [g.email!.toLowerCase(), g]))
+        const guestByPhone  = new Map(guests.filter((g) => g.phone).map((g) => [g.phone!, g]))
+
+        for (const row of unmatched) {
+          const normalizedPhone = row.phone ? formatPhilippinePhone(row.phone) : undefined
+          const member =
+            (row.email && memberByEmail.get(row.email.toLowerCase())) ||
+            (normalizedPhone && memberByPhone.get(normalizedPhone))
+          const guest = !member && (
+            (row.email && guestByEmail.get(row.email.toLowerCase())) ||
+            (normalizedPhone && guestByPhone.get(normalizedPhone))
+          )
+          const found = member || guest || null
+          if (found) {
+            matches.push({
+              rowIndex:      row.index,
+              existingId:    found.id,
+              existingType:  member ? "member" : "guest",
+              existingName:  `${found.firstName} ${found.lastName}`,
+              existingEmail: found.email ?? null,
+              existingPhone: found.phone ?? null,
+              kind:          "recognized",
+            })
+          }
+        }
       }
     }
 

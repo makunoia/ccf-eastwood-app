@@ -19,6 +19,7 @@ export function NavigationLoader() {
   // Detect navigation start via document click on anchor elements
   useEffect(() => {
     function handleClick(e: MouseEvent) {
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return
       const anchor = (e.target as HTMLElement).closest("a")
       if (!anchor) return
       const href = anchor.getAttribute("href")
