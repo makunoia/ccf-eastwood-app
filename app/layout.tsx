@@ -6,7 +6,6 @@ import { Toaster } from "sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { NavigationLoader } from "@/components/navigation-loader"
 import { PwaSplashScreen } from "@/components/pwa-splash-screen"
-import { PreventInputZoom } from "@/components/prevent-input-zoom"
 import "./globals.css"
 
 export const metadata: Metadata = {
@@ -27,6 +26,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   minimumScale: 1,
+  maximumScale: 1,
   themeColor: "#18181b",
 }
 
@@ -40,7 +40,6 @@ export default function RootLayout({
       <body className={`${GeistSans.variable} ${GeistMono.variable} antialiased`}>
         <TooltipProvider>
           <PwaSplashScreen />
-          <PreventInputZoom />
           {children}
           <Toaster
             richColors
