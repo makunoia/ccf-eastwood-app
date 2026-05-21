@@ -20,6 +20,7 @@ type SmallGroupsFiltersProps = {
   lifeStageId: string
   genderFocus: string
   meetingFormat: string
+  status: string
 }
 
 export function SmallGroupsFilters({
@@ -28,19 +29,21 @@ export function SmallGroupsFilters({
   lifeStageId,
   genderFocus,
   meetingFormat,
+  status,
 }: SmallGroupsFiltersProps) {
   const router = useRouter()
   const pathname = usePathname()
 
-  const hasFilters = search || lifeStageId || genderFocus || meetingFormat
+  const hasFilters = search || lifeStageId || genderFocus || meetingFormat || status
 
   function buildUrl(overrides: Record<string, string>) {
     const params = new URLSearchParams()
-    const current = { search, lifeStageId, genderFocus, meetingFormat, ...overrides }
+    const current = { search, lifeStageId, genderFocus, meetingFormat, status, ...overrides }
     if (current.search) params.set("search", current.search)
     if (current.lifeStageId) params.set("lifeStageId", current.lifeStageId)
     if (current.genderFocus) params.set("genderFocus", current.genderFocus)
     if (current.meetingFormat) params.set("meetingFormat", current.meetingFormat)
+    if (current.status) params.set("status", current.status)
     const qs = params.toString()
     return qs ? `${pathname}?${qs}` : pathname
   }
@@ -102,6 +105,21 @@ export function SmallGroupsFilters({
           <SelectItem value="Online">Online</SelectItem>
           <SelectItem value="InPerson">In Person</SelectItem>
           <SelectItem value="Hybrid">Hybrid</SelectItem>
+        </SelectContent>
+      </Select>
+
+      <Select
+        value={status || "all"}
+        onValueChange={(v) => setFilter("status", v === "all" ? "" : v)}
+      >
+        <SelectTrigger className="w-36">
+          <SelectValue placeholder="Status" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All Statuses</SelectItem>
+          <SelectItem value="Active">Active</SelectItem>
+          <SelectItem value="Pending">Pending</SelectItem>
+          <SelectItem value="Inactive">Inactive</SelectItem>
         </SelectContent>
       </Select>
 

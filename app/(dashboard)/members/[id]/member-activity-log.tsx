@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { IconCalendar, IconCheck, IconClock, IconMessageCircle, IconUserCheck, IconX } from "@tabler/icons-react"
+import { IconCalendar, IconCheck, IconClock, IconMessageCircle, IconPencil, IconUserCheck, IconX } from "@tabler/icons-react"
 import { TimelineEntry } from "@/components/ui/timeline-entry"
 
 type SmallGroupLogEntry = {
@@ -46,11 +46,20 @@ type CatchMechCommentEntry = {
   event: { id: string; name: string } | null
 }
 
+type VolunteerInfoUpdateEntry = {
+  kind: "volunteerInfoUpdate"
+  id: string
+  description: string | null
+  event: { id: string; name: string } | null
+  createdAt: Date
+}
+
 export type MemberActivityEntry =
   | SmallGroupLogEntry
   | EventRegistrationEntry
   | GuestOriginEntry
   | CatchMechCommentEntry
+  | VolunteerInfoUpdateEntry
 
 const ACTION_LABEL: Record<SmallGroupLogEntry["action"], string> = {
   GroupCreated: "Group created",
@@ -189,6 +198,39 @@ export function MemberActivityLog({ entries }: { entries: MemberActivityEntry[] 
                 {" · "}
                 {formatDate(entry.createdAt)}
               </p>
+            </TimelineEntry>
+          )
+        }
+
+        if (entry.kind === "volunteerInfoUpdate") {
+          return (
+            <TimelineEntry
+              key={`vol-info-${entry.id}`}
+              icon={
+                <span className="inline-flex size-5 items-center justify-center rounded-full bg-violet-100">
+                  <IconPencil className="size-3 text-violet-700" />
+                </span>
+              }
+              isLast={isLast}
+            >
+              <p className="text-sm font-medium">Updated volunteer information</p>
+              <p className="text-xs text-muted-foreground">
+                {entry.event && (
+                  <>
+                    <Link
+                      href={`/event/${entry.event.id}`}
+                      className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+                    >
+                      {entry.event.name}
+                    </Link>
+                    {" · "}
+                  </>
+                )}
+                {formatDate(entry.createdAt)}
+              </p>
+              {entry.description && (
+                <p className="text-xs text-muted-foreground mt-0.5">{entry.description}</p>
+              )}
             </TimelineEntry>
           )
         }

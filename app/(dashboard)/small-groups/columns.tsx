@@ -28,6 +28,7 @@ import { deleteSmallGroup } from "./actions"
 export type SmallGroupRow = {
   id: string
   name: string
+  status: "Active" | "Pending" | "Inactive"
   leaderName: string
   leaderId: string
   parentGroupId: string | null
@@ -130,12 +131,24 @@ export function buildColumns(): ColumnDef<SmallGroupRow>[] {
       accessorKey: "name",
       header: "Name",
       cell: ({ row }) => (
-        <Link
-          href={`/small-groups/${row.original.id}`}
-          className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-        >
-          {row.original.name}
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/small-groups/${row.original.id}`}
+            className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+          >
+            {row.original.name}
+          </Link>
+          {row.original.status === "Pending" && (
+            <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+              Pending
+            </span>
+          )}
+          {row.original.status === "Inactive" && (
+            <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+              Inactive
+            </span>
+          )}
+        </div>
       ),
     },
     {

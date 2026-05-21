@@ -38,6 +38,7 @@ export async function assignMemberToSmallGroup(
     const group = await db.smallGroup.findUnique({
       where: { id: groupId },
       select: {
+        status: true,
         memberLimit: true,
         _count: { select: { members: true } },
       },
@@ -54,6 +55,9 @@ export async function assignMemberToSmallGroup(
       where: { id: memberId },
       data: { smallGroupId: groupId, groupStatus: "Member" },
     })
+    if (group.status === "Pending") {
+      await db.smallGroup.update({ where: { id: groupId }, data: { status: "Active" } })
+    }
 
     revalidatePath(`/members/${memberId}`)
     revalidatePath(`/small-groups/${groupId}`)

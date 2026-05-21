@@ -19,7 +19,7 @@ export async function submitMemberConfirmations(
 ): Promise<ActionResult> {
   const group = await db.smallGroup.findUnique({
     where: { leaderConfirmationToken: token },
-    select: { id: true, name: true, leaderId: true },
+    select: { id: true, name: true, leaderId: true, status: true },
   })
   if (!group) {
     return { success: false, error: "Confirmation link not found or has expired." }
@@ -52,6 +52,8 @@ export async function submitMemberConfirmations(
     )
 
     await db.$transaction(async (tx) => {
+      let memberConfirmed = false
+
       for (const { requestId, status: decisionStatus, notes: decisionNotes } of decisions) {
         const req = await tx.smallGroupMemberRequest.findUnique({
           where: { id: requestId },
@@ -182,9 +184,11 @@ export async function submitMemberConfirmations(
                 },
               })
               promotedMemberId = newMember.id
+              memberConfirmed = true
             } else {
               // Guest already promoted externally — track the existing member ID
               promotedMemberId = guest.memberId
+              memberConfirmed = true
             }
           } else if (req.memberId && req.member) {
             const memberName = `${req.member.firstName} ${req.member.lastName}`
@@ -196,6 +200,7 @@ export async function submitMemberConfirmations(
                 groupStatus: "Member",
               },
             })
+            memberConfirmed = true
 
             await tx.smallGroupLog.create({
               data: {
@@ -262,6 +267,10 @@ export async function submitMemberConfirmations(
             ...(req.guestId && promotedMemberId ? { memberId: promotedMemberId, guestId: null } : {}),
           },
         })
+      }
+
+      if (group.status === "Pending" && memberConfirmed) {
+        await tx.smallGroup.update({ where: { id: group.id }, data: { status: "Active" } })
       }
     })
 

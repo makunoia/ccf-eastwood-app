@@ -180,7 +180,7 @@ async function getMemberActivityData(memberId: string) {
     select: { id: true, createdAt: true },
   })
 
-  const [memberLogs, guestLogs, memberRegistrations, guestRegistrations, memberComments, guestComments] =
+  const [memberLogs, guestLogs, memberRegistrations, guestRegistrations, memberComments, guestComments, memberLogEntries] =
     await Promise.all([
       db.smallGroupLog.findMany({
         where: { memberId },
@@ -214,6 +214,17 @@ async function getMemberActivityData(memberId: string) {
         : Promise.resolve([]),
       fetchCatchMechComments({ memberId }),
       guest ? fetchCatchMechComments({ guestId: guest.id }) : Promise.resolve([]),
+      db.memberLog.findMany({
+        where: { memberId },
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          action: true,
+          description: true,
+          createdAt: true,
+          event: { select: { id: true, name: true } },
+        },
+      }),
     ])
 
   const seenCommentIds = new Set<string>()
@@ -264,6 +275,13 @@ async function getMemberActivityData(memberId: string) {
         ]
       : []),
     ...allComments,
+    ...memberLogEntries.map((log) => ({
+      kind: "volunteerInfoUpdate" as const,
+      id: log.id,
+      description: log.description,
+      event: log.event,
+      createdAt: log.createdAt,
+    })),
   ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
 
   return entries

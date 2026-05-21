@@ -17,7 +17,14 @@ function SmallGroupCard({ group }: { group: SmallGroupRow }) {
     >
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-2">
-          <p className="font-medium leading-tight">{group.name}</p>
+          <div className="flex items-center gap-2 min-w-0">
+            <p className="font-medium leading-tight">{group.name}</p>
+            {group.status === "Pending" && (
+              <span className="inline-flex shrink-0 items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                Pending
+              </span>
+            )}
+          </div>
           <div onClick={(e) => e.stopPropagation()}>
             <RowActions row={group} />
           </div>

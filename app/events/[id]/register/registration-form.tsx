@@ -21,6 +21,7 @@ import { MultiSelect } from "@/components/ui/multi-select"
 import { OptionalEmailInput } from "@/components/ui/optional-email-input"
 import { OptionalPhonePHInput } from "@/components/ui/optional-phone-ph-input"
 import { YearInput } from "@/components/ui/year-input"
+import { PrivacyPolicyCheckbox } from "@/components/ui/privacy-policy-checkbox"
 import {
   Select,
   SelectContent,
@@ -213,6 +214,7 @@ export function RegistrationForm({
   const [selectedBreakoutId, setSelectedBreakoutId] = React.useState<string>("")
   const [assignedBreakout, setAssignedBreakout] = React.useState<AssignedBreakout | null>(null)
   const [formStep, setFormStep] = React.useState(1)
+  const [privacyAccepted, setPrivacyAccepted] = React.useState(false)
   const cardRef = React.useRef<HTMLDivElement>(null)
 
   const showBreakoutSection = breakoutCandidates.length > 0
@@ -259,6 +261,7 @@ export function RegistrationForm({
     setSelectedBreakoutId("")
     setAssignedBreakout(null)
     setFormStep(1)
+    setPrivacyAccepted(false)
   }
 
   function set(field: keyof FormValues, value: string) {
@@ -390,6 +393,11 @@ export function RegistrationForm({
 
   async function handleSubmit(e?: React.FormEvent | React.MouseEvent) {
     e?.preventDefault()
+
+    if (!privacyAccepted) {
+      toast.error("Please agree to the CCF Privacy Policy to continue")
+      return
+    }
 
     if (!isMultiStep) {
       if (!form.firstName.trim() || !form.lastName.trim()) {
@@ -1253,6 +1261,14 @@ export function RegistrationForm({
                 />
               </div>
             </>
+          )}
+
+          {/* ── Privacy Policy ── */}
+          {(!isMultiStep || formStep === sections.length) && (
+            <PrivacyPolicyCheckbox
+              checked={privacyAccepted}
+              onCheckedChange={setPrivacyAccepted}
+            />
           )}
 
           {/* ── Navigation ── */}

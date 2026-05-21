@@ -236,6 +236,49 @@ Weighted scoring engine for SmallGroup suggestions and Breakout auto-assignment.
 
 ## Development Conventions
 
+### Migrations
+
+Prisma generates non-idempotent SQL by default. **Always rewrite generated migration files to be idempotent before committing.** This prevents P3018/P3009 failures when a migration partially runs and is retried.
+
+| Statement | Required rewrite |
+|---|---|
+| `CREATE TYPE "Foo" AS ENUM (...)` | Wrap in `DO $$ BEGIN ... EXCEPTION WHEN duplicate_object THEN NULL; END $$;` |
+| `ALTER TABLE "T" ADD COLUMN "c" ...` | `ALTER TABLE "T" ADD COLUMN IF NOT EXISTS "c" ...` |
+| `CREATE TABLE "T" (...)` | `CREATE TABLE IF NOT EXISTS "T" (...)` |
+| `CREATE INDEX "i" ON ...` | `CREATE INDEX IF NOT EXISTS "i" ON ...` |
+| `ALTER TABLE "T" ADD CONSTRAINT ...` | Wrap in `DO $$ BEGIN ... EXCEPTION WHEN duplicate_object THEN NULL; END $$;` |
+
+**Example — enum + column + table + FK:**
+```sql
+DO $$ BEGIN
+  CREATE TYPE "MyStatus" AS ENUM ('Active', 'Inactive');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+ALTER TABLE "MyTable" ADD COLUMN IF NOT EXISTS "status" "MyStatus" NOT NULL DEFAULT 'Active';
+
+CREATE TABLE IF NOT EXISTS "MyLog" (
+    "id" TEXT NOT NULL,
+    "refId" TEXT NOT NULL,
+    CONSTRAINT "MyLog_pkey" PRIMARY KEY ("id")
+);
+
+DO $$ BEGIN
+  ALTER TABLE "MyLog" ADD CONSTRAINT "MyLog_refId_fkey"
+    FOREIGN KEY ("refId") REFERENCES "MyTable"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+```
+
+**Workflow:** `prisma migrate dev` (local) → edit SQL → commit → `prisma migrate deploy` (preview/prod). Never run `migrate dev` against shared databases.
+
+**Recovery when a migration fails in prod (P3009/P3018):**
+1. `PRISMA_ENV_FILE=.env.preview npx prisma migrate resolve --rolled-back <migration_name>`
+2. Fix the migration SQL to be idempotent
+3. `PRISMA_ENV_FILE=.env.preview npx prisma migrate deploy`
+
+---
+
 ### Data Access
 - Prisma client only — no raw SQL except migrations. Import `db` from `@/lib/db`.
 - Prisma 7: import `PrismaClient` from `@/app/generated/prisma/client`; `lib/db.ts` uses `PrismaPg` adapter.

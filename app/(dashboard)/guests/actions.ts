@@ -152,6 +152,7 @@ export async function promoteGuestToMember(
     const group = await db.smallGroup.findUnique({
       where: { id: groupId },
       select: {
+        status: true,
         memberLimit: true,
         _count: { select: { members: true } },
       },
@@ -213,6 +214,10 @@ export async function promoteGuestToMember(
         where: { guestId },
         data: { memberId: newMember.id, guestId: null },
       })
+
+      if (group.status === "Pending") {
+        await tx.smallGroup.update({ where: { id: groupId }, data: { status: "Active" } })
+      }
 
       return newMember.id
     })

@@ -21,7 +21,7 @@ DO $$ BEGIN
   ALTER TABLE "OccurrenceSubFacilitator"
     ADD CONSTRAINT "OccurrenceSubFacilitator_occurrenceId_breakoutGroupId_role_key"
     UNIQUE ("occurrenceId", "breakoutGroupId", "role");
-EXCEPTION WHEN duplicate_object THEN NULL;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL;
 END $$;
 
 -- Foreign keys
