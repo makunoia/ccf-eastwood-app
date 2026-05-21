@@ -79,7 +79,7 @@ describe("CCF-78 — createBreakoutGroup with Timothy facilitator", () => {
       language: ["Filipino"],
       genderFocus: "Mixed",
       meetingFormat: "InPerson",
-      schedule: { dayOfWeek: 0, timeStart: "09:00" },
+      schedule: { dayOfWeek: 0, timeStart: "09:00", timeEnd: "10:00" },
     })
 
     expect(result.success).toBe(true)
@@ -110,7 +110,7 @@ describe("CCF-78 — createBreakoutGroup with Timothy facilitator", () => {
       genderFocus: "Mixed",
       language: [],
       meetingFormat: "InPerson",
-      schedule: { dayOfWeek: 0, timeStart: "09:00" },
+      schedule: { dayOfWeek: 0, timeStart: "09:00", timeEnd: "10:00" },
     })
 
     expect(result.success).toBe(false)
@@ -195,7 +195,7 @@ describe("CCF-78 — updateBreakoutGroup with Timothy facilitator", () => {
       genderFocus: "Mixed",
       language: ["Filipino"],
       meetingFormat: "InPerson",
-      schedule: { dayOfWeek: 1, timeStart: "10:00" },
+      schedule: { dayOfWeek: 1, timeStart: "10:00", timeEnd: "11:00" },
     })
 
     expect(result.success).toBe(true)
