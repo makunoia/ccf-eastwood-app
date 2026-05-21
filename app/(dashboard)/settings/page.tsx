@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { IconAdjustmentsHorizontal, IconAlertTriangle, IconTags, IconUsers } from "@tabler/icons-react"
+import { IconAdjustmentsHorizontal, IconAlertTriangle, IconDoorEnter, IconTags, IconUsers } from "@tabler/icons-react"
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
 const sections = [
@@ -26,6 +26,12 @@ const sections = [
     description: "Find and resolve Guest and Member records sharing the same phone or email address",
     icon: IconAlertTriangle,
     href: "/settings/duplicate-profiles",
+  },
+  {
+    title: "Join Page",
+    description: "Customize the public page where guests can find and request to join a small group",
+    icon: IconDoorEnter,
+    href: "/settings/join-page",
   },
 ]
 

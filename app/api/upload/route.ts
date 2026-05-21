@@ -21,7 +21,7 @@ export async function POST(request: Request) {
   }
 
   const ext = fileName.split(".").pop() ?? "bin"
-  const key = `${R2_FOLDER}/logos/${crypto.randomUUID()}.${ext}`
+  const key = `${R2_FOLDER}/${crypto.randomUUID()}.${ext}`
 
   const command = new PutObjectCommand({
     Bucket: R2_BUCKET,
