@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
+import { canWrite } from "@/lib/permissions"
 import {
   smallGroupSchema,
   type SmallGroupFormValues,
@@ -12,6 +13,13 @@ type ActionResult<T = void> =
   | { success: true; data: T }
   | { success: false; error: string }
 
+async function requireWrite(): Promise<{ error: string } | null> {
+  const session = await auth()
+  if (!session?.user) return { error: "Not authenticated." }
+  if (!canWrite(session, "SmallGroups")) return { error: "Unauthorized." }
+  return null
+}
+
 async function getActorId(): Promise<string | null> {
   const session = await auth()
   return session?.user?.id ?? null
@@ -20,6 +28,9 @@ async function getActorId(): Promise<string | null> {
 export async function createSmallGroup(
   raw: SmallGroupFormValues
 ): Promise<ActionResult<{ id: string }>> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   const parsed = smallGroupSchema.safeParse(raw)
   if (!parsed.success) {
     return {
@@ -106,6 +117,9 @@ export async function updateSmallGroup(
   id: string,
   raw: SmallGroupFormValues
 ): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   const parsed = smallGroupSchema.safeParse(raw)
   if (!parsed.success) {
     return {
@@ -197,6 +211,9 @@ export async function updateSmallGroup(
 }
 
 export async function deleteSmallGroup(id: string): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   try {
     await db.smallGroup.delete({ where: { id } })
     revalidatePath("/small-groups")
@@ -210,6 +227,9 @@ export async function addMemberToGroup(
   groupId: string,
   memberId: string
 ): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   try {
     const group = await db.smallGroup.findUnique({
       where: { id: groupId },
@@ -262,6 +282,9 @@ export async function removeMemberFromGroup(
   memberId: string,
   groupId: string
 ): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   try {
     const actorId = await getActorId()
     const member = await db.member.findUnique({
@@ -296,6 +319,9 @@ export async function updateMemberGroupStatus(
   groupId: string,
   status: "Member" | "Timothy" | "Leader"
 ): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   try {
     await db.member.update({
       where: { id: memberId },
@@ -314,6 +340,9 @@ export async function assignGuestToGroupTemporarily(
   groupId: string,
   guestId: string
 ): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   try {
     const guest = await db.guest.findUnique({
       where: { id: guestId },
@@ -363,6 +392,9 @@ export async function assignMemberTransferTemporarily(
   groupId: string,
   memberId: string
 ): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   try {
     const member = await db.member.findUnique({
       where: { id: memberId },
@@ -414,6 +446,9 @@ export async function assignMemberTransferTemporarily(
 export async function cancelTempAssignment(
   requestId: string
 ): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   try {
     const request = await db.smallGroupMemberRequest.findUnique({
       where: { id: requestId },

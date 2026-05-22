@@ -40,6 +40,11 @@ export async function createUser(
   const rawPassword = generatePassword()
   const hashedPassword = await bcrypt.hash(rawPassword, 12)
 
+  // Flatten permission entries into one row per [feature, action] pair
+  const permissionRows = permissions.flatMap(({ feature, actions }) =>
+    actions.map((action) => ({ feature, action }))
+  )
+
   try {
     const user = await db.user.create({
       data: {
@@ -51,7 +56,7 @@ export async function createUser(
         mustChangePassword: true,
         requiresTotpSetup: true,
         permissions: {
-          create: permissions.map((feature) => ({ feature })),
+          create: permissionRows,
         },
         eventAccess: {
           create: eventIds.map((eventId) => ({ eventId })),
@@ -84,11 +89,15 @@ export async function updateUserPermissions(
 
   const { permissions, eventIds } = parsed.data
 
+  const permissionRows = permissions.flatMap(({ feature, actions }) =>
+    actions.map((action) => ({ userId: id, feature, action }))
+  )
+
   try {
     await db.$transaction([
       db.userPermission.deleteMany({ where: { userId: id } }),
-      ...(permissions.length > 0
-        ? [db.userPermission.createMany({ data: permissions.map((feature) => ({ userId: id, feature })) })]
+      ...(permissionRows.length > 0
+        ? [db.userPermission.createMany({ data: permissionRows })]
         : []),
       db.userEventAccess.deleteMany({ where: { userId: id } }),
       ...(eventIds.length > 0

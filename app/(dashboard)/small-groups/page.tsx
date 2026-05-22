@@ -1,9 +1,17 @@
-import { GenderFocus, MeetingFormat, MemberRequestStatus, Prisma, SmallGroupStatus } from "@/app/generated/prisma/client"
+import {
+  GenderFocus,
+  MeetingFormat,
+  MemberRequestStatus,
+  Prisma,
+  SmallGroupStatus,
+} from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import { type SmallGroupRow } from "./columns"
 import { SmallGroupsTable } from "./small-groups-table"
 import { SmallGroupsToolbar } from "./toolbar"
 import { SmallGroupsFilters } from "./small-groups-filters"
+import { SmallGroupsTabs } from "./small-groups-tabs"
+import { RequestsTable, type RequestRow } from "./requests-table"
 
 async function getSmallGroups(where: Prisma.SmallGroupWhereInput): Promise<SmallGroupRow[]> {
   const groups = await db.smallGroup.findMany({
@@ -47,12 +55,55 @@ async function getSmallGroups(where: Prisma.SmallGroupWhereInput): Promise<Small
   }))
 }
 
+async function getPendingRequests(): Promise<RequestRow[]> {
+  const requests = await db.smallGroupMemberRequest.findMany({
+    where: { status: MemberRequestStatus.Pending },
+    orderBy: { createdAt: "asc" },
+    include: {
+      guest: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+      member: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+      smallGroup: {
+        select: {
+          id: true,
+          name: true,
+          leader: { select: { id: true, firstName: true, lastName: true, phone: true } },
+        },
+      },
+      fromGroup: { select: { id: true, name: true } },
+    },
+  })
+
+  return requests.map((r) => {
+    const person = r.member ?? r.guest!
+    const personType: "Member" | "Guest" = r.member ? "Member" : "Guest"
+    return {
+      id: r.id,
+      createdAt: r.createdAt,
+      notes: r.notes,
+      personName: `${person.firstName} ${person.lastName}`,
+      personType,
+      personEmail: person.email ?? null,
+      personPhone: person.phone ?? null,
+      personId: person.id,
+      isTransfer: r.fromGroupId !== null,
+      fromGroupId: r.fromGroupId,
+      fromGroupName: r.fromGroup?.name ?? null,
+      targetGroupId: r.smallGroup.id,
+      targetGroupName: r.smallGroup.name,
+      leaderName: `${r.smallGroup.leader.firstName} ${r.smallGroup.leader.lastName}`,
+      leaderId: r.smallGroup.leader.id,
+      leaderPhone: r.smallGroup.leader.phone ?? null,
+    }
+  })
+}
+
 export default async function SmallGroupsPage({
   searchParams,
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>
 }) {
   const params = await searchParams
+  const tab = (params.tab as string) || "all"
   const search = (params.search as string) || ""
   const lifeStageId = (params.lifeStageId as string) || ""
   const genderFocus = (params.genderFocus as string) || ""
@@ -77,42 +128,45 @@ export default async function SmallGroupsPage({
     ],
   }
 
-  const [groups, lifeStages, pendingCount] = await Promise.all([
-    getSmallGroups(where),
-    db.lifeStage.findMany({ orderBy: { order: "asc" }, select: { id: true, name: true } }),
-    db.smallGroup.count({ where: { status: "Pending" } }),
+  const [pendingRequestCount, groups, lifeStages, requests] = await Promise.all([
+    db.smallGroupMemberRequest.count({ where: { status: MemberRequestStatus.Pending } }),
+    tab === "all" ? getSmallGroups(where) : Promise.resolve([]),
+    tab === "all"
+      ? db.lifeStage.findMany({ orderBy: { order: "asc" }, select: { id: true, name: true } })
+      : Promise.resolve([]),
+    tab === "requests" ? getPendingRequests() : Promise.resolve([]),
   ])
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
       <div className="flex items-center justify-between">
         <div>
-          <div className="flex items-center gap-2">
-            <h2 className="type-headline">Small Groups</h2>
-            {pendingCount > 0 && (
-              <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
-                {pendingCount} pending
-              </span>
-            )}
-          </div>
+          <h2 className="type-headline">Small Groups</h2>
           <p className="text-sm text-muted-foreground">
             Manage fellowship groups and their hierarchy
           </p>
         </div>
-        <SmallGroupsToolbar />
+        {tab === "all" && <SmallGroupsToolbar />}
       </div>
 
-      <SmallGroupsFilters
-        key={`${search}-${lifeStageId}-${genderFocus}-${meetingFormat}-${status}`}
-        lifeStages={lifeStages}
-        search={search}
-        lifeStageId={lifeStageId}
-        genderFocus={genderFocus}
-        meetingFormat={meetingFormat}
-        status={status}
-      />
+      <SmallGroupsTabs pendingRequestCount={pendingRequestCount} />
 
-      <SmallGroupsTable groups={groups} />
+      {tab === "requests" ? (
+        <RequestsTable requests={requests} />
+      ) : (
+        <>
+          <SmallGroupsFilters
+            key={`${search}-${lifeStageId}-${genderFocus}-${meetingFormat}-${status}`}
+            lifeStages={lifeStages}
+            search={search}
+            lifeStageId={lifeStageId}
+            genderFocus={genderFocus}
+            meetingFormat={meetingFormat}
+            status={status}
+          />
+          <SmallGroupsTable groups={groups} />
+        </>
+      )}
     </div>
   )
 }

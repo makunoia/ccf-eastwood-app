@@ -123,47 +123,68 @@ export async function submitMemberConfirmations(
                 continue
               }
 
-              const newMember = await tx.member.create({
-                data: {
-                  firstName: guest.firstName,
-                  lastName: guest.lastName,
-                  email: guest.email ?? null,
-                  phone: guest.phone ?? null,
-                  notes: guest.notes ?? null,
-                  lifeStageId: guest.lifeStageId ?? null,
-                  gender: guest.gender ?? null,
-                  language: guest.language,
-                  birthMonth: guest.birthMonth ?? null,
-                  birthYear: guest.birthYear ?? null,
-                  workCity: guest.workCity ?? null,
-                  workIndustry: guest.workIndustry ?? null,
-                  meetingPreference: guest.meetingPreference ?? null,
-                  dateJoined: now,
-                  smallGroupId: group.id,
-                  groupStatus: "Member",
-                  ...(guest.scheduleDayOfWeek !== null &&
-                  guest.scheduleTimeStart !== null
-                    ? {
-                        schedulePreferences: {
-                          create: {
-                            dayOfWeek: guest.scheduleDayOfWeek,
-                            timeStart: guest.scheduleTimeStart!,
+              // Check if a member with the same email already exists to avoid
+              // a P2002 unique constraint violation on Member.email.
+              const existingByEmail = guest.email
+                ? await tx.member.findUnique({
+                    where: { email: guest.email },
+                    select: { id: true },
+                  })
+                : null
+
+              let resolvedMemberId: string
+
+              if (existingByEmail) {
+                // Re-use the existing member — just move them into this group
+                await tx.member.update({
+                  where: { id: existingByEmail.id },
+                  data: { smallGroupId: group.id, groupStatus: "Member" },
+                })
+                resolvedMemberId = existingByEmail.id
+              } else {
+                const newMember = await tx.member.create({
+                  data: {
+                    firstName: guest.firstName,
+                    lastName: guest.lastName,
+                    email: guest.email ?? null,
+                    phone: guest.phone ?? null,
+                    notes: guest.notes ?? null,
+                    lifeStageId: guest.lifeStageId ?? null,
+                    gender: guest.gender ?? null,
+                    language: guest.language,
+                    birthMonth: guest.birthMonth ?? null,
+                    birthYear: guest.birthYear ?? null,
+                    workCity: guest.workCity ?? null,
+                    workIndustry: guest.workIndustry ?? null,
+                    meetingPreference: guest.meetingPreference ?? null,
+                    dateJoined: now,
+                    smallGroupId: group.id,
+                    groupStatus: "Member",
+                    ...(guest.scheduleDayOfWeek !== null &&
+                    guest.scheduleTimeStart !== null
+                      ? {
+                          schedulePreferences: {
+                            create: {
+                              dayOfWeek: guest.scheduleDayOfWeek,
+                              timeStart: guest.scheduleTimeStart!,
+                            },
                           },
-                        },
-                      }
-                    : {}),
-                },
-                select: { id: true },
-              })
+                        }
+                      : {}),
+                  },
+                  select: { id: true },
+                })
+                resolvedMemberId = newMember.id
+              }
 
               // Link guest → member and transfer event registrations
               await tx.guest.update({
                 where: { id: req.guestId },
-                data: { memberId: newMember.id },
+                data: { memberId: resolvedMemberId },
               })
               await tx.eventRegistrant.updateMany({
                 where: { guestId: req.guestId },
-                data: { memberId: newMember.id, guestId: null },
+                data: { memberId: resolvedMemberId, guestId: null },
               })
 
               await tx.smallGroupLog.create({
@@ -171,7 +192,7 @@ export async function submitMemberConfirmations(
                   smallGroupId: group.id,
                   action: "TempAssignmentConfirmed",
                   guestId: req.guestId,
-                  memberId: newMember.id,
+                  memberId: resolvedMemberId,
                   description: `${guest.firstName} ${guest.lastName} was confirmed by the group leader${catchMechContext} and promoted to member`,
                 },
               })
@@ -179,11 +200,11 @@ export async function submitMemberConfirmations(
                 data: {
                   smallGroupId: group.id,
                   action: "MemberAdded",
-                  memberId: newMember.id,
+                  memberId: resolvedMemberId,
                   description: `${guest.firstName} ${guest.lastName} joined the group${catchMechContext}`,
                 },
               })
-              promotedMemberId = newMember.id
+              promotedMemberId = resolvedMemberId
               memberConfirmed = true
             } else {
               // Guest already promoted externally — track the existing member ID
@@ -325,7 +346,8 @@ export async function submitMemberConfirmations(
     }
 
     return { success: true, data: undefined }
-  } catch {
+  } catch (e) {
+    console.error("[submitMemberConfirmations] error:", e)
     return { success: false, error: "Failed to submit confirmations. Please try again." }
   }
 }

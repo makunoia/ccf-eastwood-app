@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache"
 import { Prisma } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
+import { auth } from "@/lib/auth"
+import { canWrite } from "@/lib/permissions"
 import { memberSchema, type MemberFormValues } from "@/lib/validations/member"
 import { checkDuplicateContactInfo } from "@/lib/duplicate-check"
 
@@ -10,9 +12,19 @@ type ActionResult<T = void> =
   | { success: true; data: T }
   | { success: false; error: string }
 
+async function requireWrite(): Promise<{ error: string } | null> {
+  const session = await auth()
+  if (!session?.user) return { error: "Not authenticated." }
+  if (!canWrite(session, "Members")) return { error: "Unauthorized." }
+  return null
+}
+
 export async function createMember(
   raw: MemberFormValues
 ): Promise<ActionResult<{ id: string }>> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   const parsed = memberSchema.safeParse(raw)
   if (!parsed.success) {
     return {
@@ -62,6 +74,9 @@ export async function updateMember(
   id: string,
   raw: MemberFormValues
 ): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   const parsed = memberSchema.safeParse(raw)
   if (!parsed.success) {
     return {
@@ -109,6 +124,9 @@ export async function updateMember(
 }
 
 export async function deleteMember(id: string): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   try {
     await db.member.delete({ where: { id } })
     revalidatePath("/members")
@@ -134,6 +152,9 @@ export async function saveMemberMatchingPreferences(
   memberId: string,
   prefs: MemberMatchingPrefs
 ): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   try {
     const hasSchedule =
       prefs.scheduleDayOfWeek !== "" &&

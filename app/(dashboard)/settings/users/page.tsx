@@ -2,6 +2,9 @@ import { db } from "@/lib/db"
 import { type UserRow, type EventOption } from "./columns"
 import { UsersTable } from "./users-table"
 import { UsersToolbar } from "./toolbar"
+import type { FeatureArea, PermissionAction } from "@/app/generated/prisma/client"
+
+type PermissionEntry = { feature: FeatureArea; actions: PermissionAction[] }
 
 async function getUsers(): Promise<UserRow[]> {
   const users = await db.user.findMany({
@@ -16,24 +19,40 @@ async function getUsers(): Promise<UserRow[]> {
       mustChangePassword: true,
       requiresTotpSetup: true,
       createdAt: true,
-      permissions: { select: { feature: true } },
+      permissions: { select: { feature: true, action: true } },
       eventAccess: { select: { eventId: true } },
     },
   })
 
-  return users.map((u) => ({
-    id: u.id,
-    name: u.name,
-    email: u.email,
-    role: u.role,
-    totpEnabled: u.totpEnabled,
-    mustChangePassword: u.mustChangePassword,
-    requiresTotpSetup: u.requiresTotpSetup,
-    createdAt: u.createdAt,
-    permissions: u.permissions.map((p) => p.feature),
-    eventAccess: u.eventAccess.map((e) => e.eventId),
-    tempPassword: u.tempPassword,
-  }))
+  return users.map((u) => {
+    // Group permission rows by feature
+    const permMap = new Map<FeatureArea, PermissionAction[]>()
+    for (const { feature, action } of u.permissions) {
+      const existing = permMap.get(feature)
+      if (existing) {
+        existing.push(action)
+      } else {
+        permMap.set(feature, [action])
+      }
+    }
+    const permissions: PermissionEntry[] = Array.from(permMap.entries()).map(
+      ([feature, actions]) => ({ feature, actions })
+    )
+
+    return {
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      role: u.role,
+      totpEnabled: u.totpEnabled,
+      mustChangePassword: u.mustChangePassword,
+      requiresTotpSetup: u.requiresTotpSetup,
+      createdAt: u.createdAt,
+      permissions,
+      eventAccess: u.eventAccess.map((e) => e.eventId),
+      tempPassword: u.tempPassword,
+    }
+  })
 }
 
 async function getEvents(): Promise<EventOption[]> {

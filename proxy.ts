@@ -4,6 +4,7 @@ import type { NextRequest } from "next/server"
 import type { Session } from "next-auth"
 import { authConfig } from "./auth.config"
 import type { FeatureArea } from "@/app/generated/prisma/client"
+import type { UserPermissionEntry } from "@/types/next-auth"
 
 // Create a lightweight Auth.js instance for middleware (no Prisma/DB imports)
 const { auth } = NextAuth(authConfig)
@@ -90,8 +91,8 @@ export default auth(function proxy(req: NextRequest & { auth: Session | null }) 
   // ── Staff: enforce feature-based route access ──────────────────────────────
   for (const [prefix, feature] of ROUTE_PERMISSIONS) {
     if (pathname.startsWith(prefix)) {
-      const permissions: FeatureArea[] = user.permissions ?? []
-      if (!permissions.includes(feature)) {
+      const permissions: UserPermissionEntry[] = user.permissions ?? []
+      if (!permissions.some((p) => p.feature === feature)) {
         return NextResponse.redirect(new URL("/dashboard", req.url))
       }
 

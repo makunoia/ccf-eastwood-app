@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { db } from "@/lib/db"
+import { auth } from "@/lib/auth"
+import { canWrite } from "@/lib/permissions"
 import { guestSchema, type GuestFormValues } from "@/lib/validations/guest"
 import { checkDuplicateContactInfo } from "@/lib/duplicate-check"
 
@@ -10,9 +12,19 @@ type ActionResult<T = void> =
   | { success: true; data: T }
   | { success: false; error: string }
 
+async function requireWrite(): Promise<{ error: string } | null> {
+  const session = await auth()
+  if (!session?.user) return { error: "Not authenticated." }
+  if (!canWrite(session, "Guests")) return { error: "Unauthorized." }
+  return null
+}
+
 export async function createGuest(
   raw: GuestFormValues
 ): Promise<ActionResult<{ id: string }>> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   const parsed = guestSchema.safeParse(raw)
   if (!parsed.success) {
     return {
@@ -57,6 +69,9 @@ export async function updateGuest(
   id: string,
   raw: GuestFormValues
 ): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   const parsed = guestSchema.safeParse(raw)
   if (!parsed.success) {
     return {
@@ -100,6 +115,9 @@ export async function updateGuest(
 }
 
 export async function deleteGuest(id: string): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   try {
     await db.guest.delete({ where: { id } })
     revalidatePath("/guests")
@@ -113,6 +131,9 @@ export async function promoteGuestToMember(
   guestId: string,
   groupId: string
 ): Promise<ActionResult<{ memberId: string }>> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   try {
     const guest = await db.guest.findUnique({
       where: { id: guestId },
@@ -257,6 +278,9 @@ export async function saveGuestMatchingProfile(
   guestId: string,
   raw: GuestMatchingProfileInput
 ): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   const parsed = guestMatchingProfileSchema.safeParse(raw)
   if (!parsed.success) {
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
@@ -289,6 +313,9 @@ export async function saveGuestClaimedGroup(
   guestId: string,
   smallGroupId: string
 ): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   try {
     const group = await db.smallGroup.findUnique({ where: { id: smallGroupId }, select: { id: true } })
     if (!group) return { success: false, error: "Small group not found" }
@@ -304,6 +331,9 @@ export async function saveGuestClaimedGroup(
 }
 
 export async function clearGuestClaimedGroup(guestId: string): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   try {
     await db.guest.update({
       where: { id: guestId },

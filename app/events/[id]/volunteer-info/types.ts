@@ -4,8 +4,12 @@ export const groupFieldsSchema = z.object({
   name: z.string().min(1),
   lifeStageId: z.string().nullable(),
   genderFocus: z.enum(["Male", "Female", "Mixed"]).nullable(),
+  language: z.array(z.string()),
+  ageRangeMin: z.number().int().min(0).nullable(),
+  ageRangeMax: z.number().int().min(0).nullable(),
   meetingFormat: z.enum(["Online", "Hybrid", "InPerson"]).nullable(),
   locationCity: z.string().nullable(),
+  memberLimit: z.number().int().min(1).nullable(),
   scheduleDayOfWeek: z.number().int().min(0).max(6).nullable(),
   scheduleTimeStart: z.string().regex(/^\d{2}:\d{2}$/).nullable(),
   scheduleTimeEnd: z.string().regex(/^\d{2}:\d{2}$/).nullable(),
@@ -45,8 +49,12 @@ export type VolunteerIdentity = {
     name: string
     lifeStageId: string | null
     genderFocus: "Male" | "Female" | "Mixed" | null
+    language: string[]
+    ageRangeMin: number | null
+    ageRangeMax: number | null
     meetingFormat: "Online" | "Hybrid" | "InPerson" | null
     locationCity: string | null
+    memberLimit: number | null
     scheduleDayOfWeek: number | null
     scheduleTimeStart: string | null
     scheduleTimeEnd: string | null

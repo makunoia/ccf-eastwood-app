@@ -4,7 +4,7 @@ import * as React from "react"
 import { type ColumnDef } from "@tanstack/react-table"
 import { IconDots, IconPencil, IconTrash, IconShieldCheck, IconShield } from "@tabler/icons-react"
 import { toast } from "sonner"
-import type { FeatureArea } from "@/app/generated/prisma/client"
+import type { FeatureArea, PermissionAction } from "@/app/generated/prisma/client"
 
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -26,12 +26,17 @@ import {
 import { deleteUser } from "./actions"
 import { UserDialog } from "./user-dialog"
 
+export type PermissionEntry = {
+  feature: FeatureArea
+  actions: PermissionAction[]
+}
+
 export type UserRow = {
   id: string
   name: string | null
   email: string
   role: "SuperAdmin" | "Staff"
-  permissions: FeatureArea[]
+  permissions: PermissionEntry[]
   eventAccess: string[]
   tempPassword: string | null
   totpEnabled: boolean
@@ -41,6 +46,22 @@ export type UserRow = {
 }
 
 export type EventOption = { id: string; name: string }
+
+const FEATURE_LABELS: Record<FeatureArea, string> = {
+  Members: "Members",
+  Guests: "Guests",
+  SmallGroups: "Small Groups",
+  Ministries: "Ministries",
+  Events: "Events",
+  Volunteers: "Volunteers",
+}
+
+const ACTION_LABELS: Record<PermissionAction, string> = {
+  Read: "R",
+  Write: "W",
+  Import: "I",
+  Export: "E",
+}
 
 function StatusBadge({ user }: { user: UserRow }) {
   if (user.requiresTotpSetup) {
@@ -177,9 +198,12 @@ export function buildColumns(
         }
         return (
           <div className="flex flex-wrap gap-1">
-            {row.original.permissions.map((p) => (
-              <Badge key={p} variant="outline" className="text-xs">
-                {p === "SmallGroups" ? "Small Groups" : p}
+            {row.original.permissions.map(({ feature, actions }) => (
+              <Badge key={feature} variant="outline" className="text-xs gap-1">
+                <span>{FEATURE_LABELS[feature]}</span>
+                <span className="text-muted-foreground font-mono">
+                  {actions.map((a) => ACTION_LABELS[a]).sort().join("")}
+                </span>
               </Badge>
             ))}
           </div>

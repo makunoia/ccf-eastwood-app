@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { db } from "@/lib/db"
+import { auth } from "@/lib/auth"
+import { canWrite } from "@/lib/permissions"
 import { eventSchema, type EventFormValues } from "@/lib/validations/event"
 import { suggestBreakoutGroup } from "@/lib/breakout-suggestion"
 import { fetchBreakoutCandidates } from "@/lib/breakout-suggestion-server"
@@ -119,6 +121,8 @@ const registrantSchema = z.object({
   workCity: z.string().optional().nullable().transform((v) => v || null),
   scheduleDayOfWeek: z.number().int().min(0).max(6).optional().nullable(),
   scheduleTimeStart: z.string().optional().nullable().transform((v) => v || null),
+  scheduleTimeEnd: z.string().optional().nullable().transform((v) => v || null),
+  claimedSmallGroupId: z.string().optional().nullable().transform((v) => v || null),
   // Optional dietary fields — collected when the Dietary registration module is enabled
   dietaryPreference: z
     .enum([
@@ -136,9 +140,19 @@ type ActionResult<T = void> =
   | { success: true; data: T }
   | { success: false; error: string }
 
+async function requireWrite(): Promise<{ error: string } | null> {
+  const session = await auth()
+  if (!session?.user) return { error: "Not authenticated." }
+  if (!canWrite(session, "Events")) return { error: "Unauthorized." }
+  return null
+}
+
 export async function createEvent(
   raw: EventFormValues
 ): Promise<ActionResult<{ id: string }>> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   const parsed = eventSchema.safeParse(raw)
   if (!parsed.success) {
     return {
@@ -178,6 +192,9 @@ export async function updateEvent(
   id: string,
   raw: EventFormValues
 ): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   const parsed = eventSchema.safeParse(raw)
   if (!parsed.success) {
     return {
@@ -218,6 +235,9 @@ export async function updateEvent(
 }
 
 export async function deleteEvent(id: string): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   try {
     await db.event.delete({ where: { id } })
     revalidatePath("/events")
@@ -537,7 +557,7 @@ export async function createRegistrant(
         select: {
           email: true, phone: true, birthMonth: true, birthYear: true,
           lifeStageId: true, gender: true, language: true, meetingPreference: true, workCity: true,
-          scheduleDayOfWeek: true, scheduleTimeStart: true,
+          scheduleDayOfWeek: true, scheduleTimeStart: true, scheduleTimeEnd: true, claimedSmallGroupId: true,
         },
       })
       const guestUpdates: Record<string, unknown> = {}
@@ -552,6 +572,8 @@ export async function createRegistrant(
       if (!existing.workCity && parsed.data.workCity) guestUpdates.workCity = parsed.data.workCity
       if (existing.scheduleDayOfWeek == null && parsed.data.scheduleDayOfWeek != null) guestUpdates.scheduleDayOfWeek = parsed.data.scheduleDayOfWeek
       if (!existing.scheduleTimeStart && parsed.data.scheduleTimeStart) guestUpdates.scheduleTimeStart = parsed.data.scheduleTimeStart
+      if (!existing.scheduleTimeEnd && parsed.data.scheduleTimeEnd) guestUpdates.scheduleTimeEnd = parsed.data.scheduleTimeEnd
+      if (!existing.claimedSmallGroupId && parsed.data.claimedSmallGroupId) guestUpdates.claimedSmallGroupId = parsed.data.claimedSmallGroupId
 
       const [registrant] = await db.$transaction([
         db.eventRegistrant.create({
@@ -589,6 +611,8 @@ export async function createRegistrant(
         workCity: parsed.data.workCity ?? null,
         scheduleDayOfWeek: parsed.data.scheduleDayOfWeek ?? null,
         scheduleTimeStart: parsed.data.scheduleTimeStart ?? null,
+        scheduleTimeEnd: parsed.data.scheduleTimeEnd ?? null,
+        claimedSmallGroupId: parsed.data.claimedSmallGroupId ?? null,
       }
 
       // Deduplicate guests: try phone first, then email, then last name + birthday
@@ -641,7 +665,9 @@ export async function createRegistrant(
             ...(matchingProfile.scheduleDayOfWeek !== null && {
               scheduleDayOfWeek: matchingProfile.scheduleDayOfWeek,
               scheduleTimeStart: matchingProfile.scheduleTimeStart,
+              scheduleTimeEnd: matchingProfile.scheduleTimeEnd,
             }),
+          ...(matchingProfile.claimedSmallGroupId !== null && { claimedSmallGroupId: matchingProfile.claimedSmallGroupId }),
           },
         })
       } else {
@@ -660,6 +686,8 @@ export async function createRegistrant(
             workCity: matchingProfile.workCity,
             scheduleDayOfWeek: matchingProfile.scheduleDayOfWeek,
             scheduleTimeStart: matchingProfile.scheduleTimeStart,
+            scheduleTimeEnd: matchingProfile.scheduleTimeEnd,
+            claimedSmallGroupId: matchingProfile.claimedSmallGroupId,
           },
           select: { id: true },
         })
@@ -737,6 +765,9 @@ export async function markRegistrantPaid(
   paymentReference: string,
   eventId: string
 ): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   if (!paymentReference.trim()) {
     return { success: false, error: "Payment reference is required" }
   }
@@ -756,6 +787,9 @@ export async function markRegistrantAttended(
   registrantId: string,
   eventId: string
 ): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   try {
     await db.eventRegistrant.update({
       where: { id: registrantId },
@@ -772,6 +806,9 @@ export async function unmarkRegistrantAttended(
   registrantId: string,
   eventId: string
 ): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   try {
     await db.eventRegistrant.update({
       where: { id: registrantId },
@@ -788,6 +825,9 @@ export async function createOccurrence(
   eventId: string,
   date: string // "YYYY-MM-DD" UTC
 ): Promise<ActionResult<{ id: string }>> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   try {
     const dateValue = new Date(`${date}T00:00:00.000Z`)
     const existing = await db.eventOccurrence.findUnique({
@@ -867,6 +907,9 @@ export async function setOccurrenceCheckinOpen(
   isOpen: boolean,
   eventId: string
 ): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   try {
     await db.eventOccurrence.update({
       where: { id: occurrenceId },
@@ -889,6 +932,7 @@ type GuestSmallGroupPrompt = {
     workCity: string | null
     scheduleDayOfWeek: number | null
     scheduleTimeStart: string | null
+    scheduleTimeEnd: string | null
   }
 }
 
@@ -946,7 +990,9 @@ export async function lookupCheckinRegistrant(
             workCity: true,
             scheduleDayOfWeek: true,
             scheduleTimeStart: true,
+            scheduleTimeEnd: true,
             claimedSmallGroupId: true,
+            groupRequests: { select: { status: true } },
           },
         },
       },
@@ -983,27 +1029,25 @@ export async function lookupCheckinRegistrant(
       }
 
       let guestSmallGroupPrompt: GuestSmallGroupPrompt | null = null
-      if (occurrenceId !== null && matched.guestId && matched.guest) {
+      if (matched.guestId && matched.guest) {
         const g = matched.guest
-        const profileIncomplete = !g.lifeStageId || !g.gender || !g.meetingPreference
         const noClaimedGroup = !g.claimedSmallGroupId
-        if (profileIncomplete && noClaimedGroup) {
-          const priorCheckInCount = await db.occurrenceAttendee.count({
-            where: { registrantId: matched.id, occurrence: { eventId } },
-          })
-          if (priorCheckInCount >= 1) {
-            guestSmallGroupPrompt = {
-              guestId: matched.guestId,
-              existingProfile: {
-                lifeStageId: g.lifeStageId,
-                gender: g.gender,
-                language: g.language,
-                meetingPreference: g.meetingPreference,
-                workCity: g.workCity,
-                scheduleDayOfWeek: g.scheduleDayOfWeek,
-                scheduleTimeStart: g.scheduleTimeStart,
-              },
-            }
+        const hasPendingRequest = g.groupRequests.some(
+          (r) => r.status === "Pending" || r.status === "Confirmed"
+        )
+        if (noClaimedGroup && !hasPendingRequest) {
+          guestSmallGroupPrompt = {
+            guestId: matched.guestId,
+            existingProfile: {
+              lifeStageId: g.lifeStageId,
+              gender: g.gender,
+              language: g.language,
+              meetingPreference: g.meetingPreference,
+              workCity: g.workCity,
+              scheduleDayOfWeek: g.scheduleDayOfWeek,
+              scheduleTimeStart: g.scheduleTimeStart,
+              scheduleTimeEnd: g.scheduleTimeEnd,
+            },
           }
         }
       }
@@ -1074,7 +1118,9 @@ export async function lookupCheckinRegistrantByProfile(
             workCity: true,
             scheduleDayOfWeek: true,
             scheduleTimeStart: true,
+            scheduleTimeEnd: true,
             claimedSmallGroupId: true,
+            groupRequests: { select: { status: true } },
           },
         },
       },
@@ -1117,27 +1163,25 @@ export async function lookupCheckinRegistrantByProfile(
       }
 
       let guestSmallGroupPrompt: GuestSmallGroupPrompt | null = null
-      if (occurrenceId !== null && matched.guestId && matched.guest) {
+      if (matched.guestId && matched.guest) {
         const g = matched.guest
-        const profileIncomplete = !g.lifeStageId || !g.gender || !g.meetingPreference
         const noClaimedGroup = !g.claimedSmallGroupId
-        if (profileIncomplete && noClaimedGroup) {
-          const priorCheckInCount = await db.occurrenceAttendee.count({
-            where: { registrantId: matched.id, occurrence: { eventId } },
-          })
-          if (priorCheckInCount >= 1) {
-            guestSmallGroupPrompt = {
-              guestId: matched.guestId,
-              existingProfile: {
-                lifeStageId: g.lifeStageId,
-                gender: g.gender,
-                language: g.language,
-                meetingPreference: g.meetingPreference,
-                workCity: g.workCity,
-                scheduleDayOfWeek: g.scheduleDayOfWeek,
-                scheduleTimeStart: g.scheduleTimeStart,
-              },
-            }
+        const hasPendingRequest = g.groupRequests.some(
+          (r) => r.status === "Pending" || r.status === "Confirmed"
+        )
+        if (noClaimedGroup && !hasPendingRequest) {
+          guestSmallGroupPrompt = {
+            guestId: matched.guestId,
+            existingProfile: {
+              lifeStageId: g.lifeStageId,
+              gender: g.gender,
+              language: g.language,
+              meetingPreference: g.meetingPreference,
+              workCity: g.workCity,
+              scheduleDayOfWeek: g.scheduleDayOfWeek,
+              scheduleTimeStart: g.scheduleTimeStart,
+              scheduleTimeEnd: g.scheduleTimeEnd,
+            },
           }
         }
       }
