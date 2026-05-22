@@ -99,7 +99,8 @@ function exportRegistrantsCSV(
   const isRecurringOrMultiDay = eventType === "Recurring" || eventType === "MultiDay"
 
   const headers = [
-    "Name",
+    "First Name",
+    "Last Name",
     "Nickname",
     "Mobile",
     "Email",
@@ -109,6 +110,9 @@ function exportRegistrantsCSV(
   ]
 
   const rows = registrants.map((r) => {
+    const firstName = r.member?.firstName ?? r.guest?.firstName ?? r.firstName ?? ""
+    const lastName  = r.member?.lastName  ?? r.guest?.lastName  ?? r.lastName  ?? ""
+
     const dateStr = isRecurringOrMultiDay
       ? new Date(r.createdAt).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })
       : r.attendedAt
@@ -116,7 +120,8 @@ function exportRegistrantsCSV(
         : ""
 
     const row = [
-      displayName(r) ?? "",
+      firstName,
+      lastName,
       r.nickname ?? "",
       displayMobile(r) ?? "",
       displayEmail(r) ?? "",

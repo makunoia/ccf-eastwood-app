@@ -1,6 +1,6 @@
 import type { ReactNode } from "react"
 import { notFound } from "next/navigation"
-import { UserCheck, UserPlus, Users, UsersRound } from "lucide-react"
+import { UserCheck, UserPlus, Users } from "lucide-react"
 import { db } from "@/lib/db"
 import { isReturner } from "@/lib/session-stats"
 import { BreadcrumbOverride } from "@/components/breadcrumb-context"
@@ -186,6 +186,7 @@ export default async function OccurrenceDetailPage({
   const totalCount = attendeesWithStats.length
   const newCount = attendeesWithStats.filter((a) => !a.isReturner).length
   const volunteersPresent = attendeesWithStats.filter((a) => a.isVolunteer).length
+  const participantCount = totalCount - volunteersPresent
   const menCount = attendeesWithStats.filter((a) => a.gender === "Male").length
   const womenCount = attendeesWithStats.filter((a) => a.gender === "Female").length
 
@@ -269,36 +270,23 @@ export default async function OccurrenceDetailPage({
       />
 
       <div className="flex flex-1 flex-col gap-6 p-6">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          <StatCard label="Total" value={totalCount} icon={<Users className="size-4" />} />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <StatCard
+            label="Total"
+            value={totalCount}
+            icon={<Users className="size-4" />}
+            genderBar={{ men: menCount, women: womenCount }}
+          />
           <StatCard label="New" value={newCount} icon={<UserPlus className="size-4" />} />
           <StatCard
             label="Attendance"
-            value={
-              <>
-                {totalCount}
-                <span className="text-lg font-normal text-muted-foreground">
-                  {" "}/ {totalRegistrants}
-                </span>
-              </>
-            }
+            value={participantCount}
             icon={<Users className="size-4" />}
           />
           <StatCard
             label="Volunteers"
             value={volunteersPresent}
             icon={<UserCheck className="size-4" />}
-          />
-          <StatCard
-            label="Men / Women"
-            value={
-              <>
-                {menCount}
-                <span className="text-muted-foreground/50"> / </span>
-                {womenCount}
-              </>
-            }
-            icon={<UsersRound className="size-4" />}
           />
         </div>
 
@@ -319,13 +307,16 @@ function StatCard({
   label,
   value,
   icon,
+  genderBar,
 }: {
   label: string
   value: ReactNode
   icon: ReactNode
+  genderBar?: { men: number; women: number }
 }) {
+  const genderTotal = (genderBar?.men ?? 0) + (genderBar?.women ?? 0)
   return (
-    <div className="flex flex-col gap-3 rounded-lg border px-5 py-5">
+    <div className="relative flex flex-col gap-3 overflow-hidden rounded-lg border px-5 py-5">
       <div className="flex items-center justify-between">
         <p className="text-[11px] font-semibold tracking-[0.15em] uppercase text-muted-foreground">
           {label}
@@ -335,6 +326,24 @@ function StatCard({
       <p className="text-3xl font-semibold tabular-nums tracking-tight text-foreground">
         {value}
       </p>
+      {genderBar && genderTotal > 0 && (
+        <div className="absolute bottom-0 left-0 right-0 flex h-1">
+          {genderBar.men > 0 && (
+            <div
+              title={`${genderBar.men} men`}
+              className="cursor-default bg-blue-400 transition-colors hover:bg-blue-500"
+              style={{ flex: genderBar.men }}
+            />
+          )}
+          {genderBar.women > 0 && (
+            <div
+              title={`${genderBar.women} women`}
+              className="cursor-default bg-pink-400 transition-colors hover:bg-pink-500"
+              style={{ flex: genderBar.women }}
+            />
+          )}
+        </div>
+      )}
     </div>
   )
 }
