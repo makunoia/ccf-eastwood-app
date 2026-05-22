@@ -5,6 +5,7 @@ import { IconCheck } from "@tabler/icons-react"
 import { PhonePHInput } from "@/components/ui/phone-ph-input"
 import { OptionalEmailInput } from "@/components/ui/optional-email-input"
 import { TimeInput } from "@/components/ui/time-input"
+import { MultiSelect } from "@/components/ui/multi-select"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -15,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
 import { lookupVolunteer, submitVolunteerInfo } from "./actions"
 import { type VolunteerIdentity, type VolunteerInfoInput, type GroupFields } from "./types"
 
@@ -35,8 +37,8 @@ const MEETING_FORMAT_OPTIONS = [
 
 const GENDER_FOCUS_OPTIONS = [
   { value: "Mixed", label: "Mixed" },
-  { value: "Male", label: "Men only" },
-  { value: "Female", label: "Women only" },
+  { value: "Male", label: "Male" },
+  { value: "Female", label: "Female" },
 ] as const
 
 type LeadershipStatus = "leader" | "timothy" | "none"
@@ -46,8 +48,12 @@ function emptyGroupFields(): GroupFields {
     name: "",
     lifeStageId: null,
     genderFocus: null,
+    language: [],
+    ageRangeMin: null,
+    ageRangeMax: null,
     meetingFormat: null,
     locationCity: null,
+    memberLimit: null,
     scheduleDayOfWeek: null,
     scheduleTimeStart: null,
     scheduleTimeEnd: null,
@@ -103,16 +109,15 @@ function GroupFieldsEditor({
         <div className="space-y-1.5">
           <Label>Gender focus</Label>
           <Select
-            value={value.genderFocus ?? "none"}
+            value={value.genderFocus ?? ""}
             onValueChange={(v) =>
-              onChange({ ...value, genderFocus: v === "none" ? null : (v as GroupFields["genderFocus"]) })
+              onChange({ ...value, genderFocus: v as GroupFields["genderFocus"] })
             }
           >
             <SelectTrigger>
               <SelectValue placeholder="Select" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="none">Not specified</SelectItem>
               {GENDER_FOCUS_OPTIONS.map((o) => (
                 <SelectItem key={o.value} value={o.value}>
                   {o.label}
@@ -120,6 +125,39 @@ function GroupFieldsEditor({
               ))}
             </SelectContent>
           </Select>
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>Language</Label>
+        <MultiSelect
+          options={LANGUAGE_OPTIONS}
+          value={value.language}
+          onChange={(v) => onChange({ ...value, language: v })}
+          placeholder="Select languages"
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label>Min Age</Label>
+          <Input
+            type="number"
+            min={0}
+            value={value.ageRangeMin ?? ""}
+            onChange={(e) => onChange({ ...value, ageRangeMin: e.target.value ? parseInt(e.target.value, 10) : null })}
+            placeholder="e.g. 18"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Max Age</Label>
+          <Input
+            type="number"
+            min={0}
+            value={value.ageRangeMax ?? ""}
+            onChange={(e) => onChange({ ...value, ageRangeMax: e.target.value ? parseInt(e.target.value, 10) : null })}
+            placeholder="e.g. 30"
+          />
         </div>
       </div>
 
@@ -148,12 +186,34 @@ function GroupFieldsEditor({
 
         <div className="space-y-1.5">
           <Label>Location / City</Label>
-          <Input
-            value={value.locationCity ?? ""}
-            onChange={(e) => onChange({ ...value, locationCity: e.target.value || null })}
-            placeholder="e.g. Makati"
-          />
+          <Select
+            value={value.locationCity ?? "_none"}
+            onValueChange={(v) => onChange({ ...value, locationCity: v === "_none" ? null : v })}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select city" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="_none">Not specified</SelectItem>
+              {CITY_OPTIONS.map((city) => (
+                <SelectItem key={city} value={city}>
+                  {city}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>Member Limit</Label>
+        <Input
+          type="number"
+          min={1}
+          value={value.memberLimit ?? ""}
+          onChange={(e) => onChange({ ...value, memberLimit: e.target.value ? parseInt(e.target.value, 10) : null })}
+          placeholder="e.g. 12"
+        />
       </div>
 
       <div className="space-y-2">
@@ -263,8 +323,12 @@ export function VolunteerInfoForm({ eventId, lifeStages }: Props) {
         name: v.ledGroup.name,
         lifeStageId: v.ledGroup.lifeStageId,
         genderFocus: v.ledGroup.genderFocus,
+        language: v.ledGroup.language,
+        ageRangeMin: v.ledGroup.ageRangeMin,
+        ageRangeMax: v.ledGroup.ageRangeMax,
         meetingFormat: v.ledGroup.meetingFormat,
         locationCity: v.ledGroup.locationCity,
+        memberLimit: v.ledGroup.memberLimit,
         scheduleDayOfWeek: v.ledGroup.scheduleDayOfWeek,
         scheduleTimeStart: v.ledGroup.scheduleTimeStart,
         scheduleTimeEnd: v.ledGroup.scheduleTimeEnd,
@@ -401,43 +465,56 @@ export function VolunteerInfoForm({ eventId, lifeStages }: Props) {
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
           Small Group Leadership
         </h2>
-        <p className="text-sm text-muted-foreground">
-          What is your current small group leadership status?
-        </p>
 
-        <div className="flex gap-2">
-          {(["leader", "timothy", "none"] as const).map((v) => (
-            <button
-              key={v}
-              type="button"
-              onClick={() => setLeadershipStatus(v)}
-              className={`flex-1 rounded-lg border py-2 text-sm font-medium transition-colors ${
-                leadershipStatus === v
-                  ? "border-primary bg-primary text-primary-foreground"
-                  : "hover:bg-muted/50"
-              }`}
-            >
-              {v === "leader" ? "I lead a group" : v === "timothy" ? "I'm a Timothy" : "Neither"}
-            </button>
-          ))}
-        </div>
-
-        {leadershipStatus === "leader" && (
+        {identity?.ledGroup ? (
+          // Already leads a group — skip the status question, show form directly
           <GroupFieldsEditor
             value={groupFields}
             onChange={setGroupFields}
             lifeStages={lifeStages}
             nameLabel="Group name"
           />
-        )}
+        ) : (
+          <>
+            <p className="text-sm text-muted-foreground">
+              What is your current small group leadership status?
+            </p>
 
-        {leadershipStatus === "timothy" && (
-          <GroupFieldsEditor
-            value={groupFields}
-            onChange={setGroupFields}
-            lifeStages={lifeStages}
-            nameLabel="Intended group name"
-          />
+            <div className="flex gap-2">
+              {(["leader", "timothy", "none"] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setLeadershipStatus(v)}
+                  className={`flex-1 rounded-lg border py-2 text-sm font-medium transition-colors ${
+                    leadershipStatus === v
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "hover:bg-muted/50"
+                  }`}
+                >
+                  {v === "leader" ? "I lead a group" : v === "timothy" ? "I'm a Timothy" : "Neither"}
+                </button>
+              ))}
+            </div>
+
+            {leadershipStatus === "leader" && (
+              <GroupFieldsEditor
+                value={groupFields}
+                onChange={setGroupFields}
+                lifeStages={lifeStages}
+                nameLabel="Group name"
+              />
+            )}
+
+            {leadershipStatus === "timothy" && (
+              <GroupFieldsEditor
+                value={groupFields}
+                onChange={setGroupFields}
+                lifeStages={lifeStages}
+                nameLabel="Intended group name"
+              />
+            )}
+          </>
         )}
       </section>
 
