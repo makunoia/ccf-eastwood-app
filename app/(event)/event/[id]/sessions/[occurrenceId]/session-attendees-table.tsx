@@ -43,7 +43,8 @@ type FacilitatorRole = (typeof FacilitatorRole)[keyof typeof FacilitatorRole]
 
 export type AttendeeRow = {
   id: string
-  name: string
+  registrantId: string
+  name: string | null
   checkedInAtFormatted: string
   isReturner: boolean
   isMember: boolean
@@ -167,9 +168,6 @@ export function SessionAttendeesTable({
               )}
             </div>
           </div>
-          <p className="text-right text-xs text-muted-foreground">
-            {filtered.length} of {attendees.length} attendee{attendees.length === 1 ? "" : "s"}
-          </p>
         </div>
       )}
 
@@ -189,7 +187,12 @@ export function SessionAttendeesTable({
               {filtered.map((a) => (
                 <div key={a.id} className="flex items-center gap-3 px-4 py-3">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{a.name}</p>
+                    <Link
+                      href={`/event/${eventId}/registrants/${a.registrantId}`}
+                      className="truncate text-sm font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+                    >
+                      {a.name ?? <span className="text-muted-foreground italic">No name</span>}
+                    </Link>
                     <div className="mt-1 flex flex-wrap gap-1">
                       {a.isMember ? (
                         <Badge variant="secondary">Member</Badge>
@@ -228,7 +231,14 @@ export function SessionAttendeesTable({
                 <TableBody>
                   {filtered.map((a) => (
                     <TableRow key={a.id}>
-                      <TableCell className="font-medium">{a.name}</TableCell>
+                      <TableCell>
+                        <Link
+                          href={`/event/${eventId}/registrants/${a.registrantId}`}
+                          className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+                        >
+                          {a.name ?? <span className="text-muted-foreground italic">No name</span>}
+                        </Link>
+                      </TableCell>
                       <TableCell>
                         {a.isReturner ? (
                           <Badge variant="secondary">Returning</Badge>

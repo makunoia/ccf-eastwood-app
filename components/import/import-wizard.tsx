@@ -212,8 +212,10 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
     const payload = previewRows.map((row) => ({
       mapped: row.mapped,
       resolution: row.resolution,
-      existingId: row.duplicate?.existingId,
-      existingType: row.duplicate?.existingType,
+      // Don't pass existingId for recognized rows — they aren't checked in yet and
+      // the import action would skip them if existingId is set.
+      existingId: row.duplicate?.kind === "recognized" ? undefined : row.duplicate?.existingId,
+      existingType: row.duplicate?.kind === "recognized" ? undefined : row.duplicate?.existingType,
     }))
     const importResult = await onImport(payload)
     setImporting(false)
@@ -235,7 +237,7 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
 
   function handleSetAllResolution(resolution: RowResolution) {
     setPreviewRows((prev) =>
-      prev.map((r) => r.duplicate ? { ...r, resolution } : r)
+      prev.map((r) => r.duplicate && r.duplicate.kind !== "recognized" ? { ...r, resolution } : r)
     )
   }
 

@@ -137,10 +137,10 @@ function getAttendeeName(registrant: {
   guest: { firstName: string; lastName: string } | null
   firstName: string | null
   lastName: string | null
-}): string {
+}): string | null {
   if (registrant.member) return `${registrant.member.firstName} ${registrant.member.lastName}`
   if (registrant.guest) return `${registrant.guest.firstName} ${registrant.guest.lastName}`
-  return `${registrant.firstName ?? ""} ${registrant.lastName ?? ""}`.trim()
+  return `${registrant.firstName ?? ""} ${registrant.lastName ?? ""}`.trim() || null
 }
 
 export default async function OccurrenceDetailPage({
@@ -166,6 +166,7 @@ export default async function OccurrenceDetailPage({
 
   const attendeesWithStats = occurrence.attendees.map((a) => ({
     id: a.id,
+    registrantId: a.registrant.id,
     name: getAttendeeName(a.registrant),
     checkedInAtFormatted: a.checkedInAt.toLocaleTimeString("en-PH", {
       hour: "2-digit",

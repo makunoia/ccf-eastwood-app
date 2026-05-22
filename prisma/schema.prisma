@@ -101,6 +101,12 @@ enum SmallGroupLogAction {
   TempAssignmentRejected
 }
 
+enum SmallGroupStatus {
+  Active
+  Pending
+  Inactive
+}
+
 enum UserRole {
   SuperAdmin
   Staff
@@ -247,6 +253,7 @@ model Member {
   guest               Guest?              // set if this Member was promoted from a Guest
   groupRequests       SmallGroupMemberRequest[]
   smallGroupLogs      SmallGroupLog[]
+  logs                MemberLog[]
 }
 
 model Guest {
@@ -328,6 +335,8 @@ model SmallGroup {
   // Leader confirmation token for the public confirmation link
   leaderConfirmationToken String?  @unique
 
+  status           SmallGroupStatus     @default(Active)
+
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
 
@@ -382,6 +391,10 @@ model Event {
   formIncludeDietary          Boolean             @default(false)
   formIncludePayment          Boolean             @default(false)
   autoAssignBreakout          Boolean             @default(false)
+  // Registration page customization
+  registrationPageTitle       String?
+  registrationPageDescription String?
+  registrationPageBannerUrl   String?
   createdAt             DateTime            @default(now())
   updatedAt             DateTime            @updatedAt
 
@@ -396,6 +409,7 @@ model Event {
   buses             Bus[]
   userAccess        UserEventAccess[]
   catchMechSessions CatchMechSession[]
+  memberLogs        MemberLog[]
 }
 
 model EventMinistry {
@@ -711,6 +725,17 @@ model SmallGroupLog {
 
   description  String?
   createdAt    DateTime            @default(now())
+}
+
+model MemberLog {
+  id          String   @id @default(cuid())
+  memberId    String
+  member      Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  action      String
+  description String?
+  eventId     String?
+  event       Event?   @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
 }
 
 // ─── Catch Mech ──────────────────────────────────────────────────────────────

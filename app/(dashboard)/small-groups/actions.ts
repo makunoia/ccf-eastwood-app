@@ -214,6 +214,7 @@ export async function addMemberToGroup(
     const group = await db.smallGroup.findUnique({
       where: { id: groupId },
       select: {
+        status: true,
         memberLimit: true,
         _count: { select: { members: true } },
       },
@@ -235,6 +236,9 @@ export async function addMemberToGroup(
       where: { id: memberId },
       data: { smallGroupId: groupId, groupStatus: "Member" },
     })
+    if (group.status === "Pending") {
+      await db.smallGroup.update({ where: { id: groupId }, data: { status: "Active" } })
+    }
     await db.smallGroupLog.create({
       data: {
         smallGroupId: groupId,

@@ -23,6 +23,9 @@ async function getEvent(id: string) {
       formIncludeDietary: true,
       formIncludePayment: true,
       autoAssignBreakout: true,
+      registrationPageTitle: true,
+      registrationPageDescription: true,
+      registrationPageBannerUrl: true,
       ministries: {
         select: {
           ministry: {
@@ -100,34 +103,56 @@ export default async function RegisterPage({
     timeZone: "UTC",
   })
 
+  const bannerUrl = event.registrationPageBannerUrl ?? null
+  const pageTitle = event.registrationPageTitle || `${event.name} Registration`
+  const pageDescription =
+    event.registrationPageDescription ||
+    [ministryNames, event.type !== "Recurring" ? dateLabel : ""].filter(Boolean).join(" · ")
+
+  const hasBg = !!(bannerUrl || primaryColor)
+
   return (
-    <div className="min-h-svh bg-muted">
+    <div className="relative min-h-svh bg-muted">
+      {bannerUrl && (
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={bannerUrl}
+            alt=""
+            className="fixed inset-0 h-full w-full object-cover"
+          />
+          <div className="fixed inset-0 bg-black/50" />
+        </>
+      )}
+
       {/* Branded header band */}
       <div
-        className={primaryColor ? "px-6 pt-8 pb-16 text-center" : "px-6 pt-12 pb-16 text-center"}
-        style={primaryColor ? { backgroundColor: primaryColor } : undefined}
+        className={`relative px-6 pt-8 pb-16 text-center`}
+        style={!bannerUrl && primaryColor ? { backgroundColor: primaryColor } : undefined}
       >
-        {logoUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={logoUrl}
-            alt={event.name}
-            className="mx-auto mb-4 size-20 rounded-xl object-contain"
-            style={primaryColor ? { backgroundColor: "rgba(255,255,255,0.15)", padding: "0.5rem" } : undefined}
-          />
-        )}
-        <h1 className={`text-2xl font-bold ${primaryColor ? "text-white" : ""}`}>{event.name} Registration</h1>
-        <p className={`mt-1 text-sm ${primaryColor ? "text-white/75" : "text-muted-foreground"}`}>
-          {ministryNames}{ministryNames && event.type !== "Recurring" ? " · " : ""}{event.type !== "Recurring" ? dateLabel : ""}
-        </p>
-        {event.price != null && (
-          <p className={`mt-1 text-sm font-medium ${primaryColor ? "text-white/90" : ""}`}>
-            ₱
-            {(event.price / 100).toLocaleString("en-PH", {
-              minimumFractionDigits: 2,
-            })}
+        <div className="relative mx-auto w-full max-w-md">
+          {logoUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={logoUrl}
+              alt={event.name}
+              className="mx-auto mb-4 size-20 rounded-xl object-contain"
+              style={hasBg ? { backgroundColor: "rgba(255,255,255,0.15)", padding: "0.5rem" } : undefined}
+            />
+          )}
+          <h1 className={`text-2xl font-bold ${hasBg ? "text-white" : ""}`}>{pageTitle}</h1>
+          <p className={`mt-1 text-sm ${hasBg ? "text-white/75" : "text-muted-foreground"}`}>
+            {pageDescription}
           </p>
-        )}
+          {event.price != null && (
+            <p className={`mt-1 text-sm font-medium ${hasBg ? "text-white/90" : ""}`}>
+              ₱
+              {(event.price / 100).toLocaleString("en-PH", {
+                minimumFractionDigits: 2,
+              })}
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Form area */}

@@ -38,6 +38,7 @@ import { TimeInput } from "@/components/ui/time-input"
 import { OptionalEmailInput } from "@/components/ui/optional-email-input"
 import { PhonePHInput } from "@/components/ui/phone-ph-input"
 import { YearInput } from "@/components/ui/year-input"
+import { PrivacyPolicyCheckbox } from "@/components/ui/privacy-policy-checkbox"
 import { LANGUAGE_OPTIONS } from "@/lib/constants/group-options"
 import { buildFitReasons } from "@/components/small-group-match-card"
 import {
@@ -201,6 +202,7 @@ export function JoinForm({ lifeStages }: { lifeStages: LifeStage[] }) {
   const [requesting, setRequesting] = React.useState(false)
   const [isDone, setIsDone] = React.useState(false)
   const [noEmail, setNoEmail] = React.useState(false)
+  const [privacyAccepted, setPrivacyAccepted] = React.useState(false)
 
   const [pendingConflict, setPendingConflict] = React.useState<{
     existingRequestId: string
@@ -216,6 +218,7 @@ export function JoinForm({ lifeStages }: { lifeStages: LifeStage[] }) {
   const stepIndex = SECTIONS.findIndex((s) => s.key === step) + 1
 
   function handlePersonalNext() {
+    if (!privacyAccepted) return toast.error("Please agree to the CCF Privacy Policy to continue")
     if (!personal.firstName.trim()) return toast.error("First name is required")
     if (!personal.lastName.trim()) return toast.error("Last name is required")
     if (!personal.phone.trim()) return toast.error("Mobile number is required")
@@ -469,6 +472,11 @@ export function JoinForm({ lifeStages }: { lifeStages: LifeStage[] }) {
                   />
                 </div>
               </div>
+
+              <PrivacyPolicyCheckbox
+                checked={privacyAccepted}
+                onCheckedChange={setPrivacyAccepted}
+              />
 
               <Button onClick={handlePersonalNext} className="w-full">
                 Next

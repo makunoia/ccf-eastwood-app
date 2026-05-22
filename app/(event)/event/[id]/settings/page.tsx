@@ -19,6 +19,9 @@ async function getEventSettings(id: string) {
       formIncludeDietary: true,
       formIncludePayment: true,
       autoAssignBreakout: true,
+      registrationPageTitle: true,
+      registrationPageDescription: true,
+      registrationPageBannerUrl: true,
       modules: { select: { id: true, type: true } },
       buses: {
         orderBy: { createdAt: "asc" },
@@ -94,6 +97,11 @@ export default async function EventSettingsPage({
         AutoAssignBreakout: event.autoAssignBreakout,
       }}
       linkedMinistries={linkedMinistries}
+      registrationPage={{
+        registrationPageTitle: event.registrationPageTitle ?? "",
+        registrationPageDescription: event.registrationPageDescription ?? "",
+        registrationPageBannerUrl: event.registrationPageBannerUrl ?? "",
+      }}
     />
   )
 }

@@ -125,7 +125,7 @@ export async function submitCatchMechConfirmations(
 
   const smallGroup = await db.smallGroup.findFirst({
     where: { leaderId: faciMember.id },
-    select: { id: true },
+    select: { id: true, status: true },
   })
   if (!smallGroup) {
     return { success: false, error: "Could not find your small group" }
@@ -138,6 +138,13 @@ export async function submitCatchMechConfirmations(
   const eventName = event?.name ?? null
 
   await db.$transaction(async (tx) => {
+    // Activate a group that was pre-created via the volunteer info form
+    if (smallGroup.status === "Pending") {
+      await tx.smallGroup.update({
+        where: { id: smallGroup.id },
+        data: { status: "Active" },
+      })
+    }
     await resolveConfirmations(smallGroup.id, session.breakoutGroupId, decisions, registrantMap, takenEmails, tx, eventName)
   }, { timeout: 30000 })
 

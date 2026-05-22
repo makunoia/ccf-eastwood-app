@@ -95,6 +95,7 @@ async function getSmallGroup(id: string): Promise<(SmallGroupRow & {
   return {
     id: g.id,
     name: g.name,
+    status: g.status as "Active" | "Pending" | "Inactive",
     leaderName: `${g.leader.firstName} ${g.leader.lastName}`,
     leaderId: g.leader.id,
     parentGroupId: g.parentGroupId,

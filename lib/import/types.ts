@@ -27,6 +27,9 @@ export type DuplicateMatch = {
   existingName: string
   existingEmail: string | null
   existingPhone: string | null
+  // "recognized" = person exists in the system but hasn't been processed in this context yet
+  // undefined / absent = already exists in this context (e.g. already checked in)
+  kind?: "recognized"
 }
 
 export type RowResolution = "use-existing" | "use-csv"

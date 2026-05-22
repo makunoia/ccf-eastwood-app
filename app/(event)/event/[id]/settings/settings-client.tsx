@@ -37,6 +37,8 @@ import { CommitteeManager } from "@/app/(dashboard)/events/[id]/committees"
 import { LogoUploader } from "@/components/logo-uploader"
 import { ColorThemePicker, type ColorTheme } from "@/components/color-theme-picker"
 import { updateEventBranding, type EventBrandingValues } from "@/app/(dashboard)/events/branding-actions"
+import { updateRegistrationPage, type RegistrationPageValues } from "@/app/(dashboard)/events/registration-page-actions"
+import { Textarea } from "@/components/ui/textarea"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -71,6 +73,7 @@ type Props = {
   branding: EventBrandingValues
   formModules: FormModules
   linkedMinistries: LinkedMinistry[]
+  registrationPage: RegistrationPageValues
 }
 
 type BusFormValues = { name: string; capacity: string; direction: string }
@@ -325,6 +328,94 @@ function BrandingTab({
   )
 }
 
+// ─── Registration page tab ────────────────────────────────────────────────────
+
+function RegistrationPageTab({
+  eventId,
+  initial,
+}: {
+  eventId: string
+  initial: RegistrationPageValues
+}) {
+  const [form, setForm] = React.useState<RegistrationPageValues>(initial)
+  const [saving, setSaving] = React.useState(false)
+  const [dirty, setDirty] = React.useState(false)
+
+  function set<K extends keyof RegistrationPageValues>(key: K, value: RegistrationPageValues[K]) {
+    setDirty(true)
+    setForm((prev) => ({ ...prev, [key]: value }))
+  }
+
+  async function handleSave() {
+    setSaving(true)
+    const result = await updateRegistrationPage(eventId, form)
+    setSaving(false)
+    if (result.success) {
+      setDirty(false)
+      toast.success("Registration page saved")
+    } else {
+      toast.error(result.error)
+    }
+  }
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <div>
+        <p className="text-xs text-muted-foreground">
+          Customize the header on this event&apos;s public registration page. Leave a field blank to use the default.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="regPageTitle">Page Title</Label>
+        <Input
+          id="regPageTitle"
+          value={form.registrationPageTitle}
+          onChange={(e) => set("registrationPageTitle", e.target.value)}
+          placeholder="e.g. Youth Camp 2026 — Sign Up"
+        />
+        <p className="text-xs text-muted-foreground">
+          Defaults to &ldquo;[Event Name] Registration&rdquo; when blank.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="regPageDescription">Description</Label>
+        <Textarea
+          id="regPageDescription"
+          value={form.registrationPageDescription}
+          onChange={(e) => set("registrationPageDescription", e.target.value)}
+          placeholder="e.g. Fill in your details below to secure your slot."
+          rows={3}
+        />
+        <p className="text-xs text-muted-foreground">
+          Shown below the title. Defaults to the ministry and date when blank.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <LogoUploader
+          label="Banner Image"
+          value={form.registrationPageBannerUrl || null}
+          onChange={(url) => {
+            setDirty(true)
+            setForm((prev) => ({ ...prev, registrationPageBannerUrl: url ?? "" }))
+          }}
+        />
+        <p className="text-xs text-muted-foreground">
+          Full-cover background behind the header. Leave blank to use the event&apos;s branding color.
+        </p>
+      </div>
+
+      {dirty && (
+        <Button onClick={handleSave} disabled={saving}>
+          {saving ? "Saving…" : "Save registration page"}
+        </Button>
+      )}
+    </div>
+  )
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function EventSettingsClient({
@@ -336,6 +427,7 @@ export function EventSettingsClient({
   branding,
   formModules,
   linkedMinistries,
+  registrationPage,
 }: Props) {
   const [modules, setModules] = React.useState<Set<string>>(new Set(enabledModules))
   const [togglingModule, setTogglingModule] = React.useState<string | null>(null)
@@ -401,6 +493,7 @@ export function EventSettingsClient({
         <TabsList>
           <TabsTrigger value="modules">Modules</TabsTrigger>
           <TabsTrigger value="registration-form">Registration Form</TabsTrigger>
+          <TabsTrigger value="registration-page">Registration Page</TabsTrigger>
           <TabsTrigger value="committees">Committees</TabsTrigger>
           <TabsTrigger value="branding">Branding</TabsTrigger>
         </TabsList>
@@ -531,6 +624,28 @@ export function EventSettingsClient({
                 </div>
               </CardHeader>
             </Card>
+
+            <h3 className="type-label text-muted-foreground pt-2">Volunteer Tools</h3>
+
+            {/* Volunteer Info Form */}
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-start gap-3 min-w-0">
+                    <IconUsers className="size-5 shrink-0 text-muted-foreground mt-0.5" />
+                    <div className="min-w-0">
+                      <CardTitle className="text-base">Volunteer Info Form</CardTitle>
+                      <CardDescription className="mt-0.5">
+                        Share this link with volunteers so they can update their personal info, small group membership, and availability.
+                      </CardDescription>
+                    </div>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <VolunteerInfoUrlCopier eventId={eventId} />
+              </CardContent>
+            </Card>
           </section>
         </TabsContent>
 
@@ -637,6 +752,10 @@ export function EventSettingsClient({
           </section>
         </TabsContent>
 
+        <TabsContent value="registration-page" className="mt-6">
+          <RegistrationPageTab eventId={eventId} initial={registrationPage} />
+        </TabsContent>
+
         <TabsContent value="committees" className="mt-6 max-w-2xl">
           <CommitteeManager eventId={eventId} committees={committees} />
         </TabsContent>
@@ -677,6 +796,30 @@ export function EventSettingsClient({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+function VolunteerInfoUrlCopier({ eventId }: { eventId: string }) {
+  const [copied, setCopied] = React.useState(false)
+
+  const url =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/events/${eventId}/volunteer-info`
+      : `/events/${eventId}/volunteer-info`
+
+  async function handleCopy() {
+    await navigator.clipboard.writeText(url)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <Input readOnly value={url} className="text-xs text-muted-foreground" />
+      <Button type="button" variant="outline" size="sm" onClick={handleCopy} className="shrink-0">
+        {copied ? "Copied!" : "Copy"}
+      </Button>
     </div>
   )
 }

@@ -88,12 +88,7 @@ async function getEventBreakouts(id: string) {
           NOT: {
             member: {
               volunteers: {
-                some: {
-                  OR: [
-                    { facilitatedGroups: { some: { eventId: id } } },
-                    { coFacilitatedGroups: { some: { eventId: id } } },
-                  ],
-                },
+                some: { eventId: id, status: "Confirmed" },
               },
             },
           },
