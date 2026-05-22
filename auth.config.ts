@@ -5,6 +5,7 @@
  */
 import type { NextAuthConfig } from "next-auth"
 import type { UserRole, FeatureArea } from "@/app/generated/prisma/client"
+import type { UserPermissionEntry } from "@/types/next-auth"
 
 export const authConfig = {
   pages: { signIn: "/login" },
@@ -34,7 +35,7 @@ export const authConfig = {
       if (session.user) {
         session.user.id = token.id as string
         session.user.role = token.role as UserRole
-        session.user.permissions = (token.permissions ?? []) as FeatureArea[]
+        session.user.permissions = (token.permissions ?? []) as UserPermissionEntry[]
         session.user.eventAccess = (token.eventAccess ?? []) as string[]
         session.user.totpEnabled = (token.totpEnabled ?? false) as boolean
         session.user.mustChangePassword = (token.mustChangePassword ?? false) as boolean

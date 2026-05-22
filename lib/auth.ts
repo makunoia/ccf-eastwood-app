@@ -4,7 +4,23 @@ import { PrismaAdapter } from "@auth/prisma-adapter"
 import bcrypt from "bcryptjs"
 import { db } from "@/lib/db"
 import { verifyPreAuthToken } from "@/lib/auth-tokens"
-import type { UserRole, FeatureArea } from "@/app/generated/prisma/client"
+import type { UserRole, FeatureArea, PermissionAction } from "@/app/generated/prisma/client"
+import type { UserPermissionEntry } from "@/types/next-auth"
+
+function groupPermissions(
+  rows: { feature: FeatureArea; action: PermissionAction }[]
+): UserPermissionEntry[] {
+  const map = new Map<FeatureArea, PermissionAction[]>()
+  for (const { feature, action } of rows) {
+    const existing = map.get(feature)
+    if (existing) {
+      existing.push(action)
+    } else {
+      map.set(feature, [action])
+    }
+  }
+  return Array.from(map.entries()).map(([feature, actions]) => ({ feature, actions }))
+}
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(db),
@@ -24,7 +40,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           const user = await db.user.findUnique({
             where: { id: userId },
             include: {
-              permissions: { select: { feature: true } },
+              permissions: { select: { feature: true, action: true } },
               eventAccess: { select: { eventId: true } },
             },
           })
@@ -39,7 +55,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             totpEnabled: user.totpEnabled,
             mustChangePassword: user.mustChangePassword,
             requiresTotpSetup: user.requiresTotpSetup,
-            permissions: user.permissions.map((p) => p.feature),
+            permissions: groupPermissions(user.permissions),
             eventAccess: user.eventAccess.map((e) => e.eventId),
           }
         }
@@ -50,7 +66,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const user = await db.user.findUnique({
           where: { email: credentials.email as string },
           include: {
-            permissions: { select: { feature: true } },
+            permissions: { select: { feature: true, action: true } },
             eventAccess: { select: { eventId: true } },
           },
         })
@@ -72,7 +88,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           totpEnabled: user.totpEnabled,
           mustChangePassword: user.mustChangePassword,
           requiresTotpSetup: user.requiresTotpSetup,
-          permissions: user.permissions.map((p) => p.feature),
+          permissions: groupPermissions(user.permissions),
           eventAccess: user.eventAccess.map((e) => e.eventId),
         }
       },
@@ -100,13 +116,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const fresh = await db.user.findUnique({
           where: { id: token.id as string },
           include: {
-            permissions: { select: { feature: true } },
+            permissions: { select: { feature: true, action: true } },
             eventAccess: { select: { eventId: true } },
           },
         })
         if (fresh) {
           token.role = fresh.role
-          token.permissions = fresh.permissions.map((p) => p.feature)
+          token.permissions = groupPermissions(fresh.permissions)
           token.eventAccess = fresh.eventAccess.map((e) => e.eventId)
           token.totpEnabled = fresh.totpEnabled
           token.mustChangePassword = fresh.mustChangePassword
@@ -120,7 +136,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (session.user) {
         session.user.id = token.id as string
         session.user.role = token.role as UserRole
-        session.user.permissions = (token.permissions ?? []) as FeatureArea[]
+        session.user.permissions = (token.permissions ?? []) as UserPermissionEntry[]
         session.user.eventAccess = (token.eventAccess ?? []) as string[]
         session.user.totpEnabled = (token.totpEnabled ?? false) as boolean
         session.user.mustChangePassword = (token.mustChangePassword ?? false) as boolean

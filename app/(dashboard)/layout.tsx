@@ -31,7 +31,7 @@ export default async function DashboardLayout({
           avatar: session.user?.image ?? "",
         }}
         role={session.user.role}
-        permissions={session.user.permissions}
+        permissions={session.user.permissions?.map((p) => p.feature) ?? []}
       />
       <SidebarInset className="overflow-hidden">
         <BreadcrumbProvider>

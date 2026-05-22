@@ -9,19 +9,32 @@ export const FEATURE_AREAS = [
   "Volunteers",
 ] as const
 
+export const PERMISSION_ACTIONS = ["Read", "Write", "Import", "Export"] as const
+
 export type FeatureAreaValue = (typeof FEATURE_AREAS)[number]
+export type PermissionActionValue = (typeof PERMISSION_ACTIONS)[number]
+
+export type PermissionEntryInput = {
+  feature: FeatureAreaValue
+  actions: PermissionActionValue[]
+}
+
+const permissionEntrySchema = z.object({
+  feature: z.enum(FEATURE_AREAS),
+  actions: z.array(z.enum(PERMISSION_ACTIONS)).min(1, "At least one action is required"),
+})
 
 export const createUserSchema = z.object({
   email: z.string().email("Enter a valid email address"),
   name: z.string().min(1, "Name is required").trim(),
-  permissions: z.array(z.enum(FEATURE_AREAS)),
+  permissions: z.array(permissionEntrySchema),
   eventIds: z.array(z.string()),
 })
 
 export type CreateUserInput = z.infer<typeof createUserSchema>
 
 export const updateUserPermissionsSchema = z.object({
-  permissions: z.array(z.enum(FEATURE_AREAS)),
+  permissions: z.array(permissionEntrySchema),
   eventIds: z.array(z.string()),
 })
 

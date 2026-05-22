@@ -18,15 +18,23 @@ import {
   IconShield,
   IconAlertTriangle,
 } from "@tabler/icons-react"
+import type { FeatureArea, PermissionAction } from "@/app/generated/prisma/client"
 import type { UserRow, EventOption } from "./columns"
 
-const FEATURE_LABELS: Record<string, string> = {
+const FEATURE_LABELS: Record<FeatureArea, string> = {
   Members: "Members",
   Guests: "Guests",
   SmallGroups: "Small Groups",
   Ministries: "Ministries",
   Events: "Events",
   Volunteers: "Volunteers",
+}
+
+const ACTION_LABELS: Record<PermissionAction, string> = {
+  Read: "Read",
+  Write: "Write",
+  Import: "Import",
+  Export: "Export",
 }
 
 type Props = {
@@ -67,6 +75,8 @@ export function UserDetailSheet({ user, events, open, onOpenChange }: Props) {
       : user.eventAccess
           .map((id) => events.find((e) => e.id === id)?.name ?? id)
           .join(", ")
+
+  const hasEventsPermission = user.permissions.some((p) => p.feature === "Events")
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -133,22 +143,33 @@ export function UserDetailSheet({ user, events, open, onOpenChange }: Props) {
               Feature access
             </p>
             {isSuperAdmin ? (
-              <p className="text-sm text-muted-foreground">All features</p>
+              <p className="text-sm text-muted-foreground">All features — full access</p>
             ) : user.permissions.length === 0 ? (
               <p className="text-sm text-muted-foreground">No access</p>
             ) : (
-              <div className="flex flex-wrap gap-1.5">
-                {user.permissions.map((p) => (
-                  <Badge key={p} variant="outline" className="text-xs">
-                    {FEATURE_LABELS[p] ?? p}
-                  </Badge>
+              <div className="space-y-1.5">
+                {user.permissions.map(({ feature, actions }) => (
+                  <div key={feature} className="flex items-center justify-between">
+                    <span className="text-sm">{FEATURE_LABELS[feature as FeatureArea]}</span>
+                    <div className="flex gap-1">
+                      {(["Read", "Write", "Import", "Export"] as PermissionAction[]).map((a) => (
+                        <Badge
+                          key={a}
+                          variant={actions.includes(a) ? "outline" : "secondary"}
+                          className={`text-xs px-1.5 ${!actions.includes(a) ? "opacity-30" : ""}`}
+                        >
+                          {ACTION_LABELS[a]}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
             )}
           </div>
 
           {/* Event access — only for Staff with Events permission */}
-          {!isSuperAdmin && user.permissions.includes("Events") && (
+          {!isSuperAdmin && hasEventsPermission && (
             <div className="space-y-2">
               <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
                 Event access

@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
+import { auth } from "@/lib/auth"
+import { canImport } from "@/lib/permissions"
 import { Prisma } from "@/app/generated/prisma/client"
 import { toTitleCase, formatPhilippinePhone } from "@/lib/utils"
 import type { DuplicateMatch, ImportResult, RowResolution } from "@/lib/import/types"
@@ -9,6 +11,13 @@ import type { DuplicateMatch, ImportResult, RowResolution } from "@/lib/import/t
 type ActionResult<T = void> =
   | { success: true; data: T }
   | { success: false; error: string }
+
+async function requireImport(): Promise<{ error: string } | null> {
+  const session = await auth()
+  if (!session?.user) return { error: "Not authenticated." }
+  if (!canImport(session, "Events")) return { error: "Unauthorized." }
+  return null
+}
 
 // ─── Duplicate check ──────────────────────────────────────────────────────────
 // For session attendance, "duplicate" = already has an OccurrenceAttendee for
@@ -182,6 +191,9 @@ export async function importSessionAttendance(
   occurrenceId: string,
   rows: ImportRow[]
 ): Promise<ActionResult<ImportResult>> {
+  const authError = await requireImport()
+  if (authError) return { success: false, error: authError.error }
+
   const result: ImportResult = {
     total: rows.length,
     created: 0,

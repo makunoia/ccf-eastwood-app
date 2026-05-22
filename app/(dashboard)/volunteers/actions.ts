@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache"
 import { Prisma } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
+import { auth } from "@/lib/auth"
+import { canWrite } from "@/lib/permissions"
 import {
   createVolunteerSchema,
   updateVolunteerSchema,
@@ -12,6 +14,13 @@ import {
 type ActionResult<T = void> =
   | { success: true; data: T }
   | { success: false; error: string }
+
+async function requireWrite(): Promise<{ error: string } | null> {
+  const session = await auth()
+  if (!session?.user) return { error: "Not authenticated." }
+  if (!canWrite(session, "Volunteers")) return { error: "Unauthorized." }
+  return null
+}
 
 export async function lookupMemberByMobile(mobile: string): Promise<{
   id: string
@@ -29,6 +38,9 @@ export async function lookupMemberByMobile(mobile: string): Promise<{
 export async function createVolunteer(
   raw: VolunteerFormValues
 ): Promise<ActionResult<{ id: string }>> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   const parsed = createVolunteerSchema.safeParse(raw)
   if (!parsed.success) {
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
@@ -75,6 +87,9 @@ export async function updateVolunteer(
   id: string,
   raw: VolunteerFormValues
 ): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   const parsed = updateVolunteerSchema.safeParse(raw)
   if (!parsed.success) {
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
@@ -105,6 +120,9 @@ export async function updateVolunteer(
 }
 
 export async function deleteVolunteer(id: string): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   try {
     await db.volunteer.delete({ where: { id } })
     revalidatePath("/volunteers")

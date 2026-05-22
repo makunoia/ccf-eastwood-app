@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { db } from "@/lib/db"
+import { auth } from "@/lib/auth"
+import { canWrite } from "@/lib/permissions"
 import { eventSchema, type EventFormValues } from "@/lib/validations/event"
 import { suggestBreakoutGroup } from "@/lib/breakout-suggestion"
 import { fetchBreakoutCandidates } from "@/lib/breakout-suggestion-server"
@@ -136,9 +138,19 @@ type ActionResult<T = void> =
   | { success: true; data: T }
   | { success: false; error: string }
 
+async function requireWrite(): Promise<{ error: string } | null> {
+  const session = await auth()
+  if (!session?.user) return { error: "Not authenticated." }
+  if (!canWrite(session, "Events")) return { error: "Unauthorized." }
+  return null
+}
+
 export async function createEvent(
   raw: EventFormValues
 ): Promise<ActionResult<{ id: string }>> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   const parsed = eventSchema.safeParse(raw)
   if (!parsed.success) {
     return {
@@ -178,6 +190,9 @@ export async function updateEvent(
   id: string,
   raw: EventFormValues
 ): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   const parsed = eventSchema.safeParse(raw)
   if (!parsed.success) {
     return {
@@ -218,6 +233,9 @@ export async function updateEvent(
 }
 
 export async function deleteEvent(id: string): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   try {
     await db.event.delete({ where: { id } })
     revalidatePath("/events")
@@ -737,6 +755,9 @@ export async function markRegistrantPaid(
   paymentReference: string,
   eventId: string
 ): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   if (!paymentReference.trim()) {
     return { success: false, error: "Payment reference is required" }
   }
@@ -756,6 +777,9 @@ export async function markRegistrantAttended(
   registrantId: string,
   eventId: string
 ): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   try {
     await db.eventRegistrant.update({
       where: { id: registrantId },
@@ -772,6 +796,9 @@ export async function unmarkRegistrantAttended(
   registrantId: string,
   eventId: string
 ): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   try {
     await db.eventRegistrant.update({
       where: { id: registrantId },
@@ -788,6 +815,9 @@ export async function createOccurrence(
   eventId: string,
   date: string // "YYYY-MM-DD" UTC
 ): Promise<ActionResult<{ id: string }>> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   try {
     const dateValue = new Date(`${date}T00:00:00.000Z`)
     const existing = await db.eventOccurrence.findUnique({
@@ -867,6 +897,9 @@ export async function setOccurrenceCheckinOpen(
   isOpen: boolean,
   eventId: string
 ): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   try {
     await db.eventOccurrence.update({
       where: { id: occurrenceId },

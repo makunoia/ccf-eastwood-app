@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
+import { auth } from "@/lib/auth"
+import { canWrite, canImport } from "@/lib/permissions"
 import type { DuplicateMatch, ImportResult, RowResolution } from "@/lib/import/types"
 import { Prisma } from "@/app/generated/prisma/client"
 import { toTitleCase, formatPhilippinePhone } from "@/lib/utils"
@@ -9,6 +11,20 @@ import { toTitleCase, formatPhilippinePhone } from "@/lib/utils"
 type ActionResult<T = void> =
   | { success: true; data: T }
   | { success: false; error: string }
+
+async function requireWrite(): Promise<{ error: string } | null> {
+  const session = await auth()
+  if (!session?.user) return { error: "Not authenticated." }
+  if (!canWrite(session, "Events")) return { error: "Unauthorized." }
+  return null
+}
+
+async function requireImport(): Promise<{ error: string } | null> {
+  const session = await auth()
+  if (!session?.user) return { error: "Not authenticated." }
+  if (!canImport(session, "Events")) return { error: "Unauthorized." }
+  return null
+}
 
 // ─── Duplicate check ──────────────────────────────────────────────────────────
 
@@ -104,6 +120,9 @@ export async function importEventRegistrants(
   eventId: string,
   rows: ImportRow[]
 ): Promise<ActionResult<ImportResult>> {
+  const authError = await requireImport()
+  if (authError) return { success: false, error: authError.error }
+
   const result: ImportResult = { total: rows.length, created: 0, linked: 0, updated: 0, skipped: 0, errors: [] }
 
   // Verify event exists
@@ -304,6 +323,9 @@ export async function deleteEventRegistrant(
   registrantId: string,
   eventId: string
 ): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   try {
     await db.eventRegistrant.delete({ where: { id: registrantId } })
     revalidatePath(`/event/${eventId}/registrants`)
@@ -327,6 +349,9 @@ export async function addEventRegistrant(
   eventId: string,
   input: AddRegistrantInput
 ): Promise<ActionResult<{ id: string }>> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   try {
     const firstName = toTitleCase(input.firstName.trim())
     const lastName  = toTitleCase(input.lastName.trim())

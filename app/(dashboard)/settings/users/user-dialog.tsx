@@ -16,7 +16,13 @@ import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { IconCopy, IconCheck, IconAlertTriangle } from "@tabler/icons-react"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { FEATURE_AREAS, type FeatureAreaValue } from "@/lib/validations/user-management"
+import {
+  FEATURE_AREAS,
+  PERMISSION_ACTIONS,
+  type FeatureAreaValue,
+  type PermissionActionValue,
+  type PermissionEntryInput,
+} from "@/lib/validations/user-management"
 import { createUser, updateUserPermissions } from "./actions"
 import type { UserRow, EventOption } from "./columns"
 
@@ -29,6 +35,16 @@ const FEATURE_LABELS: Record<FeatureAreaValue, string> = {
   Volunteers: "Volunteers",
 }
 
+const ACTION_LABELS: Record<PermissionActionValue, string> = {
+  Read: "Read",
+  Write: "Write",
+  Import: "Import",
+  Export: "Export",
+}
+
+/** Actions that imply Read (must be removed if Read is unchecked). */
+const READ_DEPENDENTS: PermissionActionValue[] = ["Write", "Import", "Export"]
+
 type Props = {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -38,12 +54,20 @@ type Props = {
 
 type CreatedState = { generatedPassword: string }
 
+function emptyPermissions(): Record<FeatureAreaValue, PermissionActionValue[]> {
+  return Object.fromEntries(FEATURE_AREAS.map((f) => [f, []])) as unknown as Record<
+    FeatureAreaValue,
+    PermissionActionValue[]
+  >
+}
+
 export function UserDialog({ open, onOpenChange, user, events }: Props) {
   const isEdit = !!user
 
   const [email, setEmail] = React.useState("")
   const [name, setName] = React.useState("")
-  const [permissions, setPermissions] = React.useState<FeatureAreaValue[]>([])
+  // Map of feature → selected actions
+  const [permMap, setPermMap] = React.useState<Record<FeatureAreaValue, PermissionActionValue[]>>(emptyPermissions)
   const [eventScope, setEventScope] = React.useState<"all" | "specific">("all")
   const [eventIds, setEventIds] = React.useState<string[]>([])
   const [saving, setSaving] = React.useState(false)
@@ -55,39 +79,72 @@ export function UserDialog({ open, onOpenChange, user, events }: Props) {
     if (user) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setName(user.name ?? "")
-      setPermissions(user.permissions as FeatureAreaValue[])
+      const map = emptyPermissions()
+      for (const { feature, actions } of user.permissions) {
+        map[feature as FeatureAreaValue] = actions as PermissionActionValue[]
+      }
+      setPermMap(map)
       const hasSpecific = user.eventAccess.length > 0
       setEventScope(hasSpecific ? "specific" : "all")
       setEventIds(user.eventAccess)
     } else {
       setEmail("")
       setName("")
-      setPermissions([])
+      setPermMap(emptyPermissions())
       setEventScope("all")
       setEventIds([])
     }
     setCreated(null)
   }, [user, open])
 
-  function togglePermission(feature: FeatureAreaValue) {
-    const next = permissions.includes(feature)
-      ? permissions.filter((p) => p !== feature)
-      : [...permissions, feature]
-    setPermissions(next)
-    if (feature === "Events" && !next.includes("Events")) {
-      setEventScope("all")
-      setEventIds([])
-    }
+  function toggleAction(feature: FeatureAreaValue, action: PermissionActionValue) {
+    setPermMap((prev) => {
+      const current = prev[feature]
+      let next: PermissionActionValue[]
+
+      if (current.includes(action)) {
+        // Unchecking Read → also remove all dependents
+        if (action === "Read") {
+          next = current.filter((a) => a !== "Read" && !READ_DEPENDENTS.includes(a))
+        } else {
+          next = current.filter((a) => a !== action)
+        }
+      } else {
+        // Checking Write/Import/Export → auto-add Read
+        if (READ_DEPENDENTS.includes(action) && !current.includes("Read")) {
+          next = [...current, "Read", action]
+        } else {
+          next = [...current, action]
+        }
+      }
+
+      // If all actions removed for Events, reset event scope
+      if (feature === "Events" && next.length === 0) {
+        setEventScope("all")
+        setEventIds([])
+      }
+
+      return { ...prev, [feature]: next }
+    })
   }
 
   function toggleEvent(id: string) {
     setEventIds((prev) => (prev.includes(id) ? prev.filter((e) => e !== id) : [...prev, id]))
   }
 
+  // Convert permMap to the array format expected by the action
+  function buildPermissions(): PermissionEntryInput[] {
+    return FEATURE_AREAS.filter((f) => permMap[f].length > 0).map((feature) => ({
+      feature,
+      actions: permMap[feature],
+    }))
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
 
+    const permissions = buildPermissions()
     const resolvedEventIds = eventScope === "all" ? [] : eventIds
 
     if (isEdit) {
@@ -162,11 +219,11 @@ export function UserDialog({ open, onOpenChange, user, events }: Props) {
   }
 
   // ── Create / Edit form ──────────────────────────────────────────────────────
-  const hasEventsPermission = permissions.includes("Events")
+  const hasEventsPermission = permMap["Events"].length > 0
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit permissions" : "Add user"}</DialogTitle>
           <DialogDescription>
@@ -209,26 +266,49 @@ export function UserDialog({ open, onOpenChange, user, events }: Props) {
               </>
             )}
 
-            {/* Feature access */}
-            <div className="space-y-3">
-              <Label>Feature access</Label>
-              <div className="grid grid-cols-2 gap-2">
-                {FEATURE_AREAS.map((feature) => (
-                  <label
-                    key={feature}
-                    className="flex items-center gap-2 rounded-md border px-3 py-2.5 cursor-pointer hover:bg-muted/50 transition-colors"
-                  >
-                    <Checkbox
-                      checked={permissions.includes(feature)}
-                      onCheckedChange={() => togglePermission(feature)}
-                    />
-                    <span className="text-sm">{FEATURE_LABELS[feature]}</span>
-                  </label>
-                ))}
+            {/* Feature access with per-feature action checkboxes */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Feature access</Label>
+                {/* Action legend */}
+                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                  {PERMISSION_ACTIONS.map((a) => (
+                    <span key={a}>{ACTION_LABELS[a]}</span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-md border divide-y">
+                {FEATURE_AREAS.map((feature) => {
+                  const actions = permMap[feature]
+                  return (
+                    <div key={feature} className="flex items-center justify-between px-3 py-2.5">
+                      <span className="text-sm font-medium">{FEATURE_LABELS[feature]}</span>
+                      <div className="flex items-center gap-3">
+                        {PERMISSION_ACTIONS.map((action) => {
+                          const isChecked = actions.includes(action)
+                          // Read cannot be unchecked if a dependent action is active
+                          const isReadLocked =
+                            action === "Read" &&
+                            READ_DEPENDENTS.some((dep) => actions.includes(dep))
+                          return (
+                            <Checkbox
+                              key={action}
+                              checked={isChecked}
+                              disabled={isReadLocked}
+                              onCheckedChange={() => toggleAction(feature, action)}
+                              aria-label={`${FEATURE_LABELS[feature]} — ${ACTION_LABELS[action]}`}
+                            />
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             </div>
 
-            {/* Event access — only shown when Events is selected */}
+            {/* Event access — only shown when Events has any actions */}
             {hasEventsPermission && (
               <div className="space-y-3">
                 <Label>Event access</Label>

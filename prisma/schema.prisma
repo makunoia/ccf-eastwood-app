@@ -121,6 +121,13 @@ enum FeatureArea {
   Volunteers
 }
 
+enum PermissionAction {
+  Read
+  Write
+  Import
+  Export
+}
+
 // ─── Auth (NextAuth / Auth.js v5) ────────────────────────────────────────────
 
 model User {
@@ -148,12 +155,13 @@ model User {
 }
 
 model UserPermission {
-  id      String      @id @default(cuid())
+  id      String           @id @default(cuid())
   userId  String
   feature FeatureArea
-  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action  PermissionAction @default(Read)
+  user    User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, feature])
+  @@unique([userId, feature, action])
 }
 
 model UserEventAccess {

@@ -2,9 +2,18 @@
 
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
+import { auth } from "@/lib/auth"
+import { canWrite } from "@/lib/permissions"
 import { updateVolunteerSchema } from "@/lib/validations/volunteer"
 
 type ActionResult<T = void> = { success: true; data: T } | { success: false; error: string }
+
+async function requireWrite(): Promise<{ error: string } | null> {
+  const session = await auth()
+  if (!session?.user) return { error: "Not authenticated." }
+  if (!canWrite(session, "Events")) return { error: "Unauthorized." }
+  return null
+}
 
 type UpdateInput = {
   memberId: string
@@ -21,6 +30,9 @@ export async function updateEventVolunteer(
   eventId: string,
   raw: UpdateInput
 ): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   const parsed = updateVolunteerSchema.safeParse(raw)
   if (!parsed.success) {
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
@@ -54,6 +66,9 @@ export async function deleteEventVolunteerById(
   volunteerId: string,
   eventId: string
 ): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
   try {
     await db.volunteer.delete({ where: { id: volunteerId } })
     revalidatePath(`/event/${eventId}/volunteers`)
