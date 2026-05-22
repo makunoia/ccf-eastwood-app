@@ -485,7 +485,7 @@ model EventRegistrant {
   member       Member?   @relation(fields: [memberId], references: [id])
 
   guestId      String?
-  guest        Guest?    @relation(fields: [guestId], references: [id])
+  guest        Guest?    @relation(fields: [guestId], references: [id], onDelete: Cascade)
 
   // Only populated when both memberId and guestId are null (truly anonymous registrant)
   firstName    String?

@@ -309,10 +309,12 @@ export function VolunteerInfoForm({ eventId, lifeStages }: Props) {
     setEmail(v.email ?? "")
     setPhone(v.phone ?? lookupPhone)
 
-    if (v.groupStatus === "Leader") {
-      setLeadershipStatus("leader")
-    } else if (v.groupStatus === "Timothy") {
+    // Prioritize ledGroup existence: a member who leads a group should always
+    // be treated as leader/timothy even if groupStatus is stale or null.
+    if (v.groupStatus === "Timothy") {
       setLeadershipStatus("timothy")
+    } else if (v.groupStatus === "Leader" || v.ledGroup) {
+      setLeadershipStatus("leader")
     } else {
       setLeadershipStatus("none")
     }

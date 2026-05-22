@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
-import { TimeInput } from "@/components/ui/time-input"
+import { ScheduleInput } from "@/components/ui/schedule-input"
 import { Label } from "@/components/ui/label"
 import { MultiSelect } from "@/components/ui/multi-select"
 import { OptionalEmailInput } from "@/components/ui/optional-email-input"
@@ -170,15 +170,6 @@ const DIETARY_OPTIONS: { value: Exclude<DietaryValue, "">; label: string }[] = [
   { value: "Other", label: "Other" },
 ]
 
-const DAYS_OF_WEEK = [
-  { value: "0", label: "Sunday" },
-  { value: "1", label: "Monday" },
-  { value: "2", label: "Tuesday" },
-  { value: "3", label: "Wednesday" },
-  { value: "4", label: "Thursday" },
-  { value: "5", label: "Friday" },
-  { value: "6", label: "Saturday" },
-]
 
 type Props = {
   eventId: string
@@ -1188,35 +1179,15 @@ export function RegistrationForm({
 
                   <div className="space-y-2">
                     <Label>Best time to meet</Label>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Select
-                        value={form.scheduleDayOfWeek}
-                        onValueChange={(v) => set("scheduleDayOfWeek", v === "none" ? "" : v)}
-                      >
-                        <SelectTrigger className="w-36">
-                          <SelectValue placeholder="Day" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">Any day</SelectItem>
-                          {DAYS_OF_WEEK.map((d) => (
-                            <SelectItem key={d.value} value={d.value}>
-                              {d.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <TimeInput
-                        value={form.scheduleTimeStart}
-                        onChange={(v) => set("scheduleTimeStart", v)}
-                        className="w-28"
-                      />
-                      <span className="text-sm text-muted-foreground">to</span>
-                      <TimeInput
-                        value={form.scheduleTimeEnd}
-                        onChange={(v) => set("scheduleTimeEnd", v)}
-                        className="w-28"
-                      />
-                    </div>
+                    <ScheduleInput
+                      allowAny
+                      dayOfWeek={form.scheduleDayOfWeek}
+                      timeStart={form.scheduleTimeStart}
+                      timeEnd={form.scheduleTimeEnd}
+                      onDayChange={(v) => set("scheduleDayOfWeek", v)}
+                      onTimeStartChange={(v) => set("scheduleTimeStart", v)}
+                      onTimeEndChange={(v) => set("scheduleTimeEnd", v)}
+                    />
                   </div>
 
                   <div className="space-y-2">

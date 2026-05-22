@@ -50,7 +50,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { TimeInput } from "@/components/ui/time-input"
+import { ScheduleInput } from "@/components/ui/schedule-input"
 import { LANGUAGE_OPTIONS } from "@/lib/constants/group-options"
 import {
   createBreakoutGroup,
@@ -124,16 +124,6 @@ function deriveProfileFromGroup(g: LedGroup) {
 }
 
 const GENDER_FOCUS_LABELS: Record<string, string> = { Male: "Male", Female: "Female", Mixed: "Mixed" }
-
-const DAYS_OF_WEEK = [
-  { value: "0", label: "Sunday" },
-  { value: "1", label: "Monday" },
-  { value: "2", label: "Tuesday" },
-  { value: "3", label: "Wednesday" },
-  { value: "4", label: "Thursday" },
-  { value: "5", label: "Friday" },
-  { value: "6", label: "Saturday" },
-]
 
 // ─── Group form drawer (create / edit) ─────────────────────────────────────────
 
@@ -394,29 +384,16 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
             </div>
 
             <div className="space-y-1.5">
-              <Label>Meeting Day {isFacilitatorTimothy && <span className="text-destructive">*</span>}</Label>
-              <Select value={form.scheduleDayOfWeek} onValueChange={(v) => setForm((f) => ({ ...f, scheduleDayOfWeek: v === "_none" ? "" : v }))}>
-                <SelectTrigger><SelectValue placeholder="Any" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="_none">Any</SelectItem>
-                  {DAYS_OF_WEEK.map((d) => <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Meeting Time {isFacilitatorTimothy && <span className="text-destructive">*</span>}</Label>
-              <div className="flex items-center gap-2">
-                <TimeInput
-                  value={form.scheduleTimeStart}
-                  onChange={(v) => setForm((f) => ({ ...f, scheduleTimeStart: v }))}
-                />
-                <span className="text-sm text-muted-foreground">to</span>
-                <TimeInput
-                  value={form.scheduleTimeEnd}
-                  onChange={(v) => setForm((f) => ({ ...f, scheduleTimeEnd: v }))}
-                />
-              </div>
+              <Label>Meeting Schedule {isFacilitatorTimothy && <span className="text-destructive">*</span>}</Label>
+              <ScheduleInput
+                allowAny
+                dayOfWeek={form.scheduleDayOfWeek}
+                timeStart={form.scheduleTimeStart}
+                timeEnd={form.scheduleTimeEnd}
+                onDayChange={(v) => setForm((f) => ({ ...f, scheduleDayOfWeek: v }))}
+                onTimeStartChange={(v) => setForm((f) => ({ ...f, scheduleTimeStart: v }))}
+                onTimeEndChange={(v) => setForm((f) => ({ ...f, scheduleTimeEnd: v }))}
+              />
             </div>
           </div>
         </div>

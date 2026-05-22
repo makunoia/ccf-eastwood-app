@@ -19,6 +19,7 @@ async function getOccurrenceWithEvent(occurrenceId: string) {
           brandMinistryId: true,
           logoUrl: true,
           themeColorPrimary: true,
+          registrationPageBannerUrl: true,
           autoAssignBreakout: true,
           formIncludePayment: true,
           ministries: {
@@ -70,41 +71,37 @@ function CheckinHeader({
   name,
   subtitle,
   primaryColor,
+  bannerUrl,
 }: {
   logoUrl: string | null
   name: string
   subtitle?: string
   primaryColor?: string | null
+  bannerUrl?: string | null
 }) {
-  if (primaryColor) {
-    return (
-      <div className="px-6 pt-6 pb-16 text-center" style={{ backgroundColor: primaryColor }}>
+  const hasBg = !!(bannerUrl || primaryColor)
+  return (
+    <div
+      className="relative px-6 pt-8 pb-16 text-center"
+      style={!bannerUrl && primaryColor ? { backgroundColor: primaryColor } : undefined}
+    >
+      <div className="relative mx-auto w-full max-w-md">
         {logoUrl && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={logoUrl}
             alt={name}
-            className="mx-auto mb-3 size-16 rounded-2xl object-contain bg-white/20 p-1.5"
+            className="mx-auto mb-4 size-20 rounded-xl object-contain"
+            style={hasBg ? { backgroundColor: "rgba(255,255,255,0.15)", padding: "0.5rem" } : undefined}
           />
         )}
-        <h1 className="text-xl font-bold text-white">{name}</h1>
-        {subtitle && <p className="mt-0.5 text-sm text-white/75">{subtitle}</p>}
+        <h1 className={`text-2xl font-bold ${hasBg ? "text-white" : ""}`}>{name}</h1>
+        {subtitle && (
+          <p className={`mt-1 text-sm ${hasBg ? "text-white/75" : "text-muted-foreground"}`}>
+            {subtitle}
+          </p>
+        )}
       </div>
-    )
-  }
-
-  return (
-    <div className="px-6 pt-8 pb-16 text-center">
-      {logoUrl && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={logoUrl}
-          alt={name}
-          className="mx-auto mb-3 size-16 rounded-2xl object-contain bg-muted p-1.5"
-        />
-      )}
-      <h1 className="text-xl font-bold">{name}</h1>
-      {subtitle && <p className="mt-0.5 text-sm text-muted-foreground">{subtitle}</p>}
     </div>
   )
 }
@@ -125,6 +122,7 @@ export default async function OccurrenceCheckinPage({
   }
 
   const { logoUrl, primaryColor } = resolveEventBrand(occurrence.event)
+  const bannerUrl = occurrence.event.registrationPageBannerUrl ?? null
   const ministryNames = occurrence.event.ministries.map((em) => em.ministry.name).join(" · ")
   const defaultLifeStageId =
     occurrence.event.ministries.length === 1 && occurrence.event.ministries[0].ministry.lifeStageId
@@ -147,15 +145,23 @@ export default async function OccurrenceCheckinPage({
 
   if (today !== occurrenceDate && !occurrence.isOpen) {
     return (
-      <div className="min-h-svh bg-muted">
+      <div className="relative min-h-svh bg-muted">
+        {bannerUrl && (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={bannerUrl} alt="" className="fixed inset-0 h-full w-full object-cover" />
+            <div className="fixed inset-0 bg-black/50" />
+          </>
+        )}
         <CheckinHeader
           logoUrl={logoUrl}
           name={`${occurrence.event.name} Check-in`}
           subtitle={subtitle}
           primaryColor={primaryColor}
+          bannerUrl={bannerUrl}
         />
         <div className="relative z-10 -mt-10 flex items-start justify-center px-4 pb-4">
-          <div className="w-full max-w-sm rounded-lg border bg-card overflow-hidden">
+          <div className="w-full max-w-md rounded-lg border bg-card overflow-hidden">
             <div className="flex flex-col items-center justify-center gap-2 px-6 py-16 text-center">
               <p className="font-medium text-sm">Check-in not available</p>
               <p className="text-sm text-muted-foreground">
@@ -174,15 +180,23 @@ export default async function OccurrenceCheckinPage({
     : await fetchBreakoutCandidates(id, occurrenceId)
 
   return (
-    <div className="min-h-svh bg-muted">
+    <div className="relative min-h-svh bg-muted">
+      {bannerUrl && (
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={bannerUrl} alt="" className="fixed inset-0 h-full w-full object-cover" />
+          <div className="fixed inset-0 bg-black/50" />
+        </>
+      )}
       <CheckinHeader
         logoUrl={logoUrl}
         name={`${occurrence.event.name} Check-in`}
         subtitle={subtitle}
         primaryColor={primaryColor}
+        bannerUrl={bannerUrl}
       />
       <div className="relative z-10 -mt-10 flex items-start justify-center px-4 pb-4">
-        <div className="w-full max-w-sm rounded-lg border bg-card overflow-hidden">
+        <div className="w-full max-w-md rounded-lg border bg-card overflow-hidden">
           <CheckinBoard
             eventId={id}
             occurrenceId={occurrenceId}

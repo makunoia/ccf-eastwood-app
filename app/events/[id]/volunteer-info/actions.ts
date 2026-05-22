@@ -33,6 +33,7 @@ export async function lookupVolunteer(
       },
       ledGroups: {
         take: 1,
+        orderBy: { createdAt: "asc" },
         select: {
           id: true,
           name: true,
@@ -114,6 +115,7 @@ export async function submitVolunteerInfo(
       if ((leadershipStatus === "leader" || leadershipStatus === "timothy") && groupFields) {
         const existing = await tx.smallGroup.findFirst({
           where: { leaderId: memberId },
+          orderBy: { createdAt: "asc" },
           select: { id: true, status: true },
         })
 
