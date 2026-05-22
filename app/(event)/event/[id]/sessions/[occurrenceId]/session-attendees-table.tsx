@@ -50,6 +50,7 @@ export type AttendeeRow = {
   isMember: boolean
   isVolunteer: boolean
   breakoutGroupIds: string[]
+  gender: "Male" | "Female" | null
 }
 
 export type BreakoutGroupOption = {

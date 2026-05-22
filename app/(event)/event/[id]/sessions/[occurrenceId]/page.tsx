@@ -1,6 +1,6 @@
 import type { ReactNode } from "react"
 import { notFound } from "next/navigation"
-import { Repeat2, UserCheck, UserPlus, Users } from "lucide-react"
+import { UserCheck, UserPlus, Users, UsersRound } from "lucide-react"
 import { db } from "@/lib/db"
 import { isReturner } from "@/lib/session-stats"
 import { BreadcrumbOverride } from "@/components/breadcrumb-context"
@@ -27,8 +27,8 @@ async function getOccurrenceDetail(occurrenceId: string) {
               id: true,
               memberId: true,
               guestId: true,
-              member: { select: { firstName: true, lastName: true } },
-              guest: { select: { firstName: true, lastName: true } },
+              member: { select: { firstName: true, lastName: true, gender: true } },
+              guest: { select: { firstName: true, lastName: true, gender: true } },
               firstName: true,
               lastName: true,
               occurrenceAttendances: {
@@ -49,7 +49,7 @@ async function getOccurrenceDetail(occurrenceId: string) {
 
   if (!occurrence) return null
 
-  const [volunteers, breakoutGroups, subFacilitators] = await Promise.all([
+  const [volunteers, breakoutGroups, subFacilitators, totalRegistrants] = await Promise.all([
     db.volunteer.findMany({
       where: { eventId: occurrence.event.id },
       select: {
@@ -126,9 +126,10 @@ async function getOccurrenceDetail(occurrenceId: string) {
         substitute: { include: { member: { select: { firstName: true, lastName: true } } } },
       },
     }),
+    db.eventRegistrant.count({ where: { eventId: occurrence.event.id } }),
   ])
 
-  return { occurrence, volunteers, breakoutGroups, subFacilitators }
+  return { occurrence, volunteers, breakoutGroups, subFacilitators, totalRegistrants }
 }
 
 function getAttendeeName(registrant: {
@@ -152,7 +153,7 @@ export default async function OccurrenceDetailPage({
   const data = await getOccurrenceDetail(occurrenceId)
   if (!data || data.occurrence.event.id !== id) notFound()
 
-  const { occurrence, volunteers, breakoutGroups, subFacilitators } = data
+  const { occurrence, volunteers, breakoutGroups, subFacilitators, totalRegistrants } = data
 
   const dateLabel = occurrence.date.toLocaleDateString("en-PH", {
     weekday: "long",
@@ -179,12 +180,14 @@ export default async function OccurrenceDetailPage({
       ? volunteerMemberIds.has(a.registrant.memberId)
       : false,
     breakoutGroupIds: a.registrant.breakoutGroupMemberships.map((m) => m.breakoutGroupId),
+    gender: a.registrant.member?.gender ?? a.registrant.guest?.gender ?? null,
   }))
 
   const totalCount = attendeesWithStats.length
   const newCount = attendeesWithStats.filter((a) => !a.isReturner).length
-  const returneeCount = attendeesWithStats.filter((a) => a.isReturner).length
   const volunteersPresent = attendeesWithStats.filter((a) => a.isVolunteer).length
+  const menCount = attendeesWithStats.filter((a) => a.gender === "Male").length
+  const womenCount = attendeesWithStats.filter((a) => a.gender === "Female").length
 
   const breakoutStats = breakoutGroups.map((bg) => {
     const facilitatorPresent =
@@ -266,14 +269,36 @@ export default async function OccurrenceDetailPage({
       />
 
       <div className="flex flex-1 flex-col gap-6 p-6">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           <StatCard label="Total" value={totalCount} icon={<Users className="size-4" />} />
           <StatCard label="New" value={newCount} icon={<UserPlus className="size-4" />} />
-          <StatCard label="Returnees" value={returneeCount} icon={<Repeat2 className="size-4" />} />
+          <StatCard
+            label="Attendance"
+            value={
+              <>
+                {totalCount}
+                <span className="text-lg font-normal text-muted-foreground">
+                  {" "}/ {totalRegistrants}
+                </span>
+              </>
+            }
+            icon={<Users className="size-4" />}
+          />
           <StatCard
             label="Volunteers"
             value={volunteersPresent}
             icon={<UserCheck className="size-4" />}
+          />
+          <StatCard
+            label="Men / Women"
+            value={
+              <>
+                {menCount}
+                <span className="text-muted-foreground/50"> / </span>
+                {womenCount}
+              </>
+            }
+            icon={<UsersRound className="size-4" />}
           />
         </div>
 
@@ -296,7 +321,7 @@ function StatCard({
   icon,
 }: {
   label: string
-  value: number
+  value: ReactNode
   icon: ReactNode
 }) {
   return (
@@ -308,7 +333,7 @@ function StatCard({
         <span className="text-muted-foreground/40">{icon}</span>
       </div>
       <p className="text-3xl font-semibold tabular-nums tracking-tight text-foreground">
-        {value.toLocaleString()}
+        {value}
       </p>
     </div>
   )

@@ -6,9 +6,9 @@ import Link from "next/link"
 import {
   IconCalendarPlus,
   IconCalendarRepeat,
-  IconCopy,
   IconDoorEnter,
   IconDoorExit,
+  IconExternalLink,
 } from "@tabler/icons-react"
 import { toast } from "sonner"
 
@@ -88,12 +88,6 @@ export function SessionsClient({ eventId, eventType, occurrences }: Props) {
     }
   }
 
-  function copyCheckinLink(occurrenceId: string) {
-    const url = `${window.location.origin}/events/${eventId}/checkin/${occurrenceId}`
-    navigator.clipboard.writeText(url)
-    toast.success("Check-in link copied")
-  }
-
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
       <div className="flex items-center justify-between">
@@ -165,9 +159,15 @@ export function SessionsClient({ eventId, eventType, occurrences }: Props) {
                           </>
                         )}
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => copyCheckinLink(o.id)}>
-                        <IconCopy className="mr-1.5 size-3.5" />
-                        Copy link
+                      <Button variant="ghost" size="sm" asChild>
+                        <a
+                          href={`/events/${eventId}/checkin/${o.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <IconExternalLink className="mr-1.5 size-3.5" />
+                          Check-in page
+                        </a>
                       </Button>
                     </div>
                   </td>

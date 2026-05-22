@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation"
 import {
   IconCheck,
   IconClock,
+  IconDownload,
   IconExternalLink,
   IconPlus,
   IconUpload,
@@ -85,6 +86,58 @@ function displayEmail(r: Registrant) {
   if (r.member) return r.member.email
   if (r.guest)  return r.guest.email
   return r.email
+}
+
+// ─── CSV export ───────────────────────────────────────────────────────────────
+
+function exportRegistrantsCSV(
+  registrants: Registrant[],
+  eventType: string,
+  isPaidEvent: boolean,
+  eventId: string,
+) {
+  const isRecurringOrMultiDay = eventType === "Recurring" || eventType === "MultiDay"
+
+  const headers = [
+    "Name",
+    "Nickname",
+    "Mobile",
+    "Email",
+    "Type",
+    ...(isPaidEvent && !isRecurringOrMultiDay ? ["Paid", "Payment Reference"] : []),
+    isRecurringOrMultiDay ? "Registered" : "Attended",
+  ]
+
+  const rows = registrants.map((r) => {
+    const dateStr = isRecurringOrMultiDay
+      ? new Date(r.createdAt).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })
+      : r.attendedAt
+        ? new Date(r.attendedAt).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })
+        : ""
+
+    const row = [
+      displayName(r) ?? "",
+      r.nickname ?? "",
+      displayMobile(r) ?? "",
+      displayEmail(r) ?? "",
+      r.memberId ? "Member" : "Guest",
+      ...(isPaidEvent && !isRecurringOrMultiDay ? [r.isPaid ? "Yes" : "No", r.paymentReference ?? ""] : []),
+      dateStr,
+    ]
+    return row
+  })
+
+  const csv = [headers, ...rows]
+    .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+    .join("\n")
+
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = `registrants-${eventId}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 // ─── Payment dialog ───────────────────────────────────────────────────────────
@@ -413,6 +466,15 @@ export function RegistrantsClient({
       <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
         <IconUpload className="size-4" />
         <span className="hidden sm:inline">Import</span>
+      </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => exportRegistrantsCSV(registrants, eventType, isPaidEvent, eventId)}
+        disabled={registrants.length === 0}
+      >
+        <IconDownload className="size-4" />
+        <span className="hidden sm:inline">Export</span>
       </Button>
       <Button variant="outline" size="sm" asChild>
         <Link href={`/events/${eventId}/register`} target="_blank" rel="noopener noreferrer">

@@ -352,7 +352,7 @@ function RegistrationPageTab({
     setSaving(false)
     if (result.success) {
       setDirty(false)
-      toast.success("Registration page saved")
+      toast.success("Page settings saved")
     } else {
       toast.error(result.error)
     }
@@ -362,7 +362,7 @@ function RegistrationPageTab({
     <div className="space-y-6 max-w-2xl">
       <div>
         <p className="text-xs text-muted-foreground">
-          Customize the header on this event&apos;s public registration page. Leave a field blank to use the default.
+          Customize the header shown on this event&apos;s public registration and check-in pages. Leave a field blank to use the default.
         </p>
       </div>
 
@@ -409,7 +409,7 @@ function RegistrationPageTab({
 
       {dirty && (
         <Button onClick={handleSave} disabled={saving}>
-          {saving ? "Saving…" : "Save registration page"}
+          {saving ? "Saving…" : "Save page settings"}
         </Button>
       )}
     </div>
@@ -493,7 +493,7 @@ export function EventSettingsClient({
         <TabsList>
           <TabsTrigger value="modules">Modules</TabsTrigger>
           <TabsTrigger value="registration-form">Registration Form</TabsTrigger>
-          <TabsTrigger value="registration-page">Registration Page</TabsTrigger>
+          <TabsTrigger value="registration-page">Registration & Check-in Page</TabsTrigger>
           <TabsTrigger value="committees">Committees</TabsTrigger>
           <TabsTrigger value="branding">Branding</TabsTrigger>
         </TabsList>
@@ -504,10 +504,10 @@ export function EventSettingsClient({
 
             {/* Baptism */}
             <Card>
-              <CardHeader className="pb-3">
+              <CardHeader className="p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-3 min-w-0">
-                    <IconCross className="size-5 shrink-0 text-muted-foreground mt-0.5" />
+                    <IconCross className="size-6 shrink-0 text-muted-foreground mt-0.5" />
                     <div className="min-w-0">
                       <CardTitle className="text-base">Baptism</CardTitle>
                       <CardDescription className="mt-0.5">
@@ -528,10 +528,10 @@ export function EventSettingsClient({
             {/* Embarkation — only for OneTime/MultiDay */}
             {showEmbarkation && (
               <Card>
-                <CardHeader className={modules.has("Embarkation") ? "pb-3" : undefined}>
+                <CardHeader className={modules.has("Embarkation") ? "p-4 pb-2" : "p-4"}>
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex items-start gap-3 min-w-0">
-                      <IconBus className="size-5 shrink-0 text-muted-foreground mt-0.5" />
+                      <IconBus className="size-6 shrink-0 text-muted-foreground mt-0.5" />
                       <div className="min-w-0">
                         <CardTitle className="text-base">Embarkation</CardTitle>
                         <CardDescription className="mt-0.5">
@@ -604,10 +604,10 @@ export function EventSettingsClient({
             )}
             {/* Catch Mech */}
             <Card>
-              <CardHeader className="pb-3">
+              <CardHeader className="p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-3 min-w-0">
-                    <IconFish className="size-5 shrink-0 text-muted-foreground mt-0.5" />
+                    <IconFish className="size-6 shrink-0 text-muted-foreground mt-0.5" />
                     <div className="min-w-0">
                       <CardTitle className="text-base">Catch Mech</CardTitle>
                       <CardDescription className="mt-0.5">
@@ -629,10 +629,10 @@ export function EventSettingsClient({
 
             {/* Volunteer Info Form */}
             <Card>
-              <CardHeader className="pb-3">
+              <CardHeader className="p-4 pb-3">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-3 min-w-0">
-                    <IconUsers className="size-5 shrink-0 text-muted-foreground mt-0.5" />
+                    <IconUsers className="size-6 shrink-0 text-muted-foreground mt-0.5" />
                     <div className="min-w-0">
                       <CardTitle className="text-base">Volunteer Info Form</CardTitle>
                       <CardDescription className="mt-0.5">
@@ -660,10 +660,10 @@ export function EventSettingsClient({
 
             {/* Small Group */}
             <Card>
-              <CardHeader className="pb-3">
+              <CardHeader className="p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-3 min-w-0">
-                    <IconUsers className="size-5 shrink-0 text-muted-foreground mt-0.5" />
+                    <IconUsers className="size-6 shrink-0 text-muted-foreground mt-0.5" />
                     <div className="min-w-0">
                       <CardTitle className="text-base">Small Group</CardTitle>
                       <CardDescription className="mt-0.5">
@@ -683,10 +683,10 @@ export function EventSettingsClient({
 
             {/* Dietary Restrictions */}
             <Card>
-              <CardHeader className="pb-3">
+              <CardHeader className="p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-3 min-w-0">
-                    <IconSalad className="size-5 shrink-0 text-muted-foreground mt-0.5" />
+                    <IconSalad className="size-6 shrink-0 text-muted-foreground mt-0.5" />
                     <div className="min-w-0">
                       <CardTitle className="text-base">Dietary Restrictions</CardTitle>
                       <CardDescription className="mt-0.5">
@@ -706,10 +706,10 @@ export function EventSettingsClient({
 
             {/* Payment */}
             <Card>
-              <CardHeader className="pb-3">
+              <CardHeader className="p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-3 min-w-0">
-                    <IconCash className="size-5 shrink-0 text-muted-foreground mt-0.5" />
+                    <IconCash className="size-6 shrink-0 text-muted-foreground mt-0.5" />
                     <div className="min-w-0">
                       <CardTitle className="text-base">Payment Reference</CardTitle>
                       <CardDescription className="mt-0.5">
@@ -729,10 +729,10 @@ export function EventSettingsClient({
 
             {/* Auto-assign Breakout */}
             <Card>
-              <CardHeader className="pb-3">
+              <CardHeader className="p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-3 min-w-0">
-                    <IconSparkles className="size-5 shrink-0 text-muted-foreground mt-0.5" />
+                    <IconSparkles className="size-6 shrink-0 text-muted-foreground mt-0.5" />
                     <div className="min-w-0">
                       <CardTitle className="text-base">Automatically assign breakout groups</CardTitle>
                       <CardDescription className="mt-0.5">

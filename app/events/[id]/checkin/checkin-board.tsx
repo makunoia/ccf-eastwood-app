@@ -4,15 +4,8 @@ import * as React from "react"
 import { IconCheck, IconLoader2, IconUserQuestion, IconArrowLeft } from "@tabler/icons-react"
 
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { TimeInput } from "@/components/ui/time-input"
+import { ScheduleInput } from "@/components/ui/schedule-input"
 import { YearInput } from "@/components/ui/year-input"
 import { Label } from "@/components/ui/label"
 import { OptionalEmailInput } from "@/components/ui/optional-email-input"
@@ -105,16 +98,6 @@ type Props = {
 }
 
 const AUTO_RESET_MS = 4000
-
-const DAYS_OF_WEEK = [
-  { value: "0", label: "Sunday" },
-  { value: "1", label: "Monday" },
-  { value: "2", label: "Tuesday" },
-  { value: "3", label: "Wednesday" },
-  { value: "4", label: "Thursday" },
-  { value: "5", label: "Friday" },
-  { value: "6", label: "Saturday" },
-]
 
 function queryIsPhone(q: string): boolean {
   return !q.includes("@")
@@ -338,7 +321,7 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], defaultLi
   if (step === "lookup") {
     return (
       <div className="flex flex-col items-center justify-center px-6 py-8">
-        <div className="w-full max-w-sm space-y-6">
+        <div className="w-full space-y-6">
           <p className="text-sm text-muted-foreground text-center">
             How would you like to look up your registration?
           </p>
@@ -498,7 +481,7 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], defaultLi
   if (step === "disambiguate") {
     return (
       <div className="flex flex-col items-center justify-center px-6 py-8">
-        <div className="w-full max-w-sm space-y-6">
+        <div className="w-full space-y-6">
           <div className="space-y-1 text-center">
             <h2 className="text-2xl font-semibold tracking-tight">Multiple profiles found</h2>
             <p className="text-sm text-muted-foreground">
@@ -546,7 +529,7 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], defaultLi
   if (step === "confirm" && matched) {
     return (
       <div className="flex flex-col items-center justify-center px-6 py-8">
-        <div className="w-full max-w-sm space-y-8">
+        <div className="w-full space-y-8">
           <div className="space-y-3 text-center">
             <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Is this you?</p>
             <div>
@@ -592,7 +575,7 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], defaultLi
   if (step === "sg-prompt" && matched) {
     return (
       <div className="flex flex-col items-center justify-center px-6 py-8">
-        <div className="w-full max-w-sm space-y-6">
+        <div className="w-full space-y-6">
           <div className="space-y-1 text-center">
             <h2 className="text-2xl font-semibold tracking-tight">One quick question</h2>
             <p className="text-sm text-muted-foreground">
@@ -657,7 +640,7 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], defaultLi
   if (step === "success" && matched) {
     return (
       <div className="flex flex-col items-center justify-center px-6 py-8">
-        <div className="w-full max-w-sm space-y-6 text-center">
+        <div className="w-full space-y-6 text-center">
           <div className="mx-auto flex size-20 items-center justify-center rounded-full bg-green-100">
             <IconCheck className="size-10 text-green-600" />
           </div>
@@ -683,7 +666,7 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], defaultLi
   if (step === "already-in" && matched) {
     return (
       <div className="flex flex-col items-center justify-center px-6 py-8">
-        <div className="w-full max-w-sm space-y-6 text-center">
+        <div className="w-full space-y-6 text-center">
           <div className="mx-auto flex size-20 items-center justify-center rounded-full bg-green-100">
             <IconCheck className="size-10 text-green-600" />
           </div>
@@ -705,7 +688,7 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], defaultLi
   if (step === "not-found-prompt") {
     return (
       <div className="flex flex-col items-center justify-center px-6 py-8">
-        <div className="w-full max-w-sm space-y-6 text-center">
+        <div className="w-full space-y-6 text-center">
           <div className="mx-auto flex size-20 items-center justify-center rounded-full bg-muted">
             <IconUserQuestion className="size-10 text-muted-foreground" />
           </div>
@@ -742,13 +725,11 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], defaultLi
     const isPhone = queryIsPhone(query)
     return (
       <div className="flex flex-col items-center justify-center px-6 py-8">
-        <div className="w-full max-w-sm">
-          <Card>
-            <CardHeader>
-              <CardTitle>Register &amp; Check In</CardTitle>
-              <CardDescription>Fill in your details and we&apos;ll check you in right away.</CardDescription>
-            </CardHeader>
-            <CardContent>
+        <div className="w-full space-y-6">
+          <div className="space-y-1">
+            <h2 className="text-2xl font-semibold tracking-tight">Register &amp; Check In</h2>
+            <p className="text-sm text-muted-foreground">Fill in your details and we&apos;ll check you in right away.</p>
+          </div>
               <form onSubmit={handleWalkInSubmit} className="space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
@@ -969,15 +950,13 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], defaultLi
                 </Button>
               </form>
 
-              <button
-                type="button"
-                onClick={() => { setError(null); setStep("not-found-prompt") }}
-                className="mt-4 flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-              >
-                <IconArrowLeft className="size-4" /> Back
-              </button>
-            </CardContent>
-          </Card>
+          <button
+            type="button"
+            onClick={() => { setError(null); setStep("not-found-prompt") }}
+            className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          >
+            <IconArrowLeft className="size-4" /> Back
+          </button>
         </div>
       </div>
     )
@@ -1045,7 +1024,7 @@ function ProfileForm({ guestId, existingProfile, lifeStages, defaultLifeStageId 
 
   return (
     <div className="flex flex-col px-6 py-8">
-      <div className="mx-auto w-full max-w-sm space-y-6">
+      <div className="w-full space-y-6">
         <div className="space-y-1">
           <h2 className="text-xl font-semibold tracking-tight">Tell us about yourself</h2>
           <p className="text-sm text-muted-foreground">
@@ -1145,33 +1124,15 @@ function ProfileForm({ guestId, existingProfile, lifeStages, defaultLifeStageId 
           {/* Schedule */}
           <div className="space-y-2">
             <Label>Best time to meet</Label>
-            <div className="flex flex-wrap items-center gap-2">
-              <Select
-                value={form.scheduleDayOfWeek}
-                onValueChange={(v) => setForm((p) => ({ ...p, scheduleDayOfWeek: v === "none" ? "" : v }))}
-              >
-                <SelectTrigger className="w-36">
-                  <SelectValue placeholder="Day" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Any day</SelectItem>
-                  {DAYS_OF_WEEK.map((d) => (
-                    <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <TimeInput
-                value={form.scheduleTimeStart}
-                onChange={(v) => setForm((p) => ({ ...p, scheduleTimeStart: v }))}
-                className="w-28"
-              />
-              <span className="text-sm text-muted-foreground">to</span>
-              <TimeInput
-                value={form.scheduleTimeEnd}
-                onChange={(v) => setForm((p) => ({ ...p, scheduleTimeEnd: v }))}
-                className="w-28"
-              />
-            </div>
+            <ScheduleInput
+              allowAny
+              dayOfWeek={form.scheduleDayOfWeek}
+              timeStart={form.scheduleTimeStart}
+              timeEnd={form.scheduleTimeEnd}
+              onDayChange={(v) => setForm((p) => ({ ...p, scheduleDayOfWeek: v }))}
+              onTimeStartChange={(v) => setForm((p) => ({ ...p, scheduleTimeStart: v }))}
+              onTimeEndChange={(v) => setForm((p) => ({ ...p, scheduleTimeEnd: v }))}
+            />
           </div>
 
           {/* City */}
@@ -1268,7 +1229,7 @@ function LeaderSearch({ guestId, onSave, onBack }: LeaderSearchProps) {
 
   return (
     <div className="flex flex-col px-6 py-8">
-      <div className="mx-auto w-full max-w-sm space-y-6">
+      <div className="w-full space-y-6">
         <div className="space-y-1">
           <h2 className="text-xl font-semibold tracking-tight">Find your leader</h2>
           <p className="text-sm text-muted-foreground">

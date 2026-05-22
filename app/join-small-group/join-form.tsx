@@ -34,12 +34,12 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { MultiSelect } from "@/components/ui/multi-select"
-import { TimeInput } from "@/components/ui/time-input"
+import { ScheduleInput } from "@/components/ui/schedule-input"
 import { OptionalEmailInput } from "@/components/ui/optional-email-input"
 import { PhonePHInput } from "@/components/ui/phone-ph-input"
 import { YearInput } from "@/components/ui/year-input"
 import { PrivacyPolicyCheckbox } from "@/components/ui/privacy-policy-checkbox"
-import { LANGUAGE_OPTIONS } from "@/lib/constants/group-options"
+import { LANGUAGE_OPTIONS, DAYS_OF_WEEK } from "@/lib/constants/group-options"
 import { buildFitReasons } from "@/components/small-group-match-card"
 import {
   submitJoinForm,
@@ -51,16 +51,6 @@ import {
 } from "./actions"
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-
-const DAYS_OF_WEEK = [
-  { value: "0", label: "Sunday" },
-  { value: "1", label: "Monday" },
-  { value: "2", label: "Tuesday" },
-  { value: "3", label: "Wednesday" },
-  { value: "4", label: "Thursday" },
-  { value: "5", label: "Friday" },
-  { value: "6", label: "Saturday" },
-]
 
 const SECTIONS = [
   { key: "personal", title: "Personal Information" },
@@ -496,40 +486,14 @@ export function JoinForm({ lifeStages }: { lifeStages: LifeStage[] }) {
                 <Label>
                   Best Time to Meet <span className="text-destructive">*</span>
                 </Label>
-                <div className="flex flex-col gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground">On</span>
-                    <Select
-                      value={prefs.scheduleDayOfWeek || "_none"}
-                      onValueChange={(v) => setPref("scheduleDayOfWeek", v === "_none" ? "" : v)}
-                    >
-                      <SelectTrigger className="w-36">
-                        <SelectValue placeholder="Day" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {DAYS_OF_WEEK.map((d) => (
-                          <SelectItem key={d.value} value={d.value}>
-                            {d.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground">from</span>
-                    <TimeInput
-                      value={prefs.scheduleTimeStart ?? ""}
-                      onChange={(v) => setPref("scheduleTimeStart", v)}
-                      className="w-32"
-                    />
-                    <span className="text-sm text-muted-foreground">to</span>
-                    <TimeInput
-                      value={prefs.scheduleTimeEnd ?? ""}
-                      onChange={(v) => setPref("scheduleTimeEnd", v)}
-                      className="w-32"
-                    />
-                  </div>
-                </div>
+                <ScheduleInput
+                  dayOfWeek={prefs.scheduleDayOfWeek ?? ""}
+                  timeStart={prefs.scheduleTimeStart ?? ""}
+                  timeEnd={prefs.scheduleTimeEnd ?? ""}
+                  onDayChange={(v) => setPref("scheduleDayOfWeek", v)}
+                  onTimeStartChange={(v) => setPref("scheduleTimeStart", v)}
+                  onTimeEndChange={(v) => setPref("scheduleTimeEnd", v)}
+                />
               </div>
 
               {/* Language */}

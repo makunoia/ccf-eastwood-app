@@ -7,7 +7,7 @@ import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { TimeInput } from "@/components/ui/time-input"
+import { ScheduleInput } from "@/components/ui/schedule-input"
 import { Label } from "@/components/ui/label"
 import { MultiSelect } from "@/components/ui/multi-select"
 import {
@@ -23,16 +23,6 @@ import { findSmallGroupMatchesForMember, assignMemberToSmallGroup } from "../mat
 import { assignMemberTransferTemporarily } from "@/app/(dashboard)/small-groups/actions"
 import { saveMemberMatchingPreferences } from "../actions"
 import type { MatchResult } from "@/lib/matching/types"
-
-const DAYS_OF_WEEK = [
-  { value: "0", label: "Sunday" },
-  { value: "1", label: "Monday" },
-  { value: "2", label: "Tuesday" },
-  { value: "3", label: "Wednesday" },
-  { value: "4", label: "Thursday" },
-  { value: "5", label: "Friday" },
-  { value: "6", label: "Saturday" },
-]
 
 function buildScheduleSlot(prefs: MatchingPrefs): { dayOfWeek: number; timeStart: string; timeEnd: string } | null {
   if (!prefs.scheduleDayOfWeek || !prefs.scheduleTimeStart || !prefs.scheduleTimeEnd) {
@@ -190,35 +180,15 @@ export function MemberMatchSection({
           <Label>
             Schedule <span className="text-destructive">*</span>
           </Label>
-          <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-2">
-            <span className="text-sm text-muted-foreground">On</span>
-            <Select
-              value={prefs.scheduleDayOfWeek || "none"}
-              onValueChange={(v) => setPref("scheduleDayOfWeek", v === "none" ? "" : v)}
-            >
-              <SelectTrigger className="h-auto w-auto min-w-28 border-0 border-b border-dashed border-foreground/40 rounded-none px-0.5 pb-0.5 shadow-none focus:ring-0 text-sm">
-                <SelectValue placeholder="day" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Select day</SelectItem>
-                {DAYS_OF_WEEK.map((day) => (
-                  <SelectItem key={day.value} value={day.value}>{day.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <span className="text-sm text-muted-foreground">from</span>
-            <TimeInput
-              variant="inline"
-              value={prefs.scheduleTimeStart}
-              onChange={(v) => setPref("scheduleTimeStart", v)}
-            />
-            <span className="text-sm text-muted-foreground">to</span>
-            <TimeInput
-              variant="inline"
-              value={prefs.scheduleTimeEnd}
-              onChange={(v) => setPref("scheduleTimeEnd", v)}
-            />
-          </div>
+          <ScheduleInput
+            variant="inline"
+            dayOfWeek={prefs.scheduleDayOfWeek}
+            timeStart={prefs.scheduleTimeStart}
+            timeEnd={prefs.scheduleTimeEnd}
+            onDayChange={(v) => setPref("scheduleDayOfWeek", v)}
+            onTimeStartChange={(v) => setPref("scheduleTimeStart", v)}
+            onTimeEndChange={(v) => setPref("scheduleTimeEnd", v)}
+          />
         </div>
 
         {/* Required: Life Stage + Language */}
