@@ -22,7 +22,7 @@ export function StepColumnMap({ fields, headers, mapping, onChange, errors }: Pr
         <span className="text-destructive">*</span>.
       </p>
       <div className="rounded-lg border overflow-hidden">
-        <table className="w-full text-sm">
+        <table className="w-full table-fixed text-sm">
           <thead className="bg-muted/50 border-b">
             <tr>
               <th className="px-4 py-2 text-left font-medium w-1/2">Data field</th>
@@ -49,7 +49,7 @@ export function StepColumnMap({ fields, headers, mapping, onChange, errors }: Pr
                     value={mapping[field.key] ?? ""}
                     onChange={(e) => set(field.key, e.target.value)}
                     className={[
-                      "w-full rounded-md border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring",
+                      "w-full min-w-0 truncate rounded-md border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring",
                       errors[field.key] ? "border-destructive" : "border-input",
                     ].join(" ")}
                   >

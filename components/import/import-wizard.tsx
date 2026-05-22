@@ -317,11 +317,15 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
     }
   }
 
-  const isWide = step === "preview" || step === "results"
+  function dialogWidth() {
+    if (step === "preview" || step === "results") return "sm:max-w-4xl"
+    if (step === "column-map") return "sm:max-w-2xl"
+    return "sm:max-w-lg"
+  }
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className={isWide ? "sm:max-w-4xl" : "sm:max-w-lg"}>
+      <DialogContent className={dialogWidth()}>
         <DialogHeader>
           <DialogTitle>Import {entityLabel}</DialogTitle>
           {/* Step indicator */}
