@@ -121,6 +121,8 @@ const registrantSchema = z.object({
   workCity: z.string().optional().nullable().transform((v) => v || null),
   scheduleDayOfWeek: z.number().int().min(0).max(6).optional().nullable(),
   scheduleTimeStart: z.string().optional().nullable().transform((v) => v || null),
+  scheduleTimeEnd: z.string().optional().nullable().transform((v) => v || null),
+  claimedSmallGroupId: z.string().optional().nullable().transform((v) => v || null),
   // Optional dietary fields — collected when the Dietary registration module is enabled
   dietaryPreference: z
     .enum([
@@ -555,7 +557,7 @@ export async function createRegistrant(
         select: {
           email: true, phone: true, birthMonth: true, birthYear: true,
           lifeStageId: true, gender: true, language: true, meetingPreference: true, workCity: true,
-          scheduleDayOfWeek: true, scheduleTimeStart: true,
+          scheduleDayOfWeek: true, scheduleTimeStart: true, scheduleTimeEnd: true, claimedSmallGroupId: true,
         },
       })
       const guestUpdates: Record<string, unknown> = {}
@@ -570,6 +572,8 @@ export async function createRegistrant(
       if (!existing.workCity && parsed.data.workCity) guestUpdates.workCity = parsed.data.workCity
       if (existing.scheduleDayOfWeek == null && parsed.data.scheduleDayOfWeek != null) guestUpdates.scheduleDayOfWeek = parsed.data.scheduleDayOfWeek
       if (!existing.scheduleTimeStart && parsed.data.scheduleTimeStart) guestUpdates.scheduleTimeStart = parsed.data.scheduleTimeStart
+      if (!existing.scheduleTimeEnd && parsed.data.scheduleTimeEnd) guestUpdates.scheduleTimeEnd = parsed.data.scheduleTimeEnd
+      if (!existing.claimedSmallGroupId && parsed.data.claimedSmallGroupId) guestUpdates.claimedSmallGroupId = parsed.data.claimedSmallGroupId
 
       const [registrant] = await db.$transaction([
         db.eventRegistrant.create({
@@ -607,6 +611,8 @@ export async function createRegistrant(
         workCity: parsed.data.workCity ?? null,
         scheduleDayOfWeek: parsed.data.scheduleDayOfWeek ?? null,
         scheduleTimeStart: parsed.data.scheduleTimeStart ?? null,
+        scheduleTimeEnd: parsed.data.scheduleTimeEnd ?? null,
+        claimedSmallGroupId: parsed.data.claimedSmallGroupId ?? null,
       }
 
       // Deduplicate guests: try phone first, then email, then last name + birthday
@@ -659,7 +665,9 @@ export async function createRegistrant(
             ...(matchingProfile.scheduleDayOfWeek !== null && {
               scheduleDayOfWeek: matchingProfile.scheduleDayOfWeek,
               scheduleTimeStart: matchingProfile.scheduleTimeStart,
+              scheduleTimeEnd: matchingProfile.scheduleTimeEnd,
             }),
+          ...(matchingProfile.claimedSmallGroupId !== null && { claimedSmallGroupId: matchingProfile.claimedSmallGroupId }),
           },
         })
       } else {
@@ -678,6 +686,8 @@ export async function createRegistrant(
             workCity: matchingProfile.workCity,
             scheduleDayOfWeek: matchingProfile.scheduleDayOfWeek,
             scheduleTimeStart: matchingProfile.scheduleTimeStart,
+            scheduleTimeEnd: matchingProfile.scheduleTimeEnd,
+            claimedSmallGroupId: matchingProfile.claimedSmallGroupId,
           },
           select: { id: true },
         })
@@ -922,6 +932,7 @@ type GuestSmallGroupPrompt = {
     workCity: string | null
     scheduleDayOfWeek: number | null
     scheduleTimeStart: string | null
+    scheduleTimeEnd: string | null
   }
 }
 
@@ -979,7 +990,9 @@ export async function lookupCheckinRegistrant(
             workCity: true,
             scheduleDayOfWeek: true,
             scheduleTimeStart: true,
+            scheduleTimeEnd: true,
             claimedSmallGroupId: true,
+            groupRequests: { select: { status: true } },
           },
         },
       },
@@ -1016,27 +1029,25 @@ export async function lookupCheckinRegistrant(
       }
 
       let guestSmallGroupPrompt: GuestSmallGroupPrompt | null = null
-      if (occurrenceId !== null && matched.guestId && matched.guest) {
+      if (matched.guestId && matched.guest) {
         const g = matched.guest
-        const profileIncomplete = !g.lifeStageId || !g.gender || !g.meetingPreference
         const noClaimedGroup = !g.claimedSmallGroupId
-        if (profileIncomplete && noClaimedGroup) {
-          const priorCheckInCount = await db.occurrenceAttendee.count({
-            where: { registrantId: matched.id, occurrence: { eventId } },
-          })
-          if (priorCheckInCount >= 1) {
-            guestSmallGroupPrompt = {
-              guestId: matched.guestId,
-              existingProfile: {
-                lifeStageId: g.lifeStageId,
-                gender: g.gender,
-                language: g.language,
-                meetingPreference: g.meetingPreference,
-                workCity: g.workCity,
-                scheduleDayOfWeek: g.scheduleDayOfWeek,
-                scheduleTimeStart: g.scheduleTimeStart,
-              },
-            }
+        const hasPendingRequest = g.groupRequests.some(
+          (r) => r.status === "Pending" || r.status === "Confirmed"
+        )
+        if (noClaimedGroup && !hasPendingRequest) {
+          guestSmallGroupPrompt = {
+            guestId: matched.guestId,
+            existingProfile: {
+              lifeStageId: g.lifeStageId,
+              gender: g.gender,
+              language: g.language,
+              meetingPreference: g.meetingPreference,
+              workCity: g.workCity,
+              scheduleDayOfWeek: g.scheduleDayOfWeek,
+              scheduleTimeStart: g.scheduleTimeStart,
+              scheduleTimeEnd: g.scheduleTimeEnd,
+            },
           }
         }
       }
@@ -1107,7 +1118,9 @@ export async function lookupCheckinRegistrantByProfile(
             workCity: true,
             scheduleDayOfWeek: true,
             scheduleTimeStart: true,
+            scheduleTimeEnd: true,
             claimedSmallGroupId: true,
+            groupRequests: { select: { status: true } },
           },
         },
       },
@@ -1150,27 +1163,25 @@ export async function lookupCheckinRegistrantByProfile(
       }
 
       let guestSmallGroupPrompt: GuestSmallGroupPrompt | null = null
-      if (occurrenceId !== null && matched.guestId && matched.guest) {
+      if (matched.guestId && matched.guest) {
         const g = matched.guest
-        const profileIncomplete = !g.lifeStageId || !g.gender || !g.meetingPreference
         const noClaimedGroup = !g.claimedSmallGroupId
-        if (profileIncomplete && noClaimedGroup) {
-          const priorCheckInCount = await db.occurrenceAttendee.count({
-            where: { registrantId: matched.id, occurrence: { eventId } },
-          })
-          if (priorCheckInCount >= 1) {
-            guestSmallGroupPrompt = {
-              guestId: matched.guestId,
-              existingProfile: {
-                lifeStageId: g.lifeStageId,
-                gender: g.gender,
-                language: g.language,
-                meetingPreference: g.meetingPreference,
-                workCity: g.workCity,
-                scheduleDayOfWeek: g.scheduleDayOfWeek,
-                scheduleTimeStart: g.scheduleTimeStart,
-              },
-            }
+        const hasPendingRequest = g.groupRequests.some(
+          (r) => r.status === "Pending" || r.status === "Confirmed"
+        )
+        if (noClaimedGroup && !hasPendingRequest) {
+          guestSmallGroupPrompt = {
+            guestId: matched.guestId,
+            existingProfile: {
+              lifeStageId: g.lifeStageId,
+              gender: g.gender,
+              language: g.language,
+              meetingPreference: g.meetingPreference,
+              workCity: g.workCity,
+              scheduleDayOfWeek: g.scheduleDayOfWeek,
+              scheduleTimeStart: g.scheduleTimeStart,
+              scheduleTimeEnd: g.scheduleTimeEnd,
+            },
           }
         }
       }

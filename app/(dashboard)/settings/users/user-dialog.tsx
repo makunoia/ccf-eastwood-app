@@ -271,9 +271,9 @@ export function UserDialog({ open, onOpenChange, user, events }: Props) {
               <div className="flex items-center justify-between">
                 <Label>Feature access</Label>
                 {/* Action legend */}
-                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                <div className="flex items-center">
                   {PERMISSION_ACTIONS.map((a) => (
-                    <span key={a}>{ACTION_LABELS[a]}</span>
+                    <span key={a} className="w-16 text-center text-xs text-muted-foreground">{ACTION_LABELS[a]}</span>
                   ))}
                 </div>
               </div>
@@ -284,7 +284,7 @@ export function UserDialog({ open, onOpenChange, user, events }: Props) {
                   return (
                     <div key={feature} className="flex items-center justify-between px-3 py-2.5">
                       <span className="text-sm font-medium">{FEATURE_LABELS[feature]}</span>
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center">
                         {PERMISSION_ACTIONS.map((action) => {
                           const isChecked = actions.includes(action)
                           // Read cannot be unchecked if a dependent action is active
@@ -292,13 +292,14 @@ export function UserDialog({ open, onOpenChange, user, events }: Props) {
                             action === "Read" &&
                             READ_DEPENDENTS.some((dep) => actions.includes(dep))
                           return (
-                            <Checkbox
-                              key={action}
-                              checked={isChecked}
-                              disabled={isReadLocked}
-                              onCheckedChange={() => toggleAction(feature, action)}
-                              aria-label={`${FEATURE_LABELS[feature]} — ${ACTION_LABELS[action]}`}
-                            />
+                            <div key={action} className="w-16 flex justify-center">
+                              <Checkbox
+                                checked={isChecked}
+                                disabled={isReadLocked}
+                                onCheckedChange={() => toggleAction(feature, action)}
+                                aria-label={`${FEATURE_LABELS[feature]} — ${ACTION_LABELS[action]}`}
+                              />
+                            </div>
                           )
                         })}
                       </div>

@@ -33,6 +33,7 @@ import {
   createRegistrant,
   lookupMemberForRegistration,
 } from "@/app/(dashboard)/events/actions"
+import { searchMembersForLeaderLookup } from "@/app/(dashboard)/guests/actions"
 import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
 import {
   suggestBreakoutGroup,
@@ -94,6 +95,7 @@ type FormValues = {
   workCity: string
   scheduleDayOfWeek: string
   scheduleTimeStart: string
+  scheduleTimeEnd: string
   dietaryPreference: DietaryValue
   dietaryOther: string
   paymentReference: string
@@ -150,6 +152,7 @@ const defaultForm: FormValues = {
   workCity: "",
   scheduleDayOfWeek: "",
   scheduleTimeStart: "",
+  scheduleTimeEnd: "",
   dietaryPreference: "",
   dietaryOther: "",
   paymentReference: "",
@@ -202,7 +205,12 @@ export function RegistrationForm({
   const [form, setForm] = React.useState<FormValues>({ ...defaultForm, lifeStageId: defaultLifeStageId })
   const [noMobile, setNoMobile] = React.useState(false)
   const [noEmail, setNoEmail] = React.useState(false)
-  const [wantsSmallGroup, setWantsSmallGroup] = React.useState(false)
+  const [smallGroupIntent, setSmallGroupIntent] = React.useState<null | "wants" | "already_in">(null)
+  const [claimedSmallGroupId, setClaimedSmallGroupId] = React.useState("")
+  const [claimedGroupQuery, setClaimedGroupQuery] = React.useState("")
+  const [claimedGroupResults, setClaimedGroupResults] = React.useState<Array<{ id: string; name: string; leaderName: string }>>([])
+  const [claimedGroupSearching, setClaimedGroupSearching] = React.useState(false)
+  const claimedGroupDebounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const [submitting, setSubmitting] = React.useState(false)
   const [matchedMember, setMatchedMember] = React.useState<MatchedMember | null>(null)
   const [confirmedMember, setConfirmedMember] = React.useState<MatchedMember | null>(null)
@@ -234,6 +242,36 @@ export function RegistrationForm({
     })
   }, [breakoutCandidates, form.gender, form.birthYear])
 
+  React.useEffect(() => {
+    return () => { if (claimedGroupDebounceRef.current) clearTimeout(claimedGroupDebounceRef.current) }
+  }, [])
+
+  function handleClaimedGroupQueryChange(value: string) {
+    setClaimedGroupQuery(value)
+    setClaimedSmallGroupId("")
+    if (claimedGroupDebounceRef.current) clearTimeout(claimedGroupDebounceRef.current)
+    claimedGroupDebounceRef.current = setTimeout(async () => {
+      if (value.trim().length < 2) {
+        setClaimedGroupResults([])
+        return
+      }
+      setClaimedGroupSearching(true)
+      const res = await searchMembersForLeaderLookup(value.trim())
+      setClaimedGroupSearching(false)
+      if (res.success) {
+        setClaimedGroupResults(
+          res.data.flatMap((m) =>
+            m.ledGroups.map((g) => ({
+              id: g.id,
+              name: g.name,
+              leaderName: `${m.firstName} ${m.lastName}`,
+            }))
+          )
+        )
+      }
+    }, 300)
+  }
+
   const sections: { key: string; title: string }[] = [
     { key: "personal", title: "Personal Information" },
     ...(includeSmallGroup && !skipSmallGroup ? [{ key: "smallgroup", title: "Small Group Info" }] : []),
@@ -253,7 +291,10 @@ export function RegistrationForm({
     setForm({ ...defaultForm, lifeStageId: defaultLifeStageId })
     setNoMobile(false)
     setNoEmail(false)
-    setWantsSmallGroup(false)
+    setSmallGroupIntent(null)
+    setClaimedSmallGroupId("")
+    setClaimedGroupQuery("")
+    setClaimedGroupResults([])
     setMatchedMember(null)
     setConfirmedMember(null)
     setSkipSmallGroup(false)
@@ -358,7 +399,7 @@ export function RegistrationForm({
 
     // Auto-check "wants small group" for confirmed members who don't have one yet
     if (match.recordType === "member" && !match.smallGroupId) {
-      setWantsSmallGroup(true)
+      setSmallGroupIntent("wants")
     }
 
     setMatchedMember(null)
@@ -454,7 +495,7 @@ export function RegistrationForm({
     skipDeduplication?: boolean
   ) {
     setSubmitting(true)
-    const includeMatching = includeSmallGroup && wantsSmallGroup
+    const includeMatching = includeSmallGroup && smallGroupIntent === "wants"
     const result = await createRegistrant(
       eventId,
       {
@@ -477,6 +518,9 @@ export function RegistrationForm({
             ? parseInt(form.scheduleDayOfWeek, 10)
             : null,
         scheduleTimeStart: includeMatching ? form.scheduleTimeStart || null : null,
+        scheduleTimeEnd: includeMatching ? form.scheduleTimeEnd || null : null,
+        claimedSmallGroupId:
+          includeSmallGroup && smallGroupIntent === "already_in" ? claimedSmallGroupId || null : null,
         dietaryPreference: includeDietary
           ? form.dietaryPreference === ""
             ? null
@@ -968,21 +1012,122 @@ export function RegistrationForm({
                 </div>
               )}
 
-              <div className={cn("flex items-start gap-2", !isMultiStep && "pt-1")}>
-                <Checkbox
-                  id="wantsSmallGroup"
-                  checked={wantsSmallGroup}
-                  onCheckedChange={(v) => setWantsSmallGroup(v === true)}
-                  className="mt-0.5"
-                />
-                <Label htmlFor="wantsSmallGroup" className="text-sm font-normal leading-snug">
-                  {confirmedMember?.recordType === "member" && !confirmedMember.smallGroupId
-                    ? "Join a Small Group"
-                    : "I want to join a Small Group"}
-                </Label>
-              </div>
+              {/* For confirmed members: single "Join a Small Group" toggle */}
+              {confirmedMember?.recordType === "member" ? (
+                <div className={cn("flex items-start gap-2", !isMultiStep && "pt-1")}>
+                  <Checkbox
+                    id="wantsSmallGroup"
+                    checked={smallGroupIntent === "wants"}
+                    onCheckedChange={(v) => setSmallGroupIntent(v === true ? "wants" : null)}
+                    className="mt-0.5"
+                  />
+                  <Label htmlFor="wantsSmallGroup" className="text-sm font-normal leading-snug">
+                    Join a Small Group
+                  </Label>
+                </div>
+              ) : (
+                /* For guests / unconfirmed: two mutually exclusive options */
+                <div className={cn("space-y-2", !isMultiStep && "pt-1")}>
+                  <div className="flex items-start gap-2">
+                    <Checkbox
+                      id="wantsSmallGroup"
+                      checked={smallGroupIntent === "wants"}
+                      onCheckedChange={(v) => setSmallGroupIntent(v === true ? "wants" : null)}
+                      className="mt-0.5"
+                    />
+                    <Label htmlFor="wantsSmallGroup" className="text-sm font-normal leading-snug">
+                      I want to join a Small Group
+                    </Label>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <Checkbox
+                      id="alreadyInSmallGroup"
+                      checked={smallGroupIntent === "already_in"}
+                      onCheckedChange={(v) => {
+                        setSmallGroupIntent(v === true ? "already_in" : null)
+                        if (!v) {
+                          setClaimedSmallGroupId("")
+                          setClaimedGroupQuery("")
+                          setClaimedGroupResults([])
+                        }
+                      }}
+                      className="mt-0.5"
+                    />
+                    <Label htmlFor="alreadyInSmallGroup" className="text-sm font-normal leading-snug">
+                      I&apos;m already part of a Small Group
+                    </Label>
+                  </div>
+                </div>
+              )}
 
-              {wantsSmallGroup && (
+              {/* Already in a group — leader/group search */}
+              {smallGroupIntent === "already_in" && (
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="claimedGroupSearch">Search by leader&apos;s name</Label>
+                    <Input
+                      id="claimedGroupSearch"
+                      value={claimedGroupQuery}
+                      onChange={(e) => handleClaimedGroupQueryChange(e.target.value)}
+                      placeholder="e.g. Juan dela Cruz"
+                      autoComplete="off"
+                    />
+                  </div>
+                  {claimedGroupSearching && (
+                    <p className="text-xs text-muted-foreground">Searching…</p>
+                  )}
+                  {!claimedGroupSearching && claimedGroupResults.length > 0 && (
+                    <div className="space-y-1.5">
+                      {claimedGroupResults.map((g) => (
+                        <button
+                          key={g.id}
+                          type="button"
+                          onClick={() => {
+                            setClaimedSmallGroupId(g.id)
+                            setClaimedGroupQuery(g.name)
+                            setClaimedGroupResults([])
+                          }}
+                          className={cn(
+                            "w-full rounded-lg border px-4 py-3 text-left transition-colors",
+                            claimedSmallGroupId === g.id
+                              ? "border-primary bg-primary/5"
+                              : "bg-background hover:bg-muted"
+                          )}
+                        >
+                          <p className="text-sm font-medium">{g.name}</p>
+                          <p className="text-xs text-muted-foreground">Led by {g.leaderName}</p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {!claimedGroupSearching && claimedGroupQuery.trim().length >= 2 && claimedGroupResults.length === 0 && !claimedSmallGroupId && (
+                    <p className="text-xs text-muted-foreground">
+                      No groups found for &ldquo;{claimedGroupQuery}&rdquo;.
+                    </p>
+                  )}
+                  {claimedSmallGroupId && claimedGroupResults.length === 0 && (
+                    <div className="flex items-center justify-between rounded-lg border border-primary bg-primary/5 px-4 py-3">
+                      <div>
+                        <p className="text-sm font-medium">{claimedGroupQuery}</p>
+                        <p className="text-xs text-muted-foreground">Small Group selected</p>
+                      </div>
+                      <button
+                        type="button"
+                        className="text-xs text-muted-foreground hover:text-foreground"
+                        onClick={() => {
+                          setClaimedSmallGroupId("")
+                          setClaimedGroupQuery("")
+                        }}
+                      >
+                        Change
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Wants to join — matching preferences */}
+              {smallGroupIntent === "wants" && (
                 <>
                   <div className={cn(isMultiStep ? "pt-1" : "pt-2 border-t")}>
                     <p className="text-sm font-medium text-foreground">Help us connect you</p>
@@ -1063,6 +1208,12 @@ export function RegistrationForm({
                       <TimeInput
                         value={form.scheduleTimeStart}
                         onChange={(v) => set("scheduleTimeStart", v)}
+                        className="w-28"
+                      />
+                      <span className="text-sm text-muted-foreground">to</span>
+                      <TimeInput
+                        value={form.scheduleTimeEnd}
+                        onChange={(v) => set("scheduleTimeEnd", v)}
                         className="w-28"
                       />
                     </div>

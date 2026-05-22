@@ -13,6 +13,7 @@ async function getPageData(id: string) {
         startDate: true,
         useMinistryBrand: true,
         brandMinistryId: true,
+        logoUrl: true,
         themeColorPrimary: true,
         ministries: {
           select: {
@@ -20,6 +21,7 @@ async function getPageData(id: string) {
               select: {
                 id: true,
                 name: true,
+                logoUrl: true,
                 themeColorPrimary: true,
               },
             },
@@ -35,9 +37,15 @@ async function getPageData(id: string) {
 function resolveEventBrand(event: NonNullable<Awaited<ReturnType<typeof getPageData>>["event"]>) {
   if (event.useMinistryBrand && event.brandMinistryId) {
     const ministry = event.ministries.find((em) => em.ministry.id === event.brandMinistryId)
-    return { primaryColor: ministry?.ministry.themeColorPrimary ?? null }
+    return {
+      logoUrl: ministry?.ministry.logoUrl ?? null,
+      primaryColor: ministry?.ministry.themeColorPrimary ?? null,
+    }
   }
-  return { primaryColor: event.themeColorPrimary ?? null }
+  return {
+    logoUrl: event.logoUrl ?? null,
+    primaryColor: event.themeColorPrimary ?? null,
+  }
 }
 
 export default async function VolunteerInfoPage({
@@ -49,7 +57,7 @@ export default async function VolunteerInfoPage({
   const { event, lifeStages } = await getPageData(id)
   if (!event) notFound()
 
-  const { primaryColor } = resolveEventBrand(event)
+  const { logoUrl, primaryColor } = resolveEventBrand(event)
   const ministryNames = event.ministries.map((em) => em.ministry.name).join(" · ")
   const dateLabel = event.startDate.toLocaleDateString("en-PH", {
     month: "long",
@@ -76,6 +84,15 @@ export default async function VolunteerInfoPage({
           </>
         )}
         <div className="relative mx-auto w-full max-w-md">
+          {logoUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={logoUrl}
+              alt={event.name}
+              className="mx-auto mb-4 size-20 rounded-xl object-contain"
+              style={primaryColor ? { backgroundColor: "rgba(255,255,255,0.15)", padding: "0.5rem" } : undefined}
+            />
+          )}
           <h1 className={`text-2xl font-bold ${primaryColor ? "text-white" : ""}`}>
             {event.name}
           </h1>
