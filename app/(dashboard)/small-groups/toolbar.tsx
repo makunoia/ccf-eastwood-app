@@ -5,7 +5,7 @@ import Link from "next/link"
 import { IconExternalLink, IconPlus, IconUpload } from "@tabler/icons-react"
 import { Button } from "@/components/ui/button"
 import { ImportWizard } from "@/components/import/import-wizard"
-import { checkSmallGroupDuplicates, importSmallGroups } from "./import-actions"
+import { checkSmallGroupDuplicates, checkSmallGroupLeaders, importSmallGroups, loadMembersForLeaderSearch } from "./import-actions"
 
 export function SmallGroupsToolbar() {
   const [importOpen, setImportOpen] = React.useState(false)
@@ -35,9 +35,9 @@ export function SmallGroupsToolbar() {
         config={{ entity: "small-group" }}
         open={importOpen}
         onOpenChange={setImportOpen}
-        onCheckDuplicates={(rows) =>
-          checkSmallGroupDuplicates(rows)
-        }
+        onCheckDuplicates={(rows) => checkSmallGroupDuplicates(rows)}
+        onCheckLeaders={(rows) => checkSmallGroupLeaders(rows)}
+        onLoadMembers={() => loadMembersForLeaderSearch()}
         onImport={(rows) => importSmallGroups(rows)}
       />
     </div>

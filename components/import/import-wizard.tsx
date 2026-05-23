@@ -21,27 +21,38 @@ import type {
   RowResolution,
   DuplicateMatch,
   ImportResult,
+  UnmatchedLeaderRow,
+  LeaderResolution,
 } from "@/lib/import/types"
 import { StepUpload } from "./steps/step-upload"
 import { StepSheetSelect } from "./steps/step-sheet-select"
 import { StepColumnMap } from "./steps/step-column-map"
 import { StepPreview } from "./steps/step-preview"
+import { StepLeaderResolution } from "./steps/step-leader-resolution"
 import { StepResults } from "./steps/step-results"
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const STEP_LABELS: Record<WizardStep, string> = {
-  "upload":       "Upload",
-  "sheet-select": "Select Sheet",
-  "column-map":   "Map Columns",
-  "preview":      "Preview",
-  "results":      "Results",
+  "upload":            "Upload",
+  "sheet-select":      "Select Sheet",
+  "column-map":        "Map Columns",
+  "preview":           "Preview",
+  "leader-resolution": "Resolve Leaders",
+  "results":           "Results",
 }
 
-function stepIndex(step: WizardStep, hasSheetSelect: boolean): number {
-  const all: WizardStep[] = ["upload", "sheet-select", "column-map", "preview", "results"]
-  const visible = hasSheetSelect ? all : all.filter((s) => s !== "sheet-select")
-  return visible.indexOf(step)
+function getVisibleSteps(hasSheetSelect: boolean, hasLeaderResolution: boolean): WizardStep[] {
+  const all: WizardStep[] = ["upload", "sheet-select", "column-map", "preview", "leader-resolution", "results"]
+  return all.filter((s) => {
+    if (s === "sheet-select"      && !hasSheetSelect)      return false
+    if (s === "leader-resolution" && !hasLeaderResolution) return false
+    return true
+  })
+}
+
+function stepIndex(step: WizardStep, visibleSteps: WizardStep[]): number {
+  return visibleSteps.indexOf(step)
 }
 
 function applyMapping(
@@ -60,24 +71,50 @@ function applyMapping(
   })
 }
 
-// ─── Props ────────────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type MemberRecord = {
+  id: string
+  firstName: string
+  lastName: string
+  email: string | null
+  phone: string | null
+}
 
 type Props = {
   config: ImportWizardConfig
   open: boolean
   onOpenChange: (v: boolean) => void
-  // Server actions injected per-entity (avoids dynamic imports)
   onCheckDuplicates: (
     rows: { email?: string; phone?: string; name?: string }[]
   ) => Promise<{ success: true; data: DuplicateMatch[] } | { success: false; error: string }>
   onImport: (
-    rows: Array<{ mapped: Record<string, string>; resolution: RowResolution; existingId?: string; existingType?: "member" | "guest" | "small-group" }>
+    rows: Array<{
+      mapped: Record<string, string>
+      resolution: RowResolution
+      existingId?: string
+      existingType?: "member" | "guest" | "small-group"
+      leaderId?: string
+      createLeader?: { type: "create"; firstName: string; lastName: string; email?: string; mobile?: string }
+    }>
   ) => Promise<{ success: true; data: ImportResult } | { success: false; error: string }>
+  // Optional — only needed for small-group imports
+  onCheckLeaders?: (
+    rows: Array<{
+      index: number
+      groupName?: string
+      leaderFirstName?: string
+      leaderLastName?: string
+      leaderEmail?: string
+      leaderMobile?: string
+    }>
+  ) => Promise<{ success: true; data: UnmatchedLeaderRow[] } | { success: false; error: string }>
+  onLoadMembers?: () => Promise<{ success: true; data: MemberRecord[] } | { success: false; error: string }>
 }
 
 // ─── Wizard ───────────────────────────────────────────────────────────────────
 
-export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, onImport }: Props) {
+export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, onImport, onCheckLeaders, onLoadMembers }: Props) {
   const fields = getFieldsForEntity(config.entity)
   const entityLabel = getEntityLabel(config.entity)
 
@@ -92,8 +129,22 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
   const [result, setResult] = React.useState<ImportResult | null>(null)
   const [fileLoading, setFileLoading] = React.useState(false)
 
+  // Leader resolution state
+  const [unmatchedLeaderRows, setUnmatchedLeaderRows] = React.useState<UnmatchedLeaderRow[]>([])
+  const [leaderResolutions, setLeaderResolutions] = React.useState<Map<number, LeaderResolution>>(new Map())
+  const [checkingLeaders, setCheckingLeaders] = React.useState(false)
+  const [members, setMembers] = React.useState<MemberRecord[]>([])
+  const [membersLoading, setMembersLoading] = React.useState(false)
+
   const sheet = parsedFile?.sheets[selectedSheet]
   const hasSheetSelect = (parsedFile?.sheets.length ?? 0) > 1
+  const hasLeaderResolution = unmatchedLeaderRows.length > 0
+  const visibleSteps = getVisibleSteps(hasSheetSelect, hasLeaderResolution)
+  const currentIdx = stepIndex(step, visibleSteps)
+
+  const allLeadersResolved =
+    unmatchedLeaderRows.length === 0 ||
+    unmatchedLeaderRows.every((r) => leaderResolutions.has(r.rowIndex))
 
   // Reset when dialog closes
   function handleOpenChange(v: boolean) {
@@ -105,6 +156,9 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
       setMappingErrors({})
       setPreviewRows([])
       setResult(null)
+      setUnmatchedLeaderRows([])
+      setLeaderResolutions(new Map())
+      setMembers([])
     }
     onOpenChange(v)
   }
@@ -116,7 +170,6 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
       const parsed = await parseFile(file)
       setParsedFile(parsed)
       setSelectedSheet(0)
-      // Auto-map: if a header matches a field label (case-insensitive), pre-select it
       const firstSheet = parsed.sheets[0]
       if (firstSheet) {
         const autoMap: ColumnMapping = {}
@@ -145,7 +198,6 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
   function handleSheetConfirm() {
     const s = parsedFile?.sheets[selectedSheet]
     if (!s) return
-    // Re-run auto-map for selected sheet
     const autoMap: ColumnMapping = {}
     for (const field of fields) {
       const match = s.headers.find(
@@ -174,7 +226,6 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
     setMappingErrors({})
     if (!sheet) return
 
-    // Build preview rows
     const mappedData = applyMapping(sheet.headers, sheet.rows, mapping)
     const rows: PreviewRow[] = mappedData.map((mapped, i) => ({
       index: i,
@@ -184,7 +235,6 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
     setPreviewRows(rows)
     setStep("preview")
 
-    // Check duplicates
     setChecking(true)
     const lookups = rows.map((r) => ({
       email: r.mapped["email"] || undefined,
@@ -206,17 +256,65 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
     )
   }
 
-  // ── Step 4: Run import ──
+  // ── Step 4 (preview → next): Check leaders if applicable ──
+  async function handlePreviewNext() {
+    if (!onCheckLeaders) {
+      await handleImport()
+      return
+    }
+
+    setCheckingLeaders(true)
+    const leaderRows = previewRows.map((r) => ({
+      index:           r.index,
+      groupName:       r.mapped["name"]            || undefined,
+      leaderFirstName: r.mapped["leaderFirstName"] || undefined,
+      leaderLastName:  r.mapped["leaderLastName"]  || undefined,
+      leaderEmail:     r.mapped["leaderEmail"]     || undefined,
+      leaderMobile:    r.mapped["leaderMobile"]    || undefined,
+    }))
+    const leaderResult = await onCheckLeaders(leaderRows)
+    setCheckingLeaders(false)
+
+    if (!leaderResult.success) {
+      toast.error(leaderResult.error)
+      return
+    }
+
+    if (leaderResult.data.length === 0) {
+      // All leaders resolved — go straight to import
+      await handleImport()
+      return
+    }
+
+    setUnmatchedLeaderRows(leaderResult.data)
+    setLeaderResolutions(new Map())
+    setStep("leader-resolution")
+
+    // Load members for the search combobox
+    if (onLoadMembers && members.length === 0) {
+      setMembersLoading(true)
+      const membersResult = await onLoadMembers()
+      setMembersLoading(false)
+      if (membersResult.success) {
+        setMembers(membersResult.data)
+      }
+    }
+  }
+
+  // ── Step 5: Run import ──
   async function handleImport() {
     setImporting(true)
-    const payload = previewRows.map((row) => ({
-      mapped: row.mapped,
-      resolution: row.resolution,
-      // Don't pass existingId for recognized rows — they aren't checked in yet and
-      // the import action would skip them if existingId is set.
-      existingId: row.duplicate?.kind === "recognized" ? undefined : row.duplicate?.existingId,
-      existingType: row.duplicate?.kind === "recognized" ? undefined : row.duplicate?.existingType,
-    }))
+    const payload = previewRows.map((row) => {
+      const leaderRes = leaderResolutions.get(row.index)
+      return {
+        mapped:       row.mapped,
+        resolution:   row.resolution,
+        existingId:   row.duplicate?.kind === "recognized" ? undefined : row.duplicate?.existingId,
+        existingType: row.duplicate?.kind === "recognized" ? undefined : row.duplicate?.existingType,
+        leaderId:     leaderRes?.type === "link"   ? leaderRes.memberId    : undefined,
+        createLeader: leaderRes?.type === "create" ? leaderRes             : undefined,
+      }
+    })
     const importResult = await onImport(payload)
     setImporting(false)
     if (!importResult.success) {
@@ -241,12 +339,16 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
     )
   }
 
-  // ─── Render ───────────────────────────────────────────────────────────────────
+  // ── Leader resolution ──
+  function handleLeaderResolutionChange(rowIndexes: number[], resolution: LeaderResolution) {
+    setLeaderResolutions((prev) => {
+      const next = new Map(prev)
+      for (const idx of rowIndexes) next.set(idx, resolution)
+      return next
+    })
+  }
 
-  const visibleSteps: WizardStep[] = hasSheetSelect
-    ? ["upload", "sheet-select", "column-map", "preview", "results"]
-    : ["upload", "column-map", "preview", "results"]
-  const currentIdx = stepIndex(step, hasSheetSelect)
+  // ─── Render ───────────────────────────────────────────────────────────────────
 
   function renderStep() {
     switch (step) {
@@ -280,6 +382,16 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
             onSetAllResolution={handleSetAllResolution}
           />
         )
+      case "leader-resolution":
+        return (
+          <StepLeaderResolution
+            rows={unmatchedLeaderRows}
+            resolutions={leaderResolutions}
+            members={members}
+            membersLoading={membersLoading}
+            onResolutionChange={handleLeaderResolutionChange}
+          />
+        )
       case "results":
         return result ? <StepResults result={result} /> : null
     }
@@ -288,7 +400,7 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
   function renderFooter() {
     switch (step) {
       case "upload":
-        return null // navigated by file selection
+        return null
       case "sheet-select":
         return (
           <>
@@ -306,8 +418,17 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
       case "preview":
         return (
           <>
-            <Button variant="outline" onClick={() => setStep("column-map")} disabled={importing}>Back</Button>
-            <Button onClick={handleImport} disabled={importing || checking}>
+            <Button variant="outline" onClick={() => setStep("column-map")} disabled={checkingLeaders || importing}>Back</Button>
+            <Button onClick={handlePreviewNext} disabled={importing || checking || checkingLeaders}>
+              {checkingLeaders ? "Checking leaders…" : importing ? "Importing…" : onCheckLeaders ? "Next" : `Import ${previewRows.length} row${previewRows.length !== 1 ? "s" : ""}`}
+            </Button>
+          </>
+        )
+      case "leader-resolution":
+        return (
+          <>
+            <Button variant="outline" onClick={() => { setUnmatchedLeaderRows([]); setStep("preview") }} disabled={importing}>Back</Button>
+            <Button onClick={handleImport} disabled={importing || !allLeadersResolved}>
               {importing ? "Importing…" : `Import ${previewRows.length} row${previewRows.length !== 1 ? "s" : ""}`}
             </Button>
           </>
@@ -318,7 +439,7 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
   }
 
   function dialogWidth() {
-    if (step === "preview" || step === "results") return "sm:max-w-4xl"
+    if (step === "preview" || step === "results" || step === "leader-resolution") return "sm:max-w-4xl"
     if (step === "column-map") return "sm:max-w-2xl"
     return "sm:max-w-lg"
   }
@@ -344,7 +465,21 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
           </p>
         </DialogHeader>
 
-        <div className="py-2">{renderStep()}</div>
+        {/* Full-width indeterminate progress bar while checking leaders */}
+        {checkingLeaders && (
+          <div className="-mx-6 h-0.75 relative overflow-hidden bg-primary/15">
+            <div
+              className="absolute inset-y-0 bg-primary"
+              style={{ animation: "indeterminate-1 2.1s cubic-bezier(0.65,0.815,0.735,0.395) infinite" }}
+            />
+            <div
+              className="absolute inset-y-0 bg-primary"
+              style={{ animation: "indeterminate-2 2.1s cubic-bezier(0.165,0.84,0.44,1) 1.15s infinite" }}
+            />
+          </div>
+        )}
+
+        <div className="py-2 min-w-0">{renderStep()}</div>
 
         {renderFooter() && (
           <DialogFooter>{renderFooter()}</DialogFooter>

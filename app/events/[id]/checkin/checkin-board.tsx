@@ -309,7 +309,7 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], defaultLi
     setMatched({
       registrantId: result.data.registrantId,
       name: result.data.name,
-      nickname: null,
+      nickname: walkInForm.nickname || null,
       guestSmallGroupPrompt: null,
       breakoutGroup: result.data.breakoutGroup,
     })

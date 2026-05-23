@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
-import type { DuplicateMatch, ImportResult, RowResolution } from "@/lib/import/types"
+import type { DuplicateMatch, ImportResult, RowResolution, UnmatchedLeaderRow, LeaderResolution } from "@/lib/import/types"
 import { GenderFocus, MeetingFormat, Prisma } from "@/app/generated/prisma/client"
 
 type ActionResult<T = void> =
@@ -47,12 +47,103 @@ export async function checkSmallGroupDuplicates(
   }
 }
 
+// ─── Leader check ─────────────────────────────────────────────────────────────
+
+export async function checkSmallGroupLeaders(
+  rows: Array<{
+    index: number
+    groupName?: string
+    leaderFirstName?: string
+    leaderLastName?: string
+    leaderEmail?: string
+    leaderMobile?: string
+  }>
+): Promise<ActionResult<UnmatchedLeaderRow[]>> {
+  try {
+    const unmatched: UnmatchedLeaderRow[] = []
+
+    for (const row of rows) {
+      const mobile = row.leaderMobile?.trim()
+      const email  = row.leaderEmail?.trim()
+
+      if (!mobile && !email) {
+        unmatched.push({
+          rowIndex:        row.index,
+          groupName:       row.groupName?.trim()       ?? "",
+          leaderFirstName: row.leaderFirstName?.trim() ?? "",
+          leaderLastName:  row.leaderLastName?.trim()  ?? "",
+          leaderEmail:     email                       ?? "",
+          leaderMobile:    mobile                      ?? "",
+        })
+        continue
+      }
+
+      const found = await resolveLeader(mobile, email)
+      if (!found) {
+        unmatched.push({
+          rowIndex:        row.index,
+          groupName:       row.groupName?.trim()       ?? "",
+          leaderFirstName: row.leaderFirstName?.trim() ?? "",
+          leaderLastName:  row.leaderLastName?.trim()  ?? "",
+          leaderEmail:     email                       ?? "",
+          leaderMobile:    mobile                      ?? "",
+        })
+      }
+    }
+
+    return { success: true, data: unmatched }
+  } catch {
+    return { success: false, error: "Failed to check leaders" }
+  }
+}
+
+// ─── Member search (for leader resolution step) ───────────────────────────────
+
+export async function loadMembersForLeaderSearch(): Promise<
+  ActionResult<Array<{ id: string; firstName: string; lastName: string; phone: string | null; email: string | null }>>
+> {
+  try {
+    const members = await db.member.findMany({
+      select: { id: true, firstName: true, lastName: true, phone: true, email: true },
+      orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+    })
+    return { success: true, data: members }
+  } catch {
+    return { success: false, error: "Failed to load members" }
+  }
+}
+
+// ─── Internal helpers ─────────────────────────────────────────────────────────
+
+async function resolveLeader(
+  mobile: string | undefined,
+  email: string | undefined
+): Promise<{ id: string } | null> {
+  if (mobile) {
+    const byPhone = await db.member.findFirst({
+      where: { phone: { equals: mobile, mode: "insensitive" } },
+      select: { id: true },
+    })
+    if (byPhone) return byPhone
+  }
+  if (email) {
+    const byEmail = await db.member.findFirst({
+      where: { email: { equals: email, mode: "insensitive" } },
+      select: { id: true },
+    })
+    if (byEmail) return byEmail
+  }
+  return null
+}
+
 // ─── Import ───────────────────────────────────────────────────────────────────
 
 type ImportRow = {
   mapped: Record<string, string>
   resolution: RowResolution
   existingId?: string
+  leaderId?: string
+  createLeader?: LeaderResolution & { type: "create" }
 }
 
 function parseGenderFocus(v: string): GenderFocus | null {
@@ -87,7 +178,8 @@ function parseDayOfWeek(v: string): number | null {
 }
 
 function parseTime(v: string): string | null {
-  const trimmed = v.trim()
+  // Strip seconds if present (HH:MM:SS → HH:MM)
+  const trimmed = v.trim().replace(/^(\d{1,2}:\d{2}):\d{2}$/, "$1")
   if (/^\d{2}:\d{2}$/.test(trimmed)) return trimmed
   if (/^\d{1}:\d{2}$/.test(trimmed)) return `0${trimmed}`
   return null
@@ -105,9 +197,17 @@ export async function importSmallGroups(
   const result: ImportResult = { total: rows.length, created: 0, linked: 0, updated: 0, skipped: 0, errors: [] }
 
   for (let i = 0; i < rows.length; i++) {
-    const { mapped, resolution, existingId } = rows[i]
+    const { mapped, resolution, existingId, leaderId: preResolvedLeaderId, createLeader } = rows[i]
     try {
-      if (!mapped.name?.trim()) {
+      // Auto-generate name from leader if the name cell is blank
+      let groupName = mapped.name?.trim()
+      if (!groupName) {
+        const fn = mapped.leaderFirstName?.trim() || createLeader?.firstName.trim() || ""
+        const ln = mapped.leaderLastName?.trim()  || createLeader?.lastName.trim()  || ""
+        const leaderName = [fn, ln].filter(Boolean).join(" ")
+        groupName = leaderName ? `${leaderName} Group` : ""
+      }
+      if (!groupName) {
         result.errors.push({ row: i, message: "Group name is required" })
         result.skipped++
         continue
@@ -118,24 +218,48 @@ export async function importSmallGroups(
         continue
       }
 
-      // Resolve leader by email (required)
-      if (!mapped.leaderEmail?.trim()) {
-        result.errors.push({ row: i, message: "Leader email is required" })
+      // ── Leader resolution ──────────────────────────────────────────────────
+      let leaderId: string | null = preResolvedLeaderId ?? null
+
+      if (!leaderId) {
+        // Auto-lookup: mobile first, email fallback
+        const mobile = mapped.leaderMobile?.trim()
+        const email  = mapped.leaderEmail?.trim()
+        const found  = await resolveLeader(mobile, email)
+        if (found) {
+          leaderId = found.id
+        }
+      }
+
+      if (!leaderId && createLeader) {
+        // Create new member from wizard-confirmed data (race-condition safe: check again first)
+        const mobile = createLeader.mobile?.trim()
+        const email  = createLeader.email?.trim()
+        const existing = await resolveLeader(mobile, email)
+        if (existing) {
+          leaderId = existing.id
+        } else {
+          const newMember = await db.member.create({
+            data: {
+              firstName:  createLeader.firstName.trim(),
+              lastName:   createLeader.lastName.trim(),
+              email:      email  || null,
+              phone:      mobile || null,
+              dateJoined: new Date(),
+            },
+            select: { id: true },
+          })
+          leaderId = newMember.id
+        }
+      }
+
+      if (!leaderId) {
+        result.errors.push({ row: i, message: "Could not resolve leader — no leader linked or created" })
         result.skipped++
         continue
       }
 
-      const leader = await db.member.findFirst({
-        where: { email: { equals: mapped.leaderEmail.trim(), mode: "insensitive" } },
-        select: { id: true },
-      })
-      if (!leader) {
-        result.errors.push({ row: i, message: `No member found with email "${mapped.leaderEmail.trim()}"` })
-        result.skipped++
-        continue
-      }
-
-      // Resolve optional parent group by name
+      // ── Parent group ───────────────────────────────────────────────────────
       let parentGroupId: string | null = null
       if (mapped.parentGroupName?.trim()) {
         const parent = await db.smallGroup.findFirst({
@@ -150,7 +274,7 @@ export async function importSmallGroups(
         parentGroupId = parent.id
       }
 
-      // Resolve optional life stage by name (soft — ignored if not found)
+      // ── Life stage ─────────────────────────────────────────────────────────
       let lifeStageId: string | null = null
       if (mapped.lifeStage?.trim()) {
         const ls = await db.lifeStage.findFirst({
@@ -161,8 +285,8 @@ export async function importSmallGroups(
       }
 
       const data = {
-        name:              mapped.name.trim(),
-        leaderId:          leader.id,
+        name:              groupName,
+        leaderId,
         parentGroupId,
         lifeStageId,
         genderFocus:       mapped.genderFocus      ? parseGenderFocus(mapped.genderFocus)        : null,
