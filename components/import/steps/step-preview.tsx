@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { IconAlertTriangle } from "@tabler/icons-react"
+import { IconAlertTriangle, IconAlertCircle } from "@tabler/icons-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import type { FieldDefinition, PreviewRow, RowResolution } from "@/lib/import/types"
@@ -18,6 +18,9 @@ export function StepPreview({ fields, rows, checking, onResolutionChange, onSetA
   const duplicateRows  = rows.filter((r) => r.duplicate && r.duplicate.kind !== "recognized")
   const recognizedRows = rows.filter((r) => r.duplicate?.kind === "recognized")
   const errorRows      = rows.filter((r) => r.validationError)
+
+  const skippingCount    = duplicateRows.filter((r) => r.resolution === "use-existing").length
+  const reimportingCount = duplicateRows.filter((r) => r.resolution === "use-csv").length
 
   if (checking) {
     return (
@@ -50,12 +53,26 @@ export function StepPreview({ fields, rows, checking, onResolutionChange, onSetA
         )}
       </div>
 
-      {/* Global duplicate resolution controls */}
+      {/* Error rows callout */}
+      {errorRows.length > 0 && (
+        <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">
+          <IconAlertCircle className="size-4 text-destructive shrink-0" />
+          <span className="text-destructive flex-1">
+            {errorRows.length} row{errorRows.length !== 1 ? "s" : ""} with validation errors will be skipped on import.
+          </span>
+        </div>
+      )}
+
+      {/* Duplicate resolution controls */}
       {duplicateRows.length > 0 && (
         <div className="flex items-center gap-2 rounded-lg border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm">
           <IconAlertTriangle className="size-4 text-yellow-600 shrink-0" />
           <span className="text-yellow-800 flex-1">
-            {duplicateRows.length} row{duplicateRows.length !== 1 ? "s" : ""} already exist in the system.
+            {duplicateRows.length} duplicate{duplicateRows.length !== 1 ? "s" : ""}&thinsp;—&thinsp;
+            <span className="font-medium">{skippingCount} skipping</span>
+            {reimportingCount > 0 && (
+              <> · <span className="font-medium">{reimportingCount} re-importing</span></>
+            )}
           </span>
           <div className="flex gap-1.5">
             <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => onSetAllResolution("use-existing")}>
@@ -106,9 +123,15 @@ export function StepPreview({ fields, rows, checking, onResolutionChange, onSetA
                       {row.validationError ? (
                         <span className="text-xs text-destructive">{row.validationError}</span>
                       ) : isDuplicate ? (
-                        <Badge variant="outline" className="text-yellow-700 border-yellow-400 bg-yellow-50 text-xs">
-                          Duplicate
-                        </Badge>
+                        row.resolution === "use-csv" ? (
+                          <Badge variant="outline" className="text-blue-700 border-blue-400 bg-blue-50 text-xs">
+                            Re-importing
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-muted-foreground border-border text-xs">
+                            Skipping
+                          </Badge>
+                        )
                       ) : isRecognized ? (
                         <Badge variant="outline" className="text-blue-700 border-blue-400 bg-blue-50 text-xs">
                           Existing

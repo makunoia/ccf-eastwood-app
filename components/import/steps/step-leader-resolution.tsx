@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { IconUserSearch, IconUserPlus, IconAlertTriangle } from "@tabler/icons-react"
+import { IconUserSearch, IconUserPlus, IconAlertTriangle, IconCheck } from "@tabler/icons-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { PersonCombobox, type PersonComboboxOption } from "@/components/ui/person-combobox"
@@ -71,7 +71,9 @@ function LeaderGroupCard({
   onResolutionChange: (resolution: LeaderResolution) => void
 }) {
   const { representative: row, rowIndexes, groupNames } = group
-  const cardKey = rowIndexes[0]
+  const cardKey  = rowIndexes[0]
+  const hasNoData = !row.leaderFirstName && !row.leaderLastName && !row.leaderMobile && !row.leaderEmail
+  const isResolved = !!resolution
 
   const [mode, setMode] = React.useState<RowMode>(resolution?.type ?? "link")
   const [selectedMemberId, setSelectedMemberId] = React.useState<string>(
@@ -121,7 +123,11 @@ function LeaderGroupCard({
   }
 
   return (
-    <div className="rounded-lg border bg-card p-4 flex flex-col gap-3">
+    <div className={[
+      "rounded-lg border p-4 flex flex-col gap-3 transition-colors",
+      isResolved ? "border-green-300 bg-green-50/40" : "bg-card",
+      hasNoData && !isResolved ? "border-destructive/40" : "",
+    ].join(" ")}>
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
         <div className="flex flex-col gap-0.5">
@@ -134,10 +140,19 @@ function LeaderGroupCard({
             )}
             {row.leaderMobile && <span>{row.leaderMobile}</span>}
             {row.leaderEmail  && <span>{row.leaderEmail}</span>}
-            {!hasName && !row.leaderMobile && !row.leaderEmail && (
-              <span className="italic text-sm">No leader data in CSV</span>
+            {hasNoData && (
+              <span className="italic text-sm text-muted-foreground">No leader data in CSV</span>
             )}
           </div>
+          {/* Resolution summary when resolved */}
+          {isResolved && (
+            <p className="text-xs text-green-700 font-medium mt-0.5 flex items-center gap-1">
+              <IconCheck className="size-3" />
+              {resolution.type === "link"
+                ? `Linked to ${resolution.memberName}`
+                : "Will create new Member"}
+            </p>
+          )}
           {/* Affected groups */}
           <div className="flex flex-wrap gap-1 mt-1">
             {groupNames.map((name) => (
@@ -158,9 +173,19 @@ function LeaderGroupCard({
               {rowIndexes.length} groups
             </Badge>
           )}
-          <Badge variant="outline" className="text-orange-700 border-orange-400 bg-orange-50 text-xs">
-            Unmatched
-          </Badge>
+          {isResolved ? (
+            <Badge variant="outline" className="text-green-700 border-green-400 bg-green-50 text-xs">
+              {resolution.type === "link" ? "Linked" : "Will create"}
+            </Badge>
+          ) : hasNoData ? (
+            <Badge variant="outline" className="text-destructive border-destructive/40 bg-destructive/5 text-xs">
+              No data
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-orange-700 border-orange-400 bg-orange-50 text-xs">
+              Unmatched
+            </Badge>
+          )}
         </div>
       </div>
 
@@ -244,8 +269,10 @@ export function StepLeaderResolution({ rows, resolutions, members, membersLoadin
   const groups = React.useMemo(() => buildGroups(rows), [rows])
   const unresolvedCount = groups.filter((g) => !resolutions.has(g.rowIndexes[0])).length
 
-  function handleSetAllCreate() {
-    for (const group of groups) {
+  const unresolvedGroups = groups.filter((g) => !resolutions.has(g.rowIndexes[0]))
+
+  function handleSetRemainingCreate() {
+    for (const group of unresolvedGroups) {
       const row = group.representative
       onResolutionChange(group.rowIndexes, {
         type:      "create",
@@ -269,8 +296,14 @@ export function StepLeaderResolution({ rows, resolutions, members, membersLoadin
             <span className="ml-1 font-medium">({unresolvedCount} remaining)</span>
           )}
         </span>
-        <Button size="sm" variant="outline" className="h-7 text-xs shrink-0" onClick={handleSetAllCreate}>
-          Create all as new Members
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 text-xs shrink-0"
+          onClick={handleSetRemainingCreate}
+          disabled={unresolvedGroups.length === 0}
+        >
+          Create remaining{unresolvedGroups.length > 0 ? ` (${unresolvedGroups.length})` : ""} as new Members
         </Button>
       </div>
 

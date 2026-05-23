@@ -264,66 +264,77 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
     }
 
     setCheckingLeaders(true)
-    const leaderRows = previewRows.map((r) => ({
-      index:           r.index,
-      groupName:       r.mapped["name"]            || undefined,
-      leaderFirstName: r.mapped["leaderFirstName"] || undefined,
-      leaderLastName:  r.mapped["leaderLastName"]  || undefined,
-      leaderEmail:     r.mapped["leaderEmail"]     || undefined,
-      leaderMobile:    r.mapped["leaderMobile"]    || undefined,
-    }))
-    const leaderResult = await onCheckLeaders(leaderRows)
-    setCheckingLeaders(false)
+    try {
+      const leaderRows = previewRows.map((r) => ({
+        index:           r.index,
+        groupName:       r.mapped["name"]            || undefined,
+        leaderFirstName: r.mapped["leaderFirstName"] || undefined,
+        leaderLastName:  r.mapped["leaderLastName"]  || undefined,
+        leaderEmail:     r.mapped["leaderEmail"]     || undefined,
+        leaderMobile:    r.mapped["leaderMobile"]    || undefined,
+      }))
+      const leaderResult = await onCheckLeaders(leaderRows)
 
-    if (!leaderResult.success) {
-      toast.error(leaderResult.error)
-      return
-    }
-
-    if (leaderResult.data.length === 0) {
-      // All leaders resolved — go straight to import
-      await handleImport()
-      return
-    }
-
-    setUnmatchedLeaderRows(leaderResult.data)
-    setLeaderResolutions(new Map())
-    setStep("leader-resolution")
-
-    // Load members for the search combobox
-    if (onLoadMembers && members.length === 0) {
-      setMembersLoading(true)
-      const membersResult = await onLoadMembers()
-      setMembersLoading(false)
-      if (membersResult.success) {
-        setMembers(membersResult.data)
+      if (!leaderResult.success) {
+        toast.error(leaderResult.error)
+        return
       }
+
+      if (leaderResult.data.length === 0) {
+        // All leaders resolved — go straight to import
+        setCheckingLeaders(false)
+        await handleImport()
+        return
+      }
+
+      setUnmatchedLeaderRows(leaderResult.data)
+      setLeaderResolutions(new Map())
+      setStep("leader-resolution")
+
+      // Load members for the search combobox
+      if (onLoadMembers && members.length === 0) {
+        setMembersLoading(true)
+        const membersResult = await onLoadMembers()
+        setMembersLoading(false)
+        if (membersResult.success) {
+          setMembers(membersResult.data)
+        }
+      }
+    } catch {
+      toast.error("Failed to check leaders. Please try again.")
+    } finally {
+      setCheckingLeaders(false)
     }
   }
 
   // ── Step 5: Run import ──
   async function handleImport() {
     setImporting(true)
-    const payload = previewRows.map((row) => {
-      const leaderRes = leaderResolutions.get(row.index)
-      return {
-        mapped:       row.mapped,
-        resolution:   row.resolution,
-        existingId:   row.duplicate?.kind === "recognized" ? undefined : row.duplicate?.existingId,
-        existingType: row.duplicate?.kind === "recognized" ? undefined : row.duplicate?.existingType,
-        leaderId:     leaderRes?.type === "link"   ? leaderRes.memberId    : undefined,
-        createLeader: leaderRes?.type === "create" ? leaderRes             : undefined,
+    try {
+      const payload = previewRows.map((row) => {
+        const leaderRes = leaderResolutions.get(row.index)
+        return {
+          mapped:       row.mapped,
+          resolution:   row.resolution,
+          existingId:   row.duplicate?.kind === "recognized" ? undefined : row.duplicate?.existingId,
+          existingType: row.duplicate?.kind === "recognized" ? undefined : row.duplicate?.existingType,
+          leaderId:     leaderRes?.type === "link"   ? leaderRes.memberId    : undefined,
+          createLeader: leaderRes?.type === "create" ? leaderRes             : undefined,
+        }
+      })
+      const importResult = await onImport(payload)
+      if (!importResult.success) {
+        toast.error(importResult.error)
+        return
       }
-    })
-    const importResult = await onImport(payload)
-    setImporting(false)
-    if (!importResult.success) {
-      toast.error(importResult.error)
-      return
+      setResult(importResult.data)
+      setStep("results")
+      config.onSuccess?.()
+    } catch {
+      toast.error("Import failed. Please try again.")
+    } finally {
+      setImporting(false)
     }
-    setResult(importResult.data)
-    setStep("results")
-    config.onSuccess?.()
   }
 
   // ── Duplicate resolution ──
@@ -420,6 +431,9 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
           <>
             <Button variant="outline" onClick={() => setStep("column-map")} disabled={checkingLeaders || importing}>Back</Button>
             <Button onClick={handlePreviewNext} disabled={importing || checking || checkingLeaders}>
+              {(checkingLeaders || importing) && (
+                <span className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+              )}
               {checkingLeaders ? "Checking leaders…" : importing ? "Importing…" : onCheckLeaders ? "Next" : `Import ${previewRows.length} row${previewRows.length !== 1 ? "s" : ""}`}
             </Button>
           </>
@@ -429,6 +443,9 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
           <>
             <Button variant="outline" onClick={() => { setUnmatchedLeaderRows([]); setStep("preview") }} disabled={importing}>Back</Button>
             <Button onClick={handleImport} disabled={importing || !allLeadersResolved}>
+              {importing && (
+                <span className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+              )}
               {importing ? "Importing…" : `Import ${previewRows.length} row${previewRows.length !== 1 ? "s" : ""}`}
             </Button>
           </>
@@ -466,7 +483,7 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
         </DialogHeader>
 
         {/* Full-width indeterminate progress bar while checking leaders */}
-        {checkingLeaders && (
+        {(checkingLeaders || importing) && (
           <div className="-mx-6 h-0.75 relative overflow-hidden bg-primary/15">
             <div
               className="absolute inset-y-0 bg-primary"
