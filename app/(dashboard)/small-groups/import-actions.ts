@@ -60,25 +60,31 @@ export async function checkSmallGroupLeaders(
   }>
 ): Promise<ActionResult<UnmatchedLeaderRow[]>> {
   try {
-    const unmatched: UnmatchedLeaderRow[] = []
+    // Collect all unique mobiles and emails — two queries total instead of one per row
+    const mobiles = [...new Set(rows.map((r) => r.leaderMobile?.trim()).filter(Boolean))] as string[]
+    const emails  = [...new Set(rows.map((r) => r.leaderEmail?.trim()).filter(Boolean))]  as string[]
 
+    const [byPhone, byEmail] = await Promise.all([
+      mobiles.length > 0
+        ? db.member.findMany({ where: { phone: { in: mobiles, mode: "insensitive" } }, select: { phone: true } })
+        : [],
+      emails.length > 0
+        ? db.member.findMany({ where: { email: { in: emails,  mode: "insensitive" } }, select: { email: true } })
+        : [],
+    ])
+
+    const matchedPhones = new Set(byPhone.map((m) => m.phone!.toLowerCase()))
+    const matchedEmails = new Set(byEmail.map((m) => m.email!.toLowerCase()))
+
+    const unmatched: UnmatchedLeaderRow[] = []
     for (const row of rows) {
       const mobile = row.leaderMobile?.trim()
       const email  = row.leaderEmail?.trim()
 
-      if (!mobile && !email) {
-        unmatched.push({
-          rowIndex:        row.index,
-          groupName:       row.groupName?.trim()       ?? "",
-          leaderFirstName: row.leaderFirstName?.trim() ?? "",
-          leaderLastName:  row.leaderLastName?.trim()  ?? "",
-          leaderEmail:     email                       ?? "",
-          leaderMobile:    mobile                      ?? "",
-        })
-        continue
-      }
+      const found =
+        (mobile && matchedPhones.has(mobile.toLowerCase())) ||
+        (email  && matchedEmails.has(email.toLowerCase()))
 
-      const found = await resolveLeader(mobile, email)
       if (!found) {
         unmatched.push({
           rowIndex:        row.index,
@@ -111,29 +117,6 @@ export async function loadMembersForLeaderSearch(): Promise<
   } catch {
     return { success: false, error: "Failed to load members" }
   }
-}
-
-// ─── Internal helpers ─────────────────────────────────────────────────────────
-
-async function resolveLeader(
-  mobile: string | undefined,
-  email: string | undefined
-): Promise<{ id: string } | null> {
-  if (mobile) {
-    const byPhone = await db.member.findFirst({
-      where: { phone: { equals: mobile, mode: "insensitive" } },
-      select: { id: true },
-    })
-    if (byPhone) return byPhone
-  }
-  if (email) {
-    const byEmail = await db.member.findFirst({
-      where: { email: { equals: email, mode: "insensitive" } },
-      select: { id: true },
-    })
-    if (byEmail) return byEmail
-  }
-  return null
 }
 
 // ─── Import ───────────────────────────────────────────────────────────────────
@@ -194,7 +177,29 @@ function addTwoHours(time: string): string {
 export async function importSmallGroups(
   rows: ImportRow[]
 ): Promise<ActionResult<ImportResult>> {
+  try {
   const result: ImportResult = { total: rows.length, created: 0, linked: 0, updated: 0, skipped: 0, errors: [] }
+
+  // ── Pre-flight batch reads — O(5) queries regardless of row count ──────────
+  const mobiles        = [...new Set(rows.map((r) => r.mapped.leaderMobile?.trim()).filter(Boolean))] as string[]
+  const emails         = [...new Set(rows.map((r) => r.mapped.leaderEmail?.trim()).filter(Boolean))]  as string[]
+  const parentNames    = [...new Set(rows.map((r) => r.mapped.parentGroupName?.trim()).filter(Boolean))] as string[]
+  const lifeStageNames = [...new Set(rows.map((r) => r.mapped.lifeStage?.trim()).filter(Boolean))]    as string[]
+
+  const [membersByPhone, membersByEmail, parentGroups, lifeStages] = await Promise.all([
+    mobiles.length     > 0 ? db.member.findMany({ where: { phone: { in: mobiles,        mode: "insensitive" } }, select: { id: true, phone: true } }) : [],
+    emails.length      > 0 ? db.member.findMany({ where: { email: { in: emails,         mode: "insensitive" } }, select: { id: true, email: true } }) : [],
+    parentNames.length > 0 ? db.smallGroup.findMany({ where: { name: { in: parentNames, mode: "insensitive" } }, select: { id: true, name: true } }) : [],
+    lifeStageNames.length > 0 ? db.lifeStage.findMany({ where: { name: { in: lifeStageNames, mode: "insensitive" } }, select: { id: true, name: true } }) : [],
+  ])
+
+  const phoneToMemberId    = new Map(membersByPhone.map((m) => [m.phone!.toLowerCase(), m.id]))
+  const emailToMemberId    = new Map(membersByEmail.map((m) => [m.email!.toLowerCase(), m.id]))
+  const nameToParentId     = new Map(parentGroups.map((g) => [g.name.toLowerCase(), g.id]))
+  const nameToLifeStageId  = new Map(lifeStages.map((ls) => [ls.name.toLowerCase(), ls.id]))
+
+  // Cache for members created during this run (same leader leading multiple groups)
+  const createdLeaderCache = new Map<string, string>() // "mobile|email" → memberId
 
   for (let i = 0; i < rows.length; i++) {
     const { mapped, resolution, existingId, leaderId: preResolvedLeaderId, createLeader } = rows[i]
@@ -218,38 +223,52 @@ export async function importSmallGroups(
         continue
       }
 
-      // ── Leader resolution ──────────────────────────────────────────────────
+      // ── Leader resolution (map lookup — no DB call for auto-resolved rows) ─
       let leaderId: string | null = preResolvedLeaderId ?? null
 
       if (!leaderId) {
-        // Auto-lookup: mobile first, email fallback
         const mobile = mapped.leaderMobile?.trim()
         const email  = mapped.leaderEmail?.trim()
-        const found  = await resolveLeader(mobile, email)
-        if (found) {
-          leaderId = found.id
-        }
+        leaderId =
+          (mobile && phoneToMemberId.get(mobile.toLowerCase())) ||
+          (email  && emailToMemberId.get(email.toLowerCase()))  ||
+          null
       }
 
       if (!leaderId && createLeader) {
-        // Create new member from wizard-confirmed data (race-condition safe: check again first)
-        const mobile = createLeader.mobile?.trim()
-        const email  = createLeader.email?.trim()
-        const existing = await resolveLeader(mobile, email)
-        if (existing) {
-          leaderId = existing.id
+        const mobile   = createLeader.mobile?.trim()
+        const email    = createLeader.email?.trim()
+        const cacheKey = `${mobile ?? ""}|${email ?? ""}`
+
+        // Check cache first (same leader created earlier in this run)
+        if (createdLeaderCache.has(cacheKey)) {
+          leaderId = createdLeaderCache.get(cacheKey)!
         } else {
-          const newMember = await db.member.create({
-            data: {
-              firstName:  createLeader.firstName.trim(),
-              lastName:   createLeader.lastName.trim(),
-              email:      email  || null,
-              phone:      mobile || null,
-              dateJoined: new Date(),
-            },
-            select: { id: true },
-          })
-          leaderId = newMember.id
+          // Race-condition-safe final check before creating
+          const existing =
+            (mobile && phoneToMemberId.get(mobile.toLowerCase())) ||
+            (email  && emailToMemberId.get(email.toLowerCase()))  ||
+            null
+          if (existing) {
+            leaderId = existing
+          } else {
+            const newMember = await db.member.create({
+              data: {
+                firstName:  createLeader.firstName.trim(),
+                lastName:   createLeader.lastName.trim(),
+                email:      email  || null,
+                phone:      mobile || null,
+                language:   [],
+                dateJoined: new Date(),
+              },
+              select: { id: true },
+            })
+            leaderId = newMember.id
+            // Cache so subsequent rows with the same leader reuse the new record
+            createdLeaderCache.set(cacheKey, newMember.id)
+            if (mobile) phoneToMemberId.set(mobile.toLowerCase(), newMember.id)
+            if (email)  emailToMemberId.set(email.toLowerCase(),  newMember.id)
+          }
         }
       }
 
@@ -259,30 +278,21 @@ export async function importSmallGroups(
         continue
       }
 
-      // ── Parent group ───────────────────────────────────────────────────────
+      // ── Parent group (map lookup) ──────────────────────────────────────────
       let parentGroupId: string | null = null
       if (mapped.parentGroupName?.trim()) {
-        const parent = await db.smallGroup.findFirst({
-          where: { name: { equals: mapped.parentGroupName.trim(), mode: "insensitive" } },
-          select: { id: true },
-        })
-        if (!parent) {
+        parentGroupId = nameToParentId.get(mapped.parentGroupName.trim().toLowerCase()) ?? null
+        if (!parentGroupId) {
           result.errors.push({ row: i, message: `No group found with name "${mapped.parentGroupName.trim()}"` })
           result.skipped++
           continue
         }
-        parentGroupId = parent.id
       }
 
-      // ── Life stage ─────────────────────────────────────────────────────────
-      let lifeStageId: string | null = null
-      if (mapped.lifeStage?.trim()) {
-        const ls = await db.lifeStage.findFirst({
-          where: { name: { equals: mapped.lifeStage.trim(), mode: "insensitive" } },
-          select: { id: true },
-        })
-        if (ls) lifeStageId = ls.id
-      }
+      // ── Life stage (map lookup) ────────────────────────────────────────────
+      const lifeStageId = mapped.lifeStage?.trim()
+        ? (nameToLifeStageId.get(mapped.lifeStage.trim().toLowerCase()) ?? null)
+        : null
 
       const data = {
         name:              groupName,
@@ -314,10 +324,16 @@ export async function importSmallGroups(
       await db.smallGroup.create({ data })
       result.created++
     } catch (e) {
-      const msg =
-        e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002"
-          ? "Duplicate record"
-          : "Failed to save record"
+      console.error(`[importSmallGroups] row ${i} failed:`, e)
+      let msg = "Failed to save record"
+      if (e instanceof Prisma.PrismaClientKnownRequestError) {
+        if (e.code === "P2002") msg = "Duplicate record"
+        else if (e.code === "P2003") msg = `Foreign key constraint failed (${JSON.stringify(e.meta?.field_name ?? e.meta ?? "")})`
+        else if (e.code === "P2025") msg = "Required related record not found"
+        else msg = `DB error ${e.code}: ${e.meta ? JSON.stringify(e.meta) : e.message.split("\n")[0]}`
+      } else if (e instanceof Error) {
+        msg = e.message.split("\n")[0]
+      }
       result.errors.push({ row: i, message: msg })
       result.skipped++
     }
@@ -325,4 +341,7 @@ export async function importSmallGroups(
 
   revalidatePath("/small-groups")
   return { success: true, data: result }
+  } catch {
+    return { success: false, error: "Import failed unexpectedly" }
+  }
 }

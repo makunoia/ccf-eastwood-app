@@ -126,6 +126,7 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
   const [previewRows, setPreviewRows] = React.useState<PreviewRow[]>([])
   const [checking, setChecking] = React.useState(false)
   const [importing, setImporting] = React.useState(false)
+  const [importProgress, setImportProgress] = React.useState<{ current: number; total: number } | null>(null)
   const [result, setResult] = React.useState<ImportResult | null>(null)
   const [fileLoading, setFileLoading] = React.useState(false)
 
@@ -156,6 +157,7 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
       setMappingErrors({})
       setPreviewRows([])
       setResult(null)
+      setImportProgress(null)
       setUnmatchedLeaderRows([])
       setLeaderResolutions(new Map())
       setMembers([])
@@ -265,7 +267,11 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
 
     setCheckingLeaders(true)
     try {
-      const leaderRows = previewRows.map((r) => ({
+      // Exclude rows the user chose to skip — their leader is never used
+      const rowsToImport = previewRows.filter(
+        (r) => !(r.duplicate && r.duplicate.kind !== "recognized" && r.resolution === "use-existing")
+      )
+      const leaderRows = rowsToImport.map((r) => ({
         index:           r.index,
         groupName:       r.mapped["name"]            || undefined,
         leaderFirstName: r.mapped["leaderFirstName"] || undefined,
@@ -307,7 +313,7 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
     }
   }
 
-  // ── Step 5: Run import ──
+  // ── Step 5: Run import (chunked so UI can track progress) ──
   async function handleImport() {
     setImporting(true)
     try {
@@ -322,18 +328,41 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
           createLeader: leaderRes?.type === "create" ? leaderRes             : undefined,
         }
       })
-      const importResult = await onImport(payload)
-      if (!importResult.success) {
-        toast.error(importResult.error)
-        return
+
+      const CHUNK_SIZE = 25
+      const chunks: typeof payload[] = []
+      for (let i = 0; i < payload.length; i += CHUNK_SIZE) {
+        chunks.push(payload.slice(i, i + CHUNK_SIZE))
       }
-      setResult(importResult.data)
+
+      const merged: ImportResult = { total: payload.length, created: 0, linked: 0, updated: 0, skipped: 0, errors: [] }
+      let processed = 0
+      setImportProgress({ current: 0, total: payload.length })
+
+      for (const chunk of chunks) {
+        const chunkResult = await onImport(chunk)
+        if (!chunkResult.success) {
+          toast.error(chunkResult.error)
+          return
+        }
+        merged.created += chunkResult.data.created
+        merged.linked  += chunkResult.data.linked
+        merged.updated += chunkResult.data.updated
+        merged.skipped += chunkResult.data.skipped
+        // Offset row indices so errors point to the correct original row
+        merged.errors.push(...chunkResult.data.errors.map((e) => ({ ...e, row: e.row + processed })))
+        processed += chunk.length
+        setImportProgress({ current: processed, total: payload.length })
+      }
+
+      setResult(merged)
       setStep("results")
       config.onSuccess?.()
     } catch {
       toast.error("Import failed. Please try again.")
     } finally {
       setImporting(false)
+      setImportProgress(null)
     }
   }
 
@@ -409,6 +438,46 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
   }
 
   function renderFooter() {
+    const isLoading = checkingLeaders || importing
+    if (isLoading) {
+      // Determinate bar while import chunks are being processed
+      if (importProgress) {
+        const pct = importProgress.total > 0
+          ? Math.round((importProgress.current / importProgress.total) * 100)
+          : 0
+        return (
+          <div className="w-full flex flex-col gap-2 py-1">
+            <div className="h-1.5 relative overflow-hidden rounded-full bg-primary/15">
+              <div
+                className="absolute inset-y-0 left-0 bg-primary rounded-full transition-[width] duration-300 ease-out"
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground text-center">
+              Importing {importProgress.current} of {importProgress.total} records…
+            </p>
+          </div>
+        )
+      }
+      // Indeterminate bar while checking leaders (duration unknown)
+      const label = checkingLeaders ? "Checking leaders…" : "Preparing import…"
+      return (
+        <div className="w-full flex flex-col gap-2 py-1">
+          <div className="h-1.5 relative overflow-hidden rounded-full bg-primary/15">
+            <div
+              className="absolute inset-y-0 bg-primary rounded-full"
+              style={{ animation: "indeterminate-1 2.1s cubic-bezier(0.65,0.815,0.735,0.395) infinite" }}
+            />
+            <div
+              className="absolute inset-y-0 bg-primary rounded-full"
+              style={{ animation: "indeterminate-2 2.1s cubic-bezier(0.165,0.84,0.44,1) 1.15s infinite" }}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground text-center">{label}</p>
+        </div>
+      )
+    }
+
     switch (step) {
       case "upload":
         return null
@@ -429,24 +498,18 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
       case "preview":
         return (
           <>
-            <Button variant="outline" onClick={() => setStep("column-map")} disabled={checkingLeaders || importing}>Back</Button>
-            <Button onClick={handlePreviewNext} disabled={importing || checking || checkingLeaders}>
-              {(checkingLeaders || importing) && (
-                <span className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-              )}
-              {checkingLeaders ? "Checking leaders…" : importing ? "Importing…" : onCheckLeaders ? "Next" : `Import ${previewRows.length} row${previewRows.length !== 1 ? "s" : ""}`}
+            <Button variant="outline" onClick={() => setStep("column-map")}>Back</Button>
+            <Button onClick={handlePreviewNext} disabled={checking}>
+              {onCheckLeaders ? "Next" : `Import ${previewRows.length} row${previewRows.length !== 1 ? "s" : ""}`}
             </Button>
           </>
         )
       case "leader-resolution":
         return (
           <>
-            <Button variant="outline" onClick={() => { setUnmatchedLeaderRows([]); setStep("preview") }} disabled={importing}>Back</Button>
-            <Button onClick={handleImport} disabled={importing || !allLeadersResolved}>
-              {importing && (
-                <span className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-              )}
-              {importing ? "Importing…" : `Import ${previewRows.length} row${previewRows.length !== 1 ? "s" : ""}`}
+            <Button variant="outline" onClick={() => { setUnmatchedLeaderRows([]); setStep("preview") }}>Back</Button>
+            <Button onClick={handleImport} disabled={!allLeadersResolved}>
+              {`Import ${previewRows.length} row${previewRows.length !== 1 ? "s" : ""}`}
             </Button>
           </>
         )
@@ -460,6 +523,8 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
     if (step === "column-map") return "sm:max-w-2xl"
     return "sm:max-w-lg"
   }
+
+  const footer = renderFooter()
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -482,25 +547,9 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
           </p>
         </DialogHeader>
 
-        {/* Full-width indeterminate progress bar while checking leaders */}
-        {(checkingLeaders || importing) && (
-          <div className="-mx-6 h-0.75 relative overflow-hidden bg-primary/15">
-            <div
-              className="absolute inset-y-0 bg-primary"
-              style={{ animation: "indeterminate-1 2.1s cubic-bezier(0.65,0.815,0.735,0.395) infinite" }}
-            />
-            <div
-              className="absolute inset-y-0 bg-primary"
-              style={{ animation: "indeterminate-2 2.1s cubic-bezier(0.165,0.84,0.44,1) 1.15s infinite" }}
-            />
-          </div>
-        )}
-
         <div className="py-2 min-w-0">{renderStep()}</div>
 
-        {renderFooter() && (
-          <DialogFooter>{renderFooter()}</DialogFooter>
-        )}
+        {footer && <DialogFooter>{footer}</DialogFooter>}
       </DialogContent>
     </Dialog>
   )
