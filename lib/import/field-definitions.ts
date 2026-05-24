@@ -50,9 +50,12 @@ export const GUEST_FIELDS: FieldDefinition[] = [
 ]
 
 export const SMALL_GROUP_FIELDS: FieldDefinition[] = [
-  { key: "name",             label: "Group Name",      required: true },
-  { key: "leaderEmail",      label: "Leader Email",    required: true,  hint: "Must match an existing member's email" },
-  { key: "parentGroupName",  label: "Parent Group",    required: false, hint: "Must match an existing group's name" },
+  { key: "name",             label: "Group Name",         required: true },
+  { key: "leaderFirstName",  label: "Leader First Name",  required: false },
+  { key: "leaderLastName",   label: "Leader Last Name",   required: false },
+  { key: "leaderMobile",     label: "Leader Mobile",      required: false, hint: "Primary lookup — matched by mobile number" },
+  { key: "leaderEmail",      label: "Leader Email",       required: false, hint: "Fallback lookup — used if mobile not provided or not found" },
+  { key: "parentGroupName",  label: "Parent Group",       required: false, hint: "Must match an existing group's name" },
   { key: "lifeStage",        label: "Life Stage",      required: false, hint: "Must match an existing life stage name" },
   { key: "genderFocus",      label: "Gender Focus",    required: false, hint: "Male, Female, or Mixed" },
   { key: "language",         label: "Language",        required: false },

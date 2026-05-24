@@ -51,7 +51,20 @@ export type ImportResult = {
   errors: { row: number; message: string }[]
 }
 
-export type WizardStep = "upload" | "sheet-select" | "column-map" | "preview" | "results"
+export type WizardStep = "upload" | "sheet-select" | "column-map" | "preview" | "leader-resolution" | "results"
+
+export type UnmatchedLeaderRow = {
+  rowIndex: number
+  groupName: string
+  leaderFirstName: string
+  leaderLastName: string
+  leaderEmail: string
+  leaderMobile: string
+}
+
+export type LeaderResolution =
+  | { type: "link"; memberId: string; memberName: string }
+  | { type: "create"; firstName: string; lastName: string; email?: string; mobile?: string }
 
 export type ImportWizardConfig = {
   entity: ImportEntity

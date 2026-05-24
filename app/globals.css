@@ -175,6 +175,18 @@
   }
 }
 
+/* Indeterminate progress bar — two overlapping bars like Material Design */
+@keyframes indeterminate-1 {
+  0%   { left: -35%;  right: 100%; }
+  60%  { left: 100%;  right: -90%; }
+  100% { left: 100%;  right: -90%; }
+}
+@keyframes indeterminate-2 {
+  0%   { left: -200%; right: 100%; }
+  60%  { left: 107%;  right: -8%;  }
+  100% { left: 107%;  right: -8%;  }
+}
+
 /* Sidebar gradient — outside @layer so it overrides bg-sidebar utility */
 [data-sidebar="sidebar"] {
   background: linear-gradient(175deg, oklch(0.36 0.14 222) 0%, oklch(0.22 0.12 215) 100%);
