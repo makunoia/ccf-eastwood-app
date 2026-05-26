@@ -35,7 +35,7 @@ async function getSmallGroup(id: string): Promise<(SmallGroupRow & {
   const g = await db.smallGroup.findUnique({
     where: { id },
     include: {
-      leader: { select: { id: true, firstName: true, lastName: true } },
+      leader: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
       parentGroup: { select: { id: true, name: true } },
       lifeStage: { select: { id: true, name: true } },
       members: {
@@ -98,6 +98,10 @@ async function getSmallGroup(id: string): Promise<(SmallGroupRow & {
     status: g.status as "Active" | "Pending" | "Inactive",
     leaderName: `${g.leader.firstName} ${g.leader.lastName}`,
     leaderId: g.leader.id,
+    leaderFirstName: g.leader.firstName,
+    leaderLastName: g.leader.lastName,
+    leaderEmail: g.leader.email,
+    leaderPhone: g.leader.phone,
     parentGroupId: g.parentGroupId,
     parentGroupName: g.parentGroup?.name ?? null,
     memberCount: g.members.length,

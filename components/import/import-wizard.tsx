@@ -393,7 +393,7 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
   function renderStep() {
     switch (step) {
       case "upload":
-        return <StepUpload onFileParsed={handleFileParsed} loading={fileLoading} />
+        return <StepUpload onFileParsed={handleFileParsed} loading={fileLoading} entity={config.entity} />
       case "sheet-select":
         return (
           <StepSheetSelect
