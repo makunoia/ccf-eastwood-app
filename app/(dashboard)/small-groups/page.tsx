@@ -6,6 +6,8 @@ import {
   SmallGroupStatus,
 } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
+import { auth } from "@/lib/auth"
+import { canExport, canImport } from "@/lib/permissions"
 import { type SmallGroupRow } from "./columns"
 import { SmallGroupsTable } from "./small-groups-table"
 import { SmallGroupsToolbar } from "./toolbar"
@@ -18,7 +20,7 @@ async function getSmallGroups(where: Prisma.SmallGroupWhereInput): Promise<Small
     where,
     orderBy: { createdAt: "desc" },
     include: {
-      leader: { select: { id: true, firstName: true, lastName: true } },
+      leader: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
       parentGroup: { select: { id: true, name: true } },
       lifeStage: { select: { id: true, name: true } },
       _count: {
@@ -36,6 +38,10 @@ async function getSmallGroups(where: Prisma.SmallGroupWhereInput): Promise<Small
     status: g.status as "Active" | "Pending" | "Inactive",
     leaderName: `${g.leader.firstName} ${g.leader.lastName}`,
     leaderId: g.leader.id,
+    leaderFirstName: g.leader.firstName,
+    leaderLastName: g.leader.lastName,
+    leaderEmail: g.leader.email,
+    leaderPhone: g.leader.phone,
     parentGroupId: g.parentGroupId,
     parentGroupName: g.parentGroup?.name ?? null,
     memberCount: g._count.members,
@@ -128,7 +134,8 @@ export default async function SmallGroupsPage({
     ],
   }
 
-  const [pendingRequestCount, groups, lifeStages, requests] = await Promise.all([
+  const [session, pendingRequestCount, groups, lifeStages, requests] = await Promise.all([
+    auth(),
     db.smallGroupMemberRequest.count({ where: { status: MemberRequestStatus.Pending } }),
     tab === "all" ? getSmallGroups(where) : Promise.resolve([]),
     tab === "all"
@@ -146,7 +153,13 @@ export default async function SmallGroupsPage({
             Manage fellowship groups and their hierarchy
           </p>
         </div>
-        {tab === "all" && <SmallGroupsToolbar />}
+        {tab === "all" && (
+          <SmallGroupsToolbar
+            groups={groups}
+            canImport={canImport(session, "SmallGroups")}
+            canExport={canExport(session, "SmallGroups")}
+          />
+        )}
       </div>
 
       <SmallGroupsTabs pendingRequestCount={pendingRequestCount} />

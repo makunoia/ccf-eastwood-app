@@ -1,5 +1,7 @@
 import { Gender, Prisma } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
+import { auth } from "@/lib/auth"
+import { canExport, canImport } from "@/lib/permissions"
 import { type MemberRow } from "./columns"
 import { MembersTable } from "./members-table"
 import { MembersToolbar } from "./toolbar"
@@ -66,7 +68,8 @@ export default async function MembersPage({
     ],
   }
 
-  const [members, lifeStages, smallGroups] = await Promise.all([
+  const [session, members, lifeStages, smallGroups] = await Promise.all([
+    auth(),
     getMembers(where),
     db.lifeStage.findMany({ orderBy: { order: "asc" }, select: { id: true, name: true } }),
     db.smallGroup.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
@@ -81,7 +84,11 @@ export default async function MembersPage({
             Manage church member records
           </p>
         </div>
-        <MembersToolbar />
+        <MembersToolbar
+          members={members}
+          canImport={canImport(session, "Members")}
+          canExport={canExport(session, "Members")}
+        />
       </div>
 
       <MembersFilters

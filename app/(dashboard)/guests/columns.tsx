@@ -12,6 +12,15 @@ export type GuestRow = {
   lifeStage: string | null
   eventCount: number
   dateAdded: string
+  // Extra fields used by Export — not displayed in the table
+  gender: string | null
+  language: string[]
+  birthMonth: number | null
+  birthYear: number | null
+  workCity: string | null
+  workIndustry: string | null
+  meetingPreference: string | null
+  notes: string | null
 }
 
 export function buildColumns(): ColumnDef<GuestRow>[] {

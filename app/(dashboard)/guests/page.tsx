@@ -1,5 +1,7 @@
 import { Gender, Prisma } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
+import { auth } from "@/lib/auth"
+import { canExport, canImport } from "@/lib/permissions"
 import { type GuestRow } from "./columns"
 import { GuestsTable } from "./guests-table"
 import { GuestsFilters } from "./guests-filters"
@@ -24,6 +26,14 @@ async function getGuests(where: Prisma.GuestWhereInput): Promise<GuestRow[]> {
     lifeStage: g.lifeStage?.name ?? null,
     eventCount: g._count.eventRegistrations,
     dateAdded: g.createdAt.toISOString().split("T")[0],
+    gender: g.gender,
+    language: g.language,
+    birthMonth: g.birthMonth,
+    birthYear: g.birthYear,
+    workCity: g.workCity,
+    workIndustry: g.workIndustry,
+    meetingPreference: g.meetingPreference,
+    notes: g.notes,
   }))
 }
 
@@ -55,7 +65,8 @@ export default async function GuestsPage({
     ],
   }
 
-  const [guests, lifeStages] = await Promise.all([
+  const [session, guests, lifeStages] = await Promise.all([
+    auth(),
     getGuests(where),
     db.lifeStage.findMany({ orderBy: { order: "asc" }, select: { id: true, name: true } }),
   ])
@@ -69,7 +80,11 @@ export default async function GuestsPage({
             Non-members who have attended events
           </p>
         </div>
-        <GuestsToolbar />
+        <GuestsToolbar
+          guests={guests}
+          canImport={canImport(session, "Guests")}
+          canExport={canExport(session, "Guests")}
+        />
       </div>
 
       <GuestsFilters

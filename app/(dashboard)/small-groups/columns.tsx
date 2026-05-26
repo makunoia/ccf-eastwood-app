@@ -31,6 +31,11 @@ export type SmallGroupRow = {
   status: "Active" | "Pending" | "Inactive"
   leaderName: string
   leaderId: string
+  // Extra fields used by Export — not displayed in the table
+  leaderFirstName: string
+  leaderLastName: string
+  leaderEmail: string | null
+  leaderPhone: string | null
   parentGroupId: string | null
   parentGroupName: string | null
   memberCount: number
