@@ -3,6 +3,7 @@ import type { FieldDefinition, ImportEntity } from "./types"
 export const MEMBER_FIELDS: FieldDefinition[] = [
   { key: "firstName",        label: "First Name",         required: true },
   { key: "lastName",         label: "Last Name",          required: true },
+  { key: "nickname",         label: "Nickname",           required: false },
   { key: "dateJoined",       label: "Date Joined",        required: true,  hint: "e.g. 2024-01-15" },
   { key: "email",            label: "Email",              required: false },
   { key: "phone",            label: "Phone",              required: false },
@@ -41,6 +42,7 @@ export const VOLUNTEER_FIELDS: FieldDefinition[] = [
 export const GUEST_FIELDS: FieldDefinition[] = [
   { key: "firstName",  label: "First Name",  required: true },
   { key: "lastName",   label: "Last Name",   required: true },
+  { key: "nickname",   label: "Nickname",    required: false },
   { key: "email",      label: "Email",       required: false },
   { key: "phone",      label: "Phone",       required: false },
   { key: "gender",     label: "Gender",      required: false, hint: "Male or Female" },

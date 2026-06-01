@@ -35,7 +35,7 @@ export async function createUser(
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
   }
 
-  const { email, name, permissions, eventIds } = parsed.data
+  const { username, name, permissions, eventIds } = parsed.data
 
   const rawPassword = generatePassword()
   const hashedPassword = await bcrypt.hash(rawPassword, 12)
@@ -48,7 +48,7 @@ export async function createUser(
   try {
     const user = await db.user.create({
       data: {
-        email,
+        username,
         name,
         password: hashedPassword,
         tempPassword: rawPassword,
@@ -69,7 +69,7 @@ export async function createUser(
     return { success: true, data: { id: user.id, generatedPassword: rawPassword } }
   } catch (e: unknown) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-      return { success: false, error: "An account with this email already exists" }
+      return { success: false, error: "An account with this username already exists" }
     }
     return { success: false, error: "Failed to create user" }
   }

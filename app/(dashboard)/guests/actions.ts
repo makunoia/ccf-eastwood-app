@@ -44,6 +44,7 @@ export async function createGuest(
       data: {
         firstName: parsed.data.firstName,
         lastName: parsed.data.lastName,
+        nickname: parsed.data.nickname ?? null,
         email: parsed.data.email ?? null,
         phone: parsed.data.phone ?? null,
         notes: parsed.data.notes ?? null,
@@ -93,6 +94,7 @@ export async function updateGuest(
       data: {
         firstName: parsed.data.firstName,
         lastName: parsed.data.lastName,
+        nickname: parsed.data.nickname ?? null,
         email: parsed.data.email ?? null,
         phone: parsed.data.phone ?? null,
         notes: parsed.data.notes ?? null,
@@ -141,6 +143,7 @@ export async function promoteGuestToMember(
         memberId: true,
         firstName: true,
         lastName: true,
+        nickname: true,
         email: true,
         phone: true,
         notes: true,
@@ -196,6 +199,7 @@ export async function promoteGuestToMember(
         data: {
           firstName: guest.firstName,
           lastName: guest.lastName,
+          nickname: guest.nickname ?? null,
           email: guest.email ?? null,
           phone: guest.phone ?? null,
           notes: guest.notes ?? null,
@@ -364,6 +368,7 @@ export async function searchMembersForLeaderLookup(
         OR: [
           { firstName: { contains: q, mode: "insensitive" } },
           { lastName: { contains: q, mode: "insensitive" } },
+          { nickname: { contains: q, mode: "insensitive" } },
         ],
         ledGroups: { some: {} }, // only members who lead at least one group
       },
@@ -403,6 +408,7 @@ export async function searchGuests(
         OR: [
           { firstName: { contains: q, mode: "insensitive" } },
           { lastName: { contains: q, mode: "insensitive" } },
+          { nickname: { contains: q, mode: "insensitive" } },
           { phone: { contains: q, mode: "insensitive" } },
           { email: { contains: q, mode: "insensitive" } },
         ],

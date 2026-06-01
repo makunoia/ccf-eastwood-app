@@ -174,6 +174,22 @@ function addTwoHours(time: string): string {
   return `${String(newH).padStart(2, "0")}:${String(m).padStart(2, "0")}`
 }
 
+function getCreatedLeaderCacheKey(
+  firstName: string,
+  lastName: string,
+  mobile?: string,
+  email?: string,
+): string | null {
+  const normalizedMobile = mobile?.trim().toLowerCase() || ""
+  const normalizedEmail = email?.trim().toLowerCase() || ""
+  if (normalizedMobile || normalizedEmail) {
+    return `${normalizedMobile}|${normalizedEmail}`
+  }
+
+  const normalizedName = `${firstName.trim()} ${lastName.trim()}`.trim().toLowerCase()
+  return normalizedName ? `n:${normalizedName}` : null
+}
+
 export async function importSmallGroups(
   rows: ImportRow[]
 ): Promise<ActionResult<ImportResult>> {
@@ -199,7 +215,7 @@ export async function importSmallGroups(
   const nameToLifeStageId  = new Map(lifeStages.map((ls) => [ls.name.toLowerCase(), ls.id]))
 
   // Cache for members created during this run (same leader leading multiple groups)
-  const createdLeaderCache = new Map<string, string>() // "mobile|email" → memberId
+  const createdLeaderCache = new Map<string, string>()
 
   for (let i = 0; i < rows.length; i++) {
     const { mapped, resolution, existingId, leaderId: preResolvedLeaderId, createLeader } = rows[i]
@@ -238,10 +254,15 @@ export async function importSmallGroups(
       if (!leaderId && createLeader) {
         const mobile   = createLeader.mobile?.trim()
         const email    = createLeader.email?.trim()
-        const cacheKey = `${mobile ?? ""}|${email ?? ""}`
+        const cacheKey = getCreatedLeaderCacheKey(
+          createLeader.firstName,
+          createLeader.lastName,
+          mobile,
+          email,
+        )
 
-        // Check cache first (same leader created earlier in this run)
-        if (createdLeaderCache.has(cacheKey)) {
+        // Check cache first (same leader created earlier in this run).
+        if (cacheKey && createdLeaderCache.has(cacheKey)) {
           leaderId = createdLeaderCache.get(cacheKey)!
         } else {
           // Race-condition-safe final check before creating
@@ -265,7 +286,7 @@ export async function importSmallGroups(
             })
             leaderId = newMember.id
             // Cache so subsequent rows with the same leader reuse the new record
-            createdLeaderCache.set(cacheKey, newMember.id)
+            if (cacheKey) createdLeaderCache.set(cacheKey, newMember.id)
             if (mobile) phoneToMemberId.set(mobile.toLowerCase(), newMember.id)
             if (email)  emailToMemberId.set(email.toLowerCase(),  newMember.id)
           }

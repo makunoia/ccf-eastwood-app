@@ -29,7 +29,7 @@ export async function verifyOtp(
 
   const user = await db.user.findUnique({
     where: { id: userId },
-    select: { email: true, totpSecret: true },
+    select: { totpSecret: true },
   })
 
   if (!user?.totpSecret) {

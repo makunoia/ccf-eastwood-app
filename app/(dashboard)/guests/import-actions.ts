@@ -98,6 +98,7 @@ function buildGuestData(mapped: Record<string, string>) {
   return {
     firstName:  mapped.firstName ? toTitleCase(mapped.firstName) : "",
     lastName:   mapped.lastName  ? toTitleCase(mapped.lastName)  : "",
+    nickname:   mapped.nickname?.trim() || null,
     email:      mapped.email?.trim() || null,
     phone:      mapped.phone ? formatPhilippinePhone(mapped.phone) : null,
     notes:      mapped.notes?.trim() || null,

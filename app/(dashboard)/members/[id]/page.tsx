@@ -31,6 +31,7 @@ async function getMember(id: string): Promise<MemberRow | null> {
     id: m.id,
     firstName: m.firstName,
     lastName: m.lastName,
+    nickname: m.nickname,
     email: m.email,
     phone: m.phone,
     smallGroupName: m.smallGroup?.name ?? null,

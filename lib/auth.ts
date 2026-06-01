@@ -27,7 +27,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
     Credentials({
       credentials: {
-        email: { label: "Email", type: "email" },
+        username: { label: "Username", type: "text" },
         password: { label: "Password", type: "password" },
         preAuthToken: { label: "Pre-auth Token", type: "text" },
       },
@@ -51,6 +51,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             name: user.name,
             email: user.email,
             image: user.image,
+            username: user.username,
             role: user.role,
             totpEnabled: user.totpEnabled,
             mustChangePassword: user.mustChangePassword,
@@ -60,11 +61,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           }
         }
 
-        // ── Step 1: email + password ─────────────────────────────────────────
-        if (!credentials?.email || !credentials?.password) return null
+        // ── Step 1: username + password ──────────────────────────────────────
+        if (!credentials?.username || !credentials?.password) return null
 
         const user = await db.user.findUnique({
-          where: { email: credentials.email as string },
+          where: { username: (credentials.username as string).toLowerCase() },
           include: {
             permissions: { select: { feature: true, action: true } },
             eventAccess: { select: { eventId: true } },
@@ -84,6 +85,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           name: user.name,
           email: user.email,
           image: user.image,
+          username: user.username,
           role: user.role,
           totpEnabled: user.totpEnabled,
           mustChangePassword: user.mustChangePassword,
@@ -103,6 +105,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // On sign-in, embed user data into the token
       if (user) {
         token.id = user.id!
+        token.username = user.username ?? ""
         token.role = user.role ?? "Staff"
         token.permissions = user.permissions ?? []
         token.eventAccess = user.eventAccess ?? []
@@ -121,6 +124,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           },
         })
         if (fresh) {
+          token.username = fresh.username
           token.role = fresh.role
           token.permissions = groupPermissions(fresh.permissions)
           token.eventAccess = fresh.eventAccess.map((e) => e.eventId)
@@ -135,6 +139,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string
+        session.user.username = (token.username ?? "") as string
         session.user.role = token.role as UserRole
         session.user.permissions = (token.permissions ?? []) as UserPermissionEntry[]
         session.user.eventAccess = (token.eventAccess ?? []) as string[]

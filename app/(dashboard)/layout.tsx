@@ -27,7 +27,7 @@ export default async function DashboardLayout({
         variant="inset"
         user={{
           name: session.user?.name ?? "Admin",
-          email: session.user?.email ?? "",
+          username: session.user?.username ?? "",
           avatar: session.user?.image ?? "",
         }}
         role={session.user.role}

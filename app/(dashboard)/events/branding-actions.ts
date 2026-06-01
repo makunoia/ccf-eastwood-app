@@ -18,7 +18,10 @@ const hexColor = z
 
 const eventBrandingSchema = z.object({
   useMinistryBrand: z.boolean(),
-  brandMinistryId: z.string().nullable().optional(),
+  brandMinistryId: z
+    .string()
+    .optional()
+    .transform((v) => (v === "" || v == null ? null : v)),
   logoUrl: z
     .string()
     .optional()

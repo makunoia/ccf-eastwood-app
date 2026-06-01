@@ -10,10 +10,10 @@ import { updateProfile } from "./actions"
 
 type Props = {
   name: string
-  email: string
+  username: string
 }
 
-export function ProfileForm({ name, email }: Props) {
+export function ProfileForm({ name, username }: Props) {
   const router = useRouter()
   const [value, setValue] = useState(name)
   const [isPending, startTransition] = useTransition()
@@ -45,10 +45,10 @@ export function ProfileForm({ name, email }: Props) {
           />
         </Field>
         <Field>
-          <FieldLabel htmlFor="email">Email</FieldLabel>
-          <Input id="email" value={email} disabled />
+          <FieldLabel htmlFor="username">Username</FieldLabel>
+          <Input id="username" value={username} disabled />
           <p className="text-xs text-muted-foreground">
-            Contact your administrator to change your email address.
+            Contact your administrator to change your username.
           </p>
         </Field>
         <div className="flex justify-end">

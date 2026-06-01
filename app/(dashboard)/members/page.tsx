@@ -21,6 +21,7 @@ async function getMembers(where: Prisma.MemberWhereInput): Promise<MemberRow[]> 
     id: m.id,
     firstName: m.firstName,
     lastName: m.lastName,
+    nickname: m.nickname,
     email: m.email,
     phone: m.phone,
     smallGroupName: m.smallGroup?.name ?? null,
@@ -57,6 +58,7 @@ export default async function MembersPage({
             OR: [
               { firstName: { contains: search, mode: "insensitive" } },
               { lastName: { contains: search, mode: "insensitive" } },
+              { nickname: { contains: search, mode: "insensitive" } },
               { email: { contains: search, mode: "insensitive" } },
               { phone: { contains: search, mode: "insensitive" } },
             ],

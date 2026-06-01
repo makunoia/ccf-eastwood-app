@@ -61,6 +61,7 @@ function toFormValues(member: MemberRow): MemberFormValues {
   return {
     firstName: member.firstName,
     lastName: member.lastName,
+    nickname: member.nickname ?? "",
     email: member.email ?? "",
     phone: member.phone ?? "",
     address: member.address ?? "",
@@ -93,6 +94,7 @@ export function MemberForm({ member, groupStatus, eventHistory, activityHistory,
   const [pendingTab, setPendingTab] = React.useState<string | null>(null)
 
   const { prev, next } = useListNavigation(member?.id ?? "", "memberListIds")
+  const preferredFirstName = isEdit ? (member!.nickname?.trim() || member!.firstName) : ""
 
   function set<K extends keyof MemberFormValues>(field: K, value: MemberFormValues[K]) {
     setDirty(true)
@@ -152,14 +154,14 @@ export function MemberForm({ member, groupStatus, eventHistory, activityHistory,
       {isEdit && (
         <BreadcrumbOverride
           href={`/members/${member!.id}`}
-          label={`${member!.firstName} ${member!.lastName}`}
+          label={`${preferredFirstName} ${member!.lastName}`}
         />
       )}
 
       {/* ── Page header ──────────────────────────────────────────────── */}
       <DetailPageHeader
-        initials={isEdit ? `${member!.firstName[0]}${member!.lastName[0]}` : undefined}
-        title={isEdit ? `${member!.firstName} ${member!.lastName}` : "New Member"}
+        initials={isEdit ? `${preferredFirstName[0]}${member!.lastName[0]}` : undefined}
+        title={isEdit ? `${preferredFirstName} ${member!.lastName}` : "New Member"}
         subtitle={
           isEdit ? (
             <p className="text-sm text-muted-foreground">
@@ -249,6 +251,16 @@ export function MemberForm({ member, groupStatus, eventHistory, activityHistory,
                   required
                 />
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="nickname">Nickname</Label>
+              <Input
+                id="nickname"
+                value={form.nickname ?? ""}
+                onChange={(e) => set("nickname", e.target.value)}
+                placeholder="Jimmy"
+              />
             </div>
 
             <div className="grid grid-cols-2 gap-4">

@@ -25,6 +25,7 @@ const nullableInt = z
 export const guestSchema = z.object({
   firstName: z.string().min(1, "First name is required").trim(),
   lastName: z.string().min(1, "Last name is required").trim(),
+  nickname: nullableString,
   email: nullableEmail,
   phone: nullableString,
   notes: nullableString,
@@ -49,6 +50,7 @@ export type GuestInput = z.infer<typeof guestSchema>
 export type GuestFormValues = {
   firstName: string
   lastName: string
+  nickname?: string
   email: string
   phone: string
   notes: string
@@ -65,6 +67,7 @@ export type GuestFormValues = {
 export const defaultGuestForm: GuestFormValues = {
   firstName: "",
   lastName: "",
+  nickname: "",
   email: "",
   phone: "",
   notes: "",

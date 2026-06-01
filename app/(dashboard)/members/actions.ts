@@ -44,6 +44,7 @@ export async function createMember(
       data: {
         firstName: parsed.data.firstName,
         lastName: parsed.data.lastName,
+        nickname: parsed.data.nickname ?? null,
         email: parsed.data.email ?? null,
         phone: parsed.data.phone ?? null,
         address: parsed.data.address ?? null,
@@ -98,6 +99,7 @@ export async function updateMember(
       data: {
         firstName: parsed.data.firstName,
         lastName: parsed.data.lastName,
+        nickname: parsed.data.nickname ?? null,
         email: parsed.data.email ?? null,
         phone: parsed.data.phone ?? null,
         address: parsed.data.address ?? null,

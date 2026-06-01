@@ -54,15 +54,18 @@ export function LoginForm({
         )}
 
         <Field>
-          <FieldLabel htmlFor="email" className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-            Email
+          <FieldLabel htmlFor="username" className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            Username
           </FieldLabel>
           <Input
-            id="email"
-            name="email"
-            type="email"
-            placeholder="admin@church.org"
-            autoComplete="email"
+            id="username"
+            name="username"
+            type="text"
+            placeholder="yourname"
+            autoComplete="username"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
             required
             className="h-11 bg-background border-border/60 focus-visible:border-[#2AB9D0] focus-visible:ring-[#2AB9D0]/20"
           />

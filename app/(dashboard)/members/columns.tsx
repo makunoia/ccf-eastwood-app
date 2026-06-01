@@ -29,6 +29,7 @@ export type MemberRow = {
   id: string
   firstName: string
   lastName: string
+  nickname: string | null
   email: string | null
   phone: string | null
   smallGroupName: string | null
@@ -129,18 +130,19 @@ export function RowActions({ row }: { row: MemberRow }) {
 export function buildColumns(): ColumnDef<MemberRow>[] {
   return [
     {
-      accessorFn: (row) => `${row.firstName} ${row.lastName}`,
+      accessorFn: (row) => `${row.nickname?.trim() || row.firstName} ${row.lastName}`,
       id: "name",
       header: "Name",
       cell: ({ row, table }) => {
         const ids = table.getRowModel().rows.map((r) => (r.original as MemberRow).id)
+        const preferredFirstName = row.original.nickname?.trim() || row.original.firstName
         return (
           <Link
             href={`/members/${row.original.id}`}
             onClick={() => sessionStorage.setItem("memberListIds", JSON.stringify(ids))}
             className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
           >
-            {row.original.firstName} {row.original.lastName}
+            {preferredFirstName} {row.original.lastName}
           </Link>
         )
       },

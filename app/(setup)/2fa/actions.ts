@@ -11,14 +11,14 @@ import { redirect } from "next/navigation"
  * Returns the base32 secret (used to build the QR URI client-side).
  */
 export async function initTotpSetup(): Promise<
-  { secret: string; email: string; error?: never } | { secret?: never; email?: never; error: string }
+  { secret: string; accountLabel: string; error?: never } | { secret?: never; accountLabel?: never; error: string }
 > {
   const session = await auth()
   if (!session?.user?.id) return { error: "Not authenticated." }
 
   const user = await db.user.findUnique({
     where: { id: session.user.id },
-    select: { totpSecret: true, totpEnabled: true },
+    select: { username: true, totpSecret: true, totpEnabled: true },
   })
 
   if (!user) return { error: "User not found." }
@@ -34,7 +34,7 @@ export async function initTotpSetup(): Promise<
     })
   }
 
-  return { secret, email: session.user.email ?? "user" }
+  return { secret, accountLabel: user.username }
 }
 
 /**

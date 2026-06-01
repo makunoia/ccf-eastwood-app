@@ -7,6 +7,7 @@ export type GuestRow = {
   id: string
   firstName: string
   lastName: string
+  nickname: string | null
   email: string | null
   phone: string | null
   lifeStage: string | null
@@ -26,18 +27,19 @@ export type GuestRow = {
 export function buildColumns(): ColumnDef<GuestRow>[] {
   return [
     {
-      accessorFn: (row) => `${row.firstName} ${row.lastName}`,
+      accessorFn: (row) => `${row.nickname?.trim() || row.firstName} ${row.lastName}`,
       id: "name",
       header: "Name",
       cell: ({ row, table }) => {
         const ids = table.getRowModel().rows.map((r) => (r.original as GuestRow).id)
+        const preferredFirstName = row.original.nickname?.trim() || row.original.firstName
         return (
           <Link
             href={`/guests/${row.original.id}`}
             onClick={() => sessionStorage.setItem("guestListIds", JSON.stringify(ids))}
             className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
           >
-            {row.original.firstName} {row.original.lastName}
+            {preferredFirstName} {row.original.lastName}
           </Link>
         )
       },

@@ -55,6 +55,7 @@ type GuestDetail = {
   id: string
   firstName: string
   lastName: string
+  nickname: string | null
   email: string | null
   phone: string | null
   notes: string | null
@@ -88,6 +89,7 @@ function toFormValues(guest: GuestDetail): GuestFormValues {
   return {
     firstName: guest.firstName,
     lastName: guest.lastName,
+    nickname: guest.nickname ?? "",
     email: guest.email ?? "",
     phone: guest.phone ?? "",
     notes: guest.notes ?? "",
@@ -119,6 +121,7 @@ export function GuestForm({ guest, sourceEvent, eventHistory, activityHistory, m
   const [pendingTab, setPendingTab] = React.useState<string | null>(null)
 
   const { prev, next } = useListNavigation(guest?.id ?? "", "guestListIds")
+  const preferredFirstName = isEdit ? (guest!.nickname?.trim() || guest!.firstName) : ""
 
   function set<K extends keyof GuestFormValues>(field: K, value: GuestFormValues[K]) {
     setDirty(true)
@@ -176,14 +179,14 @@ export function GuestForm({ guest, sourceEvent, eventHistory, activityHistory, m
       {isEdit && (
         <BreadcrumbOverride
           href={`/guests/${guest!.id}`}
-          label={`${guest!.firstName} ${guest!.lastName}`}
+          label={`${preferredFirstName} ${guest!.lastName}`}
         />
       )}
 
       {/* ── Page header ──────────────────────────────────────────────── */}
       <DetailPageHeader
-        initials={isEdit ? `${guest!.firstName[0]}${guest!.lastName[0]}` : undefined}
-        title={isEdit ? `${guest!.firstName} ${guest!.lastName}` : "New Guest"}
+        initials={isEdit ? `${preferredFirstName[0]}${guest!.lastName[0]}` : undefined}
+        title={isEdit ? `${preferredFirstName} ${guest!.lastName}` : "New Guest"}
         subtitle={
           isEdit && sourceEvent ? (
             <p className="text-sm text-muted-foreground">
@@ -299,6 +302,17 @@ export function GuestForm({ guest, sourceEvent, eventHistory, activityHistory, m
                     disabled={isPromoted}
                   />
                 </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="nickname">Nickname</Label>
+                <Input
+                  id="nickname"
+                  value={form.nickname ?? ""}
+                  onChange={(e) => set("nickname", e.target.value)}
+                  placeholder="Mari"
+                  disabled={isPromoted}
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-4">

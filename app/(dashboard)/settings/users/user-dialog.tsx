@@ -64,7 +64,7 @@ function emptyPermissions(): Record<FeatureAreaValue, PermissionActionValue[]> {
 export function UserDialog({ open, onOpenChange, user, events }: Props) {
   const isEdit = !!user
 
-  const [email, setEmail] = React.useState("")
+  const [username, setUsername] = React.useState("")
   const [name, setName] = React.useState("")
   // Map of feature → selected actions
   const [permMap, setPermMap] = React.useState<Record<FeatureAreaValue, PermissionActionValue[]>>(emptyPermissions)
@@ -88,7 +88,7 @@ export function UserDialog({ open, onOpenChange, user, events }: Props) {
       setEventScope(hasSpecific ? "specific" : "all")
       setEventIds(user.eventAccess)
     } else {
-      setEmail("")
+      setUsername("")
       setName("")
       setPermMap(emptyPermissions())
       setEventScope("all")
@@ -157,7 +157,7 @@ export function UserDialog({ open, onOpenChange, user, events }: Props) {
         toast.error(result.error)
       }
     } else {
-      const result = await createUser({ email, name, permissions, eventIds: resolvedEventIds })
+      const result = await createUser({ username, name, permissions, eventIds: resolvedEventIds })
       setSaving(false)
       if (result.success) {
         setCreated({ generatedPassword: result.data.generatedPassword })
@@ -183,7 +183,7 @@ export function UserDialog({ open, onOpenChange, user, events }: Props) {
             <DialogTitle>Account created</DialogTitle>
             <DialogDescription>
               Share this temporary password with{" "}
-              <span className="font-medium">{email}</span>. They will be prompted to set
+              <span className="font-medium">@{username}</span>. They will be prompted to set
               up two-factor authentication and change their password on first login.
             </DialogDescription>
           </DialogHeader>
@@ -228,14 +228,14 @@ export function UserDialog({ open, onOpenChange, user, events }: Props) {
           <DialogTitle>{isEdit ? "Edit permissions" : "Add user"}</DialogTitle>
           <DialogDescription>
             {isEdit
-              ? `Update the feature access for ${user?.name ?? user?.email}.`
+              ? `Update the feature access for ${user?.name ?? user?.username}.`
               : "Create a new account. A temporary password will be generated."}
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit}>
           <div className="space-y-5 py-2">
-            {/* Name & email — create only */}
+            {/* Name & username — create only */}
             {!isEdit && (
               <>
                 <div className="space-y-2">
@@ -251,17 +251,26 @@ export function UserDialog({ open, onOpenChange, user, events }: Props) {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="email">
-                    Email <span className="text-destructive">*</span>
+                  <Label htmlFor="username">
+                    Username <span className="text-destructive">*</span>
                   </Label>
                   <Input
-                    id="email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="staff@church.org"
+                    id="username"
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value.toLowerCase())}
+                    placeholder="jdoe"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    pattern="[a-z0-9._\-]+"
+                    minLength={3}
+                    maxLength={32}
                     required
                   />
+                  <p className="text-xs text-muted-foreground">
+                    3–32 chars. Lowercase letters, numbers, dots, dashes, or underscores.
+                  </p>
                 </div>
               </>
             )}

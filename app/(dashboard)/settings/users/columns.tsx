@@ -34,7 +34,8 @@ export type PermissionEntry = {
 export type UserRow = {
   id: string
   name: string | null
-  email: string
+  username: string
+  email: string | null
   role: "SuperAdmin" | "Staff"
   permissions: PermissionEntry[]
   eventAccess: string[]
@@ -132,7 +133,7 @@ function RowActions({ row, events }: { row: UserRow; events: EventOption[] }) {
             <DialogTitle>Delete user</DialogTitle>
             <DialogDescription>
               Are you sure you want to delete{" "}
-              <span className="font-medium">{row.name ?? row.email}</span>? This action
+              <span className="font-medium">{row.name ?? row.username}</span>? This action
               cannot be undone.
             </DialogDescription>
           </DialogHeader>
@@ -164,9 +165,9 @@ export function buildColumns(
             onClick={() => onViewUser(row.original)}
             className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors text-left"
           >
-            {row.original.name ?? row.original.email}
+            {row.original.name ?? row.original.username}
           </button>
-          <p className="text-xs text-muted-foreground">{row.original.email}</p>
+          <p className="text-xs text-muted-foreground">@{row.original.username}</p>
         </div>
       ),
     },
