@@ -34,7 +34,7 @@ export function NavUser({
 }: {
   user: {
     name: string
-    email: string
+    username: string
     avatar: string
   }
 }) {
@@ -56,7 +56,7 @@ export function NavUser({
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-medium">{user.name}</span>
                 <span className="truncate text-xs text-sidebar-foreground/60">
-                  {user.email}
+                  @{user.username}
                 </span>
               </div>
               <IconDotsVertical className="ml-auto size-4" />
@@ -77,7 +77,7 @@ export function NavUser({
                 <div className="grid flex-1 text-left text-sm leading-tight">
                   <span className="truncate font-medium">{user.name}</span>
                   <span className="truncate text-xs text-muted-foreground">
-                    {user.email}
+                    @{user.username}
                   </span>
                 </div>
               </div>

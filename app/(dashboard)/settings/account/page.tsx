@@ -26,7 +26,7 @@ export default async function AccountPage() {
   const session = await auth()
   if (!session?.user) redirect("/login")
 
-  const { name, email, role, permissions } = session.user
+  const { name, username, role, permissions } = session.user
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-6 max-w-2xl">
@@ -42,7 +42,7 @@ export default async function AccountPage() {
           <CardDescription>Update your display name</CardDescription>
         </CardHeader>
         <CardContent>
-          <ProfileForm name={name ?? ""} email={email ?? ""} />
+          <ProfileForm name={name ?? ""} username={username ?? ""} />
         </CardContent>
       </Card>
 

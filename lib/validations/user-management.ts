@@ -25,7 +25,16 @@ const permissionEntrySchema = z.object({
 })
 
 export const createUserSchema = z.object({
-  email: z.string().email("Enter a valid email address"),
+  username: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .min(3, "Username must be at least 3 characters")
+    .max(32, "Username must be at most 32 characters")
+    .regex(
+      /^[a-z0-9._-]+$/,
+      "Use lowercase letters, numbers, dots, dashes, or underscores"
+    ),
   name: z.string().min(1, "Name is required").trim(),
   permissions: z.array(permissionEntrySchema),
   eventIds: z.array(z.string()),

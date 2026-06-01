@@ -14,6 +14,7 @@ function toExportRow(m: MemberRow): MemberExportRow {
   return {
     firstName: m.firstName,
     lastName: m.lastName,
+    nickname: m.nickname,
     email: m.email,
     phone: m.phone,
     address: m.address,

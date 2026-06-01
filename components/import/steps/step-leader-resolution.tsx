@@ -26,7 +26,8 @@ type Props = {
 
 type RowMode = "link" | "create"
 
-// Groups rows that share the same leader identity (mobile > email > name)
+// Groups rows that share the same leader identity (mobile > email > name).
+// Rows with absolutely no identity data are intentionally kept separate.
 type LeaderGroup = {
   key: string
   representative: UnmatchedLeaderRow
@@ -39,7 +40,8 @@ function leaderIdentityKey(row: UnmatchedLeaderRow): string {
   const email  = row.leaderEmail.trim()
   if (mobile) return `m:${mobile}`
   if (email)  return `e:${email.toLowerCase()}`
-  const name = `${row.leaderFirstName.trim()} ${row.leaderLastName.trim()}`.toLowerCase()
+  const name = `${row.leaderFirstName.trim()} ${row.leaderLastName.trim()}`.trim().toLowerCase()
+  if (!name) return `row:${row.rowIndex}`
   return `n:${name}`
 }
 

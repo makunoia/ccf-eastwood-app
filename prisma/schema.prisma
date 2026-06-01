@@ -133,7 +133,8 @@ enum PermissionAction {
 model User {
   id                String           @id @default(cuid())
   name              String?
-  email             String           @unique
+  username          String           @unique
+  email             String?          @unique
   emailVerified     DateTime?
   image             String?
   password          String?
@@ -229,6 +230,7 @@ model Member {
   id                  String              @id @default(cuid())
   firstName           String
   lastName            String
+  nickname            String?
   email               String?             @unique
   phone               String?
   address             String?
@@ -268,6 +270,7 @@ model Guest {
   id          String   @id @default(cuid())
   firstName   String
   lastName    String
+  nickname    String?
   email       String?
   phone       String?
   notes       String?

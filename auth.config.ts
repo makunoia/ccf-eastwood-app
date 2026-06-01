@@ -19,6 +19,7 @@ export const authConfig = {
     jwt({ token, user }) {
       if (user) {
         token.id = user.id!
+        token.username = user.username ?? ""
         token.role = user.role ?? "Staff"
         token.permissions = user.permissions ?? []
         token.eventAccess = user.eventAccess ?? []
@@ -34,6 +35,7 @@ export const authConfig = {
     session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string
+        session.user.username = (token.username ?? "") as string
         session.user.role = token.role as UserRole
         session.user.permissions = (token.permissions ?? []) as UserPermissionEntry[]
         session.user.eventAccess = (token.eventAccess ?? []) as string[]

@@ -23,7 +23,7 @@ export default function Setup2faPage() {
         setInitError(result.error)
       } else if ("secret" in result && result.secret) {
         setSecret(result.secret)
-        setQrUri(buildTotpUri(result.secret, result.email))
+        setQrUri(buildTotpUri(result.secret, result.accountLabel))
       }
     })
   }, [])

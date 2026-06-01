@@ -10,12 +10,12 @@ export function generateSecret(): string {
 
 /**
  * Build an otpauth:// URI for QR code display.
- * @param secret  base32 TOTP secret
- * @param email   user email shown in the authenticator app
- * @param issuer  app/org name shown in the authenticator app
+ * @param secret        base32 TOTP secret
+ * @param accountLabel  account identifier shown in the authenticator app (e.g. username)
+ * @param issuer        app/org name shown in the authenticator app
  */
-export function buildTotpUri(secret: string, email: string, issuer = "CCF Eastwood Admin App"): string {
-  return authenticator.keyuri(email, issuer, secret)
+export function buildTotpUri(secret: string, accountLabel: string, issuer = "CCF Eastwood Admin App"): string {
+  return authenticator.keyuri(accountLabel, issuer, secret)
 }
 
 /**

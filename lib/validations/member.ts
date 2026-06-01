@@ -25,6 +25,7 @@ const nullableInt = z
 export const memberSchema = z.object({
   firstName: z.string().min(1, "First name is required").trim(),
   lastName: z.string().min(1, "Last name is required").trim(),
+  nickname: nullableString,
   email: nullableEmail,
   phone: nullableString,
   address: nullableString,
@@ -55,6 +56,7 @@ export type MemberInput = z.infer<typeof memberSchema>
 export type MemberFormValues = {
   firstName: string
   lastName: string
+  nickname?: string
   email: string
   phone: string
   address: string
@@ -73,6 +75,7 @@ export type MemberFormValues = {
 export const defaultMemberForm: MemberFormValues = {
   firstName: "",
   lastName: "",
+  nickname: "",
   email: "",
   phone: "",
   address: "",

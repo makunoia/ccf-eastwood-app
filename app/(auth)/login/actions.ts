@@ -12,22 +12,22 @@ export async function login(
   _prevState: { error?: string } | null,
   formData: FormData
 ): Promise<{ error?: string }> {
-  const email = (formData.get("email") as string | null)?.trim() ?? ""
+  const username = ((formData.get("username") as string | null) ?? "").trim().toLowerCase()
   const password = (formData.get("password") as string | null) ?? ""
 
   // Look up user and verify password manually before deciding auth path
   const user = await db.user.findUnique({
-    where: { email },
+    where: { username },
     select: { id: true, password: true, totpEnabled: true },
   })
 
   if (!user || !user.password) {
-    return { error: "Invalid email or password." }
+    return { error: "Invalid username or password." }
   }
 
   const isValid = await bcrypt.compare(password, user.password)
   if (!isValid) {
-    return { error: "Invalid email or password." }
+    return { error: "Invalid username or password." }
   }
 
   // If TOTP is enabled → create a pre-auth token and redirect to OTP page
@@ -47,7 +47,7 @@ export async function login(
   // No TOTP → complete sign-in normally; middleware handles setup redirects
   try {
     await signIn("credentials", {
-      email,
+      username,
       password,
       redirectTo: "/dashboard",
     })
@@ -56,7 +56,7 @@ export async function login(
     if (error instanceof AuthError) {
       switch (error.type) {
         case "CredentialsSignin":
-          return { error: "Invalid email or password." }
+          return { error: "Invalid username or password." }
         default:
           return { error: "Something went wrong. Please try again." }
       }

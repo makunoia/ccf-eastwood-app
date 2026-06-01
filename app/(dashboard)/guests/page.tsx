@@ -21,6 +21,7 @@ async function getGuests(where: Prisma.GuestWhereInput): Promise<GuestRow[]> {
     id: g.id,
     firstName: g.firstName,
     lastName: g.lastName,
+    nickname: g.nickname,
     email: g.email,
     phone: g.phone,
     lifeStage: g.lifeStage?.name ?? null,
@@ -55,6 +56,7 @@ export default async function GuestsPage({
             OR: [
               { firstName: { contains: search, mode: "insensitive" } },
               { lastName: { contains: search, mode: "insensitive" } },
+              { nickname: { contains: search, mode: "insensitive" } },
               { email: { contains: search, mode: "insensitive" } },
               { phone: { contains: search, mode: "insensitive" } },
             ],

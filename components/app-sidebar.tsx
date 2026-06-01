@@ -47,7 +47,7 @@ const navSecondary: { title: string; url: string; icon: Icon }[] = [
 type AppSidebarProps = React.ComponentProps<typeof Sidebar> & {
   user: {
     name: string
-    email: string
+    username: string
     avatar: string
   }
   role?: string

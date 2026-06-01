@@ -82,8 +82,11 @@ export function UserDetailSheet({ user, events, open, onOpenChange }: Props) {
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full sm:max-w-md overflow-y-auto">
         <SheetHeader>
-          <SheetTitle>{user.name ?? user.email}</SheetTitle>
-          <SheetDescription>{user.email}</SheetDescription>
+          <SheetTitle>{user.name ?? user.username}</SheetTitle>
+          <SheetDescription>
+            @{user.username}
+            {user.email ? ` · ${user.email}` : ""}
+          </SheetDescription>
         </SheetHeader>
 
         <div className="mt-6 space-y-5 px-4 pb-6">

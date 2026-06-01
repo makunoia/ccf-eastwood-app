@@ -9,6 +9,7 @@ type GuestData = {
   id: string
   firstName: string
   lastName: string
+  nickname: string | null
   email: string | null
   phone: string | null
   notes: string | null

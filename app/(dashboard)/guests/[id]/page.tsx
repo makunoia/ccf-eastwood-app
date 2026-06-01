@@ -89,6 +89,7 @@ async function getGuest(id: string) {
     id: g.id,
     firstName: g.firstName,
     lastName: g.lastName,
+    nickname: g.nickname,
     email: g.email,
     phone: g.phone,
     notes: g.notes,

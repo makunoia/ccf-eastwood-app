@@ -8,6 +8,7 @@ import { downloadCSV, formatDayOfWeek, type CSVCell } from "./csv-export"
 export type MemberExportRow = {
   firstName: string
   lastName: string
+  nickname: string | null
   email: string | null
   phone: string | null
   address: string | null
@@ -25,7 +26,7 @@ export type MemberExportRow = {
 }
 
 const MEMBER_HEADERS = [
-  "First Name", "Last Name", "Date Joined", "Email", "Phone", "Address",
+  "First Name", "Last Name", "Nickname", "Date Joined", "Email", "Phone", "Address",
   "Small Group", "Life Stage", "Gender", "Language",
   "Birth Month", "Birth Year", "Work City", "Work Industry",
   "Meeting Preference", "Notes",
@@ -33,7 +34,7 @@ const MEMBER_HEADERS = [
 
 function memberToCells(m: MemberExportRow): CSVCell[] {
   return [
-    m.firstName, m.lastName, m.dateJoined, m.email, m.phone, m.address,
+    m.firstName, m.lastName, m.nickname, m.dateJoined, m.email, m.phone, m.address,
     m.smallGroupName, m.lifeStage, m.gender, m.language.join("; "),
     m.birthMonth, m.birthYear, m.workCity, m.workIndustry,
     m.meetingPreference, m.notes,
@@ -53,6 +54,7 @@ export function exportMembersCSV(rows: MemberExportRow[]): void {
 export type GuestExportRow = {
   firstName: string
   lastName: string
+  nickname: string | null
   email: string | null
   phone: string | null
   lifeStage: string | null
@@ -68,7 +70,7 @@ export type GuestExportRow = {
 }
 
 const GUEST_HEADERS = [
-  "First Name", "Last Name", "Email", "Phone", "Date Added",
+  "First Name", "Last Name", "Nickname", "Email", "Phone", "Date Added",
   "Life Stage", "Gender", "Language",
   "Birth Month", "Birth Year", "Work City", "Work Industry",
   "Meeting Preference", "Notes",
@@ -76,7 +78,7 @@ const GUEST_HEADERS = [
 
 function guestToCells(g: GuestExportRow): CSVCell[] {
   return [
-    g.firstName, g.lastName, g.email, g.phone, g.dateAdded,
+    g.firstName, g.lastName, g.nickname, g.email, g.phone, g.dateAdded,
     g.lifeStage, g.gender, g.language.join("; "),
     g.birthMonth, g.birthYear, g.workCity, g.workIndustry,
     g.meetingPreference, g.notes,

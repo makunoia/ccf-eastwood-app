@@ -12,6 +12,7 @@ async function getUsers(): Promise<UserRow[]> {
     select: {
       id: true,
       name: true,
+      username: true,
       email: true,
       role: true,
       tempPassword: true,
@@ -42,6 +43,7 @@ async function getUsers(): Promise<UserRow[]> {
     return {
       id: u.id,
       name: u.name,
+      username: u.username,
       email: u.email,
       role: u.role,
       totpEnabled: u.totpEnabled,

@@ -14,6 +14,7 @@ function toExportRow(g: GuestRow): GuestExportRow {
   return {
     firstName: g.firstName,
     lastName: g.lastName,
+    nickname: g.nickname,
     email: g.email,
     phone: g.phone,
     lifeStage: g.lifeStage,
