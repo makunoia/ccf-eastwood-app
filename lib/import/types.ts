@@ -65,6 +65,7 @@ export type UnmatchedLeaderRow = {
 export type LeaderResolution =
   | { type: "link"; memberId: string; memberName: string }
   | { type: "create"; firstName: string; lastName: string; email?: string; mobile?: string }
+  | { type: "none" }
 
 export type ImportWizardConfig = {
   entity: ImportEntity

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { IconUserSearch, IconUserPlus, IconAlertTriangle, IconCheck } from "@tabler/icons-react"
+import { IconUserSearch, IconUserPlus, IconUserOff, IconAlertTriangle, IconCheck } from "@tabler/icons-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { PersonCombobox, type PersonComboboxOption } from "@/components/ui/person-combobox"
@@ -24,7 +24,7 @@ type Props = {
   onResolutionChange: (rowIndexes: number[], resolution: LeaderResolution) => void
 }
 
-type RowMode = "link" | "create"
+type RowMode = "link" | "create" | "none"
 
 // Groups rows that share the same leader identity (mobile > email > name).
 // Rows with absolutely no identity data are intentionally kept separate.
@@ -85,9 +85,10 @@ function LeaderGroupCard({
   // Sync local state when resolution is changed externally (e.g. bulk "Set all")
   React.useEffect(() => {
     if (!resolution) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMode(resolution.type)
     setSelectedMemberId(resolution.type === "link" ? resolution.memberId : "")
-  }, [resolution?.type])
+  }, [resolution])
 
   const memberOptions: PersonComboboxOption[] = members.map((m) => ({
     value: m.id,
@@ -107,6 +108,9 @@ function LeaderGroupCard({
         email:     row.leaderEmail  || undefined,
         mobile:    row.leaderMobile || undefined,
       })
+    } else if (next === "none") {
+      setSelectedMemberId("")
+      onResolutionChange({ type: "none" })
     } else {
       setSelectedMemberId("")
     }
@@ -152,7 +156,9 @@ function LeaderGroupCard({
               <IconCheck className="size-3" />
               {resolution.type === "link"
                 ? `Linked to ${resolution.memberName}`
-                : "Will create new Member"}
+                : resolution.type === "create"
+                  ? "Will create new Member"
+                  : "Will import without a leader"}
             </p>
           )}
           {/* Affected groups */}
@@ -177,7 +183,7 @@ function LeaderGroupCard({
           )}
           {isResolved ? (
             <Badge variant="outline" className="text-green-700 border-green-400 bg-green-50 text-xs">
-              {resolution.type === "link" ? "Linked" : "Will create"}
+              {resolution.type === "link" ? "Linked" : resolution.type === "create" ? "Will create" : "No leader"}
             </Badge>
           ) : hasNoData ? (
             <Badge variant="outline" className="text-destructive border-destructive/40 bg-destructive/5 text-xs">
@@ -262,6 +268,26 @@ function LeaderGroupCard({
             )}
           </div>
         </label>
+
+        <label className="flex items-start gap-2.5 cursor-pointer">
+          <input
+            type="radio"
+            name={`leader-mode-${cardKey}`}
+            value="none"
+            checked={mode === "none"}
+            onChange={() => handleModeChange("none")}
+            className="mt-0.5 accent-primary"
+          />
+          <div className="flex-1 flex flex-col gap-1.5">
+            <span className="text-sm flex items-center gap-1.5">
+              <IconUserOff className="size-3.5 text-muted-foreground" />
+              Import without a leader
+              <span className="text-xs text-muted-foreground">
+                — assign a leader later
+              </span>
+            </span>
+          </div>
+        </label>
       </div>
     </div>
   )
@@ -286,6 +312,12 @@ export function StepLeaderResolution({ rows, resolutions, members, membersLoadin
     }
   }
 
+  function handleSetRemainingNone() {
+    for (const group of unresolvedGroups) {
+      onResolutionChange(group.rowIndexes, { type: "none" })
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       {/* Banner */}
@@ -306,6 +338,15 @@ export function StepLeaderResolution({ rows, resolutions, members, membersLoadin
           disabled={unresolvedGroups.length === 0}
         >
           Create remaining{unresolvedGroups.length > 0 ? ` (${unresolvedGroups.length})` : ""} as new Members
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 text-xs shrink-0"
+          onClick={handleSetRemainingNone}
+          disabled={unresolvedGroups.length === 0}
+        >
+          Import remaining without leader
         </Button>
       </div>
 

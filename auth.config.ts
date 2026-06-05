@@ -4,7 +4,7 @@
  * The full server-side config (with PrismaAdapter and DB callbacks) lives in lib/auth.ts.
  */
 import type { NextAuthConfig } from "next-auth"
-import type { UserRole, FeatureArea } from "@/app/generated/prisma/client"
+import type { UserRole } from "@/app/generated/prisma/client"
 import type { UserPermissionEntry } from "@/types/next-auth"
 
 export const authConfig = {

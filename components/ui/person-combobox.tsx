@@ -41,6 +41,7 @@ export function PersonCombobox({
   const [open, setOpen] = React.useState(false)
   const [query, setQuery] = React.useState("")
   const inputRef = React.useRef<HTMLInputElement>(null)
+  const listboxId = React.useId()
 
   const selected = options.find((o) => o.value === value)
 
@@ -69,6 +70,7 @@ export function PersonCombobox({
           type="button"
           role="combobox"
           aria-expanded={open}
+          aria-controls={listboxId}
           disabled={disabled}
           className={cn(
             "flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-transparent px-3 py-2 text-base whitespace-nowrap shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
@@ -112,7 +114,7 @@ export function PersonCombobox({
             )}
           </div>
 
-          <div className="max-h-60 overflow-y-auto p-1">
+          <div id={listboxId} role="listbox" className="max-h-60 overflow-y-auto p-1">
             {clearable && (
               <button
                 type="button"

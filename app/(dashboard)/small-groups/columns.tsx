@@ -29,8 +29,8 @@ export type SmallGroupRow = {
   id: string
   name: string
   status: "Active" | "Pending" | "Inactive"
-  leaderName: string
-  leaderId: string
+  leaderName: string | null
+  leaderId: string | null
   // Extra fields used by Export — not displayed in the table
   leaderFirstName: string
   leaderLastName: string
@@ -159,6 +159,10 @@ export function buildColumns(): ColumnDef<SmallGroupRow>[] {
     {
       accessorKey: "leaderName",
       header: "Leader",
+      cell: ({ row }) =>
+        row.original.leaderName ?? (
+          <span className="text-muted-foreground">No leader</span>
+        ),
     },
     {
       accessorKey: "parentGroupName",

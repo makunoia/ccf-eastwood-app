@@ -31,7 +31,7 @@ function SmallGroupCard({ group }: { group: SmallGroupRow }) {
         </div>
         <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
           <span className="text-muted-foreground">Leader</span>
-          <span>{group.leaderName}</span>
+          <span>{group.leaderName ?? <span className="text-muted-foreground">No leader</span>}</span>
           <span className="text-muted-foreground">Parent Group</span>
           <span>{group.parentGroupName ?? <span className="text-muted-foreground">—</span>}</span>
           <span className="text-muted-foreground">Members</span>

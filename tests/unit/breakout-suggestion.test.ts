@@ -3,7 +3,6 @@ import {
   suggestBreakoutGroup,
   filterCompatibleCandidates,
   type BreakoutCandidate,
-  type RegistrantProfile,
 } from "@/lib/breakout-suggestion"
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

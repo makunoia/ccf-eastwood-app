@@ -33,7 +33,11 @@ export function StepResults({ result }: Props) {
   function toggle(message: string) {
     setExpanded((prev) => {
       const next = new Set(prev)
-      next.has(message) ? next.delete(message) : next.add(message)
+      if (next.has(message)) {
+        next.delete(message)
+      } else {
+        next.add(message)
+      }
       return next
     })
   }

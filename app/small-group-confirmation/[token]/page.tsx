@@ -62,10 +62,14 @@ export default async function SmallGroupConfirmationPage({
             <p className="text-sm text-muted-foreground">
               For{" "}
               <span className="font-medium text-foreground">{group.name}</span>
-              {" "}— led by{" "}
-              <span className="font-medium text-foreground">
-                {group.leader.firstName} {group.leader.lastName}
-              </span>
+              {group.leader && (
+                <>
+                  {" "}— led by{" "}
+                  <span className="font-medium text-foreground">
+                    {group.leader.firstName} {group.leader.lastName}
+                  </span>
+                </>
+              )}
             </p>
           )}
         </div>

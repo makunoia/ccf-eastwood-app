@@ -125,7 +125,7 @@ type Props = {
 function toFormValues(group: SmallGroupRow): SmallGroupFormValues {
   return {
     name: group.name,
-    leaderId: group.leaderId,
+    leaderId: group.leaderId ?? "",
     parentGroupId: group.parentGroupId ?? "",
     lifeStageId: group.lifeStageId ?? "",
     genderFocus: group.genderFocus ?? "",

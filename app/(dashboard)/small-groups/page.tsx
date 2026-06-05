@@ -36,12 +36,12 @@ async function getSmallGroups(where: Prisma.SmallGroupWhereInput): Promise<Small
     id: g.id,
     name: g.name,
     status: g.status as "Active" | "Pending" | "Inactive",
-    leaderName: `${g.leader.firstName} ${g.leader.lastName}`,
-    leaderId: g.leader.id,
-    leaderFirstName: g.leader.firstName,
-    leaderLastName: g.leader.lastName,
-    leaderEmail: g.leader.email,
-    leaderPhone: g.leader.phone,
+    leaderName: g.leader ? `${g.leader.firstName} ${g.leader.lastName}` : null,
+    leaderId: g.leader?.id ?? null,
+    leaderFirstName: g.leader?.firstName ?? "",
+    leaderLastName: g.leader?.lastName ?? "",
+    leaderEmail: g.leader?.email ?? null,
+    leaderPhone: g.leader?.phone ?? null,
     parentGroupId: g.parentGroupId,
     parentGroupName: g.parentGroup?.name ?? null,
     memberCount: g._count.members,
@@ -96,9 +96,11 @@ async function getPendingRequests(): Promise<RequestRow[]> {
       fromGroupName: r.fromGroup?.name ?? null,
       targetGroupId: r.smallGroup.id,
       targetGroupName: r.smallGroup.name,
-      leaderName: `${r.smallGroup.leader.firstName} ${r.smallGroup.leader.lastName}`,
-      leaderId: r.smallGroup.leader.id,
-      leaderPhone: r.smallGroup.leader.phone ?? null,
+      leaderName: r.smallGroup.leader
+        ? `${r.smallGroup.leader.firstName} ${r.smallGroup.leader.lastName}`
+        : null,
+      leaderId: r.smallGroup.leader?.id ?? null,
+      leaderPhone: r.smallGroup.leader?.phone ?? null,
     }
   })
 }

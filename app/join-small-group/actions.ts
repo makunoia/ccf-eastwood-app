@@ -128,8 +128,8 @@ export async function submitJoinForm(
       return [
         {
           ...r,
-          leaderFirstName: g.leader.firstName,
-          leaderLastName: g.leader.lastName,
+          leaderFirstName: g.leader?.firstName ?? "",
+          leaderLastName: g.leader?.lastName ?? "",
           scheduleDayOfWeek: g.scheduleDayOfWeek,
           scheduleTimeStart: g.scheduleTimeStart,
           scheduleTimeEnd: g.scheduleTimeEnd,
