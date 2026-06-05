@@ -62,7 +62,7 @@ type RegistrantData = {
 
 type Props = {
   registrant: RegistrantData
-  request: { id: string; notes: string | null; smallGroupId: string; smallGroup: { id: string; name: string; leader: { firstName: string; lastName: string } } } | null
+  request: { id: string; notes: string | null; smallGroupId: string; smallGroup: { id: string; name: string; leader: { firstName: string; lastName: string } | null } } | null
   status: "confirmed" | "rejected" | "pending"
   eventId: string
   registrantId: string

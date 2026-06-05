@@ -67,6 +67,7 @@ export function TimeInput({
   React.useEffect(() => {
     if (value !== internalValue) {
       const parsed = parse24(value)
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setRawDigits(parsed.digits)
       setPeriod(parsed.period)
     }

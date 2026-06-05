@@ -293,11 +293,7 @@ export async function importSmallGroups(
         }
       }
 
-      if (!leaderId) {
-        result.errors.push({ row: i, message: "Could not resolve leader — no leader linked or created" })
-        result.skipped++
-        continue
-      }
+      // A null leaderId is allowed — the group is imported without a leader.
 
       // ── Parent group (map lookup) ──────────────────────────────────────────
       let parentGroupId: string | null = null

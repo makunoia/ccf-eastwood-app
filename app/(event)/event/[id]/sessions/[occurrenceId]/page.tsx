@@ -2,9 +2,15 @@ import type { ReactNode } from "react"
 import { notFound } from "next/navigation"
 import { UserCheck, UserPlus, Users } from "lucide-react"
 import { db } from "@/lib/db"
-import { isReturner } from "@/lib/session-stats"
+import { isEstablishedAttendee } from "@/lib/session-stats"
 import { BreadcrumbOverride } from "@/components/breadcrumb-context"
 import { DetailPageHeader } from "@/components/detail-page-header"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { SessionAttendeesTable } from "./session-attendees-table"
 
 async function getOccurrenceDetail(occurrenceId: string) {
@@ -105,6 +111,7 @@ async function getOccurrenceDetail(occurrenceId: string) {
             registrant: {
               select: {
                 id: true,
+                memberId: true,
                 occurrenceAttendances: {
                   select: {
                     occurrenceId: true,
@@ -153,7 +160,7 @@ export default async function OccurrenceDetailPage({
   const data = await getOccurrenceDetail(occurrenceId)
   if (!data || data.occurrence.event.id !== id) notFound()
 
-  const { occurrence, volunteers, breakoutGroups, subFacilitators, totalRegistrants } = data
+  const { occurrence, volunteers, breakoutGroups, subFacilitators } = data
 
   const dateLabel = occurrence.date.toLocaleDateString("en-PH", {
     weekday: "long",
@@ -174,7 +181,13 @@ export default async function OccurrenceDetailPage({
       minute: "2-digit",
       timeZone: "Asia/Manila",
     }),
-    isReturner: isReturner(a.registrant.occurrenceAttendances, occurrenceId, occurrence.date),
+    // Members are established — never "New". Only first-time guests are tagged New.
+    isReturner: isEstablishedAttendee(
+      !!a.registrant.memberId,
+      a.registrant.occurrenceAttendances,
+      occurrenceId,
+      occurrence.date,
+    ),
     isMember: !!a.registrant.memberId,
     isVolunteer: a.registrant.memberId
       ? volunteerMemberIds.has(a.registrant.memberId)
@@ -212,13 +225,18 @@ export default async function OccurrenceDetailPage({
       m.registrant.occurrenceAttendances.some((a) => a.occurrenceId === occurrenceId),
     )
 
-    const bgNewCount = checkedInMembers.filter(
-      (m) => !isReturner(m.registrant.occurrenceAttendances, occurrenceId, occurrence.date),
-    ).length
+    // Members are established — never "New". Only first-time guests count as New.
+    const bgReturnerFlags = checkedInMembers.map((m) =>
+      isEstablishedAttendee(
+        !!m.registrant.memberId,
+        m.registrant.occurrenceAttendances,
+        occurrenceId,
+        occurrence.date,
+      ),
+    )
 
-    const bgReturneeCount = checkedInMembers.filter((m) =>
-      isReturner(m.registrant.occurrenceAttendances, occurrenceId, occurrence.date),
-    ).length
+    const bgNewCount = bgReturnerFlags.filter((isRet) => !isRet).length
+    const bgReturneeCount = bgReturnerFlags.filter((isRet) => isRet).length
 
     return {
       id: bg.id,
@@ -327,22 +345,32 @@ function StatCard({
         {value}
       </p>
       {genderBar && genderTotal > 0 && (
-        <div className="absolute bottom-0 left-0 right-0 flex h-1">
-          {genderBar.men > 0 && (
-            <div
-              title={`${genderBar.men} men`}
-              className="cursor-default bg-blue-400 transition-colors hover:bg-blue-500"
-              style={{ flex: genderBar.men }}
-            />
-          )}
-          {genderBar.women > 0 && (
-            <div
-              title={`${genderBar.women} women`}
-              className="cursor-default bg-pink-400 transition-colors hover:bg-pink-500"
-              style={{ flex: genderBar.women }}
-            />
-          )}
-        </div>
+        <TooltipProvider>
+          <div className="absolute bottom-0 left-0 right-0 flex h-1">
+            {genderBar.men > 0 && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div
+                    className="cursor-default bg-blue-400 transition-colors hover:bg-blue-500"
+                    style={{ flex: genderBar.men }}
+                  />
+                </TooltipTrigger>
+                <TooltipContent>{genderBar.men} men</TooltipContent>
+              </Tooltip>
+            )}
+            {genderBar.women > 0 && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div
+                    className="cursor-default bg-pink-400 transition-colors hover:bg-pink-500"
+                    style={{ flex: genderBar.women }}
+                  />
+                </TooltipTrigger>
+                <TooltipContent>{genderBar.women} women</TooltipContent>
+              </Tooltip>
+            )}
+          </div>
+        </TooltipProvider>
       )}
     </div>
   )

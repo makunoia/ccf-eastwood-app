@@ -321,8 +321,8 @@ model SchedulePreference {
 model SmallGroup {
   id            String         @id @default(cuid())
   name          String
-  leaderId      String
-  leader        Member         @relation("SmallGroupLeader", fields: [leaderId], references: [id])
+  leaderId      String?
+  leader        Member?        @relation("SmallGroupLeader", fields: [leaderId], references: [id])
   parentGroupId String?
   parentGroup   SmallGroup?    @relation("SmallGroupHierarchy", fields: [parentGroupId], references: [id])
   childGroups   SmallGroup[]   @relation("SmallGroupHierarchy")

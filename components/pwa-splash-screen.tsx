@@ -17,6 +17,7 @@ export function PwaSplashScreen() {
     if (shown) return
 
     sessionStorage.setItem("pwa-splash-shown", "1")
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPhase("visible")
 
     const fadeTimer = setTimeout(() => setPhase("fading"), 1200)

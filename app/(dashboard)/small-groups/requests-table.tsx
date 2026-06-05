@@ -34,8 +34,8 @@ export type RequestRow = {
   fromGroupName: string | null
   targetGroupId: string
   targetGroupName: string
-  leaderName: string
-  leaderId: string
+  leaderName: string | null
+  leaderId: string | null
   leaderPhone: string | null
 }
 
@@ -158,15 +158,21 @@ function RequestDetailSheet({
               Leader to Follow Up
             </p>
             <div className="rounded-lg border p-3 space-y-1">
-              <Link
-                href={`/members/${request.leaderId}`}
-                className="text-sm font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-              >
-                {request.leaderName}
-              </Link>
-              <p className="text-sm text-muted-foreground">
-                {request.leaderPhone ?? "No phone on record"}
-              </p>
+              {request.leaderId && request.leaderName ? (
+                <>
+                  <Link
+                    href={`/members/${request.leaderId}`}
+                    className="text-sm font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+                  >
+                    {request.leaderName}
+                  </Link>
+                  <p className="text-sm text-muted-foreground">
+                    {request.leaderPhone ?? "No phone on record"}
+                  </p>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">No leader assigned</p>
+              )}
             </div>
           </div>
         </div>
@@ -222,7 +228,7 @@ export function RequestsTable({ requests }: { requests: RequestRow[] }) {
               <span>{r.targetGroupName}</span>
               <span className="text-muted-foreground">Leader</span>
               <span>
-                {r.leaderName}
+                {r.leaderName ?? "No leader"}
                 {r.leaderPhone ? ` · ${r.leaderPhone}` : ""}
               </span>
             </div>
@@ -273,7 +279,7 @@ export function RequestsTable({ requests }: { requests: RequestRow[] }) {
                   <span className="font-medium">{r.targetGroupName}</span>
                 </TableCell>
                 <TableCell>
-                  <p className="text-sm">{r.leaderName}</p>
+                  <p className="text-sm">{r.leaderName ?? <span className="text-muted-foreground">No leader</span>}</p>
                   {r.leaderPhone && (
                     <p className="text-xs text-muted-foreground">
                       {r.leaderPhone}

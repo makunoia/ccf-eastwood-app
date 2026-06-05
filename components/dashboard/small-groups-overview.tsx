@@ -13,7 +13,7 @@ type GroupRow = {
   id: string
   name: string
   memberLimit: number | null
-  leader: { firstName: string; lastName: string }
+  leader: { firstName: string; lastName: string } | null
   lifeStage: { name: string } | null
   _count: { members: number }
 }
@@ -63,7 +63,9 @@ export function SmallGroupsOverview({
                   <div>
                     <p className="text-sm font-medium">{g.name}</p>
                     <p className="text-xs text-muted-foreground">
-                      Led by {g.leader.firstName} {g.leader.lastName}
+                      {g.leader
+                        ? `Led by ${g.leader.firstName} ${g.leader.lastName}`
+                        : "No leader"}
                       {g.lifeStage ? ` · ${g.lifeStage.name}` : ""}
                     </p>
                   </div>

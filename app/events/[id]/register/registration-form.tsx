@@ -698,9 +698,11 @@ export function RegistrationForm({
                   setStep("volunteer-blocked")
                   return
                 }
-                matchedMember.recordType === "guest"
-                  ? register(null, matchedMember.id)
-                  : register(matchedMember.id)
+                if (matchedMember.recordType === "guest") {
+                  register(null, matchedMember.id)
+                } else {
+                  register(matchedMember.id)
+                }
               }}
               disabled={submitting}
             >
