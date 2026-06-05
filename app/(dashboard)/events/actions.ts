@@ -848,6 +848,42 @@ export async function createOccurrence(
   }
 }
 
+export async function deleteOccurrence(
+  occurrenceId: string,
+  eventId: string
+): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
+  try {
+    const occurrence = await db.eventOccurrence.findUnique({
+      where: { id: occurrenceId },
+      select: {
+        eventId: true,
+        event: { select: { type: true } },
+      },
+    })
+
+    if (!occurrence || occurrence.eventId !== eventId) {
+      return { success: false, error: "Session not found" }
+    }
+
+    if (occurrence.event.type !== "Recurring") {
+      return { success: false, error: "Only recurring sessions can be deleted" }
+    }
+
+    await db.eventOccurrence.delete({ where: { id: occurrenceId } })
+    revalidatePath(`/event/${eventId}/sessions`)
+    revalidatePath(`/event/${eventId}/dashboard`)
+    revalidatePath(`/event/${eventId}/breakouts`)
+    revalidatePath(`/events/${eventId}/checkin`)
+    revalidatePath(`/events/${eventId}/checkin/${occurrenceId}`)
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to delete session" }
+  }
+}
+
 export async function ensureMultiDayOccurrences(
   eventId: string,
   startDate: Date,

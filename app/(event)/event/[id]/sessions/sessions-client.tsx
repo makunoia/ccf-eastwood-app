@@ -9,6 +9,7 @@ import {
   IconDoorEnter,
   IconDoorExit,
   IconExternalLink,
+  IconTrash,
 } from "@tabler/icons-react"
 import { toast } from "sonner"
 
@@ -17,6 +18,7 @@ import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -25,6 +27,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
   createOccurrence,
+  deleteOccurrence,
   setOccurrenceCheckinOpen,
 } from "@/app/(dashboard)/events/actions"
 
@@ -57,6 +60,8 @@ export function SessionsClient({ eventId, eventType, occurrences }: Props) {
   const [dialogOpen, setDialogOpen] = React.useState(false)
   const [date, setDate] = React.useState("")
   const [saving, setSaving] = React.useState(false)
+  const [occurrenceToDelete, setOccurrenceToDelete] = React.useState<OccurrenceRow | null>(null)
+  const [deletingId, setDeletingId] = React.useState<string | null>(null)
 
   const title = isRecurring ? "Sessions" : "Days"
   const [togglingId, setTogglingId] = React.useState<string | null>(null)
@@ -82,6 +87,21 @@ export function SessionsClient({ eventId, eventType, occurrences }: Props) {
       toast.success("Session added")
       setDialogOpen(false)
       setDate("")
+      router.refresh()
+    } else {
+      toast.error(result.error)
+    }
+  }
+
+  async function handleDeleteSession() {
+    if (!occurrenceToDelete) return
+
+    setDeletingId(occurrenceToDelete.id)
+    const result = await deleteOccurrence(occurrenceToDelete.id, eventId)
+    setDeletingId(null)
+    if (result.success) {
+      toast.success("Session deleted")
+      setOccurrenceToDelete(null)
       router.refresh()
     } else {
       toast.error(result.error)
@@ -169,6 +189,18 @@ export function SessionsClient({ eventId, eventType, occurrences }: Props) {
                           Check-in page
                         </a>
                       </Button>
+                      {isRecurring && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => setOccurrenceToDelete(o)}
+                          disabled={deletingId === o.id}
+                        >
+                          <IconTrash className="mr-1.5 size-3.5" />
+                          Delete
+                        </Button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -202,6 +234,48 @@ export function SessionsClient({ eventId, eventType, occurrences }: Props) {
           </DialogContent>
         </Dialog>
       )}
+
+      <Dialog
+        open={occurrenceToDelete !== null}
+        onOpenChange={(open) => {
+          if (!open && !deletingId) setOccurrenceToDelete(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete session</DialogTitle>
+            <DialogDescription>
+              {occurrenceToDelete ? (
+                <>
+                  Delete{" "}
+                  <span className="font-medium">
+                    {formatOccurrenceDate(occurrenceToDelete.date)}
+                  </span>
+                  ? This will also remove {occurrenceToDelete.attendeeCount} attendance
+                  {occurrenceToDelete.attendeeCount === 1 ? " record" : " records"} and any
+                  sub-facilitator assignments for this session.
+                </>
+              ) : null}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setOccurrenceToDelete(null)}
+              disabled={deletingId !== null}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteSession}
+              disabled={occurrenceToDelete === null || deletingId !== null}
+            >
+              {deletingId !== null ? "Deleting…" : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
