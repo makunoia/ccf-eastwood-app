@@ -462,6 +462,7 @@ export function RegistrantsClient({
       config={{
         entity: "event-registrant",
         fields: getEventRegistrantFields({ includePaymentReference: formIncludePayment }),
+        useExistingEnriches: true,
         context: { eventId },
       }}
       open={importOpen}

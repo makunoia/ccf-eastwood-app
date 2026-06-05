@@ -418,6 +418,7 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
             fields={fields}
             rows={previewRows}
             checking={checking}
+            useExistingEnriches={config.useExistingEnriches ?? false}
             onResolutionChange={handleResolutionChange}
             onSetAllResolution={handleSetAllResolution}
           />

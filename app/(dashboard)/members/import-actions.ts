@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
 import type { DuplicateMatch, ImportResult, RowResolution } from "@/lib/import/types"
+import { enrichArray, enrichNullable, enrichText } from "@/lib/import/enrich"
 import { Gender, MeetingPreference, Prisma } from "@/app/generated/prisma/client"
 import { toTitleCase, formatPhilippinePhone } from "@/lib/utils"
 
@@ -119,6 +120,45 @@ function buildMemberData(mapped: Record<string, string>) {
   }
 }
 
+function enrichMemberData(
+  existing: {
+    firstName: string
+    lastName: string
+    nickname: string | null
+    email: string | null
+    phone: string | null
+    address: string | null
+    dateJoined: Date
+    notes: string | null
+    gender: Gender | null
+    language: string[]
+    birthMonth: number | null
+    birthYear: number | null
+    workCity: string | null
+    workIndustry: string | null
+    meetingPreference: MeetingPreference | null
+  },
+  incoming: ReturnType<typeof buildMemberData>,
+) {
+  return {
+    firstName: enrichText(existing.firstName, incoming.firstName) ?? existing.firstName,
+    lastName: enrichText(existing.lastName, incoming.lastName) ?? existing.lastName,
+    nickname: enrichText(existing.nickname, incoming.nickname),
+    email: enrichText(existing.email, incoming.email),
+    phone: enrichText(existing.phone, incoming.phone),
+    address: enrichText(existing.address, incoming.address),
+    dateJoined: existing.dateJoined ?? incoming.dateJoined,
+    notes: enrichText(existing.notes, incoming.notes),
+    gender: enrichNullable(existing.gender, incoming.gender),
+    language: enrichArray(existing.language, incoming.language),
+    birthMonth: enrichNullable(existing.birthMonth, incoming.birthMonth),
+    birthYear: enrichNullable(existing.birthYear, incoming.birthYear),
+    workCity: enrichText(existing.workCity, incoming.workCity),
+    workIndustry: enrichText(existing.workIndustry, incoming.workIndustry),
+    meetingPreference: enrichNullable(existing.meetingPreference, incoming.meetingPreference),
+  }
+}
+
 export async function importMembers(
   rows: ImportRow[]
 ): Promise<ActionResult<ImportResult>> {
@@ -134,8 +174,34 @@ export async function importMembers(
       }
 
       if (existingId && resolution === "use-existing") {
-        // Link only — no changes to the existing record
-        result.linked++
+        const existing = await db.member.findUnique({
+          where: { id: existingId },
+          select: {
+            firstName: true,
+            lastName: true,
+            nickname: true,
+            email: true,
+            phone: true,
+            address: true,
+            dateJoined: true,
+            notes: true,
+            gender: true,
+            language: true,
+            birthMonth: true,
+            birthYear: true,
+            workCity: true,
+            workIndustry: true,
+            meetingPreference: true,
+          },
+        })
+        if (!existing) {
+          result.errors.push({ row: i, message: "Existing member not found" })
+          result.skipped++
+          continue
+        }
+        const data = enrichMemberData(existing, buildMemberData(mapped))
+        await db.member.update({ where: { id: existingId }, data })
+        result.updated++
         continue
       }
 
