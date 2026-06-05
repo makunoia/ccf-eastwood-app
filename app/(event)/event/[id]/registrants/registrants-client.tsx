@@ -38,6 +38,7 @@ import { OptionalEmailInput } from "@/components/ui/optional-email-input"
 import { OptionalPhonePHInput } from "@/components/ui/optional-phone-ph-input"
 import { SearchInput } from "@/components/search-input"
 import { ImportWizard } from "@/components/import/import-wizard"
+import { getEventRegistrantFields } from "@/lib/import/field-definitions"
 import {
   markRegistrantAttended,
   markRegistrantPaid,
@@ -426,13 +427,14 @@ type Props = {
   eventId: string
   eventType: string
   isPaidEvent: boolean
+  formIncludePayment: boolean
   search: string
   typeFilter: string
   registrants: Registrant[]
 }
 
 export function RegistrantsClient({
-  eventId, eventType, isPaidEvent, search, typeFilter, registrants,
+  eventId, eventType, isPaidEvent, formIncludePayment, search, typeFilter, registrants,
 }: Props) {
   const [paymentDialogOpen, setPaymentDialogOpen] = React.useState(false)
   const [addDialogOpen, setAddDialogOpen]         = React.useState(false)
@@ -457,7 +459,11 @@ export function RegistrantsClient({
 
   const importWizard = (
     <ImportWizard
-      config={{ entity: "event-registrant", context: { eventId } }}
+      config={{
+        entity: "event-registrant",
+        fields: getEventRegistrantFields({ includePaymentReference: formIncludePayment }),
+        context: { eventId },
+      }}
       open={importOpen}
       onOpenChange={setImportOpen}
       onCheckDuplicates={(rows) => checkRegistrantDuplicates(eventId, rows)}

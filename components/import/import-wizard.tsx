@@ -115,7 +115,7 @@ type Props = {
 // ─── Wizard ───────────────────────────────────────────────────────────────────
 
 export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, onImport, onCheckLeaders, onLoadMembers }: Props) {
-  const fields = getFieldsForEntity(config.entity)
+  const fields = config.fields ?? getFieldsForEntity(config.entity)
   const entityLabel = getEntityLabel(config.entity)
 
   const [step, setStep] = React.useState<WizardStep>("upload")
@@ -393,7 +393,7 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
   function renderStep() {
     switch (step) {
       case "upload":
-        return <StepUpload onFileParsed={handleFileParsed} loading={fileLoading} entity={config.entity} />
+        return <StepUpload onFileParsed={handleFileParsed} loading={fileLoading} entity={config.entity} fields={fields} />
       case "sheet-select":
         return (
           <StepSheetSelect

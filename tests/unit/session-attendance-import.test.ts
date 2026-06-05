@@ -101,6 +101,22 @@ describe("checkSessionAttendanceDuplicates", () => {
     }
   })
 
+  it("matches already-attended rows when the stored phone is unformatted", async () => {
+    const { event, occurrence } = await seedRecurringEvent()
+    const member = await seedMember({ phone: "09171234567" })
+    const registrant = await seedRegistrant(event.id, { memberId: member.id })
+    await seedOccurrenceAttendee(occurrence.id, registrant.id)
+
+    const result = await checkSessionAttendanceDuplicates(occurrence.id, [
+      { phone: "+63 917 123 4567" },
+    ])
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data).toHaveLength(1)
+      expect(result.data[0].existingId).toBe(registrant.id)
+    }
+  })
+
   it("returns a match for a Guest who already has OccurrenceAttendee (by email)", async () => {
     const { event, occurrence } = await seedRecurringEvent()
     const guest = await seedGuest({ email: "maria@example.com" })
@@ -244,6 +260,18 @@ describe("importSessionAttendance", () => {
       expect(attendee?.checkedInAt.getUTCHours()).toBe(14)
       expect(attendee?.checkedInAt.getUTCMinutes()).toBe(30)
     })
+
+    it("extracts the time from a datetime string and applies it to the occurrence date", async () => {
+      const { occurrence } = await seedRecurringEvent()
+      await importSessionAttendance(occurrence.id, [
+        {
+          mapped: { firstName: "Ana", lastName: "Lim", checkedInAt: "2026-02-09 2:30 PM" },
+          resolution: "use-existing",
+        },
+      ])
+      const attendee = await db.occurrenceAttendee.findFirst({ where: { occurrenceId: occurrence.id } })
+      expect(attendee?.checkedInAt.toISOString()).toBe(new Date("2026-01-05T14:30:00.000Z").toISOString())
+    })
   })
 
   describe("existing Guest already registered for this event", () => {
@@ -303,6 +331,26 @@ describe("importSessionAttendance", () => {
 
       const result = await importSessionAttendance(occurrence.id, [
         { mapped: { firstName: "Juan", lastName: "Cruz", mobileNumber: "09171234567" }, resolution: "use-existing" },
+      ])
+      expect(result.success).toBe(true)
+      if (result.success) {
+        expect(result.data.linked).toBe(1)
+        expect(result.data.created).toBe(0)
+      }
+
+      const attendee = await db.occurrenceAttendee.findUnique({
+        where: { occurrenceId_registrantId: { occurrenceId: occurrence.id, registrantId: registrant.id } },
+      })
+      expect(attendee).not.toBeNull()
+    })
+
+    it("matches an existing member even when the stored phone is unformatted", async () => {
+      const { event, occurrence } = await seedRecurringEvent()
+      const member = await seedMember({ phone: "09171234567" })
+      const registrant = await seedRegistrant(event.id, { memberId: member.id })
+
+      const result = await importSessionAttendance(occurrence.id, [
+        { mapped: { firstName: "Juan", lastName: "Cruz", mobileNumber: "+63 917 123 4567" }, resolution: "use-existing" },
       ])
       expect(result.success).toBe(true)
       if (result.success) {

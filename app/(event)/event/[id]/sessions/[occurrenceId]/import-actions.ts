@@ -78,17 +78,17 @@ export async function checkSessionAttendanceDuplicates(
         phone,
       }
       if (email) attendedByEmail.set(email.toLowerCase(), entry)
-      if (phone) attendedByPhone.set(phone, entry)
+      setPhoneEntries(attendedByPhone, phone, entry)
     }
 
     const matches: DuplicateMatch[] = []
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i]
-      const normalizedPhone = row.phone ? formatPhilippinePhone(row.phone) : undefined
+      const phoneCandidates = buildPhoneCandidates(row.phone)
       const match =
         (row.email && attendedByEmail.get(row.email.toLowerCase())) ||
-        (normalizedPhone && attendedByPhone.get(normalizedPhone))
+        phoneCandidates.map((candidate) => attendedByPhone.get(candidate)).find(Boolean)
       if (match) {
           matches.push({
             rowIndex:      i,
@@ -116,19 +116,64 @@ type ImportRow = {
   existingId?: string   // registrantId of already-attended person (from duplicate check)
 }
 
+function buildPhoneCandidates(value: string | null | undefined): string[] {
+  const raw = value?.trim()
+  if (!raw) return []
+
+  const candidates = new Set<string>([raw, formatPhilippinePhone(raw)])
+  const digits = raw.replace(/\D/g, "")
+
+  let local: string | null = null
+  if (digits.startsWith("9") && digits.length === 10) local = digits
+  if (digits.startsWith("0") && digits.length === 11) local = digits.slice(1)
+  if (digits.startsWith("63") && digits.length === 12) local = digits.slice(2)
+
+  if (local) {
+    candidates.add(local)
+    candidates.add(`0${local}`)
+    candidates.add(`63${local}`)
+    candidates.add(`+63${local}`)
+    candidates.add(`+63 ${local.slice(0, 3)} ${local.slice(3, 6)} ${local.slice(6)}`)
+  }
+
+  return Array.from(candidates).filter(Boolean)
+}
+
+function setPhoneEntries<T>(map: Map<string, T>, phone: string | null | undefined, value: T) {
+  for (const candidate of buildPhoneCandidates(phone)) {
+    map.set(candidate, value)
+  }
+}
+
+function findTimeInString(value: string): { hours: number; minutes: number; seconds: number } | null {
+  const timeMatch = value.match(/(?:^|\s)(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?(?=$|\s)/i)
+  if (!timeMatch) return null
+
+  let hours = parseInt(timeMatch[1], 10)
+  const minutes = parseInt(timeMatch[2], 10)
+  const seconds = parseInt(timeMatch[3] ?? "0", 10)
+  const meridiem = timeMatch[4]?.toUpperCase()
+
+  if (minutes > 59 || seconds > 59) return null
+
+  if (meridiem) {
+    if (hours < 1 || hours > 12) return null
+    if (meridiem === "PM" && hours < 12) hours += 12
+    if (meridiem === "AM" && hours === 12) hours = 0
+  } else if (hours > 23) {
+    return null
+  }
+
+  return { hours, minutes, seconds }
+}
+
 function parseCheckedInAt(value: string | undefined, occurrenceDate: Date): Date {
   if (!value?.trim()) return occurrenceDate
 
-  // Try time-only strings like "10:30", "10:30 AM", "14:30"
-  const timeMatch = value.trim().match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i)
-  if (timeMatch) {
-    let hours = parseInt(timeMatch[1], 10)
-    const minutes = parseInt(timeMatch[2], 10)
-    const meridiem = timeMatch[3]?.toUpperCase()
-    if (meridiem === "PM" && hours < 12) hours += 12
-    if (meridiem === "AM" && hours === 12) hours = 0
+  const time = findTimeInString(value.trim())
+  if (time) {
     const d = new Date(occurrenceDate)
-    d.setUTCHours(hours, minutes, 0, 0)
+    d.setUTCHours(time.hours, time.minutes, time.seconds, 0)
     return d
   }
 
@@ -181,16 +226,16 @@ export async function importSessionAttendance(
       }
 
       const email  = mapped.email?.trim() || null
-      const mobile = mapped.mobileNumber ? formatPhilippinePhone(mapped.mobileNumber) : null
+      const rawPhone = mapped.mobileNumber?.trim() || null
+      const mobile = rawPhone ? formatPhilippinePhone(rawPhone) : null
+      const phoneCandidates = buildPhoneCandidates(rawPhone)
       const checkedInAt = parseCheckedInAt(mapped.checkedInAt, occurrenceDate)
 
       // ── Find existing EventRegistrant for this event ──────────────────────
       // Match by member phone/email first, then guest phone/email
-      const phoneConditions = mobile
-        ? [{ phone: mobile }] as Prisma.MemberWhereInput[]
-        : []
+      const phoneConditions = phoneCandidates.map((candidate) => ({ phone: candidate })) satisfies Prisma.MemberWhereInput[]
 
-      const matchedMember = (email || mobile) ? await db.member.findFirst({
+      const matchedMember = (email || phoneCandidates.length > 0) ? await db.member.findFirst({
         where: {
           OR: [
             email  ? { email }  : undefined,
@@ -236,11 +281,9 @@ export async function importSessionAttendance(
       }
 
       // Try matching a Guest
-      const guestPhoneConditions = mobile
-        ? [{ phone: mobile }] as Prisma.GuestWhereInput[]
-        : []
+      const guestPhoneConditions = phoneCandidates.map((candidate) => ({ phone: candidate })) satisfies Prisma.GuestWhereInput[]
 
-      const matchedGuest = (email || mobile) ? await db.guest.findFirst({
+      const matchedGuest = (email || phoneCandidates.length > 0) ? await db.guest.findFirst({
         where: {
           memberId: null,
           OR: [

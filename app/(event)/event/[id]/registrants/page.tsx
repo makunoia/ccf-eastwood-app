@@ -9,6 +9,7 @@ async function getEventRegistrants(id: string, search: string, typeFilter: strin
       id: true,
       type: true,
       price: true,
+      formIncludePayment: true,
       registrants: {
         orderBy: { createdAt: "asc" },
         select: {
@@ -87,6 +88,7 @@ export default async function RegistrantsPage({
       eventId={event.id}
       eventType={event.type}
       isPaidEvent={event.price != null}
+      formIncludePayment={event.formIncludePayment}
       search={search}
       typeFilter={typeFilter}
       registrants={event.registrants.map((r) => ({
