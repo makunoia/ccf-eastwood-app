@@ -27,6 +27,10 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { ImportWizard } from "@/components/import/import-wizard"
+import {
+  sortSessionAttendees,
+  type AttendeeSortDirection,
+} from "@/lib/session-attendees"
 import { cn } from "@/lib/utils"
 import type { PersonComboboxOption } from "@/components/ui/person-combobox"
 import {
@@ -50,6 +54,7 @@ export type AttendeeRow = {
   isMember: boolean
   isVolunteer: boolean
   breakoutGroupIds: string[]
+  breakoutGroupNames: string[]
   gender: "Male" | "Female" | null
 }
 
@@ -96,15 +101,25 @@ export function SessionAttendeesTable({
   const [activeTab, setActiveTab] = useState<SessionTab>("attendees")
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all")
   const [breakoutFilter, setBreakoutFilter] = useState("all")
+  const [statusSortDirection, setStatusSortDirection] = useState<AttendeeSortDirection>("asc")
   const [importOpen, setImportOpen] = useState(false)
 
-  const filtered = attendees.filter((a) => {
-    if (typeFilter === "member" && !a.isMember) return false
-    if (typeFilter === "guest" && a.isMember) return false
-    if (typeFilter === "volunteer" && !a.isVolunteer) return false
-    if (breakoutFilter !== "all" && !a.breakoutGroupIds.includes(breakoutFilter)) return false
-    return true
-  })
+  const filtered = useMemo(
+    () =>
+      attendees.filter((a) => {
+        if (typeFilter === "member" && !a.isMember) return false
+        if (typeFilter === "guest" && a.isMember) return false
+        if (typeFilter === "volunteer" && !a.isVolunteer) return false
+        if (breakoutFilter !== "all" && !a.breakoutGroupIds.includes(breakoutFilter)) return false
+        return true
+      }),
+    [attendees, breakoutFilter, typeFilter],
+  )
+
+  const sortedAttendees = useMemo(
+    () => sortSessionAttendees(filtered, statusSortDirection),
+    [filtered, statusSortDirection],
+  )
 
   return (
     <Tabs
@@ -185,7 +200,7 @@ export function SessionAttendeesTable({
           <>
             {/* Mobile card list */}
             <div className="sm:hidden divide-y rounded-lg border">
-              {filtered.map((a) => (
+              {sortedAttendees.map((a) => (
                 <div key={a.id} className="flex items-center gap-3 px-4 py-3">
                   <div className="min-w-0 flex-1">
                     <Link
@@ -206,6 +221,14 @@ export function SessionAttendeesTable({
                         </Badge>
                       )}
                     </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Breakout:{" "}
+                      {a.breakoutGroupNames.length > 0 ? (
+                        a.breakoutGroupNames.join(", ")
+                      ) : (
+                        <span className="italic">Unassigned</span>
+                      )}
+                    </p>
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1">
                     {a.isReturner ? (
@@ -224,13 +247,33 @@ export function SessionAttendeesTable({
                 <TableHeader className="bg-muted/50">
                   <TableRow>
                     <TableHead>Name</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setStatusSortDirection((current) =>
+                            current === "asc" ? "desc" : "asc",
+                          )
+                        }
+                        aria-label={`Sort status ${statusSortDirection === "asc" ? "descending" : "ascending"}`}
+                        className={cn(
+                          "inline-flex items-center gap-1 rounded-sm font-medium text-muted-foreground transition-colors hover:text-foreground",
+                          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                        )}
+                      >
+                        <span>Status</span>
+                        <span className="text-xs">
+                          {statusSortDirection === "asc" ? "\u2191" : "\u2193"}
+                        </span>
+                      </button>
+                    </TableHead>
                     <TableHead>Type</TableHead>
+                    <TableHead>Breakout Group</TableHead>
                     <TableHead>Checked in at</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.map((a) => (
+                  {sortedAttendees.map((a) => (
                     <TableRow key={a.id}>
                       <TableCell>
                         <Link
@@ -255,11 +298,21 @@ export function SessionAttendeesTable({
                             <Badge variant="outline">Guest</Badge>
                           )}
                           {a.isVolunteer && (
-                            <Badge variant="outline" className="border-amber-400 text-amber-600">
+                            <Badge
+                              variant="outline"
+                              className="border-amber-400 text-amber-600"
+                            >
                               Volunteer
                             </Badge>
                           )}
                         </div>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {a.breakoutGroupNames.length > 0 ? (
+                          a.breakoutGroupNames.join(", ")
+                        ) : (
+                          <span className="italic">Unassigned</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {a.checkedInAtFormatted}

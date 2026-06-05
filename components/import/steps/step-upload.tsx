@@ -3,15 +3,16 @@
 import * as React from "react"
 import { IconUpload, IconFileSpreadsheet, IconDownload } from "@tabler/icons-react"
 import { downloadImportTemplate } from "@/lib/import/template"
-import type { ImportEntity } from "@/lib/import/types"
+import type { FieldDefinition, ImportEntity } from "@/lib/import/types"
 
 type Props = {
   onFileParsed: (file: File) => void
   loading: boolean
   entity: ImportEntity
+  fields?: FieldDefinition[]
 }
 
-export function StepUpload({ onFileParsed, loading, entity }: Props) {
+export function StepUpload({ onFileParsed, loading, entity, fields }: Props) {
   const inputRef = React.useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
@@ -79,7 +80,7 @@ export function StepUpload({ onFileParsed, loading, entity }: Props) {
       <div className="flex items-center justify-center pt-1">
         <button
           type="button"
-          onClick={() => downloadImportTemplate(entity)}
+          onClick={() => downloadImportTemplate(entity, fields)}
           className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors underline decoration-dashed underline-offset-2 decoration-foreground/40 hover:decoration-foreground"
         >
           <IconDownload className="size-3.5" />

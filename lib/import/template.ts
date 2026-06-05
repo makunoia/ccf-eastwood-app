@@ -30,7 +30,6 @@ const SAMPLE_VALUES: Record<string, string> = {
   notes:            "",
 
   // Event registrant
-  isPaid:           "yes",
   paymentReference: "REF-001",
 
   // Volunteer
@@ -74,8 +73,7 @@ function fileSlug(entity: ImportEntity): string {
   return entity.replace(/[^a-z0-9-]/gi, "-").toLowerCase()
 }
 
-export function downloadImportTemplate(entity: ImportEntity): void {
-  const fields = getFieldsForEntity(entity)
+export function downloadImportTemplate(entity: ImportEntity, fields = getFieldsForEntity(entity)): void {
   const headers = fields.map(templateHeader)
   const sampleRow = fields.map(sampleFor)
   const filename = `${fileSlug(entity)}-import-template.csv`

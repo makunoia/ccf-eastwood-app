@@ -44,7 +44,14 @@ async function getOccurrenceDetail(occurrenceId: string) {
                 },
               },
               breakoutGroupMemberships: {
-                select: { breakoutGroupId: true },
+                select: {
+                  breakoutGroupId: true,
+                  breakoutGroup: {
+                    select: {
+                      name: true,
+                    },
+                  },
+                },
               },
             },
           },
@@ -193,6 +200,7 @@ export default async function OccurrenceDetailPage({
       ? volunteerMemberIds.has(a.registrant.memberId)
       : false,
     breakoutGroupIds: a.registrant.breakoutGroupMemberships.map((m) => m.breakoutGroupId),
+    breakoutGroupNames: a.registrant.breakoutGroupMemberships.map((m) => m.breakoutGroup.name),
     gender: a.registrant.member?.gender ?? a.registrant.guest?.gender ?? null,
   }))
 

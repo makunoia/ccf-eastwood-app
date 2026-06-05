@@ -5,7 +5,7 @@ import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import { canWrite, canImport } from "@/lib/permissions"
 import type { DuplicateMatch, ImportResult, RowResolution } from "@/lib/import/types"
-import { Prisma } from "@/app/generated/prisma/client"
+import { Gender, Prisma } from "@/app/generated/prisma/client"
 import { toTitleCase, formatPhilippinePhone } from "@/lib/utils"
 
 type ActionResult<T = void> =
@@ -111,9 +111,57 @@ type ImportRow = {
   existingType?: "member" | "guest" | "small-group"
 }
 
-function parseBool(v: string): boolean {
-  const n = v.toLowerCase().trim()
-  return n === "true" || n === "yes" || n === "1"
+function parseGender(v: string): Gender | null {
+  const normalized = v.toLowerCase().trim()
+  if (normalized === "male" || normalized === "m") return Gender.Male
+  if (normalized === "female" || normalized === "f") return Gender.Female
+  return null
+}
+
+const MONTH_MAP: Record<string, number> = {
+  jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3,
+  apr: 4, april: 4, may: 5, jun: 6, june: 6, jul: 7, july: 7,
+  aug: 8, august: 8, sep: 9, sept: 9, september: 9,
+  oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12,
+}
+
+function parseMonth(v: string): number | null {
+  const s = v.trim()
+  if (!s) return null
+  const num = parseInt(s, 10)
+  if (!isNaN(num)) return num >= 1 && num <= 12 ? num : null
+  return MONTH_MAP[s.toLowerCase()] ?? null
+}
+
+function parseBirthYear(v?: string): number | null {
+  if (!v?.trim()) return null
+  const year = parseInt(v, 10)
+  return Number.isNaN(year) ? null : year
+}
+
+function buildGuestData(mapped: Record<string, string>, firstName: string, lastName: string) {
+  return {
+    firstName,
+    lastName,
+    email: mapped.email?.trim() || null,
+    phone: mapped.mobileNumber ? formatPhilippinePhone(mapped.mobileNumber) : null,
+    language: [] as string[],
+    gender: mapped.gender ? parseGender(mapped.gender) : null,
+    birthMonth: parseMonth(mapped.birthMonth ?? ""),
+    birthYear: parseBirthYear(mapped.birthYear),
+  }
+}
+
+function buildMemberData(mapped: Record<string, string>, firstName: string, lastName: string) {
+  return {
+    firstName,
+    lastName,
+    email: mapped.email?.trim() || null,
+    phone: mapped.mobileNumber ? formatPhilippinePhone(mapped.mobileNumber) : null,
+    gender: mapped.gender ? parseGender(mapped.gender) : null,
+    birthMonth: parseMonth(mapped.birthMonth ?? ""),
+    birthYear: parseBirthYear(mapped.birthYear),
+  }
 }
 
 export async function importEventRegistrants(
@@ -126,7 +174,10 @@ export async function importEventRegistrants(
   const result: ImportResult = { total: rows.length, created: 0, linked: 0, updated: 0, skipped: 0, errors: [] }
 
   // Verify event exists
-  const event = await db.event.findUnique({ where: { id: eventId }, select: { id: true } })
+  const event = await db.event.findUnique({
+    where: { id: eventId },
+    select: { id: true, formIncludePayment: true },
+  })
   if (!event) return { success: false, error: "Event not found" }
 
   for (let i = 0; i < rows.length; i++) {
@@ -134,6 +185,12 @@ export async function importEventRegistrants(
     try {
       const firstName = mapped.firstName ? toTitleCase(mapped.firstName) : ""
       const lastName  = mapped.lastName  ? toTitleCase(mapped.lastName)  : ""
+      const paymentReference = event.formIncludePayment
+        ? mapped.paymentReference?.trim() || null
+        : null
+      const paymentData = paymentReference
+        ? { isPaid: true, paymentReference }
+        : {}
       if (!firstName || !lastName) {
         result.errors.push({ row: i, message: "First name and last name are required" })
         result.skipped++
@@ -159,10 +216,9 @@ export async function importEventRegistrants(
         await db.eventRegistrant.create({
           data: {
             eventId,
-            memberId:        existingType === "member" ? existingId : null,
-            guestId:         existingType === "guest"  ? existingId : null,
-            isPaid:          mapped.isPaid ? parseBool(mapped.isPaid) : false,
-            paymentReference:mapped.paymentReference?.trim() || null,
+            memberId: existingType === "member" ? existingId : null,
+            guestId: existingType === "guest"  ? existingId : null,
+            ...paymentData,
           },
         })
         result.linked++
@@ -173,12 +229,7 @@ export async function importEventRegistrants(
         // Update existing Guest and link
         await db.guest.update({
           where: { id: existingId },
-          data: {
-            firstName,
-            lastName,
-            email: mapped.email?.trim() || null,
-            phone: mapped.mobileNumber ? formatPhilippinePhone(mapped.mobileNumber) : null,
-          },
+          data: buildGuestData(mapped, firstName, lastName),
         })
         const alreadyExists = await db.eventRegistrant.findFirst({
           where: { eventId, guestId: existingId },
@@ -188,9 +239,8 @@ export async function importEventRegistrants(
           await db.eventRegistrant.create({
             data: {
               eventId,
-              guestId:         existingId,
-              isPaid:          mapped.isPaid ? parseBool(mapped.isPaid) : false,
-              paymentReference:mapped.paymentReference?.trim() || null,
+              guestId: existingId,
+              ...paymentData,
             },
           })
         }
@@ -202,12 +252,7 @@ export async function importEventRegistrants(
         // For members, update personal fields and link
         await db.member.update({
           where: { id: existingId },
-          data: {
-            firstName,
-            lastName,
-            email: mapped.email?.trim() || null,
-            phone: mapped.mobileNumber ? formatPhilippinePhone(mapped.mobileNumber) : null,
-          },
+          data: buildMemberData(mapped, firstName, lastName),
         })
         const alreadyExists = await db.eventRegistrant.findFirst({
           where: { eventId, memberId: existingId },
@@ -217,9 +262,8 @@ export async function importEventRegistrants(
           await db.eventRegistrant.create({
             data: {
               eventId,
-              memberId:        existingId,
-              isPaid:          mapped.isPaid ? parseBool(mapped.isPaid) : false,
-              paymentReference:mapped.paymentReference?.trim() || null,
+              memberId: existingId,
+              ...paymentData,
             },
           })
         }
@@ -260,9 +304,8 @@ export async function importEventRegistrants(
           await db.eventRegistrant.create({
             data: {
               eventId,
-              memberId:         matchedMember.id,
-              isPaid:           mapped.isPaid ? parseBool(mapped.isPaid) : false,
-              paymentReference: mapped.paymentReference?.trim() || null,
+              memberId: matchedMember.id,
+              ...paymentData,
             },
           })
           result.linked++
@@ -282,7 +325,7 @@ export async function importEventRegistrants(
       })
       if (!guest) {
         guest = await db.guest.create({
-          data: { firstName, lastName, email, phone: mobile, language: [] },
+          data: buildGuestData(mapped, firstName, lastName),
           select: { id: true },
         })
       }
@@ -297,10 +340,9 @@ export async function importEventRegistrants(
       await db.eventRegistrant.create({
         data: {
           eventId,
-          guestId:         guest.id,
-          nickname:        mapped.nickname?.trim() || null,
-          isPaid:          mapped.isPaid ? parseBool(mapped.isPaid) : false,
-          paymentReference:mapped.paymentReference?.trim() || null,
+          guestId: guest.id,
+          nickname: mapped.nickname?.trim() || null,
+          ...paymentData,
         },
       })
       result.created++

@@ -24,9 +24,22 @@ export const EVENT_REGISTRANT_FIELDS: FieldDefinition[] = [
   { key: "email",           label: "Email",         required: false },
   { key: "mobileNumber",    label: "Mobile Number", required: false },
   { key: "nickname",        label: "Nickname",      required: false },
-  { key: "isPaid",          label: "Is Paid",       required: false, hint: "true/false or yes/no" },
-  { key: "paymentReference",label: "Payment Ref",   required: false },
+  { key: "gender",          label: "Gender",        required: false, hint: "Male or Female" },
+  { key: "birthMonth",      label: "Birth Month",   required: false, hint: "1–12" },
+  { key: "birthYear",       label: "Birth Year",    required: false, hint: "e.g. 1995" },
 ]
+
+const EVENT_REGISTRANT_PAYMENT_REFERENCE_FIELD: FieldDefinition = {
+  key: "paymentReference",
+  label: "Payment Reference",
+  required: false,
+}
+
+export function getEventRegistrantFields(options?: { includePaymentReference?: boolean }): FieldDefinition[] {
+  return options?.includePaymentReference
+    ? [...EVENT_REGISTRANT_FIELDS, EVENT_REGISTRANT_PAYMENT_REFERENCE_FIELD]
+    : EVENT_REGISTRANT_FIELDS
+}
 
 export const VOLUNTEER_FIELDS: FieldDefinition[] = [
   { key: "email",          label: "Email",          required: false, hint: "Used to match existing Member" },
@@ -82,7 +95,7 @@ export const SESSION_ATTENDANCE_FIELDS: FieldDefinition[] = [
 export function getFieldsForEntity(entity: ImportEntity): FieldDefinition[] {
   switch (entity) {
     case "member":             return MEMBER_FIELDS
-    case "event-registrant":   return EVENT_REGISTRANT_FIELDS
+    case "event-registrant":   return getEventRegistrantFields()
     case "volunteer":          return VOLUNTEER_FIELDS
     case "guest":              return GUEST_FIELDS
     case "small-group":        return SMALL_GROUP_FIELDS
