@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
 import type { DuplicateMatch, ImportResult, RowResolution, UnmatchedLeaderRow, LeaderResolution } from "@/lib/import/types"
+import { enrichArray, enrichNullable, enrichText } from "@/lib/import/enrich"
 import { GenderFocus, MeetingFormat, Prisma } from "@/app/generated/prisma/client"
 
 type ActionResult<T = void> =
@@ -190,6 +191,58 @@ function getCreatedLeaderCacheKey(
   return normalizedName ? `n:${normalizedName}` : null
 }
 
+function enrichSmallGroupData(
+  existing: {
+    name: string
+    leaderId: string | null
+    parentGroupId: string | null
+    lifeStageId: string | null
+    genderFocus: GenderFocus | null
+    language: string[]
+    ageRangeMin: number | null
+    ageRangeMax: number | null
+    meetingFormat: MeetingFormat | null
+    locationCity: string | null
+    memberLimit: number | null
+    scheduleDayOfWeek: number | null
+    scheduleTimeStart: string | null
+    scheduleTimeEnd: string | null
+  },
+  incoming: {
+    name: string
+    leaderId: string | null
+    parentGroupId: string | null
+    lifeStageId: string | null
+    genderFocus: GenderFocus | null
+    language: string[]
+    ageRangeMin: number | null
+    ageRangeMax: number | null
+    meetingFormat: MeetingFormat | null
+    locationCity: string | null
+    memberLimit: number | null
+    scheduleDayOfWeek: number | null
+    scheduleTimeStart: string | null
+    scheduleTimeEnd: string | null
+  },
+) {
+  return {
+    name: enrichText(existing.name, incoming.name) ?? existing.name,
+    leaderId: enrichNullable(existing.leaderId, incoming.leaderId),
+    parentGroupId: enrichNullable(existing.parentGroupId, incoming.parentGroupId),
+    lifeStageId: enrichNullable(existing.lifeStageId, incoming.lifeStageId),
+    genderFocus: enrichNullable(existing.genderFocus, incoming.genderFocus),
+    language: enrichArray(existing.language, incoming.language),
+    ageRangeMin: enrichNullable(existing.ageRangeMin, incoming.ageRangeMin),
+    ageRangeMax: enrichNullable(existing.ageRangeMax, incoming.ageRangeMax),
+    meetingFormat: enrichNullable(existing.meetingFormat, incoming.meetingFormat),
+    locationCity: enrichText(existing.locationCity, incoming.locationCity),
+    memberLimit: enrichNullable(existing.memberLimit, incoming.memberLimit),
+    scheduleDayOfWeek: enrichNullable(existing.scheduleDayOfWeek, incoming.scheduleDayOfWeek),
+    scheduleTimeStart: enrichText(existing.scheduleTimeStart, incoming.scheduleTimeStart),
+    scheduleTimeEnd: enrichText(existing.scheduleTimeEnd, incoming.scheduleTimeEnd),
+  }
+}
+
 export async function importSmallGroups(
   rows: ImportRow[]
 ): Promise<ActionResult<ImportResult>> {
@@ -231,11 +284,6 @@ export async function importSmallGroups(
       if (!groupName) {
         result.errors.push({ row: i, message: "Group name is required" })
         result.skipped++
-        continue
-      }
-
-      if (existingId && resolution === "use-existing") {
-        result.linked++
         continue
       }
 
@@ -330,6 +378,39 @@ export async function importSmallGroups(
           const start = mapped.scheduleTime    ? parseTime(mapped.scheduleTime)    : null
           return end ?? (start ? addTwoHours(start) : null)
         })(),
+      }
+
+      if (existingId && resolution === "use-existing") {
+        const existing = await db.smallGroup.findUnique({
+          where: { id: existingId },
+          select: {
+            name: true,
+            leaderId: true,
+            parentGroupId: true,
+            lifeStageId: true,
+            genderFocus: true,
+            language: true,
+            ageRangeMin: true,
+            ageRangeMax: true,
+            meetingFormat: true,
+            locationCity: true,
+            memberLimit: true,
+            scheduleDayOfWeek: true,
+            scheduleTimeStart: true,
+            scheduleTimeEnd: true,
+          },
+        })
+        if (!existing) {
+          result.errors.push({ row: i, message: "Existing group not found" })
+          result.skipped++
+          continue
+        }
+        await db.smallGroup.update({
+          where: { id: existingId },
+          data: enrichSmallGroupData(existing, data),
+        })
+        result.updated++
+        continue
       }
 
       if (existingId && resolution === "use-csv") {

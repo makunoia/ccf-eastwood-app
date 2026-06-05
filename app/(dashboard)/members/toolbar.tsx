@@ -74,7 +74,7 @@ export function MembersToolbar({ members, canImport, canExport }: Props) {
       </Button>
 
       <ImportWizard
-        config={{ entity: "member" }}
+        config={{ entity: "member", useExistingEnriches: true }}
         open={importOpen}
         onOpenChange={setImportOpen}
         onCheckDuplicates={checkMemberDuplicates}

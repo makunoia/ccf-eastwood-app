@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
 import type { DuplicateMatch, ImportResult, RowResolution } from "@/lib/import/types"
+import { enrichArray, enrichNullable, enrichText } from "@/lib/import/enrich"
 import { Gender, Prisma } from "@/app/generated/prisma/client"
 import { toTitleCase, formatPhilippinePhone } from "@/lib/utils"
 
@@ -109,6 +110,35 @@ function buildGuestData(mapped: Record<string, string>) {
   }
 }
 
+function enrichGuestData(
+  existing: {
+    firstName: string
+    lastName: string
+    nickname: string | null
+    email: string | null
+    phone: string | null
+    notes: string | null
+    language: string[]
+    gender: Gender | null
+    birthMonth: number | null
+    birthYear: number | null
+  },
+  incoming: ReturnType<typeof buildGuestData>,
+) {
+  return {
+    firstName: enrichText(existing.firstName, incoming.firstName) ?? existing.firstName,
+    lastName: enrichText(existing.lastName, incoming.lastName) ?? existing.lastName,
+    nickname: enrichText(existing.nickname, incoming.nickname),
+    email: enrichText(existing.email, incoming.email),
+    phone: enrichText(existing.phone, incoming.phone),
+    notes: enrichText(existing.notes, incoming.notes),
+    language: enrichArray(existing.language, incoming.language),
+    gender: enrichNullable(existing.gender, incoming.gender),
+    birthMonth: enrichNullable(existing.birthMonth, incoming.birthMonth),
+    birthYear: enrichNullable(existing.birthYear, incoming.birthYear),
+  }
+}
+
 export async function importGuests(
   rows: ImportRow[]
 ): Promise<ActionResult<ImportResult>> {
@@ -124,7 +154,29 @@ export async function importGuests(
       }
 
       if (existingId && resolution === "use-existing") {
-        result.linked++
+        const existing = await db.guest.findUnique({
+          where: { id: existingId },
+          select: {
+            firstName: true,
+            lastName: true,
+            nickname: true,
+            email: true,
+            phone: true,
+            notes: true,
+            language: true,
+            gender: true,
+            birthMonth: true,
+            birthYear: true,
+          },
+        })
+        if (!existing) {
+          result.errors.push({ row: i, message: "Existing guest not found" })
+          result.skipped++
+          continue
+        }
+        const data = enrichGuestData(existing, buildGuestData(mapped))
+        await db.guest.update({ where: { id: existingId }, data })
+        result.updated++
         continue
       }
 

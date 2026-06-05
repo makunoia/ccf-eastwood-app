@@ -83,7 +83,7 @@ export function SmallGroupsToolbar({ groups, canImport, canExport }: Props) {
       </Button>
 
       <ImportWizard
-        config={{ entity: "small-group" }}
+        config={{ entity: "small-group", useExistingEnriches: true }}
         open={importOpen}
         onOpenChange={setImportOpen}
         onCheckDuplicates={(rows) => checkSmallGroupDuplicates(rows)}

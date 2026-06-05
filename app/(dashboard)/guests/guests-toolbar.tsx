@@ -72,7 +72,7 @@ export function GuestsToolbar({ guests, canImport, canExport }: Props) {
       </Button>
 
       <ImportWizard
-        config={{ entity: "guest" }}
+        config={{ entity: "guest", useExistingEnriches: true }}
         open={importOpen}
         onOpenChange={setImportOpen}
         onCheckDuplicates={checkGuestDuplicates}

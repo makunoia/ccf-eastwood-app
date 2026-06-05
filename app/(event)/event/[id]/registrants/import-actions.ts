@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import { canWrite, canImport } from "@/lib/permissions"
+import { enrichArray, enrichNullable, enrichText } from "@/lib/import/enrich"
 import type { DuplicateMatch, ImportResult, RowResolution } from "@/lib/import/types"
 import { Gender, Prisma } from "@/app/generated/prisma/client"
 import { toTitleCase, formatPhilippinePhone } from "@/lib/utils"
@@ -164,6 +165,146 @@ function buildMemberData(mapped: Record<string, string>, firstName: string, last
   }
 }
 
+function enrichGuestData(
+  existing: {
+    firstName: string
+    lastName: string
+    email: string | null
+    phone: string | null
+    language: string[]
+    gender: Gender | null
+    birthMonth: number | null
+    birthYear: number | null
+  },
+  incoming: ReturnType<typeof buildGuestData>,
+) {
+  return {
+    firstName: enrichText(existing.firstName, incoming.firstName) ?? existing.firstName,
+    lastName: enrichText(existing.lastName, incoming.lastName) ?? existing.lastName,
+    email: enrichText(existing.email, incoming.email),
+    phone: enrichText(existing.phone, incoming.phone),
+    language: enrichArray(existing.language, incoming.language),
+    gender: enrichNullable(existing.gender, incoming.gender),
+    birthMonth: enrichNullable(existing.birthMonth, incoming.birthMonth),
+    birthYear: enrichNullable(existing.birthYear, incoming.birthYear),
+  }
+}
+
+function enrichMemberData(
+  existing: {
+    firstName: string
+    lastName: string
+    email: string | null
+    phone: string | null
+    gender: Gender | null
+    birthMonth: number | null
+    birthYear: number | null
+  },
+  incoming: ReturnType<typeof buildMemberData>,
+) {
+  return {
+    firstName: enrichText(existing.firstName, incoming.firstName) ?? existing.firstName,
+    lastName: enrichText(existing.lastName, incoming.lastName) ?? existing.lastName,
+    email: enrichText(existing.email, incoming.email),
+    phone: enrichText(existing.phone, incoming.phone),
+    gender: enrichNullable(existing.gender, incoming.gender),
+    birthMonth: enrichNullable(existing.birthMonth, incoming.birthMonth),
+    birthYear: enrichNullable(existing.birthYear, incoming.birthYear),
+  }
+}
+
+function buildRegistrantData(mapped: Record<string, string>, paymentReference: string | null) {
+  return {
+    nickname: mapped.nickname?.trim() || null,
+    isPaid: Boolean(paymentReference),
+    paymentReference,
+  }
+}
+
+function enrichRegistrantData(
+  existing: { nickname: string | null; isPaid: boolean; paymentReference: string | null },
+  incoming: ReturnType<typeof buildRegistrantData>,
+) {
+  return {
+    nickname: enrichText(existing.nickname, incoming.nickname),
+    isPaid: existing.isPaid || incoming.isPaid,
+    paymentReference: enrichText(existing.paymentReference, incoming.paymentReference),
+  }
+}
+
+async function enrichGuestRecord(guestId: string, mapped: Record<string, string>, firstName: string, lastName: string) {
+  const existing = await db.guest.findUnique({
+    where: { id: guestId },
+    select: {
+      firstName: true,
+      lastName: true,
+      email: true,
+      phone: true,
+      language: true,
+      gender: true,
+      birthMonth: true,
+      birthYear: true,
+    },
+  })
+  if (!existing) throw new Error("Existing guest not found")
+  await db.guest.update({
+    where: { id: guestId },
+    data: enrichGuestData(existing, buildGuestData(mapped, firstName, lastName)),
+  })
+}
+
+async function enrichMemberRecord(memberId: string, mapped: Record<string, string>, firstName: string, lastName: string) {
+  const existing = await db.member.findUnique({
+    where: { id: memberId },
+    select: {
+      firstName: true,
+      lastName: true,
+      email: true,
+      phone: true,
+      gender: true,
+      birthMonth: true,
+      birthYear: true,
+    },
+  })
+  if (!existing) throw new Error("Existing member not found")
+  await db.member.update({
+    where: { id: memberId },
+    data: enrichMemberData(existing, buildMemberData(mapped, firstName, lastName)),
+  })
+}
+
+async function upsertRegistrantLink(
+  eventId: string,
+  relation: { memberId: string | null; guestId: string | null },
+  incoming: ReturnType<typeof buildRegistrantData>,
+): Promise<"created" | "updated"> {
+  const existingRegistrant = await db.eventRegistrant.findFirst({
+    where: {
+      eventId,
+      ...(relation.memberId ? { memberId: relation.memberId } : { guestId: relation.guestId! }),
+    },
+    select: { id: true, nickname: true, isPaid: true, paymentReference: true },
+  })
+
+  if (existingRegistrant) {
+    await db.eventRegistrant.update({
+      where: { id: existingRegistrant.id },
+      data: enrichRegistrantData(existingRegistrant, incoming),
+    })
+    return "updated"
+  }
+
+  await db.eventRegistrant.create({
+    data: {
+      eventId,
+      ...relation,
+      nickname: incoming.nickname,
+      ...(incoming.paymentReference ? { isPaid: true, paymentReference: incoming.paymentReference } : {}),
+    },
+  })
+  return "created"
+}
+
 export async function importEventRegistrants(
   eventId: string,
   rows: ImportRow[]
@@ -188,9 +329,7 @@ export async function importEventRegistrants(
       const paymentReference = event.formIncludePayment
         ? mapped.paymentReference?.trim() || null
         : null
-      const paymentData = paymentReference
-        ? { isPaid: true, paymentReference }
-        : {}
+      const registrantData = buildRegistrantData(mapped, paymentReference)
       if (!firstName || !lastName) {
         result.errors.push({ row: i, message: "First name and last name are required" })
         result.skipped++
@@ -198,30 +337,21 @@ export async function importEventRegistrants(
       }
 
       if (existingId && resolution === "use-existing") {
-        // Link to existing Member or Guest — just create the EventRegistrant
-        const alreadyExists = await db.eventRegistrant.findFirst({
-          where: {
-            eventId,
-            OR: [
-              existingType === "member" ? { memberId: existingId } : undefined,
-              existingType === "guest"  ? { guestId:  existingId } : undefined,
-            ].filter(Boolean) as Prisma.EventRegistrantWhereInput[],
-          },
-          select: { id: true },
-        })
-        if (alreadyExists) {
-          result.skipped++
-          continue
+        if (existingType === "guest") {
+          await enrichGuestRecord(existingId, mapped, firstName, lastName)
+        } else if (existingType === "member") {
+          await enrichMemberRecord(existingId, mapped, firstName, lastName)
         }
-        await db.eventRegistrant.create({
-          data: {
-            eventId,
+        const action = await upsertRegistrantLink(
+          eventId,
+          {
             memberId: existingType === "member" ? existingId : null,
-            guestId: existingType === "guest"  ? existingId : null,
-            ...paymentData,
+            guestId: existingType === "guest" ? existingId : null,
           },
-        })
-        result.linked++
+          registrantData,
+        )
+        if (action === "created") result.linked++
+        else result.updated++
         continue
       }
 
@@ -231,19 +361,7 @@ export async function importEventRegistrants(
           where: { id: existingId },
           data: buildGuestData(mapped, firstName, lastName),
         })
-        const alreadyExists = await db.eventRegistrant.findFirst({
-          where: { eventId, guestId: existingId },
-          select: { id: true },
-        })
-        if (!alreadyExists) {
-          await db.eventRegistrant.create({
-            data: {
-              eventId,
-              guestId: existingId,
-              ...paymentData,
-            },
-          })
-        }
+        await upsertRegistrantLink(eventId, { memberId: null, guestId: existingId }, registrantData)
         result.updated++
         continue
       }
@@ -254,19 +372,7 @@ export async function importEventRegistrants(
           where: { id: existingId },
           data: buildMemberData(mapped, firstName, lastName),
         })
-        const alreadyExists = await db.eventRegistrant.findFirst({
-          where: { eventId, memberId: existingId },
-          select: { id: true },
-        })
-        if (!alreadyExists) {
-          await db.eventRegistrant.create({
-            data: {
-              eventId,
-              memberId: existingId,
-              ...paymentData,
-            },
-          })
-        }
+        await upsertRegistrantLink(eventId, { memberId: existingId, guestId: null }, registrantData)
         result.updated++
         continue
       }
@@ -292,23 +398,14 @@ export async function importEventRegistrants(
           select: { id: true },
         })
         if (matchedMember) {
-          const memberRegistrant = await db.eventRegistrant.findFirst({
-            where: { eventId, memberId: matchedMember.id },
-            select: { id: true },
-          })
-          if (memberRegistrant) {
-            result.skipped++
-            continue
-          }
-          // Member found but not yet registered — link them
-          await db.eventRegistrant.create({
-            data: {
-              eventId,
-              memberId: matchedMember.id,
-              ...paymentData,
-            },
-          })
-          result.linked++
+          await enrichMemberRecord(matchedMember.id, mapped, firstName, lastName)
+          const action = await upsertRegistrantLink(
+            eventId,
+            { memberId: matchedMember.id, guestId: null },
+            registrantData,
+          )
+          if (action === "created") result.linked++
+          else result.updated++
           continue
         }
       }
@@ -328,24 +425,14 @@ export async function importEventRegistrants(
           data: buildGuestData(mapped, firstName, lastName),
           select: { id: true },
         })
-      }
-      const alreadyExists = await db.eventRegistrant.findFirst({
-        where: { eventId, guestId: guest.id },
-        select: { id: true },
-      })
-      if (alreadyExists) {
-        result.skipped++
+        await upsertRegistrantLink(eventId, { memberId: null, guestId: guest.id }, registrantData)
+        result.created++
         continue
       }
-      await db.eventRegistrant.create({
-        data: {
-          eventId,
-          guestId: guest.id,
-          nickname: mapped.nickname?.trim() || null,
-          ...paymentData,
-        },
-      })
-      result.created++
+      await enrichGuestRecord(guest.id, mapped, firstName, lastName)
+      const action = await upsertRegistrantLink(eventId, { memberId: null, guestId: guest.id }, registrantData)
+      if (action === "created") result.linked++
+      else result.updated++
     } catch (e) {
       const msg = e instanceof Prisma.PrismaClientKnownRequestError
         ? `DB error: ${e.message.split("\n").pop()}`

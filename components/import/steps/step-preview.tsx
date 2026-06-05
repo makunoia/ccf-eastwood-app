@@ -10,16 +10,17 @@ type Props = {
   fields: FieldDefinition[]
   rows: PreviewRow[]
   checking: boolean
+  useExistingEnriches: boolean
   onResolutionChange: (rowIndex: number, resolution: RowResolution) => void
   onSetAllResolution: (resolution: RowResolution) => void
 }
 
-export function StepPreview({ fields, rows, checking, onResolutionChange, onSetAllResolution }: Props) {
+export function StepPreview({ fields, rows, checking, useExistingEnriches, onResolutionChange, onSetAllResolution }: Props) {
   const duplicateRows  = rows.filter((r) => r.duplicate && r.duplicate.kind !== "recognized")
   const recognizedRows = rows.filter((r) => r.duplicate?.kind === "recognized")
   const errorRows      = rows.filter((r) => r.validationError)
 
-  const skippingCount    = duplicateRows.filter((r) => r.resolution === "use-existing").length
+  const usingExistingCount = duplicateRows.filter((r) => r.resolution === "use-existing").length
   const reimportingCount = duplicateRows.filter((r) => r.resolution === "use-csv").length
 
   if (checking) {
@@ -69,14 +70,16 @@ export function StepPreview({ fields, rows, checking, onResolutionChange, onSetA
           <IconAlertTriangle className="size-4 text-yellow-600 shrink-0" />
           <span className="text-yellow-800 flex-1">
             {duplicateRows.length} duplicate{duplicateRows.length !== 1 ? "s" : ""}&thinsp;—&thinsp;
-            <span className="font-medium">{skippingCount} skipping</span>
+            <span className="font-medium">
+              {usingExistingCount} {useExistingEnriches ? "enriching existing" : "skipping"}
+            </span>
             {reimportingCount > 0 && (
               <> · <span className="font-medium">{reimportingCount} re-importing</span></>
             )}
           </span>
           <div className="flex gap-1.5">
             <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => onSetAllResolution("use-existing")}>
-              Skip all
+              {useExistingEnriches ? "Use existing for all" : "Skip all"}
             </Button>
             <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => onSetAllResolution("use-csv")}>
               Re-import all
@@ -129,7 +132,7 @@ export function StepPreview({ fields, rows, checking, onResolutionChange, onSetA
                           </Badge>
                         ) : (
                           <Badge variant="outline" className="text-muted-foreground border-border text-xs">
-                            Skipping
+                            {useExistingEnriches ? "Using existing" : "Skipping"}
                           </Badge>
                         )
                       ) : isRecognized ? (
@@ -163,7 +166,7 @@ export function StepPreview({ fields, rows, checking, onResolutionChange, onSetA
                                 onChange={() => onResolutionChange(row.index, "use-existing")}
                                 className="accent-primary"
                               />
-                              <span className="text-xs">Skip</span>
+                              <span className="text-xs">{useExistingEnriches ? "Use existing" : "Skip"}</span>
                             </label>
                             <label className="flex items-center gap-1.5 cursor-pointer">
                               <input

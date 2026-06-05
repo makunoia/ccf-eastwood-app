@@ -70,6 +70,7 @@ export type LeaderResolution =
 export type ImportWizardConfig = {
   entity: ImportEntity
   fields?: FieldDefinition[]
+  useExistingEnriches?: boolean
   context?: {
     eventId?: string
     ministryId?: string
