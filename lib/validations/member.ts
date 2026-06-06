@@ -1,9 +1,17 @@
 import { z } from "zod"
+import { formatPhilippinePhone } from "@/lib/utils"
 
 const nullableString = z
   .string()
   .optional()
   .transform((v) => (v === "" || v == null ? null : v.trim()))
+
+// Always normalize mobile numbers to the canonical "+63 XXX XXX XXXX" stored
+// format before persisting — see "Mobile number format" in CLAUDE.md.
+const nullablePhone = z
+  .string()
+  .optional()
+  .transform((v) => (v === "" || v == null ? null : formatPhilippinePhone(v.trim())))
 
 const nullableEmail = z
   .string()
@@ -27,7 +35,7 @@ export const memberSchema = z.object({
   lastName: z.string().min(1, "Last name is required").trim(),
   nickname: nullableString,
   email: nullableEmail,
-  phone: nullableString,
+  phone: nullablePhone,
   address: nullableString,
   dateJoined: z
     .string()

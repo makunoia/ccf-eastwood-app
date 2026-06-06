@@ -69,6 +69,15 @@ type EventDashboardData = {
     date: string
     attendees: number
   }>
+  seriesSummaries: Array<{
+    id: string
+    title: string
+    startDate: string
+    endDate: string
+    sessionCount: number
+    totalAttendance: number
+    averageAttendance: number
+  }>
   confirmedVolunteers: Array<{
     id: string
     name: string
@@ -147,6 +156,10 @@ function formatRecurringSchedule(
 function formatAverage(value: number) {
   if (Number.isInteger(value)) return value.toLocaleString()
   return value.toLocaleString(undefined, { maximumFractionDigits: 1 })
+}
+
+function formatRange(startIso: string, endIso: string) {
+  return `${formatDate(startIso)} – ${formatDate(endIso)}`
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -442,6 +455,58 @@ export function EventDashboardClient({ event }: { event: EventDashboardData }) {
                 />
               </AreaChart>
             </ChartContainer>
+          </CardContent>
+        </Card>
+      )}
+
+      {isRecurring && (
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle>Series Summary</CardTitle>
+            <CardDescription>
+              {event.seriesSummaries.length > 0
+                ? "Attendance rollups for recurring session groups"
+                : "No recurring series created yet"}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {event.seriesSummaries.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Create a series from the Sessions page to start grouping recurring attendance.
+              </p>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border">
+                <table className="w-full text-sm">
+                  <thead className="border-b bg-muted/50">
+                    <tr>
+                      <th className="px-4 py-3 text-left font-medium">Series</th>
+                      <th className="px-4 py-3 text-left font-medium whitespace-nowrap">Sessions</th>
+                      <th className="px-4 py-3 text-left font-medium whitespace-nowrap">Attendance</th>
+                      <th className="px-4 py-3 text-left font-medium whitespace-nowrap">Average</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {event.seriesSummaries.map((series) => (
+                      <tr key={series.id} className="border-b last:border-0">
+                        <td className="px-4 py-3">
+                          <div className="min-w-0">
+                            <p className="font-medium">{series.title}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {formatRange(series.startDate, series.endDate)}
+                            </p>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">{series.sessionCount}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">{series.totalAttendance}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          {formatAverage(series.averageAttendance)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

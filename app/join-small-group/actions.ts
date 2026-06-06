@@ -3,6 +3,7 @@
 import { z } from "zod"
 import { db } from "@/lib/db"
 import { matchSmallGroups } from "@/lib/matching"
+import { formatPhilippinePhone } from "@/lib/utils"
 import type { MatchResult } from "@/lib/matching/types"
 
 type ActionResult<T = void> =
@@ -14,7 +15,7 @@ type ActionResult<T = void> =
 const personalInfoSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
-  phone: z.string().min(1, "Mobile number is required"),
+  phone: z.string().min(1, "Mobile number is required").transform((v) => formatPhilippinePhone(v.trim())),
   email: z.string().email("Invalid email").or(z.literal("")).optional(),
   gender: z.enum(["Male", "Female", ""]).optional(),
   lifeStageId: z.string().optional(),

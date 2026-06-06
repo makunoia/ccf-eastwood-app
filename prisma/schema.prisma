@@ -412,6 +412,7 @@ model Event {
   ministries     EventMinistry[]
   registrants    EventRegistrant[]
   occurrences    EventOccurrence[]
+  occurrenceSeries EventOccurrenceSeries[]
   breakoutGroups BreakoutGroup[]
   committees     VolunteerCommittee[]
   volunteers     Volunteer[]
@@ -433,13 +434,31 @@ model EventMinistry {
   @@id([eventId, ministryId])
 }
 
+model EventOccurrenceSeries {
+  id         String            @id @default(cuid())
+  eventId     String
+  event       Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  title       String
+  startDate   DateTime
+  endDate     DateTime
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  occurrences EventOccurrence[]
+
+  @@index([eventId, startDate, endDate])
+}
+
 model EventOccurrence {
   id        String               @id @default(cuid())
   eventId   String
   event     Event                @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  seriesId  String?
+  series    EventOccurrenceSeries? @relation(fields: [seriesId], references: [id], onDelete: SetNull)
   date      DateTime
   notes     String?
   isOpen    Boolean              @default(false)
+  isStandalone Boolean           @default(false)
   createdAt DateTime             @default(now())
   updatedAt DateTime             @updatedAt
 
@@ -447,6 +466,7 @@ model EventOccurrence {
   subFacilitators  OccurrenceSubFacilitator[]
 
   @@unique([eventId, date])
+  @@index([seriesId])
 }
 
 model OccurrenceAttendee {

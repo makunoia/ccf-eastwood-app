@@ -20,10 +20,10 @@ type ScheduleInputProps = {
   onDayChange: (v: string) => void
   onTimeStartChange: (v: string) => void
   onTimeEndChange: (v: string) => void
-  /** "default" = bordered inputs (forms); "inline" = dashed-underline style (match sections) */
-  variant?: "default" | "inline"
   /** Show "Any" as the first option — use for optional schedule fields */
   allowAny?: boolean
+  disabled?: boolean
+  "aria-invalid"?: boolean | "true" | "false"
   className?: string
 }
 
@@ -34,37 +34,35 @@ export function ScheduleInput({
   onDayChange,
   onTimeStartChange,
   onTimeEndChange,
-  variant = "default",
   allowAny = false,
+  disabled,
+  "aria-invalid": ariaInvalid,
   className,
 }: ScheduleInputProps) {
-  const isInline = variant === "inline"
   const selectValue = dayOfWeek || (allowAny ? ANY_SENTINEL : undefined)
 
   function handleDayChange(v: string) {
     onDayChange(v === ANY_SENTINEL ? "" : v)
   }
 
+  // Stacked bordered card — day selector on top, time range below.
   return (
     <div
+      data-slot="schedule-input"
+      aria-invalid={ariaInvalid}
       className={cn(
-        "flex flex-wrap gap-2",
-        isInline ? "items-baseline gap-x-1.5 gap-y-2" : "items-center",
+        "w-full overflow-hidden rounded-lg border border-input bg-transparent shadow-xs transition-[color,box-shadow] dark:bg-input/30",
+        "focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50",
+        "aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40",
+        disabled && "pointer-events-none opacity-50",
         className,
       )}
     >
-      <span className="text-sm text-muted-foreground">On</span>
-
-      <Select value={selectValue} onValueChange={handleDayChange}>
-        {isInline ? (
-          <SelectTrigger className="h-auto w-auto min-w-28 border-0 border-b border-dashed border-foreground/40 rounded-none px-0.5 pb-0.5 shadow-none focus:ring-0 text-sm">
-            <SelectValue placeholder="day" />
-          </SelectTrigger>
-        ) : (
-          <SelectTrigger className="w-36">
-            <SelectValue placeholder="Day" />
-          </SelectTrigger>
-        )}
+      {/* Day selector */}
+      <Select value={selectValue} onValueChange={handleDayChange} disabled={disabled}>
+        <SelectTrigger className="h-11 w-full rounded-none border-0 px-4 text-sm shadow-none focus-visible:ring-0 dark:bg-transparent dark:hover:bg-transparent">
+          <SelectValue placeholder="Select a day" />
+        </SelectTrigger>
         <SelectContent>
           {allowAny && <SelectItem value={ANY_SENTINEL}>Any</SelectItem>}
           {DAYS_OF_WEEK.map((d) => (
@@ -75,23 +73,37 @@ export function ScheduleInput({
         </SelectContent>
       </Select>
 
-      <span className="text-sm text-muted-foreground">from</span>
+      <div className="border-t border-input" />
 
-      <TimeInput
-        variant={isInline ? "inline" : "default"}
-        value={timeStart}
-        onChange={onTimeStartChange}
-        className={isInline ? undefined : "w-32"}
-      />
+      {/* Time range — grid keeps the two halves exactly equal so "To" stays
+          centered; min-w-0 lets each side shrink so the am/pm toggle never clips. */}
+      <div className="grid h-11 grid-cols-[1fr_auto_1fr] items-stretch">
+        <div className="flex min-w-0 items-center px-4">
+          <TimeInput
+            variant="bare"
+            value={timeStart}
+            onChange={onTimeStartChange}
+            disabled={disabled}
+          />
+        </div>
 
-      <span className="text-sm text-muted-foreground">to</span>
+        <div className="flex flex-col items-center justify-center gap-1 px-2">
+          <div className="w-px flex-1 bg-input" />
+          <span className="text-[0.6875rem] font-medium tracking-widest text-muted-foreground uppercase">
+            To
+          </span>
+          <div className="w-px flex-1 bg-input" />
+        </div>
 
-      <TimeInput
-        variant={isInline ? "inline" : "default"}
-        value={timeEnd}
-        onChange={onTimeEndChange}
-        className={isInline ? undefined : "w-32"}
-      />
+        <div className="flex min-w-0 items-center px-4">
+          <TimeInput
+            variant="bare"
+            value={timeEnd}
+            onChange={onTimeEndChange}
+            disabled={disabled}
+          />
+        </div>
+      </div>
     </div>
   )
 }

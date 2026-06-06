@@ -329,7 +329,6 @@ export const GuestMatchSection = React.forwardRef<
                 Schedule <span className="text-destructive">*</span>
               </Label>
               <ScheduleInput
-                variant="inline"
                 dayOfWeek={prefs.scheduleDayOfWeek}
                 timeStart={prefs.scheduleTimeStart}
                 timeEnd={prefs.scheduleTimeEnd}
@@ -553,7 +552,6 @@ export const GuestMatchSection = React.forwardRef<
             Schedule <span className="text-destructive">*</span>
           </Label>
           <ScheduleInput
-            variant="inline"
             dayOfWeek={prefs.scheduleDayOfWeek}
             timeStart={prefs.scheduleTimeStart}
             timeEnd={prefs.scheduleTimeEnd}

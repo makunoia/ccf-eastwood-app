@@ -181,7 +181,6 @@ export function MemberMatchSection({
             Schedule <span className="text-destructive">*</span>
           </Label>
           <ScheduleInput
-            variant="inline"
             dayOfWeek={prefs.scheduleDayOfWeek}
             timeStart={prefs.scheduleTimeStart}
             timeEnd={prefs.scheduleTimeEnd}

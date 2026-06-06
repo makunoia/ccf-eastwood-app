@@ -2,6 +2,7 @@ import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { EventDashboardClient } from "./dashboard-client"
 import { ensureMultiDayOccurrences } from "@/app/(dashboard)/events/actions"
+import { groupOccurrencesBySeries } from "@/lib/events/occurrence-series"
 
 type PeriodFilter = "7d" | "30d" | "90d" | "all"
 type LeaderRoleFilter = "all" | "Timothy" | "Leader"
@@ -45,6 +46,15 @@ async function getEventDashboard(id: string, period: PeriodFilter, roleFilter: L
       },
       breakoutGroups: {
         select: { id: true },
+      },
+      occurrenceSeries: {
+        orderBy: { startDate: "desc" },
+        select: {
+          id: true,
+          title: true,
+          startDate: true,
+          endDate: true,
+        },
       },
       _count: {
         select: { registrants: true, occurrences: true },
@@ -123,9 +133,28 @@ async function getEventDashboard(id: string, period: PeriodFilter, roleFilter: L
           orderBy: { date: "asc" },
           select: {
             date: true,
+            id: true,
+            isOpen: true,
+            isStandalone: true,
+            seriesId: true,
             _count: { select: { attendees: true } },
           },
         })
+
+  const recurringSeriesSummaries =
+    event.type === "Recurring"
+      ? groupOccurrencesBySeries(
+          event.occurrenceSeries,
+          occurrenceSeries.map((occurrence) => ({
+            id: occurrence.id,
+            date: occurrence.date,
+            isOpen: occurrence.isOpen,
+            isStandalone: occurrence.isStandalone,
+            attendeeCount: occurrence._count.attendees,
+            seriesId: occurrence.seriesId,
+          })),
+        ).groups
+      : []
 
   const uniqueAttendees =
     event.type === "OneTime"
@@ -367,6 +396,15 @@ async function getEventDashboard(id: string, period: PeriodFilter, roleFilter: L
     attendanceSeries: occurrenceSeries.map((occurrence) => ({
       date: occurrence.date.toISOString(),
       attendees: occurrence._count.attendees,
+    })),
+    seriesSummaries: recurringSeriesSummaries.map((series) => ({
+      id: series.id,
+      title: series.title,
+      startDate: series.startDate,
+      endDate: series.endDate,
+      sessionCount: series.sessionCount,
+      totalAttendance: series.totalAttendance,
+      averageAttendance: series.averageAttendance,
     })),
     confirmedVolunteers,
     unconfirmedVolunteers,

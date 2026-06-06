@@ -379,6 +379,7 @@ export function JoinForm({ lifeStages }: { lifeStages: LifeStage[] }) {
                   id="email"
                   value={personal.email ?? ""}
                   onChange={(e) => setPersonal((p) => ({ ...p, email: e.target.value }))}
+                  placeholder="juan@email.com"
                   noEmail={noEmail}
                   onNoEmailChange={(checked) => {
                     setNoEmail(checked)
