@@ -79,6 +79,50 @@ export const eventSchema = z
 
 export type EventInput = z.infer<typeof eventSchema>
 
+const requiredDate = z
+  .string()
+  .min(1, "Date is required")
+  .transform((value) => new Date(`${value}T00:00:00.000Z`))
+
+const nullableId = z
+  .string()
+  .nullable()
+  .optional()
+  .transform((value) => (value === "" || value == null ? null : value))
+
+export const occurrenceSeriesSchema = z
+  .object({
+    title: z.string().trim().min(1, "Title is required"),
+    startDate: requiredDate,
+    endDate: requiredDate,
+  })
+  .superRefine((data, ctx) => {
+    if (data.endDate < data.startDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["endDate"],
+        message: "End date must be on or after the start date",
+      })
+    }
+  })
+
+export type OccurrenceSeriesInput = z.infer<typeof occurrenceSeriesSchema>
+
+export const occurrenceFormSchema = z.object({
+  date: requiredDate,
+  isStandalone: z.boolean().default(false),
+  seriesId: nullableId,
+})
+
+export type OccurrenceFormInput = z.infer<typeof occurrenceFormSchema>
+
+export const occurrenceGroupingSchema = z.object({
+  isStandalone: z.boolean().default(false),
+  seriesId: nullableId,
+})
+
+export type OccurrenceGroupingInput = z.infer<typeof occurrenceGroupingSchema>
+
 export type EventFormValues = {
   name: string
   description: string

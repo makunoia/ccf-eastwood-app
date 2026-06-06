@@ -290,6 +290,12 @@ END $$;
 ### Validation
 - Zod schemas on all form inputs before DB. Co-locate with feature or in `lib/validations/`.
 
+### Mobile number format
+- **Every mobile/phone number is stored in the canonical `"+63 XXX XXX XXXX"` format** — no exceptions, across all six domains.
+- Before any `db.*.create`/`update` that writes a phone, and before any lookup that matches on `phone`, pass the value through `formatPhilippinePhone` (`@/lib/utils`). It is idempotent (canonical input → same output), so it is safe to apply defensively anywhere.
+- This applies to **every entry path**: admin forms, public registration (`registerForEvent`, `join-small-group`), event check-in/walk-ins, and **all CSV imports** (members, guests, volunteers, registrants, sessions, small groups). A raw CSV/user value that skips normalization both stores a malformed number and silently fails exact-match dedup against existing canonical records — creating duplicates.
+- Enforce at the Zod layer where possible: the shared `phone` fields in `lib/validations/member.ts` and `lib/validations/guest.ts` use a `nullablePhone` transform; the public-registration schemas (`registrantSchema`, `personalInfoSchema`) and import actions normalize inline. The `PhonePHInput` component already emits canonical on the client, but never rely on the client alone — always normalize server-side too.
+
 ### UI
 - **Tailwind CSS** for all styling
 - **shadcn/ui** for all component primitives (Button, Dialog, Table, Form, etc.)

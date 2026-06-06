@@ -5,10 +5,23 @@ import { z } from "zod"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import { canWrite } from "@/lib/permissions"
-import { eventSchema, type EventFormValues } from "@/lib/validations/event"
+import {
+  eventSchema,
+  occurrenceFormSchema,
+  occurrenceGroupingSchema,
+  occurrenceSeriesSchema,
+  type EventFormValues,
+} from "@/lib/validations/event"
 import { suggestBreakoutGroup } from "@/lib/breakout-suggestion"
 import { fetchBreakoutCandidates } from "@/lib/breakout-suggestion-server"
 import { tryCreateSmallGroupRequestFromBreakout } from "@/lib/create-small-group-request"
+import {
+  findMatchingSeries,
+  normalizeUtcDate,
+  rangesOverlap,
+  seriesContainsDate,
+} from "@/lib/events/occurrence-series"
+import { formatPhilippinePhone } from "@/lib/utils"
 import type { Gender, MeetingFormat } from "@/app/generated/prisma/client"
 
 type AssignedBreakout =
@@ -109,7 +122,7 @@ const registrantSchema = z.object({
   lastName: z.string().min(1, "Last name is required").trim(),
   nickname: z.string().nullish().transform((v) => (v === "" || v == null ? null : v.trim())),
   email: z.string().nullish().transform((v) => (v === "" || v == null ? null : v.trim())),
-  mobileNumber: z.string().nullish().transform((v) => (v === "" || v == null ? null : v.trim())),
+  mobileNumber: z.string().nullish().transform((v) => (v === "" || v == null ? null : formatPhilippinePhone(v.trim()))),
   // Birthday — used as fallback matching field when no mobile or email
   birthMonth: z.number().int().min(1).max(12).optional().nullable(),
   birthYear: z.number().int().min(1900).max(2100).optional().nullable(),
@@ -145,6 +158,68 @@ async function requireWrite(): Promise<{ error: string } | null> {
   if (!session?.user) return { error: "Not authenticated." }
   if (!canWrite(session, "Events")) return { error: "Unauthorized." }
   return null
+}
+
+type OccurrenceSeriesRecord = {
+  id: string
+  title: string
+  startDate: Date
+  endDate: Date
+}
+
+async function requireRecurringEvent(
+  eventId: string
+): Promise<ActionResult<{ id: string }> | { success: true; data: { id: string } }> {
+  const event = await db.event.findUnique({
+    where: { id: eventId },
+    select: { id: true, type: true },
+  })
+
+  if (!event || event.type !== "Recurring") {
+    return { success: false, error: "Recurring event not found" }
+  }
+
+  return { success: true, data: { id: event.id } }
+}
+
+async function getEventSeries(eventId: string): Promise<OccurrenceSeriesRecord[]> {
+  return db.eventOccurrenceSeries.findMany({
+    where: { eventId },
+    orderBy: { startDate: "asc" },
+    select: {
+      id: true,
+      title: true,
+      startDate: true,
+      endDate: true,
+    },
+  })
+}
+
+function findOverlappingSeries(
+  candidate: Pick<OccurrenceSeriesRecord, "startDate" | "endDate">,
+  series: OccurrenceSeriesRecord[],
+  excludeId?: string,
+) {
+  return (
+    series.find(
+      (entry) =>
+        entry.id !== excludeId &&
+        rangesOverlap(candidate, {
+          startDate: entry.startDate,
+          endDate: entry.endDate,
+        }),
+    ) ?? null
+  )
+}
+
+function revalidateRecurringEventPaths(eventId: string, occurrenceId?: string) {
+  revalidatePath(`/event/${eventId}/sessions`)
+  revalidatePath(`/event/${eventId}/dashboard`)
+  revalidatePath(`/events/${eventId}/checkin`)
+  if (occurrenceId) {
+    revalidatePath(`/events/${eventId}/checkin/${occurrenceId}`)
+    revalidatePath(`/event/${eventId}/sessions/${occurrenceId}`)
+  }
 }
 
 export async function createEvent(
@@ -321,9 +396,12 @@ export async function lookupMemberForRegistration(params: {
   }
   const guestSelect = { id: true, firstName: true, lastName: true, email: true, phone: true }
 
-  if (params.mobileNumber) {
+  // Normalize to the canonical stored format so lookups match how numbers are persisted.
+  const normalizedMobile = params.mobileNumber ? formatPhilippinePhone(params.mobileNumber.trim()) : null
+
+  if (normalizedMobile) {
     const members = await db.member.findMany({
-      where: { phone: params.mobileNumber.trim() },
+      where: { phone: normalizedMobile },
       select: memberSelect,
     })
     if (members.length > 1) {
@@ -395,9 +473,9 @@ export async function lookupMemberForRegistration(params: {
   }
 
   // No Member found — fall back to Guest records (only active guests, not yet promoted to members)
-  if (params.mobileNumber) {
+  if (normalizedMobile) {
     const guests = await db.guest.findMany({
-      where: { phone: params.mobileNumber.trim(), memberId: null },
+      where: { phone: normalizedMobile, memberId: null },
       select: guestSelect,
     })
     if (guests.length > 1) {
@@ -823,13 +901,28 @@ export async function unmarkRegistrantAttended(
 
 export async function createOccurrence(
   eventId: string,
-  date: string // "YYYY-MM-DD" UTC
+  raw: string | z.input<typeof occurrenceFormSchema>
 ): Promise<ActionResult<{ id: string }>> {
   const authError = await requireWrite()
   if (authError) return { success: false, error: authError.error }
 
+  const parsed = occurrenceFormSchema.safeParse(
+    typeof raw === "string"
+      ? { date: raw, isStandalone: false, seriesId: null }
+      : raw,
+  )
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Invalid input",
+    }
+  }
+
   try {
-    const dateValue = new Date(`${date}T00:00:00.000Z`)
+    const recurringEvent = await requireRecurringEvent(eventId)
+    if (!recurringEvent.success) return recurringEvent
+
+    const dateValue = normalizeUtcDate(parsed.data.date)
     const existing = await db.eventOccurrence.findUnique({
       where: { eventId_date: { eventId, date: dateValue } },
       select: { id: true },
@@ -837,14 +930,305 @@ export async function createOccurrence(
     if (existing) {
       return { success: false, error: "A session already exists for this date" }
     }
+
+    const allSeries = await getEventSeries(eventId)
+    let seriesId: string | null = null
+
+    if (!parsed.data.isStandalone) {
+      if (parsed.data.seriesId) {
+        const selectedSeries = allSeries.find((series) => series.id === parsed.data.seriesId)
+        if (!selectedSeries) {
+          return { success: false, error: "Series not found" }
+        }
+        if (!seriesContainsDate(selectedSeries, dateValue)) {
+          return {
+            success: false,
+            error: "Selected series does not include this session date",
+          }
+        }
+        seriesId = selectedSeries.id
+      } else {
+        seriesId = findMatchingSeries(allSeries, dateValue)?.id ?? null
+      }
+    }
+
     const occurrence = await db.eventOccurrence.create({
-      data: { eventId, date: dateValue },
+      data: {
+        eventId,
+        date: dateValue,
+        isStandalone: parsed.data.isStandalone,
+        seriesId,
+      },
       select: { id: true },
     })
-    revalidatePath(`/events/${eventId}`)
+    revalidateRecurringEventPaths(eventId, occurrence.id)
     return { success: true, data: { id: occurrence.id } }
   } catch {
     return { success: false, error: "Failed to create session" }
+  }
+}
+
+export async function createOccurrenceSeries(
+  eventId: string,
+  raw: z.input<typeof occurrenceSeriesSchema>,
+): Promise<ActionResult<{ id: string }>> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
+  const parsed = occurrenceSeriesSchema.safeParse(raw)
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Invalid input",
+    }
+  }
+
+  try {
+    const recurringEvent = await requireRecurringEvent(eventId)
+    if (!recurringEvent.success) return recurringEvent
+
+    const startDate = normalizeUtcDate(parsed.data.startDate)
+    const endDate = normalizeUtcDate(parsed.data.endDate)
+    const allSeries = await getEventSeries(eventId)
+    const overlap = findOverlappingSeries({ startDate, endDate }, allSeries)
+
+    if (overlap) {
+      return {
+        success: false,
+        error: `Series overlaps with "${overlap.title}"`,
+      }
+    }
+
+    const createdSeries = await db.$transaction(async (tx) => {
+      const created = await tx.eventOccurrenceSeries.create({
+        data: {
+          eventId,
+          title: parsed.data.title.trim(),
+          startDate,
+          endDate,
+        },
+        select: { id: true },
+      })
+
+      await tx.eventOccurrence.updateMany({
+        where: {
+          eventId,
+          isStandalone: false,
+          date: {
+            gte: startDate,
+            lte: endDate,
+          },
+        },
+        data: { seriesId: created.id },
+      })
+
+      return created
+    })
+
+    revalidateRecurringEventPaths(eventId)
+    return { success: true, data: { id: createdSeries.id } }
+  } catch {
+    return { success: false, error: "Failed to create series" }
+  }
+}
+
+export async function updateOccurrenceSeries(
+  seriesId: string,
+  eventId: string,
+  raw: z.input<typeof occurrenceSeriesSchema>,
+): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
+  const parsed = occurrenceSeriesSchema.safeParse(raw)
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Invalid input",
+    }
+  }
+
+  try {
+    const series = await db.eventOccurrenceSeries.findUnique({
+      where: { id: seriesId },
+      select: {
+        id: true,
+        eventId: true,
+        event: { select: { type: true } },
+      },
+    })
+
+    if (!series || series.eventId !== eventId || series.event.type !== "Recurring") {
+      return { success: false, error: "Series not found" }
+    }
+
+    const startDate = normalizeUtcDate(parsed.data.startDate)
+    const endDate = normalizeUtcDate(parsed.data.endDate)
+    const allSeries = await getEventSeries(eventId)
+    const overlap = findOverlappingSeries({ startDate, endDate }, allSeries, seriesId)
+
+    if (overlap) {
+      return {
+        success: false,
+        error: `Series overlaps with "${overlap.title}"`,
+      }
+    }
+
+    await db.$transaction(async (tx) => {
+      await tx.eventOccurrenceSeries.update({
+        where: { id: seriesId },
+        data: {
+          title: parsed.data.title.trim(),
+          startDate,
+          endDate,
+        },
+      })
+
+      await tx.eventOccurrence.updateMany({
+        where: {
+          eventId,
+          seriesId,
+          OR: [
+            { date: { lt: startDate } },
+            { date: { gt: endDate } },
+            { isStandalone: true },
+          ],
+        },
+        data: { seriesId: null },
+      })
+
+      await tx.eventOccurrence.updateMany({
+        where: {
+          eventId,
+          isStandalone: false,
+          date: {
+            gte: startDate,
+            lte: endDate,
+          },
+        },
+        data: { seriesId },
+      })
+    })
+
+    revalidateRecurringEventPaths(eventId)
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to update series" }
+  }
+}
+
+export async function deleteOccurrenceSeries(
+  seriesId: string,
+  eventId: string,
+): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
+  try {
+    const series = await db.eventOccurrenceSeries.findUnique({
+      where: { id: seriesId },
+      select: {
+        id: true,
+        eventId: true,
+        event: { select: { type: true } },
+      },
+    })
+
+    if (!series || series.eventId !== eventId || series.event.type !== "Recurring") {
+      return { success: false, error: "Series not found" }
+    }
+
+    await db.eventOccurrenceSeries.delete({
+      where: { id: seriesId },
+    })
+
+    revalidateRecurringEventPaths(eventId)
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to delete series" }
+  }
+}
+
+export async function updateOccurrenceGrouping(
+  occurrenceId: string,
+  eventId: string,
+  raw: z.input<typeof occurrenceGroupingSchema>,
+): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
+  const parsed = occurrenceGroupingSchema.safeParse(raw)
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Invalid input",
+    }
+  }
+
+  try {
+    const occurrence = await db.eventOccurrence.findUnique({
+      where: { id: occurrenceId },
+      select: {
+        id: true,
+        eventId: true,
+        date: true,
+        event: {
+          select: {
+            type: true,
+          },
+        },
+      },
+    })
+
+    if (!occurrence || occurrence.eventId !== eventId || occurrence.event.type !== "Recurring") {
+      return { success: false, error: "Session not found" }
+    }
+
+    if (parsed.data.isStandalone) {
+      await db.eventOccurrence.update({
+        where: { id: occurrenceId },
+        data: {
+          isStandalone: true,
+          seriesId: null,
+        },
+      })
+      revalidateRecurringEventPaths(eventId, occurrenceId)
+      return { success: true, data: undefined }
+    }
+
+    const allSeries = await getEventSeries(eventId)
+    let nextSeriesId: string | null = null
+
+    if (parsed.data.seriesId) {
+      const selectedSeries = allSeries.find((series) => series.id === parsed.data.seriesId)
+      if (!selectedSeries) {
+        return { success: false, error: "Series not found" }
+      }
+
+      if (!seriesContainsDate(selectedSeries, occurrence.date)) {
+        return {
+          success: false,
+          error: "Selected series does not include this session date",
+        }
+      }
+
+      nextSeriesId = selectedSeries.id
+    } else {
+      nextSeriesId = findMatchingSeries(allSeries, occurrence.date)?.id ?? null
+    }
+
+    await db.eventOccurrence.update({
+      where: { id: occurrenceId },
+      data: {
+        isStandalone: false,
+        seriesId: nextSeriesId,
+      },
+    })
+
+    revalidateRecurringEventPaths(eventId, occurrenceId)
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to update session" }
   }
 }
 
@@ -872,12 +1256,9 @@ export async function deleteOccurrence(
       return { success: false, error: "Only recurring sessions can be deleted" }
     }
 
-    await db.eventOccurrence.delete({ where: { id: occurrenceId } })
-    revalidatePath(`/event/${eventId}/sessions`)
-    revalidatePath(`/event/${eventId}/dashboard`)
+     await db.eventOccurrence.delete({ where: { id: occurrenceId } })
+    revalidateRecurringEventPaths(eventId, occurrenceId)
     revalidatePath(`/event/${eventId}/breakouts`)
-    revalidatePath(`/events/${eventId}/checkin`)
-    revalidatePath(`/events/${eventId}/checkin/${occurrenceId}`)
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to delete session" }

@@ -4,11 +4,20 @@ import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
 import type { DuplicateMatch, ImportResult, RowResolution, UnmatchedLeaderRow, LeaderResolution } from "@/lib/import/types"
 import { enrichArray, enrichNullable, enrichText } from "@/lib/import/enrich"
+import { formatPhilippinePhone } from "@/lib/utils"
 import { GenderFocus, MeetingFormat, Prisma } from "@/app/generated/prisma/client"
 
 type ActionResult<T = void> =
   | { success: true; data: T }
   | { success: false; error: string }
+
+// Normalize a raw CSV mobile value to the canonical "+63 XXX XXX XXXX" stored
+// format, returning "" when empty. Mirrors every other import path so leader
+// lookups match existing members and newly-created leaders store a valid number.
+function normalizeMobile(raw: string | undefined): string {
+  const trimmed = raw?.trim()
+  return trimmed ? formatPhilippinePhone(trimmed) : ""
+}
 
 // ─── Duplicate check ──────────────────────────────────────────────────────────
 
@@ -61,8 +70,10 @@ export async function checkSmallGroupLeaders(
   }>
 ): Promise<ActionResult<UnmatchedLeaderRow[]>> {
   try {
-    // Collect all unique mobiles and emails — two queries total instead of one per row
-    const mobiles = [...new Set(rows.map((r) => r.leaderMobile?.trim()).filter(Boolean))] as string[]
+    // Collect all unique mobiles and emails — two queries total instead of one per row.
+    // Mobiles are normalized to the canonical "+63 XXX XXX XXXX" stored format so
+    // they match how members are persisted everywhere else in the app.
+    const mobiles = [...new Set(rows.map((r) => normalizeMobile(r.leaderMobile)).filter(Boolean))] as string[]
     const emails  = [...new Set(rows.map((r) => r.leaderEmail?.trim()).filter(Boolean))]  as string[]
 
     const [byPhone, byEmail] = await Promise.all([
@@ -79,7 +90,7 @@ export async function checkSmallGroupLeaders(
 
     const unmatched: UnmatchedLeaderRow[] = []
     for (const row of rows) {
-      const mobile = row.leaderMobile?.trim()
+      const mobile = normalizeMobile(row.leaderMobile)
       const email  = row.leaderEmail?.trim()
 
       const found =
@@ -250,7 +261,7 @@ export async function importSmallGroups(
   const result: ImportResult = { total: rows.length, created: 0, linked: 0, updated: 0, skipped: 0, errors: [] }
 
   // ── Pre-flight batch reads — O(5) queries regardless of row count ──────────
-  const mobiles        = [...new Set(rows.map((r) => r.mapped.leaderMobile?.trim()).filter(Boolean))] as string[]
+  const mobiles        = [...new Set(rows.map((r) => normalizeMobile(r.mapped.leaderMobile)).filter(Boolean))] as string[]
   const emails         = [...new Set(rows.map((r) => r.mapped.leaderEmail?.trim()).filter(Boolean))]  as string[]
   const parentNames    = [...new Set(rows.map((r) => r.mapped.parentGroupName?.trim()).filter(Boolean))] as string[]
   const lifeStageNames = [...new Set(rows.map((r) => r.mapped.lifeStage?.trim()).filter(Boolean))]    as string[]
@@ -269,6 +280,10 @@ export async function importSmallGroups(
 
   // Cache for members created during this run (same leader leading multiple groups)
   const createdLeaderCache = new Map<string, string>()
+
+  // Leaders whose small group was created/updated this run — used afterward to
+  // back-fill breakout groups they facilitate that have no linked small group yet.
+  const touchedLeaderIds = new Set<string>()
 
   for (let i = 0; i < rows.length; i++) {
     const { mapped, resolution, existingId, leaderId: preResolvedLeaderId, createLeader } = rows[i]
@@ -291,7 +306,7 @@ export async function importSmallGroups(
       let leaderId: string | null = preResolvedLeaderId ?? null
 
       if (!leaderId) {
-        const mobile = mapped.leaderMobile?.trim()
+        const mobile = normalizeMobile(mapped.leaderMobile)
         const email  = mapped.leaderEmail?.trim()
         leaderId =
           (mobile && phoneToMemberId.get(mobile.toLowerCase())) ||
@@ -300,7 +315,7 @@ export async function importSmallGroups(
       }
 
       if (!leaderId && createLeader) {
-        const mobile   = createLeader.mobile?.trim()
+        const mobile   = normalizeMobile(createLeader.mobile)
         const email    = createLeader.email?.trim()
         const cacheKey = getCreatedLeaderCacheKey(
           createLeader.firstName,
@@ -405,21 +420,25 @@ export async function importSmallGroups(
           result.skipped++
           continue
         }
+        const enriched = enrichSmallGroupData(existing, data)
         await db.smallGroup.update({
           where: { id: existingId },
-          data: enrichSmallGroupData(existing, data),
+          data: enriched,
         })
+        if (enriched.leaderId) touchedLeaderIds.add(enriched.leaderId)
         result.updated++
         continue
       }
 
       if (existingId && resolution === "use-csv") {
         await db.smallGroup.update({ where: { id: existingId }, data })
+        if (data.leaderId) touchedLeaderIds.add(data.leaderId)
         result.updated++
         continue
       }
 
       await db.smallGroup.create({ data })
+      if (data.leaderId) touchedLeaderIds.add(data.leaderId)
       result.created++
     } catch (e) {
       console.error(`[importSmallGroups] row ${i} failed:`, e)
@@ -437,9 +456,54 @@ export async function importSmallGroups(
     }
   }
 
+  await linkBreakoutGroupsForLeaders([...touchedLeaderIds])
+
   revalidatePath("/small-groups")
   return { success: true, data: result }
   } catch {
     return { success: false, error: "Import failed unexpectedly" }
+  }
+}
+
+/**
+ * After importing small groups, back-fill the `linkedSmallGroupId` of any
+ * breakout group whose facilitator now leads exactly one small group and which
+ * has no linked small group yet. Mirrors the form's auto-link behaviour
+ * (`ledGroups.length === 1`) so a facilitator's small group imported *after*
+ * the breakout group was created gets picked up automatically.
+ */
+async function linkBreakoutGroupsForLeaders(leaderIds: string[]): Promise<void> {
+  if (leaderIds.length === 0) return
+
+  const affectedEventIds = new Set<string>()
+
+  for (const leaderId of leaderIds) {
+    // Only auto-link when the leader leads a single small group — otherwise the
+    // correct source group is ambiguous (same rule the create/edit form uses).
+    const ledGroups = await db.smallGroup.findMany({
+      where: { leaderId },
+      select: { id: true },
+    })
+    if (ledGroups.length !== 1) continue
+    const smallGroupId = ledGroups[0].id
+
+    const breakouts = await db.breakoutGroup.findMany({
+      where: {
+        linkedSmallGroupId: null,
+        facilitator: { is: { memberId: leaderId } },
+      },
+      select: { id: true, eventId: true },
+    })
+    if (breakouts.length === 0) continue
+
+    await db.breakoutGroup.updateMany({
+      where: { id: { in: breakouts.map((b) => b.id) } },
+      data: { linkedSmallGroupId: smallGroupId },
+    })
+    for (const b of breakouts) affectedEventIds.add(b.eventId)
+  }
+
+  for (const eventId of affectedEventIds) {
+    revalidatePath(`/event/${eventId}/breakouts`)
   }
 }

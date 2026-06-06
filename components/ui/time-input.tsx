@@ -6,7 +6,11 @@ import { cn } from "@/lib/utils"
 type TimeInputProps = {
   value: string
   onChange?: (value: string) => void
-  variant?: "default" | "inline"
+  /**
+   * "default" = bordered box (forms), "inline" = dashed underline (match sections),
+   * "bare" = no border/box — for composing inside another bordered container.
+   */
+  variant?: "default" | "inline" | "bare"
   className?: string
   disabled?: boolean
   "aria-invalid"?: boolean | "true" | "false"
@@ -175,9 +179,11 @@ export function TimeInput({
       disabled={disabled}
       className={cn(
         "min-w-0 bg-transparent outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed font-mono",
-        variant === "default"
-          ? "flex-1 pl-3 text-sm leading-none tracking-widest"
-          : "w-[4.5ch] text-sm tracking-wider",
+        variant === "inline"
+          ? "w-[4.5ch] text-sm tracking-wider"
+          : variant === "bare"
+            ? "flex-1 text-sm leading-none tracking-widest"
+            : "flex-1 pl-3 text-sm leading-none tracking-widest",
       )}
     />
   )
@@ -190,12 +196,33 @@ export function TimeInput({
       tabIndex={-1}
       className={cn(
         "select-none transition-colors text-muted-foreground hover:text-foreground text-sm",
-        variant === "default" ? "pr-3 pl-1.5 leading-none shrink-0" : "leading-none",
+        variant === "default"
+          ? "pr-3 pl-1.5 leading-none shrink-0"
+          : variant === "bare"
+            ? "pl-1.5 leading-none shrink-0"
+            : "leading-none",
       )}
     >
       {period}
     </button>
   )
+
+  if (variant === "bare") {
+    return (
+      <div
+        data-slot="time-input"
+        aria-invalid={ariaInvalid}
+        className={cn(
+          "flex w-full min-w-0 items-center",
+          disabled && "pointer-events-none opacity-50",
+          className,
+        )}
+      >
+        {inputEl}
+        {periodButton}
+      </div>
+    )
+  }
 
   if (variant === "inline") {
     return (
