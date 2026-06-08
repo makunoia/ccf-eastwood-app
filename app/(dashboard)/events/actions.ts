@@ -279,6 +279,17 @@ export async function updateEvent(
   }
 
   try {
+    const existing = await db.event.findUnique({
+      where: { id },
+      select: { type: true },
+    })
+    if (!existing) return { success: false, error: "Event not found" }
+
+    // Event type is immutable after creation — ignore any submitted change
+    // and key all type-dependent fields off the stored type.
+    const type = existing.type
+    const isRecurring = type === "Recurring"
+
     await db.$transaction([
       db.eventMinistry.deleteMany({ where: { eventId: id } }),
       db.event.update({
@@ -286,15 +297,14 @@ export async function updateEvent(
         data: {
           name: parsed.data.name,
           description: parsed.data.description ?? null,
-          type: parsed.data.type,
           startDate: parsed.data.startDate,
           endDate: parsed.data.endDate ?? parsed.data.startDate,
-          price: parsed.data.type === "Recurring" ? null : (parsed.data.price ?? null),
-          registrationStart: parsed.data.type === "Recurring" ? null : (parsed.data.registrationStart ?? null),
-          registrationEnd: parsed.data.type === "Recurring" ? null : (parsed.data.registrationEnd ?? null),
-          recurrenceDayOfWeek: parsed.data.type === "Recurring" ? parsed.data.recurrenceDayOfWeek : null,
-          recurrenceFrequency: parsed.data.type === "Recurring" ? (parsed.data.recurrenceFrequency ?? null) : null,
-          recurrenceEndDate: parsed.data.type === "Recurring" ? (parsed.data.recurrenceEndDate ?? null) : null,
+          price: isRecurring ? null : (parsed.data.price ?? null),
+          registrationStart: isRecurring ? null : (parsed.data.registrationStart ?? null),
+          registrationEnd: isRecurring ? null : (parsed.data.registrationEnd ?? null),
+          recurrenceDayOfWeek: isRecurring ? parsed.data.recurrenceDayOfWeek : null,
+          recurrenceFrequency: isRecurring ? (parsed.data.recurrenceFrequency ?? null) : null,
+          recurrenceEndDate: isRecurring ? (parsed.data.recurrenceEndDate ?? null) : null,
           ministries: parsed.data.ministryIds?.length
             ? { create: parsed.data.ministryIds.map((ministryId) => ({ ministryId })) }
             : undefined,
@@ -303,6 +313,7 @@ export async function updateEvent(
     ])
     revalidatePath("/events")
     revalidatePath(`/events/${id}`)
+    revalidatePath(`/event/${id}`, "layout")
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to update event" }

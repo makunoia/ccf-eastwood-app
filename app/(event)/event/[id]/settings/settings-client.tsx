@@ -6,6 +6,7 @@ import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
@@ -38,6 +39,8 @@ import { LogoUploader } from "@/components/logo-uploader"
 import { ColorThemePicker, type ColorTheme } from "@/components/color-theme-picker"
 import { updateEventBranding, type EventBrandingValues } from "@/app/(dashboard)/events/branding-actions"
 import { updateRegistrationPage, type RegistrationPageValues } from "@/app/(dashboard)/events/registration-page-actions"
+import { updateEvent } from "@/app/(dashboard)/events/actions"
+import { type EventFormValues } from "@/lib/validations/event"
 import { Textarea } from "@/components/ui/textarea"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -66,6 +69,8 @@ type FormModules = Record<RegistrationFormModule, boolean>
 
 type Props = {
   eventId: string
+  details: EventFormValues
+  allMinistries: { id: string; name: string }[]
   enabledModules: string[]
   buses: BusRow[]
   committees: Committee[]
@@ -416,10 +421,304 @@ function RegistrationPageTab({
   )
 }
 
+// ─── Details tab ──────────────────────────────────────────────────────────────
+
+const DAY_OF_WEEK_OPTIONS = [
+  { value: "0", label: "Sunday" },
+  { value: "1", label: "Monday" },
+  { value: "2", label: "Tuesday" },
+  { value: "3", label: "Wednesday" },
+  { value: "4", label: "Thursday" },
+  { value: "5", label: "Friday" },
+  { value: "6", label: "Saturday" },
+]
+
+function DetailsTab({
+  eventId,
+  initial,
+  allMinistries,
+}: {
+  eventId: string
+  initial: EventFormValues
+  allMinistries: { id: string; name: string }[]
+}) {
+  const [form, setForm] = React.useState<EventFormValues>(initial)
+  const [saving, setSaving] = React.useState(false)
+  const [dirty, setDirty] = React.useState(false)
+
+  const isRecurring = form.type === "Recurring"
+
+  function set(field: keyof EventFormValues, value: string) {
+    setDirty(true)
+    setForm((prev) => ({ ...prev, [field]: value }))
+  }
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    const result = await updateEvent(eventId, form)
+    setSaving(false)
+    if (result.success) {
+      setDirty(false)
+      toast.success("Event updated")
+    } else {
+      toast.error(result.error)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSave} className="max-w-2xl space-y-8">
+      {/* Basic Info */}
+      <section className="space-y-4">
+        <h3 className="type-label text-muted-foreground">Basic Information</h3>
+        <div className="space-y-2">
+          <Label htmlFor="name">
+            Event Name <span className="text-destructive">*</span>
+          </Label>
+          <Input
+            id="name"
+            value={form.name}
+            onChange={(e) => set("name", e.target.value)}
+            placeholder="Family Camp 2026"
+            required
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label>Ministry</Label>
+          <p className="text-xs text-muted-foreground">
+            Select one or more ministries, or leave blank for a ministry-agnostic event.
+          </p>
+          {allMinistries.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No ministries configured.</p>
+          ) : (
+            <div className="space-y-2 rounded-md border p-3">
+              {allMinistries.map((m) => (
+                <div key={m.id} className="flex items-center gap-2">
+                  <Checkbox
+                    id={`ministry-${m.id}`}
+                    checked={form.ministryIds.includes(m.id)}
+                    onCheckedChange={(checked) => {
+                      setDirty(true)
+                      setForm((prev) => ({
+                        ...prev,
+                        ministryIds: checked
+                          ? [...prev.ministryIds, m.id]
+                          : prev.ministryIds.filter((id) => id !== m.id),
+                      }))
+                    }}
+                  />
+                  <label
+                    htmlFor={`ministry-${m.id}`}
+                    className="text-sm leading-none cursor-pointer"
+                  >
+                    {m.name}
+                  </label>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="type">Event Type</Label>
+          <Select value={form.type} disabled>
+            <SelectTrigger id="type">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="OneTime">One-time</SelectItem>
+              <SelectItem value="MultiDay">Multi-day</SelectItem>
+              <SelectItem value="Recurring">Recurring</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Event type is set at creation and can&apos;t be changed afterwards.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="description">Description</Label>
+          <Textarea
+            id="description"
+            value={form.description}
+            onChange={(e) => set("description", e.target.value)}
+            placeholder="A brief description of the event…"
+            rows={3}
+          />
+        </div>
+      </section>
+
+      {/* Dates */}
+      <section className="space-y-4">
+        <h3 className="type-label text-muted-foreground">Event Dates</h3>
+        {form.type === "MultiDay" ? (
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="startDate">
+                Start Date <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="startDate"
+                type="date"
+                value={form.startDate}
+                onChange={(e) => set("startDate", e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="endDate">
+                End Date <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="endDate"
+                type="date"
+                value={form.endDate}
+                onChange={(e) => set("endDate", e.target.value)}
+                required
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <Label htmlFor="startDate">
+              {isRecurring ? "Series Start Date" : "Date"}{" "}
+              <span className="text-destructive">*</span>
+            </Label>
+            <Input
+              id="startDate"
+              type="date"
+              value={form.startDate}
+              onChange={(e) => set("startDate", e.target.value)}
+              required
+            />
+          </div>
+        )}
+      </section>
+
+      {/* Recurring Settings */}
+      {isRecurring && (
+        <section className="space-y-4">
+          <h3 className="type-label text-muted-foreground">Recurrence Settings</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="recurrenceDayOfWeek">
+                Day of Week <span className="text-destructive">*</span>
+              </Label>
+              <Select
+                value={form.recurrenceDayOfWeek}
+                onValueChange={(v) => set("recurrenceDayOfWeek", v)}
+              >
+                <SelectTrigger id="recurrenceDayOfWeek">
+                  <SelectValue placeholder="Select day" />
+                </SelectTrigger>
+                <SelectContent>
+                  {DAY_OF_WEEK_OPTIONS.map((d) => (
+                    <SelectItem key={d.value} value={d.value}>
+                      {d.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="recurrenceFrequency">
+                Frequency <span className="text-destructive">*</span>
+              </Label>
+              <Select
+                value={form.recurrenceFrequency}
+                onValueChange={(v) => set("recurrenceFrequency", v)}
+              >
+                <SelectTrigger id="recurrenceFrequency">
+                  <SelectValue placeholder="Select frequency" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Weekly">Weekly</SelectItem>
+                  <SelectItem value="Biweekly">Biweekly</SelectItem>
+                  <SelectItem value="Monthly">Monthly</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="recurrenceEndDate">End Date</Label>
+            <Input
+              id="recurrenceEndDate"
+              type="date"
+              value={form.recurrenceEndDate}
+              onChange={(e) => set("recurrenceEndDate", e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Leave blank if the series runs indefinitely.
+            </p>
+          </div>
+        </section>
+      )}
+
+      {/* Registration — not applicable for Recurring events */}
+      {!isRecurring && (
+        <section className="space-y-4">
+          <h3 className="type-label text-muted-foreground">Registration Window</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="registrationStart">Opens</Label>
+              <Input
+                id="registrationStart"
+                type="date"
+                value={form.registrationStart}
+                onChange={(e) => set("registrationStart", e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="registrationEnd">Closes</Label>
+              <Input
+                id="registrationEnd"
+                type="date"
+                value={form.registrationEnd}
+                onChange={(e) => set("registrationEnd", e.target.value)}
+              />
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Pricing — not applicable for Recurring events */}
+      {!isRecurring && (
+        <section className="space-y-4">
+          <h3 className="type-label text-muted-foreground">Pricing</h3>
+          <div className="space-y-2">
+            <Label htmlFor="price">Price (PHP)</Label>
+            <Input
+              id="price"
+              type="number"
+              min="0"
+              step="0.01"
+              value={form.price}
+              onChange={(e) => set("price", e.target.value)}
+              placeholder="Leave blank for free"
+            />
+            <p className="text-xs text-muted-foreground">
+              Leave blank if the event is free.
+            </p>
+          </div>
+        </section>
+      )}
+
+      {dirty && (
+        <Button type="submit" disabled={saving}>
+          {saving ? "Saving…" : "Save changes"}
+        </Button>
+      )}
+    </form>
+  )
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function EventSettingsClient({
   eventId,
+  details,
+  allMinistries,
   enabledModules,
   buses,
   committees,
@@ -489,14 +788,19 @@ export function EventSettingsClient({
         <p className="text-sm text-muted-foreground">Configure modules and options for this event</p>
       </div>
 
-      <Tabs defaultValue="modules">
+      <Tabs defaultValue="details">
         <TabsList>
+          <TabsTrigger value="details">Details</TabsTrigger>
           <TabsTrigger value="modules">Modules</TabsTrigger>
           <TabsTrigger value="registration-form">Registration Form</TabsTrigger>
           <TabsTrigger value="registration-page">Registration & Check-in Page</TabsTrigger>
           <TabsTrigger value="committees">Committees</TabsTrigger>
           <TabsTrigger value="branding">Branding</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="details" className="mt-6">
+          <DetailsTab eventId={eventId} initial={details} allMinistries={allMinistries} />
+        </TabsContent>
 
         <TabsContent value="modules" className="mt-6">
           <section className="space-y-4 max-w-2xl">

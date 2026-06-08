@@ -2,13 +2,26 @@ import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { EventSettingsClient } from "./settings-client"
 
+function toDateInput(d: Date | null): string {
+  return d ? d.toISOString().split("T")[0] : ""
+}
+
 async function getEventSettings(id: string) {
   return db.event.findUnique({
     where: { id },
     select: {
       id: true,
       name: true,
+      description: true,
       type: true,
+      startDate: true,
+      endDate: true,
+      price: true,
+      registrationStart: true,
+      registrationEnd: true,
+      recurrenceDayOfWeek: true,
+      recurrenceFrequency: true,
+      recurrenceEndDate: true,
       useMinistryBrand: true,
       brandMinistryId: true,
       logoUrl: true,
@@ -68,7 +81,10 @@ export default async function EventSettingsPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const event = await getEventSettings(id)
+  const [event, allMinistries] = await Promise.all([
+    getEventSettings(id),
+    db.ministry.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+  ])
   if (!event) notFound()
 
   const showEmbarkation = event.type !== "Recurring"
@@ -78,6 +94,22 @@ export default async function EventSettingsPage({
   return (
     <EventSettingsClient
       eventId={event.id}
+      allMinistries={allMinistries}
+      details={{
+        name: event.name,
+        description: event.description ?? "",
+        ministryIds: event.ministries.map((em) => em.ministry.id),
+        type: event.type,
+        startDate: toDateInput(event.startDate),
+        endDate: toDateInput(event.endDate),
+        price: event.price != null ? (event.price / 100).toFixed(2) : "",
+        registrationStart: toDateInput(event.registrationStart),
+        registrationEnd: toDateInput(event.registrationEnd),
+        recurrenceDayOfWeek:
+          event.recurrenceDayOfWeek != null ? String(event.recurrenceDayOfWeek) : "",
+        recurrenceFrequency: event.recurrenceFrequency ?? "",
+        recurrenceEndDate: toDateInput(event.recurrenceEndDate),
+      }}
       enabledModules={event.modules.map((m) => m.type)}
       buses={event.buses}
       committees={event.committees}

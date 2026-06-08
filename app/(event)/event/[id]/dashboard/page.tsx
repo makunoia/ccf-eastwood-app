@@ -2,7 +2,7 @@ import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { EventDashboardClient } from "./dashboard-client"
 import { ensureMultiDayOccurrences } from "@/app/(dashboard)/events/actions"
-import { groupOccurrencesBySeries } from "@/lib/events/occurrence-series"
+import { loadRecurringSeriesSummaries } from "@/lib/events/series-summary"
 
 type PeriodFilter = "7d" | "30d" | "90d" | "all"
 type LeaderRoleFilter = "all" | "Timothy" | "Leader"
@@ -46,15 +46,6 @@ async function getEventDashboard(id: string, period: PeriodFilter, roleFilter: L
       },
       breakoutGroups: {
         select: { id: true },
-      },
-      occurrenceSeries: {
-        orderBy: { startDate: "desc" },
-        select: {
-          id: true,
-          title: true,
-          startDate: true,
-          endDate: true,
-        },
       },
       _count: {
         select: { registrants: true, occurrences: true },
@@ -141,20 +132,11 @@ async function getEventDashboard(id: string, period: PeriodFilter, roleFilter: L
           },
         })
 
+  // Series summaries are whole-series rollups — they must reflect the entire
+  // series, not the dashboard's rolling period window. Loaded via a dedicated
+  // unfiltered query. See loadRecurringSeriesSummaries.
   const recurringSeriesSummaries =
-    event.type === "Recurring"
-      ? groupOccurrencesBySeries(
-          event.occurrenceSeries,
-          occurrenceSeries.map((occurrence) => ({
-            id: occurrence.id,
-            date: occurrence.date,
-            isOpen: occurrence.isOpen,
-            isStandalone: occurrence.isStandalone,
-            attendeeCount: occurrence._count.attendees,
-            seriesId: occurrence.seriesId,
-          })),
-        ).groups
-      : []
+    event.type === "Recurring" ? await loadRecurringSeriesSummaries(db, event.id) : []
 
   const uniqueAttendees =
     event.type === "OneTime"
