@@ -1,9 +1,7 @@
 "use client"
 
 import { usePathname, useRouter } from "next/navigation"
-import { IconX } from "@tabler/icons-react"
-import { SearchInput } from "@/components/search-input"
-import { Button } from "@/components/ui/button"
+import { FilterBar, FilterField } from "@/components/filter-bar"
 import {
   Select,
   SelectContent,
@@ -30,7 +28,8 @@ export function VolunteersFilters({
   const router = useRouter()
   const pathname = usePathname()
 
-  const hasFilters = search || status || committeeId
+  const activeCount = [status, committeeId].filter(Boolean).length
+  const hasFilters = Boolean(search) || activeCount > 0
 
   function buildUrl(overrides: Record<string, string>) {
     const params = new URLSearchParams()
@@ -47,54 +46,51 @@ export function VolunteersFilters({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <SearchInput
-        defaultValue={search}
-        placeholder="Search volunteers..."
-        onChange={(value) => setFilter("search", value)}
-        className="min-w-48"
-      />
-
-      <Select
-        value={status || "all"}
-        onValueChange={(v) => setFilter("status", v === "all" ? "" : v)}
-      >
-        <SelectTrigger className="w-36">
-          <SelectValue placeholder="Status" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All Statuses</SelectItem>
-          <SelectItem value="Pending">Pending</SelectItem>
-          <SelectItem value="Confirmed">Confirmed</SelectItem>
-          <SelectItem value="Rejected">Rejected</SelectItem>
-        </SelectContent>
-      </Select>
-
-      {committees.length > 0 && (
+    <FilterBar
+      searchValue={search}
+      searchPlaceholder="Search volunteers..."
+      onSearch={(value) => setFilter("search", value)}
+      activeCount={activeCount}
+      hasActive={hasFilters}
+      onClear={() => router.replace(pathname)}
+    >
+      <FilterField label="Status">
         <Select
-          value={committeeId || "all"}
-          onValueChange={(v) => setFilter("committeeId", v === "all" ? "" : v)}
+          value={status || "all"}
+          onValueChange={(v) => setFilter("status", v === "all" ? "" : v)}
         >
-          <SelectTrigger className="w-40">
-            <SelectValue placeholder="Committee" />
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Committees</SelectItem>
-            {committees.map((c) => (
-              <SelectItem key={c.id} value={c.id}>
-                {c.name}
-              </SelectItem>
-            ))}
+            <SelectItem value="all">All Statuses</SelectItem>
+            <SelectItem value="Pending">Pending</SelectItem>
+            <SelectItem value="Confirmed">Confirmed</SelectItem>
+            <SelectItem value="Rejected">Rejected</SelectItem>
           </SelectContent>
         </Select>
-      )}
+      </FilterField>
 
-      {hasFilters && (
-        <Button variant="ghost" size="sm" onClick={() => router.replace(pathname)}>
-          <IconX className="size-4" />
-          Clear
-        </Button>
+      {committees.length > 0 && (
+        <FilterField label="Committee">
+          <Select
+            value={committeeId || "all"}
+            onValueChange={(v) => setFilter("committeeId", v === "all" ? "" : v)}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Committee" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Committees</SelectItem>
+              {committees.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FilterField>
       )}
-    </div>
+    </FilterBar>
   )
 }

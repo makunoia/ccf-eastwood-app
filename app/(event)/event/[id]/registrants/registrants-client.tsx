@@ -36,7 +36,8 @@ import {
 } from "@/components/ui/select"
 import { OptionalEmailInput } from "@/components/ui/optional-email-input"
 import { OptionalPhonePHInput } from "@/components/ui/optional-phone-ph-input"
-import { SearchInput } from "@/components/search-input"
+import { FilterBar, FilterField } from "@/components/filter-bar"
+import { PageActions, PageHeader, type PageAction } from "@/components/page-header"
 import { ImportWizard } from "@/components/import/import-wizard"
 import { getEventRegistrantFields } from "@/lib/import/field-definitions"
 import {
@@ -391,33 +392,30 @@ function RegistrantsFilters({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <SearchInput
-        defaultValue={search}
-        placeholder="Search registrants..."
-        onChange={(value) => setFilter("search", value)}
-        className="min-w-48"
-      />
-      <Select
-        value={typeFilter || "all"}
-        onValueChange={(v) => setFilter("type", v === "all" ? "" : v)}
-      >
-        <SelectTrigger className="w-36">
-          <SelectValue placeholder="All Types" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All Types</SelectItem>
-          <SelectItem value="member">Members</SelectItem>
-          <SelectItem value="guest">Guests</SelectItem>
-        </SelectContent>
-      </Select>
-      {hasFilters && (
-        <Button variant="ghost" size="sm" onClick={() => router.replace(pathname)}>
-          <IconX className="size-4" />
-          Clear
-        </Button>
-      )}
-    </div>
+    <FilterBar
+      searchValue={search}
+      searchPlaceholder="Search registrants..."
+      onSearch={(value) => setFilter("search", value)}
+      activeCount={typeFilter ? 1 : 0}
+      hasActive={Boolean(hasFilters)}
+      onClear={() => router.replace(pathname)}
+    >
+      <FilterField label="Type">
+        <Select
+          value={typeFilter || "all"}
+          onValueChange={(v) => setFilter("type", v === "all" ? "" : v)}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="All Types" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Types</SelectItem>
+            <SelectItem value="member">Members</SelectItem>
+            <SelectItem value="guest">Guests</SelectItem>
+          </SelectContent>
+        </Select>
+      </FilterField>
+    </FilterBar>
   )
 }
 
@@ -472,42 +470,41 @@ export function RegistrantsClient({
     />
   )
 
-  const toolbar = (
-    <div className="flex items-center gap-2">
-      <span className="text-sm text-muted-foreground">{registrants.length} shown</span>
-      <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
-        <IconUpload className="size-4" />
-        <span className="hidden sm:inline">Import</span>
-      </Button>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => exportRegistrantsCSV(registrants, eventType, isPaidEvent, eventId)}
-        disabled={registrants.length === 0}
-      >
-        <IconDownload className="size-4" />
-        <span className="hidden sm:inline">Export</span>
-      </Button>
-      <Button variant="outline" size="sm" asChild>
-        <Link href={`/events/${eventId}/register`} target="_blank" rel="noopener noreferrer">
-          <IconExternalLink className="size-4" />
-          <span className="hidden sm:inline">Registration page</span>
-        </Link>
-      </Button>
-      <Button size="sm" onClick={() => setAddDialogOpen(true)}>
-        <IconPlus className="size-4" />
-        <span className="hidden sm:inline">Add</span>
-      </Button>
-    </div>
-  )
+  const toolbarActions: PageAction[] = [
+    {
+      label: "Import",
+      icon: <IconUpload className="size-4" />,
+      onSelect: () => setImportOpen(true),
+    },
+    {
+      label: "Export",
+      icon: <IconDownload className="size-4" />,
+      onSelect: () => exportRegistrantsCSV(registrants, eventType, isPaidEvent, eventId),
+      disabled: registrants.length === 0,
+    },
+    {
+      label: "Registration page",
+      icon: <IconExternalLink className="size-4" />,
+      href: `/events/${eventId}/register`,
+      newTab: true,
+    },
+  ]
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Registrants</h2>
-        {toolbar}
-      </div>
+      <PageHeader
+        title="Registrants"
+        description={`${registrants.length} shown`}
+        actions={
+          <PageActions actions={toolbarActions}>
+            <Button onClick={() => setAddDialogOpen(true)}>
+              <IconPlus className="size-4" />
+              Add
+            </Button>
+          </PageActions>
+        }
+      />
 
       {/* Filters */}
       <RegistrantsFilters search={search} typeFilter={typeFilter} />

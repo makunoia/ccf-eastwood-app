@@ -76,6 +76,7 @@ async function getDetailData(registrantId: string, eventId: string, prismaStatus
       select: {
         id: true,
         notes: true,
+        declineReason: true,
         smallGroupId: true,
         smallGroup: {
           select: {

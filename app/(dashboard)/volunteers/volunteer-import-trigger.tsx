@@ -40,7 +40,7 @@ export function VolunteerImportTrigger({ events }: Props) {
     <>
       <Button variant="outline" onClick={handleOpen}>
         <IconUpload className="size-4" />
-        <span className="hidden sm:inline">Import</span>
+        Import
       </Button>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

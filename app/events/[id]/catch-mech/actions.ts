@@ -1,6 +1,6 @@
 "use server"
 
-import { type Prisma } from "@/app/generated/prisma/client"
+import { DeclineReason, type Prisma } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import { revalidatePath } from "next/cache"
 
@@ -75,7 +75,22 @@ export async function verifyCatchMechFaci(
 export type ConfirmDecision = {
   registrantId: string
   status: "confirmed" | "pending" | "declined"
+  declineReason?: DeclineReason
+  // Free-text detail, only used when declineReason is "Others"
   reason?: string
+}
+
+function validateDecisions(decisions: ConfirmDecision[]): string | null {
+  for (const d of decisions) {
+    if (d.status !== "declined") continue
+    if (!d.declineReason || !(d.declineReason in DeclineReason)) {
+      return "A decline reason is required for every declined member"
+    }
+    if (d.declineReason === "Others" && !d.reason?.trim()) {
+      return "Please specify the reason when declining with Others"
+    }
+  }
+  return null
 }
 
 export type ConfirmResult =
@@ -87,6 +102,11 @@ export async function submitCatchMechConfirmations(
   token: string,
   decisions: ConfirmDecision[]
 ): Promise<ConfirmResult> {
+  const validationError = validateDecisions(decisions)
+  if (validationError) {
+    return { success: false, error: validationError }
+  }
+
   const session = await db.catchMechSession.findUnique({
     where: { token },
     select: {
@@ -163,6 +183,11 @@ export async function createSmallGroupForTimothy(
 ): Promise<ActionResult> {
   if (!groupName.trim()) {
     return { success: false, error: "Group name is required" }
+  }
+
+  const validationError = validateDecisions(decisions)
+  if (validationError) {
+    return { success: false, error: validationError }
   }
 
   const session = await db.catchMechSession.findUnique({
@@ -349,7 +374,7 @@ async function resolveConfirmations(
 ): Promise<void> {
   const now = new Date()
 
-  for (const { registrantId, status, reason } of decisions) {
+  for (const { registrantId, status, declineReason, reason } of decisions) {
     const registrant = registrantMap.get(registrantId)
     if (!registrant) continue
     if (!registrant.memberId && !registrant.guestId) continue
@@ -376,7 +401,7 @@ async function resolveConfirmations(
       if (pendingRequest) {
         await tx.smallGroupMemberRequest.update({
           where: { id: pendingRequest.id },
-          data: { status: "Rejected", resolvedAt: now, breakoutGroupId, notes: reason ?? null },
+          data: { status: "Rejected", resolvedAt: now, breakoutGroupId, declineReason: declineReason ?? null, notes: reason ?? null },
         })
       } else {
         // No pre-existing request (e.g. Timothy's group didn't exist yet at assignment time)
@@ -386,6 +411,7 @@ async function resolveConfirmations(
             breakoutGroupId,
             status: "Rejected",
             resolvedAt: now,
+            declineReason: declineReason ?? null,
             notes: reason ?? null,
             ...(registrant.memberId
               ? { memberId: registrant.memberId }

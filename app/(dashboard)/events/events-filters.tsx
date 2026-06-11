@@ -1,11 +1,8 @@
 "use client"
 
 import { usePathname, useRouter } from "next/navigation"
-import { IconX } from "@tabler/icons-react"
-import { SearchInput } from "@/components/search-input"
-import { Button } from "@/components/ui/button"
+import { FilterBar, FilterField } from "@/components/filter-bar"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import {
   Select,
   SelectContent,
@@ -36,7 +33,8 @@ export function EventsFilters({
   const router = useRouter()
   const pathname = usePathname()
 
-  const hasFilters = search || ministryId || type || dateFrom || dateTo
+  const activeCount = [ministryId, type, dateFrom, dateTo].filter(Boolean).length
+  const hasFilters = Boolean(search) || activeCount > 0
 
   function buildUrl(overrides: Record<string, string>) {
     const params = new URLSearchParams()
@@ -55,72 +53,67 @@ export function EventsFilters({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <SearchInput
-        defaultValue={search}
-        placeholder="Search events..."
-        onChange={(value) => setFilter("search", value)}
-        className="min-w-48"
-      />
+    <FilterBar
+      searchValue={search}
+      searchPlaceholder="Search events..."
+      onSearch={(value) => setFilter("search", value)}
+      activeCount={activeCount}
+      hasActive={hasFilters}
+      onClear={() => router.replace(pathname)}
+    >
+      <FilterField label="Ministry">
+        <Select
+          value={ministryId || "all"}
+          onValueChange={(v) => setFilter("ministryId", v === "all" ? "" : v)}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="Ministry" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Ministries</SelectItem>
+            {ministries.map((m) => (
+              <SelectItem key={m.id} value={m.id}>
+                {m.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </FilterField>
 
-      <Select
-        value={ministryId || "all"}
-        onValueChange={(v) => setFilter("ministryId", v === "all" ? "" : v)}
-      >
-        <SelectTrigger className="w-40">
-          <SelectValue placeholder="Ministry" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All Ministries</SelectItem>
-          {ministries.map((m) => (
-            <SelectItem key={m.id} value={m.id}>
-              {m.name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <FilterField label="Type">
+        <Select
+          value={type || "all"}
+          onValueChange={(v) => setFilter("type", v === "all" ? "" : v)}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="Type" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Types</SelectItem>
+            <SelectItem value="OneTime">One-time</SelectItem>
+            <SelectItem value="MultiDay">Multi-day</SelectItem>
+            <SelectItem value="Recurring">Recurring</SelectItem>
+          </SelectContent>
+        </Select>
+      </FilterField>
 
-      <Select
-        value={type || "all"}
-        onValueChange={(v) => setFilter("type", v === "all" ? "" : v)}
-      >
-        <SelectTrigger className="w-36">
-          <SelectValue placeholder="Type" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All Types</SelectItem>
-          <SelectItem value="OneTime">One-time</SelectItem>
-          <SelectItem value="MultiDay">Multi-day</SelectItem>
-          <SelectItem value="Recurring">Recurring</SelectItem>
-        </SelectContent>
-      </Select>
-
-      <div className="flex items-center gap-1.5">
-        <Label className="text-sm text-muted-foreground whitespace-nowrap">From</Label>
+      <FilterField label="From">
         <Input
           type="date"
           value={dateFrom}
           onChange={(e) => setFilter("dateFrom", e.target.value)}
-          className="w-36 h-9"
+          className="h-9 w-full"
         />
-      </div>
+      </FilterField>
 
-      <div className="flex items-center gap-1.5">
-        <Label className="text-sm text-muted-foreground whitespace-nowrap">To</Label>
+      <FilterField label="To">
         <Input
           type="date"
           value={dateTo}
           onChange={(e) => setFilter("dateTo", e.target.value)}
-          className="w-36 h-9"
+          className="h-9 w-full"
         />
-      </div>
-
-      {hasFilters && (
-        <Button variant="ghost" size="sm" onClick={() => router.replace(pathname)}>
-          <IconX className="size-4" />
-          Clear
-        </Button>
-      )}
-    </div>
+      </FilterField>
+    </FilterBar>
   )
 }

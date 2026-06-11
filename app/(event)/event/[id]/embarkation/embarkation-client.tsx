@@ -11,6 +11,7 @@ import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { PageHeader } from "@/components/page-header"
 import {
   Dialog,
   DialogContent,
@@ -145,7 +146,7 @@ export function EmbarkationClient({ eventId, buses, registrants, volunteers }: P
   if (buses.length === 0) {
     return (
       <div className="flex flex-1 flex-col gap-4 p-6">
-        <h2 className="text-lg font-semibold">Embarkation</h2>
+        <PageHeader title="Embarkation" />
         <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
           <IconBus className="size-8" />
           <p className="text-sm">No buses configured.</p>
@@ -159,21 +160,21 @@ export function EmbarkationClient({ eventId, buses, registrants, volunteers }: P
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Embarkation</h2>
-        <div className="flex flex-wrap gap-2">
-          {buses.map((bus) => (
-            <Badge key={bus.id} variant="outline" className="gap-1.5">
-              <IconBus className="size-3.5" />
-              {bus.name} — {bus.passengers.length}{bus.capacity != null ? `/${bus.capacity}` : ""}
-            </Badge>
-          ))}
-          {unassignedRegistrants.length + unassignedVolunteers.length > 0 && (
-            <Badge variant="outline" className="text-muted-foreground">
-              {unassignedRegistrants.length + unassignedVolunteers.length} unassigned
-            </Badge>
-          )}
-        </div>
+      <PageHeader title="Embarkation" />
+
+      {/* Bus occupancy summary */}
+      <div className="flex flex-wrap gap-2">
+        {buses.map((bus) => (
+          <Badge key={bus.id} variant="outline" className="gap-1.5">
+            <IconBus className="size-3.5" />
+            {bus.name} — {bus.passengers.length}{bus.capacity != null ? `/${bus.capacity}` : ""}
+          </Badge>
+        ))}
+        {unassignedRegistrants.length + unassignedVolunteers.length > 0 && (
+          <Badge variant="outline" className="text-muted-foreground">
+            {unassignedRegistrants.length + unassignedVolunteers.length} unassigned
+          </Badge>
+        )}
       </div>
 
       {/* Per-bus tables */}

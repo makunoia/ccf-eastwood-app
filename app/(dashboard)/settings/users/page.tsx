@@ -2,6 +2,7 @@ import { db } from "@/lib/db"
 import { type UserRow, type EventOption } from "./columns"
 import { UsersTable } from "./users-table"
 import { UsersToolbar } from "./toolbar"
+import { PageHeader } from "@/components/page-header"
 import type { FeatureArea, PermissionAction } from "@/app/generated/prisma/client"
 
 type PermissionEntry = { feature: FeatureArea; actions: PermissionAction[] }
@@ -69,15 +70,11 @@ export default async function UsersPage() {
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="type-headline">Users</h2>
-          <p className="text-sm text-muted-foreground">
-            Manage admin accounts and their feature access
-          </p>
-        </div>
-        <UsersToolbar events={events} />
-      </div>
+      <PageHeader
+        title="Users"
+        description="Manage admin accounts and their feature access"
+        actions={<UsersToolbar events={events} />}
+      />
 
       <UsersTable users={users} events={events} />
     </div>

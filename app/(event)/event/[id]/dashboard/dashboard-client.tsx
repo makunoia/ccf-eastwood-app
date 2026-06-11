@@ -1,24 +1,46 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname, useSearchParams } from "next/navigation"
+import { usePathname } from "next/navigation"
 import {
-  IconCircleCheck,
-  IconCircleOff,
-  IconClock,
   IconCopy,
   IconUserCheck,
   IconUserQuestion,
   IconUsers,
   IconUsersGroup,
 } from "@tabler/icons-react"
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Label,
+  LabelList,
+  Pie,
+  PieChart,
+  XAxis,
+  YAxis,
+} from "recharts"
 import { toast } from "sonner"
 
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import {
+  ChartContainer,
+  ChartLegend,
+  ChartLegendContent,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart"
 
 import { cn } from "@/lib/utils"
 
@@ -44,31 +66,30 @@ type EventDashboardData = {
   occurrenceCount: number
   totalCheckIns: number
   period: "7d" | "30d" | "90d" | "all"
-  roleFilter: "all" | "Timothy" | "Leader"
   averageAttendance: number
   uniqueAttendees: number
-  newLeaders: Array<{
-    id: string
-    name: string
-    groupStatus: "Member" | "Timothy" | "Leader" | null
-    updatedAt: string
-  }>
-  confirmedGuestsNowMembers: Array<{
-    id: string
-    name: string
-    memberStatus: "Member" | "Timothy" | "Leader" | null
-    smallGroupName: string
-    resolvedAt: string
-  }>
-  participantsWithoutSmallGroup: Array<{
-    id: string
-    name: string
-    type: "Member" | "Guest"
-  }>
   attendanceSeries: Array<{
     date: string
     attendees: number
   }>
+  registrationSeries: Array<{
+    date: string
+    total: number
+  }>
+  placement: {
+    inGroup: number
+    membersUnassigned: number
+    guestsUnassigned: number
+  }
+  unassignedCount: number
+  pipeline: {
+    registered: number
+    attended: number
+    inSmallGroup: number
+    newTimothys: number
+    newLeaders: number
+  }
+  confirmedGuestsCount: number
   seriesSummaries: Array<{
     id: string
     title: string
@@ -78,28 +99,13 @@ type EventDashboardData = {
     totalAttendance: number
     averageAttendance: number
   }>
-  confirmedVolunteers: Array<{
-    id: string
-    name: string
-  }>
-  unconfirmedVolunteers: Array<{
-    id: string
-    name: string
-    status: "Pending" | "Confirmed" | "Rejected"
-  }>
+  confirmedVolunteerCount: number
   pendingVolunteerCount: number
   rejectedVolunteerCount: number
   brandBackground: string | null
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
-const FREQ_LABELS: Record<string, string> = {
-  Weekly: "Weekly",
-  Biweekly: "Every two weeks",
-  Monthly: "Monthly",
-}
 
 const PERIODS: Array<{ value: EventDashboardData["period"]; label: string }> = [
   { value: "7d", label: "Last 7 days" },
@@ -108,15 +114,60 @@ const PERIODS: Array<{ value: EventDashboardData["period"]; label: string }> = [
   { value: "all", label: "All time" },
 ]
 
-const ROLE_FILTERS: Array<{ value: EventDashboardData["roleFilter"]; label: string }> = [
-  { value: "all", label: "All" },
-  { value: "Timothy", label: "Timothy" },
-  { value: "Leader", label: "Leader" },
-]
-
 const attendanceChartConfig = {
   attendees: {
     label: "Attendance",
+    color: "var(--primary)",
+  },
+} satisfies ChartConfig
+
+const registrationChartConfig = {
+  total: {
+    label: "Registrations",
+    color: "var(--chart-2)",
+  },
+} satisfies ChartConfig
+
+const placementChartConfig = {
+  inGroup: {
+    label: "In a group",
+    color: "var(--chart-2)",
+  },
+  membersUnassigned: {
+    label: "Members unassigned",
+    color: "var(--chart-4)",
+  },
+  guestsUnassigned: {
+    label: "Guests unassigned",
+    color: "var(--chart-1)",
+  },
+} satisfies ChartConfig
+
+const volunteerChartConfig = {
+  confirmed: {
+    label: "Confirmed",
+    color: "var(--chart-2)",
+  },
+  pending: {
+    label: "Pending",
+    color: "var(--chart-4)",
+  },
+  rejected: {
+    label: "Rejected",
+    color: "var(--chart-5)",
+  },
+} satisfies ChartConfig
+
+const pipelineChartConfig = {
+  value: {
+    label: "People",
+    color: "var(--primary)",
+  },
+} satisfies ChartConfig
+
+const seriesChartConfig = {
+  averageAttendance: {
+    label: "Avg attendance",
     color: "var(--primary)",
   },
 } satisfies ChartConfig
@@ -130,27 +181,11 @@ function formatDate(iso: string) {
   })
 }
 
-function getRegistrationStatus(
-  start: string | null,
-  end: string | null
-): "open" | "upcoming" | "closed" | null {
-  if (!start || !end) return null
-  const now = new Date()
-  if (now < new Date(start)) return "upcoming"
-  if (now > new Date(end)) return "closed"
-  return "open"
-}
-
-function formatRecurringSchedule(
-  dayOfWeek: number | null,
-  frequency: string | null
-): string {
-  const day = dayOfWeek != null ? DAY_NAMES[dayOfWeek] : null
-  const freq = frequency ? FREQ_LABELS[frequency] : null
-  if (day && freq) return `Every ${day} · ${freq}`
-  if (day) return `Every ${day}`
-  if (freq) return freq
-  return "Recurring"
+function formatShortDate(value: string) {
+  return new Date(value).toLocaleDateString("en-PH", {
+    month: "short",
+    day: "numeric",
+  })
 }
 
 function formatAverage(value: number) {
@@ -162,21 +197,87 @@ function formatRange(startIso: string, endIso: string) {
   return `${formatDate(startIso)} – ${formatDate(endIso)}`
 }
 
+function DonutCenterLabel({
+  viewBox,
+  value,
+  caption,
+}: {
+  viewBox?: unknown
+  value: string
+  caption: string
+}) {
+  if (!viewBox || typeof viewBox !== "object" || !("cx" in viewBox) || !("cy" in viewBox)) {
+    return null
+  }
+  const { cx, cy } = viewBox as { cx: number; cy: number }
+  return (
+    <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle">
+      <tspan x={cx} y={cy} className="fill-foreground text-2xl font-semibold tabular-nums">
+        {value}
+      </tspan>
+      <tspan x={cx} y={cy + 20} className="fill-muted-foreground text-xs">
+        {caption}
+      </tspan>
+    </text>
+  )
+}
+
+function ChartEmptyState({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex h-45 items-center justify-center">
+      <p className="text-sm text-muted-foreground">{children}</p>
+    </div>
+  )
+}
+
+const drillLinkClass =
+  "text-xs font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function EventDashboardClient({ event }: { event: EventDashboardData }) {
   const pathname = usePathname()
-  const searchParams = useSearchParams()
 
-  const regStatus = getRegistrationStatus(event.registrationStart, event.registrationEnd)
   const isRecurring = event.type === "Recurring"
   const isMultiDay = event.type === "MultiDay"
   const isSeriesEvent = isRecurring || isMultiDay
-  const isPaidEvent = event.price != null
 
-  const totalVolunteers = event.confirmedVolunteers.length + event.unconfirmedVolunteers.length
-  const pendingVolunteers = event.unconfirmedVolunteers.filter((v) => v.status === "Pending")
-  const rejectedVolunteers = event.unconfirmedVolunteers.filter((v) => v.status === "Rejected")
+  const totalVolunteers =
+    event.confirmedVolunteerCount + event.pendingVolunteerCount + event.rejectedVolunteerCount
+
+  const placementTotal =
+    event.placement.inGroup +
+    event.placement.membersUnassigned +
+    event.placement.guestsUnassigned
+  const placementData = [
+    { segment: "inGroup", count: event.placement.inGroup, fill: "var(--color-inGroup)" },
+    {
+      segment: "membersUnassigned",
+      count: event.placement.membersUnassigned,
+      fill: "var(--color-membersUnassigned)",
+    },
+    {
+      segment: "guestsUnassigned",
+      count: event.placement.guestsUnassigned,
+      fill: "var(--color-guestsUnassigned)",
+    },
+  ].filter((slice) => slice.count > 0)
+  const inGroupPercent =
+    placementTotal > 0 ? Math.round((event.placement.inGroup / placementTotal) * 100) : 0
+
+  const volunteerData = [
+    { status: "confirmed", count: event.confirmedVolunteerCount, fill: "var(--color-confirmed)" },
+    { status: "pending", count: event.pendingVolunteerCount, fill: "var(--color-pending)" },
+    { status: "rejected", count: event.rejectedVolunteerCount, fill: "var(--color-rejected)" },
+  ].filter((slice) => slice.count > 0)
+
+  const pipelineData = [
+    { stage: "Registered", value: event.pipeline.registered },
+    { stage: "Attended", value: event.pipeline.attended },
+    { stage: "In small group", value: event.pipeline.inSmallGroup },
+    { stage: "New Timothy", value: event.pipeline.newTimothys },
+    { stage: "New Leader", value: event.pipeline.newLeaders },
+  ]
 
   function copyLink(path: string) {
     const url = `${window.location.origin}${path}`
@@ -184,142 +285,39 @@ export function EventDashboardClient({ event }: { event: EventDashboardData }) {
     toast.success("Link copied")
   }
 
-  function withQuery(updates: Partial<Pick<EventDashboardData, "period" | "roleFilter">>) {
-    const params = new URLSearchParams(searchParams.toString())
-    if (updates.period) params.set("period", updates.period)
-    if (updates.roleFilter) params.set("roleFilter", updates.roleFilter)
-    const query = params.toString()
-    return query ? `${pathname}?${query}` : pathname
-  }
-
   return (
     <div className="flex flex-1 flex-col p-6">
-      {/* Event metadata — same three fields render for every event type:
-          When (Date / Dates / Schedule), Entry (fee or Free), Registration status.
-          A 3-column grid with no vertical dividers keeps the strip visually
-          identical across OneTime, MultiDay, and Recurring events. */}
-      <div className="flex flex-col gap-5 rounded-lg border bg-card px-5 py-4 lg:flex-row lg:items-center lg:justify-between lg:gap-8">
-        <dl className="grid grid-cols-1 gap-x-12 gap-y-4 sm:grid-cols-[1.8fr_1fr_1fr] lg:flex-1">
-          <div className="flex flex-col gap-1">
-            <dt className="text-[11px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">
-              {isRecurring ? "Schedule" : isMultiDay ? "Dates" : "Date"}
-            </dt>
-            <dd className="text-sm font-medium text-foreground">
-              {isRecurring && (
-                <>
-                  {formatRecurringSchedule(event.recurrenceDayOfWeek, event.recurrenceFrequency)}
-                  {" · "}
-                  {event.recurrenceEndDate ? `Ends ${formatDate(event.recurrenceEndDate)}` : "Ongoing"}
-                </>
+      {/* Filters — reads as a toolbar, not a section */}
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+        <div className="flex flex-wrap items-center gap-0.5">
+          {PERIODS.map((period) => (
+            <Link
+              key={period.value}
+              href={`${pathname}?period=${period.value}`}
+              className={cn(
+                "rounded-md px-2.5 py-1.5 text-sm transition-colors",
+                event.period === period.value
+                  ? "bg-muted font-medium text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
               )}
-              {isMultiDay && (
-                <>{formatDate(event.startDate)} – {formatDate(event.endDate)}</>
-              )}
-              {!isSeriesEvent && (
-                <>
-                  {formatDate(event.startDate)}
-                  {event.startDate !== event.endDate && <> – {formatDate(event.endDate)}</>}
-                </>
-              )}
-            </dd>
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <dt className="text-[11px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">
-              Entry
-            </dt>
-            <dd className="text-sm font-medium text-foreground tabular-nums">
-              {/* Recurring events cannot have payment, so "Free" is always accurate */}
-              {!isRecurring && isPaidEvent
-                ? `₱${(event.price! / 100).toLocaleString("en-PH", { minimumFractionDigits: 2 })}`
-                : "Free"}
-            </dd>
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <dt className="text-[11px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">
-              Registration
-            </dt>
-            <dd>
-              {regStatus === "open" && (
-                <span className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground">
-                  <IconCircleCheck className="size-3.5" />
-                  Open
-                </span>
-              )}
-              {regStatus === "upcoming" && (
-                <span className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground">
-                  <IconClock className="size-3.5" />
-                  Upcoming
-                </span>
-              )}
-              {regStatus === "closed" && (
-                <span className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
-                  <IconCircleOff className="size-3.5" />
-                  Closed
-                </span>
-              )}
-              {!regStatus && (
-                <span className="text-sm text-muted-foreground">N/A</span>
-              )}
-            </dd>
-          </div>
-        </dl>
+            >
+              {period.label}
+            </Link>
+          ))}
+        </div>
 
         {/* Check-in link — OneTime only (MultiDay/Recurring check-in is per occurrence via Sessions/Days) */}
         {!isSeriesEvent && (
-          <Button variant="outline" size="sm" onClick={() => copyLink(`/events/${event.id}/checkin`)}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto"
+            onClick={() => copyLink(`/events/${event.id}/checkin`)}
+          >
             <IconCopy className="mr-1.5 size-3.5" />
             Check-in link
           </Button>
         )}
-      </div>
-
-      {/* Filters — tight gap to metadata; reads as a toolbar, not a section */}
-      <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2">
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.15em] text-muted-foreground shrink-0">
-            Period
-          </span>
-          <div className="flex flex-wrap items-center gap-0.5">
-            {PERIODS.map((period) => (
-              <Link
-                key={period.value}
-                href={withQuery({ period: period.value })}
-                className={cn(
-                  "rounded-md px-2.5 py-1.5 text-sm transition-colors",
-                  event.period === period.value
-                    ? "bg-muted font-medium text-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {period.label}
-              </Link>
-            ))}
-          </div>
-        </div>
-        <div className="h-4 w-px bg-border" />
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.15em] text-muted-foreground shrink-0">
-            Role
-          </span>
-          <div className="flex flex-wrap items-center gap-0.5">
-            {ROLE_FILTERS.map((filter) => (
-              <Link
-                key={filter.value}
-                href={withQuery({ roleFilter: filter.value })}
-                className={cn(
-                  "rounded-md px-2.5 py-1.5 text-sm transition-colors",
-                  event.roleFilter === filter.value
-                    ? "bg-muted font-medium text-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {filter.label}
-              </Link>
-            ))}
-          </div>
-        </div>
       </div>
 
       {/* KPI cards — generous gap above signals a new data section */}
@@ -369,7 +367,7 @@ export function EventDashboardClient({ event }: { event: EventDashboardData }) {
             href={`/event/${event.id}/registrants`}
             className="text-3xl font-semibold tabular-nums tracking-tight text-foreground underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors w-fit"
           >
-            {event.participantsWithoutSmallGroup.length.toLocaleString()}
+            {event.unassignedCount.toLocaleString()}
           </Link>
           <p className="text-xs text-muted-foreground">Members and guests still unassigned</p>
         </div>
@@ -384,88 +382,291 @@ export function EventDashboardClient({ event }: { event: EventDashboardData }) {
             </span>
           </div>
           <p className="text-3xl font-semibold tabular-nums tracking-tight text-foreground">
-            {event.confirmedVolunteers.length.toLocaleString()}
+            {event.confirmedVolunteerCount.toLocaleString()}
           </p>
           <p className="text-xs text-muted-foreground">
             {totalVolunteers === 0
               ? "No volunteers yet"
-              : totalVolunteers === event.confirmedVolunteers.length
+              : totalVolunteers === event.confirmedVolunteerCount
                 ? `All ${totalVolunteers} confirmed`
                 : `of ${totalVolunteers} total${event.pendingVolunteerCount > 0 ? ` · ${event.pendingVolunteerCount} pending` : ""}${event.rejectedVolunteerCount > 0 ? ` · ${event.rejectedVolunteerCount} rejected` : ""}`}
           </p>
         </div>
       </div>
 
-      {/* Attendance graph */}
-      {isSeriesEvent && (
-        <Card className="mt-6">
+      {/* Trend row — attendance per session (series events) + cumulative registrations */}
+      <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-12">
+        {isSeriesEvent && (
+          <Card className="xl:col-span-8">
+            <CardHeader>
+              <CardTitle>Attendance by Session</CardTitle>
+              <CardDescription>
+                {event.attendanceSeries.length > 0
+                  ? "Attendance trend in selected period"
+                  : "No attendance data yet in selected period"}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="px-2 pt-4 sm:px-6 sm:pt-6">
+              <ChartContainer config={attendanceChartConfig} className="aspect-auto h-65 w-full">
+                <AreaChart data={event.attendanceSeries}>
+                  <CartesianGrid vertical={false} />
+                  <XAxis
+                    dataKey="date"
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    minTickGap={28}
+                    tickFormatter={formatShortDate}
+                  />
+                  <YAxis
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    width={32}
+                    allowDecimals={false}
+                  />
+                  <ChartTooltip
+                    cursor={false}
+                    content={
+                      <ChartTooltipContent
+                        indicator="dot"
+                        labelFormatter={(value) =>
+                          new Date(value).toLocaleDateString("en-PH", {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          })
+                        }
+                      />
+                    }
+                  />
+                  <Area
+                    dataKey="attendees"
+                    type="natural"
+                    fill="var(--color-attendees)"
+                    fillOpacity={0.1}
+                    stroke="var(--color-attendees)"
+                  />
+                </AreaChart>
+              </ChartContainer>
+            </CardContent>
+          </Card>
+        )}
+
+        <Card className={isSeriesEvent ? "xl:col-span-4" : "xl:col-span-12"}>
           <CardHeader>
-            <CardTitle>Attendance by Session</CardTitle>
-            <CardDescription>
-              {event.attendanceSeries.length > 0
-                ? "Attendance trend in selected period"
-                : "No attendance data yet in selected period"}
-            </CardDescription>
+            <CardTitle>Registration Growth</CardTitle>
+            <CardDescription>Cumulative registrations in selected period</CardDescription>
           </CardHeader>
           <CardContent className="px-2 pt-4 sm:px-6 sm:pt-6">
-            <ChartContainer config={attendanceChartConfig} className="aspect-auto h-65 w-full">
-              <AreaChart data={event.attendanceSeries}>
-                <CartesianGrid vertical={false} />
-                <XAxis
-                  dataKey="date"
-                  tickLine={false}
-                  axisLine={false}
-                  tickMargin={8}
-                  minTickGap={28}
-                  tickFormatter={(value) =>
-                    new Date(value).toLocaleDateString("en-PH", {
-                      month: "short",
-                      day: "numeric",
-                    })
-                  }
-                />
-                <YAxis
-                  tickLine={false}
-                  axisLine={false}
-                  tickMargin={8}
-                  width={32}
-                  allowDecimals={false}
-                />
-                <ChartTooltip
-                  cursor={false}
-                  content={
-                    <ChartTooltipContent
-                      indicator="dot"
-                      labelFormatter={(value) =>
-                        new Date(value).toLocaleDateString("en-PH", {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric",
-                        })
-                      }
-                    />
-                  }
-                />
-                <Area
-                  dataKey="attendees"
-                  type="natural"
-                  fill="var(--color-attendees)"
-                  fillOpacity={0.1}
-                  stroke="var(--color-attendees)"
-                />
-              </AreaChart>
-            </ChartContainer>
+            {event.registrationSeries.length === 0 ? (
+              <ChartEmptyState>No registrations yet in selected period.</ChartEmptyState>
+            ) : (
+              <ChartContainer config={registrationChartConfig} className="aspect-auto h-65 w-full">
+                <AreaChart data={event.registrationSeries}>
+                  <CartesianGrid vertical={false} />
+                  <XAxis
+                    dataKey="date"
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    minTickGap={28}
+                    tickFormatter={formatShortDate}
+                  />
+                  <YAxis
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    width={32}
+                    allowDecimals={false}
+                  />
+                  <ChartTooltip
+                    cursor={false}
+                    content={
+                      <ChartTooltipContent
+                        indicator="dot"
+                        labelFormatter={(value) =>
+                          new Date(value).toLocaleDateString("en-PH", {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          })
+                        }
+                      />
+                    }
+                  />
+                  <Area
+                    dataKey="total"
+                    type="monotone"
+                    fill="var(--color-total)"
+                    fillOpacity={0.1}
+                    stroke="var(--color-total)"
+                  />
+                </AreaChart>
+              </ChartContainer>
+            )}
           </CardContent>
         </Card>
-      )}
+      </div>
 
-      {isRecurring && (
-        <Card className="mt-6">
+      {/* Breakdown row — placement, volunteers, pipeline */}
+      <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <Card className="flex flex-col">
           <CardHeader>
-            <CardTitle>Series Summary</CardTitle>
+            <CardTitle>Small Group Placement</CardTitle>
+            <CardDescription>Participants assigned vs still unassigned</CardDescription>
+          </CardHeader>
+          <CardContent className="flex-1">
+            {placementTotal === 0 ? (
+              <ChartEmptyState>No participants yet.</ChartEmptyState>
+            ) : (
+              <ChartContainer
+                config={placementChartConfig}
+                className="mx-auto aspect-square max-h-55"
+              >
+                <PieChart>
+                  <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
+                  <Pie
+                    data={placementData}
+                    dataKey="count"
+                    nameKey="segment"
+                    innerRadius="55%"
+                    outerRadius="85%"
+                    strokeWidth={5}
+                  >
+                    <Label
+                      content={({ viewBox }) => (
+                        <DonutCenterLabel
+                          viewBox={viewBox}
+                          value={`${inGroupPercent}%`}
+                          caption="in a group"
+                        />
+                      )}
+                    />
+                  </Pie>
+                  <ChartLegend
+                    content={<ChartLegendContent nameKey="segment" />}
+                    className="flex-wrap gap-2"
+                  />
+                </PieChart>
+              </ChartContainer>
+            )}
+          </CardContent>
+          {event.unassignedCount > 0 && (
+            <CardFooter>
+              <Link href={`/event/${event.id}/registrants`} className={drillLinkClass}>
+                View {event.unassignedCount.toLocaleString()} unassigned →
+              </Link>
+            </CardFooter>
+          )}
+        </Card>
+
+        <Card className="flex flex-col">
+          <CardHeader>
+            <CardTitle>Volunteer Status</CardTitle>
+            <CardDescription>Confirmation status across all volunteers</CardDescription>
+          </CardHeader>
+          <CardContent className="flex-1">
+            {totalVolunteers === 0 ? (
+              <ChartEmptyState>No volunteers yet.</ChartEmptyState>
+            ) : (
+              <ChartContainer
+                config={volunteerChartConfig}
+                className="mx-auto aspect-square max-h-55"
+              >
+                <PieChart>
+                  <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
+                  <Pie
+                    data={volunteerData}
+                    dataKey="count"
+                    nameKey="status"
+                    innerRadius="55%"
+                    outerRadius="85%"
+                    strokeWidth={5}
+                  >
+                    <Label
+                      content={({ viewBox }) => (
+                        <DonutCenterLabel
+                          viewBox={viewBox}
+                          value={totalVolunteers.toLocaleString()}
+                          caption={totalVolunteers === 1 ? "volunteer" : "volunteers"}
+                        />
+                      )}
+                    />
+                  </Pie>
+                  <ChartLegend
+                    content={<ChartLegendContent nameKey="status" />}
+                    className="flex-wrap gap-2"
+                  />
+                </PieChart>
+              </ChartContainer>
+            )}
+          </CardContent>
+          <CardFooter>
+            <Link href={`/event/${event.id}/volunteers`} className={drillLinkClass}>
+              Manage volunteers →
+            </Link>
+          </CardFooter>
+        </Card>
+
+        <Card className="flex flex-col md:col-span-2 xl:col-span-1">
+          <CardHeader>
+            <CardTitle>Discipleship Pipeline</CardTitle>
+            <CardDescription>
+              From registration to leadership — attendance and new roles use the selected period
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex-1">
+            {event.pipeline.registered === 0 ? (
+              <ChartEmptyState>No registrants yet.</ChartEmptyState>
+            ) : (
+              <ChartContainer config={pipelineChartConfig} className="aspect-auto h-55 w-full">
+                <BarChart
+                  data={pipelineData}
+                  layout="vertical"
+                  margin={{ left: 0, right: 32 }}
+                >
+                  <XAxis type="number" hide />
+                  <YAxis
+                    dataKey="stage"
+                    type="category"
+                    tickLine={false}
+                    axisLine={false}
+                    width={104}
+                  />
+                  <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
+                  <Bar dataKey="value" fill="var(--color-value)" radius={4}>
+                    <LabelList
+                      dataKey="value"
+                      position="right"
+                      className="fill-foreground"
+                      fontSize={12}
+                    />
+                  </Bar>
+                </BarChart>
+              </ChartContainer>
+            )}
+          </CardContent>
+          {event.confirmedGuestsCount > 0 && (
+            <CardFooter>
+              <p className="text-xs text-muted-foreground">
+                {event.confirmedGuestsCount.toLocaleString()}{" "}
+                {event.confirmedGuestsCount === 1 ? "guest" : "guests"} confirmed to a small group
+                this period
+              </p>
+            </CardFooter>
+          )}
+        </Card>
+      </div>
+
+      {/* Series comparison — Recurring only */}
+      {isRecurring && (
+        <Card className="mt-4">
+          <CardHeader>
+            <CardTitle>Series Comparison</CardTitle>
             <CardDescription>
               {event.seriesSummaries.length > 0
-                ? "Attendance rollups for recurring session groups"
+                ? "Average attendance per recurring session group"
                 : "No recurring series created yet"}
             </CardDescription>
           </CardHeader>
@@ -475,193 +676,65 @@ export function EventDashboardClient({ event }: { event: EventDashboardData }) {
                 Create a series from the Sessions page to start grouping recurring attendance.
               </p>
             ) : (
-              <div className="overflow-x-auto rounded-lg border">
-                <table className="w-full text-sm">
-                  <thead className="border-b bg-muted/50">
-                    <tr>
-                      <th className="px-4 py-3 text-left font-medium">Series</th>
-                      <th className="px-4 py-3 text-left font-medium whitespace-nowrap">Sessions</th>
-                      <th className="px-4 py-3 text-left font-medium whitespace-nowrap">Attendance</th>
-                      <th className="px-4 py-3 text-left font-medium whitespace-nowrap">Average</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {event.seriesSummaries.map((series) => (
-                      <tr key={series.id} className="border-b last:border-0">
-                        <td className="px-4 py-3">
-                          <div className="min-w-0">
-                            <p className="font-medium">{series.title}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {formatRange(series.startDate, series.endDate)}
-                            </p>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap">{series.sessionCount}</td>
-                        <td className="px-4 py-3 whitespace-nowrap">{series.totalAttendance}</td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          {formatAverage(series.averageAttendance)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <ChartContainer
+                config={seriesChartConfig}
+                className="aspect-auto w-full"
+                style={{ height: Math.max(event.seriesSummaries.length * 48, 96) + 16 }}
+              >
+                <BarChart
+                  data={event.seriesSummaries}
+                  layout="vertical"
+                  margin={{ left: 0, right: 40 }}
+                >
+                  <XAxis type="number" hide />
+                  <YAxis
+                    dataKey="title"
+                    type="category"
+                    tickLine={false}
+                    axisLine={false}
+                    width={140}
+                    tickFormatter={(value: string) =>
+                      value.length > 18 ? `${value.slice(0, 17)}…` : value
+                    }
+                  />
+                  <ChartTooltip
+                    cursor={false}
+                    content={
+                      <ChartTooltipContent
+                        labelFormatter={(label, payload) => {
+                          const item = payload?.[0]?.payload as
+                            | EventDashboardData["seriesSummaries"][number]
+                            | undefined
+                          if (!item) return label
+                          return (
+                            <div className="flex flex-col gap-0.5">
+                              <span>{label}</span>
+                              <span className="font-normal text-muted-foreground">
+                                {formatRange(item.startDate, item.endDate)} · {item.sessionCount}{" "}
+                                {item.sessionCount === 1 ? "session" : "sessions"} ·{" "}
+                                {item.totalAttendance.toLocaleString()} total
+                              </span>
+                            </div>
+                          )
+                        }}
+                      />
+                    }
+                  />
+                  <Bar dataKey="averageAttendance" fill="var(--color-averageAttendance)" radius={4}>
+                    <LabelList
+                      dataKey="averageAttendance"
+                      position="right"
+                      className="fill-foreground"
+                      fontSize={12}
+                      formatter={formatAverage}
+                    />
+                  </Bar>
+                </BarChart>
+              </ChartContainer>
             )}
           </CardContent>
         </Card>
       )}
-
-      {/* Lower grid — asymmetric 8/4 split:
-          main column: action-priority content (who needs assignment, volunteer ops)
-          side column: pipeline wins (leaders identified, guests promoted) */}
-      <div className="mt-8 grid grid-cols-1 gap-4 xl:grid-cols-12">
-        <div className="flex flex-col gap-4 xl:col-span-8">
-          <Card>
-            <CardHeader>
-              <CardTitle>Participants Without Small Group</CardTitle>
-              <CardDescription>People who still need assignment</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {event.participantsWithoutSmallGroup.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Everyone is currently assigned.</p>
-              ) : (
-                <>
-                  <div className="divide-y">
-                    {event.participantsWithoutSmallGroup.slice(0, 20).map((person) => (
-                      <div key={person.id} className="flex items-center justify-between gap-2 py-2.5 first:pt-0 last:pb-0">
-                        <p className="text-sm font-medium">{person.name}</p>
-                        <Badge variant="outline">{person.type}</Badge>
-                      </div>
-                    ))}
-                  </div>
-                  {event.participantsWithoutSmallGroup.length > 20 && (
-                    <div className="flex items-center justify-between pt-3 mt-0.5 border-t">
-                      <p className="text-xs text-muted-foreground">
-                        Showing 20 of {event.participantsWithoutSmallGroup.length}
-                      </p>
-                      <Link
-                        href={`/event/${event.id}/registrants`}
-                        className="text-xs font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-                      >
-                        View all
-                      </Link>
-                    </div>
-                  )}
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Volunteer Confirmation</CardTitle>
-              <CardDescription>
-                {event.confirmedVolunteers.length} confirmed
-                {event.pendingVolunteerCount > 0 && ` · ${event.pendingVolunteerCount} pending`}
-                {event.rejectedVolunteerCount > 0 && ` · ${event.rejectedVolunteerCount} rejected`}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="grid grid-cols-1 gap-x-6 gap-y-5 md:grid-cols-2">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.15em] text-muted-foreground mb-2">Confirmed</p>
-                {event.confirmedVolunteers.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No confirmed volunteers yet.</p>
-                ) : (
-                  <div className="divide-y">
-                    {event.confirmedVolunteers.slice(0, 10).map((volunteer) => (
-                      <div key={volunteer.id} className="py-2 first:pt-0 last:pb-0">
-                        <p className="text-sm font-medium">{volunteer.name}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div className="flex flex-col gap-5">
-                {pendingVolunteers.length > 0 && (
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.15em] text-muted-foreground mb-2">Pending</p>
-                    <div className="divide-y">
-                      {pendingVolunteers.slice(0, 5).map((volunteer) => (
-                        <div key={volunteer.id} className="py-2 first:pt-0 last:pb-0">
-                          <p className="text-sm font-medium">{volunteer.name}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {rejectedVolunteers.length > 0 && (
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.15em] text-muted-foreground mb-2">Rejected</p>
-                    <div className="divide-y">
-                      {rejectedVolunteers.slice(0, 5).map((volunteer) => (
-                        <div key={volunteer.id} className="py-2 first:pt-0 last:pb-0">
-                          <p className="text-sm font-medium">{volunteer.name}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {pendingVolunteers.length === 0 && rejectedVolunteers.length === 0 && (
-                  <p className="text-sm text-muted-foreground">All volunteers are confirmed.</p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="flex flex-col gap-4 xl:col-span-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>New Small Group Leaders</CardTitle>
-              <CardDescription>Leaders and Timothys identified in selected period</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {event.newLeaders.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No new leaders in this period.</p>
-              ) : (
-                <div className="divide-y">
-                  {event.newLeaders.map((leader) => (
-                    <div key={leader.id} className="flex items-center justify-between gap-2 py-2.5 first:pt-0 last:pb-0">
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium truncate">{leader.name}</p>
-                        <p className="text-xs text-muted-foreground">Updated {formatDate(leader.updatedAt)}</p>
-                      </div>
-                      <Badge variant="secondary" className="shrink-0">{leader.groupStatus}</Badge>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Guests Confirmed to Small Group</CardTitle>
-              <CardDescription>Guests confirmed and joined a small group in this period</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {event.confirmedGuestsNowMembers.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No confirmed guests matched this filter.</p>
-              ) : (
-                <div className="divide-y">
-                  {event.confirmedGuestsNowMembers.map((guest) => (
-                    <div key={guest.id} className="flex items-center justify-between gap-2 py-2.5 first:pt-0 last:pb-0">
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium truncate">{guest.name}</p>
-                        <p className="text-xs text-muted-foreground truncate">
-                          {guest.smallGroupName} · {formatDate(guest.resolvedAt)}
-                        </p>
-                      </div>
-                      <Badge variant="secondary" className="shrink-0">{guest.memberStatus ?? "Member"}</Badge>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-
     </div>
   )
 }

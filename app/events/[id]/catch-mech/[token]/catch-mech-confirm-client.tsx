@@ -6,8 +6,12 @@ import {
   createSmallGroupForTimothy,
   type ConfirmDecision,
 } from "../actions"
+import type { DeclineReason } from "@/app/generated/prisma/client"
+import { DECLINE_REASON_OPTIONS } from "@/lib/decline-reason"
 
 type RowDecision = "confirm" | "pending" | "decline"
+
+type RejectionEntry = { declineReason: DeclineReason; note?: string }
 
 type RowData = {
   registrantId: string
@@ -86,8 +90,9 @@ export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy
 
   // Rejection reason collection — queue of declined rows needing a reason
   const [rejectionQueue, setRejectionQueue] = React.useState<RowData[]>([])
-  const [rejectionReasons, setRejectionReasons] = React.useState<Record<string, string>>({})
-  const [currentReason, setCurrentReason] = React.useState("")
+  const [rejectionReasons, setRejectionReasons] = React.useState<Record<string, RejectionEntry>>({})
+  const [selectedReason, setSelectedReason] = React.useState<DeclineReason | "">("")
+  const [otherReasonText, setOtherReasonText] = React.useState("")
   const [reasonError, setReasonError] = React.useState("")
   // Decisions accumulated before entering rejection-reason phase
   const [stagedDecisions, setStagedDecisions] = React.useState<ConfirmDecision[]>([])
@@ -178,25 +183,36 @@ export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy
     const total = Object.values(decisions).filter((d) => d === "decline").length
 
     async function handleReasonNext() {
-      if (!currentReason.trim()) {
-        setReasonError("Please provide a reason for declining.")
+      if (!selectedReason) {
+        setReasonError("Please select a reason for declining.")
+        return
+      }
+      if (selectedReason === "Others" && !otherReasonText.trim()) {
+        setReasonError("Please specify the reason for declining.")
         return
       }
       setReasonError("")
-      const updatedReasons = { ...rejectionReasons, [current.registrantId]: currentReason.trim() }
+      const entry: RejectionEntry = {
+        declineReason: selectedReason,
+        ...(selectedReason === "Others" ? { note: otherReasonText.trim() } : {}),
+      }
+      const updatedReasons = { ...rejectionReasons, [current.registrantId]: entry }
       setRejectionReasons(updatedReasons)
 
       const nextQueue = rejectionQueue.slice(1)
       if (nextQueue.length > 0) {
         setRejectionQueue(nextQueue)
-        setCurrentReason("")
+        setSelectedReason("")
+        setOtherReasonText("")
         return
       }
 
       // All reasons collected — build final decisions and submit
-      const fullDecisions: ConfirmDecision[] = stagedDecisions.map((d) =>
-        d.status === "declined" ? { ...d, reason: updatedReasons[d.registrantId] } : d
-      )
+      const fullDecisions: ConfirmDecision[] = stagedDecisions.map((d) => {
+        if (d.status !== "declined") return d
+        const collected = updatedReasons[d.registrantId]
+        return { ...d, declineReason: collected?.declineReason, reason: collected?.note }
+      })
 
       setSubmitting(true)
       const result = await submitCatchMechConfirmations(token, fullDecisions)
@@ -235,18 +251,46 @@ export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy
         </div>
 
         <div className="space-y-2">
-          <label htmlFor="reason" className="text-sm font-medium">
-            Reason for declining
-          </label>
-          <textarea
-            id="reason"
-            rows={3}
-            value={currentReason}
-            onChange={(e) => { setCurrentReason(e.target.value); setReasonError("") }}
-            placeholder="e.g. Not actively attending, prefers a different group…"
-            autoFocus
-            className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring resize-none"
-          />
+          <p className="text-sm font-medium">Reason for declining</p>
+          <div className="space-y-2" role="radiogroup" aria-label="Reason for declining">
+            {DECLINE_REASON_OPTIONS.map((option) => {
+              const selected = selectedReason === option.value
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  onClick={() => { setSelectedReason(option.value); setReasonError("") }}
+                  className={`w-full flex items-center gap-3 rounded-lg border px-4 py-2.5 text-sm text-left transition-colors ${
+                    selected
+                      ? "border-primary bg-primary/5 font-medium"
+                      : "bg-background hover:bg-muted/50"
+                  }`}
+                >
+                  <span
+                    className={`shrink-0 size-4 rounded-full border flex items-center justify-center ${
+                      selected ? "border-primary" : "border-muted-foreground/40"
+                    }`}
+                  >
+                    {selected && <span className="size-2 rounded-full bg-primary" />}
+                  </span>
+                  {option.label}
+                </button>
+              )
+            })}
+          </div>
+          {selectedReason === "Others" && (
+            <textarea
+              rows={3}
+              value={otherReasonText}
+              onChange={(e) => { setOtherReasonText(e.target.value); setReasonError("") }}
+              placeholder="Please specify the reason…"
+              autoFocus
+              aria-label="Specify the reason for declining"
+              className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring resize-none"
+            />
+          )}
           {reasonError && <p className="text-xs text-destructive">{reasonError}</p>}
         </div>
 
@@ -294,7 +338,8 @@ export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy
       // Collect rejection reasons one-by-one before submitting
       setStagedDecisions(decisionList)
       setRejectionQueue(declined)
-      setCurrentReason("")
+      setSelectedReason("")
+      setOtherReasonText("")
       return
     }
 

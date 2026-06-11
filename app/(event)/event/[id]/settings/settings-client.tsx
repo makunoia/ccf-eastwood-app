@@ -5,6 +5,7 @@ import { IconBus, IconCash, IconCross, IconFish, IconPencil, IconPlus, IconSalad
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
+import { PageHeader } from "@/components/page-header"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -783,10 +784,10 @@ export function EventSettingsClient({
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">
-      <div>
-        <h2 className="type-headline">Settings</h2>
-        <p className="text-sm text-muted-foreground">Configure modules and options for this event</p>
-      </div>
+      <PageHeader
+        title="Settings"
+        description="Configure modules and options for this event"
+      />
 
       <Tabs defaultValue="details">
         <TabsList>

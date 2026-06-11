@@ -12,6 +12,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { RegistrantGuestProfile } from "@/app/(event)/event/[id]/registrants/[registrantId]/registrant-profile"
 import { CatchMechMatchSection, type CatchMechMatchSectionHandle } from "./catch-mech-match-section"
 import { CatchMechActivityLog, type CatchMechActivityEntry } from "./catch-mech-activity-log"
+import type { DeclineReason } from "@/app/generated/prisma/client"
+import { DECLINE_REASON_LABELS } from "@/lib/decline-reason"
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -62,7 +64,7 @@ type RegistrantData = {
 
 type Props = {
   registrant: RegistrantData
-  request: { id: string; notes: string | null; smallGroupId: string; smallGroup: { id: string; name: string; leader: { firstName: string; lastName: string } | null } } | null
+  request: { id: string; notes: string | null; declineReason: DeclineReason | null; smallGroupId: string; smallGroup: { id: string; name: string; leader: { firstName: string; lastName: string } | null } } | null
   status: "confirmed" | "rejected" | "pending"
   eventId: string
   registrantId: string
@@ -279,6 +281,18 @@ export function CatchMechDetailClient(props: Props) {
                     Led by {props.request.smallGroup.leader.firstName} {props.request.smallGroup.leader.lastName}
                   </p>
                 )}
+              </div>
+            )}
+
+            {props.status === "rejected" && props.request?.declineReason && (
+              <div className="rounded-lg border bg-muted/40 p-4 space-y-1 mb-4">
+                <p className="text-sm font-medium">Declined by leader</p>
+                <p className="text-sm text-muted-foreground">
+                  {DECLINE_REASON_LABELS[props.request.declineReason]}
+                  {props.request.declineReason === "Others" && props.request.notes
+                    ? ` — ${props.request.notes}`
+                    : null}
+                </p>
               </div>
             )}
 

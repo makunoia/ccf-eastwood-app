@@ -13,7 +13,7 @@ export function UsersToolbar({ events }: { events: EventOption[] }) {
     <>
       <Button onClick={() => setOpen(true)}>
         <IconPlus />
-        <span className="hidden sm:inline">Add User</span>
+        Add User
       </Button>
       <UserDialog open={open} onOpenChange={setOpen} events={events} />
     </>

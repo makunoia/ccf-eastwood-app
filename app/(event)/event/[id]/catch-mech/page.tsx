@@ -10,6 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { PageHeader } from "@/components/page-header"
 import { CatchMechTable, type GroupRow } from "./catch-mech-table"
 import { FaciLinkButton } from "./faci-link-button"
 
@@ -185,15 +186,11 @@ export default async function CatchMechAdminPage({
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="type-headline">Catch Mech</h2>
-          <p className="text-sm text-muted-foreground">
-            Track small group confirmations from breakout groups
-          </p>
-        </div>
-        <FaciLinkButton url={publicUrl} />
-      </div>
+      <PageHeader
+        title="Catch Mech"
+        description="Track small group confirmations from breakout groups"
+        actions={<FaciLinkButton url={publicUrl} />}
+      />
 
       {/* Stats + weekly progress */}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start">

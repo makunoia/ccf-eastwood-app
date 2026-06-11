@@ -7,6 +7,27 @@ async function getSessionData(token: string) {
     where: { token },
     select: {
       breakoutGroupId: true,
+      event: {
+        select: {
+          name: true,
+          useMinistryBrand: true,
+          brandMinistryId: true,
+          logoUrl: true,
+          themeColorPrimary: true,
+          registrationPageBannerUrl: true,
+          ministries: {
+            select: {
+              ministry: {
+                select: {
+                  id: true,
+                  logoUrl: true,
+                  themeColorPrimary: true,
+                },
+              },
+            },
+          },
+        },
+      },
       facilitator: {
         select: {
           member: {
@@ -128,10 +149,25 @@ async function getSessionData(token: string) {
 
   return {
     token,
+    event: session.event,
     groupName: session.breakoutGroup.name,
     faciName: `${faciMember.firstName} ${faciMember.lastName}`,
     isTimothy,
     rows,
+  }
+}
+
+function resolveEventBrand(event: NonNullable<Awaited<ReturnType<typeof getSessionData>>>["event"]) {
+  if (event.useMinistryBrand && event.brandMinistryId) {
+    const ministry = event.ministries.find((em) => em.ministry.id === event.brandMinistryId)
+    return {
+      logoUrl: ministry?.ministry.logoUrl ?? null,
+      primaryColor: ministry?.ministry.themeColorPrimary ?? null,
+    }
+  }
+  return {
+    logoUrl: event.logoUrl ?? null,
+    primaryColor: event.themeColorPrimary ?? null,
   }
 }
 
@@ -144,24 +180,55 @@ export default async function CatchMechConfirmPage({
   const data = await getSessionData(token)
   if (!data) notFound()
 
+  const { logoUrl, primaryColor } = resolveEventBrand(data.event)
+  const bannerUrl = data.event.registrationPageBannerUrl ?? null
+  const hasBg = !!(bannerUrl || primaryColor)
+
   return (
-    <div className="min-h-svh bg-background flex flex-col items-center justify-center p-4">
-      <div className="w-full max-w-sm space-y-6">
-        <div className="text-center space-y-2">
-          <p className="text-xs text-muted-foreground uppercase tracking-widest font-medium">
+    <div className="relative min-h-svh bg-muted">
+      {bannerUrl && (
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={bannerUrl} alt="" className="fixed inset-0 h-full w-full object-cover" />
+          <div className="fixed inset-0 bg-black/50" />
+        </>
+      )}
+
+      {/* Branded header band */}
+      <div
+        className="relative px-6 pt-8 pb-16 text-center"
+        style={!bannerUrl && primaryColor ? { backgroundColor: primaryColor } : undefined}
+      >
+        <div className="relative mx-auto w-full max-w-md space-y-2">
+          {logoUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={logoUrl}
+              alt={data.event.name}
+              className="mx-auto mb-4 size-20 rounded-xl object-contain"
+              style={hasBg ? { backgroundColor: "rgba(255,255,255,0.15)", padding: "0.5rem" } : undefined}
+            />
+          )}
+          <p className={`text-xs uppercase tracking-widest font-medium ${hasBg ? "text-white/75" : "text-muted-foreground"}`}>
             {data.isTimothy ? "Timothy" : "Leader"} · {data.groupName}
           </p>
-          <h1 className="text-xl font-bold">Hi, {data.faciName}!</h1>
-          <p className="text-sm text-muted-foreground leading-relaxed">
+          <h1 className={`text-2xl font-bold ${hasBg ? "text-white" : ""}`}>Hi, {data.faciName}!</h1>
+          <p className={`text-sm leading-relaxed ${hasBg ? "text-white/75" : "text-muted-foreground"}`}>
             Review the people from your table. Confirm who will join your small group, mark others as pending, or decline with a reason.
           </p>
         </div>
-        <CatchMechConfirmClient
-          token={data.token}
-          groupName={data.groupName}
-          isTimothy={data.isTimothy}
-          rows={data.rows}
-        />
+      </div>
+
+      {/* Form area */}
+      <div className="relative z-10 -mt-10 flex items-start justify-center px-4 pb-4">
+        <div className="w-full max-w-md rounded-lg border bg-card p-6">
+          <CatchMechConfirmClient
+            token={data.token}
+            groupName={data.groupName}
+            isTimothy={data.isTimothy}
+            rows={data.rows}
+          />
+        </div>
       </div>
     </div>
   )

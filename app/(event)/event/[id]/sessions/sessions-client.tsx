@@ -18,6 +18,7 @@ import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { PageActions, PageHeader } from "@/components/page-header"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import {
   DropdownMenu,
@@ -550,21 +551,27 @@ export function SessionsClient({
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-lg font-semibold">{title}</h2>
-        {isRecurring ? (
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Button variant="outline" size="sm" className="w-full sm:w-auto" onClick={openCreateSeriesDialog}>
-              <IconStack2 className="mr-2 size-4" />
-              Add Series
-            </Button>
-            <Button size="sm" className="w-full sm:w-auto" onClick={() => setSessionDialogOpen(true)}>
-              <IconCalendarPlus className="mr-2 size-4" />
-              Add Session
-            </Button>
-          </div>
-        ) : null}
-      </div>
+      <PageHeader
+        title={title}
+        actions={
+          isRecurring ? (
+            <PageActions
+              actions={[
+                {
+                  label: "Add Series",
+                  icon: <IconStack2 className="size-4" />,
+                  onSelect: openCreateSeriesDialog,
+                },
+              ]}
+            >
+              <Button onClick={() => setSessionDialogOpen(true)}>
+                <IconCalendarPlus className="size-4" />
+                Add Session
+              </Button>
+            </PageActions>
+          ) : undefined
+        }
+      />
 
       {!isRecurring && occurrences.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">

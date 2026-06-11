@@ -91,6 +91,14 @@ enum MemberRequestStatus {
   Rejected
 }
 
+enum DeclineReason {
+  NotInterested
+  Unresponsive
+  EndorsedToAnotherLeader
+  AlreadyInSmallGroup
+  Others
+}
+
 enum SmallGroupLogAction {
   GroupCreated
   MemberAdded
@@ -720,6 +728,8 @@ model SmallGroupMemberRequest {
   fromGroup    SmallGroup?         @relation("TransferFrom", fields: [fromGroupId], references: [id])
 
   status       MemberRequestStatus @default(Pending)
+  // Structured rejection reason (analytics-friendly); notes holds free text for Others
+  declineReason DeclineReason?
   notes        String?
 
   assignedByUserId String?

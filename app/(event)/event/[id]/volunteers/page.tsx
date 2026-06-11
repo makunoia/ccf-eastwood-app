@@ -1,10 +1,8 @@
 import { notFound } from "next/navigation"
-import Link from "next/link"
-import { IconPlus } from "@tabler/icons-react"
 import { db } from "@/lib/db"
-import { Button } from "@/components/ui/button"
+import { PageHeader } from "@/components/page-header"
 import { VolunteersTab, type EventVolunteer } from "@/app/(dashboard)/events/[id]/volunteers-tab"
-import { VolunteerImportButton } from "./volunteer-import-button"
+import { VolunteersToolbar } from "./volunteers-toolbar"
 import { VolunteersFilters } from "./volunteers-filters"
 
 async function getEventVolunteers(
@@ -86,21 +84,12 @@ export default async function VolunteersPage({
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Volunteers</h2>
-        <div className="flex items-center gap-2">
-          <VolunteerImportButton eventId={event.id} />
-          <Button size="sm" asChild>
-            <Link href={`/event/${event.id}/volunteers/new`}>
-              <IconPlus className="mr-2 size-4" />
-              Add Volunteer
-            </Link>
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Volunteers"
+        actions={<VolunteersToolbar eventId={event.id} />}
+      />
 
       <VolunteersFilters
-        key={`${search}-${status}-${committeeId}`}
         committees={committees}
         search={search}
         status={status}

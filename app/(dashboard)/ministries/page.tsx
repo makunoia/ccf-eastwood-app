@@ -4,6 +4,7 @@ import { Prisma } from "@/app/generated/prisma/client"
 
 import { Button } from "@/components/ui/button"
 import { db } from "@/lib/db"
+import { PageHeader } from "@/components/page-header"
 import { type MinistryRow } from "./columns"
 import { MinistriesTable } from "./ministries-table"
 import { MinistriesFilters } from "./ministries-filters"
@@ -66,23 +67,20 @@ export default async function MinistriesPage({
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="type-headline">Ministries</h2>
-          <p className="text-sm text-muted-foreground">
-            Manage church ministry departments
-          </p>
-        </div>
-        <Button asChild>
-          <Link href="/ministries/new">
-            <IconPlus />
-            <span className="hidden sm:inline">Add Ministry</span>
-          </Link>
-        </Button>
-      </div>
+      <PageHeader
+        title="Ministries"
+        description="Manage church ministry departments"
+        actions={
+          <Button asChild>
+            <Link href="/ministries/new">
+              <IconPlus />
+              Add Ministry
+            </Link>
+          </Button>
+        }
+      />
 
       <MinistriesFilters
-        key={`${search}-${lifeStageId}`}
         lifeStages={lifeStages}
         search={search}
         lifeStageId={lifeStageId}

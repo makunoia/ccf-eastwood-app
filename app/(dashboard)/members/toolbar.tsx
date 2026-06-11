@@ -5,6 +5,7 @@ import Link from "next/link"
 import { IconDownload, IconPlus, IconUpload } from "@tabler/icons-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { PageActions, type PageAction } from "@/components/page-header"
 import { ImportWizard } from "@/components/import/import-wizard"
 import { checkMemberDuplicates, importMembers } from "./import-actions"
 import { exportMembersCSV, type MemberExportRow } from "@/lib/export-entities"
@@ -50,26 +51,30 @@ export function MembersToolbar({ members, canImport, canExport }: Props) {
     toast.success(`Exported ${members.length} member${members.length === 1 ? "" : "s"}.`)
   }
 
+  const actions: PageAction[] = [
+    ...(canExport
+      ? [{
+          label: "Export",
+          icon: <IconDownload className="size-4" />,
+          onSelect: handleExport,
+          disabled: members.length === 0,
+        }]
+      : []),
+    ...(canImport
+      ? [{
+          label: "Import",
+          icon: <IconUpload className="size-4" />,
+          onSelect: () => setImportOpen(true),
+        }]
+      : []),
+  ]
+
   return (
-    <div className="flex items-center gap-2">
-      {canExport && (
-        <Button variant="outline" onClick={handleExport} disabled={members.length === 0}>
-          <IconDownload className="size-4" />
-          <span className="hidden sm:inline">Export</span>
-        </Button>
-      )}
-
-      {canImport && (
-        <Button variant="outline" onClick={() => setImportOpen(true)}>
-          <IconUpload className="size-4" />
-          <span className="hidden sm:inline">Import</span>
-        </Button>
-      )}
-
+    <PageActions actions={actions}>
       <Button asChild>
         <Link href="/members/new">
           <IconPlus />
-          <span className="hidden sm:inline">Add Member</span>
+          Add Member
         </Link>
       </Button>
 
@@ -80,6 +85,6 @@ export function MembersToolbar({ members, canImport, canExport }: Props) {
         onCheckDuplicates={checkMemberDuplicates}
         onImport={(rows) => importMembers(rows)}
       />
-    </div>
+    </PageActions>
   )
 }
