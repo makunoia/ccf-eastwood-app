@@ -5,6 +5,7 @@ import Link from "next/link"
 import { IconDownload, IconExternalLink, IconPlus, IconUpload } from "@tabler/icons-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { PageActions, type PageAction } from "@/components/page-header"
 import { ImportWizard } from "@/components/import/import-wizard"
 import { checkSmallGroupDuplicates, checkSmallGroupLeaders, importSmallGroups, loadMembersForLeaderSearch } from "./import-actions"
 import { exportSmallGroupsCSV, type SmallGroupExportRow } from "@/lib/export-entities"
@@ -52,33 +53,36 @@ export function SmallGroupsToolbar({ groups, canImport, canExport }: Props) {
     toast.success(`Exported ${groups.length} small group${groups.length === 1 ? "" : "s"}.`)
   }
 
+  const actions: PageAction[] = [
+    {
+      label: "Confirmation Form",
+      icon: <IconExternalLink className="size-4" />,
+      href: "/small-group-confirmation",
+      newTab: true,
+    },
+    ...(canExport
+      ? [{
+          label: "Export",
+          icon: <IconDownload className="size-4" />,
+          onSelect: handleExport,
+          disabled: groups.length === 0,
+        }]
+      : []),
+    ...(canImport
+      ? [{
+          label: "Import",
+          icon: <IconUpload className="size-4" />,
+          onSelect: () => setImportOpen(true),
+        }]
+      : []),
+  ]
+
   return (
-    <div className="flex items-center gap-2">
-      <Button variant="outline" asChild>
-        <Link href="/small-group-confirmation" target="_blank">
-          <IconExternalLink className="size-4" />
-          <span className="hidden sm:inline">Confirmation Form</span>
-        </Link>
-      </Button>
-
-      {canExport && (
-        <Button variant="outline" onClick={handleExport} disabled={groups.length === 0}>
-          <IconDownload className="size-4" />
-          <span className="hidden sm:inline">Export</span>
-        </Button>
-      )}
-
-      {canImport && (
-        <Button variant="outline" onClick={() => setImportOpen(true)}>
-          <IconUpload className="size-4" />
-          <span className="hidden sm:inline">Import</span>
-        </Button>
-      )}
-
+    <PageActions actions={actions}>
       <Button asChild>
         <Link href="/small-groups/new">
           <IconPlus />
-          <span className="hidden sm:inline">Add Group</span>
+          Add Group
         </Link>
       </Button>
 
@@ -91,6 +95,6 @@ export function SmallGroupsToolbar({ groups, canImport, canExport }: Props) {
         onLoadMembers={() => loadMembersForLeaderSearch()}
         onImport={(rows) => importSmallGroups(rows)}
       />
-    </div>
+    </PageActions>
   )
 }

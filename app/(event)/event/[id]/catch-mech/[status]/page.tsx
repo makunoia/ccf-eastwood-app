@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
+import { formatDeclineReason } from "@/lib/decline-reason"
 import { StatusListClient, type StatusListRow } from "./status-list-client"
 
 const VALID_STATUSES = ["confirmed", "rejected", "pending"] as const
@@ -102,6 +103,7 @@ async function getStatusListData(eventId: string, status: Status) {
         type,
         breakoutGroupName: breakoutGroupNameMap.get(m.breakoutGroupId) ?? "—",
         smallGroupName: m.breakoutGroup.linkedSmallGroup?.name ?? null,
+        declineReason: null,
       })
     }
 
@@ -122,6 +124,8 @@ async function getStatusListData(eventId: string, status: Status) {
       smallGroupId: true,
       smallGroup: { select: { name: true } },
       breakoutGroupId: true,
+      declineReason: true,
+      notes: true,
       guest: {
         select: {
           id: true,
@@ -175,6 +179,7 @@ async function getStatusListData(eventId: string, status: Status) {
       type,
       breakoutGroupName: breakoutGroupNameMap.get(req.breakoutGroupId ?? "") ?? "—",
       smallGroupName: req.smallGroup?.name ?? null,
+      declineReason: formatDeclineReason(req.declineReason, req.notes),
     }]
   })
 

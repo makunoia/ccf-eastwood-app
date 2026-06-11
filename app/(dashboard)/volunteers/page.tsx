@@ -2,6 +2,7 @@ import { Prisma, VolunteerStatus } from "@/app/generated/prisma/client"
 
 import { db } from "@/lib/db"
 import { type MemberVolunteerRow } from "./columns"
+import { PageHeader } from "@/components/page-header"
 import { VolunteersTable } from "./volunteers-table"
 import { VolunteerImportTrigger } from "./volunteer-import-trigger"
 import { VolunteersFilters } from "./volunteers-filters"
@@ -99,20 +100,13 @@ export default async function VolunteersPage({
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="type-headline">Volunteers</h2>
-          <p className="text-sm text-muted-foreground">
-            Manage volunteer registrations and role assignments
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <VolunteerImportTrigger events={events} />
-        </div>
-      </div>
+      <PageHeader
+        title="Volunteers"
+        description="Manage volunteer registrations and role assignments"
+        actions={<VolunteerImportTrigger events={events} />}
+      />
 
       <VolunteersFilters
-        key={`${search}-${status}-${eventId}`}
         events={events}
         search={search}
         status={status}

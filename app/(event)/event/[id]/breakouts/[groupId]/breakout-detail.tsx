@@ -13,6 +13,7 @@ import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { FilterBar, FilterField } from "@/components/filter-bar"
 import {
   Dialog,
   DialogContent,
@@ -46,7 +47,6 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet"
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import {
   Tooltip,
   TooltipContent,
@@ -623,50 +623,54 @@ function MembersTable({
         )}
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <ToggleGroup
-            type="single"
+      <FilterBar
+        searchValue={search}
+        searchPlaceholder="Search name or mobile"
+        onSearch={setSearch}
+        activeCount={[typeFilter, attendanceFilter].filter((v) => v !== "all").length}
+        hasActive={
+          Boolean(search) || typeFilter !== "all" || attendanceFilter !== "all"
+        }
+        onClear={() => {
+          setSearch("")
+          setTypeFilter("all")
+          setAttendanceFilter("all")
+        }}
+      >
+        <FilterField label="Type">
+          <Select
             value={typeFilter}
-            onValueChange={(v) => setTypeFilter((v || "all") as "all" | "member" | "guest")}
-            className="gap-1"
+            onValueChange={(v) => setTypeFilter(v as "all" | "member" | "guest")}
           >
-            <ToggleGroupItem value="all" className="h-7 px-2.5 text-xs">
-              All
-            </ToggleGroupItem>
-            <ToggleGroupItem value="member" className="h-7 px-2.5 text-xs">
-              Members
-            </ToggleGroupItem>
-            <ToggleGroupItem value="guest" className="h-7 px-2.5 text-xs">
-              Guests
-            </ToggleGroupItem>
-          </ToggleGroup>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Types</SelectItem>
+              <SelectItem value="member">Members</SelectItem>
+              <SelectItem value="guest">Guests</SelectItem>
+            </SelectContent>
+          </Select>
+        </FilterField>
 
-          <ToggleGroup
-            type="single"
+        <FilterField label="Attendance">
+          <Select
             value={attendanceFilter}
-            onValueChange={(v) => setAttendanceFilter((v || "all") as "all" | "attended" | "not-attended")}
-            className="gap-1"
+            onValueChange={(v) =>
+              setAttendanceFilter(v as "all" | "attended" | "not-attended")
+            }
           >
-            <ToggleGroupItem value="all" className="h-7 px-2.5 text-xs">
-              All Attendance
-            </ToggleGroupItem>
-            <ToggleGroupItem value="attended" className="h-7 px-2.5 text-xs">
-              Attended
-            </ToggleGroupItem>
-            <ToggleGroupItem value="not-attended" className="h-7 px-2.5 text-xs">
-              Not Attended
-            </ToggleGroupItem>
-          </ToggleGroup>
-        </div>
-
-        <Input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search name or mobile"
-          className="h-8 w-full max-w-60 text-xs"
-        />
-      </div>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Attendance</SelectItem>
+              <SelectItem value="attended">Attended</SelectItem>
+              <SelectItem value="not-attended">Not Attended</SelectItem>
+            </SelectContent>
+          </Select>
+        </FilterField>
+      </FilterBar>
 
       <div className="rounded-lg border overflow-hidden">
         <Table>

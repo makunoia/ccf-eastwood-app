@@ -1,9 +1,7 @@
 "use client"
 
 import { usePathname, useRouter } from "next/navigation"
-import { IconX } from "@tabler/icons-react"
-import { SearchInput } from "@/components/search-input"
-import { Button } from "@/components/ui/button"
+import { FilterBar, FilterField } from "@/components/filter-bar"
 import {
   Select,
   SelectContent,
@@ -28,7 +26,8 @@ export function VolunteersFilters({
   const router = useRouter()
   const pathname = usePathname()
 
-  const hasFilters = search || status || eventId
+  const activeCount = [status, eventId].filter(Boolean).length
+  const hasFilters = Boolean(search) || activeCount > 0
 
   function buildUrl(overrides: Record<string, string>) {
     const params = new URLSearchParams()
@@ -45,52 +44,49 @@ export function VolunteersFilters({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <SearchInput
-        defaultValue={search}
-        placeholder="Search volunteers..."
-        onChange={(value) => setFilter("search", value)}
-        className="min-w-48"
-      />
+    <FilterBar
+      searchValue={search}
+      searchPlaceholder="Search volunteers..."
+      onSearch={(value) => setFilter("search", value)}
+      activeCount={activeCount}
+      hasActive={hasFilters}
+      onClear={() => router.replace(pathname)}
+    >
+      <FilterField label="Status">
+        <Select
+          value={status || "all"}
+          onValueChange={(v) => setFilter("status", v === "all" ? "" : v)}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Statuses</SelectItem>
+            <SelectItem value="Pending">Pending</SelectItem>
+            <SelectItem value="Confirmed">Confirmed</SelectItem>
+            <SelectItem value="Rejected">Rejected</SelectItem>
+          </SelectContent>
+        </Select>
+      </FilterField>
 
-      <Select
-        value={status || "all"}
-        onValueChange={(v) => setFilter("status", v === "all" ? "" : v)}
-      >
-        <SelectTrigger className="w-36">
-          <SelectValue placeholder="Status" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All Statuses</SelectItem>
-          <SelectItem value="Pending">Pending</SelectItem>
-          <SelectItem value="Confirmed">Confirmed</SelectItem>
-          <SelectItem value="Rejected">Rejected</SelectItem>
-        </SelectContent>
-      </Select>
-
-      <Select
-        value={eventId || "all"}
-        onValueChange={(v) => setFilter("eventId", v === "all" ? "" : v)}
-      >
-        <SelectTrigger className="w-40">
-          <SelectValue placeholder="Event" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All Events</SelectItem>
-          {events.map((e) => (
-            <SelectItem key={e.id} value={e.id}>
-              {e.name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      {hasFilters && (
-        <Button variant="ghost" size="sm" onClick={() => router.replace(pathname)}>
-          <IconX className="size-4" />
-          Clear
-        </Button>
-      )}
-    </div>
+      <FilterField label="Event">
+        <Select
+          value={eventId || "all"}
+          onValueChange={(v) => setFilter("eventId", v === "all" ? "" : v)}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="Event" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Events</SelectItem>
+            {events.map((e) => (
+              <SelectItem key={e.id} value={e.id}>
+                {e.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </FilterField>
+    </FilterBar>
   )
 }

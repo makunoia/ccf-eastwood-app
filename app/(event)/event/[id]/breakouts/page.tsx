@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
+import { PageHeader } from "@/components/page-header"
 import { BreakoutGroupsTable } from "./breakout-group"
 
 const breakoutGroupsInclude = {
@@ -157,7 +158,7 @@ export default async function BreakoutsPage({
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
-      <h2 className="text-lg font-semibold">Breakout Groups</h2>
+      <PageHeader title="Breakout Groups" />
       <BreakoutGroupsTable
         eventId={event.id}
         breakoutGroups={breakoutGroupRows}

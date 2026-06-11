@@ -6,6 +6,7 @@ import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { PageHeader } from "@/components/page-header"
 import { addBaptismOptIn, removeBaptismOptIn } from "@/app/(dashboard)/events/module-actions"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -60,10 +61,10 @@ export function BaptismClient({ eventId, registrants }: Props) {
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Baptism</h2>
-        <Badge variant="secondary">{optedIn.length} opted in</Badge>
-      </div>
+      <PageHeader
+        title="Baptism"
+        actions={<Badge variant="secondary">{optedIn.length} opted in</Badge>}
+      />
 
       {attended.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">

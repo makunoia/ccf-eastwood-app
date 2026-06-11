@@ -3,6 +3,7 @@ import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import { canExport, canImport } from "@/lib/permissions"
 import { type MemberRow } from "./columns"
+import { PageHeader } from "@/components/page-header"
 import { MembersTable } from "./members-table"
 import { MembersToolbar } from "./toolbar"
 import { MembersFilters } from "./members-filters"
@@ -79,22 +80,19 @@ export default async function MembersPage({
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="type-headline">Members</h2>
-          <p className="text-sm text-muted-foreground">
-            Manage church member records
-          </p>
-        </div>
-        <MembersToolbar
-          members={members}
-          canImport={canImport(session, "Members")}
-          canExport={canExport(session, "Members")}
-        />
-      </div>
+      <PageHeader
+        title="Members"
+        description="Manage church member records"
+        actions={
+          <MembersToolbar
+            members={members}
+            canImport={canImport(session, "Members")}
+            canExport={canExport(session, "Members")}
+          />
+        }
+      />
 
       <MembersFilters
-        key={`${search}-${lifeStageId}-${smallGroupId}-${gender}`}
         lifeStages={lifeStages}
         smallGroups={smallGroups}
         search={search}

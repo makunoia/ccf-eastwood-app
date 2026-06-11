@@ -8,6 +8,7 @@ import {
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import { canExport, canImport } from "@/lib/permissions"
+import { PageHeader } from "@/components/page-header"
 import { type SmallGroupRow } from "./columns"
 import { SmallGroupsTable } from "./small-groups-table"
 import { SmallGroupsToolbar } from "./toolbar"
@@ -148,21 +149,19 @@ export default async function SmallGroupsPage({
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="type-headline">Small Groups</h2>
-          <p className="text-sm text-muted-foreground">
-            Manage fellowship groups and their hierarchy
-          </p>
-        </div>
-        {tab === "all" && (
-          <SmallGroupsToolbar
-            groups={groups}
-            canImport={canImport(session, "SmallGroups")}
-            canExport={canExport(session, "SmallGroups")}
-          />
-        )}
-      </div>
+      <PageHeader
+        title="Small Groups"
+        description="Manage fellowship groups and their hierarchy"
+        actions={
+          tab === "all" ? (
+            <SmallGroupsToolbar
+              groups={groups}
+              canImport={canImport(session, "SmallGroups")}
+              canExport={canExport(session, "SmallGroups")}
+            />
+          ) : undefined
+        }
+      />
 
       <SmallGroupsTabs pendingRequestCount={pendingRequestCount} />
 
@@ -171,7 +170,6 @@ export default async function SmallGroupsPage({
       ) : (
         <>
           <SmallGroupsFilters
-            key={`${search}-${lifeStageId}-${genderFocus}-${meetingFormat}-${status}`}
             lifeStages={lifeStages}
             search={search}
             lifeStageId={lifeStageId}

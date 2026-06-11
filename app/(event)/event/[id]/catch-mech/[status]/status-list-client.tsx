@@ -3,6 +3,8 @@
 import * as React from "react"
 import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
+import { FilterBar, FilterField } from "@/components/filter-bar"
+import { PageHeader } from "@/components/page-header"
 import {
   Select,
   SelectContent,
@@ -26,6 +28,7 @@ export type StatusListRow = {
   type: "Member" | "Guest"
   breakoutGroupName: string
   smallGroupName: string | null  // null for Rejected
+  declineReason: string | null   // display string, only set for Rejected
 }
 
 type Props = {
@@ -65,30 +68,32 @@ export function StatusListClient({ rows, status, eventId, breakoutGroups }: Prop
       </nav>
 
       {/* Header + filter */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2 className="type-headline">{label}</h2>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            {filtered.length} {filtered.length === 1 ? "person" : "people"}
-          </p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="text-sm text-muted-foreground">Group</span>
-          <Select value={filterGroup} onValueChange={setFilterGroup}>
-            <SelectTrigger className="w-48">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All groups</SelectItem>
-              {breakoutGroups.map((bg) => (
-                <SelectItem key={bg.id} value={bg.name}>
-                  {bg.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+      <PageHeader
+        title={label}
+        description={`${filtered.length} ${filtered.length === 1 ? "person" : "people"}`}
+        actions={
+          <FilterBar
+            activeCount={filterGroup === "all" ? 0 : 1}
+            onClear={() => setFilterGroup("all")}
+          >
+            <FilterField label="Group">
+              <Select value={filterGroup} onValueChange={setFilterGroup}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All groups</SelectItem>
+                  {breakoutGroups.map((bg) => (
+                    <SelectItem key={bg.id} value={bg.name}>
+                      {bg.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </FilterField>
+          </FilterBar>
+        }
+      />
 
       {/* Table */}
       <div className="rounded-lg border overflow-hidden">
@@ -98,13 +103,13 @@ export function StatusListClient({ rows, status, eventId, breakoutGroups }: Prop
               <TableHead>Name</TableHead>
               <TableHead>Type</TableHead>
               <TableHead>Breakout Group</TableHead>
-              {status !== "rejected" && <TableHead>Small Group</TableHead>}
+              {status !== "rejected" ? <TableHead>Small Group</TableHead> : <TableHead>Reason</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
             {filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={status !== "rejected" ? 4 : 3} className="py-6 text-center text-muted-foreground">
+                <TableCell colSpan={4} className="py-6 text-center text-muted-foreground">
                   No {label.toLowerCase()} registrants.
                 </TableCell>
               </TableRow>
@@ -125,9 +130,13 @@ export function StatusListClient({ rows, status, eventId, breakoutGroups }: Prop
                     </Badge>
                   </TableCell>
                   <TableCell>{row.breakoutGroupName}</TableCell>
-                  {status !== "rejected" && (
+                  {status !== "rejected" ? (
                     <TableCell>
                       {row.smallGroupName ?? <span className="text-muted-foreground">—</span>}
+                    </TableCell>
+                  ) : (
+                    <TableCell>
+                      {row.declineReason ?? <span className="text-muted-foreground">—</span>}
                     </TableCell>
                   )}
                 </TableRow>

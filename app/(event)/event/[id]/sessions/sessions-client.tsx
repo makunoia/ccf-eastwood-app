@@ -8,6 +8,7 @@ import {
   IconCalendarRepeat,
   IconDoorEnter,
   IconDoorExit,
+  IconDotsVertical,
   IconExternalLink,
   IconPencil,
   IconStack2,
@@ -17,7 +18,14 @@ import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { PageActions, PageHeader } from "@/components/page-header"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import {
   Dialog,
   DialogContent,
@@ -36,6 +44,12 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import {
   createOccurrence,
   createOccurrenceSeries,
@@ -139,11 +153,102 @@ function groupingBadge(occurrence: OccurrenceRow) {
     return <Badge variant="outline">Stand-alone</Badge>
   }
 
-  if (!occurrence.seriesId) {
-    return <Badge variant="outline">Ungrouped</Badge>
-  }
-
   return null
+}
+
+function OccurrenceActions({
+  eventId,
+  isRecurring,
+  occurrence,
+  togglingId,
+  deletingId,
+  onToggleOpen,
+  onManage,
+  onDelete,
+}: {
+  eventId: string
+  isRecurring: boolean
+  occurrence: OccurrenceRow
+  togglingId: string | null
+  deletingId: string | null
+  onToggleOpen: (occurrenceId: string, currentlyOpen: boolean) => void
+  onManage: (occurrence: OccurrenceRow) => void
+  onDelete: (occurrence: OccurrenceRow) => void
+}) {
+  return (
+    <div className="flex items-center gap-0.5">
+      {isRecurring && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => onManage(occurrence)}
+            >
+              <IconPencil className="size-4" />
+              <span className="sr-only">Manage session</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Manage</TooltipContent>
+        </Tooltip>
+      )}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className={occurrence.isOpen ? "text-primary" : undefined}
+            onClick={() => onToggleOpen(occurrence.id, occurrence.isOpen)}
+            disabled={togglingId === occurrence.id}
+          >
+            {occurrence.isOpen ? (
+              <IconDoorExit className="size-4" />
+            ) : (
+              <IconDoorEnter className="size-4" />
+            )}
+            <span className="sr-only">
+              {occurrence.isOpen ? "Close check-in" : "Open check-in"}
+            </span>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          {occurrence.isOpen ? "Close check-in" : "Open check-in"}
+        </TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button variant="ghost" size="icon-sm" asChild>
+            <a
+              href={`/events/${eventId}/checkin/${occurrence.id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <IconExternalLink className="size-4" />
+              <span className="sr-only">Open check-in page</span>
+            </a>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Check-in page</TooltipContent>
+      </Tooltip>
+      {isRecurring && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="text-muted-foreground hover:text-destructive"
+              onClick={() => onDelete(occurrence)}
+              disabled={deletingId === occurrence.id}
+            >
+              <IconTrash className="size-4" />
+              <span className="sr-only">Delete session</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Delete</TooltipContent>
+        </Tooltip>
+      )}
+    </div>
+  )
 }
 
 function OccurrenceList({
@@ -168,88 +273,38 @@ function OccurrenceList({
   onDelete: (occurrence: OccurrenceRow) => void
 }) {
   return (
-    <>
-      <div className="flex flex-col gap-3 lg:hidden">
+    <TooltipProvider>
+      <div className="flex flex-col gap-2 lg:hidden">
         {occurrences.map((occurrence) => (
           <Card key={occurrence.id} className="gap-0 py-0">
-            <CardContent className="space-y-4 px-4 py-4 sm:px-5">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0 space-y-2">
-                  <Link
-                    href={`/event/${eventId}/sessions/${occurrence.id}`}
-                    className="block font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-                  >
-                    {formatOccurrenceDate(occurrence.date)}
-                  </Link>
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant="secondary">{occurrence.attendeeCount} attended</Badge>
-                    {occurrence.isOpen && (
-                      <Badge variant="default" className="text-xs">
-                        Check-in open
-                      </Badge>
-                    )}
-                    {showGroupingStatus ? groupingBadge(occurrence) : null}
-                  </div>
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  {isRecurring ? "Session" : "Event day"}
-                </div>
-              </div>
-
-              <div className="grid gap-2 sm:grid-cols-2">
-                {isRecurring && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="w-full justify-start"
-                    onClick={() => onManage(occurrence)}
-                  >
-                    <IconPencil className="mr-1.5 size-3.5" />
-                    Manage
-                  </Button>
-                )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="w-full justify-start"
-                  onClick={() => onToggleOpen(occurrence.id, occurrence.isOpen)}
-                  disabled={togglingId === occurrence.id}
+            <CardContent className="flex items-center justify-between gap-3 px-3 py-2.5">
+              <div className="min-w-0 space-y-1.5">
+                <Link
+                  href={`/event/${eventId}/sessions/${occurrence.id}`}
+                  className="block font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
                 >
-                  {occurrence.isOpen ? (
-                    <>
-                      <IconDoorExit className="mr-1.5 size-3.5" />
-                      Close check-in
-                    </>
-                  ) : (
-                    <>
-                      <IconDoorEnter className="mr-1.5 size-3.5" />
-                      Open check-in
-                    </>
+                  {formatOccurrenceDate(occurrence.date)}
+                </Link>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Badge variant="secondary">{occurrence.attendeeCount} attended</Badge>
+                  {occurrence.isOpen && (
+                    <Badge variant="default" className="text-xs">
+                      Check-in open
+                    </Badge>
                   )}
-                </Button>
-                <Button variant="ghost" size="sm" className="w-full justify-start" asChild>
-                  <a
-                    href={`/events/${eventId}/checkin/${occurrence.id}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <IconExternalLink className="mr-1.5 size-3.5" />
-                    Check-in page
-                  </a>
-                </Button>
-                {isRecurring && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="w-full justify-start text-destructive hover:text-destructive"
-                    onClick={() => onDelete(occurrence)}
-                    disabled={deletingId === occurrence.id}
-                  >
-                    <IconTrash className="mr-1.5 size-3.5" />
-                    Delete
-                  </Button>
-                )}
+                  {showGroupingStatus ? groupingBadge(occurrence) : null}
+                </div>
               </div>
+              <OccurrenceActions
+                eventId={eventId}
+                isRecurring={isRecurring}
+                occurrence={occurrence}
+                togglingId={togglingId}
+                deletingId={deletingId}
+                onToggleOpen={onToggleOpen}
+                onManage={onManage}
+                onDelete={onDelete}
+              />
             </CardContent>
           </Card>
         ))}
@@ -259,17 +314,17 @@ function OccurrenceList({
         <table className="w-full text-sm">
           <thead className="border-b bg-muted/50">
             <tr>
-              <th className="px-4 py-3 text-left font-medium whitespace-nowrap">
+              <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">
                 {isRecurring ? "Date" : "Day"}
               </th>
-              <th className="px-4 py-3 text-left font-medium whitespace-nowrap">Attendance</th>
-              <th className="px-4 py-3" />
+              <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">Attendance</th>
+              <th className="px-4 py-2.5" />
             </tr>
           </thead>
           <tbody>
             {occurrences.map((occurrence) => (
               <tr key={occurrence.id} className="border-b last:border-0">
-                <td className="px-4 py-3 whitespace-nowrap">
+                <td className="px-4 py-2 whitespace-nowrap">
                   <div className="flex items-center gap-2">
                     <Link
                       href={`/event/${eventId}/sessions/${occurrence.id}`}
@@ -285,68 +340,21 @@ function OccurrenceList({
                     {showGroupingStatus ? groupingBadge(occurrence) : null}
                   </div>
                 </td>
-                <td className="px-4 py-3 whitespace-nowrap">
+                <td className="px-4 py-2 whitespace-nowrap">
                   <Badge variant="secondary">{occurrence.attendeeCount} attended</Badge>
                 </td>
-                <td className="px-4 py-3">
-                  <div className="flex flex-col items-stretch gap-2 xl:flex-row xl:items-center xl:justify-end">
-                    {isRecurring && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="justify-start xl:justify-center"
-                        onClick={() => onManage(occurrence)}
-                      >
-                        <IconPencil className="mr-1.5 size-3.5" />
-                        Manage
-                      </Button>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="justify-start xl:justify-center"
-                      onClick={() => onToggleOpen(occurrence.id, occurrence.isOpen)}
-                      disabled={togglingId === occurrence.id}
-                    >
-                      {occurrence.isOpen ? (
-                        <>
-                          <IconDoorExit className="mr-1.5 size-3.5" />
-                          Close check-in
-                        </>
-                      ) : (
-                        <>
-                          <IconDoorEnter className="mr-1.5 size-3.5" />
-                          Open check-in
-                        </>
-                      )}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="justify-start xl:justify-center"
-                      asChild
-                    >
-                      <a
-                        href={`/events/${eventId}/checkin/${occurrence.id}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <IconExternalLink className="mr-1.5 size-3.5" />
-                        Check-in page
-                      </a>
-                    </Button>
-                    {isRecurring && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="justify-start text-destructive hover:text-destructive xl:justify-center"
-                        onClick={() => onDelete(occurrence)}
-                        disabled={deletingId === occurrence.id}
-                      >
-                        <IconTrash className="mr-1.5 size-3.5" />
-                        Delete
-                      </Button>
-                    )}
+                <td className="px-4 py-2">
+                  <div className="flex justify-end">
+                    <OccurrenceActions
+                      eventId={eventId}
+                      isRecurring={isRecurring}
+                      occurrence={occurrence}
+                      togglingId={togglingId}
+                      deletingId={deletingId}
+                      onToggleOpen={onToggleOpen}
+                      onManage={onManage}
+                      onDelete={onDelete}
+                    />
                   </div>
                 </td>
               </tr>
@@ -354,7 +362,7 @@ function OccurrenceList({
           </tbody>
         </table>
       </div>
-    </>
+    </TooltipProvider>
   )
 }
 
@@ -543,21 +551,27 @@ export function SessionsClient({
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-lg font-semibold">{title}</h2>
-        {isRecurring ? (
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Button variant="outline" size="sm" className="w-full sm:w-auto" onClick={openCreateSeriesDialog}>
-              <IconStack2 className="mr-2 size-4" />
-              Add Series
-            </Button>
-            <Button size="sm" className="w-full sm:w-auto" onClick={() => setSessionDialogOpen(true)}>
-              <IconCalendarPlus className="mr-2 size-4" />
-              Add Session
-            </Button>
-          </div>
-        ) : null}
-      </div>
+      <PageHeader
+        title={title}
+        actions={
+          isRecurring ? (
+            <PageActions
+              actions={[
+                {
+                  label: "Add Series",
+                  icon: <IconStack2 className="size-4" />,
+                  onSelect: openCreateSeriesDialog,
+                },
+              ]}
+            >
+              <Button onClick={() => setSessionDialogOpen(true)}>
+                <IconCalendarPlus className="size-4" />
+                Add Session
+              </Button>
+            </PageActions>
+          ) : undefined
+        }
+      />
 
       {!isRecurring && occurrences.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
@@ -593,33 +607,39 @@ export function SessionsClient({
           {seriesGroups.map((series) => (
             <Card key={series.id}>
               <CardHeader className="gap-4">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div className="flex items-start justify-between gap-3">
                   <div className="space-y-1">
                     <CardTitle>{series.title}</CardTitle>
                     <CardDescription>{formatDateRange(series.startDate, series.endDate)}</CardDescription>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant="secondary">{series.sessionCount} sessions</Badge>
-                    <Badge variant="secondary">{series.totalAttendance} attendance</Badge>
-                    <Badge variant="secondary">
-                      Avg {formatAverage(series.averageAttendance)}
-                    </Badge>
-                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon-sm" className="-mr-1 shrink-0">
+                        <IconDotsVertical className="size-4" />
+                        <span className="sr-only">Series actions</span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onSelect={() => openEditSeriesDialog(series)}>
+                        <IconPencil className="size-4" />
+                        Edit series
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onSelect={() => setSeriesToDelete(series)}
+                      >
+                        <IconTrash className="size-4" />
+                        Delete series
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
-                <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-                  <Button variant="ghost" size="sm" onClick={() => openEditSeriesDialog(series)}>
-                    <IconPencil className="mr-1.5 size-3.5" />
-                    Edit series
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-destructive hover:text-destructive"
-                    onClick={() => setSeriesToDelete(series)}
-                  >
-                    <IconTrash className="mr-1.5 size-3.5" />
-                    Delete series
-                  </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="secondary">{series.sessionCount} sessions</Badge>
+                  <Badge variant="secondary">{series.totalAttendance} attendance</Badge>
+                  <Badge variant="secondary">
+                    Avg {formatAverage(series.averageAttendance)}
+                  </Badge>
                 </div>
               </CardHeader>
               <CardContent>

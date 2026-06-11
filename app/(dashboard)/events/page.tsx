@@ -2,6 +2,7 @@ import { EventType, Prisma } from "@/app/generated/prisma/client"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { isSuperAdmin } from "@/lib/permissions"
+import { PageHeader } from "@/components/page-header"
 import { type EventRow } from "./columns"
 import { EventsTable } from "./events-table"
 import { EventsToolbar } from "./toolbar"
@@ -87,18 +88,13 @@ export default async function EventsPage({
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="type-headline">Events</h2>
-          <p className="text-sm text-muted-foreground">
-            Manage church events and registrations
-          </p>
-        </div>
-        <EventsToolbar />
-      </div>
+      <PageHeader
+        title="Events"
+        description="Manage church events and registrations"
+        actions={<EventsToolbar />}
+      />
 
       <EventsFilters
-        key={`${search}-${ministryId}-${type}-${dateFrom}-${dateTo}`}
         ministries={ministries}
         search={search}
         ministryId={ministryId}

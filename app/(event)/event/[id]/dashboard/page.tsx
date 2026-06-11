@@ -2,10 +2,9 @@ import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { EventDashboardClient } from "./dashboard-client"
 import { ensureMultiDayOccurrences } from "@/app/(dashboard)/events/actions"
-import { groupOccurrencesBySeries } from "@/lib/events/occurrence-series"
+import { loadRecurringSeriesSummaries } from "@/lib/events/series-summary"
 
 type PeriodFilter = "7d" | "30d" | "90d" | "all"
-type LeaderRoleFilter = "all" | "Timothy" | "Leader"
 type UngroupedParticipant = {
   id: string
   name: string
@@ -22,7 +21,11 @@ function getPeriodStart(period: PeriodFilter, eventStart: Date) {
   return start
 }
 
-async function getEventDashboard(id: string, period: PeriodFilter, roleFilter: LeaderRoleFilter) {
+function dayKey(date: Date) {
+  return date.toISOString().slice(0, 10)
+}
+
+async function getEventDashboard(id: string, period: PeriodFilter) {
   const event = await db.event.findUnique({
     where: { id },
     select: {
@@ -47,15 +50,6 @@ async function getEventDashboard(id: string, period: PeriodFilter, roleFilter: L
       breakoutGroups: {
         select: { id: true },
       },
-      occurrenceSeries: {
-        orderBy: { startDate: "desc" },
-        select: {
-          id: true,
-          title: true,
-          startDate: true,
-          endDate: true,
-        },
-      },
       _count: {
         select: { registrants: true, occurrences: true },
       },
@@ -64,6 +58,7 @@ async function getEventDashboard(id: string, period: PeriodFilter, roleFilter: L
           id: true,
           isPaid: true,
           attendedAt: true,
+          createdAt: true,
           memberId: true,
           guestId: true,
           member: {
@@ -141,20 +136,11 @@ async function getEventDashboard(id: string, period: PeriodFilter, roleFilter: L
           },
         })
 
+  // Series summaries are whole-series rollups — they must reflect the entire
+  // series, not the dashboard's rolling period window. Loaded via a dedicated
+  // unfiltered query. See loadRecurringSeriesSummaries.
   const recurringSeriesSummaries =
-    event.type === "Recurring"
-      ? groupOccurrencesBySeries(
-          event.occurrenceSeries,
-          occurrenceSeries.map((occurrence) => ({
-            id: occurrence.id,
-            date: occurrence.date,
-            isOpen: occurrence.isOpen,
-            isStandalone: occurrence.isStandalone,
-            attendeeCount: occurrence._count.attendees,
-            seriesId: occurrence.seriesId,
-          })),
-        ).groups
-      : []
+    event.type === "Recurring" ? await loadRecurringSeriesSummaries(db, event.id) : []
 
   const uniqueAttendees =
     event.type === "OneTime"
@@ -195,20 +181,9 @@ async function getEventDashboard(id: string, period: PeriodFilter, roleFilter: L
               lte: periodEnd,
             },
           },
-          orderBy: { resolvedAt: "desc" },
           select: {
             id: true,
-            resolvedAt: true,
-            smallGroup: { select: { name: true } },
-            member: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                groupStatus: true,
-                smallGroupId: true,
-              },
-            },
+            member: { select: { smallGroupId: true } },
           },
         })
 
@@ -225,10 +200,7 @@ async function getEventDashboard(id: string, period: PeriodFilter, roleFilter: L
   const participantMembers = new Map<
     string,
     {
-      id: string
-      fullName: string
       groupStatus: "Member" | "Timothy" | "Leader" | null
-      smallGroupId: string | null
       updatedAt: Date
     }
   >()
@@ -236,10 +208,7 @@ async function getEventDashboard(id: string, period: PeriodFilter, roleFilter: L
   for (const registrant of event.registrants) {
     if (registrant.member) {
       participantMembers.set(registrant.member.id, {
-        id: registrant.member.id,
-        fullName: `${registrant.member.firstName} ${registrant.member.lastName}`,
         groupStatus: registrant.member.groupStatus,
-        smallGroupId: registrant.member.smallGroupId,
         updatedAt: registrant.member.updatedAt,
       })
     }
@@ -247,10 +216,7 @@ async function getEventDashboard(id: string, period: PeriodFilter, roleFilter: L
     if (registrant.guest?.member) {
       const promoted = registrant.guest.member
       participantMembers.set(promoted.id, {
-        id: promoted.id,
-        fullName: `${promoted.firstName} ${promoted.lastName}`,
         groupStatus: promoted.groupStatus,
-        smallGroupId: promoted.smallGroupId,
         updatedAt: promoted.updatedAt,
       })
     }
@@ -264,39 +230,24 @@ async function getEventDashboard(id: string, period: PeriodFilter, roleFilter: L
       // Only add if not already tracked via a registrant record
       if (!participantMembers.has(m.id)) {
         participantMembers.set(m.id, {
-          id: m.id,
-          fullName: `${m.firstName} ${m.lastName}`,
           groupStatus: m.groupStatus,
-          smallGroupId: m.smallGroupId,
           updatedAt: m.updatedAt,
         })
       }
     }
   }
 
-  const newLeaders = Array.from(participantMembers.values())
-    .filter((member) => {
-      const isLeadershipRole = member.groupStatus === "Leader" || member.groupStatus === "Timothy"
-      if (!isLeadershipRole) return false
-      if (member.updatedAt < periodStart) return false
-      if (roleFilter === "all") return true
-      return member.groupStatus === roleFilter
-    })
-    .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+  let newTimothys = 0
+  let newLeaders = 0
+  for (const member of participantMembers.values()) {
+    if (member.updatedAt < periodStart) continue
+    if (member.groupStatus === "Timothy") newTimothys++
+    else if (member.groupStatus === "Leader") newLeaders++
+  }
 
-  const confirmedGuestsNowMembers = confirmedGuestRequests
-    .filter((req) => req.member?.smallGroupId)
-    .map((req) => ({
-      id: req.id,
-      name: `${req.member!.firstName} ${req.member!.lastName}`,
-      memberStatus: req.member!.groupStatus,
-      smallGroupName: req.smallGroup.name,
-      resolvedAt: req.resolvedAt!.toISOString(),
-    }))
-    .filter((row) => {
-      if (roleFilter === "all") return true
-      return row.memberStatus === roleFilter
-    })
+  const confirmedGuestsCount = confirmedGuestRequests.filter(
+    (req) => req.member?.smallGroupId
+  ).length
 
   const participantsWithoutSmallGroup = event.registrants
     .flatMap<UngroupedParticipant>((registrant) => {
@@ -336,21 +287,54 @@ async function getEventDashboard(id: string, period: PeriodFilter, roleFilter: L
     })
     .filter((person, index, list) => list.findIndex((p) => p.id === person.id) === index)
 
-  const confirmedVolunteers = event.volunteers
-    .filter((volunteer) => volunteer.status === "Confirmed")
-    .map((volunteer) => ({
-      id: volunteer.member.id,
-      name: `${volunteer.member.firstName} ${volunteer.member.lastName}`,
-    }))
+  const membersUnassigned = participantsWithoutSmallGroup.filter((p) => p.type === "Member").length
+  const guestsUnassigned = participantsWithoutSmallGroup.filter((p) => p.type === "Guest").length
 
-  const unconfirmedVolunteers = event.volunteers
-    .filter((volunteer) => volunteer.status !== "Confirmed")
-    .map((volunteer) => ({
-      id: volunteer.member.id,
-      name: `${volunteer.member.firstName} ${volunteer.member.lastName}`,
-      status: volunteer.status,
-    }))
+  const groupedMemberIds = new Set<string>()
+  for (const registrant of event.registrants) {
+    const member = registrant.member ?? registrant.guest?.member
+    if (member?.smallGroupId) groupedMemberIds.add(member.id)
+  }
+  const inGroup = groupedMemberIds.size
 
+  // Cumulative registration growth, bucketed by UTC day. Registrants created
+  // before the window still count toward the baseline so the line starts at
+  // the right height.
+  const sortedRegistrationDates = event.registrants
+    .map((r) => r.createdAt)
+    .sort((a, b) => a.getTime() - b.getTime())
+  const registrationWindowStart =
+    period === "all" && sortedRegistrationDates.length > 0
+      ? sortedRegistrationDates[0]
+      : periodStart
+
+  let registrationBaseline = 0
+  const dailyRegistrations = new Map<string, number>()
+  for (const created of sortedRegistrationDates) {
+    if (created < registrationWindowStart) {
+      registrationBaseline++
+      continue
+    }
+    if (created > periodEnd) continue
+    const key = dayKey(created)
+    dailyRegistrations.set(key, (dailyRegistrations.get(key) ?? 0) + 1)
+  }
+
+  let runningTotal = registrationBaseline
+  const registrationSeries = Array.from(dailyRegistrations.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, count]) => {
+      runningTotal += count
+      return { date, total: runningTotal }
+    })
+  if (registrationBaseline > 0 && registrationSeries[0]?.date !== dayKey(registrationWindowStart)) {
+    registrationSeries.unshift({
+      date: dayKey(registrationWindowStart),
+      total: registrationBaseline,
+    })
+  }
+
+  const confirmedVolunteerCount = event.volunteers.filter((v) => v.status === "Confirmed").length
   const pendingVolunteerCount = event.volunteers.filter((v) => v.status === "Pending").length
   const rejectedVolunteerCount = event.volunteers.filter((v) => v.status === "Rejected").length
 
@@ -382,21 +366,27 @@ async function getEventDashboard(id: string, period: PeriodFilter, roleFilter: L
     occurrenceCount: event._count.occurrences,
     totalCheckIns,
     period,
-    roleFilter,
     averageAttendance,
     uniqueAttendees,
-    newLeaders: newLeaders.map((leader) => ({
-      id: leader.id,
-      name: leader.fullName,
-      groupStatus: leader.groupStatus,
-      updatedAt: leader.updatedAt.toISOString(),
-    })),
-    confirmedGuestsNowMembers,
-    participantsWithoutSmallGroup,
     attendanceSeries: occurrenceSeries.map((occurrence) => ({
       date: occurrence.date.toISOString(),
       attendees: occurrence._count.attendees,
     })),
+    registrationSeries,
+    placement: {
+      inGroup,
+      membersUnassigned,
+      guestsUnassigned,
+    },
+    unassignedCount: participantsWithoutSmallGroup.length,
+    pipeline: {
+      registered: event._count.registrants,
+      attended: uniqueAttendees,
+      inSmallGroup: inGroup,
+      newTimothys,
+      newLeaders,
+    },
+    confirmedGuestsCount,
     seriesSummaries: recurringSeriesSummaries.map((series) => ({
       id: series.id,
       title: series.title,
@@ -406,8 +396,7 @@ async function getEventDashboard(id: string, period: PeriodFilter, roleFilter: L
       totalAttendance: series.totalAttendance,
       averageAttendance: series.averageAttendance,
     })),
-    confirmedVolunteers,
-    unconfirmedVolunteers,
+    confirmedVolunteerCount,
     pendingVolunteerCount,
     rejectedVolunteerCount,
     brandBackground,
@@ -424,16 +413,12 @@ export default async function EventDashboardPage({
   const { id } = await params
   const sp = await searchParams
   const period = ((sp.period as string) || "30d") as PeriodFilter
-  const roleFilter = ((sp.roleFilter as string) || "all") as LeaderRoleFilter
 
   const normalizedPeriod: PeriodFilter = ["7d", "30d", "90d", "all"].includes(period)
     ? period
     : "30d"
-  const normalizedRoleFilter: LeaderRoleFilter = ["all", "Timothy", "Leader"].includes(roleFilter)
-    ? roleFilter
-    : "all"
 
-  let event = await getEventDashboard(id, normalizedPeriod, normalizedRoleFilter)
+  let event = await getEventDashboard(id, normalizedPeriod)
   if (!event) notFound()
 
   // Ensure MultiDay occurrences are up to date
@@ -443,7 +428,7 @@ export default async function EventDashboardPage({
       new Date(event.startDate),
       new Date(event.endDate)
     )
-    event = await getEventDashboard(id, normalizedPeriod, normalizedRoleFilter)
+    event = await getEventDashboard(id, normalizedPeriod)
     if (!event) notFound()
   }
 

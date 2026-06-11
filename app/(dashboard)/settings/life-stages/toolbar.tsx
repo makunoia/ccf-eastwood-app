@@ -13,7 +13,7 @@ export function LifeStagesToolbar() {
     <>
       <Button onClick={() => setOpen(true)}>
         <IconPlus />
-        <span className="hidden sm:inline">Add Life Stage</span>
+        Add Life Stage
       </Button>
       <LifeStageDialog open={open} onOpenChange={setOpen} />
     </>

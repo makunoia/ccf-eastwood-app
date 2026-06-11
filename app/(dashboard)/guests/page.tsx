@@ -2,6 +2,7 @@ import { Gender, Prisma } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import { canExport, canImport } from "@/lib/permissions"
+import { PageHeader } from "@/components/page-header"
 import { type GuestRow } from "./columns"
 import { GuestsTable } from "./guests-table"
 import { GuestsFilters } from "./guests-filters"
@@ -75,22 +76,19 @@ export default async function GuestsPage({
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h2 className="type-headline">Guests</h2>
-          <p className="text-sm text-muted-foreground">
-            Non-members who have attended events
-          </p>
-        </div>
-        <GuestsToolbar
-          guests={guests}
-          canImport={canImport(session, "Guests")}
-          canExport={canExport(session, "Guests")}
-        />
-      </div>
+      <PageHeader
+        title="Guests"
+        description="Non-members who have attended events"
+        actions={
+          <GuestsToolbar
+            guests={guests}
+            canImport={canImport(session, "Guests")}
+            canExport={canExport(session, "Guests")}
+          />
+        }
+      />
 
       <GuestsFilters
-        key={`${search}-${lifeStageId}-${gender}`}
         lifeStages={lifeStages}
         search={search}
         lifeStageId={lifeStageId}
