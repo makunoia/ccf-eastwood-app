@@ -32,7 +32,6 @@ export async function lookupVolunteer(
         orderBy: { createdAt: "asc" },
       },
       ledGroups: {
-        take: 1,
         orderBy: { createdAt: "asc" },
         select: {
           id: true,
@@ -79,7 +78,7 @@ export async function lookupVolunteer(
       phone: member.phone,
       groupStatus: member.groupStatus,
       schedulePreferences: member.schedulePreferences,
-      ledGroup: member.ledGroups[0] ?? null,
+      ledGroups: member.ledGroups,
     },
   }
 }
@@ -94,8 +93,27 @@ export async function submitVolunteerInfo(
     return { success: false, error: "Invalid form data" }
   }
 
-  const { memberId, eventId, firstName, lastName, email, phone, leadershipStatus, groupFields } =
+  const { memberId, eventId, firstName, lastName, email, phone, leadershipStatus, groupId, groupFields } =
     parsed.data
+
+  // Resolve which led group the groupFields apply to. An explicit groupId must
+  // belong to this member; without one, fall back to their oldest led group.
+  const targetGroup =
+    (leadershipStatus === "leader" || leadershipStatus === "timothy") && groupFields
+      ? groupId
+        ? await db.smallGroup.findFirst({
+            where: { id: groupId, leaderId: memberId },
+            select: { id: true, status: true },
+          })
+        : await db.smallGroup.findFirst({
+            where: { leaderId: memberId },
+            orderBy: { createdAt: "asc" },
+            select: { id: true, status: true },
+          })
+      : null
+  if (groupId && groupFields && leadershipStatus !== "none" && !targetGroup) {
+    return { success: false, error: "Group not found" }
+  }
 
   try {
     const event = await db.event.findUnique({
@@ -113,11 +131,7 @@ export async function submitVolunteerInfo(
 
       // ── SmallGroup create/update (leader and Timothy both) ──────────────────
       if ((leadershipStatus === "leader" || leadershipStatus === "timothy") && groupFields) {
-        const existing = await tx.smallGroup.findFirst({
-          where: { leaderId: memberId },
-          orderBy: { createdAt: "asc" },
-          select: { id: true, status: true },
-        })
+        const existing = targetGroup
 
         const groupData = {
           name: groupFields.name,

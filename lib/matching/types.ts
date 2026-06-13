@@ -64,6 +64,9 @@ export type MatchResult = {
   totalScore: number
   breakdown: ScoreBreakdown
   candidateProfile: CandidateProfile
+  // True when the group recently received a guest assignment and is only shown
+  // because no other eligible groups remain (cooldown fallback).
+  onCooldown?: boolean
 }
 
 export type EscalationLevel = {

@@ -30,6 +30,10 @@ export const volunteerInfoSchema = z.object({
   // Leadership
   leadershipStatus: z.enum(["leader", "timothy", "none"]),
 
+  // Which led group the groupFields apply to — null falls back to the oldest
+  // led group (or creates one when none exists)
+  groupId: z.string().nullable(),
+
   // Set when leadershipStatus === "leader" or "timothy"
   groupFields: groupFieldsSchema.nullable(),
 })
@@ -44,7 +48,7 @@ export type VolunteerIdentity = {
   phone: string | null
   groupStatus: "Member" | "Timothy" | "Leader" | null
   schedulePreferences: { dayOfWeek: number; timeStart: string; timeEnd: string | null }[]
-  ledGroup: {
+  ledGroups: {
     id: string
     name: string
     lifeStageId: string | null
@@ -58,5 +62,5 @@ export type VolunteerIdentity = {
     scheduleDayOfWeek: number | null
     scheduleTimeStart: string | null
     scheduleTimeEnd: string | null
-  } | null
+  }[]
 }

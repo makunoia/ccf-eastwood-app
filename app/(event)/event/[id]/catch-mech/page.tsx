@@ -45,7 +45,7 @@ async function getCatchMechData(eventId: string) {
                   id: true,
                   firstName: true,
                   lastName: true,
-                  ledGroups: { select: { id: true, name: true }, take: 1 },
+                  ledGroups: { select: { id: true, name: true }, orderBy: { name: "asc" } },
                 },
               },
             },
@@ -104,7 +104,7 @@ async function getCatchMechData(eventId: string) {
   for (const bg of event.breakoutGroups) {
     const faciMember = bg.facilitator?.member ?? null
     const isTimothy = faciMember ? faciMember.ledGroups.length === 0 : false
-    const ledGroupName = !isTimothy ? (faciMember?.ledGroups[0]?.name ?? null) : null
+    const ledGroupNames = faciMember?.ledGroups.map((g) => g.name) ?? []
 
     const groupRequests = allRequests.filter((r) => r.breakoutGroupId === bg.id)
 
@@ -153,7 +153,7 @@ async function getCatchMechData(eventId: string) {
       faciName: faciMember ? `${faciMember.firstName} ${faciMember.lastName}` : null,
       faciMemberId: faciMember?.id ?? null,
       isTimothy,
-      ledGroupName,
+      ledGroupNames,
       totalMembers: total,
       confirmedCount: confirmed,
       rejectedCount: rejected,

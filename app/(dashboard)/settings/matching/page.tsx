@@ -1,8 +1,12 @@
 import { db } from "@/lib/db"
 import { MatchingContext } from "@/app/generated/prisma/client"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { type MatchingWeightsFormValues } from "@/lib/validations/matching-weights"
+import {
+  DEFAULT_GUEST_COOLDOWN_DAYS,
+  type MatchingWeightsFormValues,
+} from "@/lib/validations/matching-weights"
 import { MatchingWeightsForm } from "./matching-weights-form"
+import { GuestCooldownForm } from "./guest-cooldown-form"
 
 async function getWeights(context: MatchingContext): Promise<MatchingWeightsFormValues | null> {
   const row = await db.matchingWeightConfig.findUnique({ where: { context } })
@@ -20,10 +24,19 @@ async function getWeights(context: MatchingContext): Promise<MatchingWeightsForm
   }
 }
 
+async function getGuestCooldownDays(): Promise<number> {
+  const row = await db.matchingWeightConfig.findUnique({
+    where: { context: MatchingContext.SmallGroup },
+    select: { guestCooldownDays: true },
+  })
+  return row?.guestCooldownDays ?? DEFAULT_GUEST_COOLDOWN_DAYS
+}
+
 export default async function MatchingWeightsPage() {
-  const [smallGroupWeights, breakoutWeights] = await Promise.all([
+  const [smallGroupWeights, breakoutWeights, guestCooldownDays] = await Promise.all([
     getWeights(MatchingContext.SmallGroup),
     getWeights(MatchingContext.Breakout),
+    getGuestCooldownDays(),
   ])
 
   return (
@@ -42,11 +55,12 @@ export default async function MatchingWeightsPage() {
           <TabsTrigger value="breakout">Breakout</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="small-group" className="mt-6">
+        <TabsContent value="small-group" className="mt-6 space-y-6">
           <MatchingWeightsForm
             context={MatchingContext.SmallGroup}
             initial={smallGroupWeights}
           />
+          <GuestCooldownForm initial={guestCooldownDays} />
         </TabsContent>
 
         <TabsContent value="breakout" className="mt-6">

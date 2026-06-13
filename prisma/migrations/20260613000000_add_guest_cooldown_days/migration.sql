@@ -1,0 +1,1 @@
+ALTER TABLE "MatchingWeightConfig" ADD COLUMN IF NOT EXISTS "guestCooldownDays" INTEGER NOT NULL DEFAULT 7;

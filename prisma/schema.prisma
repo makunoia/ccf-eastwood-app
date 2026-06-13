@@ -261,6 +261,9 @@ model Member {
   workIndustry        String?
   meetingPreference   MeetingPreference?
 
+  // Self-service token for the public /me member portal link
+  selfServiceToken    String?             @unique
+
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
 
@@ -657,6 +660,9 @@ model MatchingWeightConfig {
   mode      Float
   career    Float
   capacity  Float
+  // Days a group is excluded from guest match suggestions after receiving a
+  // guest assignment (0 = disabled). Only meaningful on the SmallGroup row.
+  guestCooldownDays Int      @default(7)
   updatedAt DateTime        @updatedAt
 }
 

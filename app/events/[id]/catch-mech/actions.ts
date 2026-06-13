@@ -113,13 +113,14 @@ export async function submitCatchMechConfirmations(
       eventId: true,
       facilitatorVolunteerId: true,
       breakoutGroupId: true,
+      breakoutGroup: { select: { linkedSmallGroupId: true } },
       facilitator: {
         select: {
           memberId: true,
           member: {
             select: {
               id: true,
-              ledGroups: { select: { id: true }, take: 1 },
+              ledGroups: { select: { id: true } },
             },
           },
         },
@@ -143,8 +144,21 @@ export async function submitCatchMechConfirmations(
     return { success: true, requiresGroupName: false }
   }
 
-  const smallGroup = await db.smallGroup.findFirst({
-    where: { leaderId: faciMember.id },
+  // Resolve the target group: the breakout's explicit link wins; otherwise the
+  // faci's led group — unambiguous only when they lead exactly one.
+  const targetGroupId =
+    session.breakoutGroup.linkedSmallGroupId ??
+    (faciMember.ledGroups.length === 1 ? faciMember.ledGroups[0].id : null)
+  if (!targetGroupId) {
+    return {
+      success: false,
+      error:
+        "You lead multiple small groups — ask an admin to link this breakout group to one of them first",
+    }
+  }
+
+  const smallGroup = await db.smallGroup.findUnique({
+    where: { id: targetGroupId },
     select: { id: true, status: true },
   })
   if (!smallGroup) {

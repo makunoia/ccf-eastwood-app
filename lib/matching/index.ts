@@ -1,7 +1,7 @@
 import { unstable_cache } from "next/cache"
 import { db } from "@/lib/db"
 import { MatchingContext } from "@/app/generated/prisma/client"
-import { DEFAULT_WEIGHTS } from "@/lib/validations/matching-weights"
+import { DEFAULT_WEIGHTS, DEFAULT_GUEST_COOLDOWN_DAYS } from "@/lib/validations/matching-weights"
 import { scoreGroup } from "./engine"
 import { scoreGender, scoreLifeStage, scoreSchedule } from "./scorers"
 import { EMPTY_CANDIDATE } from "./types"
@@ -174,6 +174,55 @@ const loadBreakoutWeights = unstable_cache(
   { revalidate: 60 }
 )
 
+const loadGuestCooldownDays = unstable_cache(
+  async (): Promise<number> => {
+    const config = await db.matchingWeightConfig.findUnique({
+      where: { context: MatchingContext.SmallGroup },
+      select: { guestCooldownDays: true },
+    })
+    return config?.guestCooldownDays ?? DEFAULT_GUEST_COOLDOWN_DAYS
+  },
+  ["matching-guest-cooldown-days"],
+  { revalidate: 60 }
+)
+
+/**
+ * Groups currently on guest-assignment cooldown: they received a guest
+ * assignment (a Pending or Confirmed request) within the cooldown window.
+ * Rejected/cancelled requests release the cooldown immediately.
+ */
+async function getGuestCooldownGroupIds(): Promise<Set<string>> {
+  const days = await loadGuestCooldownDays()
+  if (days <= 0) return new Set()
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+  const recent = await db.smallGroupMemberRequest.findMany({
+    where: {
+      guestId: { not: null },
+      status: { in: ["Pending", "Confirmed"] },
+      createdAt: { gte: cutoff },
+    },
+    select: { smallGroupId: true },
+  })
+  return new Set(recent.map((r) => r.smallGroupId))
+}
+
+/**
+ * Applies the guest-assignment cooldown to an eligible group list.
+ * Cooling-down groups are dropped — unless that would leave the seeker with
+ * nothing, in which case all eligible groups are kept and the cooling-down
+ * ones are flagged so the UI can surface them as "recently assigned".
+ */
+function applyCooldown<T extends { id: string }>(
+  eligible: T[],
+  cooldownGroupIds: Set<string>
+): { pool: T[]; isOnCooldown: (id: string) => boolean } {
+  const nonCooldown = eligible.filter((g) => !cooldownGroupIds.has(g.id))
+  if (nonCooldown.length > 0) {
+    return { pool: nonCooldown, isOnCooldown: () => false }
+  }
+  return { pool: eligible, isOnCooldown: (id) => cooldownGroupIds.has(id) }
+}
+
 // ─── Small Group Matching ─────────────────────────────────────────────────────
 
 export async function matchSmallGroups(
@@ -286,8 +335,17 @@ export async function matchSmallGroups(
     return true
   })
 
-  return eligible
-    .map((g) => scoreGroup(candidate, buildSmallGroupProfile(g), weights))
+  // Cooldown applies to guest seekers only — member transfers are deliberate
+  // admin moves and stay unrestricted.
+  const cooldownGroupIds =
+    "guestId" in params ? await getGuestCooldownGroupIds() : new Set<string>()
+  const { pool, isOnCooldown } = applyCooldown(eligible, cooldownGroupIds)
+
+  return pool
+    .map((g) => ({
+      ...scoreGroup(candidate, buildSmallGroupProfile(g), weights),
+      onCooldown: isOnCooldown(g.id),
+    }))
     .sort((a, b) => b.totalScore - a.totalScore)
     .slice(0, options?.limit ?? 10)
 }
@@ -391,8 +449,17 @@ export async function matchSmallGroupsWithEscalation(
     return true
   })
 
-  const scored = eligible.map((g) => ({
-    result: scoreGroup(candidate, buildSmallGroupProfile(g), weights),
+  // Escalation matching is always for a guest — apply the cooldown across the
+  // whole eligible set so the fallback considers every level, not each level
+  // in isolation.
+  const cooldownGroupIds = await getGuestCooldownGroupIds()
+  const { pool, isOnCooldown } = applyCooldown(eligible, cooldownGroupIds)
+
+  const scored = pool.map((g) => ({
+    result: {
+      ...scoreGroup(candidate, buildSmallGroupProfile(g), weights),
+      onCooldown: isOnCooldown(g.id),
+    },
     id: g.id,
   }))
 

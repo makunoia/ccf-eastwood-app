@@ -38,7 +38,6 @@ async function getSessionData(token: string) {
               groupStatus: true,
               ledGroups: {
                 select: { id: true, name: true },
-                take: 1,
               },
             },
           },
@@ -47,6 +46,7 @@ async function getSessionData(token: string) {
       breakoutGroup: {
         select: {
           name: true,
+          linkedSmallGroupId: true,
           members: {
             orderBy: { assignedAt: "asc" },
             select: {
@@ -71,7 +71,11 @@ async function getSessionData(token: string) {
 
   const faciMember = session.facilitator.member
   const isTimothy = faciMember.ledGroups.length === 0
-  const leadingGroupId = isTimothy ? null : faciMember.ledGroups[0].id
+  // Mirror the submit action's target resolution: explicit breakout link first,
+  // then the faci's led group when they lead exactly one.
+  const leadingGroupId =
+    session.breakoutGroup.linkedSmallGroupId ??
+    (faciMember.ledGroups.length === 1 ? faciMember.ledGroups[0].id : null)
 
   // Collect IDs for a batch lookup of existing SmallGroupMemberRequests
   const guestIds = session.breakoutGroup.members
