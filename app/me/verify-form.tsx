@@ -1,0 +1,53 @@
+"use client"
+
+import * as React from "react"
+import { useRouter } from "next/navigation"
+import { PhonePHInput } from "@/components/ui/phone-ph-input"
+import { verifyMemberMobile } from "./actions"
+
+export function VerifyForm() {
+  const router = useRouter()
+  const [mobile, setMobile] = React.useState("")
+  const [loading, setLoading] = React.useState(false)
+  const [error, setError] = React.useState("")
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setError("")
+    setLoading(true)
+    const result = await verifyMemberMobile(mobile)
+    if (!result.success) {
+      setLoading(false)
+      setError(result.error)
+      return
+    }
+    router.push(`/me/${result.data.token}`)
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="space-y-1.5">
+        <label htmlFor="mobile" className="text-sm font-medium">
+          Mobile number
+        </label>
+        <PhonePHInput
+          id="mobile"
+          value={mobile}
+          onChange={(val) => {
+            setMobile(val)
+            setError("")
+          }}
+          autoFocus
+        />
+        {error && <p className="text-xs text-destructive">{error}</p>}
+      </div>
+      <button
+        type="submit"
+        disabled={loading || !mobile.trim()}
+        className="w-full rounded-lg bg-primary text-primary-foreground py-2.5 text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
+      >
+        {loading ? "Verifying…" : "Continue"}
+      </button>
+    </form>
+  )
+}

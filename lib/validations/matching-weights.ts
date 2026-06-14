@@ -35,6 +35,16 @@ export const WEIGHT_FIELDS: Array<{
   { key: "capacity", label: "Group Availability", description: "Prefer groups with open spots" },
 ]
 
+// Days a small group is excluded from guest match suggestions after receiving
+// a guest assignment. 0 disables the cooldown.
+export const DEFAULT_GUEST_COOLDOWN_DAYS = 7
+
+export const guestCooldownDaysSchema = z.coerce
+  .number()
+  .int("Must be a whole number")
+  .min(0, "Must be at least 0")
+  .max(365, "Must be at most 365")
+
 export const DEFAULT_WEIGHTS: MatchingWeightsFormValues = {
   lifeStage: 0.20,
   gender: 0.10,

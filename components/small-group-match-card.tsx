@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -89,7 +90,14 @@ export function SmallGroupMatchCard({
             ) : (
               <p className="font-medium">{result.groupName}</p>
             )}
-            <p className="text-sm text-muted-foreground">{score}% match</p>
+            <div className="flex items-center gap-2">
+              <p className="text-sm text-muted-foreground">{score}% match</p>
+              {result.onCooldown && (
+                <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">
+                  Recently assigned a guest
+                </Badge>
+              )}
+            </div>
             {subtitle && (
               <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>
             )}

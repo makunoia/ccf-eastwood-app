@@ -4,7 +4,7 @@ import * as React from "react"
 import { IconCheck } from "@tabler/icons-react"
 import { PhonePHInput } from "@/components/ui/phone-ph-input"
 import { OptionalEmailInput } from "@/components/ui/optional-email-input"
-import { TimeInput } from "@/components/ui/time-input"
+import { ScheduleInput } from "@/components/ui/schedule-input"
 import { MultiSelect } from "@/components/ui/multi-select"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -26,8 +26,6 @@ type Props = {
   eventId: string
   lifeStages: LifeStage[]
 }
-
-const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 
 const MEETING_FORMAT_OPTIONS = [
   { value: "Online", label: "Online" },
@@ -57,6 +55,23 @@ function emptyGroupFields(): GroupFields {
     scheduleDayOfWeek: null,
     scheduleTimeStart: null,
     scheduleTimeEnd: null,
+  }
+}
+
+function groupToFields(g: VolunteerIdentity["ledGroups"][number]): GroupFields {
+  return {
+    name: g.name,
+    lifeStageId: g.lifeStageId,
+    genderFocus: g.genderFocus,
+    language: g.language,
+    ageRangeMin: g.ageRangeMin,
+    ageRangeMax: g.ageRangeMax,
+    meetingFormat: g.meetingFormat,
+    locationCity: g.locationCity,
+    memberLimit: g.memberLimit,
+    scheduleDayOfWeek: g.scheduleDayOfWeek,
+    scheduleTimeStart: g.scheduleTimeStart,
+    scheduleTimeEnd: g.scheduleTimeEnd,
   }
 }
 
@@ -218,43 +233,15 @@ function GroupFieldsEditor({
 
       <div className="space-y-2">
         <Label>Meeting schedule</Label>
-        <div className="grid grid-cols-3 gap-3">
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Day</Label>
-            <Select
-              value={value.scheduleDayOfWeek !== null ? String(value.scheduleDayOfWeek) : "none"}
-              onValueChange={(v) =>
-                onChange({ ...value, scheduleDayOfWeek: v === "none" ? null : Number(v) })
-              }
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Day" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Not set</SelectItem>
-                {DAYS.map((d, i) => (
-                  <SelectItem key={i} value={String(i)}>
-                    {d}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Start</Label>
-            <TimeInput
-              value={value.scheduleTimeStart ?? ""}
-              onChange={(v) => onChange({ ...value, scheduleTimeStart: v || null })}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">End</Label>
-            <TimeInput
-              value={value.scheduleTimeEnd ?? ""}
-              onChange={(v) => onChange({ ...value, scheduleTimeEnd: v || null })}
-            />
-          </div>
-        </div>
+        <ScheduleInput
+          dayOfWeek={value.scheduleDayOfWeek !== null ? String(value.scheduleDayOfWeek) : ""}
+          timeStart={value.scheduleTimeStart ?? ""}
+          timeEnd={value.scheduleTimeEnd ?? ""}
+          onDayChange={(v) => onChange({ ...value, scheduleDayOfWeek: v ? Number(v) : null })}
+          onTimeStartChange={(v) => onChange({ ...value, scheduleTimeStart: v || null })}
+          onTimeEndChange={(v) => onChange({ ...value, scheduleTimeEnd: v || null })}
+          allowAny
+        />
       </div>
     </div>
   )
@@ -280,6 +267,7 @@ export function VolunteerInfoForm({ eventId, lifeStages }: Props) {
 
   // Leadership
   const [leadershipStatus, setLeadershipStatus] = React.useState<LeadershipStatus>("none")
+  const [selectedGroupId, setSelectedGroupId] = React.useState<string | null>(null)
   const [groupFields, setGroupFields] = React.useState<GroupFields>(emptyGroupFields())
 
   // Submit
@@ -309,32 +297,21 @@ export function VolunteerInfoForm({ eventId, lifeStages }: Props) {
     setEmail(v.email ?? "")
     setPhone(v.phone ?? lookupPhone)
 
-    // Prioritize ledGroup existence: a member who leads a group should always
+    // Prioritize led-group existence: a member who leads a group should always
     // be treated as leader/timothy even if groupStatus is stale or null.
     if (v.groupStatus === "Timothy") {
       setLeadershipStatus("timothy")
-    } else if (v.groupStatus === "Leader" || v.ledGroup) {
+    } else if (v.groupStatus === "Leader" || v.ledGroups.length > 0) {
       setLeadershipStatus("leader")
     } else {
       setLeadershipStatus("none")
     }
 
     // Pre-fill group fields from their existing led group (leader or Timothy with pending group)
-    if (v.ledGroup) {
-      setGroupFields({
-        name: v.ledGroup.name,
-        lifeStageId: v.ledGroup.lifeStageId,
-        genderFocus: v.ledGroup.genderFocus,
-        language: v.ledGroup.language,
-        ageRangeMin: v.ledGroup.ageRangeMin,
-        ageRangeMax: v.ledGroup.ageRangeMax,
-        meetingFormat: v.ledGroup.meetingFormat,
-        locationCity: v.ledGroup.locationCity,
-        memberLimit: v.ledGroup.memberLimit,
-        scheduleDayOfWeek: v.ledGroup.scheduleDayOfWeek,
-        scheduleTimeStart: v.ledGroup.scheduleTimeStart,
-        scheduleTimeEnd: v.ledGroup.scheduleTimeEnd,
-      })
+    const firstGroup = v.ledGroups[0]
+    if (firstGroup) {
+      setSelectedGroupId(firstGroup.id)
+      setGroupFields(groupToFields(firstGroup))
     } else if (v.groupStatus === "Timothy" && v.schedulePreferences.length > 0) {
       // Timothy with no pending group yet — pre-fill schedule from their preferences
       const pref = v.schedulePreferences[0]
@@ -365,6 +342,7 @@ export function VolunteerInfoForm({ eventId, lifeStages }: Props) {
       email: noEmail ? null : email.trim() || null,
       phone,
       leadershipStatus,
+      groupId: leadershipStatus !== "none" ? selectedGroupId : null,
       groupFields: leadershipStatus !== "none" ? groupFields : null,
     }
 
@@ -468,14 +446,40 @@ export function VolunteerInfoForm({ eventId, lifeStages }: Props) {
           Small Group Leadership
         </h2>
 
-        {identity?.ledGroup ? (
+        {identity && identity.ledGroups.length > 0 ? (
           // Already leads a group — skip the status question, show form directly
-          <GroupFieldsEditor
-            value={groupFields}
-            onChange={setGroupFields}
-            lifeStages={lifeStages}
-            nameLabel="Group name"
-          />
+          <div className="space-y-4">
+            {identity.ledGroups.length > 1 && (
+              <div className="space-y-1.5">
+                <Label>Which group are you updating?</Label>
+                <Select
+                  value={selectedGroupId ?? undefined}
+                  onValueChange={(id) => {
+                    setSelectedGroupId(id)
+                    const g = identity.ledGroups.find((lg) => lg.id === id)
+                    if (g) setGroupFields(groupToFields(g))
+                  }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select a group" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {identity.ledGroups.map((g) => (
+                      <SelectItem key={g.id} value={g.id}>
+                        {g.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <GroupFieldsEditor
+              value={groupFields}
+              onChange={setGroupFields}
+              lifeStages={lifeStages}
+              nameLabel="Group name"
+            />
+          </div>
         ) : (
           <>
             <p className="text-sm text-muted-foreground">

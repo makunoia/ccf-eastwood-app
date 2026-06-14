@@ -5,6 +5,8 @@ import { MatchingContext } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import {
   matchingWeightsSchema,
+  guestCooldownDaysSchema,
+  DEFAULT_WEIGHTS,
   type MatchingWeightsFormValues,
 } from "@/lib/validations/matching-weights"
 
@@ -39,5 +41,24 @@ export async function upsertMatchingWeights(
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to save matching weights" }
+  }
+}
+
+export async function updateGuestCooldownDays(raw: number): Promise<ActionResult> {
+  const parsed = guestCooldownDaysSchema.safeParse(raw)
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
+  }
+
+  try {
+    await db.matchingWeightConfig.upsert({
+      where: { context: MatchingContext.SmallGroup },
+      create: { context: MatchingContext.SmallGroup, ...DEFAULT_WEIGHTS, guestCooldownDays: parsed.data },
+      update: { guestCooldownDays: parsed.data },
+    })
+    revalidatePath("/settings/matching")
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to save cooldown setting" }
   }
 }

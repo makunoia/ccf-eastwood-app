@@ -33,7 +33,7 @@ export type GroupRow = {
   faciName: string | null
   faciMemberId: string | null
   isTimothy: boolean
-  ledGroupName: string | null
+  ledGroupNames: string[]
   totalMembers: number
   confirmedCount: number
   rejectedCount: number
@@ -158,11 +158,15 @@ function FacilitatorDetailSheet({
             </Badge>
           </div>
 
-          {/* Led small group */}
-          {group.ledGroupName && (
+          {/* Led small groups */}
+          {group.ledGroupNames.length > 0 && (
             <div className="space-y-1.5">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Leads</p>
-              <p className="text-sm">{group.ledGroupName}</p>
+              <div className="space-y-1">
+                {group.ledGroupNames.map((name) => (
+                  <p key={name} className="text-sm">{name}</p>
+                ))}
+              </div>
             </div>
           )}
 
