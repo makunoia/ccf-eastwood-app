@@ -109,7 +109,7 @@ type ImportRow = {
   mapped: Record<string, string>
   resolution: RowResolution
   existingId?: string
-  existingType?: "member" | "guest" | "small-group"
+  existingType?: "member" | "guest" | "small-group" | "breakout-group"
 }
 
 function parseGender(v: string): Gender | null {

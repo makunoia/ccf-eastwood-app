@@ -14,6 +14,7 @@ import {
 import { toast } from "sonner"
 
 import { DetailPageHeader } from "@/components/detail-page-header"
+import { useListNavigation } from "@/lib/hooks/use-list-navigation"
 import { BreadcrumbOverride } from "@/components/breadcrumb-context"
 import { Button } from "@/components/ui/button"
 import { TimelineEntry } from "@/components/ui/timeline-entry"
@@ -193,6 +194,7 @@ export function SmallGroupForm({
 }: Props) {
   const router = useRouter()
   const isEdit = !!group
+  const { prev, next } = useListNavigation(group?.id ?? "", "smallGroupListIds")
   const [form, setForm] = React.useState<SmallGroupFormValues>(
     () => group ? toFormValues(group) : defaultSmallGroupForm
   )
@@ -425,6 +427,8 @@ export function SmallGroupForm({
       <DetailPageHeader
         title={isEdit ? group!.name : "New Small Group"}
         initials={isEdit ? getInitials(group!.name) : undefined}
+        prevHref={isEdit ? (prev ? `/small-groups/${prev}` : null) : undefined}
+        nextHref={isEdit ? (next ? `/small-groups/${next}` : null) : undefined}
         subtitle={
           !isEdit ? (
             <p className="text-sm text-muted-foreground">

@@ -9,9 +9,10 @@ type Props = {
   initials: string
   title: string
   subtitle?: React.ReactNode
+  action?: React.ReactNode
 }
 
-export function RegistrantNavHeader({ registrantId, eventId, initials, title, subtitle }: Props) {
+export function RegistrantNavHeader({ registrantId, eventId, initials, title, subtitle, action }: Props) {
   const { prev, next } = useListNavigation(registrantId, "registrantListIds")
 
   return (
@@ -19,6 +20,7 @@ export function RegistrantNavHeader({ registrantId, eventId, initials, title, su
       initials={initials}
       title={title}
       subtitle={subtitle}
+      action={action}
       prevHref={prev ? `/event/${eventId}/registrants/${prev}` : null}
       nextHref={next ? `/event/${eventId}/registrants/${next}` : null}
     />

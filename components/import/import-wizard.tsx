@@ -93,7 +93,7 @@ type Props = {
       mapped: Record<string, string>
       resolution: RowResolution
       existingId?: string
-      existingType?: "member" | "guest" | "small-group"
+      existingType?: "member" | "guest" | "small-group" | "breakout-group"
       leaderId?: string
       createLeader?: { type: "create"; firstName: string; lastName: string; email?: string; mobile?: string }
     }>

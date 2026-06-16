@@ -232,6 +232,13 @@ async function mergeIntoMember(tx: TxClient, keeperId: string, losers: LoserRef[
       // Any Guest that was promoted into the loser: re-point its memberId to the keeper.
       await tx.guest.updateMany({ where: { memberId: m.id }, data: { memberId: keeperId } })
 
+      // Delete the loser BEFORE filling the keeper. `fillNulls` can copy unique
+      // fields (email, phone) from the loser onto the keeper; if the loser still
+      // existed, that update would collide with the loser's own value and throw
+      // a P2002 unique-constraint error. `m` is already in memory, so deleting
+      // first is safe.
+      await tx.member.delete({ where: { id: m.id } })
+
       // Merge field values into keeper (fill nulls only)
       const fill = fillNulls(keeper, m)
       // Don't overwrite the keeper's smallGroupId from the loser's — could create circular refs
@@ -243,8 +250,6 @@ async function mergeIntoMember(tx: TxClient, keeperId: string, losers: LoserRef[
         await tx.member.update({ where: { id: keeperId }, data: fill })
         Object.assign(keeper, fill)
       }
-
-      await tx.member.delete({ where: { id: m.id } })
     } else {
       // Guest → Member promotion
       const g = await tx.guest.findUnique({ where: { id: loser.id } })
@@ -313,6 +318,11 @@ async function mergeIntoGuest(tx: TxClient, keeperId: string, losers: LoserRef[]
       keeper.memberId = g.memberId
     }
 
+    // Delete the loser BEFORE filling the keeper — `fillNulls` can copy unique
+    // fields (email, phone) from the loser, which would collide with the loser's
+    // own still-present value (P2002). `g` is already in memory, so this is safe.
+    await tx.guest.delete({ where: { id: g.id } })
+
     const fill = fillNulls(keeper, g)
     delete (fill as { id?: unknown }).id
     delete (fill as { createdAt?: unknown }).createdAt
@@ -322,7 +332,5 @@ async function mergeIntoGuest(tx: TxClient, keeperId: string, losers: LoserRef[]
       await tx.guest.update({ where: { id: keeperId }, data: fill })
       Object.assign(keeper, fill)
     }
-
-    await tx.guest.delete({ where: { id: g.id } })
   }
 }

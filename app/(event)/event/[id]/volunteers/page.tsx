@@ -1,8 +1,12 @@
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
+import { auth } from "@/lib/auth"
+import { canWrite } from "@/lib/permissions"
 import { PageHeader } from "@/components/page-header"
+import { BatchSelectionProvider } from "@/components/batch/batch-selection-provider"
 import { VolunteersTab, type EventVolunteer } from "@/app/(dashboard)/events/[id]/volunteers-tab"
 import { VolunteersToolbar } from "./volunteers-toolbar"
+import { VolunteersBatchBar } from "./volunteers-batch-bar"
 import { VolunteersFilters } from "./volunteers-filters"
 
 async function getEventVolunteers(
@@ -61,7 +65,8 @@ export default async function VolunteersPage({
   const status = (sp.status as string) || ""
   const committeeId = (sp.committeeId as string) || ""
 
-  const [event, committees] = await Promise.all([
+  const [session, event, committees] = await Promise.all([
+    auth(),
     getEventVolunteers(id, { search, status, committeeId }),
     db.volunteerCommittee.findMany({
       where: { eventId: id },
@@ -82,21 +87,32 @@ export default async function VolunteersPage({
     assignedRole: v.assignedRole,
   }))
 
+  const selectionEnabled = canWrite(session, "Events")
+
   return (
-    <div className="flex flex-1 flex-col gap-4 p-6">
-      <PageHeader
-        title="Volunteers"
-        actions={<VolunteersToolbar eventId={event.id} />}
-      />
+    <BatchSelectionProvider
+      allIds={volunteers.map((v) => v.id)}
+      enabled={selectionEnabled}
+    >
+      <div className="flex flex-1 flex-col gap-4 p-6">
+        <PageHeader
+          title="Volunteers"
+          actions={
+            <VolunteersBatchBar eventId={event.id}>
+              <VolunteersToolbar eventId={event.id} />
+            </VolunteersBatchBar>
+          }
+        />
 
-      <VolunteersFilters
-        committees={committees}
-        search={search}
-        status={status}
-        committeeId={committeeId}
-      />
+        <VolunteersFilters
+          committees={committees}
+          search={search}
+          status={status}
+          committeeId={committeeId}
+        />
 
-      <VolunteersTab volunteers={volunteers} eventId={event.id} />
-    </div>
+        <VolunteersTab volunteers={volunteers} eventId={event.id} />
+      </div>
+    </BatchSelectionProvider>
   )
 }

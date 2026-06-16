@@ -22,3 +22,9 @@ export type BatchLifeStageFn = (
   ids: string[],
   lifeStageId: string | null
 ) => Promise<ActionResult<{ updated: number }>>
+
+/** Server-action signature for a bulk status update. */
+export type BatchStatusFn = (
+  ids: string[],
+  status: string
+) => Promise<ActionResult<{ updated: number }>>

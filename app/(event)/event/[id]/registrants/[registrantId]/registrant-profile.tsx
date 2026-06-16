@@ -60,11 +60,41 @@ function toFormValues(guest: GuestData): GuestFormValues {
   }
 }
 
-export function RegistrantGuestProfile({ guest, showViewProfileButton = true, formRef }: { guest: GuestData; showViewProfileButton?: boolean; formRef?: React.RefObject<HTMLFormElement | null> }) {
+export function RegistrantGuestProfile({
+  guest,
+  showViewProfileButton = true,
+  formRef,
+  onDirtyChange,
+  onSavingChange,
+  revertRef,
+}: {
+  guest: GuestData
+  showViewProfileButton?: boolean
+  formRef?: React.RefObject<HTMLFormElement | null>
+  onDirtyChange?: (dirty: boolean) => void
+  onSavingChange?: (saving: boolean) => void
+  revertRef?: React.RefObject<(() => void) | null>
+}) {
   const [form, setForm] = React.useState<GuestFormValues>(() => toFormValues(guest))
   const [saving, setSaving] = React.useState(false)
+  const [dirty, setDirty] = React.useState(false)
+
+  React.useEffect(() => { onDirtyChange?.(dirty) }, [dirty, onDirtyChange])
+  React.useEffect(() => { onSavingChange?.(saving) }, [saving, onSavingChange])
+
+  React.useEffect(() => {
+    if (!revertRef) return
+    revertRef.current = () => {
+      setForm(toFormValues(guest))
+      setDirty(false)
+    }
+    return () => {
+      revertRef.current = null
+    }
+  }, [revertRef, guest])
 
   function set<K extends keyof GuestFormValues>(field: K, value: GuestFormValues[K]) {
+    setDirty(true)
     setForm((prev) => ({ ...prev, [field]: value }))
   }
 
@@ -74,6 +104,7 @@ export function RegistrantGuestProfile({ guest, showViewProfileButton = true, fo
     const result = await updateGuest(guest.id, form)
     setSaving(false)
     if (result.success) {
+      setDirty(false)
       toast.success("Guest updated")
     } else {
       toast.error(result.error)

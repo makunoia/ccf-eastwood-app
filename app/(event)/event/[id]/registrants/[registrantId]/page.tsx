@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label"
 import { YearInput } from "@/components/ui/year-input"
 import { Textarea } from "@/components/ui/textarea"
 import { BreakoutSection } from "./breakout-match-section"
-import { RegistrantGuestProfile } from "./registrant-profile"
+import { RegistrantGuestDetail } from "./registrant-guest-detail"
 import { RegistrantNavHeader } from "./registrant-nav-header"
 import { DeleteRegistrantSection } from "./delete-registrant-section"
 
@@ -157,6 +157,73 @@ export default async function RegistrantDetailPage({
   const session = await auth()
   const canViewMember = canRead(session, "Members")
 
+  const initials = name.split(" ").filter(Boolean).map((n) => n[0]).join("").slice(0, 2)
+  const subtitle = registrant.memberId ? (
+    <Badge variant="secondary">Member</Badge>
+  ) : (
+    <Badge variant="outline">Guest</Badge>
+  )
+
+  // Breakout group section — always first
+  const breakoutSection = (
+    <section className="space-y-3">
+      {isAssigned ? (
+        <div className="space-y-3">
+          <h3 className="type-label text-muted-foreground">Breakout Group</h3>
+          <div className="rounded-lg border p-3">
+            {registrant.breakoutGroupMemberships.map((m) => (
+              <Link
+                key={m.breakoutGroup.id}
+                href={`/event/${eventId}/breakouts/${m.breakoutGroup.id}`}
+                className="text-sm font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+              >
+                {m.breakoutGroup.name}
+              </Link>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <BreakoutSection
+          registrantId={registrantId}
+          eventId={eventId}
+          facilitatedGroup={facilitatedGroup ?? null}
+          allEventGroups={allEventGroups}
+        />
+      )}
+    </section>
+  )
+
+  const deleteSection = (
+    <DeleteRegistrantSection
+      registrantId={registrantId}
+      eventId={eventId}
+      name={name}
+    />
+  )
+
+  // Guest registrants have an editable profile — the save action lives in the
+  // page header (matching the Guest/Members detail pages).
+  if (registrant.guest) {
+    return (
+      <>
+        <BreadcrumbOverride
+          href={`/event/${eventId}/registrants/${registrantId}`}
+          label={name}
+        />
+        <RegistrantGuestDetail
+          registrantId={registrantId}
+          eventId={eventId}
+          initials={initials}
+          title={name}
+          subtitle={subtitle}
+          guest={registrant.guest}
+          breakoutSlot={breakoutSection}
+          deleteSlot={deleteSection}
+        />
+      </>
+    )
+  }
+
   return (
     <>
       <BreadcrumbOverride
@@ -166,50 +233,14 @@ export default async function RegistrantDetailPage({
       <RegistrantNavHeader
         registrantId={registrantId}
         eventId={eventId}
-        initials={name.split(" ").filter(Boolean).map((n) => n[0]).join("").slice(0, 2)}
+        initials={initials}
         title={name}
-        subtitle={
-          registrant.memberId ? (
-            <Badge variant="secondary">Member</Badge>
-          ) : (
-            <Badge variant="outline">Guest</Badge>
-          )
-        }
+        subtitle={subtitle}
       />
 
       <div className="flex flex-1 flex-col gap-6 p-6">
       <div className="max-w-2xl space-y-8">
-        {/* Breakout group section — always first */}
-        <section className="space-y-3">
-          {isAssigned ? (
-            <div className="space-y-3">
-              <h3 className="type-label text-muted-foreground">Breakout Group</h3>
-              <div className="rounded-lg border p-3">
-                {registrant.breakoutGroupMemberships.map((m) => (
-                  <Link
-                    key={m.breakoutGroup.id}
-                    href={`/event/${eventId}/breakouts/${m.breakoutGroup.id}`}
-                    className="text-sm font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-                  >
-                    {m.breakoutGroup.name}
-                  </Link>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <BreakoutSection
-              registrantId={registrantId}
-              eventId={eventId}
-              facilitatedGroup={facilitatedGroup ?? null}
-              allEventGroups={allEventGroups}
-            />
-          )}
-        </section>
-
-        {/* Profile section */}
-        {registrant.guest && (
-          <RegistrantGuestProfile guest={registrant.guest} />
-        )}
+        {breakoutSection}
 
         {registrant.member && (
           <MemberReadOnly
@@ -219,7 +250,7 @@ export default async function RegistrantDetailPage({
           />
         )}
 
-        {!registrant.guest && !registrant.member && (
+        {!registrant.member && (
           <section className="space-y-3">
             <h3 className="type-label text-muted-foreground">Contact</h3>
             <div className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
@@ -231,11 +262,7 @@ export default async function RegistrantDetailPage({
           </section>
         )}
 
-        <DeleteRegistrantSection
-          registrantId={registrantId}
-          eventId={eventId}
-          name={name}
-        />
+        {deleteSection}
       </div>
       </div>
     </>
