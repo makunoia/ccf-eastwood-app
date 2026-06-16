@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation"
 import Link from "next/link"
 
+import { auth } from "@/lib/auth"
+import { canRead } from "@/lib/permissions"
 import { db } from "@/lib/db"
 import { deriveEffectiveGenderFocus } from "@/lib/matching"
 import { Badge } from "@/components/ui/badge"
@@ -152,6 +154,9 @@ export default async function RegistrantDetailPage({
 
   const name = resolveDisplayName(registrant)
 
+  const session = await auth()
+  const canViewMember = canRead(session, "Members")
+
   return (
     <>
       <BreadcrumbOverride
@@ -207,7 +212,11 @@ export default async function RegistrantDetailPage({
         )}
 
         {registrant.member && (
-          <MemberReadOnly member={registrant.member} memberId={registrant.member.id} />
+          <MemberReadOnly
+            member={registrant.member}
+            memberId={registrant.member.id}
+            canViewMember={canViewMember}
+          />
         )}
 
         {!registrant.guest && !registrant.member && (
@@ -237,7 +246,15 @@ type MemberData = NonNullable<
   NonNullable<Awaited<ReturnType<typeof getRegistrant>>>["member"]
 >
 
-function MemberReadOnly({ member, memberId }: { member: MemberData; memberId: string }) {
+function MemberReadOnly({
+  member,
+  memberId,
+  canViewMember,
+}: {
+  member: MemberData
+  memberId: string
+  canViewMember: boolean
+}) {
   const birthMonthName = member.birthMonth ? MONTHS[member.birthMonth - 1] : null
   const dateJoinedStr = member.dateJoined
     ? new Intl.DateTimeFormat("en-US", { year: "numeric", month: "long", day: "numeric" }).format(
@@ -278,12 +295,30 @@ function MemberReadOnly({ member, memberId }: { member: MemberData; memberId: st
           </div>
         )}
 
-        <div className="grid sm:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label>Date Joined</Label>
-            <Input value={dateJoinedStr ?? ""} placeholder="—" readOnly />
-          </div>
+        <div className="space-y-2">
+          <Label>Date Joined</Label>
+          <Input value={dateJoinedStr ?? ""} placeholder="—" readOnly />
         </div>
+
+        {member.gender && (
+          <div className="space-y-2">
+            <Label>Gender</Label>
+            <div className="flex gap-3">
+              {["Male", "Female"].map((g) => (
+                <div
+                  key={g}
+                  className={`flex-1 rounded-lg border py-2.5 text-center text-sm font-medium ${
+                    member.gender === g
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border bg-background text-muted-foreground"
+                  }`}
+                >
+                  {g}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {(birthMonthName || member.birthYear) && (
           <div className="grid sm:grid-cols-2 gap-4">
@@ -309,11 +344,13 @@ function MemberReadOnly({ member, memberId }: { member: MemberData; memberId: st
           </div>
         )}
 
-        <div className="flex justify-end pt-2">
-          <Button variant="outline" asChild>
-            <Link href={`/members/${memberId}`}>View Member Information</Link>
-          </Button>
-        </div>
+        {canViewMember && (
+          <div className="flex justify-end pt-2">
+            <Button variant="outline" asChild>
+              <Link href={`/members/${memberId}`}>View Member Information</Link>
+            </Button>
+          </div>
+        )}
       </div>
     </section>
   )

@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
-import { VolunteerForm } from "@/app/(dashboard)/volunteers/volunteer-form"
+import { NewEventVolunteerForm } from "./new-event-volunteer-form"
 
 async function getData(eventId: string) {
   const [event, members] = await Promise.all([
@@ -8,7 +8,6 @@ async function getData(eventId: string) {
       where: { id: eventId },
       select: {
         id: true,
-        name: true,
         committees: {
           orderBy: { createdAt: "asc" },
           select: {
@@ -39,5 +38,11 @@ export default async function NewEventVolunteerPage({
   const { event, members } = await getData(id)
   if (!event) notFound()
 
-  return <VolunteerForm members={members} events={[event]} />
+  return (
+    <NewEventVolunteerForm
+      eventId={event.id}
+      members={members}
+      committees={event.committees}
+    />
+  )
 }

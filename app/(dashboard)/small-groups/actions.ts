@@ -8,6 +8,8 @@ import {
   smallGroupSchema,
   type SmallGroupFormValues,
 } from "@/lib/validations/small-group"
+import { runBatchDelete } from "@/lib/batch"
+import type { BatchDeleteResult } from "@/components/batch/types"
 
 type ActionResult<T = void> =
   | { success: true; data: T }
@@ -220,6 +222,57 @@ export async function deleteSmallGroup(id: string): Promise<ActionResult> {
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to delete small group" }
+  }
+}
+
+export async function deleteSmallGroupsBatch(
+  ids: string[]
+): Promise<ActionResult<BatchDeleteResult>> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
+  if (ids.length === 0) return { success: true, data: { deleted: 0, failed: [] } }
+
+  try {
+    const groups = await db.smallGroup.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, name: true },
+    })
+    const names = new Map(groups.map((g) => [g.id, g.name]))
+
+    const result = await runBatchDelete({
+      ids,
+      names,
+      deleteOne: (id) =>
+        db.smallGroup.delete({ where: { id } }).then(() => undefined),
+      fkReason: "has members or child groups",
+    })
+
+    revalidatePath("/small-groups")
+    return { success: true, data: result }
+  } catch {
+    return { success: false, error: "Failed to delete small groups" }
+  }
+}
+
+export async function setSmallGroupsLifeStageBatch(
+  ids: string[],
+  lifeStageId: string | null
+): Promise<ActionResult<{ updated: number }>> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
+  if (ids.length === 0) return { success: true, data: { updated: 0 } }
+
+  try {
+    const result = await db.smallGroup.updateMany({
+      where: { id: { in: ids } },
+      data: { lifeStageId },
+    })
+    revalidatePath("/small-groups")
+    return { success: true, data: { updated: result.count } }
+  } catch {
+    return { success: false, error: "Failed to update life stage" }
   }
 }
 

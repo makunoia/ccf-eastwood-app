@@ -5,6 +5,7 @@ import { EventHeader } from "@/components/event-header"
 import { EventSidebar } from "@/components/event-sidebar"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { canAccessEvent, isSuperAdmin } from "@/lib/permissions"
+import { resolveLandingPath } from "@/lib/landing"
 import { BreadcrumbProvider, BreadcrumbOverride } from "@/components/breadcrumb-context"
 
 async function getEventMeta(id: string) {
@@ -94,6 +95,15 @@ export default async function EventLayout({
 
   const modules = event.modules.map((m) => m.type)
   const showBackLink = isSuperAdmin(session)
+
+  // Single-event-scoped users are locked into this mini-app with no top-level
+  // sidebar (and its logout). Give them a logout button here instead.
+  const landingPath = resolveLandingPath({
+    role: session.user.role,
+    permissions: session.user.permissions,
+    eventAccess: session.user.eventAccess,
+  })
+  const showLogout = landingPath.startsWith("/event/")
   const logoUrl = resolveLogoUrl(event)
   const sidebarBrand = resolveSidebarBrand(event)
   const brandBackground = resolveBrandBackground(event)
@@ -119,6 +129,7 @@ export default async function EventLayout({
         eventType={event.type}
         modules={modules}
         showBackLink={showBackLink}
+        showLogout={showLogout}
         logoUrl={logoUrl}
       />
       <SidebarInset className="overflow-hidden">

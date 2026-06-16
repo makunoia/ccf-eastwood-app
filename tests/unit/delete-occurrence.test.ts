@@ -41,7 +41,9 @@ beforeEach(async () => {
     "Guest"
     RESTART IDENTITY CASCADE`
 
-  vi.mocked(auth).mockResolvedValue(adminSession)
+  // next-auth's `auth` is overloaded; vi.mocked resolves the middleware overload,
+  // so cast the session through `never` to bypass overload resolution.
+  vi.mocked(auth).mockResolvedValue(adminSession as never)
 })
 
 afterAll(async () => {
@@ -157,7 +159,7 @@ describe("deleteOccurrence", () => {
   })
 
   it("rejects deletion when the user is not authenticated", async () => {
-    vi.mocked(auth).mockResolvedValue(null)
+    vi.mocked(auth).mockResolvedValue(null as never)
 
     const event = await db.event.create({
       data: {

@@ -63,7 +63,7 @@ describe("breakout link back-fill on small group import", () => {
     const result = await importSmallGroups([
       {
         mapped: { name: "Grace's Group", leaderMobile: "09170000001" },
-        resolution: "create",
+        resolution: "use-csv",
       },
     ])
 
@@ -98,7 +98,7 @@ describe("breakout link back-fill on small group import", () => {
     const result = await importSmallGroups([
       {
         mapped: { name: "Mark's Second Group", leaderMobile: "09170000002" },
-        resolution: "create",
+        resolution: "use-csv",
       },
     ])
 

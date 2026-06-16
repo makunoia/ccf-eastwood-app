@@ -69,6 +69,7 @@ type Props = {
   eventId: string
   registrantId: string
   profileLink: string | null
+  canViewSmallGroup: boolean
   name: string
   initialPrefs: {
     lifeStageId: string
@@ -250,12 +251,16 @@ export function CatchMechDetailClient(props: Props) {
               <div className="rounded-lg border p-4 space-y-2">
                 <p className="text-sm font-medium">Member of this group</p>
                 <p className="text-sm">
-                  <Link
-                    href={`/small-groups/${props.request.smallGroup.id}`}
-                    className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-                  >
-                    {props.request.smallGroup.name}
-                  </Link>
+                  {props.canViewSmallGroup ? (
+                    <Link
+                      href={`/small-groups/${props.request.smallGroup.id}`}
+                      className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+                    >
+                      {props.request.smallGroup.name}
+                    </Link>
+                  ) : (
+                    <span className="font-medium">{props.request.smallGroup.name}</span>
+                  )}
                 </p>
                 {props.request.smallGroup.leader && (
                   <p className="text-sm text-muted-foreground">
@@ -269,12 +274,16 @@ export function CatchMechDetailClient(props: Props) {
               <div className="rounded-lg border bg-muted/40 p-4 space-y-2">
                 <p className="text-sm font-medium">Awaiting leader confirmation</p>
                 <p className="text-sm">
-                  <Link
-                    href={`/small-groups/${props.request.smallGroup.id}`}
-                    className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-                  >
-                    {props.request.smallGroup.name}
-                  </Link>
+                  {props.canViewSmallGroup ? (
+                    <Link
+                      href={`/small-groups/${props.request.smallGroup.id}`}
+                      className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+                    >
+                      {props.request.smallGroup.name}
+                    </Link>
+                  ) : (
+                    <span className="font-medium">{props.request.smallGroup.name}</span>
+                  )}
                 </p>
                 {props.request.smallGroup.leader && (
                   <p className="text-sm text-muted-foreground">
@@ -316,6 +325,7 @@ export function CatchMechDetailClient(props: Props) {
             <CatchMechActivityLog
               entries={props.activityEntries}
               requestId={props.requestId}
+              canViewSmallGroup={props.canViewSmallGroup}
             />
           </TabsContent>
         </Tabs>

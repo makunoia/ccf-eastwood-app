@@ -20,8 +20,11 @@ async function requireImport(): Promise<{ error: string } | null> {
 }
 
 // ─── Duplicate check ──────────────────────────────────────────────────────────
-// For session attendance, "duplicate" = already has an OccurrenceAttendee for
-// this occurrence. We surface this as a match so the preview step highlights them.
+// Two passes:
+// Pass 1 — already has an OccurrenceAttendee for this occurrence → true duplicate
+//           (no kind, existingId = registrantId → import skips the row)
+// Pass 2 — person exists in the system as a Member/Guest but hasn't attended yet
+//           (kind = "recognized", existingId = member/guest id → import links them)
 
 export async function checkSessionAttendanceDuplicates(
   occurrenceId: string,
@@ -82,6 +85,7 @@ export async function checkSessionAttendanceDuplicates(
     }
 
     const matches: DuplicateMatch[] = []
+    const unmatchedIndices: number[] = []
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i]
@@ -90,15 +94,106 @@ export async function checkSessionAttendanceDuplicates(
         (row.email && attendedByEmail.get(row.email.toLowerCase())) ||
         phoneCandidates.map((candidate) => attendedByPhone.get(candidate)).find(Boolean)
       if (match) {
-          matches.push({
-            rowIndex:      i,
-            existingId:    match.id,
-            existingType:  match.existingType,
-            existingName:  match.name,
-            existingEmail: match.email,
-            existingPhone: match.phone,
+        matches.push({
+          rowIndex:      i,
+          existingId:    match.id,
+          existingType:  match.existingType,
+          existingName:  match.name,
+          existingEmail: match.email,
+          existingPhone: match.phone,
           // no kind = already checked in (true duplicate)
         })
+      } else {
+        unmatchedIndices.push(i)
+      }
+    }
+
+    // ── Pass 2: find existing Members/Guests not yet in this session ──────────
+    if (unmatchedIndices.length > 0) {
+      const unmatchedRows = unmatchedIndices.map((i) => rows[i])
+      const emails = unmatchedRows.map((r) => r.email).filter(Boolean) as string[]
+      const allPhoneCandidates = Array.from(
+        new Set(unmatchedRows.flatMap((r) => buildPhoneCandidates(r.phone)))
+      )
+
+      if (emails.length > 0 || allPhoneCandidates.length > 0) {
+        const orConditions = [
+          emails.length > 0             ? { email: { in: emails } }             : undefined,
+          allPhoneCandidates.length > 0 ? { phone: { in: allPhoneCandidates } } : undefined,
+        ].filter(Boolean) as Prisma.MemberWhereInput[]
+
+        const [members, guests] = await Promise.all([
+          db.member.findMany({
+            where: { OR: orConditions },
+            select: { id: true, firstName: true, lastName: true, email: true, phone: true },
+          }),
+          db.guest.findMany({
+            where: { memberId: null, OR: orConditions as Prisma.GuestWhereInput[] },
+            select: { id: true, firstName: true, lastName: true, email: true, phone: true },
+          }),
+        ])
+
+        const membersByEmail = new Map<string, PersonEntry>()
+        const membersByPhone = new Map<string, PersonEntry>()
+        for (const m of members) {
+          const entry: PersonEntry = {
+            id: m.id,
+            existingType: "member",
+            name: `${m.firstName} ${m.lastName}`,
+            email: m.email,
+            phone: m.phone,
+          }
+          if (m.email) membersByEmail.set(m.email.toLowerCase(), entry)
+          setPhoneEntries(membersByPhone, m.phone, entry)
+        }
+
+        const guestsByEmail = new Map<string, PersonEntry>()
+        const guestsByPhone = new Map<string, PersonEntry>()
+        for (const g of guests) {
+          const entry: PersonEntry = {
+            id: g.id,
+            existingType: "guest",
+            name: `${g.firstName} ${g.lastName}`,
+            email: g.email,
+            phone: g.phone,
+          }
+          if (g.email) guestsByEmail.set(g.email.toLowerCase(), entry)
+          setPhoneEntries(guestsByPhone, g.phone, entry)
+        }
+
+        for (const i of unmatchedIndices) {
+          const row = rows[i]
+          const phoneCandidates = buildPhoneCandidates(row.phone)
+          const memberMatch =
+            (row.email && membersByEmail.get(row.email.toLowerCase())) ||
+            phoneCandidates.map((c) => membersByPhone.get(c)).find(Boolean)
+          if (memberMatch) {
+            matches.push({
+              rowIndex:      i,
+              existingId:    memberMatch.id,
+              existingType:  "member",
+              existingName:  memberMatch.name,
+              existingEmail: memberMatch.email,
+              existingPhone: memberMatch.phone,
+              kind: "recognized",
+            })
+            continue
+          }
+          const guestMatch =
+            (row.email && guestsByEmail.get(row.email.toLowerCase())) ||
+            phoneCandidates.map((c) => guestsByPhone.get(c)).find(Boolean)
+          if (guestMatch) {
+            matches.push({
+              rowIndex:      i,
+              existingId:    guestMatch.id,
+              existingType:  "guest",
+              existingName:  guestMatch.name,
+              existingEmail: guestMatch.email,
+              existingPhone: guestMatch.phone,
+              kind: "recognized",
+            })
+          }
+        }
       }
     }
 

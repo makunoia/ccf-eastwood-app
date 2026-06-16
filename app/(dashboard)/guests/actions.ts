@@ -7,6 +7,8 @@ import { auth } from "@/lib/auth"
 import { canWrite } from "@/lib/permissions"
 import { guestSchema, type GuestFormValues } from "@/lib/validations/guest"
 import { checkDuplicateContactInfo } from "@/lib/duplicate-check"
+import { runBatchDelete } from "@/lib/batch"
+import type { BatchDeleteResult } from "@/components/batch/types"
 
 type ActionResult<T = void> =
   | { success: true; data: T }
@@ -126,6 +128,58 @@ export async function deleteGuest(id: string): Promise<ActionResult> {
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to delete guest" }
+  }
+}
+
+export async function deleteGuestsBatch(
+  ids: string[]
+): Promise<ActionResult<BatchDeleteResult>> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
+  if (ids.length === 0) return { success: true, data: { deleted: 0, failed: [] } }
+
+  try {
+    const guests = await db.guest.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, firstName: true, lastName: true },
+    })
+    const names = new Map(
+      guests.map((g) => [g.id, `${g.firstName} ${g.lastName}`])
+    )
+
+    const result = await runBatchDelete({
+      ids,
+      names,
+      deleteOne: (id) => db.guest.delete({ where: { id } }).then(() => undefined),
+      fkReason: "has linked event records",
+    })
+
+    revalidatePath("/guests")
+    return { success: true, data: result }
+  } catch {
+    return { success: false, error: "Failed to delete guests" }
+  }
+}
+
+export async function setGuestsLifeStageBatch(
+  ids: string[],
+  lifeStageId: string | null
+): Promise<ActionResult<{ updated: number }>> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
+  if (ids.length === 0) return { success: true, data: { updated: 0 } }
+
+  try {
+    const result = await db.guest.updateMany({
+      where: { id: { in: ids } },
+      data: { lifeStageId },
+    })
+    revalidatePath("/guests")
+    return { success: true, data: { updated: result.count } }
+  } catch {
+    return { success: false, error: "Failed to update life stage" }
   }
 }
 

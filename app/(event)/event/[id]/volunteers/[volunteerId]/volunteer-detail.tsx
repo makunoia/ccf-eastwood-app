@@ -64,7 +64,13 @@ type FormState = {
   notes: string
 }
 
-export function EventVolunteerDetail({ volunteer }: { volunteer: VolunteerData }) {
+export function EventVolunteerDetail({
+  volunteer,
+  canViewMember,
+}: {
+  volunteer: VolunteerData
+  canViewMember: boolean
+}) {
   const router = useRouter()
   const { prev, next } = useListNavigation(volunteer.id, "volunteerListIds")
   const [form, setForm] = React.useState<FormState>({
@@ -110,7 +116,7 @@ export function EventVolunteerDetail({ volunteer }: { volunteer: VolunteerData }
     setSaving(false)
     if (result.success) {
       toast.success("Volunteer updated")
-      router.push(`/event/${volunteer.eventId}/volunteers`)
+      router.refresh()
     } else {
       toast.error(result.error)
     }
@@ -278,11 +284,13 @@ export function EventVolunteerDetail({ volunteer }: { volunteer: VolunteerData }
         </form>
 
         {/* Member link */}
-        <div className="max-w-2xl mt-6">
-          <Button variant="outline" asChild>
-            <Link href={`/members/${volunteer.memberId_link}`}>View Member Profile</Link>
-          </Button>
-        </div>
+        {canViewMember && (
+          <div className="max-w-2xl mt-6">
+            <Button variant="outline" asChild>
+              <Link href={`/members/${volunteer.memberId_link}`}>View Member Profile</Link>
+            </Button>
+          </div>
+        )}
 
         {/* Leader approval */}
         <div className="max-w-2xl mt-6 rounded-lg border p-4 space-y-3">

@@ -3,6 +3,8 @@
 import Link from "next/link"
 import { type ColumnDef } from "@tanstack/react-table"
 
+import { buildSelectionColumn } from "@/components/batch/selection-column"
+
 export type GuestRow = {
   id: string
   firstName: string
@@ -24,8 +26,9 @@ export type GuestRow = {
   notes: string | null
 }
 
-export function buildColumns(): ColumnDef<GuestRow>[] {
+export function buildColumns(selectable = false): ColumnDef<GuestRow>[] {
   return [
+    ...(selectable ? [buildSelectionColumn<GuestRow>()] : []),
     {
       accessorFn: (row) => `${row.nickname?.trim() || row.firstName} ${row.lastName}`,
       id: "name",

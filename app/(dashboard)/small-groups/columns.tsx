@@ -23,6 +23,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import Link from "next/link"
+import { buildSelectionColumn } from "@/components/batch/selection-column"
 import { deleteSmallGroup } from "./actions"
 
 export type SmallGroupRow = {
@@ -130,8 +131,9 @@ export function RowActions({ row }: { row: SmallGroupRow }) {
   )
 }
 
-export function buildColumns(): ColumnDef<SmallGroupRow>[] {
+export function buildColumns(selectable = false): ColumnDef<SmallGroupRow>[] {
   return [
+    ...(selectable ? [buildSelectionColumn<SmallGroupRow>()] : []),
     {
       accessorKey: "name",
       header: "Name",

@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { Prisma } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import { canWrite } from "@/lib/permissions"
@@ -13,6 +14,54 @@ async function requireWrite(): Promise<{ error: string } | null> {
   if (!session?.user) return { error: "Not authenticated." }
   if (!canWrite(session, "Events")) return { error: "Unauthorized." }
   return null
+}
+
+type CreateInput = {
+  eventId: string
+  memberId: string
+  committeeId: string
+  preferredRoleId: string
+  notes: string
+}
+
+export async function createEventVolunteer(
+  raw: CreateInput
+): Promise<ActionResult<{ id: string }>> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
+  const { eventId, memberId, committeeId, preferredRoleId, notes } = raw
+
+  if (!memberId || !eventId || !committeeId || !preferredRoleId) {
+    return { success: false, error: "All required fields must be filled." }
+  }
+
+  const existing = await db.volunteer.findFirst({ where: { memberId, eventId } })
+  if (existing) {
+    return { success: false, error: "This member is already registered as a volunteer for this event" }
+  }
+
+  try {
+    const volunteer = await db.volunteer.create({
+      data: {
+        memberId,
+        eventId,
+        committeeId,
+        preferredRoleId,
+        notes: notes || null,
+        leaderApprovalToken: crypto.randomUUID(),
+      },
+      select: { id: true },
+    })
+    revalidatePath(`/event/${eventId}/volunteers`)
+    revalidatePath("/volunteers")
+    return { success: true, data: { id: volunteer.id } }
+  } catch (e: unknown) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      return { success: false, error: "This member is already registered as a volunteer for this event" }
+    }
+    return { success: false, error: "Failed to create volunteer" }
+  }
 }
 
 type UpdateInput = {

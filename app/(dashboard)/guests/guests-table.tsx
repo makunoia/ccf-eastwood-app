@@ -5,48 +5,78 @@ import { IconUserScan } from "@tabler/icons-react"
 
 import { DataTable } from "@/components/ui/data-table"
 import { Card, CardContent } from "@/components/ui/card"
+import { Checkbox } from "@/components/ui/checkbox"
+import { useBatchSelection } from "@/components/batch/batch-selection-provider"
 import { buildColumns, type GuestRow } from "./columns"
 
 function GuestCard({ guest, allIds }: { guest: GuestRow; allIds: string[] }) {
   const router = useRouter()
+  const selection = useBatchSelection()
+  const selecting = selection?.enabled && selection.selectMode
+  const checked = selection?.isSelected(guest.id) ?? false
+
   return (
     <Card
-      className="cursor-pointer py-0 transition-colors hover:bg-muted/50"
+      className="cursor-pointer py-0 transition-colors hover:bg-muted/50 data-[selected=true]:border-primary"
+      data-selected={checked}
       onClick={() => {
+        if (selecting) {
+          selection?.toggle(guest.id)
+          return
+        }
         sessionStorage.setItem("guestListIds", JSON.stringify(allIds))
         router.push(`/guests/${guest.id}`)
       }}
     >
       <CardContent className="p-4">
-        <p className="font-medium leading-tight">
-          {guest.firstName} {guest.lastName}
-        </p>
-        <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
-          <span className="text-muted-foreground">Email</span>
-          <span>{guest.email ?? <span className="text-muted-foreground">—</span>}</span>
-          <span className="text-muted-foreground">Mobile</span>
-          <span>{guest.phone ?? <span className="text-muted-foreground">—</span>}</span>
-          <span className="text-muted-foreground">Events</span>
-          <span>{guest.eventCount}</span>
-          <span className="text-muted-foreground">Life Stage</span>
-          <span>{guest.lifeStage ?? <span className="text-muted-foreground">—</span>}</span>
-          <span className="text-muted-foreground">Date Added</span>
-          <span>
-            {new Date(guest.dateAdded).toLocaleDateString("en-PH", {
-              year: "numeric",
-              month: "short",
-              day: "numeric",
-              timeZone: "UTC",
-            })}
-          </span>
+        <div className="flex items-start gap-3">
+          {selecting && (
+            <Checkbox
+              checked={checked}
+              onClick={(e) => e.stopPropagation()}
+              onCheckedChange={() => selection?.toggle(guest.id)}
+              aria-label={`Select ${guest.firstName} ${guest.lastName}`}
+              className="mt-0.5"
+            />
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="font-medium leading-tight">
+              {guest.firstName} {guest.lastName}
+            </p>
+            <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
+              <span className="text-muted-foreground">Email</span>
+              <span>{guest.email ?? <span className="text-muted-foreground">—</span>}</span>
+              <span className="text-muted-foreground">Mobile</span>
+              <span>{guest.phone ?? <span className="text-muted-foreground">—</span>}</span>
+              <span className="text-muted-foreground">Events</span>
+              <span>{guest.eventCount}</span>
+              <span className="text-muted-foreground">Life Stage</span>
+              <span>{guest.lifeStage ?? <span className="text-muted-foreground">—</span>}</span>
+              <span className="text-muted-foreground">Date Added</span>
+              <span>
+                {new Date(guest.dateAdded).toLocaleDateString("en-PH", {
+                  year: "numeric",
+                  month: "short",
+                  day: "numeric",
+                  timeZone: "UTC",
+                })}
+              </span>
+            </div>
+          </div>
         </div>
       </CardContent>
     </Card>
   )
 }
 
-export function GuestsTable({ guests }: { guests: GuestRow[] }) {
-  const columns = buildColumns()
+export function GuestsTable({
+  guests,
+  canWrite = false,
+}: {
+  guests: GuestRow[]
+  canWrite?: boolean
+}) {
+  const columns = buildColumns(canWrite)
 
   return (
     <>

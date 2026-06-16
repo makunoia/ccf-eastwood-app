@@ -81,9 +81,10 @@ function formatDate(date: Date) {
 type Props = {
   entries: CatchMechActivityEntry[]
   requestId: string | null
+  canViewSmallGroup: boolean
 }
 
-export function CatchMechActivityLog({ entries, requestId }: Props) {
+export function CatchMechActivityLog({ entries, requestId, canViewSmallGroup }: Props) {
   const router = useRouter()
   const [text, setText] = React.useState("")
   const [submitting, setSubmitting] = React.useState(false)
@@ -143,12 +144,16 @@ export function CatchMechActivityLog({ entries, requestId }: Props) {
                   {entry.description ?? ACTION_LABEL[entry.action]}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  <Link
-                    href={`/small-groups/${entry.smallGroup.id}`}
-                    className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-                  >
-                    {entry.smallGroup.name}
-                  </Link>
+                  {canViewSmallGroup ? (
+                    <Link
+                      href={`/small-groups/${entry.smallGroup.id}`}
+                      className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+                    >
+                      {entry.smallGroup.name}
+                    </Link>
+                  ) : (
+                    <span className="font-medium">{entry.smallGroup.name}</span>
+                  )}
                   {" · "}
                   {formatDate(entry.createdAt)}
                 </p>

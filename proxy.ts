@@ -3,6 +3,7 @@ import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 import type { Session } from "next-auth"
 import { authConfig } from "./auth.config"
+import { resolveLandingPath } from "@/lib/landing"
 import type { FeatureArea } from "@/app/generated/prisma/client"
 import type { UserPermissionEntry } from "@/types/next-auth"
 
@@ -23,6 +24,7 @@ const PUBLIC_PREFIXES = [
 const EVENT_PUBLIC_PATTERNS = [
   /^\/events\/[^/]+\/register/,
   /^\/events\/[^/]+\/checkin/,
+  /^\/events\/[^/]+\/catch-mech/,
   /^\/volunteer-approval\//,
   /^\/small-group-confirmation\//,
   /^\/ministries\/[^/]+\/volunteer/,
@@ -83,17 +85,30 @@ export default auth(function proxy(req: NextRequest & { auth: Session | null }) 
     return NextResponse.next()
   }
 
+  // ── Staff: where access denials and the top-level dashboard funnel to ──────
+  // For a single-event staff user this is their event workspace, not /dashboard.
+  const permissions: UserPermissionEntry[] = user.permissions ?? []
+  const landingPath = resolveLandingPath({
+    role: user.role,
+    permissions,
+    eventAccess: user.eventAccess ?? [],
+  })
+
+  // Single-event users have nothing to see on the top-level dashboard.
+  if (landingPath !== "/dashboard" && pathname.startsWith("/dashboard")) {
+    return NextResponse.redirect(new URL(landingPath, req.url))
+  }
+
   // ── Staff: block /settings entirely ───────────────────────────────────────
   if (pathname.startsWith("/settings")) {
-    return NextResponse.redirect(new URL("/dashboard", req.url))
+    return NextResponse.redirect(new URL(landingPath, req.url))
   }
 
   // ── Staff: enforce feature-based route access ──────────────────────────────
   for (const [prefix, feature] of ROUTE_PERMISSIONS) {
     if (pathname.startsWith(prefix)) {
-      const permissions: UserPermissionEntry[] = user.permissions ?? []
       if (!permissions.some((p) => p.feature === feature)) {
-        return NextResponse.redirect(new URL("/dashboard", req.url))
+        return NextResponse.redirect(new URL(landingPath, req.url))
       }
 
       // Event-specific access: check event ID if the user has a restricted list
@@ -103,7 +118,7 @@ export default auth(function proxy(req: NextRequest & { auth: Session | null }) 
           const eventId = eventIdMatch[1]
           const allowed: string[] = user.eventAccess ?? []
           if (allowed.length > 0 && !allowed.includes(eventId)) {
-            return NextResponse.redirect(new URL("/dashboard", req.url))
+            return NextResponse.redirect(new URL(landingPath, req.url))
           }
         }
       }
