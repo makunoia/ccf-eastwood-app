@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation"
 import Link from "next/link"
 import { ChevronRight } from "lucide-react"
+import { auth } from "@/lib/auth"
+import { canRead } from "@/lib/permissions"
 import { db } from "@/lib/db"
 import {
   Table,
@@ -183,6 +185,9 @@ export default async function CatchMechAdminPage({
   const { groupRows, stats, weeklyProgress } = data
   const publicUrl = `/events/${id}/catch-mech`
 
+  const session = await auth()
+  const canViewMember = canRead(session, "Members")
+
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">
       {/* Header */}
@@ -269,7 +274,7 @@ export default async function CatchMechAdminPage({
       {/* Per-group table */}
       <section className="space-y-3">
         <h3 className="type-label text-muted-foreground">Breakout Groups</h3>
-        <CatchMechTable groupRows={groupRows} />
+        <CatchMechTable groupRows={groupRows} canViewMember={canViewMember} />
       </section>
     </div>
   )

@@ -1,12 +1,15 @@
 import { Gender, Prisma } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
-import { canExport, canImport } from "@/lib/permissions"
+import { canExport, canImport, canWrite } from "@/lib/permissions"
 import { type MemberRow } from "./columns"
 import { PageHeader } from "@/components/page-header"
+import { BatchSelectionProvider } from "@/components/batch/batch-selection-provider"
+import { BatchActionHeader } from "@/components/batch/batch-action-header"
 import { MembersTable } from "./members-table"
 import { MembersToolbar } from "./toolbar"
 import { MembersFilters } from "./members-filters"
+import { deleteMembersBatch, setMembersLifeStageBatch } from "./actions"
 
 async function getMembers(where: Prisma.MemberWhereInput): Promise<MemberRow[]> {
   const members = await db.member.findMany({
@@ -78,30 +81,41 @@ export default async function MembersPage({
     db.smallGroup.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
   ])
 
+  const writable = canWrite(session, "Members")
+
   return (
-    <div className="flex flex-1 flex-col gap-4 p-6">
-      <PageHeader
-        title="Members"
-        description="Manage church member records"
-        actions={
-          <MembersToolbar
-            members={members}
-            canImport={canImport(session, "Members")}
-            canExport={canExport(session, "Members")}
-          />
-        }
-      />
+    <BatchSelectionProvider allIds={members.map((m) => m.id)} enabled={writable}>
+      <div className="flex flex-1 flex-col gap-4 p-6">
+        <PageHeader
+          title="Members"
+          description="Manage church member records"
+          actions={
+            <BatchActionHeader
+              entityLabel="member"
+              lifeStages={lifeStages}
+              onDelete={deleteMembersBatch}
+              onSetLifeStage={setMembersLifeStageBatch}
+            >
+              <MembersToolbar
+                members={members}
+                canImport={canImport(session, "Members")}
+                canExport={canExport(session, "Members")}
+              />
+            </BatchActionHeader>
+          }
+        />
 
-      <MembersFilters
-        lifeStages={lifeStages}
-        smallGroups={smallGroups}
-        search={search}
-        lifeStageId={lifeStageId}
-        smallGroupId={smallGroupId}
-        gender={gender}
-      />
+        <MembersFilters
+          lifeStages={lifeStages}
+          smallGroups={smallGroups}
+          search={search}
+          lifeStageId={lifeStageId}
+          smallGroupId={smallGroupId}
+          gender={gender}
+        />
 
-      <MembersTable members={members} />
-    </div>
+        <MembersTable members={members} canWrite={writable} />
+      </div>
+    </BatchSelectionProvider>
   )
 }

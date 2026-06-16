@@ -1,5 +1,7 @@
 import { notFound } from "next/navigation"
 
+import { auth } from "@/lib/auth"
+import { canRead } from "@/lib/permissions"
 import { db } from "@/lib/db"
 import { CatchMechDetailClient } from "./catch-mech-detail-client"
 import type { CatchMechActivityEntry } from "./catch-mech-activity-log"
@@ -149,10 +151,18 @@ export default async function CatchMechDetailPage({
     name = `${registrant.firstName ?? ""} ${registrant.lastName ?? ""}`.trim() || "—"
   }
 
+  const session = await auth()
+  const canViewSmallGroup = canRead(session, "SmallGroups")
+
+  // Only expose the top-level profile link if the user can access that feature area.
   const profileLink = registrant.memberId
-    ? `/members/${registrant.memberId}`
+    ? canRead(session, "Members")
+      ? `/members/${registrant.memberId}`
+      : null
     : registrant.guestId
-    ? `/guests/${registrant.guestId}`
+    ? canRead(session, "Guests")
+      ? `/guests/${registrant.guestId}`
+      : null
     : null
 
   const initialPrefs = {
@@ -190,6 +200,7 @@ export default async function CatchMechDetailPage({
       eventId={eventId}
       registrantId={registrantId}
       profileLink={profileLink}
+      canViewSmallGroup={canViewSmallGroup}
       name={name}
       initialPrefs={initialPrefs}
       lifeStages={lifeStages}

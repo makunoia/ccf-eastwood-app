@@ -131,10 +131,12 @@ function FacilitatorDetailSheet({
   group,
   open,
   onOpenChange,
+  canViewMember,
 }: {
   group: GroupRow | null
   open: boolean
   onOpenChange: (open: boolean) => void
+  canViewMember: boolean
 }) {
   if (!group || !group.faciName) return null
 
@@ -173,7 +175,7 @@ function FacilitatorDetailSheet({
           <Separator />
 
           {/* Member profile link */}
-          {group.faciMemberId && (
+          {canViewMember && group.faciMemberId && (
             <Link
               href={`/members/${group.faciMemberId}`}
               className="text-sm font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
@@ -189,7 +191,13 @@ function FacilitatorDetailSheet({
 
 // ─── Main table ─────────────────────────────────────────────────────────────────
 
-export function CatchMechTable({ groupRows }: { groupRows: GroupRow[] }) {
+export function CatchMechTable({
+  groupRows,
+  canViewMember,
+}: {
+  groupRows: GroupRow[]
+  canViewMember: boolean
+}) {
   const [groupSheet, setGroupSheet] = React.useState<GroupRow | null>(null)
   const [faciSheet, setFaciSheet] = React.useState<GroupRow | null>(null)
 
@@ -267,6 +275,7 @@ export function CatchMechTable({ groupRows }: { groupRows: GroupRow[] }) {
         group={faciSheet}
         open={!!faciSheet}
         onOpenChange={(open) => { if (!open) setFaciSheet(null) }}
+        canViewMember={canViewMember}
       />
     </>
   )

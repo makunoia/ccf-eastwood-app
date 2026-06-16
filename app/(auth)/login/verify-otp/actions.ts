@@ -5,6 +5,7 @@ import { AuthError } from "next-auth"
 import { db } from "@/lib/db"
 import { verifyPreAuthToken } from "@/lib/auth-tokens"
 import { verifyTotpCode } from "@/lib/totp"
+import { resolveLandingPathForUser } from "@/lib/landing.server"
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 
@@ -46,7 +47,7 @@ export async function verifyOtp(
   try {
     await signIn("credentials", {
       preAuthToken: rawToken,
-      redirectTo: "/dashboard",
+      redirectTo: await resolveLandingPathForUser(userId),
     })
     return {}
   } catch (error) {

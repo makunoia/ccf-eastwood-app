@@ -3,6 +3,7 @@
 import Link from "next/link"
 import Image from "next/image"
 import { usePathname } from "next/navigation"
+import { signOut } from "next-auth/react"
 import {
   IconArrowLeft,
   IconBus,
@@ -11,6 +12,7 @@ import {
   IconCross,
   IconFish,
   IconLayoutDashboard,
+  IconLogout,
   IconSettings,
   IconUsersGroup,
   IconHeart,
@@ -36,6 +38,7 @@ type EventSidebarProps = React.ComponentProps<typeof Sidebar> & {
   eventType: "OneTime" | "MultiDay" | "Recurring"
   modules: string[]
   showBackLink: boolean
+  showLogout?: boolean
   logoUrl?: string | null
 }
 
@@ -45,6 +48,7 @@ export function EventSidebar({
   eventType,
   modules,
   showBackLink,
+  showLogout,
   logoUrl,
   ...props
 }: EventSidebarProps) {
@@ -181,6 +185,17 @@ export function EventSidebar({
                   <IconArrowLeft />
                   <span>Events</span>
                 </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          )}
+          {showLogout && (
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                tooltip="Log out"
+                onClick={() => signOut({ callbackUrl: "/login" })}
+              >
+                <IconLogout />
+                <span>Log out</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
           )}

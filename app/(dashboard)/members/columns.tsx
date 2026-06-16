@@ -23,6 +23,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import Link from "next/link"
+import { buildSelectionColumn } from "@/components/batch/selection-column"
 import { deleteMember } from "./actions"
 
 export type MemberRow = {
@@ -127,8 +128,9 @@ export function RowActions({ row }: { row: MemberRow }) {
   )
 }
 
-export function buildColumns(): ColumnDef<MemberRow>[] {
+export function buildColumns(selectable = false): ColumnDef<MemberRow>[] {
   return [
+    ...(selectable ? [buildSelectionColumn<MemberRow>()] : []),
     {
       accessorFn: (row) => `${row.nickname?.trim() || row.firstName} ${row.lastName}`,
       id: "name",

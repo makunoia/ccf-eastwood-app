@@ -1,4 +1,6 @@
 import { notFound } from "next/navigation"
+import { auth } from "@/lib/auth"
+import { canRead } from "@/lib/permissions"
 import { db } from "@/lib/db"
 import { EventVolunteerDetail } from "./volunteer-detail"
 
@@ -37,8 +39,12 @@ export default async function EventVolunteerDetailPage({
 
   const memberName = `${volunteer.member.firstName} ${volunteer.member.lastName}`
 
+  const session = await auth()
+  const canViewMember = canRead(session, "Members")
+
   return (
     <EventVolunteerDetail
+      canViewMember={canViewMember}
       volunteer={{
         id: volunteer.id,
         memberId: volunteer.memberId,

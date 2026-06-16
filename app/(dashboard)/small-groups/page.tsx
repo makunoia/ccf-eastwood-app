@@ -7,14 +7,17 @@ import {
 } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
-import { canExport, canImport } from "@/lib/permissions"
+import { canExport, canImport, canWrite } from "@/lib/permissions"
 import { PageHeader } from "@/components/page-header"
+import { BatchSelectionProvider } from "@/components/batch/batch-selection-provider"
+import { BatchActionHeader } from "@/components/batch/batch-action-header"
 import { type SmallGroupRow } from "./columns"
 import { SmallGroupsTable } from "./small-groups-table"
 import { SmallGroupsToolbar } from "./toolbar"
 import { SmallGroupsFilters } from "./small-groups-filters"
 import { SmallGroupsTabs } from "./small-groups-tabs"
 import { RequestsTable, type RequestRow } from "./requests-table"
+import { deleteSmallGroupsBatch, setSmallGroupsLifeStageBatch } from "./actions"
 
 async function getSmallGroups(where: Prisma.SmallGroupWhereInput): Promise<SmallGroupRow[]> {
   const groups = await db.smallGroup.findMany({
@@ -147,39 +150,54 @@ export default async function SmallGroupsPage({
     tab === "requests" ? getPendingRequests() : Promise.resolve([]),
   ])
 
+  const writable = canWrite(session, "SmallGroups")
+  const selectionEnabled = writable && tab === "all"
+
   return (
-    <div className="flex flex-1 flex-col gap-4 p-6">
-      <PageHeader
-        title="Small Groups"
-        description="Manage fellowship groups and their hierarchy"
-        actions={
-          tab === "all" ? (
-            <SmallGroupsToolbar
-              groups={groups}
-              canImport={canImport(session, "SmallGroups")}
-              canExport={canExport(session, "SmallGroups")}
+    <BatchSelectionProvider
+      allIds={groups.map((g) => g.id)}
+      enabled={selectionEnabled}
+    >
+      <div className="flex flex-1 flex-col gap-4 p-6">
+        <PageHeader
+          title="Small Groups"
+          description="Manage fellowship groups and their hierarchy"
+          actions={
+            tab === "all" ? (
+              <BatchActionHeader
+                entityLabel="small group"
+                lifeStages={lifeStages}
+                onDelete={deleteSmallGroupsBatch}
+                onSetLifeStage={setSmallGroupsLifeStageBatch}
+              >
+                <SmallGroupsToolbar
+                  groups={groups}
+                  canImport={canImport(session, "SmallGroups")}
+                  canExport={canExport(session, "SmallGroups")}
+                />
+              </BatchActionHeader>
+            ) : undefined
+          }
+        />
+
+        <SmallGroupsTabs pendingRequestCount={pendingRequestCount} />
+
+        {tab === "requests" ? (
+          <RequestsTable requests={requests} />
+        ) : (
+          <>
+            <SmallGroupsFilters
+              lifeStages={lifeStages}
+              search={search}
+              lifeStageId={lifeStageId}
+              genderFocus={genderFocus}
+              meetingFormat={meetingFormat}
+              status={status}
             />
-          ) : undefined
-        }
-      />
-
-      <SmallGroupsTabs pendingRequestCount={pendingRequestCount} />
-
-      {tab === "requests" ? (
-        <RequestsTable requests={requests} />
-      ) : (
-        <>
-          <SmallGroupsFilters
-            lifeStages={lifeStages}
-            search={search}
-            lifeStageId={lifeStageId}
-            genderFocus={genderFocus}
-            meetingFormat={meetingFormat}
-            status={status}
-          />
-          <SmallGroupsTable groups={groups} />
-        </>
-      )}
-    </div>
+            <SmallGroupsTable groups={groups} canWrite={selectionEnabled} />
+          </>
+        )}
+      </div>
+    </BatchSelectionProvider>
   )
 }

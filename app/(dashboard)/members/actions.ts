@@ -7,6 +7,8 @@ import { auth } from "@/lib/auth"
 import { canWrite } from "@/lib/permissions"
 import { memberSchema, type MemberFormValues } from "@/lib/validations/member"
 import { checkDuplicateContactInfo } from "@/lib/duplicate-check"
+import { runBatchDelete } from "@/lib/batch"
+import type { BatchDeleteResult } from "@/components/batch/types"
 
 type ActionResult<T = void> =
   | { success: true; data: T }
@@ -135,6 +137,58 @@ export async function deleteMember(id: string): Promise<ActionResult> {
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to delete member" }
+  }
+}
+
+export async function deleteMembersBatch(
+  ids: string[]
+): Promise<ActionResult<BatchDeleteResult>> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
+  if (ids.length === 0) return { success: true, data: { deleted: 0, failed: [] } }
+
+  try {
+    const members = await db.member.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, firstName: true, lastName: true },
+    })
+    const names = new Map(
+      members.map((m) => [m.id, `${m.firstName} ${m.lastName}`])
+    )
+
+    const result = await runBatchDelete({
+      ids,
+      names,
+      deleteOne: (id) => db.member.delete({ where: { id } }).then(() => undefined),
+      fkReason: "leads a small group or has linked records",
+    })
+
+    revalidatePath("/members")
+    return { success: true, data: result }
+  } catch {
+    return { success: false, error: "Failed to delete members" }
+  }
+}
+
+export async function setMembersLifeStageBatch(
+  ids: string[],
+  lifeStageId: string | null
+): Promise<ActionResult<{ updated: number }>> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
+  if (ids.length === 0) return { success: true, data: { updated: 0 } }
+
+  try {
+    const result = await db.member.updateMany({
+      where: { id: { in: ids } },
+      data: { lifeStageId },
+    })
+    revalidatePath("/members")
+    return { success: true, data: { updated: result.count } }
+  } catch {
+    return { success: false, error: "Failed to update life stage" }
   }
 }
 

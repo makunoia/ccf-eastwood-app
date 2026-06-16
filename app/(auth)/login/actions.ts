@@ -5,6 +5,7 @@ import { AuthError } from "next-auth"
 import { db } from "@/lib/db"
 import bcrypt from "bcryptjs"
 import { signPreAuthToken } from "@/lib/auth-tokens"
+import { resolveLandingPathForUser } from "@/lib/landing.server"
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 
@@ -49,7 +50,7 @@ export async function login(
     await signIn("credentials", {
       username,
       password,
-      redirectTo: "/dashboard",
+      redirectTo: await resolveLandingPathForUser(user.id),
     })
     return {}
   } catch (error) {

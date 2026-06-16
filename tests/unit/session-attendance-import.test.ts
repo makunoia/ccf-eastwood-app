@@ -134,7 +134,7 @@ describe("checkSessionAttendanceDuplicates", () => {
     }
   })
 
-  it("does not return a match for a registrant who has NOT attended this occurrence", async () => {
+  it("returns a recognized match for a Guest who exists in the DB but has NOT attended this occurrence", async () => {
     const { event, occurrence } = await seedRecurringEvent()
     const guest = await seedGuest({ email: "pending@example.com" })
     await seedRegistrant(event.id, { guestId: guest.id })
@@ -144,7 +144,61 @@ describe("checkSessionAttendanceDuplicates", () => {
       { email: "pending@example.com" },
     ])
     expect(result.success).toBe(true)
-    if (result.success) expect(result.data).toHaveLength(0)
+    if (result.success) {
+      expect(result.data).toHaveLength(1)
+      expect(result.data[0].kind).toBe("recognized")
+      expect(result.data[0].existingId).toBe(guest.id)
+      expect(result.data[0].existingType).toBe("guest")
+    }
+  })
+
+  it("returns a recognized match for a Guest found by phone (not email)", async () => {
+    const { occurrence } = await seedRecurringEvent()
+    await seedGuest({ phone: "+63 917 123 4567" })
+
+    const result = await checkSessionAttendanceDuplicates(occurrence.id, [
+      { phone: "09171234567" },
+    ])
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data).toHaveLength(1)
+      expect(result.data[0].kind).toBe("recognized")
+      expect(result.data[0].existingType).toBe("guest")
+    }
+  })
+
+  it("returns a recognized match for a Member found by phone", async () => {
+    const { occurrence } = await seedRecurringEvent()
+    const member = await seedMember({ phone: "+63 917 123 4567" })
+
+    const result = await checkSessionAttendanceDuplicates(occurrence.id, [
+      { phone: "09171234567" },
+    ])
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data).toHaveLength(1)
+      expect(result.data[0].kind).toBe("recognized")
+      expect(result.data[0].existingId).toBe(member.id)
+      expect(result.data[0].existingType).toBe("member")
+    }
+  })
+
+  it("prefers already-attended (true duplicate) over recognized for the same person", async () => {
+    const { event, occurrence } = await seedRecurringEvent()
+    const guest = await seedGuest({ email: "attended@example.com" })
+    const registrant = await seedRegistrant(event.id, { guestId: guest.id })
+    await seedOccurrenceAttendee(occurrence.id, registrant.id)
+
+    const result = await checkSessionAttendanceDuplicates(occurrence.id, [
+      { email: "attended@example.com" },
+    ])
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data).toHaveLength(1)
+      // Must be a true duplicate (no kind), not recognized
+      expect(result.data[0].kind).toBeUndefined()
+      expect(result.data[0].existingId).toBe(registrant.id)
+    }
   })
 
   it("returns error when occurrence does not exist", async () => {
@@ -152,20 +206,25 @@ describe("checkSessionAttendanceDuplicates", () => {
     expect(result.success).toBe(false)
   })
 
-  it("handles mixed rows — only already-attended rows return as matches", async () => {
+  it("handles mixed rows — already-attended and recognized and truly new", async () => {
     const { event, occurrence } = await seedRecurringEvent()
-    const guest = await seedGuest({ email: "checked-in@example.com" })
-    const registrant = await seedRegistrant(event.id, { guestId: guest.id })
+    const attendedGuest = await seedGuest({ email: "checked-in@example.com" })
+    const registrant = await seedRegistrant(event.id, { guestId: attendedGuest.id })
     await seedOccurrenceAttendee(occurrence.id, registrant.id)
+    // Existing guest not yet checked in
+    await seedGuest({ email: "existing@example.com" })
 
     const result = await checkSessionAttendanceDuplicates(occurrence.id, [
-      { email: "checked-in@example.com" },
-      { email: "new-person@example.com" },
+      { email: "checked-in@example.com" },   // already attended → true duplicate
+      { email: "existing@example.com" },      // in DB but not attended → recognized
+      { email: "new-person@example.com" },    // not in DB → no match
     ])
     expect(result.success).toBe(true)
     if (result.success) {
-      expect(result.data).toHaveLength(1)
-      expect(result.data[0].rowIndex).toBe(0)
+      expect(result.data).toHaveLength(2)
+      const byEmail = Object.fromEntries(result.data.map((d) => [d.existingEmail, d]))
+      expect(byEmail["checked-in@example.com"].kind).toBeUndefined()
+      expect(byEmail["existing@example.com"].kind).toBe("recognized")
     }
   })
 })
@@ -301,7 +360,7 @@ describe("importSessionAttendance", () => {
   })
 
   describe("existing Guest NOT yet registered for this event", () => {
-    it("creates EventRegistrant and OccurrenceAttendee (walk-in link)", async () => {
+    it("creates EventRegistrant and OccurrenceAttendee (walk-in link) — by email", async () => {
       const { event, occurrence } = await seedRecurringEvent()
       const guest = await seedGuest({ email: "unregistered@example.com" })
       // No EventRegistrant
@@ -320,6 +379,42 @@ describe("importSessionAttendance", () => {
 
       const attendee = await db.occurrenceAttendee.findFirst({ where: { occurrenceId: occurrence.id } })
       expect(attendee?.registrantId).toBe(registrant!.id)
+    })
+
+    it("creates EventRegistrant and OccurrenceAttendee (walk-in link) — by phone", async () => {
+      const { event, occurrence } = await seedRecurringEvent()
+      const guest = await seedGuest({ phone: "+63 917 123 4567" })
+      // No EventRegistrant
+
+      const result = await importSessionAttendance(occurrence.id, [
+        { mapped: { firstName: "Maria", lastName: "Santos", mobileNumber: "09171234567" }, resolution: "use-existing" },
+      ])
+      expect(result.success).toBe(true)
+      if (result.success) {
+        expect(result.data.linked).toBe(1)
+        expect(result.data.created).toBe(0)
+      }
+
+      const registrant = await db.eventRegistrant.findFirst({ where: { eventId: event.id, guestId: guest.id } })
+      expect(registrant).not.toBeNull()
+
+      const attendee = await db.occurrenceAttendee.findFirst({ where: { occurrenceId: occurrence.id } })
+      expect(attendee?.registrantId).toBe(registrant!.id)
+    })
+
+    it("does not create a duplicate Guest when phone format differs from stored canonical", async () => {
+      const { event, occurrence } = await seedRecurringEvent()
+      await seedGuest({ phone: "+63 917 123 4567" })
+
+      await importSessionAttendance(occurrence.id, [
+        { mapped: { firstName: "Maria", lastName: "Santos", mobileNumber: "09171234567" }, resolution: "use-existing" },
+      ])
+
+      const allGuests = await db.guest.findMany({ where: { phone: { in: ["+63 917 123 4567", "09171234567"] } } })
+      expect(allGuests).toHaveLength(1)
+
+      const allRegistrants = await db.eventRegistrant.findMany({ where: { eventId: event.id } })
+      expect(allRegistrants).toHaveLength(1)
     })
   })
 
