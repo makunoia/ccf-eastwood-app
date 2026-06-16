@@ -9,7 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { useBatchSelection } from "@/components/batch/batch-selection-provider"
 import { buildColumns, type SmallGroupRow, RowActions } from "./columns"
 
-function SmallGroupCard({ group }: { group: SmallGroupRow }) {
+function SmallGroupCard({ group, allIds }: { group: SmallGroupRow; allIds: string[] }) {
   const router = useRouter()
   const selection = useBatchSelection()
   const selecting = selection?.enabled && selection.selectMode
@@ -24,6 +24,7 @@ function SmallGroupCard({ group }: { group: SmallGroupRow }) {
           selection?.toggle(group.id)
           return
         }
+        sessionStorage.setItem("smallGroupListIds", JSON.stringify(allIds))
         router.push(`/small-groups/${group.id}`)
       }}
     >
@@ -92,7 +93,9 @@ export function SmallGroupsTable({
             <p className="text-sm">No small groups yet</p>
           </div>
         ) : (
-          groups.map((group) => <SmallGroupCard key={group.id} group={group} />)
+          groups.map((group) => (
+            <SmallGroupCard key={group.id} group={group} allIds={groups.map((g) => g.id)} />
+          ))
         )}
       </div>
 

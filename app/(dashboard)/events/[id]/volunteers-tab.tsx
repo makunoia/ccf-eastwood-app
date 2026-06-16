@@ -9,6 +9,8 @@ import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { Checkbox } from "@/components/ui/checkbox"
+import { useBatchSelection } from "@/components/batch/batch-selection-provider"
 import {
   Dialog,
   DialogContent,
@@ -129,20 +131,44 @@ function VolunteerCard({
   onNavigate: () => void
 }) {
   const router = useRouter()
+  const selection = useBatchSelection()
+  const selecting = selection?.enabled && selection.selectMode
+  const checked = selection?.isSelected(volunteer.id) ?? false
   const memberName = `${volunteer.member.firstName} ${volunteer.member.lastName}`
   const statusVariant = STATUS_VARIANT[volunteer.status] ?? "secondary"
 
   return (
     <Card
-      className="cursor-pointer hover:bg-muted/50 transition-colors py-0"
-      onClick={() => { onNavigate(); router.push(`/event/${eventId}/volunteers/${volunteer.id}`) }}
+      className="cursor-pointer hover:bg-muted/50 transition-colors py-0 data-[selected=true]:border-primary"
+      data-selected={checked}
+      onClick={() => {
+        if (selecting) {
+          selection?.toggle(volunteer.id)
+          return
+        }
+        onNavigate()
+        router.push(`/event/${eventId}/volunteers/${volunteer.id}`)
+      }}
     >
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-2">
-          <p className="font-medium leading-tight">{memberName}</p>
+          <div className="flex items-start gap-3 min-w-0">
+            {selecting && (
+              <Checkbox
+                checked={checked}
+                onClick={(e) => e.stopPropagation()}
+                onCheckedChange={() => selection?.toggle(volunteer.id)}
+                aria-label={`Select ${memberName}`}
+                className="mt-0.5"
+              />
+            )}
+            <p className="font-medium leading-tight">{memberName}</p>
+          </div>
           <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
             <Badge variant={statusVariant}>{volunteer.status}</Badge>
-            <VolunteerRowActions volunteer={volunteer} eventId={eventId} onNavigate={onNavigate} />
+            {!selecting && (
+              <VolunteerRowActions volunteer={volunteer} eventId={eventId} onNavigate={onNavigate} />
+            )}
           </div>
         </div>
         <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
@@ -171,11 +197,29 @@ function VolunteersDesktopTable({
   eventId: string
   onNavigate: () => void
 }) {
+  const selection = useBatchSelection()
+  const selectable = selection?.enabled ?? false
+
   return (
     <div className="overflow-x-auto rounded-lg border">
       <table className="w-full text-sm">
         <thead className="border-b bg-muted/50">
           <tr>
+            {selectable && (
+              <th className="w-10 px-4 py-3">
+                <Checkbox
+                  checked={
+                    selection!.allSelected
+                      ? true
+                      : selection!.someSelected
+                        ? "indeterminate"
+                        : false
+                  }
+                  onCheckedChange={() => selection!.toggleAll()}
+                  aria-label="Select all rows"
+                />
+              </th>
+            )}
             <th className="px-4 py-3 text-left font-medium">Member</th>
             <th className="px-4 py-3 text-left font-medium">Committee</th>
             <th className="px-4 py-3 text-left font-medium">Preferred Role</th>
@@ -189,7 +233,20 @@ function VolunteersDesktopTable({
             const memberName = `${v.member.firstName} ${v.member.lastName}`
             const statusVariant = STATUS_VARIANT[v.status] ?? "secondary"
             return (
-              <tr key={v.id} className="border-b last:border-0">
+              <tr
+                key={v.id}
+                className="border-b last:border-0 data-[selected=true]:bg-muted/40"
+                data-selected={selectable && selection!.isSelected(v.id)}
+              >
+                {selectable && (
+                  <td className="px-4 py-3">
+                    <Checkbox
+                      checked={selection!.isSelected(v.id)}
+                      onCheckedChange={() => selection!.toggle(v.id)}
+                      aria-label={`Select ${memberName}`}
+                    />
+                  </td>
+                )}
                 <td className="px-4 py-3">
                   <Link
                     href={`/event/${eventId}/volunteers/${v.id}`}

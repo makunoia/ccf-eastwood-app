@@ -1,7 +1,10 @@
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
+import { auth } from "@/lib/auth"
+import { canImport } from "@/lib/permissions"
 import { PageHeader } from "@/components/page-header"
 import { BreakoutGroupsTable } from "./breakout-group"
+import { BreakoutsToolbar } from "./breakouts-toolbar"
 
 const breakoutGroupsInclude = {
   orderBy: { createdAt: "asc" } as const,
@@ -138,7 +141,8 @@ export default async function BreakoutsPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const [event, lifeStages] = await Promise.all([
+  const [session, event, lifeStages] = await Promise.all([
+    auth(),
     getEventBreakouts(id),
     db.lifeStage.findMany({ orderBy: { order: "asc" }, select: { id: true, name: true } }),
   ])
@@ -158,7 +162,14 @@ export default async function BreakoutsPage({
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
-      <PageHeader title="Breakout Groups" />
+      <PageHeader
+        title="Breakout Groups"
+        actions={
+          canImport(session, "Events") ? (
+            <BreakoutsToolbar eventId={event.id} />
+          ) : undefined
+        }
+      />
       <BreakoutGroupsTable
         eventId={event.id}
         breakoutGroups={breakoutGroupRows}

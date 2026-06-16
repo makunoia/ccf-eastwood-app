@@ -173,11 +173,28 @@ function parseDayOfWeek(v: string): number | null {
 }
 
 function parseTime(v: string): string | null {
-  // Strip seconds if present (HH:MM:SS → HH:MM)
-  const trimmed = v.trim().replace(/^(\d{1,2}:\d{2}):\d{2}$/, "$1")
-  if (/^\d{2}:\d{2}$/.test(trimmed)) return trimmed
-  if (/^\d{1}:\d{2}$/.test(trimmed)) return `0${trimmed}`
-  return null
+  // Accept both 24-hour ("19:00", "19:00:00") and 12-hour ("7:00 PM", "7:00pm")
+  // formats — times are displayed/entered in 12-hour am/pm throughout the app,
+  // so hand-authored or spreadsheet-edited CSVs commonly use that form. Always
+  // returns the canonical 24-hour "HH:MM" stored format.
+  const match = v.trim().match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?$/i)
+  if (!match) return null
+
+  let hours = parseInt(match[1], 10)
+  const minutes = parseInt(match[2], 10)
+  const meridiem = match[3]?.toUpperCase()
+
+  if (minutes > 59) return null
+
+  if (meridiem) {
+    if (hours < 1 || hours > 12) return null
+    if (meridiem === "PM" && hours < 12) hours += 12
+    if (meridiem === "AM" && hours === 12) hours = 0
+  } else if (hours > 23) {
+    return null
+  }
+
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`
 }
 
 function addTwoHours(time: string): string {

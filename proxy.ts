@@ -29,6 +29,7 @@ const EVENT_PUBLIC_PATTERNS = [
   /^\/small-group-confirmation\//,
   /^\/ministries\/[^/]+\/volunteer/,
   /^\/events\/[^/]+\/volunteer/,
+  /^\/me(\/|$)/,
 ]
 
 // Paths accessible during the first-login setup flow

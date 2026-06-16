@@ -137,10 +137,16 @@ export function buildColumns(selectable = false): ColumnDef<SmallGroupRow>[] {
     {
       accessorKey: "name",
       header: "Name",
-      cell: ({ row }) => (
+      cell: ({ row, table }) => (
         <div className="flex items-center gap-2">
           <Link
             href={`/small-groups/${row.original.id}`}
+            onClick={() =>
+              sessionStorage.setItem(
+                "smallGroupListIds",
+                JSON.stringify(table.getRowModel().rows.map((r) => (r.original as SmallGroupRow).id)),
+              )
+            }
             className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
           >
             {row.original.name}

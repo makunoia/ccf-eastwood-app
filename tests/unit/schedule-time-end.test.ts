@@ -32,6 +32,7 @@ import { db } from "@/lib/db"
 import { saveGuestMatchingProfile, promoteGuestToMember } from "@/app/(dashboard)/guests/actions"
 import { saveMemberMatchingPreferences } from "@/app/(dashboard)/members/actions"
 import { createSmallGroup, updateSmallGroup } from "@/app/(dashboard)/small-groups/actions"
+import { importSmallGroups } from "@/app/(dashboard)/small-groups/import-actions"
 import { createBreakoutGroup, updateBreakoutGroup } from "@/app/(dashboard)/events/breakout-actions"
 import { matchSmallGroups } from "@/lib/matching"
 
@@ -215,6 +216,50 @@ describe("createSmallGroup / updateSmallGroup — scheduleTimeEnd", () => {
     expect(result.success).toBe(true)
     const updated = await db.smallGroup.findUnique({ where: { id: group.id } })
     expect(updated?.scheduleTimeEnd).toBe("11:00")
+  })
+})
+
+describe("importSmallGroups — schedule time parsing", () => {
+  function importRow(mapped: Record<string, string>) {
+    return [{ mapped, resolution: "use-csv" as const }]
+  }
+
+  it("parses 12-hour am/pm meeting times and stores canonical 24-hour HH:MM", async () => {
+    const result = await importSmallGroups(
+      importRow({ name: "PM Group", scheduleDayOfWeek: "Wednesday", scheduleTime: "7:00 PM" }),
+    )
+
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(result.data.created).toBe(1)
+
+    const group = await db.smallGroup.findFirst({ where: { name: "PM Group" } })
+    expect(group?.scheduleDayOfWeek).toBe(3)
+    expect(group?.scheduleTimeStart).toBe("19:00")
+    // End time defaults to start + 2 hours when not provided
+    expect(group?.scheduleTimeEnd).toBe("21:00")
+  })
+
+  it("parses an explicit am/pm end time", async () => {
+    const result = await importSmallGroups(
+      importRow({ name: "AM Group", scheduleTime: "9:30 AM", scheduleTimeEnd: "11:00 AM" }),
+    )
+
+    expect(result.success).toBe(true)
+    const group = await db.smallGroup.findFirst({ where: { name: "AM Group" } })
+    expect(group?.scheduleTimeStart).toBe("09:30")
+    expect(group?.scheduleTimeEnd).toBe("11:00")
+  })
+
+  it("still accepts 24-hour times", async () => {
+    const result = await importSmallGroups(
+      importRow({ name: "24h Group", scheduleTime: "19:00", scheduleTimeEnd: "21:00" }),
+    )
+
+    expect(result.success).toBe(true)
+    const group = await db.smallGroup.findFirst({ where: { name: "24h Group" } })
+    expect(group?.scheduleTimeStart).toBe("19:00")
+    expect(group?.scheduleTimeEnd).toBe("21:00")
   })
 })
 
