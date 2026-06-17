@@ -132,7 +132,9 @@ async function getEventDashboard(id: string, period: PeriodFilter) {
             isOpen: true,
             isStandalone: true,
             seriesId: true,
-            _count: { select: { attendees: true } },
+            // Participant attendance only — volunteer check-ins (registrantId null) are
+            // tracked separately and excluded from attendance totals.
+            _count: { select: { attendees: { where: { registrantId: { not: null } } } } },
           },
         })
 
@@ -152,6 +154,8 @@ async function getEventDashboard(id: string, period: PeriodFilter) {
       : (
           await db.occurrenceAttendee.findMany({
             where: {
+              // Participant attendance only — exclude volunteer check-ins.
+              registrantId: { not: null },
               occurrence: {
                 eventId: event.id,
                 date: {

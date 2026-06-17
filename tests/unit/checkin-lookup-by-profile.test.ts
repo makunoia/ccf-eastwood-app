@@ -47,15 +47,24 @@ async function seedMember(overrides: {
   })
 }
 
+type SingleMatchData = {
+  kind: "registrant" | "volunteer"
+  subjectId: string
+  name: string
+  nickname: string | null
+  alreadyCheckedIn: boolean
+  guestSmallGroupPrompt: null
+}
+
 function isSingleMatch(
   result: Awaited<ReturnType<typeof lookupCheckinRegistrantByProfile>>
-): result is { success: true; data: { registrantId: string; name: string; nickname: string | null; alreadyCheckedIn: boolean; guestSmallGroupPrompt: null } } {
+): result is { success: true; data: SingleMatchData } {
   return result.success && result.data !== null && !("matchType" in (result.data as object))
 }
 
 function isAmbiguousMatch(
   result: Awaited<ReturnType<typeof lookupCheckinRegistrantByProfile>>
-): result is { success: true; data: { matchType: "ambiguous"; candidates: Array<{ registrantId: string; name: string; nickname: string | null; alreadyCheckedIn: boolean; guestSmallGroupPrompt: null }> } } {
+): result is { success: true; data: { matchType: "ambiguous"; candidates: SingleMatchData[] } } {
   return result.success && result.data !== null && "matchType" in (result.data as object)
 }
 

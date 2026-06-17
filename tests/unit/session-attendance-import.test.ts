@@ -283,7 +283,7 @@ describe("importSessionAttendance", () => {
       const attendee = await db.occurrenceAttendee.findFirst({ where: { occurrenceId: occurrence.id } })
       expect(attendee).not.toBeNull()
 
-      const registrant = await db.eventRegistrant.findUnique({ where: { id: attendee!.registrantId } })
+      const registrant = await db.eventRegistrant.findUnique({ where: { id: attendee!.registrantId! } })
       expect(registrant?.guestId).toBeTruthy()
 
       const guest = await db.guest.findUnique({ where: { id: registrant!.guestId! } })

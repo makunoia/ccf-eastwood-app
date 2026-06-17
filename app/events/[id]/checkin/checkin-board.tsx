@@ -69,8 +69,11 @@ type Step =
   | "sg-profile"
   | "sg-leader-search"
 
+type CheckinSubjectKind = "registrant" | "volunteer"
+
 type DisambiguateCandidate = {
-  registrantId: string
+  kind: CheckinSubjectKind
+  subjectId: string
   name: string
   nickname: string | null
   alreadyCheckedIn: boolean
@@ -80,7 +83,8 @@ type DisambiguateCandidate = {
 type CheckinRegistrantResult = DisambiguateCandidate
 
 type MatchedState = {
-  registrantId: string
+  kind: CheckinSubjectKind
+  subjectId: string
   name: string
   nickname: string | null
   guestSmallGroupPrompt: GuestSmallGroupPrompt | null
@@ -223,7 +227,8 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], defaultLi
 
     const checkinResult = result.data as CheckinRegistrantResult
     setMatched({
-      registrantId: checkinResult.registrantId,
+      kind: checkinResult.kind,
+      subjectId: checkinResult.subjectId,
       name: checkinResult.name,
       nickname: checkinResult.nickname,
       guestSmallGroupPrompt: checkinResult.guestSmallGroupPrompt,
@@ -241,10 +246,11 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], defaultLi
     if (!matched) return
     setLoading(true)
 
+    const subject = { kind: matched.kind, id: matched.subjectId }
     const result =
       occurrenceId !== null
-        ? await checkInToOccurrence(occurrenceId, matched.registrantId)
-        : await markCheckinAttendance(matched.registrantId)
+        ? await checkInToOccurrence(occurrenceId, subject)
+        : await markCheckinAttendance(subject)
 
     setLoading(false)
 
@@ -255,9 +261,10 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], defaultLi
 
     // Silently auto-assign to best breakout group in the background — only when
     // the event opts in to auto-assignment. Otherwise the registrant either picked
-    // a group at registration or stays unassigned by choice.
-    if (occurrenceId !== null && autoAssignBreakout) {
-      void autoAssignRegistrantToBreakout(matched.registrantId, eventId)
+    // a group at registration or stays unassigned by choice. Volunteers are not
+    // breakout participants, so they are never auto-assigned.
+    if (occurrenceId !== null && autoAssignBreakout && matched.kind === "registrant") {
+      void autoAssignRegistrantToBreakout(matched.subjectId, eventId)
     }
 
     // If this guest should be asked about a small group, show prompt first
@@ -307,7 +314,8 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], defaultLi
     }
 
     setMatched({
-      registrantId: result.data.registrantId,
+      kind: "registrant",
+      subjectId: result.data.registrantId,
       name: result.data.name,
       nickname: walkInForm.nickname || null,
       guestSmallGroupPrompt: null,
@@ -492,11 +500,12 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], defaultLi
           <div className="flex flex-col gap-3">
             {disambiguateCandidates.map((c) => (
               <button
-                key={c.registrantId}
+                key={`${c.kind}-${c.subjectId}`}
                 type="button"
                 onClick={() => {
                   setMatched({
-                    registrantId: c.registrantId,
+                    kind: c.kind,
+                    subjectId: c.subjectId,
                     name: c.name,
                     nickname: c.nickname,
                     guestSmallGroupPrompt: c.guestSmallGroupPrompt,

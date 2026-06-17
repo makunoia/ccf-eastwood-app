@@ -484,11 +484,16 @@ model OccurrenceAttendee {
   id           String          @id @default(cuid())
   occurrenceId String
   occurrence   EventOccurrence @relation(fields: [occurrenceId], references: [id], onDelete: Cascade)
-  registrantId String
-  registrant   EventRegistrant @relation(fields: [registrantId], references: [id], onDelete: Cascade)
+  // Exactly one of registrantId / volunteerId is set (app-layer enforced), mirroring the
+  // EventRegistrant memberId/guestId convention. A volunteer is never a registrant.
+  registrantId String?
+  registrant   EventRegistrant? @relation(fields: [registrantId], references: [id], onDelete: Cascade)
+  volunteerId  String?
+  volunteer    Volunteer?       @relation(fields: [volunteerId], references: [id], onDelete: Cascade)
   checkedInAt  DateTime        @default(now())
 
   @@unique([occurrenceId, registrantId])
+  @@unique([occurrenceId, volunteerId])
 }
 
 enum FacilitatorRole {
@@ -638,14 +643,18 @@ model Volunteer {
   notes                String?
   leaderApprovalToken  String?           @unique
   leaderNotes          String?
+  // OneTime-event attendance marker, symmetric to EventRegistrant.attendedAt.
+  // Session-based (MultiDay/Recurring) attendance lives in OccurrenceAttendee.
+  attendedAt           DateTime?
   createdAt            DateTime          @default(now())
   updatedAt            DateTime          @updatedAt
 
-  facilitatedGroups   BreakoutGroup[] @relation("FacilitatedGroups")
-  coFacilitatedGroups BreakoutGroup[] @relation("CoFacilitatedGroups")
-  busPassengers       BusPassenger[]
-  catchMechSessions   CatchMechSession[]
-  subFacilitatorSlots OccurrenceSubFacilitator[]
+  facilitatedGroups     BreakoutGroup[] @relation("FacilitatedGroups")
+  coFacilitatedGroups   BreakoutGroup[] @relation("CoFacilitatedGroups")
+  busPassengers         BusPassenger[]
+  catchMechSessions     CatchMechSession[]
+  subFacilitatorSlots   OccurrenceSubFacilitator[]
+  occurrenceAttendances OccurrenceAttendee[]
 }
 
 model MatchingWeightConfig {

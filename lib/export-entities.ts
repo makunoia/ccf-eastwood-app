@@ -144,3 +144,39 @@ export function exportSmallGroupsCSV(rows: SmallGroupExportRow[]): void {
     rows.map(smallGroupToCells),
   )
 }
+
+// ── Volunteer ─────────────────────────────────────────────────────────────────
+
+export type VolunteerExportRow = {
+  firstName: string
+  lastName: string
+  email: string | null
+  phone: string | null
+  committeeName: string
+  preferredRole: string
+  assignedRole: string | null
+  status: string
+  notes: string | null
+}
+
+// "Role Name" aligns to the import's roleName (= preferred role) so an
+// export → re-import round-trips; "Assigned Role" is extra context.
+const VOLUNTEER_HEADERS = [
+  "First Name", "Last Name", "Email", "Phone",
+  "Committee Name", "Role Name", "Assigned Role", "Status", "Notes",
+]
+
+function volunteerToCells(v: VolunteerExportRow): CSVCell[] {
+  return [
+    v.firstName, v.lastName, v.email, v.phone,
+    v.committeeName, v.preferredRole, v.assignedRole, v.status, v.notes,
+  ]
+}
+
+export function exportVolunteersCSV(rows: VolunteerExportRow[]): void {
+  downloadCSV(
+    `volunteers-${new Date().toISOString().split("T")[0]}.csv`,
+    VOLUNTEER_HEADERS,
+    rows.map(volunteerToCells),
+  )
+}

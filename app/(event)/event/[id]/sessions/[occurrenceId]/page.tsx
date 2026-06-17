@@ -55,6 +55,12 @@ async function getOccurrenceDetail(occurrenceId: string) {
               },
             },
           },
+          volunteer: {
+            select: {
+              id: true,
+              member: { select: { firstName: true, lastName: true, gender: true } },
+            },
+          },
         },
       },
     },
@@ -76,7 +82,9 @@ async function getOccurrenceDetail(occurrenceId: string) {
       orderBy: { name: "asc" },
       include: {
         facilitator: {
-          include: {
+          select: {
+            // Facilitators are volunteers — presence comes from their own volunteer check-in.
+            occurrenceAttendances: { where: { occurrenceId }, select: { id: true } },
             member: {
               select: {
                 firstName: true,
@@ -95,7 +103,8 @@ async function getOccurrenceDetail(occurrenceId: string) {
           },
         },
         coFacilitator: {
-          include: {
+          select: {
+            occurrenceAttendances: { where: { occurrenceId }, select: { id: true } },
             member: {
               select: {
                 firstName: true,
@@ -177,32 +186,52 @@ export default async function OccurrenceDetailPage({
     timeZone: "UTC",
   })
 
-  const volunteerMemberIds = new Set(volunteers.map((v) => v.memberId))
-
-  const attendeesWithStats = occurrence.attendees.map((a) => ({
-    id: a.id,
-    registrantId: a.registrant.id,
-    name: getAttendeeName(a.registrant),
-    checkedInAtFormatted: a.checkedInAt.toLocaleTimeString("en-PH", {
+  const attendeesWithStats = occurrence.attendees.map((a) => {
+    const checkedInAtFormatted = a.checkedInAt.toLocaleTimeString("en-PH", {
       hour: "2-digit",
       minute: "2-digit",
       timeZone: "Asia/Manila",
-    }),
-    // Members are established — never "New". Only first-time guests are tagged New.
-    isReturner: isEstablishedAttendee(
-      !!a.registrant.memberId,
-      a.registrant.occurrenceAttendances,
-      occurrenceId,
-      occurrence.date,
-    ),
-    isMember: !!a.registrant.memberId,
-    isVolunteer: a.registrant.memberId
-      ? volunteerMemberIds.has(a.registrant.memberId)
-      : false,
-    breakoutGroupIds: a.registrant.breakoutGroupMemberships.map((m) => m.breakoutGroupId),
-    breakoutGroupNames: a.registrant.breakoutGroupMemberships.map((m) => m.breakoutGroup.name),
-    gender: a.registrant.member?.gender ?? a.registrant.guest?.gender ?? null,
-  }))
+    })
+
+    // Volunteer attendance row — recorded directly against the Volunteer, not a registrant.
+    if (a.volunteer) {
+      return {
+        id: a.id,
+        kind: "volunteer" as const,
+        subjectId: a.volunteer.id,
+        name: `${a.volunteer.member.firstName} ${a.volunteer.member.lastName}`.trim() || null,
+        checkedInAtFormatted,
+        // Volunteers are established — never tagged "New".
+        isReturner: true,
+        isMember: true,
+        isVolunteer: true,
+        breakoutGroupIds: [] as string[],
+        breakoutGroupNames: [] as string[],
+        gender: a.volunteer.member.gender ?? null,
+      }
+    }
+
+    const r = a.registrant!
+    return {
+      id: a.id,
+      kind: "registrant" as const,
+      subjectId: r.id,
+      name: getAttendeeName(r),
+      checkedInAtFormatted,
+      // Members are established — never "New". Only first-time guests are tagged New.
+      isReturner: isEstablishedAttendee(
+        !!r.memberId,
+        r.occurrenceAttendances,
+        occurrenceId,
+        occurrence.date,
+      ),
+      isMember: !!r.memberId,
+      isVolunteer: false,
+      breakoutGroupIds: r.breakoutGroupMemberships.map((m) => m.breakoutGroupId),
+      breakoutGroupNames: r.breakoutGroupMemberships.map((m) => m.breakoutGroup.name),
+      gender: r.member?.gender ?? r.guest?.gender ?? null,
+    }
+  })
 
   const totalCount = attendeesWithStats.length
   const newCount = attendeesWithStats.filter((a) => !a.isReturner).length
@@ -212,15 +241,19 @@ export default async function OccurrenceDetailPage({
   const womenCount = attendeesWithStats.filter((a) => a.gender === "Female").length
 
   const breakoutStats = breakoutGroups.map((bg) => {
+    // A facilitator is present if they checked in as a volunteer (current path) or,
+    // for legacy data, via a linked registrant attendance.
     const facilitatorPresent =
-      bg.facilitator?.member.eventRegistrations.some(
+      (bg.facilitator?.occurrenceAttendances.length ?? 0) > 0 ||
+      (bg.facilitator?.member.eventRegistrations.some(
         (r) => r.occurrenceAttendances.length > 0,
-      ) ?? false
+      ) ?? false)
 
     const coFacilitatorPresent =
-      bg.coFacilitator?.member.eventRegistrations.some(
+      (bg.coFacilitator?.occurrenceAttendances.length ?? 0) > 0 ||
+      (bg.coFacilitator?.member.eventRegistrations.some(
         (r) => r.occurrenceAttendances.length > 0,
-      ) ?? false
+      ) ?? false)
 
     const subFac = subFacilitators.find(
       (s) => s.breakoutGroupId === bg.id && s.role === "Facilitator",
