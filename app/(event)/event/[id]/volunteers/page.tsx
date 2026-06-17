@@ -5,6 +5,7 @@ import { canWrite } from "@/lib/permissions"
 import { PageHeader } from "@/components/page-header"
 import { BatchSelectionProvider } from "@/components/batch/batch-selection-provider"
 import { VolunteersTab, type EventVolunteer } from "@/app/(dashboard)/events/[id]/volunteers-tab"
+import type { VolunteerExportRow } from "@/lib/export-entities"
 import { VolunteersToolbar } from "./volunteers-toolbar"
 import { VolunteersBatchBar } from "./volunteers-batch-bar"
 import { VolunteersFilters } from "./volunteers-filters"
@@ -41,6 +42,8 @@ async function getEventVolunteers(
               id: true,
               firstName: true,
               lastName: true,
+              email: true,
+              phone: true,
             },
           },
           committee: { select: { id: true, name: true } },
@@ -87,6 +90,18 @@ export default async function VolunteersPage({
     assignedRole: v.assignedRole,
   }))
 
+  const exportRows: VolunteerExportRow[] = event.volunteers.map((v) => ({
+    firstName: v.member.firstName,
+    lastName: v.member.lastName,
+    email: v.member.email,
+    phone: v.member.phone,
+    committeeName: v.committee.name,
+    preferredRole: v.preferredRole.name,
+    assignedRole: v.assignedRole?.name ?? null,
+    status: v.status,
+    notes: v.notes,
+  }))
+
   const selectionEnabled = canWrite(session, "Events")
 
   return (
@@ -99,7 +114,7 @@ export default async function VolunteersPage({
           title="Volunteers"
           actions={
             <VolunteersBatchBar eventId={event.id}>
-              <VolunteersToolbar eventId={event.id} />
+              <VolunteersToolbar eventId={event.id} exportRows={exportRows} />
             </VolunteersBatchBar>
           }
         />

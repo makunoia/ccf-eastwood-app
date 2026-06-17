@@ -47,7 +47,8 @@ type FacilitatorRole = (typeof FacilitatorRole)[keyof typeof FacilitatorRole]
 
 export type AttendeeRow = {
   id: string
-  registrantId: string
+  kind: "registrant" | "volunteer"
+  subjectId: string
   name: string | null
   checkedInAtFormatted: string
   isReturner: boolean
@@ -56,6 +57,13 @@ export type AttendeeRow = {
   breakoutGroupIds: string[]
   breakoutGroupNames: string[]
   gender: "Male" | "Female" | null
+}
+
+// Volunteers link to the volunteer detail page; registrants to the registrant detail page.
+function attendeeHref(eventId: string, a: AttendeeRow): string {
+  return a.kind === "volunteer"
+    ? `/event/${eventId}/volunteers/${a.subjectId}`
+    : `/event/${eventId}/registrants/${a.subjectId}`
 }
 
 export type BreakoutGroupOption = {
@@ -204,7 +212,7 @@ export function SessionAttendeesTable({
                 <div key={a.id} className="flex items-center gap-3 px-4 py-3">
                   <div className="min-w-0 flex-1">
                     <Link
-                      href={`/event/${eventId}/registrants/${a.registrantId}`}
+                      href={attendeeHref(eventId, a)}
                       className="truncate text-sm font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
                     >
                       {a.name ?? <span className="text-muted-foreground italic">No name</span>}
@@ -277,7 +285,7 @@ export function SessionAttendeesTable({
                     <TableRow key={a.id}>
                       <TableCell>
                         <Link
-                          href={`/event/${eventId}/registrants/${a.registrantId}`}
+                          href={attendeeHref(eventId, a)}
                           className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
                         >
                           {a.name ?? <span className="text-muted-foreground italic">No name</span>}

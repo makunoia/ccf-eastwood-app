@@ -1,9 +1,10 @@
 "use client"
 
 import * as React from "react"
-import { IconPlus, IconUpload } from "@tabler/icons-react"
+import { IconDownload, IconPlus, IconUpload } from "@tabler/icons-react"
 import { PageActions } from "@/components/page-header"
 import { ImportWizard } from "@/components/import/import-wizard"
+import { exportVolunteersCSV, type VolunteerExportRow } from "@/lib/export-entities"
 import {
   checkVolunteerDuplicates,
   importVolunteers,
@@ -11,9 +12,10 @@ import {
 
 type Props = {
   eventId: string
+  exportRows: VolunteerExportRow[]
 }
 
-export function VolunteersToolbar({ eventId }: Props) {
+export function VolunteersToolbar({ eventId, exportRows }: Props) {
   const [importOpen, setImportOpen] = React.useState(false)
   const context = { eventId }
 
@@ -29,6 +31,13 @@ export function VolunteersToolbar({ eventId }: Props) {
           label: "Import",
           icon: <IconUpload className="size-4" />,
           onSelect: () => setImportOpen(true),
+          overflow: true,
+        },
+        {
+          label: "Export",
+          icon: <IconDownload className="size-4" />,
+          onSelect: () => exportVolunteersCSV(exportRows),
+          disabled: exportRows.length === 0,
           overflow: true,
         },
       ]}

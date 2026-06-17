@@ -821,13 +821,20 @@ export async function createRegistrant(
 }
 
 export async function markCheckinAttendance(
-  registrantId: string
+  subject: CheckinSubject
 ): Promise<ActionResult> {
   try {
-    await db.eventRegistrant.update({
-      where: { id: registrantId },
-      data: { attendedAt: new Date() },
-    })
+    if (subject.kind === "volunteer") {
+      await db.volunteer.update({
+        where: { id: subject.id },
+        data: { attendedAt: new Date() },
+      })
+    } else {
+      await db.eventRegistrant.update({
+        where: { id: subject.id },
+        data: { attendedAt: new Date() },
+      })
+    }
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to mark attendance" }
@@ -1316,14 +1323,22 @@ export async function ensureMultiDayOccurrences(
 
 export async function checkInToOccurrence(
   occurrenceId: string,
-  registrantId: string
+  subject: CheckinSubject
 ): Promise<ActionResult> {
   try {
-    await db.occurrenceAttendee.upsert({
-      where: { occurrenceId_registrantId: { occurrenceId, registrantId } },
-      create: { occurrenceId, registrantId },
-      update: {},
-    })
+    if (subject.kind === "volunteer") {
+      await db.occurrenceAttendee.upsert({
+        where: { occurrenceId_volunteerId: { occurrenceId, volunteerId: subject.id } },
+        create: { occurrenceId, volunteerId: subject.id },
+        update: {},
+      })
+    } else {
+      await db.occurrenceAttendee.upsert({
+        where: { occurrenceId_registrantId: { occurrenceId, registrantId: subject.id } },
+        create: { occurrenceId, registrantId: subject.id },
+        update: {},
+      })
+    }
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to check in" }
@@ -1364,24 +1379,26 @@ type GuestSmallGroupPrompt = {
   }
 }
 
+// A check-in subject is either an event registrant or an event volunteer — never both.
+// Volunteers are looked up via their linked Member and recorded with the same attendance
+// machinery (OccurrenceAttendee for sessions, attendedAt for OneTime).
+export type CheckinSubjectKind = "registrant" | "volunteer"
+export type CheckinSubject = { kind: CheckinSubjectKind; id: string }
+
 type CheckinRegistrantResult = {
-  registrantId: string
+  kind: CheckinSubjectKind
+  subjectId: string
   name: string
   nickname: string | null
   alreadyCheckedIn: boolean
-  // Set when this is a guest's 2nd+ occurrence check-in and their profile is incomplete
+  // Set when this is a guest's 2nd+ occurrence check-in and their profile is incomplete.
+  // Always null for volunteers.
   guestSmallGroupPrompt: GuestSmallGroupPrompt | null
 }
 
 type CheckinAmbiguousResult = {
   matchType: "ambiguous"
-  candidates: Array<{
-    registrantId: string
-    name: string
-    nickname: string | null
-    alreadyCheckedIn: boolean
-    guestSmallGroupPrompt: GuestSmallGroupPrompt | null
-  }>
+  candidates: CheckinRegistrantResult[]
 }
 
 export async function lookupCheckinRegistrant(
@@ -1438,8 +1455,6 @@ export async function lookupCheckinRegistrant(
       )
     })
 
-    if (allMatched.length === 0) return { success: true, data: null }
-
     async function resolveRegistrant(matched: (typeof registrants)[number]) {
       const firstName = matched.member?.firstName ?? matched.guest?.firstName ?? matched.firstName ?? ""
       const lastName = matched.member?.lastName ?? matched.guest?.lastName ?? matched.lastName ?? ""
@@ -1481,7 +1496,8 @@ export async function lookupCheckinRegistrant(
       }
 
       return {
-        registrantId: matched.id,
+        kind: "registrant" as const,
+        subjectId: matched.id,
         name,
         nickname: matched.nickname,
         alreadyCheckedIn,
@@ -1489,15 +1505,85 @@ export async function lookupCheckinRegistrant(
       }
     }
 
-    if (allMatched.length > 1) {
-      const candidates = await Promise.all(allMatched.map(resolveRegistrant))
+    // Event volunteers are matched on their linked member's phone/email and recorded
+    // with the same attendance machinery. A volunteer is never a registrant.
+    const matchedVolunteers = (await findEventVolunteersForLookup(eventId)).filter((v) => {
+      const email = v.member.email ?? ""
+      const phone = v.member.phone ?? ""
+      return email.toLowerCase() === lq || phone.replace(/\s+/g, "") === qNorm
+    })
+
+    const candidates: CheckinRegistrantResult[] = [
+      ...(await Promise.all(allMatched.map(resolveRegistrant))),
+      ...(await Promise.all(matchedVolunteers.map((v) => resolveVolunteerCandidate(v, occurrenceId)))),
+    ]
+
+    if (candidates.length === 0) return { success: true, data: null }
+    if (candidates.length > 1) {
       return { success: true, data: { matchType: "ambiguous", candidates } }
     }
-
-    const data = await resolveRegistrant(allMatched[0])
-    return { success: true, data }
+    return { success: true, data: candidates[0] }
   } catch {
     return { success: false, error: "Lookup failed. Please try again." }
+  }
+}
+
+// Shared loader/resolver for volunteer check-in subjects, used by both lookup paths.
+type VolunteerLookupRow = {
+  id: string
+  attendedAt: Date | null
+  member: {
+    firstName: string
+    lastName: string
+    email: string | null
+    phone: string | null
+    birthMonth: number | null
+    birthYear: number | null
+  }
+}
+
+function findEventVolunteersForLookup(eventId: string): Promise<VolunteerLookupRow[]> {
+  return db.volunteer.findMany({
+    where: { eventId },
+    select: {
+      id: true,
+      attendedAt: true,
+      member: {
+        select: {
+          firstName: true,
+          lastName: true,
+          email: true,
+          phone: true,
+          birthMonth: true,
+          birthYear: true,
+        },
+      },
+    },
+  })
+}
+
+async function resolveVolunteerCandidate(
+  v: VolunteerLookupRow,
+  occurrenceId: string | null
+): Promise<CheckinRegistrantResult> {
+  let alreadyCheckedIn: boolean
+  if (occurrenceId !== null) {
+    const existing = await db.occurrenceAttendee.findUnique({
+      where: { occurrenceId_volunteerId: { occurrenceId, volunteerId: v.id } },
+      select: { id: true },
+    })
+    alreadyCheckedIn = existing !== null
+  } else {
+    alreadyCheckedIn = v.attendedAt !== null
+  }
+
+  return {
+    kind: "volunteer",
+    subjectId: v.id,
+    name: `${v.member.firstName} ${v.member.lastName}`.trim(),
+    nickname: null,
+    alreadyCheckedIn,
+    guestSmallGroupPrompt: null,
   }
 }
 
@@ -1572,8 +1658,6 @@ export async function lookupCheckinRegistrantByProfile(
       return false
     })
 
-    if (allMatched.length === 0) return { success: true, data: null }
-
     async function resolveRegistrant(matched: (typeof registrants)[number]) {
       const firstName = matched.member?.firstName ?? matched.guest?.firstName ?? matched.firstName ?? ""
       const lastName = matched.member?.lastName ?? matched.guest?.lastName ?? matched.lastName ?? ""
@@ -1615,7 +1699,8 @@ export async function lookupCheckinRegistrantByProfile(
       }
 
       return {
-        registrantId: matched.id,
+        kind: "registrant" as const,
+        subjectId: matched.id,
         name,
         nickname: matched.nickname,
         alreadyCheckedIn,
@@ -1623,13 +1708,24 @@ export async function lookupCheckinRegistrantByProfile(
       }
     }
 
-    if (allMatched.length > 1) {
-      const candidates = await Promise.all(allMatched.map(resolveRegistrant))
+    // Match event volunteers by their linked member's last name + birthday.
+    const matchedVolunteers = (await findEventVolunteersForLookup(eventId)).filter(
+      (v) =>
+        v.member.lastName.toLowerCase() === ln &&
+        v.member.birthMonth === birthMonth &&
+        v.member.birthYear === birthYear
+    )
+
+    const candidates: CheckinRegistrantResult[] = [
+      ...(await Promise.all(allMatched.map(resolveRegistrant))),
+      ...(await Promise.all(matchedVolunteers.map((v) => resolveVolunteerCandidate(v, occurrenceId)))),
+    ]
+
+    if (candidates.length === 0) return { success: true, data: null }
+    if (candidates.length > 1) {
       return { success: true, data: { matchType: "ambiguous", candidates } }
     }
-
-    const data = await resolveRegistrant(allMatched[0])
-    return { success: true, data }
+    return { success: true, data: candidates[0] }
   } catch {
     return { success: false, error: "Lookup failed. Please try again." }
   }

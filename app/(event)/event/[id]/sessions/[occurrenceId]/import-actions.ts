@@ -39,7 +39,8 @@ export async function checkSessionAttendanceDuplicates(
 
     // ── Pass 1: already checked in to this session ────────────────────────────
     const alreadyAttended = await db.occurrenceAttendee.findMany({
-      where: { occurrenceId },
+      // Volunteer check-ins (registrantId null) are not part of the registrant import scan.
+      where: { occurrenceId, registrantId: { not: null } },
       select: {
         registrant: {
           select: {
@@ -67,6 +68,7 @@ export async function checkSessionAttendanceDuplicates(
 
     for (const a of alreadyAttended) {
       const r = a.registrant
+      if (!r) continue
       const name =
         r.member ? `${r.member.firstName} ${r.member.lastName}` :
         r.guest  ? `${r.guest.firstName} ${r.guest.lastName}` :
