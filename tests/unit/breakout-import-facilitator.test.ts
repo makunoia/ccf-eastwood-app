@@ -23,7 +23,7 @@ afterAll(async () => {
  * can be assigned as a breakout facilitator. Optionally makes that member lead a
  * single small group so the import's auto-link can pick it up.
  */
-async function seedEventVolunteer(opts: { phone: string; ledGroupName?: string }) {
+async function seedEventVolunteer(opts: { phone: string; ledGroupName?: string; rawPhone?: boolean }) {
   const event = await db.event.create({
     data: { name: "Conference", type: "OneTime", startDate: new Date(), endDate: new Date() },
   })
@@ -34,7 +34,9 @@ async function seedEventVolunteer(opts: { phone: string; ledGroupName?: string }
     data: { name: "Facilitator", committeeId: committee.id },
   })
   const member = await db.member.create({
-    data: { firstName: "Grace", lastName: "Lee", phone: formatPhilippinePhone(opts.phone), dateJoined: new Date(), language: [] },
+    // rawPhone seeds a legacy, non-canonical number to prove the import
+    // normalizes the stored value too before matching.
+    data: { firstName: "Grace", lastName: "Lee", phone: opts.rawPhone ? opts.phone : formatPhilippinePhone(opts.phone), dateJoined: new Date(), language: [] },
   })
   const volunteer = await db.volunteer.create({
     data: { memberId: member.id, eventId: event.id, committeeId: committee.id, preferredRoleId: role.id, status: "Confirmed" },
@@ -64,6 +66,21 @@ describe("breakout group import — facilitator by mobile", () => {
     const created = await db.breakoutGroup.findFirst({ where: { eventId: event.id, name: "Group A" } })
     expect(created?.facilitatorId).toBe(volunteer.id)
     expect(created?.linkedSmallGroupId).toBe(smallGroup!.id)
+  })
+
+  it("normalizes both sides — matches a legacy stored phone against a formatted CSV value", async () => {
+    const { event, volunteer } = await seedEventVolunteer({ phone: "09170000009", rawPhone: true })
+
+    const result = await importBreakoutGroups({ eventId: event.id }, [
+      { mapped: { name: "Group Legacy", facilitatorMobile: "+63 917 000 0009" }, resolution: "use-csv" },
+    ])
+
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(result.data.created).toBe(1)
+
+    const created = await db.breakoutGroup.findFirst({ where: { eventId: event.id, name: "Group Legacy" } })
+    expect(created?.facilitatorId).toBe(volunteer.id)
   })
 
   it("leaves the small-group link null when the facilitator leads no group", async () => {

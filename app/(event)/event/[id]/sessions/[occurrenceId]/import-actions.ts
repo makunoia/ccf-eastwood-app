@@ -281,6 +281,55 @@ function parseCheckedInAt(value: string | undefined, occurrenceDate: Date): Date
   return occurrenceDate
 }
 
+// Record a volunteer's session attendance, healing any participant attendance that
+// an earlier import wrongly recorded for the same person on this occurrence
+// (schema rule: "a volunteer is never a registrant"). The mis-filed participant
+// OccurrenceAttendee is removed, and an auto-created walk-in EventRegistrant is
+// deleted when it has no payment and no other attendance — so the volunteer stops
+// double-counting under both Participants and the roster. Idempotent.
+async function recordVolunteerAttendance(
+  occurrenceId: string,
+  eventId: string,
+  volunteerId: string,
+  memberId: string,
+  checkedInAt: Date
+): Promise<"linked" | "skipped"> {
+  const memberRegistrants = await db.eventRegistrant.findMany({
+    where: { eventId, memberId },
+    select: {
+      id: true,
+      isPaid: true,
+      attendedAt: true,
+      occurrenceAttendances: { select: { id: true, occurrenceId: true } },
+    },
+  })
+
+  for (const reg of memberRegistrants) {
+    const here = reg.occurrenceAttendances.find((a) => a.occurrenceId === occurrenceId)
+    if (here) {
+      await db.occurrenceAttendee.delete({ where: { id: here.id } })
+    }
+    // Drop the walk-in shell only if this occurrence was its sole purpose.
+    const otherAttendances = reg.occurrenceAttendances.filter(
+      (a) => a.occurrenceId !== occurrenceId
+    )
+    if (otherAttendances.length === 0 && !reg.isPaid && !reg.attendedAt) {
+      await db.eventRegistrant.delete({ where: { id: reg.id } })
+    }
+  }
+
+  const existing = await db.occurrenceAttendee.findUnique({
+    where: { occurrenceId_volunteerId: { occurrenceId, volunteerId } },
+    select: { id: true },
+  })
+  if (existing) return "skipped"
+
+  await db.occurrenceAttendee.create({
+    data: { occurrenceId, volunteerId, checkedInAt },
+  })
+  return "linked"
+}
+
 export async function importSessionAttendance(
   occurrenceId: string,
   rows: ImportRow[]
@@ -316,8 +365,35 @@ export async function importSessionAttendance(
         continue
       }
 
-      // Already attended (flagged by duplicate check) — skip
+      const checkedInAt = parseCheckedInAt(mapped.checkedInAt, occurrenceDate)
+
+      // Already attended as a participant (flagged by the duplicate check). Normally
+      // a skip — but if this registrant actually belongs to an event volunteer, an
+      // earlier import mis-filed them. Convert to volunteer attendance instead so a
+      // re-import moves them into the Volunteers stat.
       if (existingId) {
+        const reg = await db.eventRegistrant.findUnique({
+          where: { id: existingId },
+          select: { memberId: true },
+        })
+        const volunteer = reg?.memberId
+          ? await db.volunteer.findFirst({
+              where: { eventId, memberId: reg.memberId },
+              select: { id: true },
+            })
+          : null
+        if (volunteer && reg?.memberId) {
+          const outcome = await recordVolunteerAttendance(
+            occurrenceId,
+            eventId,
+            volunteer.id,
+            reg.memberId,
+            checkedInAt
+          )
+          if (outcome === "linked") result.linked++
+          else result.skipped++
+          continue
+        }
         result.skipped++
         continue
       }
@@ -326,7 +402,6 @@ export async function importSessionAttendance(
       const rawPhone = mapped.mobileNumber?.trim() || null
       const mobile = rawPhone ? formatPhilippinePhone(rawPhone) : null
       const phoneCandidates = buildPhoneCandidates(rawPhone)
-      const checkedInAt = parseCheckedInAt(mapped.checkedInAt, occurrenceDate)
 
       // ── Find existing EventRegistrant for this event ──────────────────────
       // Match by member phone/email first, then guest phone/email
@@ -352,18 +427,15 @@ export async function importSessionAttendance(
           select: { id: true },
         })
         if (matchedVolunteer) {
-          const existing = await db.occurrenceAttendee.findUnique({
-            where: { occurrenceId_volunteerId: { occurrenceId, volunteerId: matchedVolunteer.id } },
-            select: { id: true },
-          })
-          if (existing) {
-            result.skipped++
-            continue
-          }
-          await db.occurrenceAttendee.create({
-            data: { occurrenceId, volunteerId: matchedVolunteer.id, checkedInAt },
-          })
-          result.linked++
+          const outcome = await recordVolunteerAttendance(
+            occurrenceId,
+            eventId,
+            matchedVolunteer.id,
+            matchedMember.id,
+            checkedInAt
+          )
+          if (outcome === "linked") result.linked++
+          else result.skipped++
           continue
         }
 

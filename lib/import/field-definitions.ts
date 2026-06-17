@@ -84,20 +84,13 @@ export const SMALL_GROUP_FIELDS: FieldDefinition[] = [
   { key: "scheduleTimeEnd",  label: "Meeting Time End",   required: false, hint: "HH:MM (24-hour) — defaults to start + 2 hrs if blank" },
 ]
 
+// Breakout groups inherit their matching profile (life stage, gender, language,
+// age, meeting format, location, schedule) from the facilitator's linked small
+// group, so those columns are intentionally omitted from the import.
 export const BREAKOUT_GROUP_FIELDS: FieldDefinition[] = [
-  { key: "name",                 label: "Group Name",         required: true },
-  { key: "facilitatorMobile",    label: "Facilitator Mobile", required: false, hint: "Matched by mobile against an existing event volunteer. Their small group is linked automatically." },
-  { key: "lifeStage",            label: "Life Stage",         required: false, hint: "Must match an existing life stage name" },
-  { key: "genderFocus",          label: "Gender Focus",       required: false, hint: "Male, Female, or Mixed" },
-  { key: "language",             label: "Language",           required: false },
-  { key: "ageRangeMin",          label: "Min Age",            required: false },
-  { key: "ageRangeMax",          label: "Max Age",            required: false },
-  { key: "meetingFormat",        label: "Meeting Format",     required: false, hint: "Online, Hybrid, or InPerson" },
-  { key: "locationCity",         label: "Location City",      required: false },
-  { key: "memberLimit",          label: "Member Limit",       required: false },
-  { key: "scheduleDayOfWeek",    label: "Meeting Day",        required: false, hint: "Sunday–Saturday or 0–6" },
-  { key: "scheduleTime",         label: "Meeting Time Start", required: false, hint: "HH:MM (24-hour)" },
-  { key: "scheduleTimeEnd",      label: "Meeting Time End",   required: false, hint: "HH:MM (24-hour) — defaults to start + 2 hrs if blank" },
+  { key: "name",              label: "Group Name",         required: true },
+  { key: "facilitatorMobile", label: "Facilitator Mobile", required: false, hint: "Matched by mobile against an existing event volunteer. Their small group is linked automatically." },
+  { key: "memberLimit",       label: "Member Limit",       required: false },
 ]
 
 export const SESSION_ATTENDANCE_FIELDS: FieldDefinition[] = [

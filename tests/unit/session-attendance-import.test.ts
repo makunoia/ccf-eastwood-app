@@ -552,6 +552,77 @@ describe("importSessionAttendance", () => {
       expect(registrants).toHaveLength(0)
     })
 
+    it("heals a re-import: converts mis-filed participant attendance to volunteer attendance and removes the walk-in registrant", async () => {
+      const { event, occurrence } = await seedRecurringEvent()
+      const member = await seedMember({ phone: "+63 917 123 4567" })
+      const volunteer = await seedEventVolunteer(event.id, member.id)
+      // Simulate the earlier buggy import: a walk-in registrant + participant attendance.
+      const walkInReg = await seedRegistrant(event.id, { memberId: member.id })
+      await seedOccurrenceAttendee(occurrence.id, walkInReg.id)
+
+      // Re-import the same person — the duplicate check would flag the walk-in as
+      // already-attended (existingId = walkInReg.id).
+      const result = await importSessionAttendance(occurrence.id, [
+        {
+          mapped: { firstName: "Juan", lastName: "Cruz", mobileNumber: "09171234567" },
+          resolution: "use-existing",
+          existingId: walkInReg.id,
+        },
+      ])
+      expect(result.success).toBe(true)
+      if (result.success) expect(result.data.linked).toBe(1)
+
+      // Participant attendance gone, single volunteer attendance row remains.
+      const attendees = await db.occurrenceAttendee.findMany({ where: { occurrenceId: occurrence.id } })
+      expect(attendees).toHaveLength(1)
+      expect(attendees[0].volunteerId).toBe(volunteer.id)
+      expect(attendees[0].registrantId).toBeNull()
+
+      // The auto-created walk-in registrant was removed.
+      const registrants = await db.eventRegistrant.findMany({ where: { eventId: event.id } })
+      expect(registrants).toHaveLength(0)
+    })
+
+    it("heals attendance but keeps a registrant that has payment or other-session attendance", async () => {
+      const event = await db.event.create({
+        data: { name: "Camp", type: "MultiDay", startDate: new Date("2026-01-05"), endDate: new Date("2026-01-06") },
+        select: { id: true },
+      })
+      const day1 = await db.eventOccurrence.create({
+        data: { eventId: event.id, date: new Date("2026-01-05T00:00:00Z"), isOpen: true },
+        select: { id: true },
+      })
+      const day2 = await db.eventOccurrence.create({
+        data: { eventId: event.id, date: new Date("2026-01-06T00:00:00Z"), isOpen: true },
+        select: { id: true },
+      })
+      const member = await seedMember({ email: "juan@example.com" })
+      const volunteer = await seedEventVolunteer(event.id, member.id)
+      const reg = await seedRegistrant(event.id, { memberId: member.id })
+      // Mis-filed participant attendance on day1, plus a legit attendance on day2.
+      await seedOccurrenceAttendee(day1.id, reg.id)
+      await seedOccurrenceAttendee(day2.id, reg.id)
+
+      const result = await importSessionAttendance(day1.id, [
+        {
+          mapped: { firstName: "Juan", lastName: "Cruz", email: "juan@example.com" },
+          resolution: "use-existing",
+          existingId: reg.id,
+        },
+      ])
+      expect(result.success).toBe(true)
+
+      // Day1 now has a volunteer row; the registrant survives because it still has day2.
+      const day1Attendees = await db.occurrenceAttendee.findMany({ where: { occurrenceId: day1.id } })
+      expect(day1Attendees).toHaveLength(1)
+      expect(day1Attendees[0].volunteerId).toBe(volunteer.id)
+
+      const registrants = await db.eventRegistrant.findMany({ where: { eventId: event.id } })
+      expect(registrants).toHaveLength(1)
+      const day2Attendees = await db.occurrenceAttendee.findMany({ where: { occurrenceId: day2.id } })
+      expect(day2Attendees).toHaveLength(1)
+    })
+
     it("is idempotent — skips when the volunteer already has attendance for this occurrence", async () => {
       const { event, occurrence } = await seedRecurringEvent()
       const member = await seedMember({ email: "juan@example.com" })
