@@ -153,6 +153,14 @@ export async function importGuests(
         continue
       }
 
+      if (resolution === "create-new") {
+        // Import as a brand-new guest — skip matching/enrichment. Shared placeholder contacts
+        // were already blanked client-side, so siblings won't collapse into one record.
+        await db.guest.create({ data: buildGuestData(mapped) })
+        result.created++
+        continue
+      }
+
       if (existingId && resolution === "use-existing") {
         const existing = await db.guest.findUnique({
           where: { id: existingId },

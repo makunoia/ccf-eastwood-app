@@ -13,12 +13,20 @@ type Props = {
   useExistingEnriches: boolean
   onResolutionChange: (rowIndex: number, resolution: RowResolution) => void
   onSetAllResolution: (resolution: RowResolution) => void
+  onSetSharedResolution: (resolution: RowResolution) => void
 }
 
-export function StepPreview({ fields, rows, checking, useExistingEnriches, onResolutionChange, onSetAllResolution }: Props) {
+const CONTACT_LABEL: Record<string, string> = {
+  email: "email",
+  phone: "phone number",
+  mobileNumber: "mobile number",
+}
+
+export function StepPreview({ fields, rows, checking, useExistingEnriches, onResolutionChange, onSetAllResolution, onSetSharedResolution }: Props) {
   const duplicateRows  = rows.filter((r) => r.duplicate && r.duplicate.kind !== "recognized")
   const recognizedRows = rows.filter((r) => r.duplicate?.kind === "recognized")
   const errorRows      = rows.filter((r) => r.validationError)
+  const sharedRows     = rows.filter((r) => r.sharedContactFields?.length)
 
   const usingExistingCount = duplicateRows.filter((r) => r.resolution === "use-existing").length
   const reimportingCount = duplicateRows.filter((r) => r.resolution === "use-csv").length
@@ -45,6 +53,11 @@ export function StepPreview({ fields, rows, checking, useExistingEnriches, onRes
         {recognizedRows.length > 0 && (
           <Badge variant="outline" className="text-blue-700 border-blue-400 bg-blue-50">
             {recognizedRows.length} existing {recognizedRows.length !== 1 ? "records" : "record"}
+          </Badge>
+        )}
+        {sharedRows.length > 0 && (
+          <Badge variant="outline" className="text-orange-700 border-orange-400 bg-orange-50">
+            {sharedRows.length} shared contact{sharedRows.length !== 1 ? "s" : ""}
           </Badge>
         )}
         {errorRows.length > 0 && (
@@ -88,6 +101,22 @@ export function StepPreview({ fields, rows, checking, useExistingEnriches, onRes
         </div>
       )}
 
+      {/* Shared-contact (placeholder) callout */}
+      {sharedRows.length > 0 && (
+        <div className="flex items-center gap-2 rounded-lg border border-orange-300 bg-orange-50 px-3 py-2 text-sm">
+          <IconAlertTriangle className="size-4 text-orange-600 shrink-0" />
+          <span className="text-orange-800 flex-1">
+            {sharedRows.length} row{sharedRows.length !== 1 ? "s" : ""} share a contact with another row&thinsp;—&thinsp;
+            likely a placeholder. They&apos;ll import as separate people with that contact dropped.
+          </span>
+          <div className="flex gap-1.5">
+            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => onSetSharedResolution("create-new")}>
+              Import all separately
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Preview table */}
       <div className="min-w-0 overflow-x-auto rounded-lg border max-h-[min(360px,40vh)] overflow-y-auto">
         <table className="min-w-full text-sm">
@@ -106,12 +135,15 @@ export function StepPreview({ fields, rows, checking, useExistingEnriches, onRes
             {rows.map((row) => {
               const isDuplicate  = row.duplicate && row.duplicate.kind !== "recognized"
               const isRecognized = row.duplicate?.kind === "recognized"
+              const isShared     = (row.sharedContactFields?.length ?? 0) > 0
+              const isCreateNew  = row.resolution === "create-new"
               return (
                 <React.Fragment key={row.index}>
                   <tr
                     className={[
                       "border-b",
-                      isDuplicate  ? "bg-yellow-50" : "",
+                      isShared     ? "bg-orange-50" : "",
+                      isDuplicate && !isShared ? "bg-yellow-50" : "",
                       isRecognized ? "bg-blue-50/40" : "",
                       row.validationError ? "bg-destructive/5" : "",
                     ].join(" ")}
@@ -125,6 +157,10 @@ export function StepPreview({ fields, rows, checking, useExistingEnriches, onRes
                     <td className="px-3 py-2">
                       {row.validationError ? (
                         <span className="text-xs text-destructive">{row.validationError}</span>
+                      ) : isCreateNew ? (
+                        <Badge variant="outline" className="text-orange-700 border-orange-400 bg-orange-50 text-xs">
+                          Separate person
+                        </Badge>
                       ) : isDuplicate ? (
                         row.resolution === "use-csv" ? (
                           <Badge variant="outline" className="text-blue-700 border-blue-400 bg-blue-50 text-xs">
@@ -178,6 +214,57 @@ export function StepPreview({ fields, rows, checking, useExistingEnriches, onRes
                                 className="accent-primary"
                               />
                               <span className="text-xs">Re-import</span>
+                            </label>
+                            <label className="flex items-center gap-1.5 cursor-pointer">
+                              <input
+                                type="radio"
+                                name={`dup-${row.index}`}
+                                value="create-new"
+                                checked={row.resolution === "create-new"}
+                                onChange={() => onResolutionChange(row.index, "create-new")}
+                                className="accent-primary"
+                              />
+                              <span className="text-xs">Import as separate person</span>
+                            </label>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+
+                  {/* Shared contact (placeholder) — only when not already a duplicate row */}
+                  {isShared && !isDuplicate && (
+                    <tr className="border-b bg-orange-50/60">
+                      <td />
+                      <td colSpan={fields.length + 1} className="px-3 pb-2.5">
+                        <div className="flex flex-col gap-1.5">
+                          <p className="text-xs text-orange-800 font-medium">
+                            Shares a{" "}
+                            {row.sharedContactFields!.map((f) => CONTACT_LABEL[f] ?? f).join(" & ")}
+                            {" "}with another row — likely a placeholder, so it will be dropped.
+                          </p>
+                          <div className="flex gap-3">
+                            <label className="flex items-center gap-1.5 cursor-pointer">
+                              <input
+                                type="radio"
+                                name={`shared-${row.index}`}
+                                value="create-new"
+                                checked={row.resolution === "create-new"}
+                                onChange={() => onResolutionChange(row.index, "create-new")}
+                                className="accent-primary"
+                              />
+                              <span className="text-xs">Import as separate person (drop contact)</span>
+                            </label>
+                            <label className="flex items-center gap-1.5 cursor-pointer">
+                              <input
+                                type="radio"
+                                name={`shared-${row.index}`}
+                                value="use-existing"
+                                checked={row.resolution !== "create-new"}
+                                onChange={() => onResolutionChange(row.index, "use-existing")}
+                                className="accent-primary"
+                              />
+                              <span className="text-xs">Keep contact &amp; import normally</span>
                             </label>
                           </div>
                         </div>

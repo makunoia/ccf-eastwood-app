@@ -1,10 +1,8 @@
 "use client"
 
 import * as React from "react"
-import Link from "next/link"
 import { IconDownload, IconExternalLink, IconPlus, IconUpload } from "@tabler/icons-react"
 import { toast } from "sonner"
-import { Button } from "@/components/ui/button"
 import { PageActions, type PageAction } from "@/components/page-header"
 import { ImportWizard } from "@/components/import/import-wizard"
 import { checkSmallGroupDuplicates, checkSmallGroupLeaders, importSmallGroups, loadMembersForLeaderSearch } from "./import-actions"
@@ -78,14 +76,14 @@ export function SmallGroupsToolbar({ groups, canImport, canExport }: Props) {
   ]
 
   return (
-    <PageActions actions={actions}>
-      <Button asChild>
-        <Link href="/small-groups/new">
-          <IconPlus />
-          Add Group
-        </Link>
-      </Button>
-
+    <PageActions
+      primary={{
+        label: "Add Group",
+        icon: <IconPlus />,
+        href: "/small-groups/new",
+      }}
+      actions={actions}
+    >
       <ImportWizard
         config={{ entity: "small-group", useExistingEnriches: true }}
         open={importOpen}

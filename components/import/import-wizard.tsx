@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog"
 import { parseFile } from "@/lib/import/parse-file"
 import { getFieldsForEntity, getEntityLabel } from "@/lib/import/field-definitions"
+import { formatPhilippinePhone } from "@/lib/utils"
 import type {
   ImportWizardConfig,
   WizardStep,
@@ -69,6 +70,40 @@ function applyMapping(
     }
     return mapped
   })
+}
+
+// Contact fields that can be reused as placeholders. Phone lives under different keys per entity.
+const CONTACT_FIELDS: ("email" | "phone" | "mobileNumber")[] = ["email", "phone", "mobileNumber"]
+
+function normalizeContact(field: "email" | "phone" | "mobileNumber", raw: string): string | null {
+  const value = raw.trim()
+  if (!value) return null
+  return field === "email" ? value.toLowerCase() : formatPhilippinePhone(value)
+}
+
+// Returns, per row index, the contact field keys whose normalized value repeats across the sheet.
+// A repeated email/phone is almost always a placeholder (e.g. an admin's own contact), not a real
+// shared identity, so callers default those rows to "create-new" and blank the offending field.
+function detectSharedContactFields(rows: PreviewRow[]): Map<number, ("email" | "phone" | "mobileNumber")[]> {
+  const counts = new Map<string, number>()
+  for (const row of rows) {
+    for (const field of CONTACT_FIELDS) {
+      const norm = normalizeContact(field, row.mapped[field] ?? "")
+      if (!norm) continue
+      const key = `${field}:${norm}`
+      counts.set(key, (counts.get(key) ?? 0) + 1)
+    }
+  }
+  const result = new Map<number, ("email" | "phone" | "mobileNumber")[]>()
+  for (const row of rows) {
+    const shared: ("email" | "phone" | "mobileNumber")[] = []
+    for (const field of CONTACT_FIELDS) {
+      const norm = normalizeContact(field, row.mapped[field] ?? "")
+      if (norm && (counts.get(`${field}:${norm}`) ?? 0) >= 2) shared.push(field)
+    }
+    if (shared.length > 0) result.set(row.index, shared)
+  }
+  return result
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -250,12 +285,20 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
       return
     }
     const dupMap = new Map(dupResult.data.map((d) => [d.rowIndex, d]))
-    setPreviewRows((prev) =>
-      prev.map((row) => {
+    setPreviewRows((prev) => {
+      const merged = prev.map((row) => {
         const dup = dupMap.get(row.index)
-        return dup ? { ...row, duplicate: dup, resolution: "use-existing" } : row
+        return dup ? { ...row, duplicate: dup, resolution: "use-existing" as RowResolution } : row
       })
-    )
+      if (!config.detectSharedContacts) return merged
+      const sharedMap = detectSharedContactFields(merged)
+      return merged.map((row) => {
+        const shared = sharedMap.get(row.index)
+        return shared
+          ? { ...row, sharedContactFields: shared, resolution: "create-new" as RowResolution }
+          : row
+      })
+    })
   }
 
   // ── Step 4 (preview → next): Check leaders if applicable ──
@@ -319,11 +362,20 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
     try {
       const payload = previewRows.map((row) => {
         const leaderRes = leaderResolutions.get(row.index)
+        const isCreateNew = row.resolution === "create-new"
+        // Drop placeholder contact fields (only when importing as a separate person) so they're
+        // never stored and rows can't re-collapse. If the admin chose to keep the contact, leave it.
+        let mapped = row.mapped
+        if (isCreateNew && row.sharedContactFields?.length) {
+          mapped = { ...row.mapped }
+          for (const field of row.sharedContactFields) mapped[field] = ""
+        }
         return {
-          mapped:       row.mapped,
+          mapped,
           resolution:   row.resolution,
-          existingId:   row.duplicate?.kind === "recognized" ? undefined : row.duplicate?.existingId,
-          existingType: row.duplicate?.kind === "recognized" ? undefined : row.duplicate?.existingType,
+          // create-new ignores any DB match — never send the existing record.
+          existingId:   isCreateNew || row.duplicate?.kind === "recognized" ? undefined : row.duplicate?.existingId,
+          existingType: isCreateNew || row.duplicate?.kind === "recognized" ? undefined : row.duplicate?.existingType,
           leaderId:     leaderRes?.type === "link"   ? leaderRes.memberId    : undefined,
           createLeader: leaderRes?.type === "create" ? leaderRes             : undefined,
         }
@@ -379,6 +431,12 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
     )
   }
 
+  function handleSetSharedResolution(resolution: RowResolution) {
+    setPreviewRows((prev) =>
+      prev.map((r) => r.sharedContactFields?.length ? { ...r, resolution } : r)
+    )
+  }
+
   // ── Leader resolution ──
   function handleLeaderResolutionChange(rowIndexes: number[], resolution: LeaderResolution) {
     setLeaderResolutions((prev) => {
@@ -421,6 +479,7 @@ export function ImportWizard({ config, open, onOpenChange, onCheckDuplicates, on
             useExistingEnriches={config.useExistingEnriches ?? false}
             onResolutionChange={handleResolutionChange}
             onSetAllResolution={handleSetAllResolution}
+            onSetSharedResolution={handleSetSharedResolution}
           />
         )
       case "leader-resolution":

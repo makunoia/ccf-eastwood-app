@@ -1,15 +1,15 @@
-import Link from "next/link"
 import { IconPlus } from "@tabler/icons-react"
 
-import { Button } from "@/components/ui/button"
+import { PageActions } from "@/components/page-header"
 
 export function EventsToolbar() {
   return (
-    <Button asChild>
-      <Link href="/events/new">
-        <IconPlus />
-        Add Event
-      </Link>
-    </Button>
+    <PageActions
+      primary={{
+        label: "Add Event",
+        icon: <IconPlus />,
+        href: "/events/new",
+      }}
+    />
   )
 }

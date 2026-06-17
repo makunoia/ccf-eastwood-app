@@ -1,10 +1,8 @@
 "use client"
 
 import * as React from "react"
-import Link from "next/link"
 import { IconDownload, IconPlus, IconUpload } from "@tabler/icons-react"
 import { toast } from "sonner"
-import { Button } from "@/components/ui/button"
 import { PageActions, type PageAction } from "@/components/page-header"
 import { ImportWizard } from "@/components/import/import-wizard"
 import { checkMemberDuplicates, importMembers } from "./import-actions"
@@ -70,16 +68,16 @@ export function MembersToolbar({ members, canImport, canExport }: Props) {
   ]
 
   return (
-    <PageActions actions={actions}>
-      <Button asChild>
-        <Link href="/members/new">
-          <IconPlus />
-          Add Member
-        </Link>
-      </Button>
-
+    <PageActions
+      primary={{
+        label: "Add Member",
+        icon: <IconPlus />,
+        href: "/members/new",
+      }}
+      actions={actions}
+    >
       <ImportWizard
-        config={{ entity: "member", useExistingEnriches: true }}
+        config={{ entity: "member", useExistingEnriches: true, detectSharedContacts: true }}
         open={importOpen}
         onOpenChange={setImportOpen}
         onCheckDuplicates={checkMemberDuplicates}

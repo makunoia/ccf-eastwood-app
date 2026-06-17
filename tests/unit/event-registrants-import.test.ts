@@ -180,4 +180,56 @@ describe("importEventRegistrants", () => {
       birthYear: 1990,
     })
   })
+
+  it("imports create-new rows as distinct guests without touching the shared contact's record", async () => {
+    const event = await seedEvent()
+    // Existing record whose phone an admin reused as a placeholder across the sheet.
+    const placeholder = await db.guest.create({
+      data: {
+        firstName: "Admin",
+        lastName: "Owner",
+        phone: "+63 917 123 4567",
+        language: [],
+      },
+      select: { id: true, firstName: true, lastName: true, phone: true },
+    })
+
+    // Wizard sends create-new with the shared phone already blanked client-side.
+    const result = await importEventRegistrants(
+      event.id,
+      ["Ana Lopez", "Beth Cruz", "Cara Diaz"].map((full) => {
+        const [firstName, lastName] = full.split(" ")
+        return {
+          mapped: { firstName, lastName, mobileNumber: "" },
+          resolution: "create-new" as const,
+        }
+      }),
+    )
+
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(result.data.created).toBe(3)
+
+    // The placeholder record is untouched.
+    const stillPlaceholder = await db.guest.findUnique({
+      where: { id: placeholder.id },
+      select: { firstName: true, lastName: true, phone: true },
+    })
+    expect(stillPlaceholder).toMatchObject({
+      firstName: "Admin",
+      lastName: "Owner",
+      phone: "+63 917 123 4567",
+    })
+
+    // Three distinct new registrants, each on its own new guest with no phone.
+    const registrants = await db.eventRegistrant.findMany({
+      where: { eventId: event.id },
+      select: { id: true, guestId: true, guest: { select: { phone: true } } },
+    })
+    expect(registrants).toHaveLength(3)
+    const guestIds = new Set(registrants.map((r) => r.guestId))
+    expect(guestIds.size).toBe(3)
+    expect(guestIds.has(placeholder.id)).toBe(false)
+    expect(registrants.every((r) => r.guest?.phone === null)).toBe(true)
+  })
 })

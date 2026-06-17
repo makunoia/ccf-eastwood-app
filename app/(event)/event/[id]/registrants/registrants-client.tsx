@@ -461,6 +461,7 @@ export function RegistrantsClient({
         entity: "event-registrant",
         fields: getEventRegistrantFields({ includePaymentReference: formIncludePayment }),
         useExistingEnriches: true,
+        detectSharedContacts: true,
         context: { eventId },
       }}
       open={importOpen}
@@ -497,12 +498,14 @@ export function RegistrantsClient({
         title="Registrants"
         description={`${registrants.length} shown`}
         actions={
-          <PageActions actions={toolbarActions}>
-            <Button onClick={() => setAddDialogOpen(true)}>
-              <IconPlus className="size-4" />
-              Add
-            </Button>
-          </PageActions>
+          <PageActions
+            primary={{
+              label: "Add",
+              icon: <IconPlus className="size-4" />,
+              onSelect: () => setAddDialogOpen(true),
+            }}
+            actions={toolbarActions}
+          />
         }
       />
 

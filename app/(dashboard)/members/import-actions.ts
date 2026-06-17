@@ -173,6 +173,14 @@ export async function importMembers(
         continue
       }
 
+      if (resolution === "create-new") {
+        // Import as a brand-new member — skip matching/enrichment. Shared placeholder contacts
+        // were already blanked client-side, so there's no risk of a P2002 email collision.
+        await db.member.create({ data: buildMemberData(mapped) })
+        result.created++
+        continue
+      }
+
       if (existingId && resolution === "use-existing") {
         const existing = await db.member.findUnique({
           where: { id: existingId },

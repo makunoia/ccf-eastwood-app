@@ -32,7 +32,7 @@ export type DuplicateMatch = {
   kind?: "recognized"
 }
 
-export type RowResolution = "use-existing" | "use-csv"
+export type RowResolution = "use-existing" | "use-csv" | "create-new"
 
 export type PreviewRow = {
   index: number
@@ -40,6 +40,9 @@ export type PreviewRow = {
   duplicate?: DuplicateMatch
   resolution: RowResolution
   validationError?: string
+  // Mapped keys whose value repeats across the sheet (likely a placeholder/admin contact).
+  // Drives the "import as separate person" warning and which fields to blank on import.
+  sharedContactFields?: ("email" | "phone" | "mobileNumber")[]
 }
 
 export type ImportResult = {
@@ -71,6 +74,9 @@ export type ImportWizardConfig = {
   entity: ImportEntity
   fields?: FieldDefinition[]
   useExistingEnriches?: boolean
+  // When true, the wizard flags contact values (email/phone) repeated across rows as likely
+  // placeholders and defaults those rows to the "create-new" resolution (drops the shared contact).
+  detectSharedContacts?: boolean
   context?: {
     eventId?: string
     ministryId?: string
