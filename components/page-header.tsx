@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { IconDotsVertical } from "@tabler/icons-react"
+import { IconDots } from "@tabler/icons-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -40,6 +40,11 @@ export type PageAction = {
   href?: string
   newTab?: boolean
   disabled?: boolean
+  /**
+   * Always render this action inside the "⋯" overflow menu, never inline — even
+   * when there is room. Use for utility actions like Import/Export.
+   */
+  overflow?: boolean
 }
 
 /** Renders a single PageAction as an outline button (href-aware). */
@@ -88,19 +93,13 @@ function ActionMenuItem({ action }: { action: PageAction }) {
   )
 }
 
-/** The "⋮" overflow menu holding a set of actions. */
-function OverflowMenu({
-  actions,
-  className,
-}: {
-  actions: PageAction[]
-  className?: string
-}) {
+/** The "⋯" overflow menu holding a set of actions. */
+function OverflowMenu({ actions }: { actions: PageAction[] }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="icon" className={className}>
-          <IconDotsVertical className="size-4" />
+        <Button variant="outline" size="icon">
+          <IconDots className="size-4" />
           <span className="sr-only">More actions</span>
         </Button>
       </DropdownMenuTrigger>
@@ -113,6 +112,37 @@ function OverflowMenu({
   )
 }
 
+/** The primary action button — full label on sm+, icon-only when `iconOnly`. */
+function PrimaryButton({ primary, iconOnly }: { primary: PageAction; iconOnly?: boolean }) {
+  const content = (
+    <>
+      {primary.icon}
+      {iconOnly ? <span className="sr-only">{primary.label}</span> : primary.label}
+    </>
+  )
+  if (primary.href) {
+    return (
+      <Button size={iconOnly ? "icon" : undefined} disabled={primary.disabled} asChild>
+        <Link
+          href={primary.href}
+          {...(primary.newTab ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+        >
+          {content}
+        </Link>
+      </Button>
+    )
+  }
+  return (
+    <Button
+      size={iconOnly ? "icon" : undefined}
+      onClick={primary.onSelect}
+      disabled={primary.disabled}
+    >
+      {content}
+    </Button>
+  )
+}
+
 type PageActionsProps = {
   /**
    * The primary action. Renders as a full-label default button on sm+, and as an
@@ -121,9 +151,11 @@ type PageActionsProps = {
    */
   primary?: PageAction
   /**
-   * Secondary actions. On sm+ the first few render inline as outline buttons (the
-   * header is capped at 3 visible buttons total) and any extras collapse into a "⋮"
-   * overflow menu. Below sm all secondary actions collapse into a single "⋮" menu.
+   * Secondary actions. On sm+ inline-eligible actions render as outline buttons
+   * (the header is capped at 3 visible buttons total) before the primary, and any
+   * extras — plus anything flagged `overflow` (e.g. Import/Export) — collapse into
+   * a "⋯" menu pinned to the far right. Below sm all secondary actions collapse
+   * into that single "⋯" menu.
    */
   actions?: PageAction[]
   /** Non-visual siblings (dialogs, import wizards) mounted alongside the buttons. */
@@ -131,73 +163,32 @@ type PageActionsProps = {
 }
 
 export function PageActions({ primary, actions = [], children }: PageActionsProps) {
-  // Cap the header at 3 visible buttons: 1 primary + up to 2 inline secondary,
-  // or 3 inline secondary when there is no primary. Extras overflow to the menu.
+  // Cap the header at 3 visible buttons: 1 primary + up to 2 inline secondary, or 3
+  // inline secondary when there is no primary. Actions flagged `overflow` never go
+  // inline; remaining extras overflow too. Order is preserved in the menu.
   const inlineCap = primary ? 2 : 3
-  const inline = actions.slice(0, inlineCap)
-  const overflow = actions.slice(inlineCap)
+  const inline = actions.filter((a) => !a.overflow).slice(0, inlineCap)
+  const inlineSet = new Set(inline)
+  const overflow = actions.filter((a) => !inlineSet.has(a))
+
+  if (!primary && actions.length === 0) return <>{children}</>
 
   return (
     <>
-      {actions.length > 0 && (
-        <>
-          {/* Desktop: inline outline buttons + overflow menu for any extras */}
-          <div className="hidden items-center gap-2 sm:flex">
-            {inline.map((action) => (
-              <ActionButton key={action.label} action={action} />
-            ))}
-            {overflow.length > 0 && <OverflowMenu actions={overflow} />}
-          </div>
-          {/* Mobile: all secondary actions collapse into one "⋮" menu */}
-          <OverflowMenu actions={actions} className="sm:hidden" />
-        </>
-      )}
+      {/* Desktop: inline secondary → primary → overflow menu (far right) */}
+      <div className="hidden items-center gap-2 sm:flex">
+        {inline.map((action) => (
+          <ActionButton key={action.label} action={action} />
+        ))}
+        {primary && <PrimaryButton primary={primary} />}
+        {overflow.length > 0 && <OverflowMenu actions={overflow} />}
+      </div>
 
-      {primary && (
-        <>
-          {/* Desktop: full-label primary button */}
-          <div className="hidden sm:block">
-            {primary.href ? (
-              <Button disabled={primary.disabled} asChild>
-                <Link
-                  href={primary.href}
-                  {...(primary.newTab ? { target: "_blank", rel: "noopener noreferrer" } : {})}
-                >
-                  {primary.icon}
-                  {primary.label}
-                </Link>
-              </Button>
-            ) : (
-              <Button onClick={primary.onSelect} disabled={primary.disabled}>
-                {primary.icon}
-                {primary.label}
-              </Button>
-            )}
-          </div>
-          {/* Mobile: icon-only primary button */}
-          {primary.href ? (
-            <Button size="icon" className="sm:hidden" disabled={primary.disabled} asChild>
-              <Link
-                href={primary.href}
-                {...(primary.newTab ? { target: "_blank", rel: "noopener noreferrer" } : {})}
-              >
-                {primary.icon}
-                <span className="sr-only">{primary.label}</span>
-              </Link>
-            </Button>
-          ) : (
-            <Button
-              size="icon"
-              className="sm:hidden"
-              onClick={primary.onSelect}
-              disabled={primary.disabled}
-            >
-              {primary.icon}
-              <span className="sr-only">{primary.label}</span>
-            </Button>
-          )}
-        </>
-      )}
+      {/* Mobile: icon-only primary → overflow menu (far right) */}
+      <div className="flex items-center gap-2 sm:hidden">
+        {primary && <PrimaryButton primary={primary} iconOnly />}
+        {actions.length > 0 && <OverflowMenu actions={actions} />}
+      </div>
 
       {children}
     </>

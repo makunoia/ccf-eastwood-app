@@ -315,61 +315,51 @@ function MemberReadOnly({
           </div>
         </div>
 
-        {member.address && (
+        {/* Shared fields — order matches the Guest profile form */}
+        <div className="grid sm:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label>Address</Label>
-            <Input value={member.address} readOnly />
+            <Label>Birth Month</Label>
+            <Input value={birthMonthName ?? ""} placeholder="—" readOnly />
           </div>
-        )}
+          <div className="space-y-2">
+            <Label>Birth Year</Label>
+            <YearInput value={member.birthYear ? String(member.birthYear) : ""} readOnly />
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label>Gender</Label>
+          <div className="flex gap-3">
+            {["Male", "Female"].map((g) => (
+              <div
+                key={g}
+                className={`flex-1 rounded-lg border py-2.5 text-center text-sm font-medium ${
+                  member.gender === g
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border bg-background text-muted-foreground"
+                }`}
+              >
+                {g}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Member-only fields — Guest has no address/dateJoined */}
+        <div className="space-y-2">
+          <Label>Address</Label>
+          <Input value={member.address ?? ""} placeholder="—" readOnly />
+        </div>
 
         <div className="space-y-2">
           <Label>Date Joined</Label>
           <Input value={dateJoinedStr ?? ""} placeholder="—" readOnly />
         </div>
 
-        {member.gender && (
-          <div className="space-y-2">
-            <Label>Gender</Label>
-            <div className="flex gap-3">
-              {["Male", "Female"].map((g) => (
-                <div
-                  key={g}
-                  className={`flex-1 rounded-lg border py-2.5 text-center text-sm font-medium ${
-                    member.gender === g
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-border bg-background text-muted-foreground"
-                  }`}
-                >
-                  {g}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {(birthMonthName || member.birthYear) && (
-          <div className="grid sm:grid-cols-2 gap-4">
-            {birthMonthName && (
-              <div className="space-y-2">
-                <Label>Birth Month</Label>
-                <Input value={birthMonthName} readOnly />
-              </div>
-            )}
-            {member.birthYear && (
-              <div className="space-y-2">
-                <Label>Birth Year</Label>
-                <YearInput value={String(member.birthYear)} readOnly />
-              </div>
-            )}
-          </div>
-        )}
-
-        {member.notes && (
-          <div className="space-y-2">
-            <Label>Notes</Label>
-            <Textarea value={member.notes} readOnly rows={3} />
-          </div>
-        )}
+        <div className="space-y-2">
+          <Label>Notes</Label>
+          <Textarea value={member.notes ?? ""} placeholder="—" readOnly rows={3} />
+        </div>
 
         {canViewMember && (
           <div className="flex justify-end pt-2">

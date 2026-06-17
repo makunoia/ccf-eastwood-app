@@ -64,6 +64,7 @@ export function SmallGroupsToolbar({ groups, canImport, canExport }: Props) {
           icon: <IconDownload className="size-4" />,
           onSelect: handleExport,
           disabled: groups.length === 0,
+          overflow: true,
         }]
       : []),
     ...(canImport
@@ -71,6 +72,7 @@ export function SmallGroupsToolbar({ groups, canImport, canExport }: Props) {
           label: "Import",
           icon: <IconUpload className="size-4" />,
           onSelect: () => setImportOpen(true),
+          overflow: true,
         }]
       : []),
   ]

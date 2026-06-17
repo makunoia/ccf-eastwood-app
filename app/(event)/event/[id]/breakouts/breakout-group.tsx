@@ -9,6 +9,7 @@ import {
   IconPlus,
   IconSparkles,
   IconTrash,
+  IconUpload,
   IconUsers,
 } from "@tabler/icons-react"
 import { type ColumnDef } from "@tanstack/react-table"
@@ -51,6 +52,9 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { ScheduleInput } from "@/components/ui/schedule-input"
+import { PageHeader, PageActions, type PageAction } from "@/components/page-header"
+import { FilterBar, FilterField } from "@/components/filter-bar"
+import { ImportWizard } from "@/components/import/import-wizard"
 import { LANGUAGE_OPTIONS } from "@/lib/constants/group-options"
 import {
   createBreakoutGroup,
@@ -58,6 +62,7 @@ import {
   deleteBreakoutGroup,
   autoAssignBreakouts,
 } from "@/app/(dashboard)/events/breakout-actions"
+import { checkBreakoutDuplicates, importBreakoutGroups } from "./import-actions"
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -590,6 +595,7 @@ type Props = {
   volunteers: Volunteer[]
   lifeStages: { id: string; name: string }[]
   defaultLifeStageId?: string
+  canImport?: boolean
 }
 
 export function BreakoutGroupsTable({
@@ -600,10 +606,12 @@ export function BreakoutGroupsTable({
   volunteers,
   lifeStages,
   defaultLifeStageId = "",
+  canImport = false,
 }: Props) {
   const [search, setSearch] = React.useState("")
   const [lifeStageFilter, setLifeStageFilter] = React.useState("_all")
   const [createOpen, setCreateOpen] = React.useState(false)
+  const [importOpen, setImportOpen] = React.useState(false)
   const [editingGroup, setEditingGroup] = React.useState<BreakoutGroupRow | null>(null)
   const [deletingGroup, setDeletingGroup] = React.useState<BreakoutGroupRow | null>(null)
   const [autoAssigning, setAutoAssigning] = React.useState(false)
@@ -652,19 +660,63 @@ export function BreakoutGroupsTable({
     }
   }
 
+  const headerActions: PageAction[] = [
+    ...(unassignedCount > 0 && breakoutGroups.length > 0
+      ? [{
+          label: autoAssigning ? "Assigning…" : "Auto-Assign",
+          icon: autoAssigning ? (
+            <IconLoader className="size-4 animate-spin" />
+          ) : (
+            <IconSparkles className="size-4" />
+          ),
+          onSelect: () => { void handleAutoAssign() },
+          disabled: autoAssigning,
+        }]
+      : []),
+    ...(canImport
+      ? [{
+          label: "Import",
+          icon: <IconUpload className="size-4" />,
+          onSelect: () => setImportOpen(true),
+          overflow: true,
+        }]
+      : []),
+  ]
+
   return (
     <div className="flex flex-1 flex-col gap-4">
-      {/* Toolbar */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-1 items-center gap-2">
-          <Input
-            placeholder="Search by name or facilitator…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="max-w-xs"
+      <PageHeader
+        title="Breakout Groups"
+        description={
+          unassignedCount === 0
+            ? `All ${registrantCount} registrants assigned`
+            : `${unassignedCount} of ${registrantCount} unassigned`
+        }
+        actions={
+          <PageActions
+            primary={{
+              label: "New Group",
+              icon: <IconPlus className="size-4" />,
+              onSelect: () => setCreateOpen(true),
+            }}
+            actions={headerActions}
           />
+        }
+      />
+
+      <FilterBar
+        searchValue={search}
+        searchPlaceholder="Search by name or facilitator…"
+        onSearch={setSearch}
+        activeCount={lifeStageFilter !== "_all" ? 1 : 0}
+        onClear={() => {
+          setSearch("")
+          setLifeStageFilter("_all")
+        }}
+      >
+        <FilterField label="Life stage">
           <Select value={lifeStageFilter} onValueChange={setLifeStageFilter}>
-            <SelectTrigger className="w-40">
+            <SelectTrigger className="w-full">
               <SelectValue placeholder="Life stage" />
             </SelectTrigger>
             <SelectContent>
@@ -674,27 +726,8 @@ export function BreakoutGroupsTable({
               ))}
             </SelectContent>
           </Select>
-        </div>
-        <div className="flex items-center gap-2">
-          <p className="text-sm text-muted-foreground hidden sm:block">
-            {unassignedCount === 0 ? (
-              <span className="text-foreground font-medium">All {registrantCount} registrants assigned</span>
-            ) : (
-              <><span className="font-medium text-foreground">{unassignedCount}</span> of {registrantCount} unassigned</>
-            )}
-          </p>
-          {unassignedCount > 0 && breakoutGroups.length > 0 && (
-            <Button variant="outline" size="sm" onClick={() => { void handleAutoAssign() }} disabled={autoAssigning}>
-              {autoAssigning ? <IconLoader className="size-4 animate-spin" /> : <IconSparkles className="size-4" />}
-              {autoAssigning ? "Assigning…" : "Auto-Assign"}
-            </Button>
-          )}
-          <Button size="sm" onClick={() => setCreateOpen(true)}>
-            <IconPlus className="size-4" />
-            New Group
-          </Button>
-        </div>
-      </div>
+        </FilterField>
+      </FilterBar>
 
       {/* Table */}
       <div className="hidden md:flex md:flex-1 md:flex-col">
@@ -773,6 +806,15 @@ export function BreakoutGroupsTable({
         onOpenChange={(open) => { if (!open) setDeletingGroup(null) }}
         eventId={eventId}
       />
+      {canImport && (
+        <ImportWizard
+          config={{ entity: "breakout-group", context: { eventId }, useExistingEnriches: true }}
+          open={importOpen}
+          onOpenChange={setImportOpen}
+          onCheckDuplicates={(rows) => checkBreakoutDuplicates({ eventId }, rows)}
+          onImport={(rows) => importBreakoutGroups({ eventId }, rows)}
+        />
+      )}
     </div>
   )
 }

@@ -305,8 +305,10 @@ END $$;
 - **Time inputs:** Always use `TimeInput` (`components/ui/time-input.tsx`) for any time-of-day field — never a plain `<input type="time">`. Accepts/emits `HH:MM` 24-hour strings or `""`. Use `variant="inline"` inside match/profile sections (underline style); use the default variant elsewhere (bordered, matches shadcn `Input` height). The component enforces 12-hour display with am/pm toggle and caps hours at 12.
 - **Table link columns:** The primary identifier column in every table (name, date, title) must be a `<Link>` with this exact className: `"font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"`. Do not use `hover:underline`, a plain `<Button asChild>`, or any other link style in table identifier columns — this applies everywhere in the app including the Event miniapp (`app/(event)/`).
 - **Page headers & actions:** Every list screen header uses `PageHeader` + `PageActions` (`components/page-header.tsx`). Pass the main action as `PageActions`' `primary` prop (a `PageAction`) and any extras as the `actions` array; mount dialogs/import wizards as `children`. `PageActions` enforces the standard automatically — never hand-roll header buttons or pass a bare `<Button>` into `PageHeader`'s `actions` slot:
-  - **Max 3 visible buttons** on desktop (1 primary + up to 2 inline secondary); any further secondary actions auto-overflow into a `⋮` menu.
-  - **On mobile** (`<sm`) the primary renders **icon-only** and all secondary actions collapse into a single `⋮` overflow menu. Always give every `PageAction` an `icon` so the icon-only/overflow states read clearly.
+  - **Max 3 visible buttons** on desktop (1 primary + up to 2 inline secondary); any further secondary actions auto-overflow into the `⋯` menu.
+  - **Layout:** inline secondary → `primary` → the `⋯` overflow menu, which is always pinned to the **far right**.
+  - **Utility actions** (Import, Export, and similar) must set `overflow: true` on their `PageAction` so they always live inside the `⋯` menu rather than inline.
+  - **On mobile** (`<sm`) the primary renders **icon-only** and all secondary actions collapse into the single `⋯` menu (still far right). Always give every `PageAction` an `icon` so the icon-only/overflow states read clearly.
 - **Filter controls:** List screens filter via the `FilterBar` drawer (`components/filter-bar.tsx`) with `FilterField`-wrapped controls — never an ad-hoc inline filter row.
 
 ### Error Handling
