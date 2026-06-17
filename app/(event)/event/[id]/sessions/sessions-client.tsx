@@ -556,6 +556,11 @@ export function SessionsClient({
         actions={
           isRecurring ? (
             <PageActions
+              primary={{
+                label: "Add Session",
+                icon: <IconCalendarPlus className="size-4" />,
+                onSelect: () => setSessionDialogOpen(true),
+              }}
               actions={[
                 {
                   label: "Add Series",
@@ -563,12 +568,7 @@ export function SessionsClient({
                   onSelect: openCreateSeriesDialog,
                 },
               ]}
-            >
-              <Button onClick={() => setSessionDialogOpen(true)}>
-                <IconCalendarPlus className="size-4" />
-                Add Session
-              </Button>
-            </PageActions>
+            />
           ) : undefined
         }
       />

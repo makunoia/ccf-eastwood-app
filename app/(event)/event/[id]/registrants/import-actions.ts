@@ -336,6 +336,18 @@ export async function importEventRegistrants(
         continue
       }
 
+      if (resolution === "create-new") {
+        // Import as a brand-new person — skip all matching/enrichment. Shared placeholder
+        // contacts have already been blanked client-side, so siblings won't collapse.
+        const newGuest = await db.guest.create({
+          data: buildGuestData(mapped, firstName, lastName),
+          select: { id: true },
+        })
+        await upsertRegistrantLink(eventId, { memberId: null, guestId: newGuest.id }, registrantData)
+        result.created++
+        continue
+      }
+
       if (existingId && resolution === "use-existing") {
         if (existingType === "guest") {
           await enrichGuestRecord(existingId, mapped, firstName, lastName)

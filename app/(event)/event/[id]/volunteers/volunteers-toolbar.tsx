@@ -1,9 +1,7 @@
 "use client"
 
 import * as React from "react"
-import Link from "next/link"
 import { IconPlus, IconUpload } from "@tabler/icons-react"
-import { Button } from "@/components/ui/button"
 import { PageActions } from "@/components/page-header"
 import { ImportWizard } from "@/components/import/import-wizard"
 import {
@@ -21,6 +19,11 @@ export function VolunteersToolbar({ eventId }: Props) {
 
   return (
     <PageActions
+      primary={{
+        label: "Add Volunteer",
+        icon: <IconPlus className="size-4" />,
+        href: `/event/${eventId}/volunteers/new`,
+      }}
       actions={[
         {
           label: "Import",
@@ -29,13 +32,6 @@ export function VolunteersToolbar({ eventId }: Props) {
         },
       ]}
     >
-      <Button asChild>
-        <Link href={`/event/${eventId}/volunteers/new`}>
-          <IconPlus className="size-4" />
-          Add Volunteer
-        </Link>
-      </Button>
-
       <ImportWizard
         config={{ entity: "volunteer", context }}
         open={importOpen}

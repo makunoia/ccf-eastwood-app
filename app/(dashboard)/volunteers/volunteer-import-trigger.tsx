@@ -3,6 +3,7 @@
 import * as React from "react"
 import { IconUpload } from "@tabler/icons-react"
 import { Button } from "@/components/ui/button"
+import { PageActions } from "@/components/page-header"
 import {
   Dialog,
   DialogContent,
@@ -37,12 +38,15 @@ export function VolunteerImportTrigger({ events }: Props) {
   const context = { eventId: selectedId }
 
   return (
-    <>
-      <Button variant="outline" onClick={handleOpen}>
-        <IconUpload className="size-4" />
-        Import
-      </Button>
-
+    <PageActions
+      actions={[
+        {
+          label: "Import",
+          icon: <IconUpload className="size-4" />,
+          onSelect: handleOpen,
+        },
+      ]}
+    >
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
@@ -90,6 +94,6 @@ export function VolunteerImportTrigger({ events }: Props) {
         onCheckDuplicates={checkVolunteerDuplicates}
         onImport={(rows) => importVolunteers(context, rows)}
       />
-    </>
+    </PageActions>
   )
 }

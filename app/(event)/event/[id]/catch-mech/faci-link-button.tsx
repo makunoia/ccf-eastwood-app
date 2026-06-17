@@ -2,7 +2,6 @@
 
 import * as React from "react"
 import { Copy, Check, ExternalLink } from "lucide-react"
-import { Button } from "@/components/ui/button"
 import { PageActions } from "@/components/page-header"
 
 export function FaciLinkButton({ url }: { url: string }) {
@@ -16,6 +15,12 @@ export function FaciLinkButton({ url }: { url: string }) {
 
   return (
     <PageActions
+      primary={{
+        label: "Open",
+        icon: <ExternalLink className="size-3.5" />,
+        href: url,
+        newTab: true,
+      }}
       actions={[
         {
           label: copied ? "Copied!" : "Copy Faci Link",
@@ -27,13 +32,6 @@ export function FaciLinkButton({ url }: { url: string }) {
           onSelect: handleCopy,
         },
       ]}
-    >
-      <Button asChild>
-        <a href={url} target="_blank" rel="noopener noreferrer">
-          <ExternalLink className="size-3.5" />
-          Open
-        </a>
-      </Button>
-    </PageActions>
+    />
   )
 }

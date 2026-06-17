@@ -1,10 +1,8 @@
-import Link from "next/link"
 import { IconPlus } from "@tabler/icons-react"
 import { Prisma } from "@/app/generated/prisma/client"
 
-import { Button } from "@/components/ui/button"
 import { db } from "@/lib/db"
-import { PageHeader } from "@/components/page-header"
+import { PageHeader, PageActions } from "@/components/page-header"
 import { type MinistryRow } from "./columns"
 import { MinistriesTable } from "./ministries-table"
 import { MinistriesFilters } from "./ministries-filters"
@@ -71,12 +69,13 @@ export default async function MinistriesPage({
         title="Ministries"
         description="Manage church ministry departments"
         actions={
-          <Button asChild>
-            <Link href="/ministries/new">
-              <IconPlus />
-              Add Ministry
-            </Link>
-          </Button>
+          <PageActions
+            primary={{
+              label: "Add Ministry",
+              icon: <IconPlus />,
+              href: "/ministries/new",
+            }}
+          />
         }
       />
 

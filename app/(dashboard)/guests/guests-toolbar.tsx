@@ -1,10 +1,8 @@
 "use client"
 
 import * as React from "react"
-import Link from "next/link"
 import { IconDownload, IconPlus, IconUpload } from "@tabler/icons-react"
 import { toast } from "sonner"
-import { Button } from "@/components/ui/button"
 import { PageActions, type PageAction } from "@/components/page-header"
 import { ImportWizard } from "@/components/import/import-wizard"
 import { checkGuestDuplicates, importGuests } from "./import-actions"
@@ -68,16 +66,16 @@ export function GuestsToolbar({ guests, canImport, canExport }: Props) {
   ]
 
   return (
-    <PageActions actions={actions}>
-      <Button asChild>
-        <Link href="/guests/new">
-          <IconPlus />
-          Add Guest
-        </Link>
-      </Button>
-
+    <PageActions
+      primary={{
+        label: "Add Guest",
+        icon: <IconPlus />,
+        href: "/guests/new",
+      }}
+      actions={actions}
+    >
       <ImportWizard
-        config={{ entity: "guest", useExistingEnriches: true }}
+        config={{ entity: "guest", useExistingEnriches: true, detectSharedContacts: true }}
         open={importOpen}
         onOpenChange={setImportOpen}
         onCheckDuplicates={checkGuestDuplicates}
