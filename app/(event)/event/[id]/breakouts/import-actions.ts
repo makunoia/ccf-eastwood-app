@@ -6,7 +6,15 @@ import { auth } from "@/lib/auth"
 import { canImport } from "@/lib/permissions"
 import type { DuplicateMatch, ImportResult, RowResolution } from "@/lib/import/types"
 import { enrichArray, enrichNullable, enrichText } from "@/lib/import/enrich"
+import { formatPhilippinePhone } from "@/lib/utils"
 import { GenderFocus, MeetingFormat, Prisma } from "@/app/generated/prisma/client"
+
+// Mobile numbers are stored canonical ("+63 XXX XXX XXXX"); normalize the CSV
+// value the same way before matching so exact-match lookups line up.
+function normalizeMobile(value?: string): string {
+  const trimmed = value?.trim()
+  return trimmed ? formatPhilippinePhone(trimmed) : ""
+}
 
 type ActionResult<T = void> =
   | { success: true; data: T }
@@ -136,6 +144,7 @@ type ImportRow = {
 
 type BreakoutScalars = {
   name: string
+  facilitatorId: string | null
   linkedSmallGroupId: string | null
   lifeStageId: string | null
   genderFocus: GenderFocus | null
@@ -162,15 +171,35 @@ export async function importBreakoutGroups(
     const result: ImportResult = { total: rows.length, created: 0, linked: 0, updated: 0, skipped: 0, errors: [] }
 
     // ── Pre-flight batch reads — O(2) queries regardless of row count ──────────
-    const linkedNames    = [...new Set(rows.map((r) => r.mapped.linkedSmallGroupName?.trim()).filter(Boolean))] as string[]
-    const lifeStageNames = [...new Set(rows.map((r) => r.mapped.lifeStage?.trim()).filter(Boolean))]            as string[]
+    const facilitatorMobiles = [...new Set(rows.map((r) => normalizeMobile(r.mapped.facilitatorMobile)).filter(Boolean))] as string[]
+    const lifeStageNames     = [...new Set(rows.map((r) => r.mapped.lifeStage?.trim()).filter(Boolean))]                   as string[]
 
-    const [linkedGroups, lifeStages] = await Promise.all([
-      linkedNames.length    > 0 ? db.smallGroup.findMany({ where: { name: { in: linkedNames,    mode: "insensitive" } }, select: { id: true, name: true } }) : [],
+    const [eventVolunteers, lifeStages] = await Promise.all([
+      facilitatorMobiles.length > 0
+        ? db.volunteer.findMany({
+            where: { eventId: context.eventId, member: { is: { phone: { in: facilitatorMobiles } } } },
+            // Confirmed first so a member with multiple volunteer records on the
+            // event resolves to the same one the create/edit form would offer.
+            orderBy: [{ status: "asc" }, { createdAt: "asc" }],
+            select: { id: true, member: { select: { phone: true, ledGroups: { select: { id: true } } } } },
+          })
+        : [],
       lifeStageNames.length > 0 ? db.lifeStage.findMany({ where: { name: { in: lifeStageNames, mode: "insensitive" } }, select: { id: true, name: true } }) : [],
     ])
 
-    const nameToLinkedId    = new Map(linkedGroups.map((g) => [g.name.toLowerCase(), g.id]))
+    // phone → matched facilitator volunteer. We also pre-compute the small group
+    // to auto-link: only when the facilitator leads exactly one group (same rule
+    // as the form's auto-link and the small-group import back-fill).
+    const mobileToFacilitator = new Map<string, { volunteerId: string; linkedSmallGroupId: string | null }>()
+    for (const v of eventVolunteers) {
+      const phone = v.member?.phone
+      if (!phone || mobileToFacilitator.has(phone)) continue
+      mobileToFacilitator.set(phone, {
+        volunteerId: v.id,
+        linkedSmallGroupId: v.member!.ledGroups.length === 1 ? v.member!.ledGroups[0].id : null,
+      })
+    }
+
     const nameToLifeStageId = new Map(lifeStages.map((ls) => [ls.name.toLowerCase(), ls.id]))
 
     for (let i = 0; i < rows.length; i++) {
@@ -183,15 +212,21 @@ export async function importBreakoutGroups(
           continue
         }
 
-        // ── Linked small group (map lookup) ──────────────────────────────────
+        // ── Facilitator (matched by mobile against an existing event volunteer) ─
+        // The facilitator's small group is linked automatically — there is no
+        // small-group column to import.
+        let facilitatorId: string | null = null
         let linkedSmallGroupId: string | null = null
-        if (mapped.linkedSmallGroupName?.trim()) {
-          linkedSmallGroupId = nameToLinkedId.get(mapped.linkedSmallGroupName.trim().toLowerCase()) ?? null
-          if (!linkedSmallGroupId) {
-            result.errors.push({ row: i, message: `No small group found with name "${mapped.linkedSmallGroupName.trim()}"` })
+        const facilitatorMobile = normalizeMobile(mapped.facilitatorMobile)
+        if (facilitatorMobile) {
+          const match = mobileToFacilitator.get(facilitatorMobile)
+          if (!match) {
+            result.errors.push({ row: i, message: `No event volunteer found with mobile "${mapped.facilitatorMobile?.trim()}"` })
             result.skipped++
             continue
           }
+          facilitatorId = match.volunteerId
+          linkedSmallGroupId = match.linkedSmallGroupId
         }
 
         // ── Life stage (map lookup) ──────────────────────────────────────────
@@ -201,6 +236,7 @@ export async function importBreakoutGroups(
 
         const data: BreakoutScalars = {
           name,
+          facilitatorId,
           linkedSmallGroupId,
           lifeStageId,
           genderFocus:  mapped.genderFocus      ? parseGenderFocus(mapped.genderFocus)     : null,
@@ -232,6 +268,7 @@ export async function importBreakoutGroups(
             select: {
               eventId: true,
               name: true,
+              facilitatorId: true,
               linkedSmallGroupId: true,
               lifeStageId: true,
               genderFocus: true,
@@ -254,6 +291,7 @@ export async function importBreakoutGroups(
             resolution === "use-existing"
               ? {
                   name: enrichText(existing.name, data.name) ?? existing.name,
+                  facilitatorId: enrichNullable(existing.facilitatorId, data.facilitatorId),
                   linkedSmallGroupId: enrichNullable(existing.linkedSmallGroupId, data.linkedSmallGroupId),
                   lifeStageId: enrichNullable(existing.lifeStageId, data.lifeStageId),
                   genderFocus: enrichNullable(existing.genderFocus, data.genderFocus),
@@ -266,7 +304,14 @@ export async function importBreakoutGroups(
                 }
               : data
 
-          await db.breakoutGroup.update({ where: { id: existingId }, data: payload })
+          // The small-group link is system-derived, not a CSV column — only ever
+          // fill it in, never clear or overwrite an existing link (even on use-csv).
+          const finalPayload = {
+            ...payload,
+            linkedSmallGroupId: enrichNullable(existing.linkedSmallGroupId, data.linkedSmallGroupId),
+          }
+
+          await db.breakoutGroup.update({ where: { id: existingId }, data: finalPayload })
 
           // Schedule: replace on re-import; only fill in when enriching an empty one.
           if (schedule && (resolution === "use-csv" || existing._count.schedules === 0)) {

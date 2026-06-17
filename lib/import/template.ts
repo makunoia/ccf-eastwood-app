@@ -56,7 +56,7 @@ const SAMPLE_VALUES: Record<string, string> = {
   scheduleTimeEnd:  "21:00",
 
   // Breakout group
-  linkedSmallGroupName: "Eastwood Pioneers",
+  facilitatorMobile: "09181234567",
 
   // Session attendance
   checkedInAt:      "10:30 AM",

@@ -1,5 +1,8 @@
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
+import { auth } from "@/lib/auth"
+import { canWrite } from "@/lib/permissions"
+import { BatchSelectionProvider } from "@/components/batch/batch-selection-provider"
 import { RegistrantsClient } from "./registrants-client"
 
 async function getEventRegistrants(id: string, search: string, typeFilter: string) {
@@ -80,22 +83,32 @@ export default async function RegistrantsPage({
   const search = (sp.search as string) || ""
   const typeFilter = (sp.type as string) || ""
 
-  const event = await getEventRegistrants(id, search, typeFilter)
+  const [session, event] = await Promise.all([
+    auth(),
+    getEventRegistrants(id, search, typeFilter),
+  ])
   if (!event) notFound()
 
+  const selectionEnabled = canWrite(session, "Events")
+
   return (
-    <RegistrantsClient
-      eventId={event.id}
-      eventType={event.type}
-      isPaidEvent={event.price != null}
-      formIncludePayment={event.formIncludePayment}
-      search={search}
-      typeFilter={typeFilter}
-      registrants={event.registrants.map((r) => ({
-        ...r,
-        attendedAt: r.attendedAt?.toISOString() ?? null,
-        createdAt: r.createdAt.toISOString(),
-      }))}
-    />
+    <BatchSelectionProvider
+      allIds={event.registrants.map((r) => r.id)}
+      enabled={selectionEnabled}
+    >
+      <RegistrantsClient
+        eventId={event.id}
+        eventType={event.type}
+        isPaidEvent={event.price != null}
+        formIncludePayment={event.formIncludePayment}
+        search={search}
+        typeFilter={typeFilter}
+        registrants={event.registrants.map((r) => ({
+          ...r,
+          attendedAt: r.attendedAt?.toISOString() ?? null,
+          createdAt: r.createdAt.toISOString(),
+        }))}
+      />
+    </BatchSelectionProvider>
   )
 }

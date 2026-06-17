@@ -343,6 +343,30 @@ export async function importSessionAttendance(
       }) : null
 
       if (matchedMember) {
+        // A volunteer for this event attends AS a volunteer, never as a registrant
+        // (schema: "a volunteer is never a registrant"). Record volunteer attendance
+        // so the session's Volunteers stat reflects them instead of inflating the
+        // participant count.
+        const matchedVolunteer = await db.volunteer.findFirst({
+          where: { eventId, memberId: matchedMember.id },
+          select: { id: true },
+        })
+        if (matchedVolunteer) {
+          const existing = await db.occurrenceAttendee.findUnique({
+            where: { occurrenceId_volunteerId: { occurrenceId, volunteerId: matchedVolunteer.id } },
+            select: { id: true },
+          })
+          if (existing) {
+            result.skipped++
+            continue
+          }
+          await db.occurrenceAttendee.create({
+            data: { occurrenceId, volunteerId: matchedVolunteer.id, checkedInAt },
+          })
+          result.linked++
+          continue
+        }
+
         const registrant = await db.eventRegistrant.findFirst({
           where: { eventId, memberId: matchedMember.id },
           select: { id: true },

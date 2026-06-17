@@ -18,6 +18,9 @@ import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { Checkbox } from "@/components/ui/checkbox"
+import { useBatchSelection } from "@/components/batch/batch-selection-provider"
+import { RegistrantsBatchBar } from "./registrants-batch-bar"
 import {
   Dialog,
   DialogContent,
@@ -414,17 +417,39 @@ function RegistrantCard({
   onNavigate: () => void
 }) {
   const router = useRouter()
+  const selection = useBatchSelection()
+  const selecting = selection?.enabled && selection.selectMode
+  const checked = selection?.isSelected(r.id) ?? false
 
   return (
     <Card
-      className="cursor-pointer hover:bg-muted/50 transition-colors py-0"
-      onClick={() => { onNavigate(); router.push(`/event/${eventId}/registrants/${r.id}`) }}
+      className="cursor-pointer hover:bg-muted/50 transition-colors py-0 data-[selected=true]:border-primary"
+      data-selected={checked}
+      onClick={() => {
+        if (selecting) {
+          selection?.toggle(r.id)
+          return
+        }
+        onNavigate()
+        router.push(`/event/${eventId}/registrants/${r.id}`)
+      }}
     >
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-2">
-          <p className="font-medium leading-tight">
-            {displayName(r) ?? <span className="text-muted-foreground italic">No name</span>}
-          </p>
+          <div className="flex items-start gap-3 min-w-0">
+            {selecting && (
+              <Checkbox
+                checked={checked}
+                onClick={(e) => e.stopPropagation()}
+                onCheckedChange={() => selection?.toggle(r.id)}
+                aria-label={`Select ${displayName(r) ?? "registrant"}`}
+                className="mt-0.5"
+              />
+            )}
+            <p className="font-medium leading-tight">
+              {displayName(r) ?? <span className="text-muted-foreground italic">No name</span>}
+            </p>
+          </div>
           <Badge variant={r.memberId ? "secondary" : "outline"}>
             {r.memberId ? "Member" : "Guest"}
           </Badge>
@@ -562,6 +587,9 @@ export function RegistrantsClient({
   const [togglingAttendance, setTogglingAttendance] = React.useState<string | null>(null)
   const [importOpen, setImportOpen]               = React.useState(false)
 
+  const selection = useBatchSelection()
+  const selectable = selection?.enabled ?? false
+
   const isRecurringOrMultiDay = eventType === "Recurring" || eventType === "MultiDay"
 
   function saveRegistrantIds() {
@@ -622,14 +650,16 @@ export function RegistrantsClient({
         title="Registrants"
         description={`${registrants.length} shown`}
         actions={
-          <PageActions
-            primary={{
-              label: "Add",
-              icon: <IconPlus className="size-4" />,
-              onSelect: () => setAddDialogOpen(true),
-            }}
-            actions={toolbarActions}
-          />
+          <RegistrantsBatchBar eventId={eventId} canMarkAttendance={!isRecurringOrMultiDay}>
+            <PageActions
+              primary={{
+                label: "Add",
+                icon: <IconPlus className="size-4" />,
+                onSelect: () => setAddDialogOpen(true),
+              }}
+              actions={toolbarActions}
+            />
+          </RegistrantsBatchBar>
         }
       />
 
@@ -672,6 +702,21 @@ export function RegistrantsClient({
             <table className="min-w-full text-sm">
               <thead className="border-b bg-muted/50">
                 <tr>
+                  {selectable && (
+                    <th className="w-10 px-4 py-3">
+                      <Checkbox
+                        checked={
+                          selection!.allSelected
+                            ? true
+                            : selection!.someSelected
+                              ? "indeterminate"
+                              : false
+                        }
+                        onCheckedChange={() => selection!.toggleAll()}
+                        aria-label="Select all rows"
+                      />
+                    </th>
+                  )}
                   <th className="px-4 py-3 text-left font-medium whitespace-nowrap">Name</th>
                   <th className="px-4 py-3 text-left font-medium whitespace-nowrap">Contact</th>
                   <th className="px-4 py-3 text-left font-medium whitespace-nowrap">Type</th>
@@ -687,7 +732,20 @@ export function RegistrantsClient({
               </thead>
               <tbody>
                 {registrants.map((r) => (
-                  <tr key={r.id} className="border-b last:border-0 hover:bg-muted/30">
+                  <tr
+                    key={r.id}
+                    className="border-b last:border-0 hover:bg-muted/30 data-[selected=true]:bg-muted/40"
+                    data-selected={selectable && selection!.isSelected(r.id)}
+                  >
+                    {selectable && (
+                      <td className="px-4 py-3">
+                        <Checkbox
+                          checked={selection!.isSelected(r.id)}
+                          onCheckedChange={() => selection!.toggle(r.id)}
+                          aria-label={`Select ${displayName(r) ?? "registrant"}`}
+                        />
+                      </td>
+                    )}
                     <td className="px-4 py-3 whitespace-nowrap">
                       <Link
                         href={`/event/${eventId}/registrants/${r.id}`}
