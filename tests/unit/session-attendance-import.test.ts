@@ -12,6 +12,7 @@ afterAll(async () => {
 beforeEach(async () => {
   await db.$executeRaw`TRUNCATE
     "OccurrenceAttendee", "EventOccurrence", "EventRegistrant",
+    "Volunteer", "CommitteeRole", "VolunteerCommittee",
     "Event", "Guest", "SchedulePreference", "Member"
     RESTART IDENTITY CASCADE`
 })
@@ -60,6 +61,27 @@ async function seedGuest(overrides: { phone?: string; email?: string } = {}) {
 async function seedRegistrant(eventId: string, options: { memberId?: string; guestId?: string } = {}) {
   return db.eventRegistrant.create({
     data: { eventId, memberId: options.memberId ?? null, guestId: options.guestId ?? null },
+    select: { id: true },
+  })
+}
+
+async function seedEventVolunteer(eventId: string, memberId: string) {
+  const committee = await db.volunteerCommittee.create({
+    data: { name: "Logistics", eventId },
+    select: { id: true },
+  })
+  const role = await db.committeeRole.create({
+    data: { name: "Usher", committeeId: committee.id },
+    select: { id: true },
+  })
+  return db.volunteer.create({
+    data: {
+      memberId,
+      eventId,
+      committeeId: committee.id,
+      preferredRoleId: role.id,
+      status: "Confirmed",
+    },
     select: { id: true },
   })
 }
@@ -503,6 +525,52 @@ describe("importSessionAttendance", () => {
 
       const after = await db.occurrenceAttendee.count({ where: { occurrenceId: occurrence.id } })
       expect(after).toBe(before)
+    })
+  })
+
+  describe("matched Member is a volunteer for this event", () => {
+    it("records volunteer attendance (volunteerId, not registrantId)", async () => {
+      const { event, occurrence } = await seedRecurringEvent()
+      const member = await seedMember({ phone: "+63 917 123 4567" })
+      const volunteer = await seedEventVolunteer(event.id, member.id)
+
+      const result = await importSessionAttendance(occurrence.id, [
+        { mapped: { firstName: "Juan", lastName: "Cruz", mobileNumber: "09171234567" }, resolution: "use-existing" },
+      ])
+      expect(result.success).toBe(true)
+      if (result.success) {
+        expect(result.data.linked).toBe(1)
+        expect(result.data.created).toBe(0)
+      }
+
+      const attendee = await db.occurrenceAttendee.findFirst({ where: { occurrenceId: occurrence.id } })
+      expect(attendee?.volunteerId).toBe(volunteer.id)
+      expect(attendee?.registrantId).toBeNull()
+
+      // Must NOT create a participant EventRegistrant for a volunteer
+      const registrants = await db.eventRegistrant.findMany({ where: { eventId: event.id } })
+      expect(registrants).toHaveLength(0)
+    })
+
+    it("is idempotent — skips when the volunteer already has attendance for this occurrence", async () => {
+      const { event, occurrence } = await seedRecurringEvent()
+      const member = await seedMember({ email: "juan@example.com" })
+      const volunteer = await seedEventVolunteer(event.id, member.id)
+      await db.occurrenceAttendee.create({
+        data: { occurrenceId: occurrence.id, volunteerId: volunteer.id },
+      })
+
+      const result = await importSessionAttendance(occurrence.id, [
+        { mapped: { firstName: "Juan", lastName: "Cruz", email: "juan@example.com" }, resolution: "use-existing" },
+      ])
+      expect(result.success).toBe(true)
+      if (result.success) {
+        expect(result.data.skipped).toBe(1)
+        expect(result.data.linked).toBe(0)
+      }
+
+      const count = await db.occurrenceAttendee.count({ where: { occurrenceId: occurrence.id } })
+      expect(count).toBe(1)
     })
   })
 

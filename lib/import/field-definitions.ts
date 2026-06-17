@@ -86,7 +86,7 @@ export const SMALL_GROUP_FIELDS: FieldDefinition[] = [
 
 export const BREAKOUT_GROUP_FIELDS: FieldDefinition[] = [
   { key: "name",                 label: "Group Name",         required: true },
-  { key: "linkedSmallGroupName", label: "Linked Small Group", required: false, hint: "Must match an existing small group's name" },
+  { key: "facilitatorMobile",    label: "Facilitator Mobile", required: false, hint: "Matched by mobile against an existing event volunteer. Their small group is linked automatically." },
   { key: "lifeStage",            label: "Life Stage",         required: false, hint: "Must match an existing life stage name" },
   { key: "genderFocus",          label: "Gender Focus",       required: false, hint: "Male, Female, or Mixed" },
   { key: "language",             label: "Language",           required: false },

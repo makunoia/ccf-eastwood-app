@@ -145,7 +145,7 @@ describe("volunteer check-in", () => {
   })
 
   describe("registrant + volunteer sharing a phone", () => {
-    it("returns an ambiguous result containing both subjects", async () => {
+    it("prefers the volunteer record without forcing disambiguation", async () => {
       const event = await seedEvent("OneTime")
       const guest = await db.guest.create({
         data: { firstName: "Jose", lastName: "Garcia", phone: PHONE_CANONICAL, language: [] },
@@ -154,12 +154,27 @@ describe("volunteer check-in", () => {
       const volunteer = await seedVolunteer(event.id, { lastName: "Lim", phone: PHONE_CANONICAL })
 
       const lookup = await lookupCheckinRegistrant(event.id, PHONE_CANONICAL, null)
+      // A volunteer match suppresses the stray registrant match — single, non-ambiguous result.
+      if (!lookup.success || !lookup.data || "matchType" in lookup.data) throw new Error("expected single match")
+      expect(lookup.data.kind).toBe("volunteer")
+      expect(lookup.data.subjectId).toBe(volunteer.id)
+    })
+
+    it("still disambiguates between two registrants when no volunteer matches", async () => {
+      const event = await seedEvent("OneTime")
+      const g1 = await db.guest.create({
+        data: { firstName: "Ana", lastName: "Lopez", phone: PHONE_CANONICAL, language: [] },
+      })
+      const g2 = await db.guest.create({
+        data: { firstName: "Ben", lastName: "Lopez", phone: PHONE_CANONICAL, language: [] },
+      })
+      await db.eventRegistrant.create({ data: { eventId: event.id, guestId: g1.id } })
+      await db.eventRegistrant.create({ data: { eventId: event.id, guestId: g2.id } })
+
+      const lookup = await lookupCheckinRegistrant(event.id, PHONE_CANONICAL, null)
       if (!lookup.success || !lookup.data || !("matchType" in lookup.data)) throw new Error("expected ambiguous match")
       expect(lookup.data.candidates).toHaveLength(2)
-      const kinds = lookup.data.candidates.map((c) => c.kind).sort()
-      expect(kinds).toEqual(["registrant", "volunteer"])
-      const volCandidate = lookup.data.candidates.find((c) => c.kind === "volunteer")
-      expect(volCandidate?.subjectId).toBe(volunteer.id)
+      expect(lookup.data.candidates.every((c) => c.kind === "registrant")).toBe(true)
     })
   })
 

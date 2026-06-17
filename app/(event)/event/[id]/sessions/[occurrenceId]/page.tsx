@@ -338,7 +338,7 @@ export default async function OccurrenceDetailPage({
           />
           <StatCard label="New" value={newCount} icon={<UserPlus className="size-4" />} />
           <StatCard
-            label="Attendance"
+            label="Participants"
             value={participantCount}
             icon={<Users className="size-4" />}
           />

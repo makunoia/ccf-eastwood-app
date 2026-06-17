@@ -1513,10 +1513,16 @@ export async function lookupCheckinRegistrant(
       return email.toLowerCase() === lq || phone.replace(/\s+/g, "") === qNorm
     })
 
-    const candidates: CheckinRegistrantResult[] = [
-      ...(await Promise.all(allMatched.map(resolveRegistrant))),
-      ...(await Promise.all(matchedVolunteers.map((v) => resolveVolunteerCandidate(v, occurrenceId)))),
-    ]
+    // A volunteer is never a registrant: if a volunteer matches, their volunteer record is
+    // the canonical check-in subject. Suppress any registrant match for the same lookup so
+    // the volunteer isn't forced to disambiguate against a stray registrant record.
+    const volunteerCandidates = await Promise.all(
+      matchedVolunteers.map((v) => resolveVolunteerCandidate(v, occurrenceId))
+    )
+    const candidates: CheckinRegistrantResult[] =
+      volunteerCandidates.length > 0
+        ? volunteerCandidates
+        : await Promise.all(allMatched.map(resolveRegistrant))
 
     if (candidates.length === 0) return { success: true, data: null }
     if (candidates.length > 1) {
@@ -1716,10 +1722,16 @@ export async function lookupCheckinRegistrantByProfile(
         v.member.birthYear === birthYear
     )
 
-    const candidates: CheckinRegistrantResult[] = [
-      ...(await Promise.all(allMatched.map(resolveRegistrant))),
-      ...(await Promise.all(matchedVolunteers.map((v) => resolveVolunteerCandidate(v, occurrenceId)))),
-    ]
+    // A volunteer is never a registrant: if a volunteer matches, their volunteer record is
+    // the canonical check-in subject. Suppress any registrant match for the same lookup so
+    // the volunteer isn't forced to disambiguate against a stray registrant record.
+    const volunteerCandidates = await Promise.all(
+      matchedVolunteers.map((v) => resolveVolunteerCandidate(v, occurrenceId))
+    )
+    const candidates: CheckinRegistrantResult[] =
+      volunteerCandidates.length > 0
+        ? volunteerCandidates
+        : await Promise.all(allMatched.map(resolveRegistrant))
 
     if (candidates.length === 0) return { success: true, data: null }
     if (candidates.length > 1) {
