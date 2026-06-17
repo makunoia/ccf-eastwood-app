@@ -29,6 +29,7 @@ export function VolunteersToolbar({ eventId }: Props) {
           label: "Import",
           icon: <IconUpload className="size-4" />,
           onSelect: () => setImportOpen(true),
+          overflow: true,
         },
       ]}
     >

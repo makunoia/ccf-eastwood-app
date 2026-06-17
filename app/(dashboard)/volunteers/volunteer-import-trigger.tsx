@@ -44,6 +44,7 @@ export function VolunteerImportTrigger({ events }: Props) {
           label: "Import",
           icon: <IconUpload className="size-4" />,
           onSelect: handleOpen,
+          overflow: true,
         },
       ]}
     >

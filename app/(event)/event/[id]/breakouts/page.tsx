@@ -2,9 +2,7 @@ import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import { canImport } from "@/lib/permissions"
-import { PageHeader } from "@/components/page-header"
 import { BreakoutGroupsTable } from "./breakout-group"
-import { BreakoutsToolbar } from "./breakouts-toolbar"
 
 const breakoutGroupsInclude = {
   orderBy: { createdAt: "asc" } as const,
@@ -162,14 +160,6 @@ export default async function BreakoutsPage({
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
-      <PageHeader
-        title="Breakout Groups"
-        actions={
-          canImport(session, "Events") ? (
-            <BreakoutsToolbar eventId={event.id} />
-          ) : undefined
-        }
-      />
       <BreakoutGroupsTable
         eventId={event.id}
         breakoutGroups={breakoutGroupRows}
@@ -178,6 +168,7 @@ export default async function BreakoutsPage({
         volunteers={confirmedVolunteers}
         lifeStages={lifeStages}
         defaultLifeStageId={defaultLifeStageId}
+        canImport={canImport(session, "Events")}
       />
     </div>
   )

@@ -564,3 +564,135 @@ export async function addEventRegistrant(
     return { success: false, error: "Failed to add registrant" }
   }
 }
+
+// ─── Add an existing record (Member or Guest) ─────────────────────────────────
+
+type RegistrationPersonResult = {
+  recordType: "member" | "guest"
+  id: string
+  firstName: string
+  lastName: string
+  email: string | null
+  phone: string | null
+  alreadyRegistered: boolean
+}
+
+export async function searchPeopleForRegistration(
+  eventId: string,
+  query: string
+): Promise<ActionResult<RegistrationPersonResult[]>> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
+  const q = query.trim()
+  if (q.length < 2) return { success: true, data: [] }
+
+  try {
+    const matchFields = [
+      { firstName: { contains: q, mode: "insensitive" as const } },
+      { lastName: { contains: q, mode: "insensitive" as const } },
+      { nickname: { contains: q, mode: "insensitive" as const } },
+      { phone: { contains: q, mode: "insensitive" as const } },
+      { email: { contains: q, mode: "insensitive" as const } },
+    ]
+
+    const [members, guests, registrants] = await Promise.all([
+      db.member.findMany({
+        where: { OR: matchFields },
+        select: { id: true, firstName: true, lastName: true, email: true, phone: true },
+        take: 10,
+      }),
+      db.guest.findMany({
+        where: { memberId: null, OR: matchFields },
+        select: { id: true, firstName: true, lastName: true, email: true, phone: true },
+        take: 10,
+      }),
+      db.eventRegistrant.findMany({
+        where: { eventId },
+        select: { memberId: true, guestId: true },
+      }),
+    ])
+
+    const registeredMemberIds = new Set(
+      registrants.map((r) => r.memberId).filter(Boolean) as string[]
+    )
+    const registeredGuestIds = new Set(
+      registrants.map((r) => r.guestId).filter(Boolean) as string[]
+    )
+
+    const results: RegistrationPersonResult[] = [
+      ...members.map((m) => ({
+        recordType: "member" as const,
+        ...m,
+        alreadyRegistered: registeredMemberIds.has(m.id),
+      })),
+      ...guests.map((g) => ({
+        recordType: "guest" as const,
+        ...g,
+        alreadyRegistered: registeredGuestIds.has(g.id),
+      })),
+    ]
+      .sort((a, b) =>
+        `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`)
+      )
+      .slice(0, 15)
+
+    return { success: true, data: results }
+  } catch {
+    return { success: false, error: "Search failed" }
+  }
+}
+
+export async function addExistingRegistrant(
+  eventId: string,
+  input: { recordType: "member" | "guest"; recordId: string }
+): Promise<ActionResult<{ id: string }>> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
+  try {
+    if (input.recordType === "member") {
+      const member = await db.member.findUnique({
+        where: { id: input.recordId },
+        select: { id: true },
+      })
+      if (!member) return { success: false, error: "Member not found" }
+
+      const existing = await db.eventRegistrant.findFirst({
+        where: { eventId, memberId: member.id },
+        select: { id: true },
+      })
+      if (existing)
+        return { success: false, error: "This member is already registered for this event" }
+
+      const reg = await db.eventRegistrant.create({
+        data: { eventId, memberId: member.id },
+        select: { id: true },
+      })
+      revalidatePath(`/event/${eventId}/registrants`)
+      return { success: true, data: { id: reg.id } }
+    }
+
+    const guest = await db.guest.findFirst({
+      where: { id: input.recordId, memberId: null },
+      select: { id: true },
+    })
+    if (!guest) return { success: false, error: "Guest not found" }
+
+    const existing = await db.eventRegistrant.findFirst({
+      where: { eventId, guestId: guest.id },
+      select: { id: true },
+    })
+    if (existing)
+      return { success: false, error: "This person is already registered for this event" }
+
+    const reg = await db.eventRegistrant.create({
+      data: { eventId, guestId: guest.id },
+      select: { id: true },
+    })
+    revalidatePath(`/event/${eventId}/registrants`)
+    return { success: true, data: { id: reg.id } }
+  } catch {
+    return { success: false, error: "Failed to add registrant" }
+  }
+}

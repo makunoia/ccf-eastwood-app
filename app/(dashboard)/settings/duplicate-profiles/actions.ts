@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import type { Guest } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import { isSuperAdmin } from "@/lib/permissions"
@@ -132,6 +133,13 @@ async function runSingleMerge(
 
     return { success: true, data: { merged: input.losers.length } }
   } catch (e) {
+    // Our own validation throws carry safe, user-facing messages. Anything from
+    // Prisma (carries a `P####` code) must never be surfaced raw — map it to a
+    // generic message per the project's error-handling convention.
+    const code = (e as { code?: unknown })?.code
+    if (typeof code === "string" && /^P\d+/.test(code)) {
+      return { success: false, error: "Failed to merge records due to a data conflict." }
+    }
     const msg = e instanceof Error ? e.message : "Failed to merge records"
     return { success: false, error: msg }
   }
@@ -211,6 +219,33 @@ function fillNulls<T extends Record<string, unknown>>(keeper: T, loser: T): Part
   return update
 }
 
+/**
+ * Folds a loser Guest into a keeper Guest: re-points the loser's owned rows onto
+ * the keeper, deletes the loser, then fills the keeper's null/empty fields.
+ *
+ * Deliberately does NOT touch `memberId` — that column is unique, so callers must
+ * decide how to transfer the promotion link (and only after the loser is gone).
+ */
+async function foldGuestIntoGuest(tx: TxClient, keeper: Guest, loser: Guest) {
+  await tx.eventRegistrant.updateMany({ where: { guestId: loser.id }, data: { guestId: keeper.id } })
+  await tx.smallGroupMemberRequest.updateMany({ where: { guestId: loser.id }, data: { guestId: keeper.id } })
+  await tx.smallGroupLog.updateMany({ where: { guestId: loser.id }, data: { guestId: keeper.id } })
+
+  // Delete the loser BEFORE filling the keeper — `fillNulls` can copy a value the
+  // loser still holds, colliding with its own row. `loser` is already in memory.
+  await tx.guest.delete({ where: { id: loser.id } })
+
+  const fill = fillNulls(keeper, loser)
+  delete (fill as { id?: unknown }).id
+  delete (fill as { createdAt?: unknown }).createdAt
+  delete (fill as { updatedAt?: unknown }).updatedAt
+  delete (fill as { memberId?: unknown }).memberId
+  if (Object.keys(fill).length > 0) {
+    await tx.guest.update({ where: { id: keeper.id }, data: fill })
+    Object.assign(keeper, fill)
+  }
+}
+
 async function mergeIntoMember(tx: TxClient, keeperId: string, losers: LoserRef[]) {
   const keeper = await tx.member.findUnique({ where: { id: keeperId } })
   if (!keeper) throw new Error("Keeper member not found")
@@ -229,8 +264,19 @@ async function mergeIntoMember(tx: TxClient, keeperId: string, losers: LoserRef[
       await tx.schedulePreference.updateMany({ where: { memberId: m.id }, data: { memberId: keeperId } })
       // Any group the loser leads: re-point leader to keeper.
       await tx.smallGroup.updateMany({ where: { leaderId: m.id }, data: { leaderId: keeperId } })
-      // Any Guest that was promoted into the loser: re-point its memberId to the keeper.
-      await tx.guest.updateMany({ where: { memberId: m.id }, data: { memberId: keeperId } })
+      // Any Guest promoted into the loser: re-point its promotion link to the keeper.
+      // `Guest.memberId` is unique, so if the keeper already retains its own linked
+      // guest we fold the loser's guest into it rather than blindly re-pointing
+      // (which would hit a P2002 unique-constraint violation).
+      const loserGuest = await tx.guest.findUnique({ where: { memberId: m.id } })
+      if (loserGuest) {
+        const keeperGuest = await tx.guest.findUnique({ where: { memberId: keeperId } })
+        if (keeperGuest) {
+          await foldGuestIntoGuest(tx, keeperGuest, loserGuest)
+        } else {
+          await tx.guest.update({ where: { id: loserGuest.id }, data: { memberId: keeperId } })
+        }
+      }
 
       // Delete the loser BEFORE filling the keeper. `fillNulls` can copy unique
       // fields (email, phone) from the loser onto the keeper; if the loser still
@@ -285,11 +331,27 @@ async function mergeIntoMember(tx: TxClient, keeperId: string, losers: LoserRef[
         Object.assign(keeper, fill)
       }
 
-      // Link the Guest to the keeper Member (retain Guest as history)
-      await tx.guest.update({
-        where: { id: g.id },
-        data: { memberId: keeperId },
-      })
+      // Retain the loser Guest as history linked to the keeper Member. `Guest.memberId`
+      // is unique: if the keeper already retains its own linked guest, it can't take a
+      // second one. g's activity rows were already re-pointed to the keeper member
+      // above, so fold g's remaining profile into the keeper's guest and drop g.
+      const existingKeeperGuest = await tx.guest.findUnique({ where: { memberId: keeperId } })
+      if (existingKeeperGuest) {
+        await tx.guest.delete({ where: { id: g.id } })
+        const gFill = fillNulls(
+          existingKeeperGuest as unknown as Record<string, unknown>,
+          g as unknown as Record<string, unknown>,
+        )
+        delete gFill.id
+        delete gFill.createdAt
+        delete gFill.updatedAt
+        delete gFill.memberId
+        if (Object.keys(gFill).length > 0) {
+          await tx.guest.update({ where: { id: existingKeeperGuest.id }, data: gFill })
+        }
+      } else {
+        await tx.guest.update({ where: { id: g.id }, data: { memberId: keeperId } })
+      }
     }
   }
 }
@@ -307,30 +369,16 @@ async function mergeIntoGuest(tx: TxClient, keeperId: string, losers: LoserRef[]
     const g = await tx.guest.findUnique({ where: { id: loser.id } })
     if (!g) continue
 
-    // Re-point all Guest-owned rows
-    await tx.eventRegistrant.updateMany({ where: { guestId: g.id }, data: { guestId: keeperId } })
-    await tx.smallGroupMemberRequest.updateMany({ where: { guestId: g.id }, data: { guestId: keeperId } })
-    await tx.smallGroupLog.updateMany({ where: { guestId: g.id }, data: { guestId: keeperId } })
+    // If the loser Guest was already promoted, capture its memberId BEFORE the
+    // fold deletes it. `Guest.memberId` is unique, so the link can only be
+    // transferred onto the keeper once the loser row is gone.
+    const inheritMemberId = g.memberId && !keeper.memberId ? g.memberId : null
 
-    // If the loser Guest was already promoted (has memberId), surface that link on the keeper
-    if (g.memberId && !keeper.memberId) {
-      await tx.guest.update({ where: { id: keeperId }, data: { memberId: g.memberId } })
-      keeper.memberId = g.memberId
-    }
+    await foldGuestIntoGuest(tx, keeper, g)
 
-    // Delete the loser BEFORE filling the keeper — `fillNulls` can copy unique
-    // fields (email, phone) from the loser, which would collide with the loser's
-    // own still-present value (P2002). `g` is already in memory, so this is safe.
-    await tx.guest.delete({ where: { id: g.id } })
-
-    const fill = fillNulls(keeper, g)
-    delete (fill as { id?: unknown }).id
-    delete (fill as { createdAt?: unknown }).createdAt
-    delete (fill as { updatedAt?: unknown }).updatedAt
-    delete (fill as { memberId?: unknown }).memberId
-    if (Object.keys(fill).length > 0) {
-      await tx.guest.update({ where: { id: keeperId }, data: fill })
-      Object.assign(keeper, fill)
+    if (inheritMemberId) {
+      await tx.guest.update({ where: { id: keeper.id }, data: { memberId: inheritMemberId } })
+      keeper.memberId = inheritMemberId
     }
   }
 }

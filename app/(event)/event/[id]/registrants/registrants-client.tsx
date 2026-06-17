@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import {
   Select,
   SelectContent,
@@ -47,8 +48,10 @@ import {
 } from "@/app/(dashboard)/events/actions"
 import {
   addEventRegistrant,
+  addExistingRegistrant,
   checkRegistrantDuplicates,
   importEventRegistrants,
+  searchPeopleForRegistration,
 } from "./import-actions"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -191,10 +194,21 @@ function PaymentDialog({
 
 // ─── Add Registrant dialog ────────────────────────────────────────────────────
 
+type PersonResult = {
+  recordType: "member" | "guest"
+  id: string
+  firstName: string
+  lastName: string
+  email: string | null
+  phone: string | null
+  alreadyRegistered: boolean
+}
+
 function AddRegistrantDialog({
   eventId, open, onOpenChange,
 }: { eventId: string; open: boolean; onOpenChange: (v: boolean) => void }) {
   const router = useRouter()
+  // New-person tab state
   const [firstName, setFirstName] = React.useState("")
   const [lastName, setLastName]   = React.useState("")
   const [email, setEmail]         = React.useState("")
@@ -203,10 +217,17 @@ function AddRegistrantDialog({
   const [noEmail, setNoEmail]     = React.useState(false)
   const [nickname, setNickname]   = React.useState("")
   const [saving, setSaving]       = React.useState(false)
+  // Existing-person tab state
+  const [query, setQuery]         = React.useState("")
+  const [results, setResults]     = React.useState<PersonResult[]>([])
+  const [searching, setSearching] = React.useState(false)
+  const [selectedId, setSelectedId] = React.useState("")
+  const [addingExisting, setAddingExisting] = React.useState(false)
 
   function reset() {
     setFirstName(""); setLastName(""); setEmail(""); setMobile(""); setNickname("")
     setNoMobile(false); setNoEmail(false)
+    setQuery(""); setResults([]); setSelectedId(""); setSearching(false); setAddingExisting(false)
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -233,44 +254,145 @@ function AddRegistrantDialog({
     }
   }
 
+  async function handleSearch(q: string) {
+    setQuery(q)
+    setSelectedId("")
+    if (q.trim().length < 2) { setResults([]); return }
+    setSearching(true)
+    const result = await searchPeopleForRegistration(eventId, q)
+    setSearching(false)
+    if (result.success) setResults(result.data)
+  }
+
+  async function handleAddExisting() {
+    const selected = results.find((r) => r.id === selectedId)
+    if (!selected) return
+    setAddingExisting(true)
+    const result = await addExistingRegistrant(eventId, {
+      recordType: selected.recordType,
+      recordId: selected.id,
+    })
+    setAddingExisting(false)
+    if (result.success) {
+      toast.success("Registrant added")
+      onOpenChange(false)
+      reset()
+      router.refresh()
+    } else {
+      toast.error(result.error)
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) reset(); onOpenChange(v) }}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Add Registrant</DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
+        <Tabs defaultValue="new">
+          <TabsList className="w-full">
+            <TabsTrigger value="new" className="flex-1">New person</TabsTrigger>
+            <TabsTrigger value="existing" className="flex-1">Existing person</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="new">
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="add-first">First Name *</Label>
+                  <Input id="add-first" value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="add-last">Last Name *</Label>
+                  <Input id="add-last" value={lastName} onChange={(e) => setLastName(e.target.value)} />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="add-nick">Nickname</Label>
+                <Input id="add-nick" value={nickname} onChange={(e) => setNickname(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="add-mobile">Mobile Number</Label>
+                <OptionalPhonePHInput id="add-mobile" value={mobile} onChange={setMobile} noNumber={noMobile} onNoNumberChange={setNoMobile} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="add-email">Email</Label>
+                <OptionalEmailInput id="add-email" value={email} onChange={(e) => setEmail(e.target.value)} noEmail={noEmail} onNoEmailChange={setNoEmail} />
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => { reset(); onOpenChange(false) }} disabled={saving}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={saving}>
+                  {saving ? "Adding…" : "Add Registrant"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </TabsContent>
+
+          <TabsContent value="existing" className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="add-first">First Name *</Label>
-              <Input id="add-first" value={firstName} onChange={(e) => setFirstName(e.target.value)} autoFocus />
+              <Label htmlFor="add-search">Search Members &amp; Guests</Label>
+              <Input
+                id="add-search"
+                value={query}
+                onChange={(e) => handleSearch(e.target.value)}
+                placeholder="Search by name, phone, or email…"
+              />
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="add-last">Last Name *</Label>
-              <Input id="add-last" value={lastName} onChange={(e) => setLastName(e.target.value)} />
+            <div className="max-h-64 overflow-y-auto rounded-md border">
+              {query.trim().length < 2 ? (
+                <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+                  Type at least 2 characters to search.
+                </p>
+              ) : searching ? (
+                <p className="px-3 py-6 text-center text-sm text-muted-foreground">Searching…</p>
+              ) : results.length === 0 ? (
+                <p className="px-3 py-6 text-center text-sm text-muted-foreground">No matches found.</p>
+              ) : (
+                <ul className="divide-y">
+                  {results.map((r) => {
+                    const selected = r.id === selectedId
+                    const hint = r.phone ?? r.email ?? undefined
+                    return (
+                      <li key={`${r.recordType}-${r.id}`}>
+                        <button
+                          type="button"
+                          disabled={r.alreadyRegistered}
+                          onClick={() => setSelectedId(r.id)}
+                          className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                            selected ? "bg-accent" : "hover:bg-accent/50"
+                          }`}
+                        >
+                          <span className="min-w-0">
+                            <span className="flex items-center gap-2">
+                              <span className="truncate font-medium">{r.firstName} {r.lastName}</span>
+                              <Badge variant="outline" className="shrink-0 capitalize">{r.recordType}</Badge>
+                            </span>
+                            {hint && <span className="block truncate text-xs text-muted-foreground">{hint}</span>}
+                          </span>
+                          {r.alreadyRegistered ? (
+                            <span className="shrink-0 text-xs text-muted-foreground">Already registered</span>
+                          ) : selected ? (
+                            <IconCheck className="size-4 shrink-0" />
+                          ) : null}
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
             </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="add-nick">Nickname</Label>
-            <Input id="add-nick" value={nickname} onChange={(e) => setNickname(e.target.value)} />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="add-mobile">Mobile Number</Label>
-            <OptionalPhonePHInput id="add-mobile" value={mobile} onChange={setMobile} noNumber={noMobile} onNoNumberChange={setNoMobile} />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="add-email">Email</Label>
-            <OptionalEmailInput id="add-email" value={email} onChange={(e) => setEmail(e.target.value)} noEmail={noEmail} onNoEmailChange={setNoEmail} />
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => { reset(); onOpenChange(false) }} disabled={saving}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={saving}>
-              {saving ? "Adding…" : "Add Registrant"}
-            </Button>
-          </DialogFooter>
-        </form>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => { reset(); onOpenChange(false) }} disabled={addingExisting}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={handleAddExisting} disabled={!selectedId || addingExisting}>
+                {addingExisting ? "Adding…" : "Add Registrant"}
+              </Button>
+            </DialogFooter>
+          </TabsContent>
+        </Tabs>
       </DialogContent>
     </Dialog>
   )
@@ -476,12 +598,14 @@ export function RegistrantsClient({
       label: "Import",
       icon: <IconUpload className="size-4" />,
       onSelect: () => setImportOpen(true),
+      overflow: true,
     },
     {
       label: "Export",
       icon: <IconDownload className="size-4" />,
       onSelect: () => exportRegistrantsCSV(registrants, eventType, isPaidEvent, eventId),
       disabled: registrants.length === 0,
+      overflow: true,
     },
     {
       label: "Registration page",

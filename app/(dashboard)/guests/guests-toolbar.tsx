@@ -54,6 +54,7 @@ export function GuestsToolbar({ guests, canImport, canExport }: Props) {
           icon: <IconDownload className="size-4" />,
           onSelect: handleExport,
           disabled: guests.length === 0,
+          overflow: true,
         }]
       : []),
     ...(canImport
@@ -61,6 +62,7 @@ export function GuestsToolbar({ guests, canImport, canExport }: Props) {
           label: "Import",
           icon: <IconUpload className="size-4" />,
           onSelect: () => setImportOpen(true),
+          overflow: true,
         }]
       : []),
   ]
