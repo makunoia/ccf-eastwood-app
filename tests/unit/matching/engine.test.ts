@@ -19,7 +19,7 @@ const EQUAL_WEIGHTS: WeightConfig = {
 const BASE_GROUP: GroupProfile = {
   id: "group-1",
   name: "Young Professionals",
-  lifeStageId: null,
+  lifeStageIds: [],
   genderFocus: null,
   language: [],
   ageRangeMin: null,
@@ -82,7 +82,7 @@ describe("scoreGroup", () => {
 
     const group: GroupProfile = {
       ...BASE_GROUP,
-      lifeStageId: "ls-yp",
+      lifeStageIds: ["ls-yp"],
       genderFocus: "Male",
       language: ["Filipino"],
       ageRangeMin: 25,
@@ -116,7 +116,7 @@ describe("scoreGroup", () => {
 
     const group: GroupProfile = {
       ...BASE_GROUP,
-      lifeStageId: "ls-yp",
+      lifeStageIds: ["ls-yp"],
       genderFocus: "Male",
       language: ["Filipino"],
       ageRangeMin: 20,
@@ -140,7 +140,7 @@ describe("scoreGroup", () => {
     }
     const group: GroupProfile = {
       ...BASE_GROUP,
-      lifeStageId: "ls-1",
+      lifeStageIds: ["ls-1"],
     }
 
     // Weights that heavily favour lifeStage

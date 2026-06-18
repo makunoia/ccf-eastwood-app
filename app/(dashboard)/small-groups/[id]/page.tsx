@@ -37,7 +37,7 @@ async function getSmallGroup(id: string): Promise<(SmallGroupRow & {
     include: {
       leader: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
       parentGroup: { select: { id: true, name: true } },
-      lifeStage: { select: { id: true, name: true } },
+      lifeStages: { select: { id: true, name: true }, orderBy: { order: "asc" } },
       members: {
         select: { id: true, firstName: true, lastName: true, groupStatus: true },
         orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
@@ -106,8 +106,7 @@ async function getSmallGroup(id: string): Promise<(SmallGroupRow & {
     parentGroupName: g.parentGroup?.name ?? null,
     memberCount: g.members.length,
     tempMemberCount: pendingRequests.length,
-    lifeStage: g.lifeStage?.name ?? null,
-    lifeStageId: g.lifeStageId,
+    lifeStages: g.lifeStages,
     language: g.language,
     genderFocus: g.genderFocus,
     ageRangeMin: g.ageRangeMin,

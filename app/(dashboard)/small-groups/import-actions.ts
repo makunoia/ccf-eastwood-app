@@ -219,12 +219,19 @@ function getCreatedLeaderCacheKey(
   return normalizedName ? `n:${normalizedName}` : null
 }
 
+// A single CSV life-stage cell may list several stages, delimited by "," or ";".
+function splitLifeStages(raw: string | null | undefined): string[] {
+  return (raw ?? "")
+    .split(/[;,]/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
 function enrichSmallGroupData(
   existing: {
     name: string
     leaderId: string | null
     parentGroupId: string | null
-    lifeStageId: string | null
     genderFocus: GenderFocus | null
     language: string[]
     ageRangeMin: number | null
@@ -240,7 +247,6 @@ function enrichSmallGroupData(
     name: string
     leaderId: string | null
     parentGroupId: string | null
-    lifeStageId: string | null
     genderFocus: GenderFocus | null
     language: string[]
     ageRangeMin: number | null
@@ -257,7 +263,6 @@ function enrichSmallGroupData(
     name: enrichText(existing.name, incoming.name) ?? existing.name,
     leaderId: enrichNullable(existing.leaderId, incoming.leaderId),
     parentGroupId: enrichNullable(existing.parentGroupId, incoming.parentGroupId),
-    lifeStageId: enrichNullable(existing.lifeStageId, incoming.lifeStageId),
     genderFocus: enrichNullable(existing.genderFocus, incoming.genderFocus),
     language: enrichArray(existing.language, incoming.language),
     ageRangeMin: enrichNullable(existing.ageRangeMin, incoming.ageRangeMin),
@@ -281,7 +286,7 @@ export async function importSmallGroups(
   const mobiles        = [...new Set(rows.map((r) => normalizeMobile(r.mapped.leaderMobile)).filter(Boolean))] as string[]
   const emails         = [...new Set(rows.map((r) => r.mapped.leaderEmail?.trim()).filter(Boolean))]  as string[]
   const parentNames    = [...new Set(rows.map((r) => r.mapped.parentGroupName?.trim()).filter(Boolean))] as string[]
-  const lifeStageNames = [...new Set(rows.map((r) => r.mapped.lifeStage?.trim()).filter(Boolean))]    as string[]
+  const lifeStageNames = [...new Set(rows.flatMap((r) => splitLifeStages(r.mapped.lifeStage)))]       as string[]
 
   const [membersByPhone, membersByEmail, parentGroups, lifeStages] = await Promise.all([
     mobiles.length     > 0 ? db.member.findMany({ where: { phone: { in: mobiles,        mode: "insensitive" } }, select: { id: true, phone: true } }) : [],
@@ -386,16 +391,17 @@ export async function importSmallGroups(
         }
       }
 
-      // ── Life stage (map lookup) ────────────────────────────────────────────
-      const lifeStageId = mapped.lifeStage?.trim()
-        ? (nameToLifeStageId.get(mapped.lifeStage.trim().toLowerCase()) ?? null)
-        : null
+      // ── Life stages (map lookup — supports a delimited list) ───────────────
+      const lifeStageIds = [...new Set(
+        splitLifeStages(mapped.lifeStage)
+          .map((name) => nameToLifeStageId.get(name.toLowerCase()))
+          .filter((id): id is string => Boolean(id))
+      )]
 
       const data = {
         name:              groupName,
         leaderId,
         parentGroupId,
-        lifeStageId,
         genderFocus:       mapped.genderFocus      ? parseGenderFocus(mapped.genderFocus)        : null,
         language:          mapped.language?.trim() ? [mapped.language.trim()]                    : [],
         ageRangeMin:       mapped.ageRangeMin      ? parseIntField(mapped.ageRangeMin)           : null,
@@ -419,7 +425,7 @@ export async function importSmallGroups(
             name: true,
             leaderId: true,
             parentGroupId: true,
-            lifeStageId: true,
+            lifeStages: { select: { id: true } },
             genderFocus: true,
             language: true,
             ageRangeMin: true,
@@ -438,9 +444,17 @@ export async function importSmallGroups(
           continue
         }
         const enriched = enrichSmallGroupData(existing, data)
+        // Union existing + incoming life stages (enrich = add data, don't drop).
+        const enrichedLifeStageIds = enrichArray(
+          existing.lifeStages.map((ls) => ls.id),
+          lifeStageIds
+        )
         await db.smallGroup.update({
           where: { id: existingId },
-          data: enriched,
+          data: {
+            ...enriched,
+            lifeStages: { set: enrichedLifeStageIds.map((id) => ({ id })) },
+          },
         })
         if (enriched.leaderId) touchedLeaderIds.add(enriched.leaderId)
         result.updated++
@@ -448,13 +462,18 @@ export async function importSmallGroups(
       }
 
       if (existingId && resolution === "use-csv") {
-        await db.smallGroup.update({ where: { id: existingId }, data })
+        await db.smallGroup.update({
+          where: { id: existingId },
+          data: { ...data, lifeStages: { set: lifeStageIds.map((id) => ({ id })) } },
+        })
         if (data.leaderId) touchedLeaderIds.add(data.leaderId)
         result.updated++
         continue
       }
 
-      await db.smallGroup.create({ data })
+      await db.smallGroup.create({
+        data: { ...data, lifeStages: { connect: lifeStageIds.map((id) => ({ id })) } },
+      })
       if (data.leaderId) touchedLeaderIds.add(data.leaderId)
       result.created++
     } catch (e) {

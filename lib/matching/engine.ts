@@ -17,7 +17,7 @@ export function scoreGroup(
   weights: WeightConfig
 ): MatchResult {
   const breakdown: ScoreBreakdown = {
-    lifeStage: scoreLifeStage(candidate.lifeStageId, group.lifeStageId),
+    lifeStage: scoreLifeStage(candidate.lifeStageId, group.lifeStageIds),
     gender:    scoreGender(candidate.gender, group.genderFocus),
     language:  scoreLanguage(candidate.language, group.language),
     age:       scoreAge(candidate.birthMonth, candidate.birthYear, group.ageRangeMin, group.ageRangeMax),

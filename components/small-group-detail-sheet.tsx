@@ -31,7 +31,7 @@ type SmallGroupDetails = {
   id: string
   name: string
   leader: { firstName: string; lastName: string } | null
-  lifeStage: { name: string } | null
+  lifeStages: { name: string }[]
   genderFocus: "Male" | "Female" | "Mixed" | null
   language: string[]
   locationCity: string | null
@@ -107,7 +107,7 @@ export function SmallGroupDetailSheet({
                 </h3>
                 <div className="grid grid-cols-[120px_1fr] gap-y-1.5 text-sm">
                   <span className="text-muted-foreground">Life Stage</span>
-                  <span>{data.lifeStage?.name ?? "—"}</span>
+                  <span>{data.lifeStages.length > 0 ? data.lifeStages.map((ls) => ls.name).join(", ") : "—"}</span>
                   <span className="text-muted-foreground">Gender Focus</span>
                   <span>{data.genderFocus ?? "—"}</span>
                   <span className="text-muted-foreground">Language</span>

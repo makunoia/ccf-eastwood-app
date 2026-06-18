@@ -230,8 +230,8 @@ model LifeStage {
   members        Member[]
   guests         Guest[]
   ministries     Ministry[]
-  smallGroups    SmallGroup[]
-  breakoutGroups BreakoutGroup[]
+  smallGroups    SmallGroup[]    @relation("SmallGroupLifeStages")
+  breakoutGroups BreakoutGroup[] @relation("BreakoutGroupLifeStages")
 }
 
 model Member {
@@ -339,8 +339,7 @@ model SmallGroup {
   childGroups   SmallGroup[]   @relation("SmallGroupHierarchy")
 
   // Matching fields
-  lifeStageId   String?
-  lifeStage     LifeStage?     @relation(fields: [lifeStageId], references: [id])
+  lifeStages    LifeStage[]    @relation("SmallGroupLifeStages")
   genderFocus   GenderFocus?
   language      String[]
   ageRangeMin   Int?
@@ -559,8 +558,7 @@ model BreakoutGroup {
   coFacilitator   Volunteer?   @relation("CoFacilitatedGroups", fields: [coFacilitatorId], references: [id])
 
   // Matching fields (mirrors SmallGroup)
-  lifeStageId   String?
-  lifeStage     LifeStage?   @relation(fields: [lifeStageId], references: [id])
+  lifeStages    LifeStage[]  @relation("BreakoutGroupLifeStages")
   genderFocus   GenderFocus?
   language      String[]
   ageRangeMin   Int?

@@ -15,24 +15,25 @@ import {
 // scoreLifeStage
 // ---------------------------------------------------------------------------
 describe("scoreLifeStage", () => {
-  it("returns 1.0 when IDs match", () => {
-    expect(scoreLifeStage("ls-1", "ls-1")).toBe(1.0)
+  it("returns 1.0 when candidate's life stage is in the group's set", () => {
+    expect(scoreLifeStage("ls-1", ["ls-1"])).toBe(1.0)
+    expect(scoreLifeStage("ls-1", ["ls-2", "ls-1"])).toBe(1.0)
   })
 
-  it("returns 0.0 when IDs differ", () => {
-    expect(scoreLifeStage("ls-1", "ls-2")).toBe(0.0)
+  it("returns 0.0 when candidate's life stage is not in the group's set", () => {
+    expect(scoreLifeStage("ls-1", ["ls-2"])).toBe(0.0)
   })
 
-  it("returns 0.5 when group has no life stage (accepts all)", () => {
-    expect(scoreLifeStage("ls-1", null)).toBe(0.5)
+  it("returns 0.5 when group has no life stages (accepts all)", () => {
+    expect(scoreLifeStage("ls-1", [])).toBe(0.5)
   })
 
   it("returns 0.5 when candidate has no life stage data", () => {
-    expect(scoreLifeStage(null, "ls-1")).toBe(0.5)
+    expect(scoreLifeStage(null, ["ls-1"])).toBe(0.5)
   })
 
-  it("returns 0.5 when both are null", () => {
-    expect(scoreLifeStage(null, null)).toBe(0.5)
+  it("returns 0.5 when both are empty/null", () => {
+    expect(scoreLifeStage(null, [])).toBe(0.5)
   })
 })
 

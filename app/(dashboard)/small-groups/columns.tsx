@@ -41,8 +41,7 @@ export type SmallGroupRow = {
   parentGroupName: string | null
   memberCount: number
   tempMemberCount: number
-  lifeStage: string | null
-  lifeStageId: string | null
+  lifeStages: { id: string; name: string }[]
   language: string[]
   genderFocus: string | null
   ageRangeMin: number | null
@@ -185,10 +184,13 @@ export function buildColumns(selectable = false): ColumnDef<SmallGroupRow>[] {
       header: "Members",
     },
     {
-      accessorKey: "lifeStage",
+      id: "lifeStage",
+      accessorFn: (row) => row.lifeStages.map((ls) => ls.name).join(", "),
       header: "Life Stage",
       cell: ({ row }) =>
-        row.original.lifeStage ?? (
+        row.original.lifeStages.length > 0 ? (
+          row.original.lifeStages.map((ls) => ls.name).join(", ")
+        ) : (
           <span className="text-muted-foreground">—</span>
         ),
     },

@@ -186,7 +186,7 @@ describe("createSmallGroup / updateSmallGroup — scheduleTimeEnd", () => {
 
     const result = await createSmallGroup({
       name: "Group A", leaderId: leader.id, parentGroupId: "",
-      lifeStageId: lifeStage.id, genderFocus: "Mixed", language: [],
+      lifeStageIds: [lifeStage.id], genderFocus: "Mixed", language: [],
       ageRangeMin: "", ageRangeMax: "", meetingFormat: "InPerson",
       locationCity: "", memberLimit: "",
       scheduleDayOfWeek: "1", scheduleTimeStart: "09:00", scheduleTimeEnd: "10:30",
@@ -207,7 +207,7 @@ describe("createSmallGroup / updateSmallGroup — scheduleTimeEnd", () => {
 
     const result = await updateSmallGroup(group.id, {
       name: "Group A", leaderId: leader.id, parentGroupId: "",
-      lifeStageId: lifeStage.id, genderFocus: "Mixed", language: [],
+      lifeStageIds: [lifeStage.id], genderFocus: "Mixed", language: [],
       ageRangeMin: "", ageRangeMax: "", meetingFormat: "InPerson",
       locationCity: "", memberLimit: "",
       scheduleDayOfWeek: "1", scheduleTimeStart: "09:00", scheduleTimeEnd: "11:00",
@@ -269,7 +269,7 @@ describe("createBreakoutGroup / updateBreakoutGroup — BreakoutGroupSchedule.ti
     const { vol } = await seedConfirmedVolunteer(event.id, committee.id, role.id)
 
     const result = await createBreakoutGroup(event.id, {
-      name: "Table 1", facilitatorId: vol.id,
+      name: "Table 1", facilitatorId: vol.id, lifeStageIds: [],
       language: ["Filipino"], genderFocus: "Mixed", meetingFormat: "InPerson",
       schedule: { dayOfWeek: 1, timeStart: "09:00", timeEnd: "10:30" },
     })
@@ -289,7 +289,7 @@ describe("createBreakoutGroup / updateBreakoutGroup — BreakoutGroupSchedule.ti
     const { vol } = await seedConfirmedVolunteer(event.id, committee.id, role.id)
 
     const created = await createBreakoutGroup(event.id, {
-      name: "Table 1", facilitatorId: vol.id,
+      name: "Table 1", facilitatorId: vol.id, lifeStageIds: [],
       language: ["Filipino"], genderFocus: "Mixed", meetingFormat: "InPerson",
       schedule: { dayOfWeek: 1, timeStart: "09:00", timeEnd: "10:00" },
     })
@@ -297,7 +297,7 @@ describe("createBreakoutGroup / updateBreakoutGroup — BreakoutGroupSchedule.ti
     if (!created.success) return
 
     const updated = await updateBreakoutGroup(created.data.id, event.id, {
-      name: "Table 1", facilitatorId: vol.id,
+      name: "Table 1", facilitatorId: vol.id, lifeStageIds: [],
       language: ["Filipino"], genderFocus: "Mixed", meetingFormat: "InPerson",
       schedule: { dayOfWeek: 1, timeStart: "09:00", timeEnd: "10:45" },
     })

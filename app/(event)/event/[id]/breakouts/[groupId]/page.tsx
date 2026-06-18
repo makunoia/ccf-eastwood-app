@@ -10,7 +10,7 @@ const ledGroupsSelect = {
   select: {
     id: true,
     name: true,
-    lifeStageId: true,
+    lifeStages: { select: { id: true } },
     genderFocus: true,
     language: true,
     ageRangeMin: true,
@@ -38,7 +38,7 @@ async function getBreakoutGroup(groupId: string, eventId: string) {
                 select: {
                   id: true,
                   name: true,
-                  lifeStage: { select: { id: true, name: true } },
+                  lifeStages: { select: { id: true, name: true } },
                   genderFocus: true,
                   language: true,
                   ageRangeMin: true,
@@ -65,7 +65,7 @@ async function getBreakoutGroup(groupId: string, eventId: string) {
                 select: {
                   id: true,
                   name: true,
-                  lifeStage: { select: { id: true, name: true } },
+                  lifeStages: { select: { id: true, name: true } },
                   genderFocus: true,
                   language: true,
                   ageRangeMin: true,
@@ -83,7 +83,7 @@ async function getBreakoutGroup(groupId: string, eventId: string) {
       },
       linkedSmallGroup: { select: { id: true, name: true } },
       schedules: { select: { dayOfWeek: true, timeStart: true, timeEnd: true } },
-      lifeStage: { select: { id: true, name: true } },
+      lifeStages: { select: { id: true, name: true }, orderBy: { order: "asc" as const } },
       members: {
         orderBy: { assignedAt: "asc" },
         include: {
@@ -212,7 +212,7 @@ export default async function BreakoutGroupDetailPage({
               facilitatorId: group.facilitatorId,
               memberLimit: group.memberLimit,
               linkedSmallGroupId: group.linkedSmallGroupId,
-              lifeStageId: group.lifeStageId,
+              lifeStages: group.lifeStages,
               genderFocus: group.genderFocus,
               language: group.language,
               ageRangeMin: group.ageRangeMin,
@@ -240,7 +240,7 @@ export default async function BreakoutGroupDetailPage({
           coFacilitator: group.coFacilitator,
           linkedSmallGroupId: group.linkedSmallGroupId,
           linkedSmallGroup: group.linkedSmallGroup,
-          lifeStage: group.lifeStage,
+          lifeStages: group.lifeStages,
           genderFocus: group.genderFocus,
           language: group.language,
           ageRangeMin: group.ageRangeMin,

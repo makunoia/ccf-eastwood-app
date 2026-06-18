@@ -75,7 +75,7 @@ function buildSmallGroupProfile(
   g: {
     id: string
     name: string
-    lifeStageId: string | null
+    lifeStages: { id: string }[]
     genderFocus: "Male" | "Female" | "Mixed" | null
     language: string[]
     ageRangeMin: number | null
@@ -95,7 +95,7 @@ function buildSmallGroupProfile(
   return {
     id: g.id,
     name: g.name,
-    lifeStageId: g.lifeStageId,
+    lifeStageIds: g.lifeStages.map((ls) => ls.id),
     genderFocus: g.genderFocus,
     language: g.language,
     ageRangeMin: g.ageRangeMin,
@@ -118,7 +118,7 @@ function buildSmallGroupProfile(
 const SMALL_GROUP_SCORE_SELECT = {
   id: true,
   name: true,
-  lifeStageId: true,
+  lifeStages: { select: { id: true } },
   genderFocus: true,
   language: true,
   ageRangeMin: true,
@@ -330,7 +330,7 @@ export async function matchSmallGroups(
     if (g.memberLimit !== null && g._count.members >= g.memberLimit) return false
     const gp = buildSmallGroupProfile(g)
     if (scoreGender(candidate.gender, gp.genderFocus) === 0.0) return false
-    if (scoreLifeStage(candidate.lifeStageId, gp.lifeStageId) === 0.0) return false
+    if (scoreLifeStage(candidate.lifeStageId, gp.lifeStageIds) === 0.0) return false
     if (scoreSchedule(candidate.scheduleSlots, gp.scheduleSlots) === 0.0) return false
     return true
   })
@@ -444,7 +444,7 @@ export async function matchSmallGroupsWithEscalation(
     if (g.memberLimit !== null && g._count.members >= g.memberLimit) return false
     const gp = buildSmallGroupProfile(g)
     if (scoreGender(candidate.gender, gp.genderFocus) === 0.0) return false
-    if (scoreLifeStage(candidate.lifeStageId, gp.lifeStageId) === 0.0) return false
+    if (scoreLifeStage(candidate.lifeStageId, gp.lifeStageIds) === 0.0) return false
     if (scoreSchedule(candidate.scheduleSlots, gp.scheduleSlots) === 0.0) return false
     return true
   })
@@ -578,7 +578,7 @@ export async function matchBreakoutGroups(
     select: {
       id: true,
       name: true,
-      lifeStageId: true,
+      lifeStages: { select: { id: true } },
       genderFocus: true,
       language: true,
       ageRangeMin: true,
@@ -624,7 +624,7 @@ export async function matchBreakoutGroups(
       g.linkedSmallGroup?.genderFocus
     )
     if (scoreGender(candidate.gender, effectiveGenderFocus) === 0.0) return false
-    if (scoreLifeStage(candidate.lifeStageId, g.lifeStageId) === 0.0) return false
+    if (scoreLifeStage(candidate.lifeStageId, g.lifeStages.map((ls) => ls.id)) === 0.0) return false
     return true
   })
 
@@ -647,7 +647,7 @@ export async function matchBreakoutGroups(
       const profile: GroupProfile = {
         id: g.id,
         name: g.name,
-        lifeStageId: g.lifeStageId,
+        lifeStageIds: g.lifeStages.map((ls) => ls.id),
         genderFocus: effectiveGenderFocus,
         language: g.language,
         ageRangeMin: g.ageRangeMin,

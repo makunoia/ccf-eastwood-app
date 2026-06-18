@@ -69,7 +69,7 @@ import { checkBreakoutDuplicates, importBreakoutGroups } from "./import-actions"
 type LedGroup = {
   id: string
   name: string
-  lifeStageId: string | null
+  lifeStages: { id: string }[]
   genderFocus: string | null
   language: string[]
   ageRangeMin: number | null
@@ -97,8 +97,7 @@ export type BreakoutGroupRow = {
   memberCount: number
   linkedSmallGroupId: string | null
   linkedSmallGroup: { id: string; name: string } | null
-  lifeStageId: string | null
-  lifeStage: { id: string; name: string } | null
+  lifeStages: { id: string; name: string }[]
   genderFocus: string | null
   language: string[]
   ageRangeMin: number | null
@@ -116,7 +115,7 @@ function volunteerName(v: { member: { firstName: string; lastName: string } }) {
 
 function deriveProfileFromGroup(g: LedGroup) {
   return {
-    lifeStageId: g.lifeStageId ?? "",
+    lifeStageIds: g.lifeStages.map((ls) => ls.id),
     genderFocus: g.genderFocus ?? "",
     language: g.language,
     ageRangeMin: g.ageRangeMin != null ? String(g.ageRangeMin) : "",
@@ -136,7 +135,7 @@ const EMPTY_FORM = {
   name: "",
   memberLimit: "",
   facilitatorId: "",
-  lifeStageId: "",
+  lifeStageIds: [] as string[],
   genderFocus: "",
   language: [] as string[],
   ageRangeMin: "",
@@ -154,10 +153,10 @@ type GroupFormDialogProps = {
   group?: BreakoutGroupRow
   lifeStages: { id: string; name: string }[]
   volunteers: Volunteer[]
-  defaultLifeStageId?: string
+  defaultLifeStageIds?: string[]
 }
 
-function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volunteers, defaultLifeStageId = "" }: GroupFormDialogProps) {
+function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volunteers, defaultLifeStageIds = [] }: GroupFormDialogProps) {
   const isEdit = !!group
   const [form, setForm] = React.useState(EMPTY_FORM)
   const [sourceGroupId, setSourceGroupId] = React.useState("")
@@ -173,7 +172,7 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
               name: group.name,
               memberLimit: group.memberLimit?.toString() ?? "",
               facilitatorId: group.facilitatorId ?? "",
-              lifeStageId: group.lifeStageId ?? "",
+              lifeStageIds: group.lifeStages.map((ls) => ls.id),
               genderFocus: group.genderFocus ?? "",
               language: group.language ?? [],
               ageRangeMin: group.ageRangeMin?.toString() ?? "",
@@ -183,10 +182,10 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
               scheduleTimeStart: group.schedules[0]?.timeStart ?? "",
               scheduleTimeEnd: group.schedules[0]?.timeEnd ?? "",
             }
-          : { ...EMPTY_FORM, lifeStageId: defaultLifeStageId }
+          : { ...EMPTY_FORM, lifeStageIds: defaultLifeStageIds }
       )
     }
-  }, [open, group, defaultLifeStageId])
+  }, [open, group, defaultLifeStageIds])
 
   function handleVolunteerChange(volunteerId: string) {
     setSourceGroupId("")
@@ -243,7 +242,7 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
       facilitatorId: form.facilitatorId || null,
       memberLimit: form.memberLimit ? Number(form.memberLimit) : null,
       linkedSmallGroupId: sourceGroupId || null,
-      lifeStageId: form.lifeStageId || null,
+      lifeStageIds: form.lifeStageIds,
       genderFocus: (form.genderFocus as "Male" | "Female" | "Mixed") || null,
       language: form.language,
       ageRangeMin: form.ageRangeMin ? Number(form.ageRangeMin) : null,
@@ -337,14 +336,14 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
             </p>
 
             <div className="space-y-1.5">
-              <Label>Life Stage</Label>
-              <Select value={form.lifeStageId} onValueChange={(v) => setForm((f) => ({ ...f, lifeStageId: v === "_none" ? "" : v }))}>
-                <SelectTrigger><SelectValue placeholder="Any" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="_none">Any</SelectItem>
-                  {lifeStages.map((ls) => <SelectItem key={ls.id} value={ls.id}>{ls.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <Label>Life Stages</Label>
+              <MultiSelect
+                className="w-full"
+                placeholder="Any"
+                options={lifeStages.map((ls) => ({ value: ls.id, label: ls.name }))}
+                value={form.lifeStageIds}
+                onChange={(v) => setForm((f) => ({ ...f, lifeStageIds: v }))}
+              />
             </div>
 
             <div className="space-y-1.5">
@@ -563,10 +562,10 @@ function buildColumns(
     {
       id: "lifeStage",
       header: "Life Stage",
-      accessorFn: (row) => row.lifeStage?.name ?? "",
+      accessorFn: (row) => row.lifeStages.map((ls) => ls.name).join(", "),
       cell: ({ row }) =>
-        row.original.lifeStage ? (
-          <span>{row.original.lifeStage.name}</span>
+        row.original.lifeStages.length > 0 ? (
+          <span>{row.original.lifeStages.map((ls) => ls.name).join(", ")}</span>
         ) : (
           <span className="text-muted-foreground">—</span>
         ),
@@ -594,7 +593,7 @@ type Props = {
   unassignedCount: number
   volunteers: Volunteer[]
   lifeStages: { id: string; name: string }[]
-  defaultLifeStageId?: string
+  defaultLifeStageIds?: string[]
   canImport?: boolean
 }
 
@@ -605,7 +604,7 @@ export function BreakoutGroupsTable({
   unassignedCount,
   volunteers,
   lifeStages,
-  defaultLifeStageId = "",
+  defaultLifeStageIds = [],
   canImport = false,
 }: Props) {
   const [search, setSearch] = React.useState("")
@@ -628,7 +627,7 @@ export function BreakoutGroupsTable({
       )
     }
     if (lifeStageFilter !== "_all") {
-      rows = rows.filter((g) => g.lifeStageId === lifeStageFilter)
+      rows = rows.filter((g) => g.lifeStages.some((ls) => ls.id === lifeStageFilter))
     }
     return rows
   }, [breakoutGroups, search, lifeStageFilter])
@@ -771,10 +770,10 @@ export function BreakoutGroupsTable({
                 <span>{group.linkedSmallGroup?.name ?? <span className="text-muted-foreground">—</span>}</span>
                 <span className="text-muted-foreground">Members</span>
                 <span>{group.memberLimit != null ? `${group.memberCount} / ${group.memberLimit}` : group.memberCount}</span>
-                {group.lifeStage && (
+                {group.lifeStages.length > 0 && (
                   <>
                     <span className="text-muted-foreground">Life Stage</span>
-                    <span>{group.lifeStage.name}</span>
+                    <span>{group.lifeStages.map((ls) => ls.name).join(", ")}</span>
                   </>
                 )}
               </div>
@@ -790,7 +789,7 @@ export function BreakoutGroupsTable({
         eventId={eventId}
         lifeStages={lifeStages}
         volunteers={volunteers}
-        defaultLifeStageId={defaultLifeStageId}
+        defaultLifeStageIds={defaultLifeStageIds}
       />
       <GroupFormDialog
         open={!!editingGroup}
@@ -799,7 +798,7 @@ export function BreakoutGroupsTable({
         group={editingGroup ?? undefined}
         lifeStages={lifeStages}
         volunteers={volunteers}
-        defaultLifeStageId={defaultLifeStageId}
+        defaultLifeStageIds={defaultLifeStageIds}
       />
       <DeleteGroupDialog
         group={deletingGroup}

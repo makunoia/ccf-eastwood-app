@@ -206,7 +206,8 @@ describe("deleteSmallGroupsBatch / setSmallGroupsLifeStageBatch", () => {
 
     const result = await setSmallGroupsLifeStageBatch([a.id], ls.id)
     expect(result.success).toBe(true)
-    expect((await db.smallGroup.findUnique({ where: { id: a.id } }))?.lifeStageId).toBe(ls.id)
+    const updated = await db.smallGroup.findUnique({ where: { id: a.id }, include: { lifeStages: true } })
+    expect(updated?.lifeStages.map((s) => s.id)).toEqual([ls.id])
   })
 })
 

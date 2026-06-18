@@ -2,7 +2,7 @@ import { z } from "zod"
 
 export const groupFieldsSchema = z.object({
   name: z.string().min(1),
-  lifeStageId: z.string().nullable(),
+  lifeStageIds: z.array(z.string()).default([]),
   genderFocus: z.enum(["Male", "Female", "Mixed"]).nullable(),
   language: z.array(z.string()),
   ageRangeMin: z.number().int().min(0).nullable(),
@@ -51,7 +51,7 @@ export type VolunteerIdentity = {
   ledGroups: {
     id: string
     name: string
-    lifeStageId: string | null
+    lifeStageIds: string[]
     genderFocus: "Male" | "Female" | "Mixed" | null
     language: string[]
     ageRangeMin: number | null

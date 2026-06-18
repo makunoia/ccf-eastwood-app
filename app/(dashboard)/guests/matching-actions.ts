@@ -12,7 +12,7 @@ type SmallGroupDetails = {
   id: string
   name: string
   leader: { firstName: string; lastName: string } | null
-  lifeStage: { name: string } | null
+  lifeStages: { name: string }[]
   genderFocus: "Male" | "Female" | "Mixed" | null
   language: string[]
   locationCity: string | null
@@ -39,7 +39,7 @@ export async function getSmallGroupDetails(
         id: true,
         name: true,
         leader: { select: { firstName: true, lastName: true } },
-        lifeStage: { select: { name: true } },
+        lifeStages: { select: { name: true }, orderBy: { order: "asc" } },
         genderFocus: true,
         language: true,
         locationCity: true,
