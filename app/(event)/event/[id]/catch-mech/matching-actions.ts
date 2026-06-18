@@ -184,7 +184,7 @@ export async function findCatchMechSmallGroupMatches(
       const SMALL_GROUP_SCORE_SELECT = {
         id: true,
         name: true,
-        lifeStageId: true,
+        lifeStages: { select: { id: true } },
         genderFocus: true,
         language: true,
         ageRangeMin: true,
@@ -210,7 +210,7 @@ export async function findCatchMechSmallGroupMatches(
             ? [{ dayOfWeek: g.scheduleDayOfWeek, timeStart: g.scheduleTimeStart, timeEnd: addOneHour(g.scheduleTimeStart) }]
             : []
         if (scoreGender(candidate.gender, g.genderFocus) === 0.0) return false
-        if (scoreLifeStage(candidate.lifeStageId, g.lifeStageId) === 0.0) return false
+        if (scoreLifeStage(candidate.lifeStageId, g.lifeStages.map((ls) => ls.id)) === 0.0) return false
         if (scheduleSlots.length > 0 && scoreSchedule(candidate.scheduleSlots, scheduleSlots) === 0.0) return false
         return true
       })
@@ -223,7 +223,7 @@ export async function findCatchMechSmallGroupMatches(
           const profile = {
             id: g.id,
             name: g.name,
-            lifeStageId: g.lifeStageId,
+            lifeStageIds: g.lifeStages.map((ls) => ls.id),
             genderFocus: g.genderFocus,
             language: g.language,
             ageRangeMin: g.ageRangeMin,

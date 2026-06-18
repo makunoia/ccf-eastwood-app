@@ -96,7 +96,7 @@ export default async function DashboardPage({
       take: 5,
       include: {
         leader: { select: { firstName: true, lastName: true } },
-        lifeStage: { select: { name: true } },
+        lifeStages: { select: { name: true }, orderBy: { order: "asc" } },
         _count: { select: { members: true } },
       },
     }),

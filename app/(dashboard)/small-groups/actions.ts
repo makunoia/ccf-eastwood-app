@@ -49,7 +49,7 @@ export async function createSmallGroup(
           name: parsed.data.name,
           leaderId: parsed.data.leaderId,
           parentGroupId: parsed.data.parentGroupId ?? null,
-          lifeStageId: parsed.data.lifeStageId ?? null,
+          lifeStages: { connect: parsed.data.lifeStageIds.map((id) => ({ id })) },
           genderFocus: parsed.data.genderFocus ?? null,
           language: parsed.data.language,
           ageRangeMin: parsed.data.ageRangeMin ?? null,
@@ -174,7 +174,7 @@ export async function updateSmallGroup(
           name: parsed.data.name,
           leaderId: parsed.data.leaderId,
           parentGroupId: parsed.data.parentGroupId ?? null,
-          lifeStageId: parsed.data.lifeStageId ?? null,
+          lifeStages: { set: parsed.data.lifeStageIds.map((id) => ({ id })) },
           genderFocus: parsed.data.genderFocus ?? null,
           language: parsed.data.language,
           ageRangeMin: parsed.data.ageRangeMin ?? null,
@@ -264,13 +264,22 @@ export async function setSmallGroupsLifeStageBatch(
 
   if (ids.length === 0) return { success: true, data: { updated: 0 } }
 
+  // SmallGroup life stage is many-to-many; a bulk "set" replaces each group's
+  // life stages with the single chosen one (or clears them when null).
+  const lifeStages = lifeStageId
+    ? { set: [{ id: lifeStageId }] }
+    : { set: [] }
+
   try {
-    const result = await db.smallGroup.updateMany({
-      where: { id: { in: ids } },
-      data: { lifeStageId },
+    let updated = 0
+    await db.$transaction(async (tx) => {
+      for (const id of ids) {
+        await tx.smallGroup.update({ where: { id }, data: { lifeStages } })
+        updated++
+      }
     })
     revalidatePath("/small-groups")
-    return { success: true, data: { updated: result.count } }
+    return { success: true, data: { updated } }
   } catch {
     return { success: false, error: "Failed to update life stage" }
   }

@@ -40,7 +40,7 @@ import { updateBreakoutGroup, deleteBreakoutGroup } from "@/app/(dashboard)/even
 type LedGroup = {
   id: string
   name: string
-  lifeStageId: string | null
+  lifeStages: { id: string }[]
   genderFocus: string | null
   language: string[]
   ageRangeMin: number | null
@@ -63,7 +63,7 @@ export type EditableGroupData = {
   facilitatorId: string | null
   memberLimit: number | null
   linkedSmallGroupId: string | null
-  lifeStageId: string | null
+  lifeStages: { id: string }[]
   genderFocus: string | null
   language: string[]
   ageRangeMin: number | null
@@ -77,7 +77,7 @@ const GENDER_FOCUS_LABELS: Record<string, string> = { Male: "Male", Female: "Fem
 
 function deriveProfileFromGroup(g: LedGroup) {
   return {
-    lifeStageId: g.lifeStageId ?? "",
+    lifeStageIds: g.lifeStages.map((ls) => ls.id),
     genderFocus: g.genderFocus ?? "",
     language: g.language,
     ageRangeMin: g.ageRangeMin != null ? String(g.ageRangeMin) : "",
@@ -108,7 +108,7 @@ function EditDialog({
     name: "",
     memberLimit: "",
     facilitatorId: "",
-    lifeStageId: "",
+    lifeStageIds: [] as string[],
     genderFocus: "",
     language: [] as string[],
     ageRangeMin: "",
@@ -129,7 +129,7 @@ function EditDialog({
         name: group.name,
         memberLimit: group.memberLimit?.toString() ?? "",
         facilitatorId: group.facilitatorId ?? "",
-        lifeStageId: group.lifeStageId ?? "",
+        lifeStageIds: group.lifeStages.map((ls) => ls.id),
         genderFocus: group.genderFocus ?? "",
         language: group.language ?? [],
         ageRangeMin: group.ageRangeMin?.toString() ?? "",
@@ -197,7 +197,7 @@ function EditDialog({
       facilitatorId: form.facilitatorId || null,
       memberLimit: form.memberLimit ? Number(form.memberLimit) : null,
       linkedSmallGroupId: sourceGroupId || null,
-      lifeStageId: form.lifeStageId || null,
+      lifeStageIds: form.lifeStageIds,
       genderFocus: (form.genderFocus as "Male" | "Female" | "Mixed") || null,
       language: form.language,
       ageRangeMin: form.ageRangeMin ? Number(form.ageRangeMin) : null,
@@ -281,14 +281,14 @@ function EditDialog({
             </p>
 
             <div className="space-y-1.5">
-              <Label>Life Stage</Label>
-              <Select value={form.lifeStageId} onValueChange={(v) => setForm((f) => ({ ...f, lifeStageId: v === "_none" ? "" : v }))}>
-                <SelectTrigger><SelectValue placeholder="Any" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="_none">Any</SelectItem>
-                  {lifeStages.map((ls) => <SelectItem key={ls.id} value={ls.id}>{ls.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <Label>Life Stages</Label>
+              <MultiSelect
+                className="w-full"
+                placeholder="Any"
+                options={lifeStages.map((ls) => ({ value: ls.id, label: ls.name }))}
+                value={form.lifeStageIds}
+                onChange={(v) => setForm((f) => ({ ...f, lifeStageIds: v }))}
+              />
             </div>
 
             <div className="space-y-1.5">

@@ -18,11 +18,11 @@ function slotsOverlap(a: TimeSlot, b: TimeSlot): boolean {
 
 export function scoreLifeStage(
   candidateLifeStageId: string | null,
-  groupLifeStageId: string | null
+  groupLifeStageIds: string[]
 ): number {
-  if (groupLifeStageId === null) return 0.5 // group accepts all
+  if (groupLifeStageIds.length === 0) return 0.5 // group accepts all
   if (candidateLifeStageId === null) return 0.5 // no data on candidate
-  return candidateLifeStageId === groupLifeStageId ? 1.0 : 0.0
+  return groupLifeStageIds.includes(candidateLifeStageId) ? 1.0 : 0.0
 }
 
 export function scoreGender(

@@ -66,7 +66,7 @@ const UNASSIGNED = "__unassigned__"
 type LedGroup = {
   id: string
   name: string
-  lifeStage: { id: string; name: string } | null
+  lifeStages: { id: string; name: string }[]
   genderFocus: string | null
   language: string[]
   ageRangeMin: number | null
@@ -140,7 +140,7 @@ export type BreakoutDetailData = {
   coFacilitator: FacilitatorVolunteer | null
   linkedSmallGroupId: string | null
   linkedSmallGroup: { id: string; name: string } | null
-  lifeStage: { id: string; name: string } | null
+  lifeStages: { id: string; name: string }[]
   genderFocus: string | null
   language: string[]
   ageRangeMin: number | null
@@ -196,7 +196,7 @@ function SmallGroupCard({ group }: { group: LedGroup }) {
   const [open, setOpen] = React.useState(false)
 
   const details: { label: string; value: string }[] = []
-  if (group.lifeStage) details.push({ label: "Life Stage", value: group.lifeStage.name })
+  if (group.lifeStages.length > 0) details.push({ label: "Life Stage", value: group.lifeStages.map((ls) => ls.name).join(", ") })
   if (group.genderFocus) details.push({ label: "Gender Focus", value: GENDER_FOCUS_LABELS[group.genderFocus] ?? group.genderFocus })
   if (group.language.length > 0) details.push({ label: "Language", value: group.language.join(", ") })
   if (group.ageRangeMin != null || group.ageRangeMax != null) {

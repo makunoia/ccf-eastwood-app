@@ -7,6 +7,7 @@ import {
 } from "@/app/(event)/event/[id]/volunteers/actions"
 import { importBreakoutGroups } from "@/app/(event)/event/[id]/breakouts/import-actions"
 import type { RowResolution } from "@/lib/import/types"
+import { formatPhilippinePhone } from "@/lib/utils"
 
 beforeEach(async () => {
   vi.clearAllMocks()
@@ -105,25 +106,47 @@ function row(mapped: Record<string, string>, extra?: { resolution?: RowResolutio
   }
 }
 
+// Seed an event volunteer whose member carries a canonical mobile and leads
+// exactly one small group — the shape the import matches a facilitator against
+// (and auto-links that single led group as the breakout's small group).
+async function seedFacilitator(
+  eventId: string,
+  opts: { phone: string; leadsGroups?: number }
+) {
+  const member = await db.member.create({
+    data: {
+      firstName: "Faci",
+      lastName: "Litator",
+      language: [],
+      dateJoined: new Date(),
+      phone: formatPhilippinePhone(opts.phone),
+    },
+  })
+  const ledGroupIds: string[] = []
+  for (let i = 0; i < (opts.leadsGroups ?? 0); i++) {
+    const g = await db.smallGroup.create({
+      data: { name: `Led Group ${i} ${Math.random()}`, leaderId: member.id },
+    })
+    ledGroupIds.push(g.id)
+  }
+  const committee = await db.volunteerCommittee.create({ data: { eventId, name: `C ${Math.random()}` } })
+  const role = await db.committeeRole.create({ data: { committeeId: committee.id, name: "Facilitator" } })
+  const volunteer = await db.volunteer.create({
+    data: { memberId: member.id, eventId, committeeId: committee.id, preferredRoleId: role.id },
+  })
+  return { volunteer, member, ledGroupIds }
+}
+
 describe("importBreakoutGroups", () => {
-  it("creates breakout groups with resolved life stage, linked group, and a schedule", async () => {
+  it("creates a breakout group, matching the facilitator by mobile and auto-linking their sole small group", async () => {
     const event = await db.event.create({ data: { name: "Conf", type: "OneTime", startDate: new Date(), endDate: new Date() } })
-    const lifeStage = await db.lifeStage.create({ data: { name: "Young Professional", order: 1 } })
-    const linked = await db.smallGroup.create({ data: { name: "Eastwood Pioneers" } })
+    const { volunteer, ledGroupIds } = await seedFacilitator(event.id, { phone: "09171234567", leadsGroups: 1 })
 
     const result = await importBreakoutGroups({ eventId: event.id }, [
       row({
         name: "Group 1",
-        linkedSmallGroupName: "eastwood pioneers",
-        lifeStage: "young professional",
-        genderFocus: "Mixed",
-        language: "English",
-        ageRangeMin: "21",
-        ageRangeMax: "35",
-        meetingFormat: "InPerson",
+        facilitatorMobile: "0917 123 4567",
         memberLimit: "12",
-        scheduleDayOfWeek: "Wednesday",
-        scheduleTime: "7:00 PM",
       }),
     ])
 
@@ -132,29 +155,24 @@ describe("importBreakoutGroups", () => {
 
     const created = await db.breakoutGroup.findFirst({
       where: { eventId: event.id, name: "Group 1" },
-      include: { schedules: true },
     })
-    expect(created?.lifeStageId).toBe(lifeStage.id)
-    expect(created?.linkedSmallGroupId).toBe(linked.id)
-    expect(created?.genderFocus).toBe("Mixed")
-    expect(created?.language).toEqual(["English"])
+    expect(created?.facilitatorId).toBe(volunteer.id)
+    expect(created?.linkedSmallGroupId).toBe(ledGroupIds[0])
     expect(created?.memberLimit).toBe(12)
-    expect(created?.schedules).toHaveLength(1)
-    expect(created?.schedules[0]).toMatchObject({ dayOfWeek: 3, timeStart: "19:00", timeEnd: "21:00" })
   })
 
-  it("skips a row whose linked small group name does not exist", async () => {
+  it("skips a row whose facilitator mobile matches no event volunteer", async () => {
     const event = await db.event.create({ data: { name: "Conf2", type: "OneTime", startDate: new Date(), endDate: new Date() } })
 
     const result = await importBreakoutGroups({ eventId: event.id }, [
-      row({ name: "Group X", linkedSmallGroupName: "Nonexistent" }),
+      row({ name: "Group X", facilitatorMobile: "0917 000 0000" }),
     ])
 
     expect(result.success).toBe(true)
     if (result.success) {
       expect(result.data.created).toBe(0)
       expect(result.data.skipped).toBe(1)
-      expect(result.data.errors[0].message).toContain("No small group found")
+      expect(result.data.errors[0].message).toContain("No event volunteer found")
     }
     expect(await db.breakoutGroup.count()).toBe(0)
   })
@@ -162,18 +180,18 @@ describe("importBreakoutGroups", () => {
   it("enriches an existing breakout when re-importing with use-existing", async () => {
     const event = await db.event.create({ data: { name: "Conf3", type: "OneTime", startDate: new Date(), endDate: new Date() } })
     const existing = await db.breakoutGroup.create({
-      data: { eventId: event.id, name: "Group A", language: [], locationCity: null },
+      data: { eventId: event.id, name: "Group A", language: [], memberLimit: null },
     })
 
     const result = await importBreakoutGroups({ eventId: event.id }, [
       row(
-        { name: "Group A", locationCity: "Quezon City" },
+        { name: "Group A", memberLimit: "15" },
         { resolution: "use-existing", existingId: existing.id }
       ),
     ])
 
     expect(result.success).toBe(true)
     if (result.success) expect(result.data.updated).toBe(1)
-    expect((await db.breakoutGroup.findUnique({ where: { id: existing.id } }))?.locationCity).toBe("Quezon City")
+    expect((await db.breakoutGroup.findUnique({ where: { id: existing.id } }))?.memberLimit).toBe(15)
   })
 })

@@ -63,7 +63,7 @@ function SmallGroupCard({ group, allIds }: { group: SmallGroupRow; allIds: strin
               <span className="text-muted-foreground">Members</span>
               <span>{group.memberCount}</span>
               <span className="text-muted-foreground">Life Stage</span>
-              <span>{group.lifeStage ?? <span className="text-muted-foreground">—</span>}</span>
+              <span>{group.lifeStages.length > 0 ? group.lifeStages.map((ls) => ls.name).join(", ") : <span className="text-muted-foreground">—</span>}</span>
               <span className="text-muted-foreground">Temp Members</span>
               <span>{group.tempMemberCount > 0 ? group.tempMemberCount : <span className="text-muted-foreground">—</span>}</span>
             </div>

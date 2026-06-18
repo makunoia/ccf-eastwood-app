@@ -75,6 +75,7 @@ describe("CCF-78 — createBreakoutGroup with Timothy facilitator", () => {
 
     const result = await createBreakoutGroup(event.id, {
       name: "Table 1",
+      lifeStageIds: [],
       facilitatorId: volunteer.id,
       language: ["Filipino"],
       genderFocus: "Mixed",
@@ -91,6 +92,7 @@ describe("CCF-78 — createBreakoutGroup with Timothy facilitator", () => {
 
     const result = await createBreakoutGroup(event.id, {
       name: "Table 1",
+      lifeStageIds: [],
       facilitatorId: volunteer.id,
       language: [],
     })
@@ -106,6 +108,7 @@ describe("CCF-78 — createBreakoutGroup with Timothy facilitator", () => {
 
     const result = await createBreakoutGroup(event.id, {
       name: "Table 1",
+      lifeStageIds: [],
       facilitatorId: volunteer.id,
       genderFocus: "Mixed",
       language: [],
@@ -124,6 +127,7 @@ describe("CCF-78 — createBreakoutGroup with Timothy facilitator", () => {
 
     const result = await createBreakoutGroup(event.id, {
       name: "Table 1",
+      lifeStageIds: [],
       facilitatorId: volunteer.id,
       genderFocus: "Mixed",
       language: ["Filipino"],
@@ -142,6 +146,7 @@ describe("CCF-78 — createBreakoutGroup with Timothy facilitator", () => {
 
     const result = await createBreakoutGroup(event.id, {
       name: "Table 2",
+      lifeStageIds: [],
       facilitatorId: volunteer.id,
       language: [],
     })
@@ -154,6 +159,7 @@ describe("CCF-78 — createBreakoutGroup with Timothy facilitator", () => {
 
     const result = await createBreakoutGroup(event.id, {
       name: "Table 3",
+      lifeStageIds: [],
       language: [],
     })
 
@@ -173,6 +179,7 @@ describe("CCF-78 — updateBreakoutGroup with Timothy facilitator", () => {
 
     const result = await updateBreakoutGroup(group.id, event.id, {
       name: "Table 1",
+      lifeStageIds: [],
       facilitatorId: volunteer.id,
       language: [],
     })
@@ -191,6 +198,7 @@ describe("CCF-78 — updateBreakoutGroup with Timothy facilitator", () => {
 
     const result = await updateBreakoutGroup(group.id, event.id, {
       name: "Table 1",
+      lifeStageIds: [],
       facilitatorId: volunteer.id,
       genderFocus: "Mixed",
       language: ["Filipino"],
@@ -211,6 +219,7 @@ describe("CCF-78 — regression", () => {
 
     const result = await createBreakoutGroup(event.id, {
       name: "Regression Table",
+      lifeStageIds: [],
       facilitatorId: volunteer.id,
       language: [],
     })
@@ -224,6 +233,7 @@ describe("CCF-78 — regression", () => {
 
     const result = await createBreakoutGroup(event.id, {
       name: "Table 1",
+      lifeStageIds: [],
       facilitatorId: volunteer.id,
       language: [],
       // All profile fields missing

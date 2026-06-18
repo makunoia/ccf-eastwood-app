@@ -36,7 +36,7 @@ export async function lookupVolunteer(
         select: {
           id: true,
           name: true,
-          lifeStageId: true,
+          lifeStages: { select: { id: true } },
           genderFocus: true,
           language: true,
           ageRangeMin: true,
@@ -78,7 +78,10 @@ export async function lookupVolunteer(
       phone: member.phone,
       groupStatus: member.groupStatus,
       schedulePreferences: member.schedulePreferences,
-      ledGroups: member.ledGroups,
+      ledGroups: member.ledGroups.map((g) => {
+        const { lifeStages, ...rest } = g
+        return { ...rest, lifeStageIds: lifeStages.map((ls) => ls.id) }
+      }),
     },
   }
 }
@@ -135,7 +138,6 @@ export async function submitVolunteerInfo(
 
         const groupData = {
           name: groupFields.name,
-          lifeStageId: groupFields.lifeStageId,
           genderFocus: groupFields.genderFocus,
           language: groupFields.language,
           ageRangeMin: groupFields.ageRangeMin,
@@ -147,18 +149,19 @@ export async function submitVolunteerInfo(
           scheduleTimeStart: groupFields.scheduleTimeStart,
           scheduleTimeEnd: groupFields.scheduleTimeEnd,
         }
+        const lifeStageConnect = groupFields.lifeStageIds.map((id) => ({ id }))
 
         if (existing) {
           await tx.smallGroup.update({
             where: { id: existing.id },
-            data: groupData,
+            data: { ...groupData, lifeStages: { set: lifeStageConnect } },
           })
           changes.push(`Updated group: "${groupFields.name}"`)
         } else {
           // Leaders get Active immediately; Timothy gets Pending until first member
           const status = leadershipStatus === "leader" ? "Active" : "Pending"
           const created = await tx.smallGroup.create({
-            data: { ...groupData, leaderId: memberId, status },
+            data: { ...groupData, leaderId: memberId, status, lifeStages: { connect: lifeStageConnect } },
             select: { id: true },
           })
           await tx.smallGroupLog.create({

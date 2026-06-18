@@ -350,7 +350,7 @@ async function main() {
     data: {
       name: "Family Alpha",
       leaderId: james.id,
-      lifeStageId: family.id,
+      lifeStages: { connect: { id: family.id } },
       genderFocus: "Mixed",
       language: ["Filipino"],
       ageRangeMin: 30,
@@ -365,7 +365,7 @@ async function main() {
     data: {
       name: "Young Adults Connect",
       leaderId: maria.id,
-      lifeStageId: youngAdults.id,
+      lifeStages: { connect: { id: youngAdults.id } },
       genderFocus: "Mixed",
       language: ["English"],
       ageRangeMin: 20,
@@ -380,7 +380,7 @@ async function main() {
     data: {
       name: "Youth Crew",
       leaderId: daniel.id,
-      lifeStageId: youth.id,
+      lifeStages: { connect: { id: youth.id } },
       genderFocus: "Mixed",
       language: ["Filipino"],
       ageRangeMin: 13,
@@ -395,7 +395,7 @@ async function main() {
     data: {
       name: "Seniors Fellowship",
       leaderId: ruth.id,
-      lifeStageId: seniors.id,
+      lifeStages: { connect: { id: seniors.id } },
       genderFocus: "Mixed",
       language: ["Filipino"],
       ageRangeMin: 55,
@@ -418,7 +418,7 @@ async function main() {
       name: "Family Beta",
       leaderId: samuel.id,
       parentGroupId: familyAlpha.id,   // Samuel is a member of Family Alpha
-      lifeStageId: family.id,
+      lifeStages: { connect: { id: family.id } },
       genderFocus: "Mixed",
       language: ["Filipino"],
       ageRangeMin: 28,
@@ -434,7 +434,7 @@ async function main() {
       name: "Young Professionals",
       leaderId: caleb.id,
       parentGroupId: youngAdultsConnect.id,  // Caleb is a member of Young Adults Connect
-      lifeStageId: youngAdults.id,
+      lifeStages: { connect: { id: youngAdults.id } },
       genderFocus: "Mixed",
       language: ["English"],
       ageRangeMin: 22,

@@ -44,7 +44,7 @@ type LeadershipStatus = "leader" | "timothy" | "none"
 function emptyGroupFields(): GroupFields {
   return {
     name: "",
-    lifeStageId: null,
+    lifeStageIds: [],
     genderFocus: null,
     language: [],
     ageRangeMin: null,
@@ -61,7 +61,7 @@ function emptyGroupFields(): GroupFields {
 function groupToFields(g: VolunteerIdentity["ledGroups"][number]): GroupFields {
   return {
     name: g.name,
-    lifeStageId: g.lifeStageId,
+    lifeStageIds: g.lifeStageIds,
     genderFocus: g.genderFocus,
     language: g.language,
     ageRangeMin: g.ageRangeMin,
@@ -102,23 +102,14 @@ function GroupFieldsEditor({
 
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
-          <Label>Life Stage</Label>
-          <Select
-            value={value.lifeStageId ?? "none"}
-            onValueChange={(v) => onChange({ ...value, lifeStageId: v === "none" ? null : v })}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">Not specified</SelectItem>
-              {lifeStages.map((ls) => (
-                <SelectItem key={ls.id} value={ls.id}>
-                  {ls.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Label>Life Stages</Label>
+          <MultiSelect
+            className="w-full"
+            placeholder="Select"
+            options={lifeStages.map((ls) => ({ value: ls.id, label: ls.name }))}
+            value={value.lifeStageIds}
+            onChange={(v) => onChange({ ...value, lifeStageIds: v })}
+          />
         </div>
 
         <div className="space-y-1.5">

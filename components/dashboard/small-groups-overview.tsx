@@ -14,7 +14,7 @@ type GroupRow = {
   name: string
   memberLimit: number | null
   leader: { firstName: string; lastName: string } | null
-  lifeStage: { name: string } | null
+  lifeStages: { name: string }[]
   _count: { members: number }
 }
 
@@ -66,7 +66,7 @@ export function SmallGroupsOverview({
                       {g.leader
                         ? `Led by ${g.leader.firstName} ${g.leader.lastName}`
                         : "No leader"}
-                      {g.lifeStage ? ` · ${g.lifeStage.name}` : ""}
+                      {g.lifeStages.length > 0 ? ` · ${g.lifeStages.map((ls) => ls.name).join(", ")}` : ""}
                     </p>
                   </div>
                   <p className="text-xs text-muted-foreground">{capacity}</p>

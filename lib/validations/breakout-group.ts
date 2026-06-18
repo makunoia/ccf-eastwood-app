@@ -7,7 +7,7 @@ export const breakoutGroupSchema = z
     coFacilitatorId: z.string().nullable().optional(),
     memberLimit: z.coerce.number().int().positive("Must be a positive number").nullable().optional(),
     // Matching profile (optional — used for future auto-assign)
-    lifeStageId: z.string().nullable().optional(),
+    lifeStageIds: z.array(z.string()).default([]),
     genderFocus: z.enum(["Male", "Female", "Mixed"]).nullable().optional(),
     language: z.array(z.string()).default([]),
     ageRangeMin: z.coerce.number().int().min(0).nullable().optional(),

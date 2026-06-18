@@ -26,7 +26,7 @@ async function getSmallGroups(where: Prisma.SmallGroupWhereInput): Promise<Small
     include: {
       leader: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
       parentGroup: { select: { id: true, name: true } },
-      lifeStage: { select: { id: true, name: true } },
+      lifeStages: { select: { id: true, name: true }, orderBy: { order: "asc" } },
       _count: {
         select: {
           members: true,
@@ -50,8 +50,7 @@ async function getSmallGroups(where: Prisma.SmallGroupWhereInput): Promise<Small
     parentGroupName: g.parentGroup?.name ?? null,
     memberCount: g._count.members,
     tempMemberCount: g._count.memberRequests,
-    lifeStage: g.lifeStage?.name ?? null,
-    lifeStageId: g.lifeStageId,
+    lifeStages: g.lifeStages,
     language: g.language,
     genderFocus: g.genderFocus,
     ageRangeMin: g.ageRangeMin,
@@ -133,7 +132,7 @@ export default async function SmallGroupsPage({
             ],
           }
         : {},
-      lifeStageId ? { lifeStageId } : {},
+      lifeStageId ? { lifeStages: { some: { id: lifeStageId } } } : {},
       genderFocus ? { genderFocus: genderFocus as GenderFocus } : {},
       meetingFormat ? { meetingFormat: meetingFormat as MeetingFormat } : {},
       status ? { status: status as SmallGroupStatus } : {},

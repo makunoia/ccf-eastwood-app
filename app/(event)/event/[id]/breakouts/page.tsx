@@ -18,7 +18,7 @@ const breakoutGroupsInclude = {
               select: {
                 id: true,
                 name: true,
-                lifeStageId: true,
+                lifeStages: { select: { id: true } },
                 genderFocus: true,
                 language: true,
                 ageRangeMin: true,
@@ -45,7 +45,7 @@ const breakoutGroupsInclude = {
               select: {
                 id: true,
                 name: true,
-                lifeStageId: true,
+                lifeStages: { select: { id: true } },
                 genderFocus: true,
                 language: true,
                 ageRangeMin: true,
@@ -64,7 +64,7 @@ const breakoutGroupsInclude = {
     linkedSmallGroup: {
       select: { id: true, name: true },
     },
-    lifeStage: { select: { id: true, name: true } },
+    lifeStages: { select: { id: true, name: true }, orderBy: { order: "asc" as const } },
     schedules: { select: { dayOfWeek: true, timeStart: true, timeEnd: true } },
     _count: { select: { members: true } },
   },
@@ -109,7 +109,7 @@ async function getEventBreakouts(id: string) {
                 select: {
                   id: true,
                   name: true,
-                  lifeStageId: true,
+                  lifeStages: { select: { id: true } },
                   genderFocus: true,
                   language: true,
                   ageRangeMin: true,
@@ -146,10 +146,10 @@ export default async function BreakoutsPage({
   ])
   if (!event) notFound()
 
-  const defaultLifeStageId =
+  const defaultLifeStageIds =
     event.ministries.length === 1 && event.ministries[0].ministry.lifeStageId
-      ? event.ministries[0].ministry.lifeStageId
-      : undefined
+      ? [event.ministries[0].ministry.lifeStageId]
+      : []
 
   const confirmedVolunteers = [...event.volunteers]
 
@@ -167,7 +167,7 @@ export default async function BreakoutsPage({
         unassignedCount={event.registrants.length}
         volunteers={confirmedVolunteers}
         lifeStages={lifeStages}
-        defaultLifeStageId={defaultLifeStageId}
+        defaultLifeStageIds={defaultLifeStageIds}
         canImport={canImport(session, "Events")}
       />
     </div>

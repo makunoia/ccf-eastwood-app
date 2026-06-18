@@ -128,7 +128,7 @@ function toFormValues(group: SmallGroupRow): SmallGroupFormValues {
     name: group.name,
     leaderId: group.leaderId ?? "",
     parentGroupId: group.parentGroupId ?? "",
-    lifeStageId: group.lifeStageId ?? "",
+    lifeStageIds: group.lifeStages.map((ls) => ls.id),
     genderFocus: group.genderFocus ?? "",
     language: group.language ?? [],
     ageRangeMin: group.ageRangeMin != null ? String(group.ageRangeMin) : "",
@@ -504,24 +504,16 @@ export function SmallGroupForm({
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="lifeStageId">
-                      Life Stage <span className="text-destructive">*</span>
+                    <Label htmlFor="lifeStageIds">
+                      Life Stages <span className="text-destructive">*</span>
                     </Label>
-                    <Select
-                      value={form.lifeStageId}
-                      onValueChange={(v) => set("lifeStageId", v)}
-                    >
-                      <SelectTrigger id="lifeStageId">
-                        <SelectValue placeholder="Select life stage" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {lifeStages.map((ls) => (
-                          <SelectItem key={ls.id} value={ls.id}>
-                            {ls.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <MultiSelect
+                      className="w-full"
+                      placeholder="Select life stages"
+                      options={lifeStages.map((ls) => ({ value: ls.id, label: ls.name }))}
+                      value={form.lifeStageIds}
+                      onChange={(v) => set("lifeStageIds", v)}
+                    />
                   </div>
 
                   <div className="space-y-2">

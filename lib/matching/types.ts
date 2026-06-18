@@ -31,7 +31,7 @@ export const EMPTY_CANDIDATE: CandidateProfile = {
 export type GroupProfile = {
   id: string
   name: string
-  lifeStageId: string | null
+  lifeStageIds: string[]
   genderFocus: "Male" | "Female" | "Mixed" | null
   language: string[]
   ageRangeMin: number | null
