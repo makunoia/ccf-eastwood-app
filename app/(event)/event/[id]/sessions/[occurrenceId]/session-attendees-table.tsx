@@ -115,8 +115,8 @@ export function SessionAttendeesTable({
   const filtered = useMemo(
     () =>
       attendees.filter((a) => {
-        if (typeFilter === "member" && !a.isMember) return false
-        if (typeFilter === "guest" && a.isMember) return false
+        if (typeFilter === "member" && (!a.isMember || a.isVolunteer)) return false
+        if (typeFilter === "guest" && (a.isMember || a.isVolunteer)) return false
         if (typeFilter === "volunteer" && !a.isVolunteer) return false
         if (breakoutFilter !== "all" && !a.breakoutGroupIds.includes(breakoutFilter)) return false
         return true
@@ -218,15 +218,14 @@ export function SessionAttendeesTable({
                       {a.name ?? <span className="text-muted-foreground italic">No name</span>}
                     </Link>
                     <div className="mt-1 flex flex-wrap gap-1">
-                      {a.isMember ? (
-                        <Badge variant="secondary">Member</Badge>
-                      ) : (
-                        <Badge variant="outline">Guest</Badge>
-                      )}
-                      {a.isVolunteer && (
+                      {a.isVolunteer ? (
                         <Badge variant="outline" className="border-amber-400 text-amber-600">
                           Volunteer
                         </Badge>
+                      ) : a.isMember ? (
+                        <Badge variant="secondary">Member</Badge>
+                      ) : (
+                        <Badge variant="outline">Guest</Badge>
                       )}
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
@@ -300,18 +299,17 @@ export function SessionAttendeesTable({
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
-                          {a.isMember ? (
-                            <Badge variant="secondary">Member</Badge>
-                          ) : (
-                            <Badge variant="outline">Guest</Badge>
-                          )}
-                          {a.isVolunteer && (
+                          {a.isVolunteer ? (
                             <Badge
                               variant="outline"
                               className="border-amber-400 text-amber-600"
                             >
                               Volunteer
                             </Badge>
+                          ) : a.isMember ? (
+                            <Badge variant="secondary">Member</Badge>
+                          ) : (
+                            <Badge variant="outline">Guest</Badge>
                           )}
                         </div>
                       </TableCell>

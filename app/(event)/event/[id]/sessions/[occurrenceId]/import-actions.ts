@@ -1,11 +1,12 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { Prisma } from "@/app/generated/prisma/client"
+import { Gender, Prisma } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import { canImport } from "@/lib/permissions"
 import { toTitleCase, formatPhilippinePhone } from "@/lib/utils"
+import { enrichNullable } from "@/lib/import/enrich"
 import type { DuplicateMatch, ImportResult, RowResolution } from "@/lib/import/types"
 
 type ActionResult<T = void> =
@@ -242,6 +243,82 @@ function setPhoneEntries<T>(map: Map<string, T>, phone: string | null | undefine
   }
 }
 
+function parseGender(v: string | undefined): Gender | null {
+  const normalized = v?.toLowerCase().trim()
+  if (normalized === "male" || normalized === "m") return Gender.Male
+  if (normalized === "female" || normalized === "f") return Gender.Female
+  return null
+}
+
+const MONTH_MAP: Record<string, number> = {
+  jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3,
+  apr: 4, april: 4, may: 5, jun: 6, june: 6, jul: 7, july: 7,
+  aug: 8, august: 8, sep: 9, sept: 9, september: 9,
+  oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12,
+}
+
+function parseMonth(v: string | undefined): number | null {
+  const s = v?.trim()
+  if (!s) return null
+  const num = parseInt(s, 10)
+  if (!isNaN(num)) return num >= 1 && num <= 12 ? num : null
+  return MONTH_MAP[s.toLowerCase()] ?? null
+}
+
+function parseBirthYear(v: string | undefined): number | null {
+  if (!v?.trim()) return null
+  const year = parseInt(v, 10)
+  return Number.isNaN(year) ? null : year
+}
+
+type MatchingProfile = {
+  gender: Gender | null
+  birthMonth: number | null
+  birthYear: number | null
+}
+
+function parseMatchingProfile(mapped: Record<string, string>): MatchingProfile {
+  return {
+    gender: parseGender(mapped.gender),
+    birthMonth: parseMonth(mapped.birthMonth),
+    birthYear: parseBirthYear(mapped.birthYear),
+  }
+}
+
+// Backfill matching fields on an existing Member/Guest from the import row without
+// overwriting values already on record (enrichNullable keeps the existing value).
+// No-op when the row supplies nothing new.
+async function enrichMatchingProfile(
+  kind: "member" | "guest",
+  id: string,
+  incoming: MatchingProfile
+): Promise<void> {
+  if (incoming.gender === null && incoming.birthMonth === null && incoming.birthYear === null) {
+    return
+  }
+  const existing =
+    kind === "member"
+      ? await db.member.findUnique({
+          where: { id },
+          select: { gender: true, birthMonth: true, birthYear: true },
+        })
+      : await db.guest.findUnique({
+          where: { id },
+          select: { gender: true, birthMonth: true, birthYear: true },
+        })
+  if (!existing) return
+  const data = {
+    gender: enrichNullable(existing.gender, incoming.gender),
+    birthMonth: enrichNullable(existing.birthMonth, incoming.birthMonth),
+    birthYear: enrichNullable(existing.birthYear, incoming.birthYear),
+  }
+  if (kind === "member") {
+    await db.member.update({ where: { id }, data })
+  } else {
+    await db.guest.update({ where: { id }, data })
+  }
+}
+
 function findTimeInString(value: string): { hours: number; minutes: number; seconds: number } | null {
   const timeMatch = value.match(/(?:^|\s)(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?(?=$|\s)/i)
   if (!timeMatch) return null
@@ -402,6 +479,7 @@ export async function importSessionAttendance(
       const rawPhone = mapped.mobileNumber?.trim() || null
       const mobile = rawPhone ? formatPhilippinePhone(rawPhone) : null
       const phoneCandidates = buildPhoneCandidates(rawPhone)
+      const profile = parseMatchingProfile(mapped)
 
       // ── Find existing EventRegistrant for this event ──────────────────────
       // Match by member phone/email first, then guest phone/email
@@ -418,6 +496,7 @@ export async function importSessionAttendance(
       }) : null
 
       if (matchedMember) {
+        await enrichMatchingProfile("member", matchedMember.id, profile)
         // A volunteer for this event attends AS a volunteer, never as a registrant
         // (schema: "a volunteer is never a registrant"). Record volunteer attendance
         // so the session's Volunteers stat reflects them instead of inflating the
@@ -488,6 +567,7 @@ export async function importSessionAttendance(
       }) : null
 
       if (matchedGuest) {
+        await enrichMatchingProfile("guest", matchedGuest.id, profile)
         const registrant = await db.eventRegistrant.findFirst({
           where: { eventId, guestId: matchedGuest.id },
           select: { id: true },
@@ -523,7 +603,16 @@ export async function importSessionAttendance(
 
       // No existing Member or Guest — create new Guest walk-in
       const guest = await db.guest.create({
-        data: { firstName, lastName, email, phone: mobile, language: [] },
+        data: {
+          firstName,
+          lastName,
+          email,
+          phone: mobile,
+          language: [],
+          gender: profile.gender,
+          birthMonth: profile.birthMonth,
+          birthYear: profile.birthYear,
+        },
         select: { id: true },
       })
       const reg = await db.eventRegistrant.create({

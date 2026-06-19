@@ -57,6 +57,7 @@ async function getCatchMechData(eventId: string) {
             select: {
               registrant: {
                 select: {
+                  id: true,
                   memberId: true,
                   guestId: true,
                   member: { select: { firstName: true, lastName: true, smallGroupId: true } },
@@ -79,6 +80,7 @@ async function getCatchMechData(eventId: string) {
   const allRequests = await db.smallGroupMemberRequest.findMany({
     where: { breakoutGroupId: { in: breakoutGroupIds } },
     select: {
+      id: true,
       breakoutGroupId: true,
       memberId: true,
       guestId: true,
@@ -209,7 +211,7 @@ export default async function CatchMechAdminPage({
       {/* Per-group table */}
       <section className="space-y-3">
         <h3 className="type-label text-muted-foreground">Breakout Groups</h3>
-        <CatchMechTable groupRows={groupRows} canViewMember={canViewMember} />
+        <CatchMechTable groupRows={groupRows} canViewMember={canViewMember} eventId={id} />
       </section>
     </div>
   )

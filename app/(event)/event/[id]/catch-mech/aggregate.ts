@@ -17,6 +17,7 @@ export type AggBreakoutGroup = {
   } | null
   members: {
     registrant: {
+      id: string
       memberId: string | null
       guestId: string | null
       member: { firstName: string; lastName: string; smallGroupId: string | null } | null
@@ -26,6 +27,7 @@ export type AggBreakoutGroup = {
 }
 
 export type AggRequest = {
+  id: string
   breakoutGroupId: string | null
   memberId: string | null
   guestId: string | null
@@ -95,7 +97,8 @@ export function buildCatchMechGroupRows(
       if (req?.status === "Confirmed") { status = "Confirmed"; confirmed++ }
       else if (req?.status === "Rejected") { status = "Rejected"; rejected++ }
 
-      members.push({ name, status })
+      // requestId enables the admin undo action — only present for resolved decisions
+      members.push({ name, status, requestId: req?.id ?? null })
     }
 
     const total = members.length

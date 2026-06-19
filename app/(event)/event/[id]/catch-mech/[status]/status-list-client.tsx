@@ -20,6 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { CatchMechUndoButton } from "../catch-mech-undo-button"
 
 export type StatusListRow = {
   requestId: string
@@ -29,6 +30,7 @@ export type StatusListRow = {
   breakoutGroupName: string
   smallGroupName: string | null  // null for Rejected
   declineReason: string | null   // display string, only set for Rejected
+  rejectedByName: string | null  // facilitator name, only set for Rejected
 }
 
 type Props = {
@@ -52,6 +54,9 @@ export function StatusListClient({ rows, status, eventId, breakoutGroups }: Prop
     : rows.filter((r) => r.breakoutGroupName === filterGroup)
 
   const label = STATUS_LABEL[status]
+  const canUndo = status === "confirmed" || status === "rejected"
+  // Name, Type, Breakout Group, (Small Group | Reason) = 4; +Rejected by; +Undo
+  const colCount = 4 + (status === "rejected" ? 1 : 0) + (canUndo ? 1 : 0)
 
   return (
     <div className="space-y-6">
@@ -104,12 +109,14 @@ export function StatusListClient({ rows, status, eventId, breakoutGroups }: Prop
               <TableHead>Type</TableHead>
               <TableHead>Breakout Group</TableHead>
               {status !== "rejected" ? <TableHead>Small Group</TableHead> : <TableHead>Reason</TableHead>}
+              {status === "rejected" && <TableHead>Rejected by</TableHead>}
+              {canUndo && <TableHead className="w-10" />}
             </TableRow>
           </TableHeader>
           <TableBody>
             {filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} className="py-6 text-center text-muted-foreground">
+                <TableCell colSpan={colCount} className="py-6 text-center text-muted-foreground">
                   No {label.toLowerCase()} registrants.
                 </TableCell>
               </TableRow>
@@ -137,6 +144,20 @@ export function StatusListClient({ rows, status, eventId, breakoutGroups }: Prop
                   ) : (
                     <TableCell>
                       {row.declineReason ?? <span className="text-muted-foreground">—</span>}
+                    </TableCell>
+                  )}
+                  {status === "rejected" && (
+                    <TableCell>
+                      {row.rejectedByName ?? <span className="text-muted-foreground">—</span>}
+                    </TableCell>
+                  )}
+                  {canUndo && (
+                    <TableCell>
+                      <CatchMechUndoButton
+                        requestId={row.requestId}
+                        eventId={eventId}
+                        decision={status === "confirmed" ? "Confirmed" : "Rejected"}
+                      />
                     </TableCell>
                   )}
                 </TableRow>

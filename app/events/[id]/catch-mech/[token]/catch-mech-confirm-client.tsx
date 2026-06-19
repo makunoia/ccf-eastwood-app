@@ -17,7 +17,6 @@ type RowData = {
   registrantId: string
   name: string
   type: "member" | "guest"
-  isConfirmed: boolean
 }
 
 type Props = {
@@ -77,8 +76,9 @@ function DecisionToggle({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy: _isTimothy, rows }: Props) {
-  const pendingRows = rows.filter((r) => !r.isConfirmed)
-  const alreadyConfirmed = rows.filter((r) => r.isConfirmed)
+  // Resolved (confirmed/rejected) registrants are filtered out server-side, so every
+  // row here still needs a decision.
+  const pendingRows = rows
 
   const [decisions, setDecisions] = React.useState<Record<string, RowDecision>>(() => {
     const init: Record<string, RowDecision> = {}
@@ -306,13 +306,13 @@ export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy
     )
   }
 
-  // ── All confirmed already ───────────────────────────────────────────────────
+  // ── Everyone already resolved (confirmed or declined) ───────────────────────
   if (pendingRows.length === 0) {
     return (
       <div className="text-center space-y-2 py-4">
-        <p className="font-medium">All members confirmed</p>
+        <p className="font-medium">All members reviewed</p>
         <p className="text-sm text-muted-foreground">
-          Everyone from your table has already been confirmed into your group.
+          Everyone from your table has already been confirmed or declined.
         </p>
       </div>
     )
@@ -395,12 +395,6 @@ export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy
           </div>
         </div>
       </div>
-
-      {alreadyConfirmed.length > 0 && (
-        <p className="text-xs text-muted-foreground text-center">
-          {alreadyConfirmed.length} member{alreadyConfirmed.length !== 1 ? "s" : ""} already confirmed
-        </p>
-      )}
 
       <div className="divide-y border rounded-lg overflow-hidden">
         {pendingRows.map((r) => (

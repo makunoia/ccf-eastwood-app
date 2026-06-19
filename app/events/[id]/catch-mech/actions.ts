@@ -529,7 +529,9 @@ async function resolveConfirmations(
       }
     } else if (registrant.memberId && registrant.member) {
       const member = registrant.member
-      if (member.smallGroupId === smallGroupId) continue
+      // A member belongs to at most one group — never re-confirm someone already
+      // placed (here or in another group) into a different one.
+      if (member.smallGroupId) continue
 
       await tx.member.update({
         where: { id: registrant.memberId },

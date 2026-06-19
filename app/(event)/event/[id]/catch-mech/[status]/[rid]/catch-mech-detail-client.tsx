@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { RegistrantGuestProfile } from "@/app/(event)/event/[id]/registrants/[registrantId]/registrant-profile"
 import { CatchMechMatchSection, type CatchMechMatchSectionHandle } from "./catch-mech-match-section"
 import { CatchMechActivityLog, type CatchMechActivityEntry } from "./catch-mech-activity-log"
+import { CatchMechUndoButton } from "../../catch-mech-undo-button"
 import type { DeclineReason } from "@/app/generated/prisma/client"
 import { DECLINE_REASON_LABELS } from "@/lib/decline-reason"
 
@@ -249,7 +250,16 @@ export function CatchMechDetailClient(props: Props) {
           <TabsContent value="small-group" className="mt-4">
             {props.status === "confirmed" && props.request?.smallGroup && (
               <div className="rounded-lg border p-4 space-y-2">
-                <p className="text-sm font-medium">Member of this group</p>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium">Member of this group</p>
+                  {props.requestId && (
+                    <CatchMechUndoButton
+                      requestId={props.requestId}
+                      eventId={props.eventId}
+                      decision="Confirmed"
+                    />
+                  )}
+                </div>
                 <p className="text-sm">
                   {props.canViewSmallGroup ? (
                     <Link
@@ -295,7 +305,16 @@ export function CatchMechDetailClient(props: Props) {
 
             {props.status === "rejected" && props.request?.declineReason && (
               <div className="rounded-lg border bg-muted/40 p-4 space-y-1 mb-4">
-                <p className="text-sm font-medium">Declined by leader</p>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium">Declined by leader</p>
+                  {props.requestId && (
+                    <CatchMechUndoButton
+                      requestId={props.requestId}
+                      eventId={props.eventId}
+                      decision="Rejected"
+                    />
+                  )}
+                </div>
                 <p className="text-sm text-muted-foreground">
                   {DECLINE_REASON_LABELS[props.request.declineReason]}
                   {props.request.declineReason === "Others" && props.request.notes

@@ -19,12 +19,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { CatchMechUndoButton } from "./catch-mech-undo-button"
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
 export type MemberEntry = {
   name: string
   status: "Confirmed" | "Rejected" | "Pending"
+  requestId: string | null  // present only for resolved (Confirmed/Rejected) entries
 }
 
 export type GroupRow = {
@@ -60,10 +62,12 @@ function GroupDetailSheet({
   group,
   open,
   onOpenChange,
+  eventId,
 }: {
   group: GroupRow | null
   open: boolean
   onOpenChange: (open: boolean) => void
+  eventId: string
 }) {
   if (!group) return null
 
@@ -104,14 +108,23 @@ function GroupDetailSheet({
             {group.members.length > 0 ? (
               <div className="divide-y rounded-lg border overflow-hidden">
                 {group.members.map((m, i) => (
-                  <div key={i} className="flex items-center justify-between px-3 py-2.5">
+                  <div key={i} className="flex items-center justify-between gap-2 px-3 py-2.5">
                     <span className="text-sm">{m.name}</span>
-                    <Badge
-                      variant="secondary"
-                      className={`text-xs ${STATUS_BADGE_CLASS[m.status]}`}
-                    >
-                      {m.status}
-                    </Badge>
+                    <div className="flex items-center gap-1">
+                      <Badge
+                        variant="secondary"
+                        className={`text-xs ${STATUS_BADGE_CLASS[m.status]}`}
+                      >
+                        {m.status}
+                      </Badge>
+                      {m.requestId && (m.status === "Confirmed" || m.status === "Rejected") && (
+                        <CatchMechUndoButton
+                          requestId={m.requestId}
+                          eventId={eventId}
+                          decision={m.status}
+                        />
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -194,9 +207,11 @@ function FacilitatorDetailSheet({
 export function CatchMechTable({
   groupRows,
   canViewMember,
+  eventId,
 }: {
   groupRows: GroupRow[]
   canViewMember: boolean
+  eventId: string
 }) {
   const [groupSheet, setGroupSheet] = React.useState<GroupRow | null>(null)
   const [faciSheet, setFaciSheet] = React.useState<GroupRow | null>(null)
@@ -270,6 +285,7 @@ export function CatchMechTable({
         group={groupSheet}
         open={!!groupSheet}
         onOpenChange={(open) => { if (!open) setGroupSheet(null) }}
+        eventId={eventId}
       />
       <FacilitatorDetailSheet
         group={faciSheet}

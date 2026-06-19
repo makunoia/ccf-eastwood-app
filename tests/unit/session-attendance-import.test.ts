@@ -696,4 +696,108 @@ describe("importSessionAttendance", () => {
       expect(totalAttendees).toBe(3)
     })
   })
+
+  describe("matching profile fields — gender, birth month, birth year", () => {
+    it("sets gender, birthMonth, and birthYear on a brand-new Guest walk-in", async () => {
+      const { occurrence } = await seedRecurringEvent()
+      const result = await importSessionAttendance(occurrence.id, [
+        {
+          mapped: {
+            firstName: "Pedro",
+            lastName: "Reyes",
+            mobileNumber: "09191234567",
+            gender: "Male",
+            birthMonth: "March",
+            birthYear: "1995",
+          },
+          resolution: "use-existing",
+        },
+      ])
+      expect(result.success).toBe(true)
+
+      const guest = await db.guest.findFirst({ where: { firstName: "Pedro", lastName: "Reyes" } })
+      expect(guest?.gender).toBe("Male")
+      expect(guest?.birthMonth).toBe(3)
+      expect(guest?.birthYear).toBe(1995)
+    })
+
+    it("parses a numeric birth month", async () => {
+      const { occurrence } = await seedRecurringEvent()
+      await importSessionAttendance(occurrence.id, [
+        {
+          mapped: { firstName: "Ana", lastName: "Lim", gender: "F", birthMonth: "12" },
+          resolution: "use-existing",
+        },
+      ])
+      const guest = await db.guest.findFirst({ where: { firstName: "Ana", lastName: "Lim" } })
+      expect(guest?.gender).toBe("Female")
+      expect(guest?.birthMonth).toBe(12)
+      expect(guest?.birthYear).toBeNull()
+    })
+
+    it("ignores an out-of-range birth month", async () => {
+      const { occurrence } = await seedRecurringEvent()
+      await importSessionAttendance(occurrence.id, [
+        { mapped: { firstName: "Ana", lastName: "Lim", birthMonth: "13" }, resolution: "use-existing" },
+      ])
+      const guest = await db.guest.findFirst({ where: { firstName: "Ana", lastName: "Lim" } })
+      expect(guest?.birthMonth).toBeNull()
+    })
+
+    it("backfills missing matching fields on an existing Guest without overwriting set ones", async () => {
+      const { occurrence } = await seedRecurringEvent()
+      const guest = await db.guest.create({
+        data: {
+          firstName: "Maria",
+          lastName: "Santos",
+          email: "maria@example.com",
+          language: [],
+          gender: "Female",
+          // birthMonth / birthYear unset
+        },
+        select: { id: true },
+      })
+
+      await importSessionAttendance(occurrence.id, [
+        {
+          mapped: {
+            firstName: "Maria",
+            lastName: "Santos",
+            email: "maria@example.com",
+            gender: "Male", // should NOT overwrite existing Female
+            birthMonth: "6",
+            birthYear: "1990",
+          },
+          resolution: "use-existing",
+        },
+      ])
+
+      const updated = await db.guest.findUnique({ where: { id: guest.id } })
+      expect(updated?.gender).toBe("Female") // preserved
+      expect(updated?.birthMonth).toBe(6) // backfilled
+      expect(updated?.birthYear).toBe(1990) // backfilled
+    })
+
+    it("backfills missing matching fields on an existing Member", async () => {
+      const { occurrence } = await seedRecurringEvent()
+      const member = await seedMember({ email: "juan@example.com" })
+
+      await importSessionAttendance(occurrence.id, [
+        {
+          mapped: {
+            firstName: "Juan",
+            lastName: "Cruz",
+            email: "juan@example.com",
+            gender: "Male",
+            birthYear: "1988",
+          },
+          resolution: "use-existing",
+        },
+      ])
+
+      const updated = await db.member.findUnique({ where: { id: member.id } })
+      expect(updated?.gender).toBe("Male")
+      expect(updated?.birthYear).toBe(1988)
+    })
+  })
 })

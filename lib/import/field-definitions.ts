@@ -98,6 +98,9 @@ export const SESSION_ATTENDANCE_FIELDS: FieldDefinition[] = [
   { key: "lastName",     label: "Last Name",     required: true },
   { key: "mobileNumber", label: "Mobile Number", required: false },
   { key: "email",        label: "Email",         required: false },
+  { key: "gender",       label: "Gender",        required: false, hint: "Male or Female" },
+  { key: "birthMonth",   label: "Birth Month",   required: false, hint: "1–12" },
+  { key: "birthYear",    label: "Birth Year",    required: false, hint: "e.g. 1995" },
   { key: "checkedInAt",  label: "Checked In At", required: false, hint: "e.g. 10:30 AM or 14:30 — defaults to session date" },
 ]
 

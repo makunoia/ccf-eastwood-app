@@ -178,6 +178,13 @@ export default async function OccurrenceDetailPage({
 
   const { occurrence, volunteers, breakoutGroups, subFacilitators } = data
 
+  // A registrant may also be a volunteer for this event (registered + checked in via the
+  // normal flow, or imported as session attendance). Cross-reference by member so those
+  // attendees are recognized as volunteers rather than plain members.
+  const volunteerMemberIds = new Set(
+    volunteers.map((v) => v.memberId).filter((id): id is string => id !== null),
+  )
+
   const dateLabel = occurrence.date.toLocaleDateString("en-PH", {
     weekday: "long",
     month: "long",
@@ -212,21 +219,24 @@ export default async function OccurrenceDetailPage({
     }
 
     const r = a.registrant!
+    const isVolunteer = r.memberId ? volunteerMemberIds.has(r.memberId) : false
     return {
       id: a.id,
       kind: "registrant" as const,
       subjectId: r.id,
       name: getAttendeeName(r),
       checkedInAtFormatted,
-      // Members are established — never "New". Only first-time guests are tagged New.
-      isReturner: isEstablishedAttendee(
-        !!r.memberId,
-        r.occurrenceAttendances,
-        occurrenceId,
-        occurrence.date,
-      ),
+      // Members and volunteers are established — never "New". Only first-time guests are tagged New.
+      isReturner:
+        isVolunteer ||
+        isEstablishedAttendee(
+          !!r.memberId,
+          r.occurrenceAttendances,
+          occurrenceId,
+          occurrence.date,
+        ),
       isMember: !!r.memberId,
-      isVolunteer: false,
+      isVolunteer,
       breakoutGroupIds: r.breakoutGroupMemberships.map((m) => m.breakoutGroupId),
       breakoutGroupNames: r.breakoutGroupMemberships.map((m) => m.breakoutGroup.name),
       gender: r.member?.gender ?? r.guest?.gender ?? null,

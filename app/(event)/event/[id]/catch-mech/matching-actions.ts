@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
+import { canWrite } from "@/lib/permissions"
 import { matchSmallGroups } from "@/lib/matching"
 import { scoreGroup } from "@/lib/matching/engine"
 import { scoreGender, scoreLifeStage, scoreSchedule } from "@/lib/matching/scorers"
@@ -358,5 +359,120 @@ export async function assignCatchMechRegistrantToGroup(
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to assign to group" }
+  }
+}
+
+// ─── reopenCatchMechRequest (admin undo of a confirm/reject decision) ─────────
+
+export async function reopenCatchMechRequest(
+  requestId: string,
+  eventId: string
+): Promise<ActionResult<void>> {
+  const session = await auth()
+  if (!session?.user) return { success: false, error: "Not authenticated." }
+  if (!canWrite(session, "SmallGroups")) return { success: false, error: "Unauthorized." }
+  const actorId = session.user.id ?? null
+
+  try {
+    const request = await db.smallGroupMemberRequest.findUnique({
+      where: { id: requestId },
+      select: {
+        id: true,
+        status: true,
+        smallGroupId: true,
+        memberId: true,
+        guestId: true,
+        member: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            guest: { select: { id: true } },
+          },
+        },
+      },
+    })
+    if (!request) return { success: false, error: "Request not found" }
+    if (request.status !== "Confirmed" && request.status !== "Rejected") {
+      return { success: false, error: "Only confirmed or rejected decisions can be undone" }
+    }
+
+    await db.$transaction(async (tx) => {
+      // ── Rejected → Pending: simply reopen the request ──────────────────────
+      if (request.status === "Rejected") {
+        await tx.smallGroupMemberRequest.update({
+          where: { id: request.id },
+          data: { status: "Pending", resolvedAt: null, declineReason: null, notes: null },
+        })
+        await tx.smallGroupLog.create({
+          data: {
+            smallGroupId: request.smallGroupId,
+            action: "TempAssignmentCreated",
+            memberId: request.memberId ?? null,
+            guestId: request.guestId ?? null,
+            performedByUserId: actorId,
+            description: "Rejection reopened by admin (pending leader confirmation)",
+          },
+        })
+        return
+      }
+
+      // ── Confirmed → full reversal ──────────────────────────────────────────
+      const member = request.member
+      if (member?.guest) {
+        // Promoted guest: undo the promotion entirely and restore the guest.
+        const guestId = member.guest.id
+        await tx.guest.update({ where: { id: guestId }, data: { memberId: null } })
+        await tx.eventRegistrant.updateMany({
+          where: { memberId: member.id },
+          data: { guestId, memberId: null },
+        })
+        // Clear the request's memberId BEFORE deleting the member — the FK cascades.
+        await tx.smallGroupMemberRequest.update({
+          where: { id: request.id },
+          data: { status: "Pending", resolvedAt: null, guestId, memberId: null },
+        })
+        await tx.smallGroupLog.create({
+          data: {
+            smallGroupId: request.smallGroupId,
+            action: "MemberRemoved",
+            guestId,
+            performedByUserId: actorId,
+            description: `${member.firstName} ${member.lastName}'s confirmation was undone — restored to guest`,
+          },
+        })
+        await tx.member.delete({ where: { id: member.id } })
+        return
+      }
+
+      // Already a real member: remove from the group, keep the member record.
+      if (member) {
+        await tx.member.update({
+          where: { id: member.id },
+          data: { smallGroupId: null, groupStatus: null },
+        })
+        await tx.smallGroupMemberRequest.update({
+          where: { id: request.id },
+          data: { status: "Pending", resolvedAt: null },
+        })
+        await tx.smallGroupLog.create({
+          data: {
+            smallGroupId: request.smallGroupId,
+            action: "MemberRemoved",
+            memberId: member.id,
+            performedByUserId: actorId,
+            description: `${member.firstName} ${member.lastName}'s confirmation was undone — removed from the group`,
+          },
+        })
+      }
+    })
+
+    revalidatePath(`/event/${eventId}/catch-mech`, "layout")
+    revalidatePath(`/event/${eventId}/dashboard`)
+    revalidatePath(`/event/${eventId}/breakouts`)
+    revalidatePath("/small-groups")
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to undo decision" }
   }
 }

@@ -46,3 +46,7 @@ next-env.d.ts
 
 # Ticket verification tests are generated per-session — not committed
 tests/tickets/*.test.ts
+
+# Playwright test output artifacts
+/test-results
+/playwright-report
