@@ -7,6 +7,7 @@ async function getSessionData(token: string) {
     where: { token },
     select: {
       breakoutGroupId: true,
+      facilitatorVolunteerId: true,
       event: {
         select: {
           name: true,
@@ -47,6 +48,7 @@ async function getSessionData(token: string) {
         select: {
           name: true,
           linkedSmallGroupId: true,
+          facilitatorId: true,
           members: {
             orderBy: { assignedAt: "asc" },
             select: {
@@ -71,10 +73,12 @@ async function getSessionData(token: string) {
 
   const faciMember = session.facilitator.member
   const isTimothy = faciMember.ledGroups.length === 0
-  // Mirror the submit action's target resolution: explicit breakout link first,
-  // then the faci's led group when they lead exactly one.
+  // Mirror the submit action's target resolution. The breakout's link belongs to the
+  // LEAD facilitator, so a co-facilitator resolves to their own led group instead.
+  const isLeadFaci = session.facilitatorVolunteerId === session.breakoutGroup.facilitatorId
+  const effectiveLink = isLeadFaci ? session.breakoutGroup.linkedSmallGroupId : null
   const leadingGroupId =
-    session.breakoutGroup.linkedSmallGroupId ??
+    effectiveLink ??
     (faciMember.ledGroups.length === 1 ? faciMember.ledGroups[0].id : null)
 
   // Collect IDs for a batch lookup of existing SmallGroupMemberRequests

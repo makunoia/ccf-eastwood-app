@@ -57,13 +57,13 @@ function DecisionToggle({
     },
   ]
   return (
-    <div className="flex items-center rounded-md border overflow-hidden shrink-0 text-xs font-medium">
+    <div className="flex items-center rounded-md border overflow-hidden text-xs font-medium w-full sm:w-auto sm:shrink-0">
       {options.map((opt) => (
         <button
           key={opt.value}
           type="button"
           onClick={() => onChange(opt.value)}
-          className={`px-2.5 py-1 transition-colors ${
+          className={`flex-1 sm:flex-none px-2.5 py-1.5 sm:py-1 text-center transition-colors ${
             value === opt.value ? opt.active : `bg-background ${opt.inactive}`
           }`}
         >
@@ -404,9 +404,9 @@ export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy
 
       <div className="divide-y border rounded-lg overflow-hidden">
         {pendingRows.map((r) => (
-          <div key={r.registrantId} className="flex items-center gap-3 p-4">
-            <div className="flex-1 min-w-0">
-              <p className="font-medium text-sm truncate">{r.name}</p>
+          <div key={r.registrantId} className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:gap-3">
+            <div className="min-w-0 sm:flex-1">
+              <p className="font-medium text-sm wrap-break-word">{r.name}</p>
               <p className="text-xs text-muted-foreground">
                 {r.type === "guest" ? "First-time attendee" : "Returning member"}
               </p>

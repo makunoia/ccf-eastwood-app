@@ -113,7 +113,7 @@ export async function submitCatchMechConfirmations(
       eventId: true,
       facilitatorVolunteerId: true,
       breakoutGroupId: true,
-      breakoutGroup: { select: { linkedSmallGroupId: true } },
+      breakoutGroup: { select: { linkedSmallGroupId: true, facilitatorId: true } },
       facilitator: {
         select: {
           memberId: true,
@@ -132,24 +132,27 @@ export async function submitCatchMechConfirmations(
   }
 
   const faciMember = session.facilitator.member
-  const isTimothy = faciMember.ledGroups.length === 0
+  // The breakout's linked group belongs to the LEAD facilitator. A co-facilitator
+  // confirms into their OWN small group, so they ignore the link entirely.
+  const isLeadFaci = session.facilitatorVolunteerId === session.breakoutGroup.facilitatorId
+  const effectiveLink = isLeadFaci ? session.breakoutGroup.linkedSmallGroupId : null
 
-  if (isTimothy) {
-    const hasConfirmed = decisions.some((d) => d.status === "confirmed")
-    if (hasConfirmed) {
-      // Timothy has confirmed at least one member — prompt for group name first
-      return { success: true, requiresGroupName: true }
-    }
-    // No confirmed members (all pending/declined) — nothing to persist without a group
-    return { success: true, requiresGroupName: false }
-  }
-
-  // Resolve the target group: the breakout's explicit link wins; otherwise the
-  // faci's led group — unambiguous only when they lead exactly one.
+  // Resolve the target group: an explicit link (lead faci only) wins; otherwise the
+  // acting faci's own led group — unambiguous only when they lead exactly one.
   const targetGroupId =
-    session.breakoutGroup.linkedSmallGroupId ??
+    effectiveLink ??
     (faciMember.ledGroups.length === 1 ? faciMember.ledGroups[0].id : null)
+
   if (!targetGroupId) {
+    if (faciMember.ledGroups.length === 0) {
+      // Timothy (leads no group, no link) — must create their own group first
+      const hasConfirmed = decisions.some((d) => d.status === "confirmed")
+      if (hasConfirmed) {
+        return { success: true, requiresGroupName: true }
+      }
+      // No confirmed members (all pending/declined) — nothing to persist without a group
+      return { success: true, requiresGroupName: false }
+    }
     return {
       success: false,
       error:
@@ -183,7 +186,7 @@ export async function submitCatchMechConfirmations(
   }, { timeout: 30000 })
 
   revalidatePath(`/small-groups/${smallGroup.id}`)
-  revalidatePath(`/event/${session.eventId}/catch-mech`)
+  revalidatePath(`/event/${session.eventId}/catch-mech`, "layout")
   revalidatePath(`/event/${session.eventId}/dashboard`)
   return { success: true, requiresGroupName: false }
 }
@@ -210,6 +213,7 @@ export async function createSmallGroupForTimothy(
       eventId: true,
       facilitatorVolunteerId: true,
       breakoutGroupId: true,
+      breakoutGroup: { select: { facilitatorId: true } },
       facilitator: {
         select: {
           memberId: true,
@@ -228,6 +232,9 @@ export async function createSmallGroupForTimothy(
   }
 
   const faciMember = session.facilitator.member
+  // The breakout's linked group belongs to the LEAD facilitator. A co-facilitator
+  // creating their own group must not overwrite the lead's breakout link.
+  const isLeadFaci = session.facilitatorVolunteerId === session.breakoutGroup.facilitatorId
 
   // Guard: must still be a Timothy (no leading group)
   if (faciMember.ledGroups.length > 0) {
@@ -260,11 +267,14 @@ export async function createSmallGroupForTimothy(
         },
       })
 
-      // Link the breakout group to the newly created small group
-      await tx.breakoutGroup.update({
-        where: { id: session.breakoutGroupId },
-        data: { linkedSmallGroupId: created.id },
-      })
+      // Link the breakout group to the newly created small group — only when the
+      // acting faci is the LEAD. A co-faci's group must not hijack the lead's link.
+      if (isLeadFaci) {
+        await tx.breakoutGroup.update({
+          where: { id: session.breakoutGroupId },
+          data: { linkedSmallGroupId: created.id },
+        })
+      }
 
       // Promote the faci's status to Leader in their home group
       await tx.member.update({
@@ -276,20 +286,18 @@ export async function createSmallGroupForTimothy(
     }, { timeout: 30000 })
 
     revalidatePath("/small-groups")
-    revalidatePath(`/event/${session.eventId}/catch-mech`)
+    revalidatePath(`/event/${session.eventId}/catch-mech`, "layout")
     revalidatePath(`/event/${session.eventId}/breakouts/${session.breakoutGroupId}`)
     revalidatePath(`/event/${session.eventId}/dashboard`)
 
-    // Link other breakout groups where this Timothy is a facilitator across all events
+    // Auto-link other breakout groups where this member is the LEAD facilitator across
+    // all events — linkedSmallGroupId always represents the lead faci's group.
     if (newGroupId) {
       const otherBreakouts = await db.breakoutGroup.findMany({
         where: {
           linkedSmallGroupId: null,
           id: { not: session.breakoutGroupId },
-          OR: [
-            { facilitator: { memberId: faciMember.id } },
-            { coFacilitator: { memberId: faciMember.id } },
-          ],
+          facilitator: { memberId: faciMember.id },
         },
         select: { id: true, eventId: true },
       })
@@ -301,7 +309,7 @@ export async function createSmallGroupForTimothy(
         const otherEventIds = [...new Set(otherBreakouts.map((b) => b.eventId))]
         for (const eid of otherEventIds) {
           revalidatePath(`/event/${eid}/breakouts`)
-          revalidatePath(`/event/${eid}/catch-mech`)
+          revalidatePath(`/event/${eid}/catch-mech`, "layout")
           revalidatePath(`/event/${eid}/dashboard`)
         }
       }

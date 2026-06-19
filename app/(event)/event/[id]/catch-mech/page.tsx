@@ -13,8 +13,9 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { PageHeader } from "@/components/page-header"
-import { CatchMechTable, type GroupRow } from "./catch-mech-table"
+import { CatchMechTable } from "./catch-mech-table"
 import { FaciLinkButton } from "./faci-link-button"
+import { buildCatchMechGroupRows } from "./aggregate"
 
 function getISOWeekLabel(date: Date): string {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
@@ -97,78 +98,12 @@ async function getCatchMechData(eventId: string) {
     .sort(([a], [b]) => a.localeCompare(b))
     .slice(-8)
 
-  // Build per-group rows
-  const groupRows: GroupRow[] = []
-  let totalConfirmed = 0
-  let totalRejected = 0
-  let totalPending = 0
-
-  for (const bg of event.breakoutGroups) {
-    const faciMember = bg.facilitator?.member ?? null
-    const isTimothy = faciMember ? faciMember.ledGroups.length === 0 : false
-    const ledGroupNames = faciMember?.ledGroups.map((g) => g.name) ?? []
-
-    const groupRequests = allRequests.filter((r) => r.breakoutGroupId === bg.id)
-
-    let confirmed = 0
-    let rejected = 0
-    const members: GroupRow["members"] = []
-
-    for (const m of bg.members) {
-      const r = m.registrant
-      if (!r.memberId && !r.guestId) continue
-      // Members already in a small group are excluded from catch mech tracking
-      if (r.memberId && r.member?.smallGroupId) continue
-
-      // Resolve display name
-      let name = "Unknown"
-      if (r.memberId && r.member) {
-        name = `${r.member.firstName} ${r.member.lastName}`
-      } else if (r.guestId && r.guest) {
-        name = `${r.guest.firstName} ${r.guest.lastName}`
-      }
-
-      // Match to a request record
-      const req = groupRequests.find(
-        (rq) =>
-          (r.memberId && rq.memberId === r.memberId) ||
-          (r.guestId && rq.guestId === r.guestId)
-      )
-
-      let status: GroupRow["members"][number]["status"] = "Pending"
-      if (req?.status === "Confirmed") { status = "Confirmed"; confirmed++ }
-      else if (req?.status === "Rejected") { status = "Rejected"; rejected++ }
-
-      members.push({ name, status })
-    }
-
-    const total = members.length
-    const pending = total - confirmed - rejected
-
-    totalConfirmed += confirmed
-    totalRejected += rejected
-    totalPending += pending
-
-    groupRows.push({
-      id: bg.id,
-      name: bg.name,
-      faciName: faciMember ? `${faciMember.firstName} ${faciMember.lastName}` : null,
-      faciMemberId: faciMember?.id ?? null,
-      isTimothy,
-      ledGroupNames,
-      totalMembers: total,
-      confirmedCount: confirmed,
-      rejectedCount: rejected,
-      pendingCount: pending,
-      members,
-    })
-  }
-
-  const totalMembers = totalConfirmed + totalRejected + totalPending
+  // Build per-group rows + aggregate stats (pure, see aggregate.ts)
+  const { groupRows, stats } = buildCatchMechGroupRows(event.breakoutGroups, allRequests)
 
   return {
     groupRows,
-    stats: { totalMembers, totalConfirmed, totalRejected, totalPending },
+    stats,
     weeklyProgress,
   }
 }
