@@ -331,6 +331,21 @@ END $$;
 
 ## Testing
 
+### Coverage Policy — build forward
+**Every implementation ships with its tests in the same change — never deferred.** Coverage only accumulates; it must never regress. For each feature or fix, add the layers that fit the change:
+
+| Layer | What it covers | Where |
+|---|---|---|
+| **Unit** | Pure logic in isolation — scorers, helpers, validators, formatters | `tests/unit/` |
+| **Integration** | Server actions + real DB state, truncate→seed→call→assert | `tests/tickets/` (or `tests/integration/`) |
+| **Regression** | A test pinning the exact bug being fixed so it cannot return | with the fix |
+| **Edge case** | Boundaries, nulls, empty/duplicate inputs, malformed phones, circular refs | with the feature |
+| **End-to-end** | User-facing flows across the browser | Playwright (`pnpm test:e2e`) |
+
+- Treat tests as part of **"done,"** not a follow-up. A PR that touches `app/` or `lib/` should touch `tests/`.
+- Not every change needs all five layers — pick the ones that fit, but **explicitly call out any layer you skip and why** rather than silently omitting it. (A copy tweak needs no integration/e2e; a new server action needs at minimum unit + integration + edge case.)
+- Gate before merge: `pnpm verify:ticket CCF-NNN` (or `pnpm test:unit`) as you go, then `pnpm qa:gate`.
+
 ### Setup
 - **Test runner:** Vitest (unit + ticket tests), Playwright (e2e)
 - **Test database:** local PostgreSQL 16 (`ccf_test`) — separate from staging. Started via `brew services start postgresql@16`.

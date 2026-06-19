@@ -20,8 +20,8 @@ async function getEventSessions(id: string) {
           isOpen: true,
           isStandalone: true,
           seriesId: true,
-          // Participant attendance only — volunteer check-ins are tracked separately.
-          _count: { select: { attendees: { where: { registrantId: { not: null } } } } },
+          // Total check-ins — includes both participant and volunteer attendance.
+          _count: { select: { attendees: true } },
         },
       },
       occurrenceSeries: {

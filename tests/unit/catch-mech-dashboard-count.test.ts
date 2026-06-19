@@ -31,6 +31,7 @@ describe("catch-mech dashboard count — pure aggregation", () => {
         members: [
           {
             registrant: {
+              id: "r1",
               memberId: "m1",
               guestId: null,
               // Confirmed → now placed in sg1
@@ -42,7 +43,7 @@ describe("catch-mech dashboard count — pure aggregation", () => {
       },
     ]
     const allRequests: AggRequest[] = [
-      { breakoutGroupId: "bg1", memberId: "m1", guestId: null, status: "Confirmed" },
+      { id: "req1", breakoutGroupId: "bg1", memberId: "m1", guestId: null, status: "Confirmed" },
     ]
 
     const { stats, groupRows } = buildCatchMechGroupRows(breakoutGroups, allRequests)
@@ -61,6 +62,7 @@ describe("catch-mech dashboard count — pure aggregation", () => {
         members: [
           {
             registrant: {
+              id: "r2",
               memberId: "m2",
               guestId: null,
               member: { firstName: "Pre", lastName: "Placed", smallGroupId: "sgX" },
@@ -146,7 +148,7 @@ describe("catch-mech dashboard count — integration", () => {
               select: {
                 registrant: {
                   select: {
-                    memberId: true, guestId: true,
+                    id: true, memberId: true, guestId: true,
                     member: { select: { firstName: true, lastName: true, smallGroupId: true } },
                     guest: { select: { firstName: true, lastName: true } },
                   },
@@ -159,7 +161,7 @@ describe("catch-mech dashboard count — integration", () => {
     })
     const allRequests = await db.smallGroupMemberRequest.findMany({
       where: { breakoutGroupId: { in: fresh!.breakoutGroups.map((b) => b.id) } },
-      select: { breakoutGroupId: true, memberId: true, guestId: true, status: true },
+      select: { id: true, breakoutGroupId: true, memberId: true, guestId: true, status: true },
     })
 
     const { stats } = buildCatchMechGroupRows(fresh!.breakoutGroups, allRequests)

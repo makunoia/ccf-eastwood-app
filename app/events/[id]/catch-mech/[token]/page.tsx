@@ -2,7 +2,7 @@ import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { CatchMechConfirmClient } from "./catch-mech-confirm-client"
 
-async function getSessionData(token: string) {
+export async function getSessionData(token: string) {
   const session = await db.catchMechSession.findUnique({
     where: { token },
     select: {
@@ -47,8 +47,8 @@ async function getSessionData(token: string) {
       breakoutGroup: {
         select: {
           name: true,
-          linkedSmallGroupId: true,
           facilitatorId: true,
+          linkedSmallGroupId: true,
           members: {
             orderBy: { assignedAt: "asc" },
             select: {
@@ -73,13 +73,14 @@ async function getSessionData(token: string) {
 
   const faciMember = session.facilitator.member
   const isTimothy = faciMember.ledGroups.length === 0
-  // Mirror the submit action's target resolution. The breakout's link belongs to the
-  // LEAD facilitator, so a co-facilitator resolves to their own led group instead.
+
+  // The breakout's linked group belongs to the LEAD facilitator; a co-facilitator
+  // works against their OWN led group. Resolve the acting faci's target group the
+  // same way submitCatchMechConfirmations does — so rejections are scoped per faci.
   const isLeadFaci = session.facilitatorVolunteerId === session.breakoutGroup.facilitatorId
   const effectiveLink = isLeadFaci ? session.breakoutGroup.linkedSmallGroupId : null
-  const leadingGroupId =
-    effectiveLink ??
-    (faciMember.ledGroups.length === 1 ? faciMember.ledGroups[0].id : null)
+  const targetGroupId =
+    effectiveLink ?? (faciMember.ledGroups.length === 1 ? faciMember.ledGroups[0].id : null)
 
   // Collect IDs for a batch lookup of existing SmallGroupMemberRequests
   const guestIds = session.breakoutGroup.members
@@ -89,42 +90,38 @@ async function getSessionData(token: string) {
     .map((m) => m.registrant.memberId)
     .filter((id): id is string => id !== null)
 
-  // Batch-fetch Confirmed/Rejected requests to avoid N+1 and to filter out rejected registrants
-  const existingRequests = leadingGroupId
-    ? await db.smallGroupMemberRequest.findMany({
-        where: {
-          smallGroupId: leadingGroupId,
-          status: { in: ["Confirmed", "Rejected"] },
-          OR: [
-            ...(guestIds.length > 0 ? [{ guestId: { in: guestIds } }] : []),
-            ...(memberIds.length > 0 ? [{ memberId: { in: memberIds } }] : []),
-          ],
-        },
-        select: { guestId: true, memberId: true, status: true },
-      })
-    : []
+  // Each facilitator decides independently. A Confirmed request means the person is
+  // placed (one group per person) — hidden from everyone. A Rejected request only
+  // removes the person from the *rejecting* faci's own list (i.e. their target group),
+  // so a co-facilitator can still confirm someone the lead declined.
+  const existingRequests =
+    guestIds.length > 0 || memberIds.length > 0
+      ? await db.smallGroupMemberRequest.findMany({
+          where: {
+            status: { in: ["Confirmed", "Rejected"] },
+            OR: [
+              ...(guestIds.length > 0 ? [{ guestId: { in: guestIds } }] : []),
+              ...(memberIds.length > 0 ? [{ memberId: { in: memberIds } }] : []),
+            ],
+          },
+          select: { guestId: true, memberId: true, status: true, smallGroupId: true },
+        })
+      : []
 
-  const rejectedGuestIds = new Set(
-    existingRequests
-      .filter((r) => r.status === "Rejected" && r.guestId)
-      .map((r) => r.guestId!)
+  const hidesPerson = (r: { status: string; smallGroupId: string }) =>
+    r.status === "Confirmed" || (r.status === "Rejected" && r.smallGroupId === targetGroupId)
+
+  const resolvedGuestIds = new Set(
+    existingRequests.filter((r) => r.guestId && hidesPerson(r)).map((r) => r.guestId!)
   )
-  const confirmedGuestIds = new Set(
-    existingRequests
-      .filter((r) => r.status === "Confirmed" && r.guestId)
-      .map((r) => r.guestId!)
-  )
-  const rejectedMemberIds = new Set(
-    existingRequests
-      .filter((r) => r.status === "Rejected" && r.memberId)
-      .map((r) => r.memberId!)
+  const resolvedMemberIds = new Set(
+    existingRequests.filter((r) => r.memberId && hidesPerson(r)).map((r) => r.memberId!)
   )
 
   type RegistrantRow = {
     registrantId: string
     name: string
     type: "member" | "guest"
-    isConfirmed: boolean
   }
 
   const rows: RegistrantRow[] = []
@@ -134,25 +131,24 @@ async function getSessionData(token: string) {
     if (!r.memberId && !r.guestId) continue
     // Skip already-promoted guests
     if (r.guestId && r.guest?.memberId) continue
-    // Skip registrants that were previously rejected for the faci's leading group
-    if (r.guestId && rejectedGuestIds.has(r.guestId)) continue
-    if (r.memberId && rejectedMemberIds.has(r.memberId)) continue
+    // Skip members already placed in any small group
+    if (r.memberId && r.member?.smallGroupId) continue
+    // Skip anyone already resolved (confirmed or rejected) in any group
+    if (r.guestId && resolvedGuestIds.has(r.guestId)) continue
+    if (r.memberId && resolvedMemberIds.has(r.memberId)) continue
 
     let name = "Unknown"
-    let isConfirmed = false
     let type: "member" | "guest" = "guest"
 
     if (r.memberId && r.member) {
       name = `${r.member.firstName} ${r.member.lastName}`
       type = "member"
-      isConfirmed = leadingGroupId !== null && r.member.smallGroupId === leadingGroupId
     } else if (r.guestId && r.guest) {
       name = `${r.guest.firstName} ${r.guest.lastName}`
       type = "guest"
-      isConfirmed = leadingGroupId !== null && confirmedGuestIds.has(r.guestId)
     }
 
-    rows.push({ registrantId: r.id, name, type, isConfirmed })
+    rows.push({ registrantId: r.id, name, type })
   }
 
   return {

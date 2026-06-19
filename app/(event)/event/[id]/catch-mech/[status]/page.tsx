@@ -104,6 +104,7 @@ async function getStatusListData(eventId: string, status: Status) {
         breakoutGroupName: breakoutGroupNameMap.get(m.breakoutGroupId) ?? "—",
         smallGroupName: m.breakoutGroup.linkedSmallGroup?.name ?? null,
         declineReason: null,
+        rejectedByName: null,
       })
     }
 
@@ -122,7 +123,12 @@ async function getStatusListData(eventId: string, status: Status) {
       guestId: true,
       memberId: true,
       smallGroupId: true,
-      smallGroup: { select: { name: true } },
+      smallGroup: {
+        select: {
+          name: true,
+          leader: { select: { firstName: true, lastName: true } },
+        },
+      },
       breakoutGroupId: true,
       declineReason: true,
       notes: true,
@@ -180,6 +186,9 @@ async function getStatusListData(eventId: string, status: Status) {
       breakoutGroupName: breakoutGroupNameMap.get(req.breakoutGroupId ?? "") ?? "—",
       smallGroupName: req.smallGroup?.name ?? null,
       declineReason: formatDeclineReason(req.declineReason, req.notes),
+      rejectedByName: req.smallGroup?.leader
+        ? `${req.smallGroup.leader.firstName} ${req.smallGroup.leader.lastName}`
+        : null,
     }]
   })
 
