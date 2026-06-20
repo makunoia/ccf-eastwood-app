@@ -1,12 +1,13 @@
 "use client"
 
 import * as React from "react"
-import { IconBus, IconCash, IconCross, IconFish, IconPencil, IconPlus, IconSalad, IconSparkles, IconTrash, IconUsers } from "@tabler/icons-react"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { IconBus, IconCross, IconFish, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/page-header"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { SettingCard } from "@/components/ui/setting-card"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
@@ -32,14 +33,11 @@ import {
   createBus,
   updateBus,
   deleteBus,
-  setRegistrationFormModule,
-  type RegistrationFormModule,
 } from "@/app/(dashboard)/events/module-actions"
 import { CommitteeManager } from "@/app/(dashboard)/events/[id]/committees"
 import { LogoUploader } from "@/components/logo-uploader"
 import { ColorThemePicker, type ColorTheme } from "@/components/color-theme-picker"
 import { updateEventBranding, type EventBrandingValues } from "@/app/(dashboard)/events/branding-actions"
-import { updateRegistrationPage, type RegistrationPageValues } from "@/app/(dashboard)/events/registration-page-actions"
 import { updateEvent } from "@/app/(dashboard)/events/actions"
 import { type EventFormValues } from "@/lib/validations/event"
 import { Textarea } from "@/components/ui/textarea"
@@ -66,8 +64,6 @@ type LinkedMinistry = {
   themeColorAccent: string | null
 }
 
-type FormModules = Record<RegistrationFormModule, boolean>
-
 type Props = {
   eventId: string
   details: EventFormValues
@@ -77,9 +73,7 @@ type Props = {
   committees: Committee[]
   showEmbarkation: boolean
   branding: EventBrandingValues
-  formModules: FormModules
   linkedMinistries: LinkedMinistry[]
-  registrationPage: RegistrationPageValues
 }
 
 type BusFormValues = { name: string; capacity: string; direction: string }
@@ -328,94 +322,6 @@ function BrandingTab({
       {dirty && (
         <Button onClick={handleSave} disabled={saving}>
           {saving ? "Saving…" : "Save branding"}
-        </Button>
-      )}
-    </div>
-  )
-}
-
-// ─── Registration page tab ────────────────────────────────────────────────────
-
-function RegistrationPageTab({
-  eventId,
-  initial,
-}: {
-  eventId: string
-  initial: RegistrationPageValues
-}) {
-  const [form, setForm] = React.useState<RegistrationPageValues>(initial)
-  const [saving, setSaving] = React.useState(false)
-  const [dirty, setDirty] = React.useState(false)
-
-  function set<K extends keyof RegistrationPageValues>(key: K, value: RegistrationPageValues[K]) {
-    setDirty(true)
-    setForm((prev) => ({ ...prev, [key]: value }))
-  }
-
-  async function handleSave() {
-    setSaving(true)
-    const result = await updateRegistrationPage(eventId, form)
-    setSaving(false)
-    if (result.success) {
-      setDirty(false)
-      toast.success("Page settings saved")
-    } else {
-      toast.error(result.error)
-    }
-  }
-
-  return (
-    <div className="space-y-6 max-w-2xl">
-      <div>
-        <p className="text-xs text-muted-foreground">
-          Customize the header shown on this event&apos;s public registration and check-in pages. Leave a field blank to use the default.
-        </p>
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="regPageTitle">Page Title</Label>
-        <Input
-          id="regPageTitle"
-          value={form.registrationPageTitle}
-          onChange={(e) => set("registrationPageTitle", e.target.value)}
-          placeholder="e.g. Youth Camp 2026 — Sign Up"
-        />
-        <p className="text-xs text-muted-foreground">
-          Defaults to &ldquo;[Event Name] Registration&rdquo; when blank.
-        </p>
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="regPageDescription">Description</Label>
-        <Textarea
-          id="regPageDescription"
-          value={form.registrationPageDescription}
-          onChange={(e) => set("registrationPageDescription", e.target.value)}
-          placeholder="e.g. Fill in your details below to secure your slot."
-          rows={3}
-        />
-        <p className="text-xs text-muted-foreground">
-          Shown below the title. Defaults to the ministry and date when blank.
-        </p>
-      </div>
-
-      <div className="space-y-2">
-        <LogoUploader
-          label="Banner Image"
-          value={form.registrationPageBannerUrl || null}
-          onChange={(url) => {
-            setDirty(true)
-            setForm((prev) => ({ ...prev, registrationPageBannerUrl: url ?? "" }))
-          }}
-        />
-        <p className="text-xs text-muted-foreground">
-          Full-cover background behind the header. Leave blank to use the event&apos;s branding color.
-        </p>
-      </div>
-
-      {dirty && (
-        <Button onClick={handleSave} disabled={saving}>
-          {saving ? "Saving…" : "Save page settings"}
         </Button>
       )}
     </div>
@@ -725,26 +631,25 @@ export function EventSettingsClient({
   committees,
   showEmbarkation,
   branding,
-  formModules,
   linkedMinistries,
-  registrationPage,
 }: Props) {
+  // Tabs are controlled by the `tab` search param so other screens (e.g. the
+  // dashboard setup checklist) can deep-link straight to a section.
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const validTabs = ["details", "modules", "committees", "branding"]
+  const tabParam = searchParams.get("tab")
+  const activeTab = tabParam && validTabs.includes(tabParam) ? tabParam : "details"
+
+  function handleTabChange(value: string) {
+    const params = new URLSearchParams(searchParams)
+    params.set("tab", value)
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+  }
+
   const [modules, setModules] = React.useState<Set<string>>(new Set(enabledModules))
   const [togglingModule, setTogglingModule] = React.useState<string | null>(null)
-  const [formMods, setFormMods] = React.useState<FormModules>(formModules)
-  const [togglingFormModule, setTogglingFormModule] = React.useState<RegistrationFormModule | null>(null)
-
-  async function handleToggleFormModule(module: RegistrationFormModule) {
-    const next = !formMods[module]
-    setTogglingFormModule(module)
-    const result = await setRegistrationFormModule(eventId, module, next)
-    setTogglingFormModule(null)
-    if (result.success) {
-      setFormMods((prev) => ({ ...prev, [module]: next }))
-    } else {
-      toast.error(result.error)
-    }
-  }
   const [busDialogOpen, setBusDialogOpen] = React.useState(false)
   const [editingBus, setEditingBus] = React.useState<BusRow | undefined>()
   const [deletingBusId, setDeletingBusId] = React.useState<string | null>(null)
@@ -789,12 +694,10 @@ export function EventSettingsClient({
         description="Configure modules and options for this event"
       />
 
-      <Tabs defaultValue="details">
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList>
           <TabsTrigger value="details">Details</TabsTrigger>
           <TabsTrigger value="modules">Modules</TabsTrigger>
-          <TabsTrigger value="registration-form">Registration Form</TabsTrigger>
-          <TabsTrigger value="registration-page">Registration & Check-in Page</TabsTrigger>
           <TabsTrigger value="committees">Committees</TabsTrigger>
           <TabsTrigger value="branding">Branding</TabsTrigger>
         </TabsList>
@@ -808,53 +711,35 @@ export function EventSettingsClient({
             <h3 className="type-label text-muted-foreground">Add-on Modules</h3>
 
             {/* Baptism */}
-            <Card>
-              <CardHeader className="p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-3 min-w-0">
-                    <IconCross className="size-6 shrink-0 text-muted-foreground mt-0.5" />
-                    <div className="min-w-0">
-                      <CardTitle className="text-base">Baptism</CardTitle>
-                      <CardDescription className="mt-0.5">
-                        Track registrants who will be baptized at this event. Managed mid-event by admin.
-                      </CardDescription>
-                    </div>
-                  </div>
-                  <Switch
-                    className="shrink-0"
-                    checked={modules.has("Baptism")}
-                    onCheckedChange={() => handleToggleModule("Baptism")}
-                    disabled={togglingModule === "Baptism"}
-                  />
-                </div>
-              </CardHeader>
-            </Card>
+            <SettingCard
+              icon={IconCross}
+              title="Baptism"
+              description="Track registrants who will be baptized at this event. Managed mid-event by admin."
+              control={
+                <Switch
+                  checked={modules.has("Baptism")}
+                  onCheckedChange={() => handleToggleModule("Baptism")}
+                  disabled={togglingModule === "Baptism"}
+                />
+              }
+            />
 
             {/* Embarkation — only for OneTime/MultiDay */}
             {showEmbarkation && (
-              <Card>
-                <CardHeader className={modules.has("Embarkation") ? "p-4 pb-2" : "p-4"}>
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex items-start gap-3 min-w-0">
-                      <IconBus className="size-6 shrink-0 text-muted-foreground mt-0.5" />
-                      <div className="min-w-0">
-                        <CardTitle className="text-base">Embarkation</CardTitle>
-                        <CardDescription className="mt-0.5">
-                          Assign registrants and volunteers to buses. Print a manifest per bus.
-                        </CardDescription>
-                      </div>
-                    </div>
-                    <Switch
-                      className="shrink-0"
-                      checked={modules.has("Embarkation")}
-                      onCheckedChange={() => handleToggleModule("Embarkation")}
-                      disabled={togglingModule === "Embarkation"}
-                    />
-                  </div>
-                </CardHeader>
-
+              <SettingCard
+                icon={IconBus}
+                title="Embarkation"
+                description="Assign registrants and volunteers to buses. Print a manifest per bus."
+                control={
+                  <Switch
+                    checked={modules.has("Embarkation")}
+                    onCheckedChange={() => handleToggleModule("Embarkation")}
+                    disabled={togglingModule === "Embarkation"}
+                  />
+                }
+              >
                 {modules.has("Embarkation") && (
-                  <CardContent className="pt-0 space-y-3">
+                  <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <p className="text-sm font-medium">Buses</p>
                       <Button size="sm" variant="outline" onClick={() => { setEditingBus(undefined); setBusDialogOpen(true) }}>
@@ -903,162 +788,24 @@ export function EventSettingsClient({
                         ))}
                       </div>
                     )}
-                  </CardContent>
+                  </div>
                 )}
-              </Card>
+              </SettingCard>
             )}
             {/* Catch Mech */}
-            <Card>
-              <CardHeader className="p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-3 min-w-0">
-                    <IconFish className="size-6 shrink-0 text-muted-foreground mt-0.5" />
-                    <div className="min-w-0">
-                      <CardTitle className="text-base">Catch Mech</CardTitle>
-                      <CardDescription className="mt-0.5">
-                        Enable facilitators to confirm breakout group members into their small groups via a weekly link.
-                      </CardDescription>
-                    </div>
-                  </div>
-                  <Switch
-                    className="shrink-0"
-                    checked={modules.has("CatchMech")}
-                    onCheckedChange={() => handleToggleModule("CatchMech")}
-                    disabled={togglingModule === "CatchMech"}
-                  />
-                </div>
-              </CardHeader>
-            </Card>
-
-            <h3 className="type-label text-muted-foreground pt-2">Volunteer Tools</h3>
-
-            {/* Volunteer Info Form */}
-            <Card>
-              <CardHeader className="p-4 pb-3">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-3 min-w-0">
-                    <IconUsers className="size-6 shrink-0 text-muted-foreground mt-0.5" />
-                    <div className="min-w-0">
-                      <CardTitle className="text-base">Volunteer Info Form</CardTitle>
-                      <CardDescription className="mt-0.5">
-                        Share this link with volunteers so they can update their personal info, small group membership, and availability.
-                      </CardDescription>
-                    </div>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <VolunteerInfoUrlCopier eventId={eventId} />
-              </CardContent>
-            </Card>
+            <SettingCard
+              icon={IconFish}
+              title="Catch Mech"
+              description="Enable facilitators to confirm breakout group members into their small groups via a weekly link."
+              control={
+                <Switch
+                  checked={modules.has("CatchMech")}
+                  onCheckedChange={() => handleToggleModule("CatchMech")}
+                  disabled={togglingModule === "CatchMech"}
+                />
+              }
+            />
           </section>
-        </TabsContent>
-
-        <TabsContent value="registration-form" className="mt-6">
-          <section className="space-y-4 max-w-2xl">
-            <div>
-              <h3 className="type-label text-muted-foreground">Public registration form</h3>
-              <p className="text-xs text-muted-foreground mt-1">
-                Toggle which optional sections appear on this event&apos;s public registration form.
-              </p>
-            </div>
-
-            {/* Small Group */}
-            <Card>
-              <CardHeader className="p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-3 min-w-0">
-                    <IconUsers className="size-6 shrink-0 text-muted-foreground mt-0.5" />
-                    <div className="min-w-0">
-                      <CardTitle className="text-base">Small Group</CardTitle>
-                      <CardDescription className="mt-0.5">
-                        Collect matching preferences so registrants can be placed into a Small Group or Breakout.
-                      </CardDescription>
-                    </div>
-                  </div>
-                  <Switch
-                    className="shrink-0"
-                    checked={formMods.SmallGroup}
-                    onCheckedChange={() => handleToggleFormModule("SmallGroup")}
-                    disabled={togglingFormModule === "SmallGroup"}
-                  />
-                </div>
-              </CardHeader>
-            </Card>
-
-            {/* Dietary Restrictions */}
-            <Card>
-              <CardHeader className="p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-3 min-w-0">
-                    <IconSalad className="size-6 shrink-0 text-muted-foreground mt-0.5" />
-                    <div className="min-w-0">
-                      <CardTitle className="text-base">Dietary Restrictions</CardTitle>
-                      <CardDescription className="mt-0.5">
-                        Ask registrants whether they have dietary preferences (Vegetarian, Vegan, Halal, etc.).
-                      </CardDescription>
-                    </div>
-                  </div>
-                  <Switch
-                    className="shrink-0"
-                    checked={formMods.Dietary}
-                    onCheckedChange={() => handleToggleFormModule("Dietary")}
-                    disabled={togglingFormModule === "Dietary"}
-                  />
-                </div>
-              </CardHeader>
-            </Card>
-
-            {/* Payment */}
-            <Card>
-              <CardHeader className="p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-3 min-w-0">
-                    <IconCash className="size-6 shrink-0 text-muted-foreground mt-0.5" />
-                    <div className="min-w-0">
-                      <CardTitle className="text-base">Payment Reference</CardTitle>
-                      <CardDescription className="mt-0.5">
-                        Ask registrants for a payment reference (e.g. GCash transaction ID) on submission.
-                      </CardDescription>
-                    </div>
-                  </div>
-                  <Switch
-                    className="shrink-0"
-                    checked={formMods.Payment}
-                    onCheckedChange={() => handleToggleFormModule("Payment")}
-                    disabled={togglingFormModule === "Payment"}
-                  />
-                </div>
-              </CardHeader>
-            </Card>
-
-            {/* Auto-assign Breakout */}
-            <Card>
-              <CardHeader className="p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-3 min-w-0">
-                    <IconSparkles className="size-6 shrink-0 text-muted-foreground mt-0.5" />
-                    <div className="min-w-0">
-                      <CardTitle className="text-base">Automatically assign breakout groups</CardTitle>
-                      <CardDescription className="mt-0.5">
-                        On submit, place each registrant into the best-fit breakout group based on Gender, Age, and remaining capacity. When off, registrants choose their own group (or skip).
-                      </CardDescription>
-                    </div>
-                  </div>
-                  <Switch
-                    className="shrink-0"
-                    checked={formMods.AutoAssignBreakout}
-                    onCheckedChange={() => handleToggleFormModule("AutoAssignBreakout")}
-                    disabled={togglingFormModule === "AutoAssignBreakout"}
-                  />
-                </div>
-              </CardHeader>
-            </Card>
-          </section>
-        </TabsContent>
-
-        <TabsContent value="registration-page" className="mt-6">
-          <RegistrationPageTab eventId={eventId} initial={registrationPage} />
         </TabsContent>
 
         <TabsContent value="committees" className="mt-6 max-w-2xl">
@@ -1101,30 +848,6 @@ export function EventSettingsClient({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
-  )
-}
-
-function VolunteerInfoUrlCopier({ eventId }: { eventId: string }) {
-  const [copied, setCopied] = React.useState(false)
-
-  const url =
-    typeof window !== "undefined"
-      ? `${window.location.origin}/events/${eventId}/volunteer-info`
-      : `/events/${eventId}/volunteer-info`
-
-  async function handleCopy() {
-    await navigator.clipboard.writeText(url)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
-  return (
-    <div className="flex items-center gap-2">
-      <Input readOnly value={url} className="text-xs text-muted-foreground" />
-      <Button type="button" variant="outline" size="sm" onClick={handleCopy} className="shrink-0">
-        {copied ? "Copied!" : "Copy"}
-      </Button>
     </div>
   )
 }

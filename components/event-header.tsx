@@ -16,6 +16,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   baptism: "Baptism",
   embarkation: "Embarkation",
   settings: "Settings",
+  forms: "Forms",
   "catch-mech": "Catch Mech",
   pending: "Pending",
   confirmed: "Confirmed",

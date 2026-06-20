@@ -1,7 +1,12 @@
 import { IconUsers } from "@tabler/icons-react"
 import { VerifyForm } from "./verify-form"
+import { FormClosed } from "@/components/form-closed"
+import { getFormConfig } from "@/lib/forms/config"
 
-export default function SmallGroupConfirmationEntryPage() {
+export default async function SmallGroupConfirmationEntryPage() {
+  const formConfig = await getFormConfig("SmallGroupConfirmation")
+  if (!formConfig.isOpen) return <FormClosed />
+
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6">
       <div className="w-full max-w-md space-y-8">

@@ -1,7 +1,12 @@
 import { IconUserCircle } from "@tabler/icons-react"
 import { VerifyForm } from "./verify-form"
+import { FormClosed } from "@/components/form-closed"
+import { getFormConfig } from "@/lib/forms/config"
 
-export default function MePage() {
+export default async function MePage() {
+  const formConfig = await getFormConfig("MemberSelfService")
+  if (!formConfig.isOpen) return <FormClosed />
+
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6">
       <div className="w-full max-w-md space-y-8">

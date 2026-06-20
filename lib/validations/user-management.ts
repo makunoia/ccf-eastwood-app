@@ -7,6 +7,7 @@ export const FEATURE_AREAS = [
   "Ministries",
   "Events",
   "Volunteers",
+  "Forms",
 ] as const
 
 export const PERMISSION_ACTIONS = ["Read", "Write", "Import", "Export"] as const

@@ -1,5 +1,7 @@
 import { db } from "@/lib/db"
 import { JoinForm } from "./join-form"
+import { FormClosed } from "@/components/form-closed"
+import { getFormConfig, resolveFormTheme } from "@/lib/forms/config"
 
 async function getPageData() {
   const [settings, lifeStages] = await Promise.all([
@@ -8,20 +10,28 @@ async function getPageData() {
   ])
 
   return {
-    title: settings?.joinPageTitle ?? "Find Your Small Group",
-    description:
-      settings?.joinPageDescription ??
-      "Tell us about yourself and we'll suggest the best small groups for you.",
-    logoUrl: settings?.joinPageLogoUrl ?? "",
-    backgroundImageUrl: settings?.joinPageBackgroundImageUrl ?? "",
-    accentColor: settings?.joinPageAccentColor ?? "",
+    // SiteSettings join-page fields are the fallback; Forms-hub overrides supersede them.
+    fallback: {
+      title: settings?.joinPageTitle || "Find Your Small Group",
+      description:
+        settings?.joinPageDescription ||
+        "Tell us about yourself and we'll suggest the best small groups for you.",
+      logoUrl: settings?.joinPageLogoUrl || null,
+      bannerUrl: settings?.joinPageBackgroundImageUrl || null,
+      primaryColor: settings?.joinPageAccentColor || null,
+    },
     lifeStages,
   }
 }
 
 export default async function JoinSmallGroupPage() {
-  const { title, description, logoUrl, backgroundImageUrl, accentColor, lifeStages } =
-    await getPageData()
+  const { fallback, lifeStages } = await getPageData()
+
+  const formConfig = await getFormConfig("JoinSmallGroup")
+  if (!formConfig.isOpen) return <FormClosed />
+
+  const { title, description, logoUrl, bannerUrl: backgroundImageUrl, primaryColor: accentColor } =
+    resolveFormTheme(formConfig, fallback)
 
   const hasBg = !!backgroundImageUrl || !!accentColor
 
@@ -49,7 +59,7 @@ export default async function JoinSmallGroupPage() {
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={logoUrl}
-              alt={title}
+              alt={title ?? ""}
               className="mx-auto mb-4 size-20 rounded-xl object-contain"
               style={hasBg ? { backgroundColor: "rgba(255,255,255,0.15)", padding: "0.5rem" } : undefined}
             />

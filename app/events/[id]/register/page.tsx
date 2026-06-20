@@ -2,6 +2,10 @@ import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { RegistrationForm } from "./registration-form"
 import { fetchBreakoutCandidates } from "@/lib/breakout-suggestion-server"
+import { PublicFormShell } from "@/components/public-form-shell"
+import { FormClosed } from "@/components/form-closed"
+import { getFormConfig, resolveFormTheme } from "@/lib/forms/config"
+import { resolveEventBrand } from "@/lib/forms/event-brand"
 
 async function getEvent(id: string) {
   const event = await db.event.findUnique({
@@ -44,20 +48,6 @@ async function getEvent(id: string) {
   return event ?? null
 }
 
-function resolveEventBrand(event: NonNullable<Awaited<ReturnType<typeof getEvent>>>) {
-  if (event.useMinistryBrand && event.brandMinistryId) {
-    const ministry = event.ministries.find((em) => em.ministry.id === event.brandMinistryId)
-    return {
-      logoUrl: ministry?.ministry.logoUrl ?? null,
-      primaryColor: ministry?.ministry.themeColorPrimary ?? null,
-    }
-  }
-  return {
-    logoUrl: event.logoUrl ?? null,
-    primaryColor: event.themeColorPrimary ?? null,
-  }
-}
-
 export default async function RegisterPage({
   params,
 }: {
@@ -66,6 +56,9 @@ export default async function RegisterPage({
   const { id } = await params
   const event = await getEvent(id)
   if (!event) notFound()
+
+  const formConfig = await getFormConfig("EventRegistration", id)
+  if (!formConfig.isOpen) return <FormClosed />
 
   const lifeStages = event.formIncludeSmallGroup
     ? await db.lifeStage.findMany({
@@ -94,7 +87,7 @@ export default async function RegisterPage({
     ? []
     : await fetchBreakoutCandidates(event.id, breakoutOccurrenceId, false)
 
-  const { logoUrl, primaryColor } = resolveEventBrand(event)
+  const brand = resolveEventBrand(event)
   const ministryNames = event.ministries.map((em) => em.ministry.name).join(" · ")
   const dateLabel = event.startDate.toLocaleDateString("en-PH", {
     month: "long",
@@ -103,73 +96,45 @@ export default async function RegisterPage({
     timeZone: "UTC",
   })
 
-  const bannerUrl = event.registrationPageBannerUrl ?? null
-  const pageTitle = event.registrationPageTitle || `${event.name} Registration`
-  const pageDescription =
-    event.registrationPageDescription ||
-    [ministryNames, event.type !== "Recurring" ? dateLabel : ""].filter(Boolean).join(" · ")
+  // EventRegistration uses its dedicated columns for the page theme; FormConfig
+  // overrides (which are unused for this key) fall through to these defaults.
+  const theme = resolveFormTheme(formConfig, {
+    title: event.registrationPageTitle || `${event.name} Registration`,
+    description:
+      event.registrationPageDescription ||
+      [ministryNames, event.type !== "Recurring" ? dateLabel : ""].filter(Boolean).join(" · "),
+    logoUrl: brand.logoUrl,
+    bannerUrl: event.registrationPageBannerUrl ?? null,
+    primaryColor: brand.primaryColor,
+  })
 
-  const hasBg = !!(bannerUrl || primaryColor)
+  const hasBg = !!(theme.bannerUrl || theme.primaryColor)
 
   return (
-    <div className="relative min-h-svh bg-muted">
-      {bannerUrl && (
-        <>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={bannerUrl}
-            alt=""
-            className="fixed inset-0 h-full w-full object-cover"
-          />
-          <div className="fixed inset-0 bg-black/50" />
-        </>
-      )}
-
-      {/* Branded header band */}
-      <div
-        className={`relative px-6 pt-8 pb-16 text-center`}
-        style={!bannerUrl && primaryColor ? { backgroundColor: primaryColor } : undefined}
-      >
-        <div className="relative mx-auto w-full max-w-md">
-          {logoUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={logoUrl}
-              alt={event.name}
-              className="mx-auto mb-4 size-20 rounded-xl object-contain"
-              style={hasBg ? { backgroundColor: "rgba(255,255,255,0.15)", padding: "0.5rem" } : undefined}
-            />
-          )}
-          <h1 className={`text-2xl font-bold ${hasBg ? "text-white" : ""}`}>{pageTitle}</h1>
-          <p className={`mt-1 text-sm ${hasBg ? "text-white/75" : "text-muted-foreground"}`}>
-            {pageDescription}
+    <PublicFormShell
+      theme={theme}
+      alt={event.name}
+      headerExtra={
+        event.price != null ? (
+          <p className={`mt-1 text-sm font-medium ${hasBg ? "" : "text-foreground"}`}>
+            ₱
+            {(event.price / 100).toLocaleString("en-PH", {
+              minimumFractionDigits: 2,
+            })}
           </p>
-          {event.price != null && (
-            <p className={`mt-1 text-sm font-medium ${hasBg ? "text-white/90" : ""}`}>
-              ₱
-              {(event.price / 100).toLocaleString("en-PH", {
-                minimumFractionDigits: 2,
-              })}
-            </p>
-          )}
-        </div>
-      </div>
-
-      {/* Form area */}
-      <div className="relative z-10 -mt-10 flex items-start justify-center px-4 pb-4">
-        <div className="w-full max-w-md">
-          <RegistrationForm
-            eventId={event.id}
-            eventName={event.name}
-            includeSmallGroup={event.formIncludeSmallGroup}
-            includeDietary={event.formIncludeDietary}
-            includePayment={event.formIncludePayment}
-            lifeStages={lifeStages}
-            defaultLifeStageId={defaultLifeStageId}
-            breakoutCandidates={breakoutCandidates}
-          />
-        </div>
-      </div>
-    </div>
+        ) : undefined
+      }
+    >
+      <RegistrationForm
+        eventId={event.id}
+        eventName={event.name}
+        includeSmallGroup={event.formIncludeSmallGroup}
+        includeDietary={event.formIncludeDietary}
+        includePayment={event.formIncludePayment}
+        lifeStages={lifeStages}
+        defaultLifeStageId={defaultLifeStageId}
+        breakoutCandidates={breakoutCandidates}
+      />
+    </PublicFormShell>
   )
 }

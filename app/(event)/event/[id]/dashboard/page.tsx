@@ -3,6 +3,7 @@ import { db } from "@/lib/db"
 import { EventDashboardClient } from "./dashboard-client"
 import { ensureMultiDayOccurrences } from "@/app/(dashboard)/events/actions"
 import { loadRecurringSeriesSummaries } from "@/lib/events/series-summary"
+import { getEventSetupChecklist } from "@/lib/events/setup-checklist"
 
 type PeriodFilter = "7d" | "30d" | "90d" | "all"
 type UngroupedParticipant = {
@@ -38,6 +39,7 @@ async function getEventDashboard(id: string, period: PeriodFilter) {
       price: true,
       registrationStart: true,
       registrationEnd: true,
+      setupDismissedAt: true,
       recurrenceDayOfWeek: true,
       recurrenceFrequency: true,
       recurrenceEndDate: true,
@@ -355,6 +357,7 @@ async function getEventDashboard(id: string, period: PeriodFilter) {
     name: event.name,
     description: event.description,
     type: event.type,
+    setupDismissedAt: event.setupDismissedAt,
     startDate: event.startDate.toISOString(),
     endDate: event.endDate.toISOString(),
     price: event.price,
@@ -436,7 +439,12 @@ export default async function EventDashboardPage({
     if (!event) notFound()
   }
 
+  // Setup walkthrough — only built while the admin hasn't dismissed it.
+  const setup = event.setupDismissedAt
+    ? null
+    : await getEventSetupChecklist(event.id, event.type)
+
   return (
-    <EventDashboardClient event={event} />
+    <EventDashboardClient event={event} setup={setup} />
   )
 }

@@ -127,6 +127,18 @@ enum FeatureArea {
   Ministries
   Events
   Volunteers
+  Forms
+}
+
+enum FormKey {
+  JoinSmallGroup
+  MemberSelfService
+  SmallGroupConfirmation
+  EventRegistration
+  VolunteerSignUp
+  VolunteerInfo
+  VolunteerApproval
+  CatchMech
 }
 
 enum PermissionAction {
@@ -416,6 +428,8 @@ model Event {
   registrationPageTitle       String?
   registrationPageDescription String?
   registrationPageBannerUrl   String?
+  // Setup walkthrough — once the admin dismisses the dashboard setup checklist it stays hidden
+  setupDismissedAt            DateTime?
   createdAt             DateTime            @default(now())
   updatedAt             DateTime            @updatedAt
 
@@ -432,6 +446,7 @@ model Event {
   userAccess        UserEventAccess[]
   catchMechSessions CatchMechSession[]
   memberLogs        MemberLog[]
+  formConfigs       FormConfig[]
 }
 
 model EventMinistry {
@@ -827,4 +842,26 @@ model SiteSettings {
   joinPageAccentColor         String   @default("")
   createdAt                   DateTime @default(now())
   updatedAt                   DateTime @updatedAt
+}
+
+// ─── Form Config ──────────────────────────────────────────────────────────────
+// Per-form public-access (open/closed) + theme overrides. One row per form:
+// global forms key on "global:<FormKey>"; event forms on "<eventId>:<FormKey>".
+model FormConfig {
+  id           String   @id @default(cuid())
+  scopeKey     String   @unique
+  key          FormKey
+  eventId      String?
+  event        Event?   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  isOpen       Boolean  @default(true)
+  // per-form theme overrides (all optional → fall back to scope defaults)
+  title        String?
+  description  String?
+  logoUrl      String?
+  bannerUrl    String?
+  primaryColor String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([eventId])
 }
