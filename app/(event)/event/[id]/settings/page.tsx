@@ -122,18 +122,7 @@ export default async function EventSettingsPage({
         themeColorSecondary: event.themeColorSecondary ?? "",
         themeColorAccent: event.themeColorAccent ?? "",
       }}
-      formModules={{
-        SmallGroup: event.formIncludeSmallGroup,
-        Dietary: event.formIncludeDietary,
-        Payment: event.formIncludePayment,
-        AutoAssignBreakout: event.autoAssignBreakout,
-      }}
       linkedMinistries={linkedMinistries}
-      registrationPage={{
-        registrationPageTitle: event.registrationPageTitle ?? "",
-        registrationPageDescription: event.registrationPageDescription ?? "",
-        registrationPageBannerUrl: event.registrationPageBannerUrl ?? "",
-      }}
     />
   )
 }

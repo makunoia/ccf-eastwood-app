@@ -333,6 +333,26 @@ export async function deleteEvent(id: string): Promise<ActionResult> {
   }
 }
 
+/**
+ * Permanently hides the dashboard setup walkthrough for an event. Once dismissed
+ * the checklist never reappears (even if data is later deleted).
+ */
+export async function dismissEventSetup(eventId: string): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
+  try {
+    await db.event.update({
+      where: { id: eventId },
+      data: { setupDismissedAt: new Date() },
+    })
+    revalidatePath(`/event/${eventId}/dashboard`)
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to dismiss setup checklist" }
+  }
+}
+
 type MemberLookupResult = {
   id: string
   firstName: string

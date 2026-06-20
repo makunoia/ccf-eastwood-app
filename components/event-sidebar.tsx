@@ -11,12 +11,14 @@ import {
   IconCalendarEvent,
   IconCross,
   IconFish,
+  IconForms,
   IconLayoutDashboard,
   IconLogout,
   IconSettings,
   IconUsersGroup,
   IconHeart,
   IconUsers,
+  IconUserCheck,
   IconCalendar,
 } from "@tabler/icons-react"
 
@@ -73,6 +75,12 @@ export function EventSidebar({
       show: true,
     },
     {
+      title: "Check-in",
+      url: `${base}/checkin`,
+      icon: IconUserCheck,
+      show: eventType === "OneTime",
+    },
+    {
       title: "Sessions",
       url: `${base}/sessions`,
       icon: IconCalendarWeek,
@@ -113,6 +121,12 @@ export function EventSidebar({
       url: `${base}/catch-mech`,
       icon: IconFish,
       show: modules.includes("CatchMech"),
+    },
+    {
+      title: "Forms",
+      url: `${base}/forms`,
+      icon: IconForms,
+      show: true,
     },
   ]
 

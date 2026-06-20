@@ -1,6 +1,9 @@
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { CatchMechConfirmClient } from "./catch-mech-confirm-client"
+import { FormClosed } from "@/components/form-closed"
+import { getFormConfig, resolveFormTheme } from "@/lib/forms/config"
+import { resolveEventBrand } from "@/lib/forms/event-brand"
 
 export async function getSessionData(token: string) {
   const session = await db.catchMechSession.findUnique({
@@ -161,31 +164,29 @@ export async function getSessionData(token: string) {
   }
 }
 
-function resolveEventBrand(event: NonNullable<Awaited<ReturnType<typeof getSessionData>>>["event"]) {
-  if (event.useMinistryBrand && event.brandMinistryId) {
-    const ministry = event.ministries.find((em) => em.ministry.id === event.brandMinistryId)
-    return {
-      logoUrl: ministry?.ministry.logoUrl ?? null,
-      primaryColor: ministry?.ministry.themeColorPrimary ?? null,
-    }
-  }
-  return {
-    logoUrl: event.logoUrl ?? null,
-    primaryColor: event.themeColorPrimary ?? null,
-  }
-}
-
 export default async function CatchMechConfirmPage({
   params,
 }: {
   params: Promise<{ id: string; token: string }>
 }) {
-  const { token } = await params
+  const { id, token } = await params
   const data = await getSessionData(token)
   if (!data) notFound()
 
-  const { logoUrl, primaryColor } = resolveEventBrand(data.event)
-  const bannerUrl = data.event.registrationPageBannerUrl ?? null
+  const formConfig = await getFormConfig("CatchMech", id)
+  if (!formConfig.isOpen) return <FormClosed />
+
+  const brand = resolveEventBrand(data.event)
+  const theme = resolveFormTheme(formConfig, {
+    title: null,
+    description: null,
+    logoUrl: brand.logoUrl,
+    bannerUrl: data.event.registrationPageBannerUrl ?? null,
+    primaryColor: brand.primaryColor,
+  })
+  const logoUrl = theme.logoUrl
+  const primaryColor = theme.primaryColor
+  const bannerUrl = theme.bannerUrl
   const hasBg = !!(bannerUrl || primaryColor)
 
   return (

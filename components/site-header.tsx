@@ -14,6 +14,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   ministries: "Ministries",
   events: "Events",
   volunteers: "Volunteers",
+  forms: "Forms",
   settings: "Settings",
   new: "New",
   edit: "Edit",

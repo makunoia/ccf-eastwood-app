@@ -6,6 +6,7 @@ import Link from "next/link"
 import {
   IconBuilding,
   IconCalendar,
+  IconForms,
   IconHeart,
   IconHelp,
   IconLayoutDashboard,
@@ -37,6 +38,7 @@ const navMain: NavItem[] = [
   { title: "Ministries", url: "/ministries", icon: IconBuilding, feature: "Ministries" },
   { title: "Events", url: "/events", icon: IconCalendar, feature: "Events" },
   { title: "Volunteers", url: "/volunteers", icon: IconHeart, feature: "Volunteers" },
+  { title: "Forms", url: "/forms", icon: IconForms, feature: "Forms" },
 ]
 
 const navSecondary: { title: string; url: string; icon: Icon }[] = [

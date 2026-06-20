@@ -2,6 +2,8 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { EventSetupChecklist } from "@/components/event-setup-checklist"
+import type { EventSetupChecklist as EventSetupChecklistData } from "@/lib/events/setup-checklist"
 import {
   IconCopy,
   IconUserCheck,
@@ -235,7 +237,13 @@ const drillLinkClass =
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function EventDashboardClient({ event }: { event: EventDashboardData }) {
+export function EventDashboardClient({
+  event,
+  setup,
+}: {
+  event: EventDashboardData
+  setup: EventSetupChecklistData | null
+}) {
   const pathname = usePathname()
 
   const isRecurring = event.type === "Recurring"
@@ -287,6 +295,12 @@ export function EventDashboardClient({ event }: { event: EventDashboardData }) {
 
   return (
     <div className="flex flex-1 flex-col p-6">
+      {setup && (
+        <div className="mb-6">
+          <EventSetupChecklist eventId={event.id} checklist={setup} />
+        </div>
+      )}
+
       {/* Filters — reads as a toolbar, not a section */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
         <div className="flex flex-wrap items-center gap-0.5">

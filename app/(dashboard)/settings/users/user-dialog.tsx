@@ -33,6 +33,7 @@ const FEATURE_LABELS: Record<FeatureAreaValue, string> = {
   Ministries: "Ministries",
   Events: "Events",
   Volunteers: "Volunteers",
+  Forms: "Forms",
 }
 
 const ACTION_LABELS: Record<PermissionActionValue, string> = {

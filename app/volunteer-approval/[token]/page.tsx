@@ -1,6 +1,8 @@
 import { IconShield } from "@tabler/icons-react"
 import { db } from "@/lib/db"
 import { ApprovalClient } from "./approval-client"
+import { FormClosed } from "@/components/form-closed"
+import { getFormConfig } from "@/lib/forms/config"
 
 async function getVolunteer(token: string) {
   return db.volunteer.findUnique({
@@ -9,6 +11,7 @@ async function getVolunteer(token: string) {
       id: true,
       status: true,
       notes: true,
+      eventId: true,
       member: { select: { firstName: true, lastName: true } },
       event: { select: { name: true } },
       committee: { select: { name: true } },
@@ -24,6 +27,12 @@ export default async function LeaderApprovalPage({
 }) {
   const { token } = await params
   const volunteer = await getVolunteer(token)
+
+  // Honor the per-event Forms open/closed toggle (event volunteers only).
+  if (volunteer?.eventId) {
+    const formConfig = await getFormConfig("VolunteerApproval", volunteer.eventId)
+    if (!formConfig.isOpen) return <FormClosed />
+  }
 
   const scope = volunteer?.event?.name ?? "—"
 
