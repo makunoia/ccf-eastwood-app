@@ -180,3 +180,95 @@ export function exportVolunteersCSV(rows: VolunteerExportRow[]): void {
     rows.map(volunteerToCells),
   )
 }
+
+// ── Event Sessions ────────────────────────────────────────────────────────────
+
+export type SessionSummaryExportRow = {
+  date: string // ISO datetime
+  seriesTitle: string | null
+  isStandalone: boolean
+  attendeeCount: number
+}
+
+export function buildSessionsSummaryTable(
+  rows: SessionSummaryExportRow[],
+  includeSeries: boolean,
+): { headers: string[]; cells: CSVCell[][] } {
+  const sorted = [...rows].sort((a, b) => a.date.localeCompare(b.date))
+  if (!includeSeries) {
+    return {
+      headers: ["Date", "Attendance"],
+      cells: sorted.map((r) => [r.date.split("T")[0], r.attendeeCount]),
+    }
+  }
+  return {
+    headers: ["Date", "Series", "Stand-alone", "Attendance"],
+    cells: sorted.map((r) => [
+      r.date.split("T")[0],
+      r.seriesTitle,
+      r.isStandalone ? "Yes" : "No",
+      r.attendeeCount,
+    ]),
+  }
+}
+
+export function exportSessionsSummaryCSV(
+  filename: string,
+  rows: SessionSummaryExportRow[],
+  includeSeries: boolean,
+): void {
+  const { headers, cells } = buildSessionsSummaryTable(rows, includeSeries)
+  downloadCSV(filename, headers, cells)
+}
+
+export type SessionAttendanceExportRow = {
+  sessionDate: string // ISO yyyy-mm-dd
+  seriesTitle: string | null
+  firstName: string
+  lastName: string
+  mobile: string
+  type: "Member" | "Guest" | "Volunteer"
+  checkedInAt: string // ISO datetime
+}
+
+function formatCheckInTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString("en-PH", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Manila",
+  })
+}
+
+export function buildSessionAttendanceTable(
+  rows: SessionAttendanceExportRow[],
+  includeSeries: boolean,
+): { headers: string[]; cells: CSVCell[][] } {
+  const headers = [
+    "Session Date",
+    ...(includeSeries ? ["Series"] : []),
+    "First Name",
+    "Last Name",
+    "Mobile",
+    "Type",
+    "Checked In",
+  ]
+  const cells = rows.map((r) => [
+    r.sessionDate,
+    ...(includeSeries ? [r.seriesTitle] : []),
+    r.firstName,
+    r.lastName,
+    r.mobile,
+    r.type,
+    formatCheckInTime(r.checkedInAt),
+  ])
+  return { headers, cells }
+}
+
+export function exportSessionAttendanceCSV(
+  filename: string,
+  rows: SessionAttendanceExportRow[],
+  includeSeries: boolean,
+): void {
+  const { headers, cells } = buildSessionAttendanceTable(rows, includeSeries)
+  downloadCSV(filename, headers, cells)
+}

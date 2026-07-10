@@ -21,6 +21,8 @@ async function getOccurrenceWithEvent(occurrenceId: string) {
           themeColorPrimary: true,
           registrationPageBannerUrl: true,
           autoAssignBreakout: true,
+          formIncludeSmallGroup: true,
+          formIncludeDietary: true,
           formIncludePayment: true,
           ministries: {
             select: {
@@ -200,6 +202,9 @@ export default async function OccurrenceCheckinPage({
           <CheckinBoard
             eventId={id}
             occurrenceId={occurrenceId}
+            eventName={occurrence.event.name}
+            includeSmallGroup={occurrence.event.formIncludeSmallGroup}
+            includeDietary={occurrence.event.formIncludeDietary}
             lifeStages={lifeStages}
             defaultLifeStageId={defaultLifeStageId}
             autoAssignBreakout={occurrence.event.autoAssignBreakout}

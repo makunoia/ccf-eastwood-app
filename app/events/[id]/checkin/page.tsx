@@ -16,6 +16,8 @@ async function getEvent(id: string) {
       themeColorPrimary: true,
       registrationPageBannerUrl: true,
       autoAssignBreakout: true,
+      formIncludeSmallGroup: true,
+      formIncludeDietary: true,
       formIncludePayment: true,
       ministries: {
         select: {
@@ -25,6 +27,7 @@ async function getEvent(id: string) {
               name: true,
               logoUrl: true,
               themeColorPrimary: true,
+              lifeStageId: true,
             },
           },
         },
@@ -134,6 +137,19 @@ export default async function CheckinPage({
     ? []
     : await fetchBreakoutCandidates(id, null)
 
+  // Walk-in registration renders the shared RegistrationForm, which needs the
+  // same small-group inputs as the public registration page.
+  const lifeStages = event.formIncludeSmallGroup
+    ? await db.lifeStage.findMany({
+        orderBy: { order: "asc" },
+        select: { id: true, name: true },
+      })
+    : []
+  const defaultLifeStageId =
+    event.ministries.length === 1 && event.ministries[0].ministry.lifeStageId
+      ? event.ministries[0].ministry.lifeStageId
+      : undefined
+
   return (
     <div className="relative min-h-svh bg-muted">
       {bannerUrl && (
@@ -149,6 +165,11 @@ export default async function CheckinPage({
           <CheckinBoard
             eventId={event.id}
             occurrenceId={null}
+            eventName={event.name}
+            includeSmallGroup={event.formIncludeSmallGroup}
+            includeDietary={event.formIncludeDietary}
+            lifeStages={lifeStages}
+            defaultLifeStageId={defaultLifeStageId}
             autoAssignBreakout={event.autoAssignBreakout}
             breakoutCandidates={breakoutCandidates}
             allowPayment={event.formIncludePayment}

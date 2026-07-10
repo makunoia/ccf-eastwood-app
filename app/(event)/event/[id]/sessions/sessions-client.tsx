@@ -9,7 +9,9 @@ import {
   IconDoorEnter,
   IconDoorExit,
   IconDotsVertical,
+  IconDownload,
   IconExternalLink,
+  IconFileDownload,
   IconPencil,
   IconStack2,
   IconTrash,
@@ -18,7 +20,7 @@ import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { PageActions, PageHeader } from "@/components/page-header"
+import { PageActions, PageHeader, type PageAction } from "@/components/page-header"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import {
   DropdownMenu,
@@ -59,6 +61,11 @@ import {
   updateOccurrenceGrouping,
   updateOccurrenceSeries,
 } from "@/app/(dashboard)/events/actions"
+import {
+  exportSessionAttendanceCSV,
+  exportSessionsSummaryCSV,
+} from "@/lib/export-entities"
+import { getSessionsAttendanceExport } from "./export-actions"
 
 export type OccurrenceRow = {
   id: string
@@ -94,6 +101,7 @@ type Props = {
   seriesGroups: OccurrenceSeriesGroup[]
   ungroupedOccurrences: OccurrenceRow[]
   seriesOptions: OccurrenceSeriesOption[]
+  canExport: boolean
 }
 
 type SeriesFormState = {
@@ -373,6 +381,7 @@ export function SessionsClient({
   seriesGroups,
   ungroupedOccurrences,
   seriesOptions,
+  canExport,
 }: Props) {
   const router = useRouter()
   const isRecurring = eventType === "Recurring"
@@ -404,6 +413,8 @@ export function SessionsClient({
   const [manageStandalone, setManageStandalone] = React.useState(false)
   const [manageSeriesMode, setManageSeriesMode] = React.useState("auto")
   const [savingManage, setSavingManage] = React.useState(false)
+
+  const [exportingAttendance, setExportingAttendance] = React.useState(false)
 
   const availableSeriesForNewSession = React.useMemo(
     () => getSeriesOptionsForDate(sessionDate, seriesOptions),
@@ -534,6 +545,54 @@ export function SessionsClient({
     }
   }
 
+  const allOccurrences = React.useMemo(
+    () =>
+      isRecurring
+        ? [
+            ...seriesGroups.flatMap((series) =>
+              series.occurrences.map((occurrence) => ({
+                ...occurrence,
+                seriesTitle: series.title,
+              })),
+            ),
+            ...ungroupedOccurrences.map((occurrence) => ({
+              ...occurrence,
+              seriesTitle: null,
+            })),
+          ]
+        : occurrences.map((occurrence) => ({ ...occurrence, seriesTitle: null })),
+    [isRecurring, seriesGroups, ungroupedOccurrences, occurrences],
+  )
+
+  function handleExportSessions() {
+    exportSessionsSummaryCSV(
+      `${isRecurring ? "sessions" : "days"}-${eventId}`,
+      allOccurrences.map((occurrence) => ({
+        date: occurrence.date,
+        seriesTitle: occurrence.seriesTitle,
+        isStandalone: occurrence.isStandalone,
+        attendeeCount: occurrence.attendeeCount,
+      })),
+      isRecurring,
+    )
+  }
+
+  async function handleExportAttendance() {
+    setExportingAttendance(true)
+    const result = await getSessionsAttendanceExport(eventId)
+    setExportingAttendance(false)
+
+    if (!result.success) {
+      toast.error(result.error)
+      return
+    }
+    if (result.data.length === 0) {
+      toast.info("No attendance to export yet.")
+      return
+    }
+    exportSessionAttendanceCSV(`session-attendance-${eventId}`, result.data, isRecurring)
+  }
+
   async function handleDeleteSeries() {
     if (!seriesToDelete) return
 
@@ -549,24 +608,52 @@ export function SessionsClient({
     }
   }
 
+  const exportActions: PageAction[] = canExport
+    ? [
+        {
+          label: `Export ${title.toLowerCase()}`,
+          icon: <IconFileDownload className="size-4" />,
+          onSelect: handleExportSessions,
+          disabled: allOccurrences.length === 0,
+          overflow: true,
+        },
+        {
+          label: "Export attendance",
+          icon: <IconDownload className="size-4" />,
+          onSelect: handleExportAttendance,
+          disabled: allOccurrences.length === 0 || exportingAttendance,
+          overflow: true,
+        },
+      ]
+    : []
+
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
       <PageHeader
         title={title}
         actions={
-          isRecurring ? (
+          isRecurring || exportActions.length > 0 ? (
             <PageActions
-              primary={{
-                label: "Add Session",
-                icon: <IconCalendarPlus className="size-4" />,
-                onSelect: () => setSessionDialogOpen(true),
-              }}
+              primary={
+                isRecurring
+                  ? {
+                      label: "Add Session",
+                      icon: <IconCalendarPlus className="size-4" />,
+                      onSelect: () => setSessionDialogOpen(true),
+                    }
+                  : undefined
+              }
               actions={[
-                {
-                  label: "Add Series",
-                  icon: <IconStack2 className="size-4" />,
-                  onSelect: openCreateSeriesDialog,
-                },
+                ...(isRecurring
+                  ? [
+                      {
+                        label: "Add Series",
+                        icon: <IconStack2 className="size-4" />,
+                        onSelect: openCreateSeriesDialog,
+                      } satisfies PageAction,
+                    ]
+                  : []),
+                ...exportActions,
               ]}
             />
           ) : undefined

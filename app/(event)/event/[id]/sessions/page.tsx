@@ -1,5 +1,7 @@
 import { notFound } from "next/navigation"
+import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
+import { canExport } from "@/lib/permissions"
 import { SessionsClient } from "./sessions-client"
 import { ensureMultiDayOccurrences } from "@/app/(dashboard)/events/actions"
 import { groupOccurrencesBySeries } from "@/lib/events/occurrence-series"
@@ -43,6 +45,7 @@ export default async function SessionsPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
+  const session = await auth()
   let event = await getEventSessions(id)
   if (!event) notFound()
 
@@ -93,6 +96,7 @@ export default async function SessionsPage({
         startDate: series.startDate.toISOString(),
         endDate: series.endDate.toISOString(),
       }))}
+      canExport={canExport(session, "Events")}
     />
   )
 }
