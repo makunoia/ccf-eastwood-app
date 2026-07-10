@@ -32,6 +32,7 @@ import {
 import {
   createRegistrant,
   lookupMemberForRegistration,
+  type AssignedBreakout,
 } from "@/app/(dashboard)/events/actions"
 import { searchMembersForLeaderLookup } from "@/app/(dashboard)/guests/actions"
 import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
@@ -40,14 +41,6 @@ import {
   filterCompatibleCandidates,
   type BreakoutCandidate,
 } from "@/lib/breakout-suggestion"
-
-type AssignedBreakout = {
-  id: string
-  name: string
-  meetingFormat: "Online" | "Hybrid" | "InPerson" | null
-  locationCity: string | null
-  schedule: { dayOfWeek: number; timeStart: string } | null
-}
 
 const DAY_NAMES = ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"]
 const MEETING_FORMAT_LABEL: Record<"Online" | "Hybrid" | "InPerson", string> = {
@@ -171,6 +164,29 @@ const DIETARY_OPTIONS: { value: Exclude<DietaryValue, "">; label: string }[] = [
 ]
 
 
+export type WalkInSuccess = {
+  registrantId: string
+  name: string
+  nickname: string | null
+  breakoutGroup: AssignedBreakout
+}
+
+// Walk-in mode (check-in kiosk): the check-in board embeds this form when a
+// lookup finds no registration. Same steps as public registration — the person
+// is registered via createRegistrant(..., walkIn) and checked in immediately.
+type WalkInConfig = {
+  occurrenceId: string | null
+  prefill: {
+    mobileNumber?: string
+    email?: string
+    lastName?: string
+    birthMonth?: string
+    birthYear?: string
+  }
+  onSuccess: (result: WalkInSuccess) => void
+  onBack: () => void
+}
+
 type Props = {
   eventId: string
   eventName?: string
@@ -180,6 +196,23 @@ type Props = {
   lifeStages?: LifeStage[]
   defaultLifeStageId?: string
   breakoutCandidates?: BreakoutCandidate[]
+  // "plain" drops the Card chrome so the form can be embedded inside another
+  // container (e.g. the check-in board's card).
+  frame?: "card" | "plain"
+  walkIn?: WalkInConfig
+}
+
+// Card wrapper that can render chrome-less for embedding. Defined at module
+// level so its identity is stable across renders (inputs keep focus).
+function FormShell({
+  plain,
+  className,
+  ...props
+}: React.ComponentProps<typeof Card> & { plain?: boolean }) {
+  if (plain) {
+    return <div className={cn("flex flex-col gap-6 py-6", className)} {...props} />
+  }
+  return <Card className={className} {...props} />
 }
 
 export function RegistrationForm({
@@ -191,9 +224,22 @@ export function RegistrationForm({
   lifeStages = [],
   defaultLifeStageId = "",
   breakoutCandidates = [],
+  frame = "card",
+  walkIn,
 }: Props) {
+  const plain = frame === "plain"
   const [step, setStep] = React.useState<Step>("form")
-  const [form, setForm] = React.useState<FormValues>({ ...defaultForm, lifeStageId: defaultLifeStageId })
+  const [form, setForm] = React.useState<FormValues>({
+    ...defaultForm,
+    lifeStageId: defaultLifeStageId,
+    // Walk-in mode: seed from the failed check-in lookup. Fields stay editable —
+    // the person may be fixing the typo that caused the miss.
+    mobileNumber: walkIn?.prefill.mobileNumber ?? "",
+    email: walkIn?.prefill.email ?? "",
+    lastName: walkIn?.prefill.lastName ?? "",
+    birthMonth: walkIn?.prefill.birthMonth ?? "",
+    birthYear: walkIn?.prefill.birthYear ?? "",
+  })
   const [noMobile, setNoMobile] = React.useState(false)
   const [noEmail, setNoEmail] = React.useState(false)
   const [smallGroupIntent, setSmallGroupIntent] = React.useState<null | "wants" | "already_in">(null)
@@ -524,11 +570,25 @@ export function RegistrationForm({
       confirmedMemberId,
       confirmedGuestId,
       skipDeduplication,
-      selectedBreakoutId || null
+      selectedBreakoutId || null,
+      walkIn ? { occurrenceId: walkIn.occurrenceId } : undefined
     )
     setSubmitting(false)
 
     if (result.success) {
+      if (walkIn) {
+        // The check-in board owns the success screen in walk-in mode
+        const source = confirmedMemberId || confirmedGuestId ? (confirmedMember ?? matchedMember) : null
+        walkIn.onSuccess({
+          registrantId: result.data.id,
+          name: source
+            ? `${source.firstName} ${source.lastName}`.trim()
+            : `${form.firstName} ${form.lastName}`.trim(),
+          nickname: form.nickname.trim() || null,
+          breakoutGroup: result.data.breakoutGroup,
+        })
+        return
+      }
       setAssignedBreakout(result.data.breakoutGroup)
       setStep("done")
     } else {
@@ -560,7 +620,7 @@ export function RegistrationForm({
         ].filter(Boolean)
       : []
     return (
-      <Card>
+      <FormShell plain={plain}>
         <CardContent className="flex flex-col items-center gap-5 pt-10 pb-6">
           <div className="flex size-16 items-center justify-center rounded-full bg-green-100">
             <IconCheck className="size-8 text-green-600" />
@@ -590,14 +650,14 @@ export function RegistrationForm({
             Register another person
           </Button>
         </CardContent>
-      </Card>
+      </FormShell>
     )
   }
 
   if (step === "volunteer-blocked" && matchedMember) {
     const firstName = matchedMember.firstName
     return (
-      <Card>
+      <FormShell plain={plain}>
         <CardContent className="flex flex-col items-center gap-5 pt-10 pb-6">
           <div className="flex size-16 items-center justify-center rounded-full bg-primary/10">
             <IconCheck className="size-8 text-primary" />
@@ -610,17 +670,23 @@ export function RegistrationForm({
               You&apos;re serving as a volunteer at this event — you&apos;re already included and don&apos;t need to register as an attendee.
             </p>
           </div>
-          <Button className="w-full" variant="outline" onClick={handleReset}>
-            Register another person
-          </Button>
+          {walkIn ? (
+            <Button className="w-full" variant="outline" onClick={walkIn.onBack}>
+              Back to check-in
+            </Button>
+          ) : (
+            <Button className="w-full" variant="outline" onClick={handleReset}>
+              Register another person
+            </Button>
+          )}
         </CardContent>
-      </Card>
+      </FormShell>
     )
   }
 
   if (step === "disambiguate" && candidates) {
     return (
-      <Card>
+      <FormShell plain={plain}>
         <CardHeader>
           <CardTitle>Multiple profiles found</CardTitle>
           <CardDescription>
@@ -660,13 +726,13 @@ export function RegistrationForm({
             {submitting ? "Registering…" : "That's not me"}
           </Button>
         </CardContent>
-      </Card>
+      </FormShell>
     )
   }
 
   if (step === "confirm" && matchedMember) {
     return (
-      <Card>
+      <FormShell plain={plain}>
         <CardHeader>
           <CardTitle>Is this you?</CardTitle>
           <CardDescription>
@@ -722,13 +788,13 @@ export function RegistrationForm({
             </Button>
           </div>
         </CardContent>
-      </Card>
+      </FormShell>
     )
   }
 
   if (step === "early-confirm" && matchedMember) {
     return (
-      <Card>
+      <FormShell plain={plain}>
         <CardHeader>
           <CardTitle>Is this you?</CardTitle>
           <CardDescription>
@@ -770,13 +836,13 @@ export function RegistrationForm({
             </Button>
           </div>
         </CardContent>
-      </Card>
+      </FormShell>
     )
   }
 
   if (step === "early-disambiguate" && candidates) {
     return (
-      <Card>
+      <FormShell plain={plain}>
         <CardHeader>
           <CardTitle>Multiple profiles found</CardTitle>
           <CardDescription>
@@ -813,12 +879,12 @@ export function RegistrationForm({
             That&apos;s not me
           </Button>
         </CardContent>
-      </Card>
+      </FormShell>
     )
   }
 
   return (
-    <Card ref={cardRef} className={cn(isMultiStep && "pt-0")}>
+    <FormShell plain={plain} ref={cardRef} className={cn(isMultiStep && "pt-0")}>
       {isMultiStep ? (
         <div className="px-6 pt-4 pb-1">
           {/* Step dots */}
@@ -1398,28 +1464,39 @@ export function RegistrationForm({
           {/* ── Navigation ── */}
           {isMultiStep ? (
             <div className="flex gap-2 pt-2">
-              {formStep > 1 && (
+              {formStep > 1 ? (
                 <Button type="button" variant="outline" onClick={handleBack}>
                   Back
                 </Button>
-              )}
+              ) : walkIn ? (
+                <Button type="button" variant="outline" onClick={walkIn.onBack}>
+                  Back
+                </Button>
+              ) : null}
               {formStep < sections.length ? (
                 <Button type="button" className="flex-1" disabled={submitting} onClick={handleNext}>
                   {submitting ? "Please wait…" : "Next"}
                 </Button>
               ) : (
                 <Button type="button" className="flex-1" disabled={submitting} onClick={handleSubmit}>
-                  {submitting ? "Checking…" : "Register"}
+                  {submitting ? "Checking…" : walkIn ? "Register & Check In" : "Register"}
                 </Button>
               )}
             </div>
           ) : (
-            <Button type="button" className="w-full" disabled={submitting} onClick={handleSubmit}>
-              {submitting ? "Checking…" : "Register"}
-            </Button>
+            <div className="space-y-3">
+              <Button type="button" className="w-full" disabled={submitting} onClick={handleSubmit}>
+                {submitting ? "Checking…" : walkIn ? "Register & Check In" : "Register"}
+              </Button>
+              {walkIn && (
+                <Button type="button" variant="ghost" className="w-full" onClick={walkIn.onBack}>
+                  Back
+                </Button>
+              )}
+            </div>
           )}
         </form>
       </CardContent>
-    </Card>
+    </FormShell>
   )
 }

@@ -8,8 +8,6 @@ import { Input } from "@/components/ui/input"
 import { ScheduleInput } from "@/components/ui/schedule-input"
 import { YearInput } from "@/components/ui/year-input"
 import { Label } from "@/components/ui/label"
-import { OptionalEmailInput } from "@/components/ui/optional-email-input"
-import { OptionalPhonePHInput } from "@/components/ui/optional-phone-ph-input"
 import { PhonePHInput } from "@/components/ui/phone-ph-input"
 import {
   Select,
@@ -23,8 +21,8 @@ import {
   lookupCheckinRegistrantByProfile,
   markCheckinAttendance,
   checkInToOccurrence,
-  walkInCheckin,
 } from "@/app/(dashboard)/events/actions"
+import { RegistrationForm, type WalkInSuccess } from "../register/registration-form"
 import { autoAssignRegistrantToBreakout } from "@/app/(dashboard)/events/breakout-actions"
 import {
   saveGuestMatchingProfile,
@@ -33,10 +31,7 @@ import {
   type GuestMatchingProfileInput,
 } from "@/app/(dashboard)/guests/actions"
 import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
-import {
-  suggestBreakoutGroup,
-  type BreakoutCandidate,
-} from "@/lib/breakout-suggestion"
+import { type BreakoutCandidate } from "@/lib/breakout-suggestion"
 
 type LifeStage = { id: string; name: string }
 type LeaderResult = { id: string; firstName: string; lastName: string; ledGroups: { id: string; name: string }[] }
@@ -64,7 +59,7 @@ type Step =
   | "already-in"
   | "success"
   | "not-found-prompt"
-  | "walk-in-form"
+  | "walk-in"
   | "sg-prompt"
   | "sg-profile"
   | "sg-leader-search"
@@ -94,6 +89,9 @@ type MatchedState = {
 type Props = {
   eventId: string
   occurrenceId: string | null
+  eventName?: string
+  includeSmallGroup?: boolean
+  includeDietary?: boolean
   lifeStages?: LifeStage[]
   defaultLifeStageId?: string
   autoAssignBreakout?: boolean
@@ -107,8 +105,7 @@ function queryIsPhone(q: string): boolean {
   return !q.includes("@")
 }
 
-export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], defaultLifeStageId = "", autoAssignBreakout = false, breakoutCandidates = [], allowPayment = false }: Props) {
-  const showBreakoutPicker = !autoAssignBreakout && breakoutCandidates.length > 0
+export function CheckinBoard({ eventId, occurrenceId, eventName = "", includeSmallGroup = false, includeDietary = false, lifeStages = [], defaultLifeStageId = "", autoAssignBreakout = false, breakoutCandidates = [], allowPayment = false }: Props) {
   const [step, setStep] = React.useState<Step>("lookup")
   const [lookupMode, setLookupMode] = React.useState<LookupMode>("mobile")
   const [query, setQuery] = React.useState("")
@@ -116,29 +113,6 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], defaultLi
   const [error, setError] = React.useState<string | null>(null)
   const [matched, setMatched] = React.useState<MatchedState | null>(null)
   const [disambiguateCandidates, setDisambiguateCandidates] = React.useState<DisambiguateCandidate[]>([])
-  const [walkInForm, setWalkInForm] = React.useState({
-    firstName: "",
-    lastName: "",
-    nickname: "",
-    email: "",
-    mobileNumber: "",
-    gender: "" as "Male" | "Female" | "",
-    birthMonth: "",
-    birthYear: "",
-    paymentReference: "",
-    selectedBreakoutGroupId: "",
-  })
-
-  const [noWalkInEmail, setNoWalkInEmail] = React.useState(false)
-  const [noWalkInMobile, setNoWalkInMobile] = React.useState(false)
-
-  const walkInSuggestedBreakout = React.useMemo(() => {
-    if (!showBreakoutPicker) return null
-    return suggestBreakoutGroup(breakoutCandidates, {
-      gender: (walkInForm.gender || null) as "Male" | "Female" | null,
-      birthYear: walkInForm.birthYear ? parseInt(walkInForm.birthYear, 10) : null,
-    })
-  }, [breakoutCandidates, walkInForm.gender, walkInForm.birthYear, showBreakoutPicker])
   const [nameDobForm, setNameDobForm] = React.useState({
     lastName: "",
     birthMonth: "",
@@ -165,9 +139,6 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], defaultLi
     setError(null)
     setMatched(null)
     setDisambiguateCandidates([])
-    setWalkInForm({ firstName: "", lastName: "", nickname: "", email: "", mobileNumber: "", gender: "", birthMonth: "", birthYear: "", paymentReference: "", selectedBreakoutGroupId: "" })
-    setNoWalkInEmail(false)
-    setNoWalkInMobile(false)
     setNameDobForm({ lastName: "", birthMonth: "", birthYear: "" })
     setLoading(false)
     focusLookupInput()
@@ -282,44 +253,17 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], defaultLi
     scheduleReset()
   }
 
-  async function handleWalkInSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!walkInForm.firstName.trim() || !walkInForm.lastName.trim()) return
-    setError(null)
-    setLoading(true)
-
-    const isPhone = queryIsPhone(query)
-    const result = await walkInCheckin(
-      eventId,
-      {
-        firstName: walkInForm.firstName,
-        lastName: walkInForm.lastName,
-        nickname: walkInForm.nickname || null,
-        email: isPhone ? (noWalkInEmail ? null : walkInForm.email || null) : query,
-        mobileNumber: isPhone ? query : (noWalkInMobile ? "" : walkInForm.mobileNumber),
-        gender: (walkInForm.gender || null) as "Male" | "Female" | null,
-        birthMonth: walkInForm.birthMonth ? parseInt(walkInForm.birthMonth, 10) : null,
-        birthYear: walkInForm.birthYear ? parseInt(walkInForm.birthYear, 10) : null,
-        paymentReference: walkInForm.paymentReference || null,
-      },
-      occurrenceId,
-      walkInForm.selectedBreakoutGroupId || null
-    )
-
-    setLoading(false)
-
-    if (!result.success) {
-      setError(result.error)
-      return
-    }
-
+  // Walk-in registration is handled by the shared RegistrationForm (same steps
+  // as public registration); it registers + checks in via createRegistrant's
+  // walk-in mode, then hands control back here for the success screen.
+  function handleWalkInSuccess(result: WalkInSuccess) {
     setMatched({
       kind: "registrant",
-      subjectId: result.data.registrantId,
-      name: result.data.name,
-      nickname: walkInForm.nickname || null,
+      subjectId: result.registrantId,
+      name: result.name,
+      nickname: result.nickname,
       guestSmallGroupPrompt: null,
-      breakoutGroup: result.data.breakoutGroup,
+      breakoutGroup: result.breakoutGroup,
     })
     setStep("success")
     scheduleReset()
@@ -712,7 +656,7 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], defaultLi
           <div className="flex flex-col gap-3">
             <Button
               className="w-full"
-              onClick={() => setStep("walk-in-form")}
+              onClick={() => setStep("walk-in")}
             >
               Register now
             </Button>
@@ -729,244 +673,39 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], defaultLi
     )
   }
 
-  // ── Walk-in registration form ─────────────────────────────────────────────
-  if (step === "walk-in-form") {
-    const isPhone = queryIsPhone(query)
+  // ── Walk-in registration (shared with public registration) ───────────────
+  if (step === "walk-in") {
     return (
-      <div className="flex flex-col items-center justify-center px-6 py-8">
-        <div className="w-full space-y-6">
-          <div className="space-y-1">
-            <h2 className="text-2xl font-semibold tracking-tight">Register &amp; Check In</h2>
-            <p className="text-sm text-muted-foreground">Fill in your details and we&apos;ll check you in right away.</p>
-          </div>
-              <form onSubmit={handleWalkInSubmit} className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label htmlFor="walkin-first">
-                      First Name <span className="text-destructive">*</span>
-                    </Label>
-                    <Input
-                      id="walkin-first"
-                      value={walkInForm.firstName}
-                      onChange={(e) => setWalkInForm((p) => ({ ...p, firstName: e.target.value }))}
-                      placeholder="Juan"
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="walkin-last">
-                      Last Name <span className="text-destructive">*</span>
-                    </Label>
-                    <Input
-                      id="walkin-last"
-                      value={walkInForm.lastName}
-                      onChange={(e) => setWalkInForm((p) => ({ ...p, lastName: e.target.value }))}
-                      placeholder="dela Cruz"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="walkin-nickname">Nickname</Label>
-                  <Input
-                    id="walkin-nickname"
-                    value={walkInForm.nickname}
-                    onChange={(e) => setWalkInForm((p) => ({ ...p, nickname: e.target.value }))}
-                    placeholder="Jun"
-                  />
-                </div>
-
-                {isPhone ? (
-                  <>
-                    <div className="space-y-2">
-                      <Label htmlFor="walkin-mobile">Mobile Number</Label>
-                      <Input
-                        id="walkin-mobile"
-                        value={query}
-                        readOnly
-                        className="bg-muted/50"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="walkin-email">Email</Label>
-                      <OptionalEmailInput
-                        id="walkin-email"
-                        value={walkInForm.email}
-                        onChange={(e) => setWalkInForm((p) => ({ ...p, email: e.target.value }))}
-                        placeholder="juan@email.com"
-                        noEmail={noWalkInEmail}
-                        onNoEmailChange={setNoWalkInEmail}
-                      />
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="space-y-2">
-                      <Label htmlFor="walkin-email">Email</Label>
-                      <Input
-                        id="walkin-email"
-                        type="email"
-                        value={query}
-                        readOnly
-                        className="bg-muted/50"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="walkin-mobile">Mobile Number</Label>
-                      <OptionalPhonePHInput
-                        id="walkin-mobile"
-                        value={walkInForm.mobileNumber}
-                        onChange={(v) => setWalkInForm((p) => ({ ...p, mobileNumber: v }))}
-                        noNumber={noWalkInMobile}
-                        onNoNumberChange={setNoWalkInMobile}
-                      />
-                    </div>
-                  </>
-                )}
-
-                <div className="space-y-2">
-                  <Label>Birthday</Label>
-                  <div className="flex gap-2">
-                    <Select
-                      value={walkInForm.birthMonth}
-                      onValueChange={(v) => setWalkInForm((p) => ({ ...p, birthMonth: v === "_none" ? "" : v }))}
-                    >
-                      <SelectTrigger className="flex-1">
-                        <SelectValue placeholder="Month" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="_none">Month</SelectItem>
-                        {["January","February","March","April","May","June","July","August","September","October","November","December"].map((m, i) => (
-                          <SelectItem key={i + 1} value={String(i + 1)}>{m}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <YearInput
-                      value={walkInForm.birthYear}
-                      onChange={(v) => setWalkInForm((p) => ({ ...p, birthYear: v }))}
-                      className="w-24"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Gender</Label>
-                  <div className="flex gap-3">
-                    {(["Male", "Female"] as const).map((g) => (
-                      <button
-                        key={g}
-                        type="button"
-                        onClick={() => setWalkInForm((p) => ({ ...p, gender: p.gender === g ? "" : g }))}
-                        className={`flex-1 rounded-lg border py-2.5 text-sm font-medium transition-colors ${
-                          walkInForm.gender === g
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "border-border bg-background hover:bg-muted"
-                        }`}
-                      >
-                        {g}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Breakout picker — only when event is not in auto-assign mode and groups exist */}
-                {showBreakoutPicker && (
-                  <div className="space-y-3">
-                    <Label>Breakout Group</Label>
-                    {walkInSuggestedBreakout && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setWalkInForm((p) => ({
-                            ...p,
-                            selectedBreakoutGroupId:
-                              p.selectedBreakoutGroupId === walkInSuggestedBreakout.id
-                                ? ""
-                                : walkInSuggestedBreakout.id,
-                          }))
-                        }
-                        className={`w-full rounded-lg border p-4 text-left transition-colors ${
-                          walkInForm.selectedBreakoutGroupId === walkInSuggestedBreakout.id
-                            ? "border-primary bg-primary/5"
-                            : "border-border bg-background hover:bg-muted/50"
-                        }`}
-                      >
-                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                          Suggested for you
-                        </p>
-                        <p className="mt-1 text-sm font-medium">{walkInSuggestedBreakout.name}</p>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          {walkInForm.selectedBreakoutGroupId === walkInSuggestedBreakout.id
-                            ? "Selected"
-                            : "Tap to select"}
-                        </p>
-                      </button>
-                    )}
-                    <Select
-                      value={walkInForm.selectedBreakoutGroupId || "_none"}
-                      onValueChange={(v) =>
-                        setWalkInForm((p) => ({ ...p, selectedBreakoutGroupId: v === "_none" ? "" : v }))
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Or browse all groups" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="_none">No selection</SelectItem>
-                        {breakoutCandidates.map((g) => {
-                          const isFull = g.memberLimit != null && g.memberCount >= g.memberLimit
-                          return (
-                            <SelectItem key={g.id} value={g.id} disabled={isFull}>
-                              {g.name}
-                              {isFull ? " (full)" : ""}
-                            </SelectItem>
-                          )
-                        })}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-
-                {/* Payment reference */}
-                {allowPayment && (
-                  <div className="space-y-2">
-                    <Label htmlFor="walkin-payment">Payment reference</Label>
-                    <Input
-                      id="walkin-payment"
-                      value={walkInForm.paymentReference}
-                      onChange={(e) => setWalkInForm((p) => ({ ...p, paymentReference: e.target.value }))}
-                      placeholder="Transaction or reference number"
-                    />
-                  </div>
-                )}
-
-                {error && <p className="text-sm text-destructive">{error}</p>}
-
-                <Button
-                  type="submit"
-                  className="w-full"
-                  disabled={loading || !walkInForm.firstName.trim() || !walkInForm.lastName.trim()}
-                >
-                  {loading ? (
-                    <>
-                      <IconLoader2 className="mr-2 size-4 animate-spin" />
-                      Registering…
-                    </>
-                  ) : (
-                    "Register & Check In"
-                  )}
-                </Button>
-              </form>
-
-          <button
-            type="button"
-            onClick={() => { setError(null); setStep("not-found-prompt") }}
-            className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-          >
-            <IconArrowLeft className="size-4" /> Back
-          </button>
-        </div>
+      <div className="px-6">
+        <RegistrationForm
+          eventId={eventId}
+          eventName={eventName}
+          includeSmallGroup={includeSmallGroup}
+          includeDietary={includeDietary}
+          includePayment={allowPayment}
+          lifeStages={lifeStages}
+          defaultLifeStageId={defaultLifeStageId}
+          breakoutCandidates={breakoutCandidates}
+          frame="plain"
+          walkIn={{
+            occurrenceId,
+            prefill:
+              lookupMode === "name-dob"
+                ? {
+                    lastName: nameDobForm.lastName,
+                    birthMonth: nameDobForm.birthMonth,
+                    birthYear: nameDobForm.birthYear,
+                  }
+                : queryIsPhone(query)
+                  ? { mobileNumber: query }
+                  : { email: query },
+            onSuccess: handleWalkInSuccess,
+            onBack: () => {
+              setError(null)
+              setStep("not-found-prompt")
+            },
+          }}
+        />
       </div>
     )
   }

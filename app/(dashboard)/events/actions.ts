@@ -24,7 +24,7 @@ import {
 import { formatPhilippinePhone } from "@/lib/utils"
 import type { Gender, MeetingFormat } from "@/app/generated/prisma/client"
 
-type AssignedBreakout =
+export type AssignedBreakout =
   | {
       id: string
       name: string
@@ -572,13 +572,34 @@ async function autoCheckinIfOpenRecurringSession(registrantId: string, eventId: 
   })
 }
 
+// Walk-in mode: check the registrant in immediately after registration.
+// Sessions (MultiDay/Recurring) record an OccurrenceAttendee; OneTime events
+// set attendedAt — only when null, preserving the first check-in time.
+async function checkInWalkInRegistrant(registrantId: string, occurrenceId: string | null) {
+  if (occurrenceId !== null) {
+    await db.occurrenceAttendee.upsert({
+      where: { occurrenceId_registrantId: { occurrenceId, registrantId } },
+      create: { occurrenceId, registrantId },
+      update: {},
+    })
+  } else {
+    await db.eventRegistrant.updateMany({
+      where: { id: registrantId, attendedAt: null },
+      data: { attendedAt: new Date() },
+    })
+  }
+}
+
 export async function createRegistrant(
   eventId: string,
   raw: z.input<typeof registrantSchema>,
   confirmedMemberId: string | null,
   confirmedGuestId?: string | null,
   skipDeduplication?: boolean,
-  selectedBreakoutGroupId?: string | null
+  selectedBreakoutGroupId?: string | null,
+  // Walk-in mode (check-in kiosk): reuse an existing registration instead of
+  // erroring, and check the person in immediately after registering.
+  walkIn?: { occurrenceId: string | null }
 ): Promise<ActionResult<{ id: string; breakoutGroup: AssignedBreakout }>> {
   const parsed = registrantSchema.safeParse(raw)
   if (!parsed.success) {
@@ -596,12 +617,14 @@ export async function createRegistrant(
         return { success: false, error: "You're serving as a volunteer at this event — you don't need to register as an attendee." }
       }
 
-      // Duplicate check — member already registered for this event
+      // Duplicate check — member already registered for this event.
+      // Walk-in mode reuses the existing registration (the person may have
+      // registered under a different contact identifier than they looked up with).
       const alreadyRegistered = await db.eventRegistrant.findFirst({
         where: { eventId, memberId: confirmedMemberId },
         select: { id: true },
       })
-      if (alreadyRegistered) {
+      if (alreadyRegistered && !walkIn) {
         return { success: false, error: "You're already registered for this event." }
       }
 
@@ -624,23 +647,32 @@ export async function createRegistrant(
       if (!existing.meetingPreference && parsed.data.meetingPreference) memberUpdates.meetingPreference = parsed.data.meetingPreference
       if (!existing.workCity && parsed.data.workCity) memberUpdates.workCity = parsed.data.workCity
 
-      const [registrant] = await db.$transaction([
-        db.eventRegistrant.create({
-          data: {
-            eventId,
-            memberId: confirmedMemberId,
-            dietaryPreference: parsed.data.dietaryPreference ?? null,
-            dietaryOther: parsed.data.dietaryOther,
-            paymentReference: parsed.data.paymentReference,
-          },
-          select: { id: true },
-        }),
-        ...(Object.keys(memberUpdates).length > 0
-          ? [db.member.update({ where: { id: confirmedMemberId }, data: memberUpdates })]
-          : []),
-      ])
+      let registrantId: string
+      if (alreadyRegistered) {
+        registrantId = alreadyRegistered.id
+        if (Object.keys(memberUpdates).length > 0) {
+          await db.member.update({ where: { id: confirmedMemberId }, data: memberUpdates })
+        }
+      } else {
+        const [registrant] = await db.$transaction([
+          db.eventRegistrant.create({
+            data: {
+              eventId,
+              memberId: confirmedMemberId,
+              dietaryPreference: parsed.data.dietaryPreference ?? null,
+              dietaryOther: parsed.data.dietaryOther,
+              paymentReference: parsed.data.paymentReference,
+            },
+            select: { id: true },
+          }),
+          ...(Object.keys(memberUpdates).length > 0
+            ? [db.member.update({ where: { id: confirmedMemberId }, data: memberUpdates })]
+            : []),
+        ])
+        registrantId = registrant.id
+      }
       const breakoutGroup = await assignBreakoutForRegistrant(
-        registrant.id,
+        registrantId,
         eventId,
         selectedBreakoutGroupId ?? null,
         {
@@ -648,15 +680,19 @@ export async function createRegistrant(
           birthYear: parsed.data.birthYear ?? existing.birthYear,
         }
       )
-      await autoCheckinIfOpenRecurringSession(registrant.id, eventId)
-      return { success: true, data: { id: registrant.id, breakoutGroup } }
+      if (walkIn) {
+        await checkInWalkInRegistrant(registrantId, walkIn.occurrenceId)
+      } else {
+        await autoCheckinIfOpenRecurringSession(registrantId, eventId)
+      }
+      return { success: true, data: { id: registrantId, breakoutGroup } }
     } else if (confirmedGuestId) {
-      // Duplicate check — guest already registered for this event
+      // Duplicate check — guest already registered for this event (walk-in reuses it)
       const alreadyRegistered = await db.eventRegistrant.findFirst({
         where: { eventId, guestId: confirmedGuestId },
         select: { id: true },
       })
-      if (alreadyRegistered) {
+      if (alreadyRegistered && !walkIn) {
         return { success: false, error: "You're already registered for this event." }
       }
 
@@ -684,23 +720,32 @@ export async function createRegistrant(
       if (!existing.scheduleTimeEnd && parsed.data.scheduleTimeEnd) guestUpdates.scheduleTimeEnd = parsed.data.scheduleTimeEnd
       if (!existing.claimedSmallGroupId && parsed.data.claimedSmallGroupId) guestUpdates.claimedSmallGroupId = parsed.data.claimedSmallGroupId
 
-      const [registrant] = await db.$transaction([
-        db.eventRegistrant.create({
-          data: {
-            eventId,
-            guestId: confirmedGuestId,
-            dietaryPreference: parsed.data.dietaryPreference ?? null,
-            dietaryOther: parsed.data.dietaryOther,
-            paymentReference: parsed.data.paymentReference,
-          },
-          select: { id: true },
-        }),
-        ...(Object.keys(guestUpdates).length > 0
-          ? [db.guest.update({ where: { id: confirmedGuestId }, data: guestUpdates })]
-          : []),
-      ])
+      let registrantId: string
+      if (alreadyRegistered) {
+        registrantId = alreadyRegistered.id
+        if (Object.keys(guestUpdates).length > 0) {
+          await db.guest.update({ where: { id: confirmedGuestId }, data: guestUpdates })
+        }
+      } else {
+        const [registrant] = await db.$transaction([
+          db.eventRegistrant.create({
+            data: {
+              eventId,
+              guestId: confirmedGuestId,
+              dietaryPreference: parsed.data.dietaryPreference ?? null,
+              dietaryOther: parsed.data.dietaryOther,
+              paymentReference: parsed.data.paymentReference,
+            },
+            select: { id: true },
+          }),
+          ...(Object.keys(guestUpdates).length > 0
+            ? [db.guest.update({ where: { id: confirmedGuestId }, data: guestUpdates })]
+            : []),
+        ])
+        registrantId = registrant.id
+      }
       const breakoutGroup = await assignBreakoutForRegistrant(
-        registrant.id,
+        registrantId,
         eventId,
         selectedBreakoutGroupId ?? null,
         {
@@ -708,8 +753,12 @@ export async function createRegistrant(
           birthYear: parsed.data.birthYear ?? existing.birthYear,
         }
       )
-      await autoCheckinIfOpenRecurringSession(registrant.id, eventId)
-      return { success: true, data: { id: registrant.id, breakoutGroup } }
+      if (walkIn) {
+        await checkInWalkInRegistrant(registrantId, walkIn.occurrenceId)
+      } else {
+        await autoCheckinIfOpenRecurringSession(registrantId, eventId)
+      }
+      return { success: true, data: { id: registrantId, breakoutGroup } }
     } else {
       // Non-member — find or create Guest by phone, then link via guestId
       const matchingProfile = {
@@ -803,28 +852,32 @@ export async function createRegistrant(
         guestId = newGuest.id
       }
 
-      // Duplicate check — guest already registered for this event
+      // Duplicate check — guest already registered for this event (walk-in reuses it)
       const alreadyRegistered = await db.eventRegistrant.findFirst({
         where: { eventId, guestId },
         select: { id: true },
       })
-      if (alreadyRegistered) {
+      if (alreadyRegistered && !walkIn) {
         return { success: false, error: "You're already registered for this event." }
       }
 
-      const registrant = await db.eventRegistrant.create({
-        data: {
-          eventId,
-          guestId,
-          nickname: parsed.data.nickname ?? null,
-          dietaryPreference: parsed.data.dietaryPreference ?? null,
-          dietaryOther: parsed.data.dietaryOther,
-          paymentReference: parsed.data.paymentReference,
-        },
-        select: { id: true },
-      })
+      const registrantId = alreadyRegistered
+        ? alreadyRegistered.id
+        : (
+            await db.eventRegistrant.create({
+              data: {
+                eventId,
+                guestId,
+                nickname: parsed.data.nickname ?? null,
+                dietaryPreference: parsed.data.dietaryPreference ?? null,
+                dietaryOther: parsed.data.dietaryOther,
+                paymentReference: parsed.data.paymentReference,
+              },
+              select: { id: true },
+            })
+          ).id
       const breakoutGroup = await assignBreakoutForRegistrant(
-        registrant.id,
+        registrantId,
         eventId,
         selectedBreakoutGroupId ?? null,
         {
@@ -832,8 +885,12 @@ export async function createRegistrant(
           birthYear: parsed.data.birthYear ?? null,
         }
       )
-      await autoCheckinIfOpenRecurringSession(registrant.id, eventId)
-      return { success: true, data: { id: registrant.id, breakoutGroup } }
+      if (walkIn) {
+        await checkInWalkInRegistrant(registrantId, walkIn.occurrenceId)
+      } else {
+        await autoCheckinIfOpenRecurringSession(registrantId, eventId)
+      }
+      return { success: true, data: { id: registrantId, breakoutGroup } }
     }
   } catch {
     return { success: false, error: "Failed to register. Please try again." }
@@ -1760,141 +1817,5 @@ export async function lookupCheckinRegistrantByProfile(
     return { success: true, data: candidates[0] }
   } catch {
     return { success: false, error: "Lookup failed. Please try again." }
-  }
-}
-
-const walkInSchema = z.object({
-  firstName: z.string().min(1, "First name is required").trim(),
-  lastName: z.string().min(1, "Last name is required").trim(),
-  nickname: z.string().optional().nullable().transform((v) => (!v?.trim() ? null : v.trim())),
-  email: z.string().optional().nullable().transform((v) => (!v?.trim() ? null : v.trim())),
-  mobileNumber: z.string().min(1, "Mobile number is required").trim(),
-  gender: z.enum(["Male", "Female"]).optional().nullable(),
-  birthMonth: z.number().int().min(1).max(12).optional().nullable(),
-  birthYear: z.number().int().min(1900).max(2100).optional().nullable(),
-  paymentReference: z.string().optional().nullable().transform((v) => (!v?.trim() ? null : v.trim())),
-})
-
-export async function walkInCheckin(
-  eventId: string,
-  raw: z.infer<typeof walkInSchema>,
-  occurrenceId: string | null,
-  selectedBreakoutGroupId?: string | null
-): Promise<ActionResult<{ registrantId: string; name: string; breakoutGroup: AssignedBreakout }>> {
-  const parsed = walkInSchema.safeParse(raw)
-  if (!parsed.success) {
-    return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
-  }
-
-  try {
-    // Member lookup can happen outside the transaction (read-only)
-    const member = await db.member.findFirst({
-      where: { phone: parsed.data.mobileNumber },
-      select: { id: true, firstName: true, lastName: true },
-    })
-
-    const { registrantId, name } = await db.$transaction(async (tx) => {
-      let memberId: string | null = null
-      let guestId: string | null = null
-      let displayName: string
-
-      if (member) {
-        memberId = member.id
-        displayName = `${member.firstName} ${member.lastName}`.trim()
-      } else {
-        // Find existing Guest by phone, then by email as fallback
-        let existingGuest = await tx.guest.findFirst({
-          where: { phone: parsed.data.mobileNumber },
-          select: { id: true, firstName: true, lastName: true, gender: true, birthMonth: true, birthYear: true },
-        })
-        if (!existingGuest && parsed.data.email) {
-          existingGuest = await tx.guest.findFirst({
-            where: { email: parsed.data.email },
-            select: { id: true, firstName: true, lastName: true, gender: true, birthMonth: true, birthYear: true },
-          })
-        }
-
-        if (existingGuest) {
-          guestId = existingGuest.id
-          displayName = `${existingGuest.firstName} ${existingGuest.lastName}`.trim()
-          // Update matching fields only when not already set
-          const guestUpdates: Record<string, unknown> = {}
-          if (!existingGuest.gender && parsed.data.gender) guestUpdates.gender = parsed.data.gender
-          if (existingGuest.birthMonth == null && parsed.data.birthMonth != null) guestUpdates.birthMonth = parsed.data.birthMonth
-          if (existingGuest.birthYear == null && parsed.data.birthYear != null) guestUpdates.birthYear = parsed.data.birthYear
-          if (Object.keys(guestUpdates).length > 0) {
-            await tx.guest.update({ where: { id: guestId }, data: guestUpdates })
-          }
-        } else {
-          const newGuest = await tx.guest.create({
-            data: {
-              firstName: parsed.data.firstName,
-              lastName: parsed.data.lastName,
-              email: parsed.data.email ?? null,
-              phone: parsed.data.mobileNumber,
-              gender: parsed.data.gender ?? null,
-              birthMonth: parsed.data.birthMonth ?? null,
-              birthYear: parsed.data.birthYear ?? null,
-              language: [],
-            },
-            select: { id: true },
-          })
-          guestId = newGuest.id
-          displayName = `${parsed.data.firstName} ${parsed.data.lastName}`.trim()
-        }
-      }
-
-      // Find or create EventRegistrant
-      const existingRegistrant = await tx.eventRegistrant.findFirst({
-        where: memberId ? { eventId, memberId } : { eventId, guestId: guestId! },
-        select: { id: true },
-      })
-
-      const regId = existingRegistrant
-        ? existingRegistrant.id
-        : (
-            await tx.eventRegistrant.create({
-              data: {
-                eventId,
-                ...(memberId ? { memberId } : { guestId: guestId! }),
-                nickname: parsed.data.nickname ?? null,
-                ...(parsed.data.paymentReference
-                  ? { isPaid: true, paymentReference: parsed.data.paymentReference }
-                  : {}),
-              },
-              select: { id: true },
-            })
-          ).id
-
-      // Check in immediately
-      if (occurrenceId !== null) {
-        await tx.occurrenceAttendee.upsert({
-          where: { occurrenceId_registrantId: { occurrenceId, registrantId: regId } },
-          create: { occurrenceId, registrantId: regId },
-          update: {},
-        })
-      } else {
-        await tx.eventRegistrant.update({
-          where: { id: regId },
-          data: { attendedAt: new Date() },
-        })
-      }
-
-      return { registrantId: regId, name: displayName }
-    })
-
-    const breakoutGroup = await assignBreakoutForRegistrant(
-      registrantId,
-      eventId,
-      selectedBreakoutGroupId ?? null,
-      {
-        gender: parsed.data.gender ?? null,
-        birthYear: parsed.data.birthYear ?? null,
-      }
-    )
-
-    return { success: true, data: { registrantId, name, breakoutGroup } }
-  } catch {
-    return { success: false, error: "Failed to register. Please try again." }
   }
 }
