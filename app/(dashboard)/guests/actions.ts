@@ -7,6 +7,7 @@ import { auth } from "@/lib/auth"
 import { canWrite } from "@/lib/permissions"
 import { guestSchema, type GuestFormValues } from "@/lib/validations/guest"
 import { checkDuplicateContactInfo } from "@/lib/duplicate-check"
+import { repointFamilyLinks } from "@/lib/family-links"
 import { runBatchDelete } from "@/lib/batch"
 import type { BatchDeleteResult } from "@/components/batch/types"
 
@@ -293,6 +294,8 @@ export async function promoteGuestToMember(
         where: { guestId },
         data: { memberId: newMember.id, guestId: null },
       })
+
+      await repointFamilyLinks(tx, { guestId }, { memberId: newMember.id })
 
       if (group.status === "Pending") {
         await tx.smallGroup.update({ where: { id: groupId }, data: { status: "Active" } })

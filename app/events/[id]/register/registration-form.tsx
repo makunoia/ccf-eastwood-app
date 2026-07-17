@@ -179,6 +179,7 @@ type WalkInConfig = {
   prefill: {
     mobileNumber?: string
     email?: string
+    firstName?: string
     lastName?: string
     birthMonth?: string
     birthYear?: string
@@ -236,6 +237,7 @@ export function RegistrationForm({
     // the person may be fixing the typo that caused the miss.
     mobileNumber: walkIn?.prefill.mobileNumber ?? "",
     email: walkIn?.prefill.email ?? "",
+    firstName: walkIn?.prefill.firstName ?? "",
     lastName: walkIn?.prefill.lastName ?? "",
     birthMonth: walkIn?.prefill.birthMonth ?? "",
     birthYear: walkIn?.prefill.birthYear ?? "",

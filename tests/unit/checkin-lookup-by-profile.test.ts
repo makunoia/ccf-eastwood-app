@@ -53,6 +53,7 @@ type SingleMatchData = {
   name: string
   nickname: string | null
   alreadyCheckedIn: boolean
+  contactHint: string | null
   guestSmallGroupPrompt: null
 }
 
@@ -335,9 +336,8 @@ describe("checkin-board UI – name-dob mode", () => {
     expect(content).toContain('"name-dob"')
   })
 
-  it("renders the 'I don't have either' toggle option", () => {
-    expect(content).toContain("I don")
-    expect(content).toContain("have either")
+  it("renders the birthday-lookup toggle option", () => {
+    expect(content).toContain("Look me up by birthday instead")
   })
 
   it("renders the last name, birth month, and birth year fields", () => {

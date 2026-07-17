@@ -9,6 +9,7 @@ import {
   type SmallGroupFormValues,
 } from "@/lib/validations/small-group"
 import { runBatchDelete } from "@/lib/batch"
+import { findSpouse, type SpouseInfo } from "@/lib/family-links"
 import type { BatchDeleteResult } from "@/components/batch/types"
 
 type ActionResult<T = void> =
@@ -49,6 +50,7 @@ export async function createSmallGroup(
           name: parsed.data.name,
           leaderId: parsed.data.leaderId,
           parentGroupId: parsed.data.parentGroupId ?? null,
+          groupType: parsed.data.groupType,
           lifeStages: { connect: parsed.data.lifeStageIds.map((id) => ({ id })) },
           genderFocus: parsed.data.genderFocus ?? null,
           language: parsed.data.language,
@@ -174,6 +176,7 @@ export async function updateSmallGroup(
           name: parsed.data.name,
           leaderId: parsed.data.leaderId,
           parentGroupId: parsed.data.parentGroupId ?? null,
+          groupType: parsed.data.groupType,
           lifeStages: { set: parsed.data.lifeStageIds.map((id) => ({ id })) },
           genderFocus: parsed.data.genderFocus ?? null,
           language: parsed.data.language,
@@ -340,6 +343,103 @@ export async function addMemberToGroup(
   }
 }
 
+/**
+ * Looks up the spouse of a member (derived from Family data) for the couples
+ * group add flow. Read-only.
+ */
+export async function getSpouseForMember(
+  memberId: string
+): Promise<ActionResult<SpouseInfo | null>> {
+  const session = await auth()
+  if (!session?.user) return { success: false, error: "Not authenticated." }
+
+  try {
+    const spouse = await findSpouse(memberId)
+    return { success: true, data: spouse }
+  } catch {
+    return { success: false, error: "Failed to look up spouse" }
+  }
+}
+
+/**
+ * Adds a married couple to a Couples group in one transaction. Both members'
+ * one-group-per-member rule applies: each spouse's smallGroupId is simply set
+ * to this group (moving them out of any previous group).
+ */
+export async function addCoupleToGroup(
+  groupId: string,
+  memberId: string,
+  spouseMemberId: string
+): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
+  if (memberId === spouseMemberId) {
+    return { success: false, error: "A member cannot be their own spouse" }
+  }
+
+  try {
+    const group = await db.smallGroup.findUnique({
+      where: { id: groupId },
+      select: {
+        status: true,
+        memberLimit: true,
+        _count: { select: { members: true } },
+      },
+    })
+    if (!group) return { success: false, error: "Group not found" }
+    if (group.memberLimit !== null && group._count.members + 2 > group.memberLimit) {
+      return {
+        success: false,
+        error: `Adding both spouses would exceed the member limit of ${group.memberLimit}`,
+      }
+    }
+
+    const [member, spouse] = await Promise.all([
+      db.member.findUnique({
+        where: { id: memberId },
+        select: { firstName: true, lastName: true },
+      }),
+      db.member.findUnique({
+        where: { id: spouseMemberId },
+        select: { firstName: true, lastName: true },
+      }),
+    ])
+    if (!member || !spouse) return { success: false, error: "Member not found" }
+
+    const actorId = await getActorId()
+    await db.$transaction(async (tx) => {
+      for (const [id, person] of [
+        [memberId, member],
+        [spouseMemberId, spouse],
+      ] as const) {
+        await tx.member.update({
+          where: { id },
+          data: { smallGroupId: groupId, groupStatus: "Member" },
+        })
+        await tx.smallGroupLog.create({
+          data: {
+            smallGroupId: groupId,
+            action: "MemberAdded",
+            memberId: id,
+            performedByUserId: actorId,
+            description: `${person.firstName} ${person.lastName} was added to the group (couple)`,
+          },
+        })
+      }
+      if (group.status === "Pending") {
+        await tx.smallGroup.update({ where: { id: groupId }, data: { status: "Active" } })
+      }
+    })
+
+    revalidatePath(`/small-groups/${groupId}`)
+    revalidatePath("/small-groups")
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to add couple to group" }
+  }
+}
+
 export async function removeMemberFromGroup(
   memberId: string,
   groupId: string
@@ -502,6 +602,98 @@ export async function assignMemberTransferTemporarily(
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to assign member transfer" }
+  }
+}
+
+/**
+ * Creates paired pending requests for both spouses into a Couples group
+ * (transfer semantics — each request records the member's current group).
+ * The group leader confirms or declines both via the confirmation link.
+ */
+export async function requestCoupleAssignment(
+  groupId: string,
+  memberIdA: string,
+  memberIdB: string
+): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
+  if (memberIdA === memberIdB) {
+    return { success: false, error: "A member cannot be their own spouse" }
+  }
+
+  try {
+    const group = await db.smallGroup.findUnique({
+      where: { id: groupId },
+      select: {
+        name: true,
+        groupType: true,
+        memberLimit: true,
+        _count: { select: { members: true } },
+      },
+    })
+    if (!group) return { success: false, error: "Group not found" }
+    if (group.groupType !== "Couples") {
+      return { success: false, error: "Couple requests are only available for couples groups" }
+    }
+    if (group.memberLimit !== null && group._count.members + 2 > group.memberLimit) {
+      return {
+        success: false,
+        error: `Adding both spouses would exceed the member limit of ${group.memberLimit}`,
+      }
+    }
+
+    const members = await db.member.findMany({
+      where: { id: { in: [memberIdA, memberIdB] } },
+      select: { id: true, firstName: true, lastName: true, smallGroupId: true },
+    })
+    if (members.length !== 2) return { success: false, error: "Member not found" }
+    if (members.some((m) => m.smallGroupId === groupId)) {
+      return { success: false, error: "One of the spouses is already in this group" }
+    }
+
+    const existingPending = await db.smallGroupMemberRequest.findFirst({
+      where: {
+        smallGroupId: groupId,
+        memberId: { in: [memberIdA, memberIdB] },
+        status: "Pending",
+      },
+      select: { id: true },
+    })
+    if (existingPending) {
+      return { success: false, error: "One of the spouses already has a pending request to this group" }
+    }
+
+    const actorId = await getActorId()
+    await db.$transaction(async (tx) => {
+      for (const member of members) {
+        await tx.smallGroupMemberRequest.create({
+          data: {
+            smallGroupId: groupId,
+            memberId: member.id,
+            fromGroupId: member.smallGroupId ?? null,
+            assignedByUserId: actorId,
+          },
+        })
+        await tx.smallGroupLog.create({
+          data: {
+            smallGroupId: groupId,
+            action: "TempAssignmentCreated",
+            memberId: member.id,
+            fromGroupId: member.smallGroupId ?? null,
+            toGroupId: groupId,
+            performedByUserId: actorId,
+            description: `${member.firstName} ${member.lastName} was assigned as part of a couple (pending leader confirmation)`,
+          },
+        })
+      }
+    })
+
+    revalidatePath(`/small-groups/${groupId}`)
+    revalidatePath("/small-groups")
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to create couple request" }
   }
 }
 

@@ -13,6 +13,7 @@ function toExportRow(g: SmallGroupRow): SmallGroupExportRow {
   return {
     name: g.name,
     status: g.status,
+    groupType: g.groupType,
     leaderFirstName: g.leaderFirstName,
     leaderLastName: g.leaderLastName,
     leaderEmail: g.leaderEmail,

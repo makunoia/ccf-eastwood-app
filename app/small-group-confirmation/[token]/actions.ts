@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
+import { repointFamilyLinks } from "@/lib/family-links"
 
 type ActionResult<T = void> =
   | { success: true; data: T }
@@ -186,6 +187,7 @@ export async function submitMemberConfirmations(
                 where: { guestId: req.guestId },
                 data: { memberId: resolvedMemberId, guestId: null },
               })
+              await repointFamilyLinks(tx, { guestId: req.guestId }, { memberId: resolvedMemberId })
 
               await tx.smallGroupLog.create({
                 data: {

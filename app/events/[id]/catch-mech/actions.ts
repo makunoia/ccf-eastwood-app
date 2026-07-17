@@ -2,6 +2,7 @@
 
 import { DeclineReason, type Prisma } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
+import { repointFamilyLinks } from "@/lib/family-links"
 import { revalidatePath } from "next/cache"
 
 type ActionResult<T = void> =
@@ -503,6 +504,7 @@ async function resolveConfirmations(
         where: { guestId: registrant.guestId },
         data: { memberId: newMember.id, guestId: null },
       })
+      await repointFamilyLinks(tx, { guestId: registrant.guestId }, { memberId: newMember.id })
       await tx.smallGroupLog.create({
         data: {
           smallGroupId,

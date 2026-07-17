@@ -55,6 +55,7 @@ type Props = {
   eventHistory?: React.ReactNode
   activityHistory?: React.ReactNode
   smallGroups?: React.ReactNode
+  family?: React.ReactNode
 }
 
 function toFormValues(member: MemberRow): MemberFormValues {
@@ -78,7 +79,7 @@ function toFormValues(member: MemberRow): MemberFormValues {
   }
 }
 
-export function MemberForm({ member, groupStatus, eventHistory, activityHistory, smallGroups }: Props) {
+export function MemberForm({ member, groupStatus, eventHistory, activityHistory, smallGroups, family }: Props) {
   const router = useRouter()
   const isEdit = !!member
   const [form, setForm] = React.useState<MemberFormValues>(
@@ -147,7 +148,7 @@ export function MemberForm({ member, groupStatus, eventHistory, activityHistory,
     setActiveTab(newTab)
   }
 
-  const hasTabs = isEdit && (eventHistory || activityHistory || smallGroups)
+  const hasTabs = isEdit && (eventHistory || activityHistory || smallGroups || family)
 
   return (
     <Tabs value={activeTab} onValueChange={handleTabChange} className="flex flex-1 flex-col gap-0">
@@ -202,6 +203,9 @@ export function MemberForm({ member, groupStatus, eventHistory, activityHistory,
               <TabsTrigger value="profile" className="after:-bottom-px">Profile</TabsTrigger>
               {smallGroups && (
                 <TabsTrigger value="small-groups" className="after:-bottom-px">Small Groups</TabsTrigger>
+              )}
+              {family && (
+                <TabsTrigger value="family" className="after:-bottom-px">Family</TabsTrigger>
               )}
               {eventHistory && (
                 <TabsTrigger value="events" className="after:-bottom-px">Events</TabsTrigger>
@@ -394,6 +398,12 @@ export function MemberForm({ member, groupStatus, eventHistory, activityHistory,
       {isEdit && smallGroups && (
         <TabsContent value="small-groups" className="mt-0 p-6">
           {smallGroups}
+        </TabsContent>
+      )}
+
+      {isEdit && family && (
+        <TabsContent value="family" className="mt-0 max-w-2xl p-6">
+          {family}
         </TabsContent>
       )}
 

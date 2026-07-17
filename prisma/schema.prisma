@@ -79,6 +79,14 @@ enum MemberGroupStatus {
   Leader
 }
 
+enum FamilyRole {
+  Father
+  Mother
+  Child
+  Guardian
+  Other
+}
+
 enum BusDirection {
   ToVenue
   FromVenue
@@ -113,6 +121,11 @@ enum SmallGroupStatus {
   Active
   Pending
   Inactive
+}
+
+enum SmallGroupType {
+  Regular
+  Couples
 }
 
 enum UserRole {
@@ -287,6 +300,7 @@ model Member {
   groupRequests       SmallGroupMemberRequest[]
   smallGroupLogs      SmallGroupLog[]
   logs                MemberLog[]
+  familyMemberships   FamilyMember[]
 }
 
 model Guest {
@@ -328,6 +342,44 @@ model Guest {
   eventRegistrations EventRegistrant[]
   groupRequests      SmallGroupMemberRequest[]
   smallGroupLogs     SmallGroupLog[]
+  familyMemberships  FamilyMember[]
+}
+
+// ─── Families ─────────────────────────────────────────────────────────────────
+// A Family is a household unit. A person can belong to multiple families
+// (e.g. an adult is a Child in their parents' family and a Father in their own),
+// hence the join model rather than a familyId column on Member.
+
+model Family {
+  id        String   @id @default(cuid())
+  name      String
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members FamilyMember[]
+}
+
+model FamilyMember {
+  id       String     @id @default(cuid())
+  familyId String
+  family   Family     @relation(fields: [familyId], references: [id], onDelete: Cascade)
+
+  // Exactly one of memberId / guestId is set (app-layer enforced, same idiom
+  // as SmallGroupMemberRequest). Repointed guestId → memberId on promotion.
+  memberId String?
+  member   Member?    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  guestId  String?
+  guest    Guest?     @relation(fields: [guestId], references: [id], onDelete: Cascade)
+
+  role      FamilyRole
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@unique([familyId, memberId])
+  @@unique([familyId, guestId])
+  @@index([memberId])
+  @@index([guestId])
 }
 
 model SchedulePreference {
@@ -369,6 +421,9 @@ model SmallGroup {
   leaderConfirmationToken String?  @unique
 
   status           SmallGroupStatus     @default(Active)
+  // Couples groups roster married pairs (derived from Family data); membership
+  // is still individual and one-group-per-member applies unchanged.
+  groupType        SmallGroupType       @default(Regular)
 
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt

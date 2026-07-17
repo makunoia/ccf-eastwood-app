@@ -1,6 +1,12 @@
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
+import { auth } from "@/lib/auth"
+import { canWrite } from "@/lib/permissions"
+import type { FamilyRoleValue } from "@/lib/validations/family"
+import { findSpouse } from "@/lib/family-links"
 import { MemberForm } from "../member-form"
+import { MemberFamilySection, type MemberFamilyEntry } from "./member-family-section"
+import { MemberCouplesMatchSection } from "./member-couples-match-section"
 import { MemberEventHistory } from "./member-event-history"
 import { MemberSmallGroups } from "./member-small-groups"
 import { MemberMatchSection } from "./member-match-section"
@@ -109,6 +115,45 @@ async function getMemberSmallGroupInfo(memberId: string) {
         }
       : null,
   }
+}
+
+async function getMemberFamilies(memberId: string): Promise<MemberFamilyEntry[]> {
+  const links = await db.familyMember.findMany({
+    where: { memberId },
+    orderBy: { createdAt: "asc" },
+    select: {
+      role: true,
+      family: {
+        select: {
+          id: true,
+          name: true,
+          members: {
+            select: {
+              id: true,
+              role: true,
+              member: { select: { id: true, firstName: true, lastName: true } },
+              guest: { select: { firstName: true, lastName: true } },
+            },
+          },
+        },
+      },
+    },
+  })
+
+  return links.map((link) => ({
+    familyId: link.family.id,
+    familyName: link.family.name,
+    role: link.role as FamilyRoleValue,
+    others: link.family.members
+      .filter((fm) => fm.member?.id !== memberId)
+      .map((fm) => {
+        const person = fm.member ?? fm.guest
+        return {
+          name: person ? `${person.firstName} ${person.lastName}` : "Unknown",
+          role: fm.role as FamilyRoleValue,
+        }
+      }),
+  }))
 }
 
 async function getMemberEventRegistrations(memberId: string) {
@@ -294,13 +339,16 @@ export default async function MemberDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const [member, lifeStages, registrations, smallGroupInfo, activityEntries, allSmallGroups] = await Promise.all([
+  const [session, member, lifeStages, registrations, smallGroupInfo, activityEntries, allSmallGroups, families, spouse] = await Promise.all([
+    auth(),
     getMember(id),
     getLifeStages(),
     getMemberEventRegistrations(id),
     getMemberSmallGroupInfo(id),
     getMemberActivityData(id),
     db.smallGroup.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    getMemberFamilies(id),
+    findSpouse(id),
   ])
 
   if (!member) notFound()
@@ -311,6 +359,12 @@ export default async function MemberDetailPage({
       groupStatus={smallGroupInfo?.memberOf?.groupStatus ?? null}
       eventHistory={<MemberEventHistory registrations={registrations} />}
       activityHistory={<MemberActivityLog entries={activityEntries} />}
+      family={
+        <MemberFamilySection
+          families={families}
+          canWrite={canWrite(session, "Members")}
+        />
+      }
       smallGroups={
         smallGroupInfo ? (
           <div className="space-y-6">
@@ -358,6 +412,20 @@ export default async function MemberDetailPage({
                 }}
                 lifeStages={lifeStages}
               />
+            )}
+            {spouse && (
+              <>
+                <div className="border-t" />
+                <MemberCouplesMatchSection
+                  memberId={id}
+                  memberFirstName={member.nickname || member.firstName}
+                  spouse={{
+                    memberId: spouse.memberId,
+                    firstName: spouse.firstName,
+                    lastName: spouse.lastName,
+                  }}
+                />
+              </>
             )}
           </div>
         ) : undefined

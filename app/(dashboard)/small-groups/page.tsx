@@ -4,6 +4,7 @@ import {
   MemberRequestStatus,
   Prisma,
   SmallGroupStatus,
+  SmallGroupType,
 } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
@@ -40,6 +41,7 @@ async function getSmallGroups(where: Prisma.SmallGroupWhereInput): Promise<Small
     id: g.id,
     name: g.name,
     status: g.status as "Active" | "Pending" | "Inactive",
+    groupType: g.groupType as "Regular" | "Couples",
     leaderName: g.leader ? `${g.leader.firstName} ${g.leader.lastName}` : null,
     leaderId: g.leader?.id ?? null,
     leaderFirstName: g.leader?.firstName ?? "",
@@ -120,6 +122,7 @@ export default async function SmallGroupsPage({
   const genderFocus = (params.genderFocus as string) || ""
   const meetingFormat = (params.meetingFormat as string) || ""
   const status = (params.status as string) || ""
+  const groupType = (params.groupType as string) || ""
 
   const where: Prisma.SmallGroupWhereInput = {
     AND: [
@@ -136,6 +139,7 @@ export default async function SmallGroupsPage({
       genderFocus ? { genderFocus: genderFocus as GenderFocus } : {},
       meetingFormat ? { meetingFormat: meetingFormat as MeetingFormat } : {},
       status ? { status: status as SmallGroupStatus } : {},
+      groupType ? { groupType: groupType as SmallGroupType } : {},
     ],
   }
 
@@ -192,6 +196,7 @@ export default async function SmallGroupsPage({
               genderFocus={genderFocus}
               meetingFormat={meetingFormat}
               status={status}
+              groupType={groupType}
             />
             <SmallGroupsTable groups={groups} canWrite={selectionEnabled} />
           </>
