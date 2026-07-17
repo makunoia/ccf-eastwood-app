@@ -1,8 +1,13 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { PageHeader } from "@/components/page-header"
 import { eventFormsForModules, scopeKeyFor } from "@/lib/forms/registry"
 import { FormsList, type FormListRow } from "@/app/(dashboard)/forms/forms-list"
+
+export const metadata: Metadata = {
+  title: "Forms",
+}
 
 export default async function EventFormsPage({
   params,

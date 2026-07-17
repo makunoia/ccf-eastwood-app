@@ -1,6 +1,11 @@
+import type { Metadata } from "next"
 import Link from "next/link"
 import { IconAdjustmentsHorizontal, IconAlertTriangle, IconDoorEnter, IconTags, IconUsers } from "@tabler/icons-react"
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+
+export const metadata: Metadata = {
+  title: "Settings",
+}
 
 const sections = [
   {

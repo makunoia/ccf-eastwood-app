@@ -1,5 +1,7 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
+import { personTitle } from "@/lib/metadata"
 import { GuestEventHistory } from "./guest-event-history"
 import { GuestActivityLog, type ActivityEntry } from "./guest-activity-log"
 import { GuestDetailContent } from "./guest-detail-content"
@@ -194,6 +196,19 @@ async function getGuestEventRegistrations(guestId: string) {
       },
     },
   })
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>
+}): Promise<Metadata> {
+  const { id } = await params
+  const guest = await db.guest.findUnique({
+    where: { id },
+    select: { firstName: true, lastName: true },
+  })
+  return { title: { absolute: personTitle(guest, "Guests") } }
 }
 
 export default async function GuestDetailPage({

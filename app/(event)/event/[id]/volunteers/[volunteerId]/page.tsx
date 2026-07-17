@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { auth } from "@/lib/auth"
 import { canRead } from "@/lib/permissions"
@@ -26,6 +27,20 @@ async function getData(volunteerId: string, eventId: string) {
     }),
   ])
   return { volunteer, committees }
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string; volunteerId: string }>
+}): Promise<Metadata> {
+  const { id, volunteerId } = await params
+  const volunteer = await db.volunteer.findFirst({
+    where: { id: volunteerId, eventId: id },
+    select: { member: { select: { firstName: true, lastName: true } } },
+  })
+  if (!volunteer) return { title: "Volunteer" }
+  return { title: `${volunteer.member.firstName} ${volunteer.member.lastName}` }
 }
 
 export default async function EventVolunteerDetailPage({

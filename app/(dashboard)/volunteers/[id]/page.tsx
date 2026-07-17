@@ -1,5 +1,7 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
+import { personTitle } from "@/lib/metadata"
 import { VolunteerForm } from "../volunteer-form"
 
 async function getData(id: string) {
@@ -38,6 +40,19 @@ async function getData(id: string) {
     }),
   ])
   return { volunteer, members, events }
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>
+}): Promise<Metadata> {
+  const { id } = await params
+  const volunteer = await db.volunteer.findUnique({
+    where: { id },
+    select: { member: { select: { firstName: true, lastName: true } } },
+  })
+  return { title: { absolute: personTitle(volunteer?.member, "Volunteers") } }
 }
 
 export default async function EditVolunteerPage({

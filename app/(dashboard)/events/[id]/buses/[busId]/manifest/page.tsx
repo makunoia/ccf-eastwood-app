@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { ManifestPrint } from "./manifest-print"
@@ -39,6 +40,21 @@ const DIRECTION_LABELS: Record<string, string> = {
   ToVenue: "To Venue",
   FromVenue: "From Venue",
   Both: "Both ways",
+}
+
+// Also becomes the header the browser prints onto the manifest PDF.
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ busId: string }>
+}): Promise<Metadata> {
+  const { busId } = await params
+  const bus = await db.bus.findUnique({
+    where: { id: busId },
+    select: { name: true, event: { select: { name: true } } },
+  })
+  if (!bus) return { title: { absolute: "Bus Manifest" } }
+  return { title: { absolute: `${bus.name} Manifest · ${bus.event.name}` } }
 }
 
 export default async function ManifestPage({

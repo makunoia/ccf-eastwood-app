@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { Prisma } from "@/app/generated/prisma/client"
 
 import { db } from "@/lib/db"
@@ -8,6 +9,10 @@ import { type FamilyRow } from "./columns"
 import { FamiliesTable } from "./families-table"
 import { FamiliesFilters } from "./families-filters"
 import { FamiliesToolbar } from "./toolbar"
+
+export const metadata: Metadata = {
+  title: "Families",
+}
 
 const PARENT_ROLES = ["Father", "Mother", "Guardian"] as const
 

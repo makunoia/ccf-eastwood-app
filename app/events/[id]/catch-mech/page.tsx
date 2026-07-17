@@ -1,5 +1,7 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
+import { getEventName } from "@/lib/metadata"
 import { CatchMechEntryForm } from "./catch-mech-entry-form"
 import { PublicFormShell } from "@/components/public-form-shell"
 import { FormClosed } from "@/components/form-closed"
@@ -43,6 +45,16 @@ async function getEventData(id: string) {
   if (!event) return null
   if (!event.modules.some((m) => m.type === "CatchMech")) return null
   return event
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>
+}): Promise<Metadata> {
+  const { id } = await params
+  const name = await getEventName(id)
+  return { title: { absolute: name ? `Catch Mech · ${name}` : "Catch Mech" } }
 }
 
 export default async function CatchMechEntryPage({

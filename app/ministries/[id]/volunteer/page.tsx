@@ -1,6 +1,8 @@
+import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
+import { getMinistryName } from "@/lib/metadata"
 
 async function getData(ministryId: string) {
   const [ministry, upcomingEvents] = await Promise.all([
@@ -18,6 +20,16 @@ async function getData(ministryId: string) {
     }),
   ])
   return { ministry, upcomingEvents }
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>
+}): Promise<Metadata> {
+  const { id } = await params
+  const name = await getMinistryName(id)
+  return { title: { absolute: name ? `Volunteer Sign-Up · ${name}` : "Volunteer Sign-Up" } }
 }
 
 export default async function MinistryVolunteerPage({

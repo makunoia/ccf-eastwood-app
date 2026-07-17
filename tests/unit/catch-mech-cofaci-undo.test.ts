@@ -93,7 +93,7 @@ describe("catch-mech — independent co-facilitator decisions + admin undo", () 
       select: { smallGroupId: true, smallGroup: { select: { leaderId: true } } },
     })
     expect(rejected?.smallGroupId).toBe(s.leadGroup.id)
-    expect(rejected?.smallGroup.leaderId).toBe(s.leadMember.id)
+    expect(rejected?.smallGroup?.leaderId).toBe(s.leadMember.id)
 
     // Co-faci still sees the person; the lead who rejected does not.
     const coData = await getSessionData(s.coSession.token)

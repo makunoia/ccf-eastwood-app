@@ -1,3 +1,4 @@
+import type { DeclineReason } from "@/app/generated/prisma/client"
 import type { GroupRow } from "./catch-mech-table"
 
 // Minimal shapes of the data the dashboard aggregation needs. These mirror the
@@ -32,12 +33,18 @@ export type AggRequest = {
   memberId: string | null
   guestId: string | null
   status: "Confirmed" | "Rejected" | "Pending"
+  declineReason: DeclineReason | null
 }
 
 export type CatchMechStats = {
-  totalMembers: number
+  /** Everyone tracked by catch mech: confirmed + rejected + inSmallGroup + pending. */
+  totalCohort: number
+  /** The people catch mech is actually trying to place: totalCohort − inSmallGroup. */
+  matchable: number
   totalConfirmed: number
+  /** True rejections only — excludes AlreadyInSmallGroup. */
   totalRejected: number
+  totalInSmallGroup: number
   totalPending: number
 }
 
@@ -56,6 +63,7 @@ export function buildCatchMechGroupRows(
   const groupRows: GroupRow[] = []
   let totalConfirmed = 0
   let totalRejected = 0
+  let totalInSmallGroup = 0
   let totalPending = 0
 
   for (const bg of breakoutGroups) {
@@ -67,6 +75,7 @@ export function buildCatchMechGroupRows(
 
     let confirmed = 0
     let rejected = 0
+    let inSmallGroup = 0
     const members: GroupRow["members"] = []
 
     for (const m of bg.members) {
@@ -83,6 +92,12 @@ export function buildCatchMechGroupRows(
 
       // Members already placed in a small group with NO catch-mech request were
       // pre-assigned outside this flow — exclude them from tracking.
+      //
+      // This is deliberately NOT the same as the "In Small Group" bucket below, which
+      // counts people a facilitator explicitly reported as AlreadyInSmallGroup. Someone
+      // pre-placed outside catch mech was never part of the cohort and belongs in no
+      // bucket at all; someone declined as AlreadyInSmallGroup was surfaced by the flow
+      // and needs to be visible. Don't "unify" these — they're different populations.
       if (!req && r.memberId && r.member?.smallGroupId) continue
 
       // Resolve display name
@@ -95,17 +110,24 @@ export function buildCatchMechGroupRows(
 
       let status: GroupRow["members"][number]["status"] = "Pending"
       if (req?.status === "Confirmed") { status = "Confirmed"; confirmed++ }
-      else if (req?.status === "Rejected") { status = "Rejected"; rejected++ }
+      else if (req?.status === "Rejected") {
+        // Both buckets are Prisma status Rejected — declineReason splits them.
+        if (req.declineReason === "AlreadyInSmallGroup") { status = "InSmallGroup"; inSmallGroup++ }
+        else { status = "Rejected"; rejected++ }
+      }
 
       // requestId enables the admin undo action — only present for resolved decisions
       members.push({ name, status, requestId: req?.id ?? null })
     }
 
-    const total = members.length
-    const pending = total - confirmed - rejected
+    const pending = members.length - confirmed - rejected - inSmallGroup
+    // Per-group "To Match" excludes the in-group bucket, so each row reconciles as
+    // Confirmed + Rejected + Pending = To Match.
+    const toMatch = confirmed + rejected + pending
 
     totalConfirmed += confirmed
     totalRejected += rejected
+    totalInSmallGroup += inSmallGroup
     totalPending += pending
 
     groupRows.push({
@@ -115,20 +137,25 @@ export function buildCatchMechGroupRows(
       faciMemberId: faciMember?.id ?? null,
       isTimothy,
       ledGroupNames,
-      totalMembers: total,
+      toMatchCount: toMatch,
       confirmedCount: confirmed,
       rejectedCount: rejected,
+      inSmallGroupCount: inSmallGroup,
       pendingCount: pending,
       members,
     })
   }
 
+  const totalCohort = totalConfirmed + totalRejected + totalInSmallGroup + totalPending
+
   return {
     groupRows,
     stats: {
-      totalMembers: totalConfirmed + totalRejected + totalPending,
+      totalCohort,
+      matchable: totalCohort - totalInSmallGroup,
       totalConfirmed,
       totalRejected,
+      totalInSmallGroup,
       totalPending,
     },
   }

@@ -9,7 +9,11 @@ import { PwaSplashScreen } from "@/components/pwa-splash-screen"
 import "./globals.css"
 
 export const metadata: Metadata = {
-  title: "CCF Eastwood Admin",
+  title: {
+    default: "CCF Eastwood Admin",
+    // Page name leads so tabs stay distinguishable when the browser truncates.
+    template: "%s · CCF Eastwood Admin",
+  },
   description: "Church management for administrators",
   appleWebApp: {
     capable: true,

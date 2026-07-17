@@ -21,6 +21,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { CatchMechUndoButton } from "../catch-mech-undo-button"
+import { SLUG_CONFIG, type CatchMechSlug } from "../status-slug"
 
 export type StatusListRow = {
   requestId: string
@@ -28,22 +29,16 @@ export type StatusListRow = {
   name: string
   type: "Member" | "Guest"
   breakoutGroupName: string
-  smallGroupName: string | null  // null for Rejected
-  declineReason: string | null   // display string, only set for Rejected
-  rejectedByName: string | null  // facilitator name, only set for Rejected
+  smallGroupName: string | null  // null for the declined statuses
+  declineReason: string | null   // display string, only set for declined rows
+  rejectedByName: string | null  // facilitator name, only set for declined rows
 }
 
 type Props = {
   rows: StatusListRow[]
-  status: "confirmed" | "pending" | "rejected"
+  status: CatchMechSlug
   eventId: string
   breakoutGroups: { id: string; name: string }[]
-}
-
-const STATUS_LABEL: Record<Props["status"], string> = {
-  confirmed: "Confirmed",
-  pending: "Pending",
-  rejected: "Rejected",
 }
 
 export function StatusListClient({ rows, status, eventId, breakoutGroups }: Props) {
@@ -53,10 +48,22 @@ export function StatusListClient({ rows, status, eventId, breakoutGroups }: Prop
     ? rows
     : rows.filter((r) => r.breakoutGroupName === filterGroup)
 
-  const label = STATUS_LABEL[status]
-  const canUndo = status === "confirmed" || status === "rejected"
-  // Name, Type, Breakout Group, (Small Group | Reason) = 4; +Rejected by; +Undo
-  const colCount = 4 + (status === "rejected" ? 1 : 0) + (canUndo ? 1 : 0)
+  const label = SLUG_CONFIG[status].label
+  // Both declined slugs carry a reason and a decider; the reason is the entire point
+  // of separating in-small-group out, so it shows there too.
+  const isDeclined = status === "rejected" || status === "in-small-group"
+  const canUndo = status !== "pending"
+
+  // Derived from the rendered columns rather than hand-counted: the old `4 + …` form
+  // baked in "exactly one of Small Group / Reason renders", which the 4th slug breaks.
+  const colCount = [
+    true,        // Name
+    true,        // Type
+    true,        // Breakout Group
+    true,        // Small Group | Reason
+    isDeclined,  // Declined by
+    canUndo,     // Undo
+  ].filter(Boolean).length
 
   return (
     <div className="space-y-6">
@@ -108,8 +115,8 @@ export function StatusListClient({ rows, status, eventId, breakoutGroups }: Prop
               <TableHead>Name</TableHead>
               <TableHead>Type</TableHead>
               <TableHead>Breakout Group</TableHead>
-              {status !== "rejected" ? <TableHead>Small Group</TableHead> : <TableHead>Reason</TableHead>}
-              {status === "rejected" && <TableHead>Rejected by</TableHead>}
+              {isDeclined ? <TableHead>Reason</TableHead> : <TableHead>Small Group</TableHead>}
+              {isDeclined && <TableHead>Declined by</TableHead>}
               {canUndo && <TableHead className="w-10" />}
             </TableRow>
           </TableHeader>
@@ -117,7 +124,9 @@ export function StatusListClient({ rows, status, eventId, breakoutGroups }: Prop
             {filtered.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={colCount} className="py-6 text-center text-muted-foreground">
-                  No {label.toLowerCase()} registrants.
+                  {status === "in-small-group"
+                    ? "No registrants were declined as already in a small group."
+                    : `No ${label.toLowerCase()} registrants.`}
                 </TableCell>
               </TableRow>
             ) : (
@@ -137,16 +146,16 @@ export function StatusListClient({ rows, status, eventId, breakoutGroups }: Prop
                     </Badge>
                   </TableCell>
                   <TableCell>{row.breakoutGroupName}</TableCell>
-                  {status !== "rejected" ? (
-                    <TableCell>
-                      {row.smallGroupName ?? <span className="text-muted-foreground">—</span>}
-                    </TableCell>
-                  ) : (
+                  {isDeclined ? (
                     <TableCell>
                       {row.declineReason ?? <span className="text-muted-foreground">—</span>}
                     </TableCell>
+                  ) : (
+                    <TableCell>
+                      {row.smallGroupName ?? <span className="text-muted-foreground">—</span>}
+                    </TableCell>
                   )}
-                  {status === "rejected" && (
+                  {isDeclined && (
                     <TableCell>
                       {row.rejectedByName ?? <span className="text-muted-foreground">—</span>}
                     </TableCell>

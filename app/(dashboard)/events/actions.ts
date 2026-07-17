@@ -1811,3 +1811,45 @@ export async function lookupCheckinRegistrantByProfile(
     return { success: false, error: "Lookup failed. Please try again." }
   }
 }
+
+export async function searchCheckinByName(
+  eventId: string,
+  query: string,
+  occurrenceId: string | null
+): Promise<ActionResult<CheckinRegistrantResult[]>> {
+  const q = normalizeNameInput(query)
+  if (!q || q.length < 2) return { success: true, data: [] }
+  const words = q.split(/\s+/).filter(Boolean)
+
+  function nameContains(first: string, last: string, nickname: string | null): boolean {
+    const full = normalizeNameInput(`${first} ${last}`)
+    const nick = nickname ? normalizeNameInput(nickname) : ""
+    return words.every((w) => full.includes(w) || nick.includes(w))
+  }
+
+  try {
+    const allRegistrants = await findEventRegistrantsForLookup(eventId)
+    const matchedRegistrants = allRegistrants.filter((r) => {
+      const first = r.member?.firstName ?? r.guest?.firstName ?? r.firstName ?? ""
+      const last = r.member?.lastName ?? r.guest?.lastName ?? r.lastName ?? ""
+      return nameContains(first, last, r.nickname)
+    })
+
+    const allVolunteers = await findEventVolunteersForLookup(eventId)
+    const matchedVolunteers = allVolunteers.filter((v) =>
+      nameContains(v.member.firstName, v.member.lastName, null)
+    )
+
+    const [registrantCandidates, volunteerCandidates] = await Promise.all([
+      Promise.all(matchedRegistrants.map((r) => resolveRegistrantCandidate(r, occurrenceId))),
+      Promise.all(matchedVolunteers.map((v) => resolveVolunteerCandidate(v, occurrenceId))),
+    ])
+
+    return {
+      success: true,
+      data: [...volunteerCandidates, ...registrantCandidates].slice(0, 15),
+    }
+  } catch {
+    return { success: false, error: "Search failed. Please try again." }
+  }
+}

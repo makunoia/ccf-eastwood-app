@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
@@ -37,6 +38,17 @@ async function getEventSessions(id: string) {
       },
     },
   })
+}
+
+// Mirrors the in-page header, which reads "Sessions" only for Recurring events.
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>
+}): Promise<Metadata> {
+  const { id } = await params
+  const event = await db.event.findUnique({ where: { id }, select: { type: true } })
+  return { title: event?.type === "Recurring" ? "Sessions" : "Days" }
 }
 
 export default async function SessionsPage({

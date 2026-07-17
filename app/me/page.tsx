@@ -1,7 +1,12 @@
+import type { Metadata } from "next"
 import { IconUserCircle } from "@tabler/icons-react"
 import { VerifyForm } from "./verify-form"
 import { FormClosed } from "@/components/form-closed"
 import { getFormConfig } from "@/lib/forms/config"
+
+export const metadata: Metadata = {
+  title: { absolute: "Member Portal" },
+}
 
 export default async function MePage() {
   const formConfig = await getFormConfig("MemberSelfService")

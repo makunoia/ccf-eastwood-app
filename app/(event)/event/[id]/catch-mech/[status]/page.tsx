@@ -1,18 +1,11 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { formatDeclineReason } from "@/lib/decline-reason"
 import { StatusListClient, type StatusListRow } from "./status-list-client"
+import { SLUG_CONFIG, isCatchMechSlug, type CatchMechSlug } from "../status-slug"
 
-const VALID_STATUSES = ["confirmed", "rejected", "pending"] as const
-type Status = (typeof VALID_STATUSES)[number]
-
-const STATUS_PRISMA: Record<Status, "Confirmed" | "Rejected" | "Pending"> = {
-  confirmed: "Confirmed",
-  rejected: "Rejected",
-  pending: "Pending",
-}
-
-async function getStatusListData(eventId: string, status: Status) {
+async function getStatusListData(eventId: string, status: CatchMechSlug) {
   const event = await db.event.findUnique({
     where: { id: eventId },
     select: {
@@ -111,12 +104,15 @@ async function getStatusListData(eventId: string, status: Status) {
     return { rows, breakoutGroups: event.breakoutGroups }
   }
 
-  const prismaStatus = STATUS_PRISMA[status]
+  const { prismaStatus, declineReasonWhere } = SLUG_CONFIG[status]
 
   const requests = await db.smallGroupMemberRequest.findMany({
     where: {
       status: prismaStatus,
       breakoutGroupId: { in: breakoutGroupIds },
+      // Splits the two Rejected slugs apart. See status-slug.ts — the null-safety
+      // here is load-bearing, not cosmetic.
+      ...declineReasonWhere,
     },
     select: {
       id: true,
@@ -195,6 +191,16 @@ async function getStatusListData(eventId: string, status: Status) {
   return { rows, breakoutGroups: event.breakoutGroups }
 }
 
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ status: string }>
+}): Promise<Metadata> {
+  const { status } = await params
+  if (!isCatchMechSlug(status)) return { title: "Catch Mech" }
+  return { title: `${SLUG_CONFIG[status].label} · Catch Mech` }
+}
+
 export default async function StatusListPage({
   params,
 }: {
@@ -202,11 +208,9 @@ export default async function StatusListPage({
 }) {
   const { id: eventId, status: rawStatus } = await params
 
-  if (!VALID_STATUSES.includes(rawStatus as Status)) {
-    notFound()
-  }
+  if (!isCatchMechSlug(rawStatus)) notFound()
 
-  const status = rawStatus as Status
+  const status = rawStatus
   const data = await getStatusListData(eventId, status)
   if (!data) notFound()
 

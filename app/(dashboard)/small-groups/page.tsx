@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import {
   GenderFocus,
   MeetingFormat,
@@ -19,6 +20,10 @@ import { SmallGroupsFilters } from "./small-groups-filters"
 import { SmallGroupsTabs } from "./small-groups-tabs"
 import { RequestsTable, type RequestRow } from "./requests-table"
 import { deleteSmallGroupsBatch, setSmallGroupsLifeStageBatch } from "./actions"
+
+export const metadata: Metadata = {
+  title: "Small Groups",
+}
 
 async function getSmallGroups(where: Prisma.SmallGroupWhereInput): Promise<SmallGroupRow[]> {
   const groups = await db.smallGroup.findMany({
@@ -68,7 +73,7 @@ async function getSmallGroups(where: Prisma.SmallGroupWhereInput): Promise<Small
 
 async function getPendingRequests(): Promise<RequestRow[]> {
   const requests = await db.smallGroupMemberRequest.findMany({
-    where: { status: MemberRequestStatus.Pending },
+    where: { status: MemberRequestStatus.Pending, smallGroupId: { not: null } },
     orderBy: { createdAt: "asc" },
     include: {
       guest: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
@@ -84,10 +89,11 @@ async function getPendingRequests(): Promise<RequestRow[]> {
     },
   })
 
-  return requests.map((r) => {
+  return requests.flatMap((r) => {
+    if (!r.smallGroup) return []
     const person = r.member ?? r.guest!
     const personType: "Member" | "Guest" = r.member ? "Member" : "Guest"
-    return {
+    return [{
       id: r.id,
       createdAt: r.createdAt,
       notes: r.notes,
@@ -106,7 +112,7 @@ async function getPendingRequests(): Promise<RequestRow[]> {
         : null,
       leaderId: r.smallGroup.leader?.id ?? null,
       leaderPhone: r.smallGroup.leader?.phone ?? null,
-    }
+    }]
   })
 }
 

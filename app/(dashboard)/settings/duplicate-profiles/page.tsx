@@ -1,5 +1,10 @@
+import type { Metadata } from "next"
 import { getDuplicateProfiles } from "./actions"
 import { DuplicatesClient } from "./duplicates-client"
+
+export const metadata: Metadata = {
+  title: "Duplicate Profiles · Settings",
+}
 
 export default async function DuplicateProfilesPage() {
   const result = await getDuplicateProfiles()

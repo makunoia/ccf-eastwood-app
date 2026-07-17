@@ -1,7 +1,12 @@
+import type { Metadata } from "next"
 import { db } from "@/lib/db"
 import { JoinForm } from "./join-form"
 import { FormClosed } from "@/components/form-closed"
 import { getFormConfig, resolveFormTheme } from "@/lib/forms/config"
+
+export const metadata: Metadata = {
+  title: { absolute: "Find Your Small Group" },
+}
 
 async function getPageData() {
   const [settings, lifeStages] = await Promise.all([

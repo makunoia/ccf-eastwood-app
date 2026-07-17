@@ -43,7 +43,7 @@ describe("catch-mech dashboard count — pure aggregation", () => {
       },
     ]
     const allRequests: AggRequest[] = [
-      { id: "req1", breakoutGroupId: "bg1", memberId: "m1", guestId: null, status: "Confirmed" },
+      { id: "req1", breakoutGroupId: "bg1", memberId: "m1", guestId: null, status: "Confirmed", declineReason: null },
     ]
 
     const { stats, groupRows } = buildCatchMechGroupRows(breakoutGroups, allRequests)
@@ -74,7 +74,120 @@ describe("catch-mech dashboard count — pure aggregation", () => {
     ]
     // No request for m2 → treated as pre-assigned outside catch mech
     const { stats } = buildCatchMechGroupRows(breakoutGroups, [])
-    expect(stats.totalMembers).toBe(0)
+    expect(stats.totalCohort).toBe(0)
+    // Pre-placed with no request is NOT the same as an AlreadyInSmallGroup decline —
+    // it belongs to no bucket at all.
+    expect(stats.totalInSmallGroup).toBe(0)
+  })
+})
+
+/** Helper: one breakout group with N members, ids m1..mN. */
+function groupWith(count: number): AggBreakoutGroup[] {
+  return [
+    {
+      id: "bg1",
+      name: "Table 1",
+      facilitator: {
+        member: { id: "lead", firstName: "L", lastName: "E", ledGroups: [{ id: "sg1", name: "G" }] },
+      },
+      members: Array.from({ length: count }, (_, i) => ({
+        registrant: {
+          id: `r${i + 1}`,
+          memberId: `m${i + 1}`,
+          guestId: null,
+          member: { firstName: "P", lastName: `${i + 1}`, smallGroupId: null },
+          guest: null,
+        },
+      })),
+    },
+  ]
+}
+
+const req = (
+  n: number,
+  status: AggRequest["status"],
+  declineReason: AggRequest["declineReason"] = null
+): AggRequest => ({
+  id: `req${n}`,
+  breakoutGroupId: "bg1",
+  memberId: `m${n}`,
+  guestId: null,
+  status,
+  declineReason,
+})
+
+describe("catch-mech AlreadyInSmallGroup bucket split", () => {
+  it("separates AlreadyInSmallGroup from true rejections", () => {
+    const { stats, groupRows } = buildCatchMechGroupRows(groupWith(4), [
+      req(1, "Confirmed"),
+      req(2, "Rejected", "NotInterested"),
+      req(3, "Rejected", "AlreadyInSmallGroup"),
+      req(4, "Rejected", "Unresponsive"),
+    ])
+
+    expect(stats.totalConfirmed).toBe(1)
+    expect(stats.totalRejected).toBe(2)       // NOT 3 — the in-group one is excluded
+    expect(stats.totalInSmallGroup).toBe(1)
+    expect(stats.totalPending).toBe(0)
+
+    expect(groupRows[0].rejectedCount).toBe(2)
+    expect(groupRows[0].inSmallGroupCount).toBe(1)
+    expect(groupRows[0].members.find((m) => m.name === "P 3")?.status).toBe("InSmallGroup")
+  })
+
+  it("treats a null declineReason as a true rejection, not in-small-group", () => {
+    // The small-group leader path never writes declineReason, so every leader-side
+    // rejection arrives null. Those must stay in the Rejected bucket.
+    const { stats } = buildCatchMechGroupRows(groupWith(2), [
+      req(1, "Rejected", null),
+      req(2, "Rejected", "AlreadyInSmallGroup"),
+    ])
+
+    expect(stats.totalRejected).toBe(1)
+    expect(stats.totalInSmallGroup).toBe(1)
+  })
+
+  it("computes matchable as cohort minus in-small-group, and buckets reconcile", () => {
+    const { stats, groupRows } = buildCatchMechGroupRows(groupWith(10), [
+      req(1, "Confirmed"),
+      req(2, "Confirmed"),
+      req(3, "Confirmed"),
+      req(4, "Rejected", "NotInterested"),
+      req(5, "Rejected", "AlreadyInSmallGroup"),
+      req(6, "Rejected", "AlreadyInSmallGroup"),
+      // 7..10 have no request → Pending
+    ])
+
+    expect(stats.totalCohort).toBe(10)
+    expect(stats.totalInSmallGroup).toBe(2)
+    expect(stats.matchable).toBe(8)
+    expect(stats.totalConfirmed + stats.totalRejected + stats.totalPending).toBe(stats.matchable)
+
+    // Per-group To Match excludes the in-group bucket and reconciles the same way.
+    const row = groupRows[0]
+    expect(row.toMatchCount).toBe(8)
+    expect(row.confirmedCount + row.rejectedCount + row.pendingCount).toBe(row.toMatchCount)
+    // ...but the sheet still lists everyone, in-group people included.
+    expect(row.members).toHaveLength(10)
+  })
+
+  it("handles an all-in-small-group cohort without dividing by zero", () => {
+    const { stats } = buildCatchMechGroupRows(groupWith(2), [
+      req(1, "Rejected", "AlreadyInSmallGroup"),
+      req(2, "Rejected", "AlreadyInSmallGroup"),
+    ])
+
+    expect(stats.totalCohort).toBe(2)
+    expect(stats.matchable).toBe(0)
+    expect(stats.totalInSmallGroup).toBe(2)
+  })
+
+  it("returns zeroed stats for an empty cohort", () => {
+    const { stats } = buildCatchMechGroupRows([], [])
+    expect(stats).toMatchObject({
+      totalCohort: 0, matchable: 0, totalConfirmed: 0,
+      totalRejected: 0, totalInSmallGroup: 0, totalPending: 0,
+    })
   })
 })
 
@@ -161,7 +274,10 @@ describe("catch-mech dashboard count — integration", () => {
     })
     const allRequests = await db.smallGroupMemberRequest.findMany({
       where: { breakoutGroupId: { in: fresh!.breakoutGroups.map((b) => b.id) } },
-      select: { id: true, breakoutGroupId: true, memberId: true, guestId: true, status: true },
+      select: {
+        id: true, breakoutGroupId: true, memberId: true,
+        guestId: true, status: true, declineReason: true,
+      },
     })
 
     const { stats } = buildCatchMechGroupRows(fresh!.breakoutGroups, allRequests)

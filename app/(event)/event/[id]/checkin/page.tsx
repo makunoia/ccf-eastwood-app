@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { UserCheck, UserPlus, Users } from "lucide-react"
 import { db } from "@/lib/db"
@@ -6,6 +7,10 @@ import { DetailPageHeader } from "@/components/detail-page-header"
 import { StatCard } from "@/components/session-stat-card"
 import { CheckinAttendeesTable } from "./checkin-attendees-table"
 import { CopyCheckinLink } from "./copy-checkin-link"
+
+export const metadata: Metadata = {
+  title: "Check-in",
+}
 
 async function getCheckinData(eventId: string) {
   const event = await db.event.findUnique({

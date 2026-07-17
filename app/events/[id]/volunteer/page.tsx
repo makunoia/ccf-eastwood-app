@@ -1,5 +1,7 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
+import { getEventName } from "@/lib/metadata"
 import { VolunteerSignUpForm } from "@/app/volunteers/volunteer-sign-up-form"
 import { FormClosed } from "@/components/form-closed"
 import { getFormConfig } from "@/lib/forms/config"
@@ -23,6 +25,16 @@ async function getEvent(id: string) {
       },
     },
   })
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>
+}): Promise<Metadata> {
+  const { id } = await params
+  const name = await getEventName(id)
+  return { title: { absolute: name ? `Volunteer Sign-Up · ${name}` : "Volunteer Sign-Up" } }
 }
 
 export default async function EventVolunteerSignUpPage({

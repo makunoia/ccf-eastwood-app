@@ -1,8 +1,13 @@
+import type { Metadata } from "next"
 import { db } from "@/lib/db"
 import { type LifeStageRow } from "./columns"
 import { LifeStagesTable } from "./life-stages-table"
 import { LifeStagesToolbar } from "./toolbar"
 import { PageHeader } from "@/components/page-header"
+
+export const metadata: Metadata = {
+  title: "Life Stages · Settings",
+}
 
 async function getLifeStages(): Promise<LifeStageRow[]> {
   const lifeStages = await db.lifeStage.findMany({

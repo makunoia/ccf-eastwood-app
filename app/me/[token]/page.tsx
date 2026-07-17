@@ -1,6 +1,11 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { MePortalClient } from "./me-portal-client"
+
+export const metadata: Metadata = {
+  title: { absolute: "Member Portal" },
+}
 
 export const dynamic = "force-dynamic"
 
@@ -85,7 +90,7 @@ export default async function MemberPortalPage({
       }}
       myGroup={member.smallGroup}
       pendingRequest={
-        pendingRequest
+        pendingRequest?.smallGroup
           ? {
               id: pendingRequest.id,
               groupId: pendingRequest.smallGroup.id,

@@ -1,11 +1,14 @@
+import type { Metadata } from "next"
 import { notFound, redirect } from "next/navigation"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
+import { getEventName } from "@/lib/metadata"
 import { EventHeader } from "@/components/event-header"
 import { EventSidebar } from "@/components/event-sidebar"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { canAccessEvent, isSuperAdmin } from "@/lib/permissions"
 import { resolveLandingPath } from "@/lib/landing"
+import { AssistantPanel } from "@/components/assistant/assistant-panel"
 import { BreadcrumbProvider, BreadcrumbOverride } from "@/components/breadcrumb-context"
 
 async function getEventMeta(id: string) {
@@ -75,6 +78,19 @@ function resolveBrandAccent(event: Awaited<ReturnType<typeof getEventMeta>>): st
   return event.themeColorAccent ?? null
 }
 
+// Retemplates every page in the event workspace as "Section · Event Name", so
+// tabs for two different events stay tellable apart.
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>
+}): Promise<Metadata> {
+  const { id } = await params
+  const name = await getEventName(id)
+  if (!name) return { title: "Event" }
+  return { title: { default: name, template: `%s · ${name}` } }
+}
+
 export default async function EventLayout({
   children,
   params,
@@ -140,6 +156,7 @@ export default async function EventLayout({
             {children}
           </div>
         </BreadcrumbProvider>
+        {isSuperAdmin(session) && <AssistantPanel />}
       </SidebarInset>
     </SidebarProvider>
   )

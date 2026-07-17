@@ -1,6 +1,11 @@
+import type { Metadata } from "next"
 import { db } from "@/lib/db"
 import { JoinPageSettingsForm } from "./join-page-settings-form"
 import type { JoinPageSettingsValues } from "./actions"
+
+export const metadata: Metadata = {
+  title: "Join Page · Settings",
+}
 
 async function getSettings(): Promise<JoinPageSettingsValues> {
   const row = await db.siteSettings.findUnique({ where: { id: "singleton" } })

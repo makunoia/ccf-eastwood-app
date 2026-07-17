@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { mapCouplesInRoster } from "@/lib/family-links"
@@ -152,6 +153,16 @@ async function getData() {
     }),
   ])
   return { members, smallGroups, lifeStages }
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>
+}): Promise<Metadata> {
+  const { id } = await params
+  const group = await db.smallGroup.findUnique({ where: { id }, select: { name: true } })
+  return { title: { absolute: group ? `${group.name} · Small Groups` : "Small Groups" } }
 }
 
 export default async function SmallGroupDetailPage({

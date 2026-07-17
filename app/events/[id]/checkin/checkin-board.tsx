@@ -6,7 +6,6 @@ import { IconCheck, IconLoader2, IconUserQuestion, IconArrowLeft } from "@tabler
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScheduleInput } from "@/components/ui/schedule-input"
-import { YearInput } from "@/components/ui/year-input"
 import { Label } from "@/components/ui/label"
 import { PhonePHInput } from "@/components/ui/phone-ph-input"
 import {
@@ -18,8 +17,7 @@ import {
 } from "@/components/ui/select"
 import {
   lookupCheckinRegistrant,
-  lookupCheckinRegistrantByName,
-  lookupCheckinRegistrantByProfile,
+  searchCheckinByName,
   markCheckinAttendance,
   checkInToOccurrence,
 } from "@/app/(dashboard)/events/actions"
@@ -50,8 +48,6 @@ type GuestSmallGroupPrompt = {
     scheduleTimeEnd: string | null
   }
 }
-
-type LookupMode = "name" | "mobile" | "email" | "name-dob"
 
 type Step =
   | "lookup"
@@ -109,41 +105,35 @@ function queryIsPhone(q: string): boolean {
 
 export function CheckinBoard({ eventId, occurrenceId, eventName = "", includeSmallGroup = false, includeDietary = false, lifeStages = [], defaultLifeStageId = "", autoAssignBreakout = false, breakoutCandidates = [], allowPayment = false }: Props) {
   const [step, setStep] = React.useState<Step>("lookup")
-  const [lookupMode, setLookupMode] = React.useState<LookupMode>("name")
   const [query, setQuery] = React.useState("")
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [matched, setMatched] = React.useState<MatchedState | null>(null)
   const [disambiguateCandidates, setDisambiguateCandidates] = React.useState<DisambiguateCandidate[]>([])
-  const [nameForm, setNameForm] = React.useState({ firstName: "", lastName: "" })
-  const [nameDobForm, setNameDobForm] = React.useState({
-    lastName: "",
-    birthMonth: "",
-    birthYear: "",
-  })
+  const [nameQuery, setNameQuery] = React.useState("")
+  const [nameResults, setNameResults] = React.useState<CheckinRegistrantResult[]>([])
+  const [nameSearchLoading, setNameSearchLoading] = React.useState(false)
   const inputRef = React.useRef<HTMLInputElement>(null)
   const phoneLookupRef = React.useRef<HTMLDivElement>(null)
   const resetTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const nameDebounceTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 
   function focusLookupInput() {
     setTimeout(() => {
-      if (lookupMode === "mobile") {
-        phoneLookupRef.current?.querySelector<HTMLInputElement>("input")?.focus()
-      } else {
-        inputRef.current?.focus()
-      }
+      inputRef.current?.focus()
     }, 50)
   }
 
   function reset() {
     if (resetTimer.current) clearTimeout(resetTimer.current)
+    if (nameDebounceTimer.current) clearTimeout(nameDebounceTimer.current)
     setStep("lookup")
     setQuery("")
     setError(null)
     setMatched(null)
     setDisambiguateCandidates([])
-    setNameForm({ firstName: "", lastName: "" })
-    setNameDobForm({ lastName: "", birthMonth: "", birthYear: "" })
+    setNameResults([])
+    setNameQuery("")
     setLoading(false)
     focusLookupInput()
   }
@@ -157,42 +147,53 @@ export function CheckinBoard({ eventId, occurrenceId, eventName = "", includeSma
     inputRef.current?.focus()
     return () => {
       if (resetTimer.current) clearTimeout(resetTimer.current)
+      if (nameDebounceTimer.current) clearTimeout(nameDebounceTimer.current)
     }
   }, [])
+
+  // Debounced name search — fires 300ms after the last keystroke
+  function handleNameQueryChange(value: string) {
+    setNameQuery(value)
+    setError(null)
+    if (nameDebounceTimer.current) clearTimeout(nameDebounceTimer.current)
+    if (value.trim().length < 2) {
+      setNameResults([])
+      setNameSearchLoading(false)
+      return
+    }
+    setNameSearchLoading(true)
+    nameDebounceTimer.current = setTimeout(async () => {
+      const result = await searchCheckinByName(eventId, value, occurrenceId)
+      setNameSearchLoading(false)
+      if (result.success) {
+        setNameResults(result.data)
+      }
+    }, 300)
+  }
+
+  function handleCandidateSelect(c: CheckinRegistrantResult) {
+    setMatched({
+      kind: c.kind,
+      subjectId: c.subjectId,
+      name: c.name,
+      nickname: c.nickname,
+      guestSmallGroupPrompt: c.guestSmallGroupPrompt,
+    })
+    if (c.alreadyCheckedIn) {
+      setStep("already-in")
+      scheduleReset()
+    } else {
+      setStep("confirm")
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
     setLoading(true)
 
-    let result: Awaited<ReturnType<typeof lookupCheckinRegistrant>>
-    if (lookupMode === "name") {
-      if (!nameForm.firstName.trim() || !nameForm.lastName.trim()) {
-        setLoading(false)
-        return
-      }
-      result = await lookupCheckinRegistrantByName(
-        eventId,
-        nameForm.firstName,
-        nameForm.lastName,
-        occurrenceId
-      )
-    } else if (lookupMode === "name-dob") {
-      if (!nameDobForm.lastName.trim() || !nameDobForm.birthMonth || !nameDobForm.birthYear) {
-        setLoading(false)
-        return
-      }
-      result = await lookupCheckinRegistrantByProfile(
-        eventId,
-        nameDobForm.lastName,
-        parseInt(nameDobForm.birthMonth, 10),
-        parseInt(nameDobForm.birthYear, 10),
-        occurrenceId
-      )
-    } else {
-      if (!query.trim()) { setLoading(false); return }
-      result = await lookupCheckinRegistrant(eventId, query, occurrenceId)
-    }
+    if (!query.trim()) { setLoading(false); return }
+    const result = await lookupCheckinRegistrant(eventId, query, occurrenceId)
     setLoading(false)
 
     if (!result.success) {
@@ -212,20 +213,7 @@ export function CheckinBoard({ eventId, occurrenceId, eventName = "", includeSma
     }
 
     const checkinResult = result.data as CheckinRegistrantResult
-    setMatched({
-      kind: checkinResult.kind,
-      subjectId: checkinResult.subjectId,
-      name: checkinResult.name,
-      nickname: checkinResult.nickname,
-      guestSmallGroupPrompt: checkinResult.guestSmallGroupPrompt,
-    })
-
-    if (checkinResult.alreadyCheckedIn) {
-      setStep("already-in")
-      scheduleReset()
-    } else {
-      setStep("confirm")
-    }
+    handleCandidateSelect(checkinResult)
   }
 
   async function handleConfirm() {
@@ -289,178 +277,98 @@ export function CheckinBoard({ eventId, occurrenceId, eventName = "", includeSma
     return (
       <div className="flex flex-col items-center justify-center px-6 py-8">
         <div className="w-full space-y-6">
-          <p className="text-sm text-muted-foreground text-center">
-            How would you like to look up your registration?
-          </p>
-
-          <div className="space-y-2">
-            <div className="flex overflow-hidden rounded-lg border">
-              {(["name", "mobile", "email"] as const).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => {
-                    if (lookupMode !== mode) {
-                      setLookupMode(mode)
-                      setQuery("")
-                      setError(null)
-                    }
-                  }}
-                  className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
-                    lookupMode === mode
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-background hover:bg-muted"
-                  }`}
-                >
-                  {mode === "name" ? "Name" : mode === "mobile" ? "Mobile" : "Email"}
-                </button>
-              ))}
+          {/* Name search */}
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label htmlFor="checkin-name">Search by name</Label>
+              <Input
+                id="checkin-name"
+                ref={inputRef}
+                value={nameQuery}
+                onChange={(e) => handleNameQueryChange(e.target.value)}
+                placeholder="e.g. Juan dela Cruz"
+                autoComplete="off"
+              />
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                if (lookupMode !== "name-dob") {
-                  setLookupMode("name-dob")
-                  setQuery("")
-                  setError(null)
-                }
-              }}
-              className={`w-full rounded-lg border py-2.5 text-sm font-medium transition-colors ${
-                lookupMode === "name-dob"
-                  ? "border-primary bg-primary text-primary-foreground"
-                  : "border-border bg-background hover:bg-muted"
-              }`}
-            >
-              Look me up by birthday instead
-            </button>
+
+            {nameSearchLoading && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <IconLoader2 className="size-4 animate-spin" />
+                Searching…
+              </div>
+            )}
+
+            {!nameSearchLoading && nameResults.length > 0 && (
+              <div className="flex flex-col gap-2">
+                {nameResults.map((c) => (
+                  <button
+                    key={`${c.kind}-${c.subjectId}`}
+                    type="button"
+                    onClick={() => handleCandidateSelect(c)}
+                    className="w-full rounded-xl border bg-card px-4 py-3 text-left shadow-sm transition-colors hover:bg-muted"
+                  >
+                    <p className="font-medium">
+                      {c.name}
+                      {c.nickname && (
+                        <span className="ml-1.5 text-sm font-normal text-muted-foreground">
+                          ({c.nickname})
+                        </span>
+                      )}
+                      {c.alreadyCheckedIn && (
+                        <span className="ml-2 text-xs font-normal text-green-600">✓ checked in</span>
+                      )}
+                    </p>
+                    {c.contactHint && (
+                      <p className="text-sm text-muted-foreground">{c.contactHint}</p>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {!nameSearchLoading && nameQuery.trim().length >= 2 && nameResults.length === 0 && (
+              <p className="text-sm text-muted-foreground text-center">
+                No results for &ldquo;{nameQuery.trim()}&rdquo;. Try mobile or email below, or{" "}
+                <button
+                  type="button"
+                  className="underline decoration-dashed underline-offset-2 hover:text-foreground transition-colors"
+                  onClick={() => setStep("walk-in")}
+                >
+                  register as a walk-in
+                </button>
+                .
+              </p>
+            )}
           </div>
 
+          <div className="relative flex items-center gap-3">
+            <div className="flex-1 border-t" />
+            <span className="text-xs text-muted-foreground">or look up by</span>
+            <div className="flex-1 border-t" />
+          </div>
+
+          {/* Mobile / Email lookup */}
           <form onSubmit={handleSubmit} className="space-y-4">
-            {lookupMode === "name" && (
-              <div className="space-y-3">
-                <div className="space-y-2">
-                  <Label htmlFor="checkin-firstname">First name</Label>
-                  <Input
-                    id="checkin-firstname"
-                    ref={inputRef}
-                    value={nameForm.firstName}
-                    onChange={(e) => {
-                      setNameForm((p) => ({ ...p, firstName: e.target.value }))
-                      setError(null)
-                    }}
-                    placeholder="Juan"
-                    autoComplete="given-name"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="checkin-lastname">Last name</Label>
-                  <Input
-                    id="checkin-lastname"
-                    value={nameForm.lastName}
-                    onChange={(e) => {
-                      setNameForm((p) => ({ ...p, lastName: e.target.value }))
-                      setError(null)
-                    }}
-                    placeholder="dela Cruz"
-                    autoComplete="family-name"
-                  />
-                </div>
-              </div>
-            )}
-
-            {lookupMode === "mobile" && (
-              <div className="space-y-2">
-                <Label htmlFor="checkin-query">Mobile number</Label>
-                <div ref={phoneLookupRef}>
-                  <PhonePHInput
-                    id="checkin-query"
-                    value={query}
-                    onChange={(v) => {
-                      setQuery(v)
-                      setError(null)
-                    }}
-                  />
-                </div>
-              </div>
-            )}
-
-            {lookupMode === "email" && (
-              <div className="space-y-2">
-                <Label htmlFor="checkin-query">Email address</Label>
-                <Input
+            <div className="space-y-2">
+              <Label htmlFor="checkin-query">Mobile number</Label>
+              <div ref={phoneLookupRef}>
+                <PhonePHInput
                   id="checkin-query"
-                  ref={inputRef}
-                  type="email"
                   value={query}
-                  onChange={(e) => {
-                    setQuery(e.target.value)
+                  onChange={(v) => {
+                    setQuery(v)
                     setError(null)
                   }}
-                  placeholder="juan@email.com"
-                  autoComplete="email"
                 />
               </div>
-            )}
-
-            {lookupMode === "name-dob" && (
-              <div className="space-y-3">
-                <div className="space-y-2">
-                  <Label htmlFor="namedob-lastname">Last name</Label>
-                  <Input
-                    id="namedob-lastname"
-                    value={nameDobForm.lastName}
-                    onChange={(e) => {
-                      setNameDobForm((p) => ({ ...p, lastName: e.target.value }))
-                      setError(null)
-                    }}
-                    placeholder="dela Cruz"
-                    autoComplete="family-name"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label htmlFor="namedob-month">Birth month</Label>
-                    <Select
-                      value={nameDobForm.birthMonth}
-                      onValueChange={(v) => setNameDobForm((p) => ({ ...p, birthMonth: v }))}
-                    >
-                      <SelectTrigger id="namedob-month">
-                        <SelectValue placeholder="Month" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {[
-                          "January", "February", "March", "April",
-                          "May", "June", "July", "August",
-                          "September", "October", "November", "December",
-                        ].map((month, i) => (
-                          <SelectItem key={month} value={String(i + 1)}>{month}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="namedob-year">Birth year</Label>
-                    <YearInput
-                      id="namedob-year"
-                      value={nameDobForm.birthYear}
-                      onChange={(v) => setNameDobForm((p) => ({ ...p, birthYear: v }))}
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
+            </div>
 
             {error && <p className="text-sm text-destructive">{error}</p>}
 
             <Button
               type="submit"
               className="w-full"
-              disabled={
-                loading ||
-                (lookupMode === "name" && (!nameForm.firstName.trim() || !nameForm.lastName.trim())) ||
-                ((lookupMode === "mobile" || lookupMode === "email") && !query.trim()) ||
-                (lookupMode === "name-dob" && (!nameDobForm.lastName.trim() || !nameDobForm.birthMonth || !nameDobForm.birthYear))
-              }
+              disabled={loading || !query.trim()}
             >
               {loading ? (
                 <>
@@ -471,20 +379,25 @@ export function CheckinBoard({ eventId, occurrenceId, eventName = "", includeSma
                 "Find my registration"
               )}
             </Button>
+
+            <p className="text-center text-sm text-muted-foreground">
+              Can&apos;t find yourself?{" "}
+              <button
+                type="button"
+                className="underline decoration-dashed underline-offset-2 hover:text-foreground transition-colors"
+                onClick={() => setStep("walk-in")}
+              >
+                Register as a walk-in
+              </button>
+            </p>
           </form>
         </div>
       </div>
     )
   }
 
-  // What the person typed, for the disambiguate/not-found copy — the shared
-  // `query` state is only used by the mobile/email modes.
-  const lookupLabel =
-    lookupMode === "name"
-      ? `${nameForm.firstName} ${nameForm.lastName}`.trim()
-      : lookupMode === "name-dob"
-        ? nameDobForm.lastName.trim()
-        : query
+  // `query` holds the mobile/email value for the disambiguate step copy
+  const lookupLabel = query
 
   // ── Disambiguate ─────────────────────────────────────────────────────────
   if (step === "disambiguate") {
@@ -750,20 +663,11 @@ export function CheckinBoard({ eventId, occurrenceId, eventName = "", includeSma
           walkIn={{
             occurrenceId,
             prefill:
-              lookupMode === "name"
-                ? {
-                    firstName: nameForm.firstName,
-                    lastName: nameForm.lastName,
-                  }
-                : lookupMode === "name-dob"
-                  ? {
-                      lastName: nameDobForm.lastName,
-                      birthMonth: nameDobForm.birthMonth,
-                      birthYear: nameDobForm.birthYear,
-                    }
-                  : queryIsPhone(query)
-                    ? { mobileNumber: query }
-                    : { email: query },
+              queryIsPhone(query)
+                ? { mobileNumber: query }
+                : query
+                  ? { email: query }
+                  : {},
             onSuccess: handleWalkInSuccess,
             onBack: () => {
               setError(null)

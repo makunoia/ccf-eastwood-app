@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -5,6 +6,10 @@ import { Badge } from "@/components/ui/badge"
 import { ProfileForm } from "./profile-form"
 import { ChangePasswordForm } from "./change-password-form"
 import type { UserPermissionEntry } from "@/types/next-auth"
+
+export const metadata: Metadata = {
+  title: "Account · Settings",
+}
 
 const FEATURE_LABELS: Record<string, string> = {
   Members: "Members",

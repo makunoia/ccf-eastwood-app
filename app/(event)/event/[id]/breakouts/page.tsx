@@ -1,8 +1,13 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import { canImport } from "@/lib/permissions"
 import { BreakoutGroupsTable } from "./breakout-group"
+
+export const metadata: Metadata = {
+  title: "Breakout Groups",
+}
 
 const breakoutGroupsInclude = {
   orderBy: { createdAt: "asc" } as const,

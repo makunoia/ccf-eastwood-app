@@ -1,5 +1,7 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
+import { personTitle } from "@/lib/metadata"
 import { auth } from "@/lib/auth"
 import { canWrite } from "@/lib/permissions"
 import type { FamilyRoleValue } from "@/lib/validations/family"
@@ -107,7 +109,7 @@ async function getMemberSmallGroupInfo(memberId: string) {
       name: g.name,
       memberCount: g._count.members,
     })),
-    pendingTransfer: pendingTransferReq
+    pendingTransfer: pendingTransferReq?.smallGroup
       ? {
           id: pendingTransferReq.id,
           toGroupName: pendingTransferReq.smallGroup.name,
@@ -331,6 +333,19 @@ async function getMemberActivityData(memberId: string) {
   ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
 
   return entries
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>
+}): Promise<Metadata> {
+  const { id } = await params
+  const member = await db.member.findUnique({
+    where: { id },
+    select: { firstName: true, lastName: true },
+  })
+  return { title: { absolute: personTitle(member, "Members") } }
 }
 
 export default async function MemberDetailPage({

@@ -1,9 +1,15 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { CatchMechConfirmClient } from "./catch-mech-confirm-client"
 import { FormClosed } from "@/components/form-closed"
 import { getFormConfig, resolveFormTheme } from "@/lib/forms/config"
 import { resolveEventBrand } from "@/lib/forms/event-brand"
+import { resolveCatchMechTargets } from "@/lib/catch-mech/targets"
+
+export const metadata: Metadata = {
+  title: { absolute: "Confirm Attendance" },
+}
 
 export async function getSessionData(token: string) {
   const session = await db.catchMechSession.findUnique({
@@ -42,6 +48,7 @@ export async function getSessionData(token: string) {
               groupStatus: true,
               ledGroups: {
                 select: { id: true, name: true },
+                orderBy: { createdAt: "asc" },
               },
             },
           },
@@ -51,7 +58,7 @@ export async function getSessionData(token: string) {
         select: {
           name: true,
           facilitatorId: true,
-          linkedSmallGroupId: true,
+          linkedSmallGroup: { select: { id: true, name: true } },
           members: {
             orderBy: { assignedAt: "asc" },
             select: {
@@ -75,15 +82,13 @@ export async function getSessionData(token: string) {
   if (!session) return null
 
   const faciMember = session.facilitator.member
-  const isTimothy = faciMember.ledGroups.length === 0
 
-  // The breakout's linked group belongs to the LEAD facilitator; a co-facilitator
-  // works against their OWN led group. Resolve the acting faci's target group the
-  // same way submitCatchMechConfirmations does — so rejections are scoped per faci.
-  const isLeadFaci = session.facilitatorVolunteerId === session.breakoutGroup.facilitatorId
-  const effectiveLink = isLeadFaci ? session.breakoutGroup.linkedSmallGroupId : null
-  const targetGroupId =
-    effectiveLink ?? (faciMember.ledGroups.length === 1 ? faciMember.ledGroups[0].id : null)
+  // Resolve the acting faci's destinations exactly as submitCatchMechConfirmations
+  // does — so rejections stay scoped per faci and the picker offers only groups the
+  // server will accept.
+  const { candidates } = resolveCatchMechTargets(session)
+  const isTimothy = candidates.length === 0
+  const candidateIds = new Set(candidates.map((g) => g.id))
 
   // Collect IDs for a batch lookup of existing SmallGroupMemberRequests
   const guestIds = session.breakoutGroup.members
@@ -93,10 +98,7 @@ export async function getSessionData(token: string) {
     .map((m) => m.registrant.memberId)
     .filter((id): id is string => id !== null)
 
-  // Each facilitator decides independently. A Confirmed request means the person is
-  // placed (one group per person) — hidden from everyone. A Rejected request only
-  // removes the person from the *rejecting* faci's own list (i.e. their target group),
-  // so a co-facilitator can still confirm someone the lead declined.
+  // Each facilitator decides independently — see hidesPerson below for the scoping.
   const existingRequests =
     guestIds.length > 0 || memberIds.length > 0
       ? await db.smallGroupMemberRequest.findMany({
@@ -107,12 +109,30 @@ export async function getSessionData(token: string) {
               ...(memberIds.length > 0 ? [{ memberId: { in: memberIds } }] : []),
             ],
           },
-          select: { guestId: true, memberId: true, status: true, smallGroupId: true },
+          select: {
+            guestId: true,
+            memberId: true,
+            status: true,
+            smallGroupId: true,
+            declinedByVolunteerId: true,
+          },
         })
       : []
 
-  const hidesPerson = (r: { status: string; smallGroupId: string }) =>
-    r.status === "Confirmed" || (r.status === "Rejected" && r.smallGroupId === targetGroupId)
+  const hidesPerson = (r: {
+    status: string
+    smallGroupId: string | null
+    declinedByVolunteerId: string | null
+  }) => {
+    // A confirmation places the person (one group per person) — hidden from everyone.
+    if (r.status === "Confirmed") return true
+    if (r.status !== "Rejected") return false
+    // A group-bound decline only clears the person from that group's own list, so a
+    // co-faci can still confirm someone the lead declined.
+    if (r.smallGroupId) return candidateIds.has(r.smallGroupId)
+    // A groupless decline has no group to compare — scope it to the faci who made it.
+    return r.declinedByVolunteerId === session.facilitatorVolunteerId
+  }
 
   const resolvedGuestIds = new Set(
     existingRequests.filter((r) => r.guestId && hidesPerson(r)).map((r) => r.guestId!)
@@ -160,6 +180,7 @@ export async function getSessionData(token: string) {
     groupName: session.breakoutGroup.name,
     faciName: `${faciMember.firstName} ${faciMember.lastName}`,
     isTimothy,
+    candidates,
     rows,
   }
 }
@@ -231,6 +252,7 @@ export default async function CatchMechConfirmPage({
             token={data.token}
             groupName={data.groupName}
             isTimothy={data.isTimothy}
+            candidates={data.candidates}
             rows={data.rows}
           />
         </div>

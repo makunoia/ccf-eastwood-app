@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 
 import { db } from "@/lib/db"
@@ -168,6 +169,19 @@ async function getEventContext(eventId: string) {
       },
     },
   })
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string; groupId: string }>
+}): Promise<Metadata> {
+  const { id, groupId } = await params
+  const group = await db.breakoutGroup.findFirst({
+    where: { id: groupId, eventId: id },
+    select: { name: true },
+  })
+  return { title: group?.name ?? "Breakout Group" }
 }
 
 export default async function BreakoutGroupDetailPage({

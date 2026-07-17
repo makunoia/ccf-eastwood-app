@@ -25,8 +25,9 @@ import { CatchMechUndoButton } from "./catch-mech-undo-button"
 
 export type MemberEntry = {
   name: string
-  status: "Confirmed" | "Rejected" | "Pending"
-  requestId: string | null  // present only for resolved (Confirmed/Rejected) entries
+  /** InSmallGroup is a Rejected request with declineReason AlreadyInSmallGroup. */
+  status: "Confirmed" | "Rejected" | "InSmallGroup" | "Pending"
+  requestId: string | null  // present only for resolved (non-Pending) entries
 }
 
 export type GroupRow = {
@@ -36,9 +37,11 @@ export type GroupRow = {
   faciMemberId: string | null
   isTimothy: boolean
   ledGroupNames: string[]
-  totalMembers: number
+  /** Confirmed + Rejected + Pending — excludes inSmallGroupCount. */
+  toMatchCount: number
   confirmedCount: number
   rejectedCount: number
+  inSmallGroupCount: number
   pendingCount: number
   members: MemberEntry[]
 }
@@ -48,7 +51,15 @@ export type GroupRow = {
 const STATUS_BADGE_CLASS: Record<MemberEntry["status"], string> = {
   Confirmed: "bg-green-100 text-green-700",
   Rejected: "bg-red-100 text-red-700",
+  InSmallGroup: "bg-sky-100 text-sky-700",
   Pending: "bg-amber-100 text-amber-700",
+}
+
+const STATUS_LABEL: Record<MemberEntry["status"], string> = {
+  Confirmed: "Confirmed",
+  Rejected: "Rejected",
+  InSmallGroup: "In Small Group",
+  Pending: "Pending",
 }
 
 const FACI_BADGE_CLASS = {
@@ -83,27 +94,32 @@ function GroupDetailSheet({
 
         <div className="mt-4 space-y-5 px-4 pb-6">
           {/* Mini stats */}
-          <div className="grid grid-cols-3 gap-3 text-center">
-            <div className="rounded-lg border px-3 py-2.5">
+          <div className="grid grid-cols-4 gap-2 text-center">
+            <div className="rounded-lg border px-2 py-2.5">
               <p className="text-xs text-muted-foreground">Confirmed</p>
               <p className="text-xl font-bold text-green-600">{group.confirmedCount}</p>
             </div>
-            <div className="rounded-lg border px-3 py-2.5">
+            <div className="rounded-lg border px-2 py-2.5">
               <p className="text-xs text-muted-foreground">Rejected</p>
               <p className="text-xl font-bold text-red-600">{group.rejectedCount}</p>
             </div>
-            <div className="rounded-lg border px-3 py-2.5">
+            <div className="rounded-lg border px-2 py-2.5">
               <p className="text-xs text-muted-foreground">Pending</p>
               <p className="text-xl font-bold text-amber-600">{group.pendingCount}</p>
+            </div>
+            <div className="rounded-lg border px-2 py-2.5">
+              <p className="text-xs text-muted-foreground">In group</p>
+              <p className="text-xl font-bold text-sky-600">{group.inSmallGroupCount}</p>
             </div>
           </div>
 
           <Separator />
 
-          {/* Member list */}
+          {/* Member list — includes the in-small-group people, who are absent from
+              the row's To Match count but still belong to the breakout group. */}
           <div className="space-y-2">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              Members ({group.totalMembers})
+              Members ({group.members.length})
             </p>
             {group.members.length > 0 ? (
               <div className="divide-y rounded-lg border overflow-hidden">
@@ -115,13 +131,15 @@ function GroupDetailSheet({
                         variant="secondary"
                         className={`text-xs ${STATUS_BADGE_CLASS[m.status]}`}
                       >
-                        {m.status}
+                        {STATUS_LABEL[m.status]}
                       </Badge>
-                      {m.requestId && (m.status === "Confirmed" || m.status === "Rejected") && (
+                      {m.requestId && m.status !== "Pending" && (
                         <CatchMechUndoButton
                           requestId={m.requestId}
                           eventId={eventId}
-                          decision={m.status}
+                          // InSmallGroup is a Rejected request underneath — the prop
+                          // only drives the confirmation copy.
+                          decision={m.status === "Confirmed" ? "Confirmed" : "Rejected"}
                         />
                       )}
                     </div>
@@ -224,7 +242,9 @@ export function CatchMechTable({
             <TableRow>
               <TableHead>Group</TableHead>
               <TableHead>Facilitator</TableHead>
-              <TableHead className="text-right">Members</TableHead>
+              {/* To Match, not Members: excludes the in-small-group bucket so each
+                  row reconciles as Confirmed + Rejected + Pending = To Match. */}
+              <TableHead className="text-right">To Match</TableHead>
               <TableHead className="text-right">Confirmed</TableHead>
               <TableHead className="text-right">Rejected</TableHead>
               <TableHead className="text-right">Pending</TableHead>
@@ -270,7 +290,7 @@ export function CatchMechTable({
                     )}
                   </TableCell>
 
-                  <TableCell className="text-right">{row.totalMembers}</TableCell>
+                  <TableCell className="text-right">{row.toMatchCount}</TableCell>
                   <TableCell className="text-right font-medium text-green-600">{row.confirmedCount}</TableCell>
                   <TableCell className="text-right font-medium text-red-600">{row.rejectedCount}</TableCell>
                   <TableCell className="text-right text-amber-600">{row.pendingCount}</TableCell>

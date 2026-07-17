@@ -1,5 +1,10 @@
+import type { Metadata } from "next"
 import { db } from "@/lib/db"
 import { SmallGroupForm } from "../small-group-form"
+
+export const metadata: Metadata = {
+  title: "New Small Group",
+}
 
 async function getData() {
   const [members, smallGroups, lifeStages] = await Promise.all([

@@ -25,6 +25,7 @@ import { RegistrantGuestProfile } from "@/app/(event)/event/[id]/registrants/[re
 import { CatchMechMatchSection, type CatchMechMatchSectionHandle } from "./catch-mech-match-section"
 import { CatchMechActivityLog, type CatchMechActivityEntry } from "./catch-mech-activity-log"
 import { CatchMechUndoButton } from "../../catch-mech-undo-button"
+import { SLUG_CONFIG, type CatchMechSlug } from "../../status-slug"
 import type { DeclineReason } from "@/app/generated/prisma/client"
 import { DECLINE_REASON_LABELS } from "@/lib/decline-reason"
 
@@ -85,8 +86,9 @@ export type SpouseCardData = {
 
 type Props = {
   registrant: RegistrantData
-  request: { id: string; notes: string | null; declineReason: DeclineReason | null; smallGroupId: string; smallGroup: { id: string; name: string; groupType: "Regular" | "Couples"; leader: { firstName: string; lastName: string } | null } } | null
-  status: "confirmed" | "rejected" | "pending"
+  // smallGroup is null for a groupless decline — a Timothy who leads no group yet.
+  request: { id: string; notes: string | null; declineReason: DeclineReason | null; smallGroupId: string | null; smallGroup: { id: string; name: string; groupType: "Regular" | "Couples"; leader: { firstName: string; lastName: string } | null } | null } | null
+  status: CatchMechSlug
   eventId: string
   registrantId: string
   profileLink: string | null
@@ -115,7 +117,7 @@ function SpouseCard({
   spouse: SpouseCardData
   eventId: string
   request: Props["request"]
-  status: "confirmed" | "rejected" | "pending"
+  status: CatchMechSlug
 }) {
   const router = useRouter()
   const [confirmOpen, setConfirmOpen] = React.useState(false)
@@ -125,7 +127,7 @@ function SpouseCard({
   const canConfirmBoth =
     status === "pending" &&
     request !== null &&
-    request.smallGroup.groupType === "Couples" &&
+    request.smallGroup?.groupType === "Couples" &&
     spouse.pendingRequest !== null &&
     spouse.pendingRequest.smallGroupId === request.smallGroupId
 
@@ -182,7 +184,7 @@ function SpouseCard({
             <DialogTitle>Confirm both spouses</DialogTitle>
             <DialogDescription>
               Confirm both pending requests into{" "}
-              <span className="font-medium">{request?.smallGroup.name}</span>? Guests
+              <span className="font-medium">{request?.smallGroup?.name}</span>? Guests
               are promoted to members, and both requests are marked Confirmed on
               behalf of the group leader.
             </DialogDescription>
@@ -270,11 +272,6 @@ function MemberReadOnly({ member, memberId: _memberId }: { member: MemberData; m
   )
 }
 
-const STATUS_LABEL: Record<"confirmed" | "rejected" | "pending", string> = {
-  confirmed: "Confirmed",
-  rejected: "Rejected",
-  pending: "Pending",
-}
 
 export function CatchMechDetailClient(props: Props) {
   const formRef = React.useRef<HTMLFormElement>(null)
@@ -301,7 +298,7 @@ export function CatchMechDetailClient(props: Props) {
         </Link>
         <span className="text-muted-foreground/50">/</span>
         <Link href={`/event/${props.eventId}/catch-mech/${props.status}`} className="hover:text-foreground transition-colors">
-          {STATUS_LABEL[props.status]}
+          {SLUG_CONFIG[props.status].label}
         </Link>
         <span className="text-muted-foreground/50">/</span>
         <span className="text-foreground font-medium truncate">{props.name}</span>
@@ -427,10 +424,18 @@ export function CatchMechDetailClient(props: Props) {
               </div>
             )}
 
-            {props.status === "rejected" && props.request?.declineReason && (
+            {/* Both declined slugs land here — without in-small-group this tab would
+                render completely blank for that bucket (the match section below is
+                deliberately rejected-only). */}
+            {(props.status === "rejected" || props.status === "in-small-group") &&
+              props.request?.declineReason && (
               <div className="rounded-lg border bg-muted/40 p-4 space-y-1 mb-4">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-medium">Declined by leader</p>
+                  <p className="text-sm font-medium">
+                    {props.status === "in-small-group"
+                      ? "Already in a small group"
+                      : "Declined by leader"}
+                  </p>
                   {props.requestId && (
                     <CatchMechUndoButton
                       requestId={props.requestId}

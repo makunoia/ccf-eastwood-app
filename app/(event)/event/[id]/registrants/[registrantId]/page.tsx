@@ -1,9 +1,11 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import Link from "next/link"
 
 import { auth } from "@/lib/auth"
 import { canRead } from "@/lib/permissions"
 import { db } from "@/lib/db"
+import { registrantName, registrantNameSelect } from "@/lib/metadata"
 import { deriveEffectiveGenderFocus } from "@/lib/matching"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -132,6 +134,19 @@ function resolveDisplayName(r: NonNullable<Awaited<ReturnType<typeof getRegistra
   if (r.member) return `${r.member.firstName} ${r.member.lastName}`
   if (r.guest) return `${r.guest.firstName} ${r.guest.lastName}`
   return `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim() || "—"
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string; registrantId: string }>
+}): Promise<Metadata> {
+  const { id: eventId, registrantId } = await params
+  const registrant = await db.eventRegistrant.findFirst({
+    where: { id: registrantId, eventId },
+    select: registrantNameSelect,
+  })
+  return { title: registrantName(registrant, "Registrant") }
 }
 
 export default async function RegistrantDetailPage({

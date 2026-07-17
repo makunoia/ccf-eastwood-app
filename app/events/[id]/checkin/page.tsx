@@ -1,5 +1,7 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
+import { getEventName } from "@/lib/metadata"
 import { CheckinBoard } from "./checkin-board"
 import { fetchBreakoutCandidates } from "@/lib/breakout-suggestion-server"
 
@@ -88,6 +90,16 @@ function CheckinHeader({
       </div>
     </div>
   )
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>
+}): Promise<Metadata> {
+  const { id } = await params
+  const name = await getEventName(id)
+  return { title: { absolute: name ? `Check-in · ${name}` : "Check-in" } }
 }
 
 export default async function CheckinPage({

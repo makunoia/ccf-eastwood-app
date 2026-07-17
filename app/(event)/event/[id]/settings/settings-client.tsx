@@ -38,7 +38,7 @@ import { CommitteeManager } from "@/app/(dashboard)/events/[id]/committees"
 import { LogoUploader } from "@/components/logo-uploader"
 import { ColorThemePicker, type ColorTheme } from "@/components/color-theme-picker"
 import { updateEventBranding, type EventBrandingValues } from "@/app/(dashboard)/events/branding-actions"
-import { updateEvent } from "@/app/(dashboard)/events/actions"
+import { updateEvent, deleteEvent } from "@/app/(dashboard)/events/actions"
 import { type EventFormValues } from "@/lib/validations/event"
 import { Textarea } from "@/components/ui/textarea"
 
@@ -638,7 +638,7 @@ export function EventSettingsClient({
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const validTabs = ["details", "modules", "committees", "branding"]
+  const validTabs = ["details", "modules", "committees", "branding", "danger-zone"]
   const tabParam = searchParams.get("tab")
   const activeTab = tabParam && validTabs.includes(tabParam) ? tabParam : "details"
 
@@ -655,6 +655,8 @@ export function EventSettingsClient({
   const [deletingBusId, setDeletingBusId] = React.useState<string | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
   const [busToDelete, setBusToDelete] = React.useState<BusRow | undefined>()
+  const [confirmEventName, setConfirmEventName] = React.useState("")
+  const [deletingEvent, setDeletingEvent] = React.useState(false)
 
   async function handleToggleModule(type: string) {
     setTogglingModule(type)
@@ -669,6 +671,17 @@ export function EventSettingsClient({
         if (enabled) { next.delete(type) } else { next.add(type) }
         return next
       })
+    } else {
+      toast.error(result.error)
+    }
+  }
+
+  async function handleDeleteEvent() {
+    setDeletingEvent(true)
+    const result = await deleteEvent(eventId)
+    setDeletingEvent(false)
+    if (result.success) {
+      router.push("/events")
     } else {
       toast.error(result.error)
     }
@@ -700,6 +713,7 @@ export function EventSettingsClient({
           <TabsTrigger value="modules">Modules</TabsTrigger>
           <TabsTrigger value="committees">Committees</TabsTrigger>
           <TabsTrigger value="branding">Branding</TabsTrigger>
+          <TabsTrigger value="danger-zone" className="text-destructive data-[state=active]:text-destructive">Danger Zone</TabsTrigger>
         </TabsList>
 
         <TabsContent value="details" className="mt-6">
@@ -818,6 +832,36 @@ export function EventSettingsClient({
             initial={branding}
             linkedMinistries={linkedMinistries}
           />
+        </TabsContent>
+
+        <TabsContent value="danger-zone" className="mt-6">
+          <div className="max-w-2xl space-y-4 rounded-lg border border-destructive/40 p-6">
+            <div>
+              <h3 className="font-semibold text-destructive">Delete Event</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                This will permanently delete the event and all associated data — registrants,
+                sessions, breakout groups, and more. This action cannot be undone.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="confirmEventName">
+                Type <span className="font-medium text-foreground">{details.name}</span> to confirm
+              </Label>
+              <Input
+                id="confirmEventName"
+                value={confirmEventName}
+                onChange={(e) => setConfirmEventName(e.target.value)}
+                placeholder={details.name}
+              />
+            </div>
+            <Button
+              variant="destructive"
+              disabled={confirmEventName !== details.name || deletingEvent}
+              onClick={handleDeleteEvent}
+            >
+              {deletingEvent ? "Deleting…" : "Delete this event"}
+            </Button>
+          </div>
         </TabsContent>
       </Tabs>
 

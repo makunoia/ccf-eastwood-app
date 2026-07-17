@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { db } from "@/lib/db"
 import { MatchingContext } from "@/app/generated/prisma/client"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -7,6 +8,10 @@ import {
 } from "@/lib/validations/matching-weights"
 import { MatchingWeightsForm } from "./matching-weights-form"
 import { GuestCooldownForm } from "./guest-cooldown-form"
+
+export const metadata: Metadata = {
+  title: "Matching Weights · Settings",
+}
 
 async function getWeights(context: MatchingContext): Promise<MatchingWeightsFormValues | null> {
   const row = await db.matchingWeightConfig.findUnique({ where: { context } })

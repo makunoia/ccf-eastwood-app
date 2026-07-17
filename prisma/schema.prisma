@@ -721,6 +721,7 @@ model Volunteer {
   coFacilitatedGroups   BreakoutGroup[] @relation("CoFacilitatedGroups")
   busPassengers         BusPassenger[]
   catchMechSessions     CatchMechSession[]
+  declinedRequests      SmallGroupMemberRequest[] @relation("DeclinedRequests")
   subFacilitatorSlots   OccurrenceSubFacilitator[]
   occurrenceAttendances OccurrenceAttendee[]
 }
@@ -797,8 +798,11 @@ model BusPassenger {
 
 model SmallGroupMemberRequest {
   id           String              @id @default(cuid())
-  smallGroupId String
-  smallGroup   SmallGroup          @relation(fields: [smallGroupId], references: [id], onDelete: Cascade)
+  // Null only for a groupless decline: a Timothy who leads no group yet declines
+  // someone, so there is no group to scope the rejection to. Every other request
+  // (Pending, Confirmed, and any decline by a faci who leads a group) sets this.
+  smallGroupId String?
+  smallGroup   SmallGroup?         @relation(fields: [smallGroupId], references: [id], onDelete: Cascade)
 
   // Exactly one of guestId or memberId must be set (enforced at app layer)
   guestId      String?
@@ -820,6 +824,12 @@ model SmallGroupMemberRequest {
 
   // Tracks which breakout group triggered this request (for auto-cancellation on removal)
   breakoutGroupId  String?
+
+  // The faci who declined via Catch Mech. Only needed to scope a groupless decline
+  // (smallGroupId = null) to its author — lead and co-faci share a breakout group,
+  // so breakoutGroupId alone cannot tell their lists apart.
+  declinedByVolunteerId String?
+  declinedByVolunteer   Volunteer? @relation("DeclinedRequests", fields: [declinedByVolunteerId], references: [id], onDelete: SetNull)
 
   comments     CatchMechComment[]
 

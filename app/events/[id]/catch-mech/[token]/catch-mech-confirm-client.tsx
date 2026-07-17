@@ -8,6 +8,14 @@ import {
 } from "../actions"
 import type { DeclineReason } from "@/app/generated/prisma/client"
 import { DECLINE_REASON_OPTIONS } from "@/lib/decline-reason"
+import type { CandidateGroup } from "@/lib/catch-mech/targets"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 type RowDecision = "confirm" | "pending" | "decline"
 
@@ -23,6 +31,8 @@ type Props = {
   token: string
   groupName: string
   isTimothy: boolean
+  /** Groups this faci can absorb someone into. >1 shows a per-person picker. */
+  candidates: CandidateGroup[]
   rows: RowData[]
 }
 
@@ -75,16 +85,21 @@ function DecisionToggle({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy: _isTimothy, rows }: Props) {
+export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy: _isTimothy, candidates, rows }: Props) {
   // Resolved (confirmed/rejected) registrants are filtered out server-side, so every
   // row here still needs a decision.
   const pendingRows = rows
+
+  // With one destination there is nothing to choose — the server implies it.
+  const needsGroupChoice = candidates.length > 1
 
   const [decisions, setDecisions] = React.useState<Record<string, RowDecision>>(() => {
     const init: Record<string, RowDecision> = {}
     for (const r of pendingRows) init[r.registrantId] = "pending"
     return init
   })
+  // Per-person destination, defaulted to the linked group (candidates[0]).
+  const [targets, setTargets] = React.useState<Record<string, string>>({})
   const [submitting, setSubmitting] = React.useState(false)
   const [error, setError] = React.useState("")
 
@@ -218,8 +233,10 @@ export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy
       const result = await submitCatchMechConfirmations(token, fullDecisions)
       setSubmitting(false)
       if (!result.success) {
-        setError(result.error)
-        setRejectionQueue([])
+        // Stay on this screen. Clearing the queue would drop the faci back to the
+        // member list, which reads as "it forgot my declines" — the error is then
+        // offscreen at the bottom of a long list and never gets seen.
+        setReasonError(result.error)
         return
       }
       if (result.requiresGroupName) {
@@ -331,6 +348,9 @@ export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy
         : decisions[r.registrantId] === "decline"
         ? "declined"
         : "pending",
+      ...(decisions[r.registrantId] === "confirm" && needsGroupChoice
+        ? { targetGroupId: targets[r.registrantId] ?? candidates[0].id }
+        : {}),
     }))
 
     const declined = pendingRows.filter((r) => decisions[r.registrantId] === "decline")
@@ -398,19 +418,49 @@ export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy
 
       <div className="divide-y border rounded-lg overflow-hidden">
         {pendingRows.map((r) => (
-          <div key={r.registrantId} className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:gap-3">
-            <div className="min-w-0 sm:flex-1">
-              <p className="font-medium text-sm wrap-break-word">{r.name}</p>
-              <p className="text-xs text-muted-foreground">
-                {r.type === "guest" ? "First-time attendee" : "Returning member"}
-              </p>
+          <div key={r.registrantId} className="p-4 space-y-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+              <div className="min-w-0 sm:flex-1">
+                <p className="font-medium text-sm wrap-break-word">{r.name}</p>
+                <p className="text-xs text-muted-foreground">
+                  {r.type === "guest" ? "First-time attendee" : "Returning member"}
+                </p>
+              </div>
+              <DecisionToggle
+                value={decisions[r.registrantId] ?? "pending"}
+                onChange={(v) =>
+                  setDecisions((prev) => ({ ...prev, [r.registrantId]: v }))
+                }
+              />
             </div>
-            <DecisionToggle
-              value={decisions[r.registrantId] ?? "pending"}
-              onChange={(v) =>
-                setDecisions((prev) => ({ ...prev, [r.registrantId]: v }))
-              }
-            />
+
+            {needsGroupChoice && decisions[r.registrantId] === "confirm" && (
+              <div className="space-y-1.5">
+                <label
+                  htmlFor={`group-${r.registrantId}`}
+                  className="text-xs font-medium text-muted-foreground"
+                >
+                  Which group will {r.name.split(" ")[0]} join?
+                </label>
+                <Select
+                  value={targets[r.registrantId] ?? candidates[0].id}
+                  onValueChange={(v) =>
+                    setTargets((prev) => ({ ...prev, [r.registrantId]: v }))
+                  }
+                >
+                  <SelectTrigger id={`group-${r.registrantId}`} className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {candidates.map((g) => (
+                      <SelectItem key={g.id} value={g.id}>
+                        {g.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
         ))}
       </div>

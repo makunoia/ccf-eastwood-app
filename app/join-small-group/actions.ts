@@ -172,16 +172,15 @@ export async function requestToJoinGroup(
       where: { guestId, status: "Pending" },
       select: {
         id: true,
-        smallGroupId: true,
-        smallGroup: { select: { name: true } },
+        smallGroup: { select: { id: true, name: true } },
       },
     })
 
-    if (existingRequest) {
+    if (existingRequest?.smallGroup) {
       return {
         hasPendingRequest: true,
         existingRequestId: existingRequest.id,
-        existingGroupId: existingRequest.smallGroupId,
+        existingGroupId: existingRequest.smallGroup.id,
         existingGroupName: existingRequest.smallGroup.name,
       }
     }
@@ -233,7 +232,8 @@ export async function cancelAndRequestGroup(
       where: { id: existingRequestId },
       select: { smallGroupId: true },
     })
-    if (!existing) return { success: false, error: "Request not found" }
+    // A groupless request is a Catch Mech decline, never a pending join request.
+    if (!existing?.smallGroupId) return { success: false, error: "Request not found" }
 
     await db.$transaction([
       db.smallGroupMemberRequest.update({
