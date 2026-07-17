@@ -2,8 +2,20 @@
 
 import * as React from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
+import { IconHeart } from "@tabler/icons-react"
+import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { confirmCatchMechCoupleRequests } from "../../matching-actions"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { YearInput } from "@/components/ui/year-input"
@@ -63,9 +75,17 @@ type RegistrantData = {
   member: MemberData | null
 }
 
+export type SpouseCardData = {
+  name: string
+  isGuest: boolean
+  currentGroupId: string | null
+  currentGroupName: string | null
+  pendingRequest: { id: string; smallGroupId: string; smallGroupName: string } | null
+}
+
 type Props = {
   registrant: RegistrantData
-  request: { id: string; notes: string | null; declineReason: DeclineReason | null; smallGroupId: string; smallGroup: { id: string; name: string; leader: { firstName: string; lastName: string } | null } } | null
+  request: { id: string; notes: string | null; declineReason: DeclineReason | null; smallGroupId: string; smallGroup: { id: string; name: string; groupType: "Regular" | "Couples"; leader: { firstName: string; lastName: string } | null } } | null
   status: "confirmed" | "rejected" | "pending"
   eventId: string
   registrantId: string
@@ -83,6 +103,102 @@ type Props = {
   initialTab?: "details" | "small-group"
   requestId: string | null
   activityEntries: CatchMechActivityEntry[]
+  spouseCard: SpouseCardData | null
+}
+
+function SpouseCard({
+  spouse,
+  eventId,
+  request,
+  status,
+}: {
+  spouse: SpouseCardData
+  eventId: string
+  request: Props["request"]
+  status: "confirmed" | "rejected" | "pending"
+}) {
+  const router = useRouter()
+  const [confirmOpen, setConfirmOpen] = React.useState(false)
+  const [confirming, setConfirming] = React.useState(false)
+
+  // "Confirm both" only when both halves are pending for the same Couples group
+  const canConfirmBoth =
+    status === "pending" &&
+    request !== null &&
+    request.smallGroup.groupType === "Couples" &&
+    spouse.pendingRequest !== null &&
+    spouse.pendingRequest.smallGroupId === request.smallGroupId
+
+  async function handleConfirmBoth() {
+    if (!request || !spouse.pendingRequest) return
+    setConfirming(true)
+    const result = await confirmCatchMechCoupleRequests(
+      eventId,
+      request.id,
+      spouse.pendingRequest.id
+    )
+    setConfirming(false)
+    if (result.success) {
+      toast.success("Both spouses confirmed into the group")
+      setConfirmOpen(false)
+      router.refresh()
+    } else {
+      toast.error(result.error)
+    }
+  }
+
+  return (
+    <div className="rounded-lg border p-4 space-y-2 mb-4">
+      <div className="flex items-center justify-between gap-2">
+        <p className="flex items-center gap-1.5 text-sm font-medium">
+          <IconHeart className="size-4 text-rose-500" />
+          Spouse
+        </p>
+        {canConfirmBoth && (
+          <Button size="sm" onClick={() => setConfirmOpen(true)}>
+            Confirm both
+          </Button>
+        )}
+      </div>
+      <p className="text-sm">
+        <span className="font-medium">{spouse.name}</span>
+        {spouse.isGuest && (
+          <Badge variant="outline" className="ml-2">Guest</Badge>
+        )}
+      </p>
+      <p className="text-sm text-muted-foreground">
+        {spouse.pendingRequest
+          ? spouse.pendingRequest.smallGroupId === request?.smallGroupId
+            ? "Also pending for this group"
+            : `Pending for ${spouse.pendingRequest.smallGroupName}`
+          : spouse.currentGroupName
+            ? `Member of ${spouse.currentGroupName}`
+            : "No small group or pending request"}
+      </p>
+
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm both spouses</DialogTitle>
+            <DialogDescription>
+              Confirm both pending requests into{" "}
+              <span className="font-medium">{request?.smallGroup.name}</span>? Guests
+              are promoted to members, and both requests are marked Confirmed on
+              behalf of the group leader.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmOpen(false)} disabled={confirming}>
+              Cancel
+            </Button>
+            <Button onClick={handleConfirmBoth} disabled={confirming}>
+              {confirming ? "Confirming…" : "Confirm both"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
 }
 
 function MemberReadOnly({ member, memberId: _memberId }: { member: MemberData; memberId: string }) {
@@ -248,6 +364,14 @@ export function CatchMechDetailClient(props: Props) {
           </TabsContent>
 
           <TabsContent value="small-group" className="mt-4">
+            {props.spouseCard && (
+              <SpouseCard
+                spouse={props.spouseCard}
+                eventId={props.eventId}
+                request={props.request}
+                status={props.status}
+              />
+            )}
             {props.status === "confirmed" && props.request?.smallGroup && (
               <div className="rounded-lg border p-4 space-y-2">
                 <div className="flex items-center justify-between gap-2">

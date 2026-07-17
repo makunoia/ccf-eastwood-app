@@ -47,3 +47,27 @@ export function scoreGroup(
     candidateProfile: candidate,
   }
 }
+
+export type CoupleScore = {
+  /** Ranking score: the WORSE spouse's score — a couples placement is only as
+   *  good as its fit for the less-well-matched spouse. */
+  combinedScore: number
+  /** Tie-breaker between groups with equal combinedScore. */
+  averageScore: number
+  scoreA: number
+  scoreB: number
+}
+
+/**
+ * Combines two spouses' individual scores for the same group into a joint
+ * couple score. Worst-of (min) semantics: a group that fits one spouse
+ * perfectly but the other poorly is a bad couples placement.
+ */
+export function combineCoupleScores(scoreA: number, scoreB: number): CoupleScore {
+  return {
+    combinedScore: Math.min(scoreA, scoreB),
+    averageScore: (scoreA + scoreB) / 2,
+    scoreA,
+    scoreB,
+  }
+}

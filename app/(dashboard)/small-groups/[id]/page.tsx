@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
+import { mapCouplesInRoster } from "@/lib/family-links"
 import { SmallGroupForm } from "../small-group-form"
 import { type SmallGroupRow } from "../columns"
 
@@ -8,6 +9,8 @@ type GroupMember = {
   firstName: string
   lastName: string
   groupStatus: "Member" | "Timothy" | "Leader" | null
+  /** For Couples groups: the roster memberId of this member's spouse, if also in the group. */
+  spouseId: string | null
 }
 
 export type PendingRequest = {
@@ -92,10 +95,17 @@ async function getSmallGroup(id: string): Promise<(SmallGroupRow & {
     createdAt: l.createdAt,
   }))
 
+  // Couples groups: pair roster members via shared Father/Mother family links
+  const couples =
+    g.groupType === "Couples"
+      ? await mapCouplesInRoster(g.members.map((m) => m.id))
+      : new Map<string, string>()
+
   return {
     id: g.id,
     name: g.name,
     status: g.status as "Active" | "Pending" | "Inactive",
+    groupType: g.groupType as "Regular" | "Couples",
     leaderName: g.leader ? `${g.leader.firstName} ${g.leader.lastName}` : null,
     leaderId: g.leader?.id ?? null,
     leaderFirstName: g.leader?.firstName ?? "",
@@ -117,7 +127,10 @@ async function getSmallGroup(id: string): Promise<(SmallGroupRow & {
     scheduleDayOfWeek: g.scheduleDayOfWeek,
     scheduleTimeStart: g.scheduleTimeStart,
     scheduleTimeEnd: g.scheduleTimeEnd,
-    groupMembers: g.members,
+    groupMembers: g.members.map((m) => ({
+      ...m,
+      spouseId: couples.get(m.id) ?? null,
+    })),
     pendingRequests,
     logs,
   }

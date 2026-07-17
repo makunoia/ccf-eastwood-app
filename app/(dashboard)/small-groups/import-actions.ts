@@ -5,7 +5,7 @@ import { db } from "@/lib/db"
 import type { DuplicateMatch, ImportResult, RowResolution, UnmatchedLeaderRow, LeaderResolution } from "@/lib/import/types"
 import { enrichArray, enrichNullable, enrichText } from "@/lib/import/enrich"
 import { formatPhilippinePhone } from "@/lib/utils"
-import { GenderFocus, MeetingFormat, Prisma } from "@/app/generated/prisma/client"
+import { GenderFocus, MeetingFormat, Prisma, SmallGroupType } from "@/app/generated/prisma/client"
 
 type ActionResult<T = void> =
   | { success: true; data: T }
@@ -146,6 +146,13 @@ function parseGenderFocus(v: string): GenderFocus | null {
   if (n === "male" || n === "m") return GenderFocus.Male
   if (n === "female" || n === "f") return GenderFocus.Female
   if (n === "mixed") return GenderFocus.Mixed
+  return null
+}
+
+function parseGroupType(v: string): SmallGroupType | null {
+  const n = v.toLowerCase().trim()
+  if (n === "couples" || n === "couple") return SmallGroupType.Couples
+  if (n === "regular") return SmallGroupType.Regular
   return null
 }
 
@@ -398,6 +405,9 @@ export async function importSmallGroups(
           .filter((id): id is string => Boolean(id))
       )]
 
+      // null = column blank or unparseable — never changes an existing group's type
+      const csvGroupType = mapped.groupType ? parseGroupType(mapped.groupType) : null
+
       const data = {
         name:              groupName,
         leaderId,
@@ -425,6 +435,7 @@ export async function importSmallGroups(
             name: true,
             leaderId: true,
             parentGroupId: true,
+            groupType: true,
             lifeStages: { select: { id: true } },
             genderFocus: true,
             language: true,
@@ -449,10 +460,20 @@ export async function importSmallGroups(
           existing.lifeStages.map((ls) => ls.id),
           lifeStageIds
         )
+        // Enrich = add data, never drop: a Couples group can never be downgraded
+        // by re-import; a Regular group upgrades only when the CSV says Couples.
+        const enrichedGroupType =
+          existing.groupType === SmallGroupType.Couples || csvGroupType === SmallGroupType.Couples
+            ? SmallGroupType.Couples
+            : existing.groupType
+        if (enrichedGroupType === SmallGroupType.Couples) {
+          enriched.genderFocus = GenderFocus.Mixed
+        }
         await db.smallGroup.update({
           where: { id: existingId },
           data: {
             ...enriched,
+            groupType: enrichedGroupType,
             lifeStages: { set: enrichedLifeStageIds.map((id) => ({ id })) },
           },
         })
@@ -462,17 +483,34 @@ export async function importSmallGroups(
       }
 
       if (existingId && resolution === "use-csv") {
+        // CSV wins when the column is provided; a blank cell keeps the current type.
+        const existingType = await db.smallGroup.findUnique({
+          where: { id: existingId },
+          select: { groupType: true },
+        })
+        const finalType = csvGroupType ?? existingType?.groupType ?? SmallGroupType.Regular
         await db.smallGroup.update({
           where: { id: existingId },
-          data: { ...data, lifeStages: { set: lifeStageIds.map((id) => ({ id })) } },
+          data: {
+            ...data,
+            groupType: finalType,
+            ...(finalType === SmallGroupType.Couples ? { genderFocus: GenderFocus.Mixed } : {}),
+            lifeStages: { set: lifeStageIds.map((id) => ({ id })) },
+          },
         })
         if (data.leaderId) touchedLeaderIds.add(data.leaderId)
         result.updated++
         continue
       }
 
+      const createType = csvGroupType ?? SmallGroupType.Regular
       await db.smallGroup.create({
-        data: { ...data, lifeStages: { connect: lifeStageIds.map((id) => ({ id })) } },
+        data: {
+          ...data,
+          groupType: createType,
+          ...(createType === SmallGroupType.Couples ? { genderFocus: GenderFocus.Mixed } : {}),
+          lifeStages: { connect: lifeStageIds.map((id) => ({ id })) },
+        },
       })
       if (data.leaderId) touchedLeaderIds.add(data.leaderId)
       result.created++

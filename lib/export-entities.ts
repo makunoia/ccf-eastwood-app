@@ -98,6 +98,7 @@ export function exportGuestsCSV(rows: GuestExportRow[]): void {
 export type SmallGroupExportRow = {
   name: string
   status: string
+  groupType: string
   leaderFirstName: string
   leaderLastName: string
   leaderEmail: string | null
@@ -118,7 +119,7 @@ export type SmallGroupExportRow = {
 }
 
 const SMALL_GROUP_HEADERS = [
-  "Group Name", "Status",
+  "Group Name", "Status", "Group Type",
   "Leader First Name", "Leader Last Name", "Leader Mobile", "Leader Email",
   "Parent Group", "Life Stage", "Gender Focus", "Language",
   "Min Age", "Max Age", "Meeting Format", "Location City",
@@ -128,7 +129,7 @@ const SMALL_GROUP_HEADERS = [
 
 function smallGroupToCells(g: SmallGroupExportRow): CSVCell[] {
   return [
-    g.name, g.status,
+    g.name, g.status, g.groupType,
     g.leaderFirstName, g.leaderLastName, g.leaderMobile, g.leaderEmail,
     g.parentGroupName, g.lifeStage, g.genderFocus, g.language.join("; "),
     g.ageRangeMin, g.ageRangeMax, g.meetingFormat, g.locationCity,

@@ -2,7 +2,7 @@ import { unstable_cache } from "next/cache"
 import { db } from "@/lib/db"
 import { MatchingContext } from "@/app/generated/prisma/client"
 import { DEFAULT_WEIGHTS, DEFAULT_GUEST_COOLDOWN_DAYS } from "@/lib/validations/matching-weights"
-import { scoreGroup } from "./engine"
+import { scoreGroup, combineCoupleScores } from "./engine"
 import { scoreGender, scoreLifeStage, scoreSchedule } from "./scorers"
 import { EMPTY_CANDIDATE } from "./types"
 import type { CandidateProfile, GroupProfile, MatchResult, WeightConfig, EscalationLevel, TimeSlot } from "./types"
@@ -118,6 +118,7 @@ function buildSmallGroupProfile(
 const SMALL_GROUP_SCORE_SELECT = {
   id: true,
   name: true,
+  groupType: true,
   lifeStages: { select: { id: true } },
   genderFocus: true,
   language: true,
@@ -227,7 +228,17 @@ function applyCooldown<T extends { id: string }>(
 
 export async function matchSmallGroups(
   params: { guestId: string } | { memberId: string },
-  options?: { excludeCurrentGroup?: boolean; limit?: number; candidateScheduleSlot?: TimeSlot }
+  options?: {
+    excludeCurrentGroup?: boolean
+    limit?: number
+    candidateScheduleSlot?: TimeSlot
+    /**
+     * Couples groups are excluded from individual matching by default. Admin
+     * flows may include them when the candidate is known to have a spouse
+     * (e.g. catch-mech assignment for one half of a couple).
+     */
+    includeCouplesGroups?: boolean
+  }
 ): Promise<MatchResult[]> {
   let candidate: CandidateProfile
   let currentGroupId: string | null | undefined
@@ -321,6 +332,9 @@ export async function matchSmallGroups(
   }
 
   const eligible = groups.filter((g) => {
+    // Couples groups take married pairs, never individually matched candidates
+    // (unless the caller explicitly opted in for a candidate with a spouse)
+    if (g.groupType === "Couples" && !options?.includeCouplesGroups) return false
     if (options?.excludeCurrentGroup && currentGroupId && g.id === currentGroupId) {
       return false
     }
@@ -348,6 +362,116 @@ export async function matchSmallGroups(
     }))
     .sort((a, b) => b.totalScore - a.totalScore)
     .slice(0, options?.limit ?? 10)
+}
+
+// ─── Couples Group Matching ──────────────────────────────────────────────────
+
+export type CoupleMatchResult = {
+  groupId: string
+  groupName: string
+  /** Worst-of the two spouses' scores — the ranking key. */
+  combinedScore: number
+  /** Tie-breaker between equal combined scores. */
+  averageScore: number
+  resultA: MatchResult
+  resultB: MatchResult
+}
+
+const MEMBER_CANDIDATE_SELECT = {
+  lifeStageId: true,
+  gender: true,
+  language: true,
+  birthMonth: true,
+  birthYear: true,
+  workCity: true,
+  workIndustry: true,
+  meetingPreference: true,
+  smallGroupId: true,
+  ledGroups: { select: { id: true } },
+  schedulePreferences: {
+    select: { dayOfWeek: true, timeStart: true, timeEnd: true },
+  },
+} as const
+
+/**
+ * Jointly scores COUPLES groups for a married pair. Only `groupType: Couples`
+ * groups are considered; capacity requires two free seats; a group either
+ * spouse leads, already belongs to, or was rejected by is excluded. Both
+ * spouses must individually pass the hard eligibility gates (life stage,
+ * schedule), then results rank by worst-of score (see combineCoupleScores).
+ */
+export async function matchCouplesGroups(
+  params: { memberIdA: string; memberIdB: string },
+  options?: { limit?: number }
+): Promise<CoupleMatchResult[]> {
+  if (params.memberIdA === params.memberIdB) return []
+
+  const [memberA, memberB] = await Promise.all([
+    db.member.findUnique({ where: { id: params.memberIdA }, select: MEMBER_CANDIDATE_SELECT }),
+    db.member.findUnique({ where: { id: params.memberIdB }, select: MEMBER_CANDIDATE_SELECT }),
+  ])
+  if (!memberA || !memberB) return []
+
+  const candidateA = buildCandidateFromMember(memberA)
+  const candidateB = buildCandidateFromMember(memberB)
+
+  const excludedGroupIds = new Set<string>(
+    [...memberA.ledGroups, ...memberB.ledGroups].map((g) => g.id)
+  )
+  // Suggesting a group either spouse already belongs to is pointless — joining
+  // an incomplete couple into an existing group goes through the group's own
+  // add-couple flow instead.
+  if (memberA.smallGroupId) excludedGroupIds.add(memberA.smallGroupId)
+  if (memberB.smallGroupId) excludedGroupIds.add(memberB.smallGroupId)
+
+  const rejected = await db.smallGroupMemberRequest.findMany({
+    where: {
+      memberId: { in: [params.memberIdA, params.memberIdB] },
+      status: "Rejected",
+    },
+    select: { smallGroupId: true },
+  })
+  for (const r of rejected) excludedGroupIds.add(r.smallGroupId)
+
+  const [groups, weights] = await Promise.all([
+    db.smallGroup.findMany({
+      where: { groupType: "Couples" },
+      select: SMALL_GROUP_SCORE_SELECT,
+    }),
+    loadSmallGroupWeights(),
+  ])
+
+  return groups
+    .filter((g) => {
+      if (excludedGroupIds.has(g.id)) return false
+      // Couples join as a pair — the group needs two free seats
+      if (g.memberLimit !== null && g._count.members + 2 > g.memberLimit) return false
+      const gp = buildSmallGroupProfile(g)
+      for (const candidate of [candidateA, candidateB]) {
+        if (scoreLifeStage(candidate.lifeStageId, gp.lifeStageIds) === 0.0) return false
+        if (scoreSchedule(candidate.scheduleSlots, gp.scheduleSlots) === 0.0) return false
+      }
+      return true
+    })
+    .map((g) => {
+      const gp = buildSmallGroupProfile(g)
+      const resultA = scoreGroup(candidateA, gp, weights)
+      const resultB = scoreGroup(candidateB, gp, weights)
+      const couple = combineCoupleScores(resultA.totalScore, resultB.totalScore)
+      return {
+        groupId: g.id,
+        groupName: g.name,
+        combinedScore: couple.combinedScore,
+        averageScore: couple.averageScore,
+        resultA,
+        resultB,
+      }
+    })
+    .sort(
+      (a, b) =>
+        b.combinedScore - a.combinedScore || b.averageScore - a.averageScore
+    )
+    .slice(0, options?.limit ?? 5)
 }
 
 // ─── Small Group Escalation Matching ─────────────────────────────────────────
@@ -440,6 +564,8 @@ export async function matchSmallGroupsWithEscalation(
   const rejectedGroupIds = new Set(rejectedRequests.map((r) => r.smallGroupId))
 
   const eligible = allGroups.filter((g) => {
+    // Couples groups take married pairs, never individually matched candidates
+    if (g.groupType === "Couples") return false
     if (rejectedGroupIds.has(g.id)) return false
     if (g.memberLimit !== null && g._count.members >= g.memberLimit) return false
     const gp = buildSmallGroupProfile(g)

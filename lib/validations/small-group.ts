@@ -15,6 +15,8 @@ export const smallGroupSchema = z.object({
   name: z.string().min(1, "Group name is required").trim(),
   leaderId: z.string().min(1, "Leader is required"),
   parentGroupId: nullableString,
+  groupType: z
+    .preprocess((v) => (v === "" || v == null ? "Regular" : v), z.enum(["Regular", "Couples"])),
   lifeStageIds: z.array(z.string()).min(1, "At least one life stage is required"),
   genderFocus: z.enum(["Male", "Female", "Mixed"]),
   language: z.array(z.string()).default([]),
@@ -39,6 +41,9 @@ export const smallGroupSchema = z.object({
 }).refine(
   (data) => data.scheduleTimeStart < data.scheduleTimeEnd,
   { message: "End time must be after start time", path: ["scheduleTimeEnd"] }
+).transform((data) =>
+  // Couples groups host married pairs — gender focus is always Mixed.
+  data.groupType === "Couples" ? { ...data, genderFocus: "Mixed" as const } : data
 )
 
 export type SmallGroupInput = z.infer<typeof smallGroupSchema>
@@ -48,6 +53,7 @@ export type SmallGroupFormValues = {
   name: string
   leaderId: string
   parentGroupId: string
+  groupType: string
   lifeStageIds: string[]
   genderFocus: string
   language: string[]
@@ -65,6 +71,7 @@ export const defaultSmallGroupForm: SmallGroupFormValues = {
   name: "",
   leaderId: "",
   parentGroupId: "",
+  groupType: "Regular",
   lifeStageIds: [],
   genderFocus: "",
   language: [],

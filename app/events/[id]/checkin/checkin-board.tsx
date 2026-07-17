@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select"
 import {
   lookupCheckinRegistrant,
+  lookupCheckinRegistrantByName,
   lookupCheckinRegistrantByProfile,
   markCheckinAttendance,
   checkInToOccurrence,
@@ -50,7 +51,7 @@ type GuestSmallGroupPrompt = {
   }
 }
 
-type LookupMode = "mobile" | "email" | "name-dob"
+type LookupMode = "name" | "mobile" | "email" | "name-dob"
 
 type Step =
   | "lookup"
@@ -72,6 +73,7 @@ type DisambiguateCandidate = {
   name: string
   nickname: string | null
   alreadyCheckedIn: boolean
+  contactHint: string | null
   guestSmallGroupPrompt: GuestSmallGroupPrompt | null
 }
 
@@ -107,12 +109,13 @@ function queryIsPhone(q: string): boolean {
 
 export function CheckinBoard({ eventId, occurrenceId, eventName = "", includeSmallGroup = false, includeDietary = false, lifeStages = [], defaultLifeStageId = "", autoAssignBreakout = false, breakoutCandidates = [], allowPayment = false }: Props) {
   const [step, setStep] = React.useState<Step>("lookup")
-  const [lookupMode, setLookupMode] = React.useState<LookupMode>("mobile")
+  const [lookupMode, setLookupMode] = React.useState<LookupMode>("name")
   const [query, setQuery] = React.useState("")
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [matched, setMatched] = React.useState<MatchedState | null>(null)
   const [disambiguateCandidates, setDisambiguateCandidates] = React.useState<DisambiguateCandidate[]>([])
+  const [nameForm, setNameForm] = React.useState({ firstName: "", lastName: "" })
   const [nameDobForm, setNameDobForm] = React.useState({
     lastName: "",
     birthMonth: "",
@@ -124,10 +127,10 @@ export function CheckinBoard({ eventId, occurrenceId, eventName = "", includeSma
 
   function focusLookupInput() {
     setTimeout(() => {
-      if (lookupMode === "email") {
-        inputRef.current?.focus()
-      } else {
+      if (lookupMode === "mobile") {
         phoneLookupRef.current?.querySelector<HTMLInputElement>("input")?.focus()
+      } else {
+        inputRef.current?.focus()
       }
     }, 50)
   }
@@ -139,6 +142,7 @@ export function CheckinBoard({ eventId, occurrenceId, eventName = "", includeSma
     setError(null)
     setMatched(null)
     setDisambiguateCandidates([])
+    setNameForm({ firstName: "", lastName: "" })
     setNameDobForm({ lastName: "", birthMonth: "", birthYear: "" })
     setLoading(false)
     focusLookupInput()
@@ -150,7 +154,7 @@ export function CheckinBoard({ eventId, occurrenceId, eventName = "", includeSma
   }
 
   React.useEffect(() => {
-    phoneLookupRef.current?.querySelector<HTMLInputElement>("input")?.focus()
+    inputRef.current?.focus()
     return () => {
       if (resetTimer.current) clearTimeout(resetTimer.current)
     }
@@ -162,7 +166,18 @@ export function CheckinBoard({ eventId, occurrenceId, eventName = "", includeSma
     setLoading(true)
 
     let result: Awaited<ReturnType<typeof lookupCheckinRegistrant>>
-    if (lookupMode === "name-dob") {
+    if (lookupMode === "name") {
+      if (!nameForm.firstName.trim() || !nameForm.lastName.trim()) {
+        setLoading(false)
+        return
+      }
+      result = await lookupCheckinRegistrantByName(
+        eventId,
+        nameForm.firstName,
+        nameForm.lastName,
+        occurrenceId
+      )
+    } else if (lookupMode === "name-dob") {
       if (!nameDobForm.lastName.trim() || !nameDobForm.birthMonth || !nameDobForm.birthYear) {
         setLoading(false)
         return
@@ -280,7 +295,7 @@ export function CheckinBoard({ eventId, occurrenceId, eventName = "", includeSma
 
           <div className="space-y-2">
             <div className="flex overflow-hidden rounded-lg border">
-              {(["mobile", "email"] as const).map((mode) => (
+              {(["name", "mobile", "email"] as const).map((mode) => (
                 <button
                   key={mode}
                   type="button"
@@ -297,7 +312,7 @@ export function CheckinBoard({ eventId, occurrenceId, eventName = "", includeSma
                       : "bg-background hover:bg-muted"
                   }`}
                 >
-                  {mode === "mobile" ? "Mobile Number" : "Email"}
+                  {mode === "name" ? "Name" : mode === "mobile" ? "Mobile" : "Email"}
                 </button>
               ))}
             </div>
@@ -316,11 +331,43 @@ export function CheckinBoard({ eventId, occurrenceId, eventName = "", includeSma
                   : "border-border bg-background hover:bg-muted"
               }`}
             >
-              I don&apos;t have either
+              Look me up by birthday instead
             </button>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            {lookupMode === "name" && (
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <Label htmlFor="checkin-firstname">First name</Label>
+                  <Input
+                    id="checkin-firstname"
+                    ref={inputRef}
+                    value={nameForm.firstName}
+                    onChange={(e) => {
+                      setNameForm((p) => ({ ...p, firstName: e.target.value }))
+                      setError(null)
+                    }}
+                    placeholder="Juan"
+                    autoComplete="given-name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="checkin-lastname">Last name</Label>
+                  <Input
+                    id="checkin-lastname"
+                    value={nameForm.lastName}
+                    onChange={(e) => {
+                      setNameForm((p) => ({ ...p, lastName: e.target.value }))
+                      setError(null)
+                    }}
+                    placeholder="dela Cruz"
+                    autoComplete="family-name"
+                  />
+                </div>
+              </div>
+            )}
+
             {lookupMode === "mobile" && (
               <div className="space-y-2">
                 <Label htmlFor="checkin-query">Mobile number</Label>
@@ -410,7 +457,8 @@ export function CheckinBoard({ eventId, occurrenceId, eventName = "", includeSma
               className="w-full"
               disabled={
                 loading ||
-                (lookupMode !== "name-dob" && !query.trim()) ||
+                (lookupMode === "name" && (!nameForm.firstName.trim() || !nameForm.lastName.trim())) ||
+                ((lookupMode === "mobile" || lookupMode === "email") && !query.trim()) ||
                 (lookupMode === "name-dob" && (!nameDobForm.lastName.trim() || !nameDobForm.birthMonth || !nameDobForm.birthYear))
               }
             >
@@ -429,6 +477,15 @@ export function CheckinBoard({ eventId, occurrenceId, eventName = "", includeSma
     )
   }
 
+  // What the person typed, for the disambiguate/not-found copy — the shared
+  // `query` state is only used by the mobile/email modes.
+  const lookupLabel =
+    lookupMode === "name"
+      ? `${nameForm.firstName} ${nameForm.lastName}`.trim()
+      : lookupMode === "name-dob"
+        ? nameDobForm.lastName.trim()
+        : query
+
   // ── Disambiguate ─────────────────────────────────────────────────────────
   if (step === "disambiguate") {
     return (
@@ -438,7 +495,7 @@ export function CheckinBoard({ eventId, occurrenceId, eventName = "", includeSma
             <h2 className="text-2xl font-semibold tracking-tight">Multiple profiles found</h2>
             <p className="text-sm text-muted-foreground">
               We found multiple registrations matching{" "}
-              <span className="font-medium">{query}</span>. Select the one that&apos;s you.
+              <span className="font-medium">{lookupLabel}</span>. Select the one that&apos;s you.
             </p>
           </div>
           <div className="flex flex-col gap-3">
@@ -466,6 +523,9 @@ export function CheckinBoard({ eventId, occurrenceId, eventName = "", includeSma
                 <p className="text-lg font-semibold">{c.name}</p>
                 {c.nickname && (
                   <p className="mt-0.5 text-sm text-muted-foreground">&ldquo;{c.nickname}&rdquo;</p>
+                )}
+                {c.contactHint && (
+                  <p className="mt-0.5 text-sm text-muted-foreground">{c.contactHint}</p>
                 )}
               </button>
             ))}
@@ -649,7 +709,7 @@ export function CheckinBoard({ eventId, occurrenceId, eventName = "", includeSma
             <h2 className="text-2xl font-semibold tracking-tight">Not found</h2>
             <p className="text-sm text-muted-foreground">
               We couldn&apos;t find a registration for{" "}
-              <span className="font-medium">{query}</span>.
+              <span className="font-medium">{lookupLabel}</span>.
               You can register now or try a different lookup.
             </p>
           </div>
@@ -690,15 +750,20 @@ export function CheckinBoard({ eventId, occurrenceId, eventName = "", includeSma
           walkIn={{
             occurrenceId,
             prefill:
-              lookupMode === "name-dob"
+              lookupMode === "name"
                 ? {
-                    lastName: nameDobForm.lastName,
-                    birthMonth: nameDobForm.birthMonth,
-                    birthYear: nameDobForm.birthYear,
+                    firstName: nameForm.firstName,
+                    lastName: nameForm.lastName,
                   }
-                : queryIsPhone(query)
-                  ? { mobileNumber: query }
-                  : { email: query },
+                : lookupMode === "name-dob"
+                  ? {
+                      lastName: nameDobForm.lastName,
+                      birthMonth: nameDobForm.birthMonth,
+                      birthYear: nameDobForm.birthYear,
+                    }
+                  : queryIsPhone(query)
+                    ? { mobileNumber: query }
+                    : { email: query },
             onSuccess: handleWalkInSuccess,
             onBack: () => {
               setError(null)

@@ -10,11 +10,13 @@ type ActionResult<T> =
   | { success: false; error: string }
 
 /**
- * Flattens every check-in across all of an event's sessions into export rows —
- * one row per attendee per session, participants and volunteers alike.
+ * Flattens check-ins into export rows — one row per attendee per session,
+ * participants and volunteers alike. Covers every session of the event, or a
+ * single session when `occurrenceId` is given.
  */
 export async function getSessionsAttendanceExport(
   eventId: string,
+  occurrenceId?: string,
 ): Promise<ActionResult<SessionAttendanceExportRow[]>> {
   const session = await auth()
   if (!session?.user) return { success: false, error: "Not authenticated." }
@@ -22,7 +24,7 @@ export async function getSessionsAttendanceExport(
 
   try {
     const occurrences = await db.eventOccurrence.findMany({
-      where: { eventId },
+      where: { eventId, ...(occurrenceId ? { id: occurrenceId } : {}) },
       orderBy: { date: "asc" },
       select: {
         date: true,

@@ -12,8 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
-    // Claude Code skill bundles (third-party scripts, not app code)
+    // Agent skill bundles (third-party scripts, not app code)
     ".claude/**",
+    ".agents/**",
+    ".codex/**",
   ]),
   {
     rules: {

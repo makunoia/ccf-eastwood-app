@@ -1468,6 +1468,9 @@ type CheckinRegistrantResult = {
   name: string
   nickname: string | null
   alreadyCheckedIn: boolean
+  // Masked phone/email so same-name candidates on the disambiguation screen can
+  // be told apart without exposing full contact details on a public page.
+  contactHint: string | null
   // Set when this is a guest's 2nd+ occurrence check-in and their profile is incomplete.
   // Always null for volunteers.
   guestSmallGroupPrompt: GuestSmallGroupPrompt | null
@@ -1476,6 +1479,158 @@ type CheckinRegistrantResult = {
 type CheckinAmbiguousResult = {
   matchType: "ambiguous"
   candidates: CheckinRegistrantResult[]
+}
+
+// ── Shared check-in lookup machinery ──────────────────────────────────────────
+// All public lookup modes (mobile/email, full name, last name + birthday) load
+// the same registrant/volunteer rows and resolve candidates identically — only
+// the filter differs.
+
+function findEventRegistrantsForLookup(eventId: string) {
+  return db.eventRegistrant.findMany({
+    where: { eventId },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      nickname: true,
+      email: true,
+      mobileNumber: true,
+      attendedAt: true,
+      guestId: true,
+      member: {
+        select: {
+          firstName: true,
+          lastName: true,
+          email: true,
+          phone: true,
+          birthMonth: true,
+          birthYear: true,
+        },
+      },
+      guest: {
+        select: {
+          firstName: true,
+          lastName: true,
+          email: true,
+          phone: true,
+          birthMonth: true,
+          birthYear: true,
+          lifeStageId: true,
+          gender: true,
+          language: true,
+          meetingPreference: true,
+          workCity: true,
+          scheduleDayOfWeek: true,
+          scheduleTimeStart: true,
+          scheduleTimeEnd: true,
+          claimedSmallGroupId: true,
+          groupRequests: { select: { status: true } },
+        },
+      },
+    },
+  })
+}
+
+type RegistrantLookupRow = Awaited<ReturnType<typeof findEventRegistrantsForLookup>>[number]
+
+function normalizeNameInput(v: string): string {
+  return v.trim().replace(/\s+/g, " ").toLowerCase()
+}
+
+function maskPhone(phone: string): string {
+  const digits = phone.replace(/\D/g, "")
+  return `+63 ••• ••• ${digits.slice(-4)}`
+}
+
+function maskEmail(email: string): string {
+  const [local, domain] = email.split("@")
+  if (!domain) return "•••"
+  return `${local.slice(0, 1)}•••@${domain}`
+}
+
+function contactHintFrom(phone: string | null, email: string | null): string | null {
+  if (phone) return maskPhone(phone)
+  if (email) return maskEmail(email)
+  return null
+}
+
+async function resolveRegistrantCandidate(
+  matched: RegistrantLookupRow,
+  occurrenceId: string | null
+): Promise<CheckinRegistrantResult> {
+  const firstName = matched.member?.firstName ?? matched.guest?.firstName ?? matched.firstName ?? ""
+  const lastName = matched.member?.lastName ?? matched.guest?.lastName ?? matched.lastName ?? ""
+  const name = `${firstName} ${lastName}`.trim()
+
+  let alreadyCheckedIn: boolean
+  if (occurrenceId !== null) {
+    const existing = await db.occurrenceAttendee.findUnique({
+      where: { occurrenceId_registrantId: { occurrenceId, registrantId: matched.id } },
+      select: { id: true },
+    })
+    alreadyCheckedIn = existing !== null
+  } else {
+    alreadyCheckedIn = matched.attendedAt !== null
+  }
+
+  let guestSmallGroupPrompt: GuestSmallGroupPrompt | null = null
+  if (matched.guestId && matched.guest) {
+    const g = matched.guest
+    const noClaimedGroup = !g.claimedSmallGroupId
+    const hasPendingRequest = g.groupRequests.some(
+      (r) => r.status === "Pending" || r.status === "Confirmed"
+    )
+    if (noClaimedGroup && !hasPendingRequest) {
+      guestSmallGroupPrompt = {
+        guestId: matched.guestId,
+        existingProfile: {
+          lifeStageId: g.lifeStageId,
+          gender: g.gender,
+          language: g.language,
+          meetingPreference: g.meetingPreference,
+          workCity: g.workCity,
+          scheduleDayOfWeek: g.scheduleDayOfWeek,
+          scheduleTimeStart: g.scheduleTimeStart,
+          scheduleTimeEnd: g.scheduleTimeEnd,
+        },
+      }
+    }
+  }
+
+  return {
+    kind: "registrant" as const,
+    subjectId: matched.id,
+    name,
+    nickname: matched.nickname,
+    alreadyCheckedIn,
+    contactHint: contactHintFrom(
+      matched.member?.phone ?? matched.guest?.phone ?? matched.mobileNumber,
+      matched.member?.email ?? matched.guest?.email ?? matched.email
+    ),
+    guestSmallGroupPrompt,
+  }
+}
+
+// A volunteer is never a registrant: if a volunteer matches, their volunteer record is
+// the canonical check-in subject. Suppress any registrant match for the same lookup so
+// the volunteer isn't forced to disambiguate against a stray registrant record.
+async function finishCheckinLookup(
+  matchedRegistrants: RegistrantLookupRow[],
+  matchedVolunteers: VolunteerLookupRow[],
+  occurrenceId: string | null
+): Promise<CheckinRegistrantResult | CheckinAmbiguousResult | null> {
+  const volunteerCandidates = await Promise.all(
+    matchedVolunteers.map((v) => resolveVolunteerCandidate(v, occurrenceId))
+  )
+  const candidates: CheckinRegistrantResult[] =
+    volunteerCandidates.length > 0
+      ? volunteerCandidates
+      : await Promise.all(matchedRegistrants.map((m) => resolveRegistrantCandidate(m, occurrenceId)))
+
+  if (candidates.length === 0) return null
+  if (candidates.length > 1) return { matchType: "ambiguous", candidates }
+  return candidates[0]
 }
 
 export async function lookupCheckinRegistrant(
@@ -1487,43 +1642,10 @@ export async function lookupCheckinRegistrant(
   if (!q) return { success: true, data: null }
 
   try {
-    const registrants = await db.eventRegistrant.findMany({
-      where: { eventId },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        nickname: true,
-        email: true,
-        mobileNumber: true,
-        attendedAt: true,
-        guestId: true,
-        member: { select: { firstName: true, lastName: true, email: true, phone: true } },
-        guest: {
-          select: {
-            firstName: true,
-            lastName: true,
-            email: true,
-            phone: true,
-            lifeStageId: true,
-            gender: true,
-            language: true,
-            meetingPreference: true,
-            workCity: true,
-            scheduleDayOfWeek: true,
-            scheduleTimeStart: true,
-            scheduleTimeEnd: true,
-            claimedSmallGroupId: true,
-            groupRequests: { select: { status: true } },
-          },
-        },
-      },
-    })
-
     const lq = q.toLowerCase()
     const qNorm = q.replace(/\s+/g, "")
 
-    const allMatched = registrants.filter((r) => {
+    const matchedRegistrants = (await findEventRegistrantsForLookup(eventId)).filter((r) => {
       const email = r.member?.email ?? r.guest?.email ?? r.email ?? ""
       const phone = r.member?.phone ?? r.guest?.phone ?? r.mobileNumber ?? ""
       return (
@@ -1532,80 +1654,53 @@ export async function lookupCheckinRegistrant(
       )
     })
 
-    async function resolveRegistrant(matched: (typeof registrants)[number]) {
-      const firstName = matched.member?.firstName ?? matched.guest?.firstName ?? matched.firstName ?? ""
-      const lastName = matched.member?.lastName ?? matched.guest?.lastName ?? matched.lastName ?? ""
-      const name = `${firstName} ${lastName}`.trim()
-
-      let alreadyCheckedIn: boolean
-      if (occurrenceId !== null) {
-        const existing = await db.occurrenceAttendee.findUnique({
-          where: { occurrenceId_registrantId: { occurrenceId, registrantId: matched.id } },
-          select: { id: true },
-        })
-        alreadyCheckedIn = existing !== null
-      } else {
-        alreadyCheckedIn = matched.attendedAt !== null
-      }
-
-      let guestSmallGroupPrompt: GuestSmallGroupPrompt | null = null
-      if (matched.guestId && matched.guest) {
-        const g = matched.guest
-        const noClaimedGroup = !g.claimedSmallGroupId
-        const hasPendingRequest = g.groupRequests.some(
-          (r) => r.status === "Pending" || r.status === "Confirmed"
-        )
-        if (noClaimedGroup && !hasPendingRequest) {
-          guestSmallGroupPrompt = {
-            guestId: matched.guestId,
-            existingProfile: {
-              lifeStageId: g.lifeStageId,
-              gender: g.gender,
-              language: g.language,
-              meetingPreference: g.meetingPreference,
-              workCity: g.workCity,
-              scheduleDayOfWeek: g.scheduleDayOfWeek,
-              scheduleTimeStart: g.scheduleTimeStart,
-              scheduleTimeEnd: g.scheduleTimeEnd,
-            },
-          }
-        }
-      }
-
-      return {
-        kind: "registrant" as const,
-        subjectId: matched.id,
-        name,
-        nickname: matched.nickname,
-        alreadyCheckedIn,
-        guestSmallGroupPrompt,
-      }
-    }
-
     // Event volunteers are matched on their linked member's phone/email and recorded
-    // with the same attendance machinery. A volunteer is never a registrant.
+    // with the same attendance machinery.
     const matchedVolunteers = (await findEventVolunteersForLookup(eventId)).filter((v) => {
       const email = v.member.email ?? ""
       const phone = v.member.phone ?? ""
       return email.toLowerCase() === lq || phone.replace(/\s+/g, "") === qNorm
     })
 
-    // A volunteer is never a registrant: if a volunteer matches, their volunteer record is
-    // the canonical check-in subject. Suppress any registrant match for the same lookup so
-    // the volunteer isn't forced to disambiguate against a stray registrant record.
-    const volunteerCandidates = await Promise.all(
-      matchedVolunteers.map((v) => resolveVolunteerCandidate(v, occurrenceId))
-    )
-    const candidates: CheckinRegistrantResult[] =
-      volunteerCandidates.length > 0
-        ? volunteerCandidates
-        : await Promise.all(allMatched.map(resolveRegistrant))
-
-    if (candidates.length === 0) return { success: true, data: null }
-    if (candidates.length > 1) {
-      return { success: true, data: { matchType: "ambiguous", candidates } }
+    return {
+      success: true,
+      data: await finishCheckinLookup(matchedRegistrants, matchedVolunteers, occurrenceId),
     }
-    return { success: true, data: candidates[0] }
+  } catch {
+    return { success: false, error: "Lookup failed. Please try again." }
+  }
+}
+
+export async function lookupCheckinRegistrantByName(
+  eventId: string,
+  firstName: string,
+  lastName: string,
+  occurrenceId: string | null
+): Promise<ActionResult<CheckinRegistrantResult | CheckinAmbiguousResult | null>> {
+  const fn = normalizeNameInput(firstName)
+  const ln = normalizeNameInput(lastName)
+  if (!fn || !ln) return { success: true, data: null }
+
+  try {
+    const matchedRegistrants = (await findEventRegistrantsForLookup(eventId)).filter((r) => {
+      const rowFirst = r.member?.firstName ?? r.guest?.firstName ?? r.firstName ?? ""
+      const rowLast = r.member?.lastName ?? r.guest?.lastName ?? r.lastName ?? ""
+      if (normalizeNameInput(rowLast) !== ln) return false
+      if (normalizeNameInput(rowFirst) === fn) return true
+      // Accept the registration nickname in place of the first name ("JR" for "Junior").
+      return r.nickname !== null && normalizeNameInput(r.nickname) === fn
+    })
+
+    const matchedVolunteers = (await findEventVolunteersForLookup(eventId)).filter(
+      (v) =>
+        normalizeNameInput(v.member.lastName) === ln &&
+        normalizeNameInput(v.member.firstName) === fn
+    )
+
+    return {
+      success: true,
+      data: await finishCheckinLookup(matchedRegistrants, matchedVolunteers, occurrenceId),
+    }
   } catch {
     return { success: false, error: "Lookup failed. Please try again." }
   }
@@ -1666,6 +1761,7 @@ async function resolveVolunteerCandidate(
     name: `${v.member.firstName} ${v.member.lastName}`.trim(),
     nickname: null,
     alreadyCheckedIn,
+    contactHint: contactHintFrom(v.member.phone, v.member.email),
     guestSmallGroupPrompt: null,
   }
 }
@@ -1681,49 +1777,7 @@ export async function lookupCheckinRegistrantByProfile(
   if (!ln || !birthMonth || !birthYear) return { success: true, data: null }
 
   try {
-    const registrants = await db.eventRegistrant.findMany({
-      where: { eventId },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        nickname: true,
-        attendedAt: true,
-        guestId: true,
-        member: {
-          select: {
-            firstName: true,
-            lastName: true,
-            email: true,
-            phone: true,
-            birthMonth: true,
-            birthYear: true,
-          },
-        },
-        guest: {
-          select: {
-            firstName: true,
-            lastName: true,
-            email: true,
-            phone: true,
-            birthMonth: true,
-            birthYear: true,
-            lifeStageId: true,
-            gender: true,
-            language: true,
-            meetingPreference: true,
-            workCity: true,
-            scheduleDayOfWeek: true,
-            scheduleTimeStart: true,
-            scheduleTimeEnd: true,
-            claimedSmallGroupId: true,
-            groupRequests: { select: { status: true } },
-          },
-        },
-      },
-    })
-
-    const allMatched = registrants.filter((r) => {
+    const matchedRegistrants = (await findEventRegistrantsForLookup(eventId)).filter((r) => {
       if (r.member) {
         return (
           r.member.lastName.toLowerCase() === ln &&
@@ -1741,56 +1795,6 @@ export async function lookupCheckinRegistrantByProfile(
       return false
     })
 
-    async function resolveRegistrant(matched: (typeof registrants)[number]) {
-      const firstName = matched.member?.firstName ?? matched.guest?.firstName ?? matched.firstName ?? ""
-      const lastName = matched.member?.lastName ?? matched.guest?.lastName ?? matched.lastName ?? ""
-      const name = `${firstName} ${lastName}`.trim()
-
-      let alreadyCheckedIn: boolean
-      if (occurrenceId !== null) {
-        const existing = await db.occurrenceAttendee.findUnique({
-          where: { occurrenceId_registrantId: { occurrenceId, registrantId: matched.id } },
-          select: { id: true },
-        })
-        alreadyCheckedIn = existing !== null
-      } else {
-        alreadyCheckedIn = matched.attendedAt !== null
-      }
-
-      let guestSmallGroupPrompt: GuestSmallGroupPrompt | null = null
-      if (matched.guestId && matched.guest) {
-        const g = matched.guest
-        const noClaimedGroup = !g.claimedSmallGroupId
-        const hasPendingRequest = g.groupRequests.some(
-          (r) => r.status === "Pending" || r.status === "Confirmed"
-        )
-        if (noClaimedGroup && !hasPendingRequest) {
-          guestSmallGroupPrompt = {
-            guestId: matched.guestId,
-            existingProfile: {
-              lifeStageId: g.lifeStageId,
-              gender: g.gender,
-              language: g.language,
-              meetingPreference: g.meetingPreference,
-              workCity: g.workCity,
-              scheduleDayOfWeek: g.scheduleDayOfWeek,
-              scheduleTimeStart: g.scheduleTimeStart,
-              scheduleTimeEnd: g.scheduleTimeEnd,
-            },
-          }
-        }
-      }
-
-      return {
-        kind: "registrant" as const,
-        subjectId: matched.id,
-        name,
-        nickname: matched.nickname,
-        alreadyCheckedIn,
-        guestSmallGroupPrompt,
-      }
-    }
-
     // Match event volunteers by their linked member's last name + birthday.
     const matchedVolunteers = (await findEventVolunteersForLookup(eventId)).filter(
       (v) =>
@@ -1799,22 +1803,10 @@ export async function lookupCheckinRegistrantByProfile(
         v.member.birthYear === birthYear
     )
 
-    // A volunteer is never a registrant: if a volunteer matches, their volunteer record is
-    // the canonical check-in subject. Suppress any registrant match for the same lookup so
-    // the volunteer isn't forced to disambiguate against a stray registrant record.
-    const volunteerCandidates = await Promise.all(
-      matchedVolunteers.map((v) => resolveVolunteerCandidate(v, occurrenceId))
-    )
-    const candidates: CheckinRegistrantResult[] =
-      volunteerCandidates.length > 0
-        ? volunteerCandidates
-        : await Promise.all(allMatched.map(resolveRegistrant))
-
-    if (candidates.length === 0) return { success: true, data: null }
-    if (candidates.length > 1) {
-      return { success: true, data: { matchType: "ambiguous", candidates } }
+    return {
+      success: true,
+      data: await finishCheckinLookup(matchedRegistrants, matchedVolunteers, occurrenceId),
     }
-    return { success: true, data: candidates[0] }
   } catch {
     return { success: false, error: "Lookup failed. Please try again." }
   }

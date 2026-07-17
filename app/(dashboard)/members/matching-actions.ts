@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
-import { matchSmallGroups } from "@/lib/matching"
+import { matchSmallGroups, matchCouplesGroups, type CoupleMatchResult } from "@/lib/matching"
 import type { MatchResult } from "@/lib/matching/types"
 
 type ActionResult<T> =
@@ -27,6 +27,21 @@ export async function findSmallGroupMatchesForMember(
     return { success: true, data: results }
   } catch {
     return { success: false, error: "Failed to compute matches" }
+  }
+}
+
+export async function findCouplesGroupMatchesForMember(
+  memberId: string,
+  spouseMemberId: string
+): Promise<ActionResult<CoupleMatchResult[]>> {
+  try {
+    const results = await matchCouplesGroups(
+      { memberIdA: memberId, memberIdB: spouseMemberId },
+      { limit: 5 }
+    )
+    return { success: true, data: results }
+  } catch {
+    return { success: false, error: "Failed to compute couples matches" }
   }
 }
 

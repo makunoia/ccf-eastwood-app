@@ -3,7 +3,8 @@ import { notFound } from "next/navigation"
 import { auth } from "@/lib/auth"
 import { canRead } from "@/lib/permissions"
 import { db } from "@/lib/db"
-import { CatchMechDetailClient } from "./catch-mech-detail-client"
+import { findSpouseOfPerson } from "@/lib/family-links"
+import { CatchMechDetailClient, type SpouseCardData } from "./catch-mech-detail-client"
 import type { CatchMechActivityEntry } from "./catch-mech-activity-log"
 
 const VALID_STATUSES = ["confirmed", "rejected", "pending"] as const
@@ -84,6 +85,7 @@ async function getDetailData(registrantId: string, eventId: string, prismaStatus
           select: {
             id: true,
             name: true,
+            groupType: true,
             leader: { select: { firstName: true, lastName: true } },
           },
         },
@@ -120,7 +122,51 @@ async function getDetailData(registrantId: string, eventId: string, prismaStatus
 
   if (!registrant) return null
 
-  return { registrant, request, lifeStages, smallGroupLogs }
+  // ── Spouse (derived from Family data) ─────────────────────────────────────
+  const spouse = registrant.memberId
+    ? await findSpouseOfPerson({ memberId: registrant.memberId })
+    : registrant.guestId
+      ? await findSpouseOfPerson({ guestId: registrant.guestId })
+      : null
+
+  let spouseCard: SpouseCardData | null = null
+  if (spouse) {
+    const [spouseGroup, spousePendingRequest] = await Promise.all([
+      spouse.smallGroupId
+        ? db.smallGroup.findUnique({
+            where: { id: spouse.smallGroupId },
+            select: { id: true, name: true },
+          })
+        : null,
+      db.smallGroupMemberRequest.findFirst({
+        where: {
+          status: "Pending",
+          breakoutGroupId: { in: breakoutGroupIds },
+          ...(spouse.memberId ? { memberId: spouse.memberId } : { guestId: spouse.guestId }),
+        },
+        select: {
+          id: true,
+          smallGroupId: true,
+          smallGroup: { select: { name: true } },
+        },
+      }),
+    ])
+    spouseCard = {
+      name: `${spouse.firstName} ${spouse.lastName}`,
+      isGuest: spouse.guestId !== null,
+      currentGroupId: spouseGroup?.id ?? null,
+      currentGroupName: spouseGroup?.name ?? null,
+      pendingRequest: spousePendingRequest
+        ? {
+            id: spousePendingRequest.id,
+            smallGroupId: spousePendingRequest.smallGroupId,
+            smallGroupName: spousePendingRequest.smallGroup.name,
+          }
+        : null,
+    }
+  }
+
+  return { registrant, request, lifeStages, smallGroupLogs, spouseCard }
 }
 
 export default async function CatchMechDetailPage({
@@ -140,7 +186,7 @@ export default async function CatchMechDetailPage({
   const data = await getDetailData(registrantId, eventId, STATUS_PRISMA[status])
   if (!data) notFound()
 
-  const { registrant, request, lifeStages, smallGroupLogs } = data
+  const { registrant, request, lifeStages, smallGroupLogs, spouseCard } = data
 
   let name: string
   if (registrant.member) {
@@ -207,6 +253,7 @@ export default async function CatchMechDetailPage({
       initialTab={initialTab}
       requestId={request?.id ?? null}
       activityEntries={activityEntries}
+      spouseCard={spouseCard}
     />
   )
 }

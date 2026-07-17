@@ -19,6 +19,7 @@ type SmallGroupsFiltersProps = {
   genderFocus: string
   meetingFormat: string
   status: string
+  groupType: string
 }
 
 export function SmallGroupsFilters({
@@ -28,21 +29,23 @@ export function SmallGroupsFilters({
   genderFocus,
   meetingFormat,
   status,
+  groupType,
 }: SmallGroupsFiltersProps) {
   const router = useRouter()
   const pathname = usePathname()
 
-  const activeCount = [lifeStageId, genderFocus, meetingFormat, status].filter(Boolean).length
+  const activeCount = [lifeStageId, genderFocus, meetingFormat, status, groupType].filter(Boolean).length
   const hasFilters = Boolean(search) || activeCount > 0
 
   function buildUrl(overrides: Record<string, string>) {
     const params = new URLSearchParams()
-    const current = { search, lifeStageId, genderFocus, meetingFormat, status, ...overrides }
+    const current = { search, lifeStageId, genderFocus, meetingFormat, status, groupType, ...overrides }
     if (current.search) params.set("search", current.search)
     if (current.lifeStageId) params.set("lifeStageId", current.lifeStageId)
     if (current.genderFocus) params.set("genderFocus", current.genderFocus)
     if (current.meetingFormat) params.set("meetingFormat", current.meetingFormat)
     if (current.status) params.set("status", current.status)
+    if (current.groupType) params.set("groupType", current.groupType)
     const qs = params.toString()
     return qs ? `${pathname}?${qs}` : pathname
   }
@@ -75,6 +78,22 @@ export function SmallGroupsFilters({
                 {ls.name}
               </SelectItem>
             ))}
+          </SelectContent>
+        </Select>
+      </FilterField>
+
+      <FilterField label="Group Type">
+        <Select
+          value={groupType || "all"}
+          onValueChange={(v) => setFilter("groupType", v === "all" ? "" : v)}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="Group Type" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Types</SelectItem>
+            <SelectItem value="Regular">Regular</SelectItem>
+            <SelectItem value="Couples">Couples</SelectItem>
           </SelectContent>
         </Select>
       </FilterField>

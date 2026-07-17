@@ -255,7 +255,23 @@ describe("getSessionsAttendanceExport", () => {
       ],
     })
 
-    return { event }
+    // Second session with a single check-in — used to verify the occurrence filter.
+    const secondOccurrence = await db.eventOccurrence.create({
+      data: {
+        eventId: event.id,
+        seriesId: series.id,
+        date: new Date("2026-03-08T00:00:00Z"),
+      },
+    })
+    await db.occurrenceAttendee.create({
+      data: {
+        occurrenceId: secondOccurrence.id,
+        registrantId: memberRegistrant.id,
+        checkedInAt: new Date("2026-03-08T01:00:00Z"),
+      },
+    })
+
+    return { event, occurrence, secondOccurrence }
   }
 
   it("returns one row per check-in with resolved names, types, and series", async () => {
@@ -265,7 +281,7 @@ describe("getSessionsAttendanceExport", () => {
     expect(result.success).toBe(true)
     if (!result.success) return
 
-    expect(result.data).toHaveLength(4)
+    expect(result.data).toHaveLength(5)
     // Sorted by check-in time within the occurrence — volunteer checked in first
     expect(result.data[0]).toMatchObject({
       sessionDate: "2026-03-01",
@@ -294,6 +310,44 @@ describe("getSessionsAttendanceExport", () => {
       mobile: "+63 917 555 6666",
       type: "Guest",
     })
+    // Sessions are ordered by date — the second session's check-in comes last
+    expect(result.data[4]).toMatchObject({
+      sessionDate: "2026-03-08",
+      firstName: "Maria",
+      lastName: "Santos",
+    })
+  })
+
+  it("returns only the given session's rows when an occurrenceId is passed", async () => {
+    const { event, secondOccurrence } = await seedEventWithAttendance()
+
+    const result = await getSessionsAttendanceExport(event.id, secondOccurrence.id)
+    expect(result.success).toBe(true)
+    if (!result.success) return
+
+    expect(result.data).toHaveLength(1)
+    expect(result.data[0]).toMatchObject({
+      sessionDate: "2026-03-08",
+      seriesTitle: "March Run",
+      firstName: "Maria",
+      lastName: "Santos",
+      type: "Member",
+    })
+  })
+
+  it("returns no rows when the occurrence belongs to a different event", async () => {
+    const { secondOccurrence } = await seedEventWithAttendance()
+    const otherEvent = await db.event.create({
+      data: {
+        name: "Other Event",
+        type: "Recurring",
+        startDate: new Date("2026-03-01T00:00:00Z"),
+        endDate: new Date("2026-12-31T00:00:00Z"),
+      },
+    })
+
+    const result = await getSessionsAttendanceExport(otherEvent.id, secondOccurrence.id)
+    expect(result).toEqual({ success: true, data: [] })
   })
 
   it("returns an empty list for an event with no attendance", async () => {

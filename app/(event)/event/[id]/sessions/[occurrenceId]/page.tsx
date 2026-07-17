@@ -1,11 +1,14 @@
 import { notFound } from "next/navigation"
 import { UserCheck, UserPlus, Users } from "lucide-react"
+import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
+import { canExport } from "@/lib/permissions"
 import { isEstablishedAttendee } from "@/lib/session-stats"
 import { BreadcrumbOverride } from "@/components/breadcrumb-context"
 import { DetailPageHeader } from "@/components/detail-page-header"
 import { StatCard } from "@/components/session-stat-card"
 import { SessionAttendeesTable } from "./session-attendees-table"
+import { SessionExportButton } from "./session-export-button"
 
 async function getOccurrenceDetail(occurrenceId: string) {
   const occurrence = await db.eventOccurrence.findUnique({
@@ -167,6 +170,7 @@ export default async function OccurrenceDetailPage({
   params: Promise<{ id: string; occurrenceId: string }>
 }) {
   const { id, occurrenceId } = await params
+  const session = await auth()
   const data = await getOccurrenceDetail(occurrenceId)
   if (!data || data.occurrence.event.id !== id) notFound()
 
@@ -329,6 +333,17 @@ export default async function OccurrenceDetailPage({
             {occurrence.event.ministries.length > 0 && " · "}
             {totalCount} attended
           </p>
+        }
+        action={
+          canExport(session, "Events") ? (
+            <SessionExportButton
+              eventId={id}
+              occurrenceId={occurrenceId}
+              sessionDate={occurrence.date.toISOString().split("T")[0]}
+              includeSeries={occurrence.event.type === "Recurring"}
+              disabled={totalCount === 0}
+            />
+          ) : undefined
         }
       />
 

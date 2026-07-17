@@ -10,6 +10,7 @@ import {
   IconX,
   IconClock,
   IconChevronDown,
+  IconHeart,
 } from "@tabler/icons-react"
 import { toast } from "sonner"
 
@@ -55,12 +56,16 @@ import {
   updateSmallGroup,
   deleteSmallGroup,
   addMemberToGroup,
+  addCoupleToGroup,
+  getSpouseForMember,
   removeMemberFromGroup,
   updateMemberGroupStatus,
   assignGuestToGroupTemporarily,
   assignMemberTransferTemporarily,
   cancelTempAssignment,
 } from "./actions"
+import type { SpouseInfo } from "@/lib/family-links"
+import { Checkbox } from "@/components/ui/checkbox"
 import { searchGuests, promoteGuestToMember } from "@/app/(dashboard)/guests/actions"
 import { Badge } from "@/components/ui/badge"
 import { MobileFormActions } from "@/components/mobile-form-actions"
@@ -71,6 +76,8 @@ type GroupMember = {
   firstName: string
   lastName: string
   groupStatus: "Member" | "Timothy" | "Leader" | null
+  /** For Couples groups: roster memberId of this member's spouse, if also in the group. */
+  spouseId: string | null
 }
 
 type GuestSearchResult = {
@@ -128,6 +135,7 @@ function toFormValues(group: SmallGroupRow): SmallGroupFormValues {
     name: group.name,
     leaderId: group.leaderId ?? "",
     parentGroupId: group.parentGroupId ?? "",
+    groupType: group.groupType ?? "Regular",
     lifeStageIds: group.lifeStages.map((ls) => ls.id),
     genderFocus: group.genderFocus ?? "",
     language: group.language ?? [],
@@ -204,6 +212,11 @@ export function SmallGroupForm({
   const [addMemberOpen, setAddMemberOpen] = React.useState(false)
   const [selectedMemberId, setSelectedMemberId] = React.useState("")
   const [addingMember, setAddingMember] = React.useState(false)
+  // Couples group spouse lookup for the add-member dialog
+  const [spouseInfo, setSpouseInfo] = React.useState<SpouseInfo | null>(null)
+  const [spouseLookupDone, setSpouseLookupDone] = React.useState(false)
+  const [loadingSpouse, setLoadingSpouse] = React.useState(false)
+  const [includeSpouse, setIncludeSpouse] = React.useState(true)
   const [removingMemberId, setRemovingMemberId] = React.useState<string | null>(null)
   const [removeConfirmMember, setRemoveConfirmMember] = React.useState<GroupMember | null>(null)
   const [addGuestOpen, setAddGuestOpen] = React.useState(false)
@@ -233,6 +246,17 @@ export function SmallGroupForm({
     setForm((prev) => ({ ...prev, [field]: value }))
   }
 
+  const isCouplesGroup = group?.groupType === "Couples"
+
+  function setGroupType(value: string) {
+    setForm((prev) => ({
+      ...prev,
+      groupType: value,
+      // Couples groups always host married pairs — gender focus is Mixed
+      ...(value === "Couples" ? { genderFocus: "Mixed" } : {}),
+    }))
+  }
+
   function handleRevert() {
     setForm(group ? toFormValues(group) : defaultSmallGroupForm)
   }
@@ -244,6 +268,30 @@ export function SmallGroupForm({
   const currentMemberIds = new Set(groupMembers?.map((m) => m.id) ?? [])
   const availableMembers = members.filter((m) => !currentMemberIds.has(m.id))
 
+  // Couples groups: order the roster so spouses sit next to each other
+  const rosterMembers = React.useMemo(() => {
+    if (!groupMembers) return groupMembers
+    if (!isCouplesGroup) return groupMembers
+    const byId = new Map(groupMembers.map((m) => [m.id, m]))
+    const seen = new Set<string>()
+    const ordered: GroupMember[] = []
+    for (const m of groupMembers) {
+      if (seen.has(m.id)) continue
+      seen.add(m.id)
+      ordered.push(m)
+      const partner = m.spouseId ? byId.get(m.spouseId) : undefined
+      if (partner && !seen.has(partner.id)) {
+        seen.add(partner.id)
+        ordered.push(partner)
+      }
+    }
+    return ordered
+  }, [groupMembers, isCouplesGroup])
+
+  const rosterNameById = new Map(
+    (groupMembers ?? []).map((m) => [m.id, `${m.firstName} ${m.lastName}`])
+  )
+
   const memberLimitNum =
     form.memberLimit !== "" ? parseInt(form.memberLimit, 10) : null
   const currentMemberCount = groupMembers?.length ?? 0
@@ -254,15 +302,42 @@ export function SmallGroupForm({
     currentMemberCount >= memberLimitNum
 
 
+  function resetAddMemberDialog() {
+    setSelectedMemberId("")
+    setSpouseInfo(null)
+    setSpouseLookupDone(false)
+    setLoadingSpouse(false)
+    setIncludeSpouse(true)
+  }
+
+  async function handleSelectMember(memberId: string) {
+    setSelectedMemberId(memberId)
+    setSpouseInfo(null)
+    setSpouseLookupDone(false)
+    setIncludeSpouse(true)
+    if (!memberId || !isCouplesGroup) return
+    setLoadingSpouse(true)
+    const result = await getSpouseForMember(memberId)
+    setLoadingSpouse(false)
+    if (result.success) setSpouseInfo(result.data)
+    setSpouseLookupDone(true)
+  }
+
+  const spouseAlreadyInGroup = spouseInfo?.smallGroupId === group?.id
+  const addAsCouple =
+    isCouplesGroup && !!spouseInfo && !spouseAlreadyInGroup && includeSpouse
+
   async function handleAddMember() {
     if (!selectedMemberId || !group) return
     setAddingMember(true)
-    const result = await addMemberToGroup(group.id, selectedMemberId)
+    const result = addAsCouple
+      ? await addCoupleToGroup(group.id, selectedMemberId, spouseInfo!.memberId)
+      : await addMemberToGroup(group.id, selectedMemberId)
     setAddingMember(false)
     if (result.success) {
-      toast.success("Member added to group")
+      toast.success(addAsCouple ? "Couple added to group" : "Member added to group")
       setAddMemberOpen(false)
-      setSelectedMemberId("")
+      resetAddMemberDialog()
       router.refresh()
     } else {
       toast.error(result.error)
@@ -502,6 +577,28 @@ export function SmallGroupForm({
                   />
                 </div>
 
+                <div className="space-y-2">
+                  <Label htmlFor="groupType">
+                    Group Type <span className="text-destructive">*</span>
+                  </Label>
+                  <Select value={form.groupType} onValueChange={setGroupType}>
+                    <SelectTrigger id="groupType">
+                      <SelectValue placeholder="Select group type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Regular">Regular</SelectItem>
+                      <SelectItem value="Couples">Couples</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {form.groupType === "Couples" && (
+                    <p className="text-xs text-muted-foreground">
+                      Couples groups host married pairs. Members are added together
+                      with their spouse (from Family records) and gender focus is
+                      always Mixed.
+                    </p>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="lifeStageIds">
@@ -523,6 +620,7 @@ export function SmallGroupForm({
                     <Select
                       value={form.genderFocus}
                       onValueChange={(v) => set("genderFocus", v)}
+                      disabled={form.groupType === "Couples"}
                     >
                       <SelectTrigger id="genderFocus">
                         <SelectValue placeholder="Select gender focus" />
@@ -770,16 +868,29 @@ export function SmallGroupForm({
                   <p className="text-sm text-muted-foreground">No members in this group yet.</p>
                 ) : (
                   <div className="rounded-md border divide-y">
-                    {groupMembers.map((m) => (
+                    {(rosterMembers ?? groupMembers).map((m) => (
                       <div key={m.id} className="flex items-center gap-3 px-4 py-3">
-                        <Link
-                          href={`/members/${m.id}`}
-                          className="flex-1 min-w-0 hover:underline"
-                        >
-                          <span className="text-sm font-medium">
-                            {m.firstName} {m.lastName}
-                          </span>
-                        </Link>
+                        <div className="flex flex-1 min-w-0 items-center gap-2">
+                          <Link href={`/members/${m.id}`} className="min-w-0 hover:underline">
+                            <span className="text-sm font-medium">
+                              {m.firstName} {m.lastName}
+                            </span>
+                          </Link>
+                          {isCouplesGroup &&
+                            (m.spouseId ? (
+                              <Badge
+                                variant="secondary"
+                                className="gap-1 bg-rose-100 text-rose-800 border-transparent"
+                              >
+                                <IconHeart className="size-3" />
+                                {rosterNameById.get(m.spouseId)?.split(" ")[0] ?? "Couple"}
+                              </Badge>
+                            ) : (
+                              <Badge className="bg-amber-100 text-amber-700 border-transparent">
+                                No partner in group
+                              </Badge>
+                            ))}
+                        </div>
                         <Select
                           value={m.groupStatus ?? ""}
                           onValueChange={(v) => handleStatusChange(m.id, v as "Member" | "Timothy" | "Leader")}
@@ -892,12 +1003,21 @@ export function SmallGroupForm({
       )}
 
       {/* Add member dialog */}
-      <Dialog open={addMemberOpen} onOpenChange={(open) => { setAddMemberOpen(open); if (!open) setSelectedMemberId("") }}>
+      <Dialog open={addMemberOpen} onOpenChange={(open) => { setAddMemberOpen(open); if (!open) resetAddMemberDialog() }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add member</DialogTitle>
+            <DialogTitle>{isCouplesGroup ? "Add couple" : "Add member"}</DialogTitle>
             <DialogDescription>
-              Select a member to add to <span className="font-medium">{group?.name}</span>.
+              {isCouplesGroup ? (
+                <>
+                  Select a member — their spouse (from Family records) is added
+                  together with them to <span className="font-medium">{group?.name}</span>.
+                </>
+              ) : (
+                <>
+                  Select a member to add to <span className="font-medium">{group?.name}</span>.
+                </>
+              )}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 py-2">
@@ -913,17 +1033,56 @@ export function SmallGroupForm({
                   hint: m.smallGroupId && m.smallGroupId !== group?.id ? "in another group" : undefined,
                 }))}
                 value={selectedMemberId}
-                onValueChange={setSelectedMemberId}
+                onValueChange={handleSelectMember}
                 placeholder="Select a member"
               />
+            )}
+
+            {/* Couples group: spouse lookup result */}
+            {isCouplesGroup && selectedMemberId && (
+              <div className="pt-1">
+                {loadingSpouse ? (
+                  <p className="text-sm text-muted-foreground">Looking up spouse…</p>
+                ) : spouseInfo && spouseAlreadyInGroup ? (
+                  <p className="text-sm text-muted-foreground">
+                    Spouse{" "}
+                    <span className="font-medium">
+                      {spouseInfo.firstName} {spouseInfo.lastName}
+                    </span>{" "}
+                    is already in this group.
+                  </p>
+                ) : spouseInfo ? (
+                  <label className="flex items-start gap-2 rounded-md border p-3 text-sm">
+                    <Checkbox
+                      checked={includeSpouse}
+                      onCheckedChange={(v) => setIncludeSpouse(v === true)}
+                      className="mt-0.5"
+                    />
+                    <span>
+                      Also add spouse{" "}
+                      <span className="font-medium">
+                        {spouseInfo.firstName} {spouseInfo.lastName}
+                      </span>
+                      {spouseInfo.smallGroupId && spouseInfo.smallGroupId !== group?.id && (
+                        <span className="text-muted-foreground"> (currently in another group)</span>
+                      )}
+                    </span>
+                  </label>
+                ) : spouseLookupDone ? (
+                  <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-800">
+                    No spouse on record for this member. You can add them
+                    individually and link their family under Families later.
+                  </p>
+                ) : null}
+              </div>
             )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddMemberOpen(false)} disabled={addingMember}>
               Cancel
             </Button>
-            <Button onClick={handleAddMember} disabled={!selectedMemberId || addingMember || availableMembers.length === 0}>
-              {addingMember ? "Adding…" : "Add member"}
+            <Button onClick={handleAddMember} disabled={!selectedMemberId || addingMember || loadingSpouse || availableMembers.length === 0}>
+              {addingMember ? "Adding…" : addAsCouple ? "Add couple" : "Add member"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -995,6 +1154,15 @@ export function SmallGroupForm({
             <DialogTitle>Remove member</DialogTitle>
             <DialogDescription>
               Remove <span className="font-medium">{removeConfirmMember?.firstName} {removeConfirmMember?.lastName}</span> from <span className="font-medium">{group?.name}</span>? They will no longer belong to this group.
+              {isCouplesGroup && removeConfirmMember?.spouseId && (
+                <>
+                  {" "}Their spouse{" "}
+                  <span className="font-medium">
+                    {rosterNameById.get(removeConfirmMember.spouseId)}
+                  </span>{" "}
+                  stays in the group — remove them separately if the couple is leaving together.
+                </>
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

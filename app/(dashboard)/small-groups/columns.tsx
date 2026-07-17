@@ -30,6 +30,7 @@ export type SmallGroupRow = {
   id: string
   name: string
   status: "Active" | "Pending" | "Inactive"
+  groupType: "Regular" | "Couples"
   leaderName: string | null
   leaderId: string | null
   // Extra fields used by Export — not displayed in the table
@@ -150,6 +151,11 @@ export function buildColumns(selectable = false): ColumnDef<SmallGroupRow>[] {
           >
             {row.original.name}
           </Link>
+          {row.original.groupType === "Couples" && (
+            <span className="inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-800">
+              Couples
+            </span>
+          )}
           {row.original.status === "Pending" && (
             <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
               Pending

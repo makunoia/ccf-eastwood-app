@@ -5,6 +5,7 @@ import type { Guest } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import { isSuperAdmin } from "@/lib/permissions"
+import { repointFamilyLinks } from "@/lib/family-links"
 
 type DuplicateRecord = {
   id: string
@@ -230,6 +231,7 @@ async function foldGuestIntoGuest(tx: TxClient, keeper: Guest, loser: Guest) {
   await tx.eventRegistrant.updateMany({ where: { guestId: loser.id }, data: { guestId: keeper.id } })
   await tx.smallGroupMemberRequest.updateMany({ where: { guestId: loser.id }, data: { guestId: keeper.id } })
   await tx.smallGroupLog.updateMany({ where: { guestId: loser.id }, data: { guestId: keeper.id } })
+  await repointFamilyLinks(tx, { guestId: loser.id }, { guestId: keeper.id })
 
   // Delete the loser BEFORE filling the keeper — `fillNulls` can copy a value the
   // loser still holds, colliding with its own row. `loser` is already in memory.
@@ -278,6 +280,8 @@ async function mergeIntoMember(tx: TxClient, keeperId: string, losers: LoserRef[
         }
       }
 
+      await repointFamilyLinks(tx, { memberId: m.id }, { memberId: keeperId })
+
       // Delete the loser BEFORE filling the keeper. `fillNulls` can copy unique
       // fields (email, phone) from the loser onto the keeper; if the loser still
       // existed, that update would collide with the loser's own value and throw
@@ -314,6 +318,7 @@ async function mergeIntoMember(tx: TxClient, keeperId: string, losers: LoserRef[
         where: { guestId: g.id },
         data: { guestId: null, memberId: keeperId },
       })
+      await repointFamilyLinks(tx, { guestId: g.id }, { memberId: keeperId })
 
       // Fill keeper's null/empty fields from the Guest's matching data
       const fill = fillNulls(keeper as unknown as Record<string, unknown>, g as unknown as Record<string, unknown>)
