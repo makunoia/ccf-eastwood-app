@@ -1,6 +1,11 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { BaptismClient } from "./baptism-client"
+
+export const metadata: Metadata = {
+  title: "Baptism",
+}
 
 async function getEventBaptism(id: string) {
   return db.event.findUnique({

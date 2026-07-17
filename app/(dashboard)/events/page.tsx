@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { EventType, Prisma } from "@/app/generated/prisma/client"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
@@ -7,6 +8,10 @@ import { type EventRow } from "./columns"
 import { EventsTable } from "./events-table"
 import { EventsToolbar } from "./toolbar"
 import { EventsFilters } from "./events-filters"
+
+export const metadata: Metadata = {
+  title: "Events",
+}
 
 async function getEvents(where: Prisma.EventWhereInput): Promise<EventRow[]> {
   const events = await db.event.findMany({

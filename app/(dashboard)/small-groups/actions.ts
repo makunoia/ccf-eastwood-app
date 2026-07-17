@@ -719,6 +719,8 @@ export async function cancelTempAssignment(
     if (request.status !== "Pending") {
       return { success: false, error: "This request has already been resolved" }
     }
+    // Only a Catch Mech decline is groupless, and those are never Pending.
+    if (!request.smallGroupId) return { success: false, error: "Request not found" }
 
     const actorId = await getActorId()
     const personName = request.guest

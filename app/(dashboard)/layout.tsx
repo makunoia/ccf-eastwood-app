@@ -4,6 +4,8 @@ import { AppSidebar } from "@/components/app-sidebar"
 import { SiteHeader } from "@/components/site-header"
 import { BreadcrumbProvider } from "@/components/breadcrumb-context"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
+import { AssistantPanel } from "@/components/assistant/assistant-panel"
+import { isSuperAdmin } from "@/lib/permissions"
 
 export default async function DashboardLayout({
   children,
@@ -40,6 +42,7 @@ export default async function DashboardLayout({
             {children}
           </div>
         </BreadcrumbProvider>
+        {isSuperAdmin(session) && <AssistantPanel />}
       </SidebarInset>
     </SidebarProvider>
   )

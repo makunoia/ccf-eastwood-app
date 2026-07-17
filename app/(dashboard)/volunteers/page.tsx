@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { Prisma, VolunteerStatus } from "@/app/generated/prisma/client"
 
 import { db } from "@/lib/db"
@@ -6,6 +7,10 @@ import { PageHeader } from "@/components/page-header"
 import { VolunteersTable } from "./volunteers-table"
 import { VolunteerImportTrigger } from "./volunteer-import-trigger"
 import { VolunteersFilters } from "./volunteers-filters"
+
+export const metadata: Metadata = {
+  title: "Volunteers",
+}
 
 async function getVolunteersByMember(
   where: Prisma.VolunteerWhereInput

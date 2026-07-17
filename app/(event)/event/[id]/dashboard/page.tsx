@@ -1,9 +1,14 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { EventDashboardClient } from "./dashboard-client"
 import { ensureMultiDayOccurrences } from "@/app/(dashboard)/events/actions"
 import { loadRecurringSeriesSummaries } from "@/lib/events/series-summary"
 import { getEventSetupChecklist } from "@/lib/events/setup-checklist"
+
+export const metadata: Metadata = {
+  title: "Dashboard",
+}
 
 type PeriodFilter = "7d" | "30d" | "90d" | "all"
 type UngroupedParticipant = {

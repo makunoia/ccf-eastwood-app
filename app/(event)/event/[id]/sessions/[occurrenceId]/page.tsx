@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { UserCheck, UserPlus, Users } from "lucide-react"
 import { auth } from "@/lib/auth"
@@ -162,6 +163,28 @@ function getAttendeeName(registrant: {
   if (registrant.member) return `${registrant.member.firstName} ${registrant.member.lastName}`
   if (registrant.guest) return `${registrant.guest.firstName} ${registrant.guest.lastName}`
   return `${registrant.firstName ?? ""} ${registrant.lastName ?? ""}`.trim() || null
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string; occurrenceId: string }>
+}): Promise<Metadata> {
+  const { id, occurrenceId } = await params
+  const occurrence = await db.eventOccurrence.findFirst({
+    where: { id: occurrenceId, eventId: id },
+    select: { date: true },
+  })
+  if (!occurrence) return { title: "Session" }
+  // Shorter than the in-page header — a tab has no room for the weekday.
+  return {
+    title: occurrence.date.toLocaleDateString("en-PH", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      timeZone: "UTC",
+    }),
+  }
 }
 
 export default async function OccurrenceDetailPage({

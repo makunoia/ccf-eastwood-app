@@ -1,5 +1,7 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
+import { getEventName } from "@/lib/metadata"
 import { VolunteerInfoForm } from "./volunteer-info-form"
 import { PublicFormShell } from "@/components/public-form-shell"
 import { FormClosed } from "@/components/form-closed"
@@ -36,6 +38,16 @@ async function getPageData(id: string) {
     db.lifeStage.findMany({ orderBy: { order: "asc" }, select: { id: true, name: true } }),
   ])
   return { event, lifeStages }
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>
+}): Promise<Metadata> {
+  const { id } = await params
+  const name = await getEventName(id)
+  return { title: { absolute: name ? `Volunteer Info · ${name}` : "Volunteer Info" } }
 }
 
 export default async function VolunteerInfoPage({

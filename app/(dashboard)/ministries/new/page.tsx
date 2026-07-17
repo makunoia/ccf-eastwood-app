@@ -1,5 +1,10 @@
+import type { Metadata } from "next"
 import { db } from "@/lib/db"
 import { MinistryForm } from "../ministry-form"
+
+export const metadata: Metadata = {
+  title: "New Ministry",
+}
 
 async function getLifeStages() {
   return db.lifeStage.findMany({

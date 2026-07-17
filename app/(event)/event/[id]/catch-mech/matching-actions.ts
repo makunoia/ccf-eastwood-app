@@ -414,6 +414,17 @@ export async function reopenCatchMechRequest(
       return { success: false, error: "Only confirmed or rejected decisions can be undone" }
     }
 
+    // A groupless decline (a Timothy who leads no group yet) has no group to reopen
+    // into, so undoing it means dropping the record — that alone returns the person
+    // to the faci's list. No log either: SmallGroupLog is group-scoped.
+    const smallGroupId = request.smallGroupId
+    if (!smallGroupId) {
+      await db.smallGroupMemberRequest.delete({ where: { id: request.id } })
+      revalidatePath(`/event/${eventId}/catch-mech`, "layout")
+      revalidatePath(`/event/${eventId}/dashboard`)
+      return { success: true, data: undefined }
+    }
+
     await db.$transaction(async (tx) => {
       // ── Rejected → Pending: simply reopen the request ──────────────────────
       if (request.status === "Rejected") {
@@ -423,7 +434,7 @@ export async function reopenCatchMechRequest(
         })
         await tx.smallGroupLog.create({
           data: {
-            smallGroupId: request.smallGroupId,
+            smallGroupId,
             action: "TempAssignmentCreated",
             memberId: request.memberId ?? null,
             guestId: request.guestId ?? null,
@@ -451,7 +462,7 @@ export async function reopenCatchMechRequest(
         })
         await tx.smallGroupLog.create({
           data: {
-            smallGroupId: request.smallGroupId,
+            smallGroupId,
             action: "MemberRemoved",
             guestId,
             performedByUserId: actorId,
@@ -476,7 +487,7 @@ export async function reopenCatchMechRequest(
         })
         await tx.smallGroupLog.create({
           data: {
-            smallGroupId: request.smallGroupId,
+            smallGroupId,
             action: "MemberRemoved",
             memberId: member.id,
             performedByUserId: actorId,

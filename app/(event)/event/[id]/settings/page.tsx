@@ -1,6 +1,11 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { EventSettingsClient } from "./settings-client"
+
+export const metadata: Metadata = {
+  title: "Settings",
+}
 
 function toDateInput(d: Date | null): string {
   return d ? d.toISOString().split("T")[0] : ""

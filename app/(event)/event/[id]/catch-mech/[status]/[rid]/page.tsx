@@ -1,19 +1,14 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 
 import { auth } from "@/lib/auth"
 import { canRead } from "@/lib/permissions"
 import { db } from "@/lib/db"
+import { registrantName, registrantNameSelect } from "@/lib/metadata"
 import { findSpouseOfPerson } from "@/lib/family-links"
 import { CatchMechDetailClient, type SpouseCardData } from "./catch-mech-detail-client"
 import type { CatchMechActivityEntry } from "./catch-mech-activity-log"
-
-const VALID_STATUSES = ["confirmed", "rejected", "pending"] as const
-type Status = (typeof VALID_STATUSES)[number]
-const STATUS_PRISMA: Record<Status, "Confirmed" | "Rejected" | "Pending"> = {
-  confirmed: "Confirmed",
-  rejected: "Rejected",
-  pending: "Pending",
-}
+import { SLUG_CONFIG, isCatchMechSlug } from "../../status-slug"
 
 async function getDetailData(registrantId: string, eventId: string, prismaStatus: "Confirmed" | "Rejected" | "Pending") {
   const eventBreakoutGroups = await db.breakoutGroup.findMany({
@@ -146,8 +141,7 @@ async function getDetailData(registrantId: string, eventId: string, prismaStatus
         },
         select: {
           id: true,
-          smallGroupId: true,
-          smallGroup: { select: { name: true } },
+          smallGroup: { select: { id: true, name: true } },
         },
       }),
     ])
@@ -156,10 +150,10 @@ async function getDetailData(registrantId: string, eventId: string, prismaStatus
       isGuest: spouse.guestId !== null,
       currentGroupId: spouseGroup?.id ?? null,
       currentGroupName: spouseGroup?.name ?? null,
-      pendingRequest: spousePendingRequest
+      pendingRequest: spousePendingRequest?.smallGroup
         ? {
             id: spousePendingRequest.id,
-            smallGroupId: spousePendingRequest.smallGroupId,
+            smallGroupId: spousePendingRequest.smallGroup.id,
             smallGroupName: spousePendingRequest.smallGroup.name,
           }
         : null,
@@ -167,6 +161,19 @@ async function getDetailData(registrantId: string, eventId: string, prismaStatus
   }
 
   return { registrant, request, lifeStages, smallGroupLogs, spouseCard }
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string; rid: string }>
+}): Promise<Metadata> {
+  const { id: eventId, rid } = await params
+  const registrant = await db.eventRegistrant.findFirst({
+    where: { id: rid, eventId },
+    select: registrantNameSelect,
+  })
+  return { title: `${registrantName(registrant, "Registrant")} · Catch Mech` }
 }
 
 export default async function CatchMechDetailPage({
@@ -180,10 +187,10 @@ export default async function CatchMechDetailPage({
   const { tab } = await searchParams
   const initialTab = tab === "small-group" ? "small-group" : "details"
 
-  if (!VALID_STATUSES.includes(rawStatus as Status)) notFound()
-  const status = rawStatus as Status
+  if (!isCatchMechSlug(rawStatus)) notFound()
+  const status = rawStatus
 
-  const data = await getDetailData(registrantId, eventId, STATUS_PRISMA[status])
+  const data = await getDetailData(registrantId, eventId, SLUG_CONFIG[status].prismaStatus)
   if (!data) notFound()
 
   const { registrant, request, lifeStages, smallGroupLogs, spouseCard } = data

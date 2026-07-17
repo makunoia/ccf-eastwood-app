@@ -1,9 +1,14 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import { canWrite } from "@/lib/permissions"
 import { BatchSelectionProvider } from "@/components/batch/batch-selection-provider"
 import { RegistrantsClient } from "./registrants-client"
+
+export const metadata: Metadata = {
+  title: "Registrants",
+}
 
 async function getEventRegistrants(id: string, search: string, typeFilter: string) {
   const event = await db.event.findUnique({

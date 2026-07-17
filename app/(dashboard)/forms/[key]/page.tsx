@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import Link from "next/link"
 import { IconArrowLeft } from "@tabler/icons-react"
@@ -7,6 +8,16 @@ import { BreadcrumbOverride } from "@/components/breadcrumb-context"
 import { FORM_REGISTRY } from "@/lib/forms/registry"
 import { getFormConfig } from "@/lib/forms/config"
 import { FormConfigEditor } from "../form-config-editor"
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ key: string }>
+}): Promise<Metadata> {
+  const { key } = await params
+  const meta = FORM_REGISTRY[key as FormKey]
+  return { title: { absolute: meta ? `${meta.label} · Forms` : "Forms" } }
+}
 
 export default async function GlobalFormEditorPage({
   params,

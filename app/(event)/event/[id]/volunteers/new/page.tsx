@@ -1,6 +1,11 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { NewEventVolunteerForm } from "./new-event-volunteer-form"
+
+export const metadata: Metadata = {
+  title: "New Volunteer",
+}
 
 async function getData(eventId: string) {
   const [event, members] = await Promise.all([

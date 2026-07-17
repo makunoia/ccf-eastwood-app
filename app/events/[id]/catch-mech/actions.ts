@@ -3,6 +3,10 @@
 import { DeclineReason, type Prisma } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import { repointFamilyLinks } from "@/lib/family-links"
+import {
+  resolveCatchMechTargets,
+  type CandidateGroup,
+} from "@/lib/catch-mech/targets"
 import { revalidatePath } from "next/cache"
 
 type ActionResult<T = void> =
@@ -76,6 +80,9 @@ export async function verifyCatchMechFaci(
 export type ConfirmDecision = {
   registrantId: string
   status: "confirmed" | "pending" | "declined"
+  // Which of the faci's groups absorbs this person. Required on confirm when the
+  // faci has more than one candidate group; ignored otherwise.
+  targetGroupId?: string
   declineReason?: DeclineReason
   // Free-text detail, only used when declineReason is "Others"
   reason?: string
@@ -92,6 +99,44 @@ function validateDecisions(decisions: ConfirmDecision[]): string | null {
     }
   }
   return null
+}
+
+/**
+ * A faci leading several groups picks a destination per confirmed person. With one
+ * candidate the picker never renders, so the single group is implied.
+ */
+function validateTargets(
+  decisions: ConfirmDecision[],
+  candidates: CandidateGroup[]
+): string | null {
+  if (candidates.length <= 1) return null
+  for (const d of decisions) {
+    if (d.status !== "confirmed") continue
+    if (!d.targetGroupId) {
+      return "Please choose which small group each confirmed person will join"
+    }
+    if (!candidates.some((c) => c.id === d.targetGroupId)) {
+      return "You can only confirm people into a small group you lead"
+    }
+  }
+  return null
+}
+
+/** A decision paired with the group it resolves to (null = groupless decline). */
+type ResolvedDecision = ConfirmDecision & { groupId: string | null }
+
+function resolveTargets(
+  decisions: ConfirmDecision[],
+  candidates: CandidateGroup[],
+  declineGroupId: string | null
+): ResolvedDecision[] {
+  return decisions.map((d) => {
+    if (d.status === "confirmed") {
+      return { ...d, groupId: d.targetGroupId ?? candidates[0]?.id ?? null }
+    }
+    if (d.status === "declined") return { ...d, groupId: declineGroupId }
+    return { ...d, groupId: null }
+  })
 }
 
 export type ConfirmResult =
@@ -114,14 +159,22 @@ export async function submitCatchMechConfirmations(
       eventId: true,
       facilitatorVolunteerId: true,
       breakoutGroupId: true,
-      breakoutGroup: { select: { linkedSmallGroupId: true, facilitatorId: true } },
+      breakoutGroup: {
+        select: {
+          facilitatorId: true,
+          linkedSmallGroup: { select: { id: true, name: true } },
+        },
+      },
       facilitator: {
         select: {
           memberId: true,
           member: {
             select: {
               id: true,
-              ledGroups: { select: { id: true } },
+              ledGroups: {
+                select: { id: true, name: true },
+                orderBy: { createdAt: "asc" },
+              },
             },
           },
         },
@@ -132,41 +185,21 @@ export async function submitCatchMechConfirmations(
     return { success: false, error: "Session not found or expired" }
   }
 
-  const faciMember = session.facilitator.member
-  // The breakout's linked group belongs to the LEAD facilitator. A co-facilitator
-  // confirms into their OWN small group, so they ignore the link entirely.
-  const isLeadFaci = session.facilitatorVolunteerId === session.breakoutGroup.facilitatorId
-  const effectiveLink = isLeadFaci ? session.breakoutGroup.linkedSmallGroupId : null
+  const { candidates, declineGroupId } = resolveCatchMechTargets(session)
 
-  // Resolve the target group: an explicit link (lead faci only) wins; otherwise the
-  // acting faci's own led group — unambiguous only when they lead exactly one.
-  const targetGroupId =
-    effectiveLink ??
-    (faciMember.ledGroups.length === 1 ? faciMember.ledGroups[0].id : null)
-
-  if (!targetGroupId) {
-    if (faciMember.ledGroups.length === 0) {
-      // Timothy (leads no group, no link) — must create their own group first
-      const hasConfirmed = decisions.some((d) => d.status === "confirmed")
-      if (hasConfirmed) {
-        return { success: true, requiresGroupName: true }
-      }
-      // No confirmed members (all pending/declined) — nothing to persist without a group
-      return { success: true, requiresGroupName: false }
-    }
-    return {
-      success: false,
-      error:
-        "You lead multiple small groups — ask an admin to link this breakout group to one of them first",
-    }
+  const targetError = validateTargets(decisions, candidates)
+  if (targetError) {
+    return { success: false, error: targetError }
   }
 
-  const smallGroup = await db.smallGroup.findUnique({
-    where: { id: targetGroupId },
-    select: { id: true, status: true },
-  })
-  if (!smallGroup) {
-    return { success: false, error: "Could not find your small group" }
+  // Timothy — leads no group and none is linked. They can only absorb someone once
+  // they have a group, so a confirmation sends them to the name step first. Declines
+  // need no group and persist right here.
+  if (candidates.length === 0) {
+    if (decisions.some((d) => d.status === "confirmed")) {
+      return { success: true, requiresGroupName: true }
+    }
+    return persistGrouplessDeclines(session, decisions)
   }
 
   const [event, { registrantMap, takenEmails }] = await Promise.all([
@@ -175,18 +208,98 @@ export async function submitCatchMechConfirmations(
   ])
   const eventName = event?.name ?? null
 
-  await db.$transaction(async (tx) => {
-    // Activate a group that was pre-created via the volunteer info form
-    if (smallGroup.status === "Pending") {
-      await tx.smallGroup.update({
-        where: { id: smallGroup.id },
+  const resolved = resolveTargets(decisions, candidates, declineGroupId)
+  const touchedGroupIds = [
+    ...new Set(resolved.map((d) => d.groupId).filter((id): id is string => id !== null)),
+  ]
+
+  try {
+    await db.$transaction(async (tx) => {
+      // Activate any targeted group that was pre-created via the volunteer info form
+      await tx.smallGroup.updateMany({
+        where: { id: { in: touchedGroupIds }, status: "Pending" },
         data: { status: "Active" },
       })
-    }
-    await resolveConfirmations(smallGroup.id, session.breakoutGroupId, decisions, registrantMap, takenEmails, tx, eventName)
-  }, { timeout: 30000 })
+      await resolveConfirmations(
+        session.breakoutGroupId,
+        session.facilitatorVolunteerId,
+        resolved,
+        registrantMap,
+        takenEmails,
+        tx,
+        eventName
+      )
+    }, { timeout: 30000 })
+  } catch (err) {
+    console.error("[submitCatchMechConfirmations]", err)
+    return { success: false, error: "Could not save your confirmations. Please try again." }
+  }
 
-  revalidatePath(`/small-groups/${smallGroup.id}`)
+  for (const groupId of touchedGroupIds) revalidatePath(`/small-groups/${groupId}`)
+  revalidatePath(`/event/${session.eventId}/catch-mech`, "layout")
+  revalidatePath(`/event/${session.eventId}/dashboard`)
+  return { success: true, requiresGroupName: false }
+}
+
+/**
+ * Records declines made by a faci who leads no group yet. Without a group there is
+ * nothing to join, so only the rejection and its reason are kept — scoped to the
+ * declining faci so a co-faci's list is untouched.
+ */
+async function persistGrouplessDeclines(
+  session: {
+    eventId: string
+    breakoutGroupId: string
+    facilitatorVolunteerId: string
+  },
+  decisions: ConfirmDecision[]
+): Promise<ConfirmResult> {
+  const declined = decisions.filter((d) => d.status === "declined")
+  if (declined.length === 0) return { success: true, requiresGroupName: false }
+
+  const { registrantMap } = await prefetchRegistrantData(declined)
+
+  try {
+    await db.$transaction(async (tx) => {
+      for (const d of declined) {
+        const registrant = registrantMap.get(d.registrantId)
+        if (!registrant) continue
+        if (!registrant.memberId && !registrant.guestId) continue
+
+        const identity = registrant.memberId
+          ? { memberId: registrant.memberId }
+          : { guestId: registrant.guestId! }
+
+        const existing = await tx.smallGroupMemberRequest.findFirst({
+          where: {
+            smallGroupId: null,
+            status: "Rejected",
+            declinedByVolunteerId: session.facilitatorVolunteerId,
+            ...identity,
+          },
+          select: { id: true },
+        })
+        if (existing) continue
+
+        await tx.smallGroupMemberRequest.create({
+          data: {
+            smallGroupId: null,
+            breakoutGroupId: session.breakoutGroupId,
+            declinedByVolunteerId: session.facilitatorVolunteerId,
+            status: "Rejected",
+            resolvedAt: new Date(),
+            declineReason: d.declineReason ?? null,
+            notes: d.reason ?? null,
+            ...identity,
+          },
+        })
+      }
+    }, { timeout: 30000 })
+  } catch (err) {
+    console.error("[persistGrouplessDeclines]", err)
+    return { success: false, error: "Could not save your declines. Please try again." }
+  }
+
   revalidatePath(`/event/${session.eventId}/catch-mech`, "layout")
   revalidatePath(`/event/${session.eventId}/dashboard`)
   return { success: true, requiresGroupName: false }
@@ -283,7 +396,17 @@ export async function createSmallGroupForTimothy(
         data: { groupStatus: "Leader" },
       })
 
-      await resolveConfirmations(created.id, session.breakoutGroupId, decisions, registrantMap, takenEmails, tx, eventName)
+      // The new group is this Timothy's only destination — every confirm and decline
+      // resolves to it.
+      await resolveConfirmations(
+        session.breakoutGroupId,
+        session.facilitatorVolunteerId,
+        decisions.map((d) => ({ ...d, groupId: created.id })),
+        registrantMap,
+        takenEmails,
+        tx,
+        eventName
+      )
     }, { timeout: 30000 })
 
     revalidatePath("/small-groups")
@@ -387,9 +510,9 @@ async function prefetchRegistrantData(decisions: ConfirmDecision[]): Promise<{
 // ─── Shared confirmation resolver (writes only — reads pre-fetched) ───────────
 
 async function resolveConfirmations(
-  smallGroupId: string,
   breakoutGroupId: string,
-  decisions: ConfirmDecision[],
+  faciVolunteerId: string,
+  decisions: ResolvedDecision[],
   registrantMap: Map<string, FetchedRegistrant>,
   takenEmails: Set<string>,
   tx: Prisma.TransactionClient,
@@ -397,13 +520,17 @@ async function resolveConfirmations(
 ): Promise<void> {
   const now = new Date()
 
-  for (const { registrantId, status, declineReason, reason } of decisions) {
+  for (const { registrantId, status, declineReason, reason, groupId } of decisions) {
     const registrant = registrantMap.get(registrantId)
     if (!registrant) continue
     if (!registrant.memberId && !registrant.guestId) continue
 
     // "pending" — leave as-is, no DB update
     if (status === "pending") continue
+    // Callers resolve a group for every confirm/decline they route here; a groupless
+    // decline goes through persistGrouplessDeclines instead.
+    if (!groupId) continue
+    const smallGroupId = groupId
 
     if (status === "declined") {
       const personName = registrant.member
@@ -424,7 +551,7 @@ async function resolveConfirmations(
       if (pendingRequest) {
         await tx.smallGroupMemberRequest.update({
           where: { id: pendingRequest.id },
-          data: { status: "Rejected", resolvedAt: now, breakoutGroupId, declineReason: declineReason ?? null, notes: reason ?? null },
+          data: { status: "Rejected", resolvedAt: now, breakoutGroupId, declinedByVolunteerId: faciVolunteerId, declineReason: declineReason ?? null, notes: reason ?? null },
         })
       } else {
         // No pre-existing request (e.g. Timothy's group didn't exist yet at assignment time)
@@ -432,6 +559,7 @@ async function resolveConfirmations(
           data: {
             smallGroupId,
             breakoutGroupId,
+            declinedByVolunteerId: faciVolunteerId,
             status: "Rejected",
             resolvedAt: now,
             declineReason: declineReason ?? null,

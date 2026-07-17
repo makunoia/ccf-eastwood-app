@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { IconPlus } from "@tabler/icons-react"
 import { Prisma } from "@/app/generated/prisma/client"
 
@@ -6,6 +7,10 @@ import { PageHeader, PageActions } from "@/components/page-header"
 import { type MinistryRow } from "./columns"
 import { MinistriesTable } from "./ministries-table"
 import { MinistriesFilters } from "./ministries-filters"
+
+export const metadata: Metadata = {
+  title: "Ministries",
+}
 
 async function getMinistries(where: Prisma.MinistryWhereInput): Promise<MinistryRow[]> {
   const ministries = await db.ministry.findMany({

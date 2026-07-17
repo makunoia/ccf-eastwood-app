@@ -1,9 +1,14 @@
+import type { Metadata } from "next"
 import { db } from "@/lib/db"
 import { ChartAreaInteractive } from "@/components/chart-area-interactive"
 import { SectionCards } from "@/components/section-cards"
 import { GuestsPending } from "@/components/dashboard/guests-pending"
 import { SmallGroupsOverview } from "@/components/dashboard/small-groups-overview"
 import { FilterableStatCards } from "@/components/dashboard/filterable-stat-cards"
+
+export const metadata: Metadata = {
+  title: "Dashboard",
+}
 
 const PERIOD_LABELS: Record<string, string> = {
   week: "This Week",

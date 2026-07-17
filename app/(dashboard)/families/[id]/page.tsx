@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 
 import { db } from "@/lib/db"
@@ -8,6 +9,16 @@ import { BreadcrumbOverride } from "@/components/breadcrumb-context"
 import type { FamilyRoleValue } from "@/lib/validations/family"
 import { FamilyToolbar } from "./family-toolbar"
 import { FamilyMembers, type FamilyMemberEntry } from "./family-members"
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>
+}): Promise<Metadata> {
+  const { id } = await params
+  const family = await db.family.findUnique({ where: { id }, select: { name: true } })
+  return { title: { absolute: family ? `${family.name} · Families` : "Families" } }
+}
 
 export default async function FamilyDetailPage({
   params,

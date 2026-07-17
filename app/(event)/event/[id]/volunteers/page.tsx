@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
@@ -9,6 +10,10 @@ import type { VolunteerExportRow } from "@/lib/export-entities"
 import { VolunteersToolbar } from "./volunteers-toolbar"
 import { VolunteersBatchBar } from "./volunteers-batch-bar"
 import { VolunteersFilters } from "./volunteers-filters"
+
+export const metadata: Metadata = {
+  title: "Volunteers",
+}
 
 async function getEventVolunteers(
   id: string,

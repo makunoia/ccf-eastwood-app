@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { Gender, Prisma } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
@@ -10,6 +11,10 @@ import { GuestsTable } from "./guests-table"
 import { GuestsFilters } from "./guests-filters"
 import { GuestsToolbar } from "./guests-toolbar"
 import { deleteGuestsBatch, setGuestsLifeStageBatch } from "./actions"
+
+export const metadata: Metadata = {
+  title: "Guests",
+}
 
 async function getGuests(where: Prisma.GuestWhereInput): Promise<GuestRow[]> {
   const guests = await db.guest.findMany({

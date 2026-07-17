@@ -1,6 +1,11 @@
+import type { Metadata } from "next"
 import { IconUsers } from "@tabler/icons-react"
 import { db } from "@/lib/db"
 import { ConfirmationClient } from "./confirmation-client"
+
+export const metadata: Metadata = {
+  title: { absolute: "Confirm Small Group Members" },
+}
 
 async function getGroupByToken(token: string) {
   return db.smallGroup.findUnique({

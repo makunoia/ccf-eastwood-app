@@ -1,8 +1,13 @@
+import type { Metadata } from "next"
 import { IconShield } from "@tabler/icons-react"
 import { db } from "@/lib/db"
 import { ApprovalClient } from "./approval-client"
 import { FormClosed } from "@/components/form-closed"
 import { getFormConfig } from "@/lib/forms/config"
+
+export const metadata: Metadata = {
+  title: { absolute: "Volunteer Approval" },
+}
 
 async function getVolunteer(token: string) {
   return db.volunteer.findUnique({

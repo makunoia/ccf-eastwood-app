@@ -1,6 +1,11 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { EmbarkationClient } from "./embarkation-client"
+
+export const metadata: Metadata = {
+  title: "Embarkation",
+}
 
 async function getEventEmbarkation(id: string) {
   return db.event.findUnique({

@@ -92,7 +92,7 @@ export async function requestGroupChange(
     const memberName = `${member.firstName} ${member.lastName}`
     await db.$transaction(async (tx) => {
       // A member can only have one pending request — replace any previous one
-      if (existing) {
+      if (existing?.smallGroupId) {
         await tx.smallGroupMemberRequest.update({
           where: { id: existing.id },
           data: { status: "Rejected", resolvedAt: new Date() },
@@ -150,6 +150,9 @@ export async function cancelGroupChange(
     if (request.status !== "Pending") {
       return { success: false, error: "This request has already been resolved" }
     }
+    // Only a Catch Mech decline is groupless, and those are never Pending.
+    const smallGroupId = request.smallGroupId
+    if (!smallGroupId) return { success: false, error: "Request not found" }
 
     await db.$transaction([
       db.smallGroupMemberRequest.update({
@@ -158,7 +161,7 @@ export async function cancelGroupChange(
       }),
       db.smallGroupLog.create({
         data: {
-          smallGroupId: request.smallGroupId,
+          smallGroupId,
           action: "TempAssignmentRejected",
           memberId: member.id,
           description: `${member.firstName} ${member.lastName} cancelled their request via the member portal`,
@@ -166,7 +169,7 @@ export async function cancelGroupChange(
       }),
     ])
 
-    revalidateGroupPages(request.smallGroupId)
+    revalidateGroupPages(smallGroupId)
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to cancel request" }

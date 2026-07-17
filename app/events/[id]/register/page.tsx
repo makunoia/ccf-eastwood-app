@@ -1,5 +1,7 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
+import { getEventName } from "@/lib/metadata"
 import { RegistrationForm } from "./registration-form"
 import { fetchBreakoutCandidates } from "@/lib/breakout-suggestion-server"
 import { PublicFormShell } from "@/components/public-form-shell"
@@ -46,6 +48,16 @@ async function getEvent(id: string) {
     },
   })
   return event ?? null
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>
+}): Promise<Metadata> {
+  const { id } = await params
+  const name = await getEventName(id)
+  return { title: { absolute: name ? `Register · ${name}` : "Register" } }
 }
 
 export default async function RegisterPage({

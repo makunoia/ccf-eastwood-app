@@ -1,9 +1,14 @@
+import type { Metadata } from "next"
 import { db } from "@/lib/db"
 import { type UserRow, type EventOption } from "./columns"
 import { UsersTable } from "./users-table"
 import { UsersToolbar } from "./toolbar"
 import { PageHeader } from "@/components/page-header"
 import type { FeatureArea, PermissionAction } from "@/app/generated/prisma/client"
+
+export const metadata: Metadata = {
+  title: "Users · Settings",
+}
 
 type PermissionEntry = { feature: FeatureArea; actions: PermissionAction[] }
 

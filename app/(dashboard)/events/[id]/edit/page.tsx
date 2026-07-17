@@ -1,5 +1,7 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
+import { getEventName } from "@/lib/metadata"
 import { EventForm } from "../../event-form"
 import { type EventRow } from "../../columns"
 
@@ -40,6 +42,16 @@ async function getMinistries() {
     orderBy: { name: "asc" },
     select: { id: true, name: true },
   })
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>
+}): Promise<Metadata> {
+  const { id } = await params
+  const name = await getEventName(id)
+  return { title: { absolute: name ? `Edit · ${name}` : "Edit Event" } }
 }
 
 export default async function EditEventPage({

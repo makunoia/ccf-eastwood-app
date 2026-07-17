@@ -161,7 +161,8 @@ export async function tryCancelSmallGroupRequestFromBreakout(
         select: { event: { select: { name: true } } },
       }),
     ])
-    if (!request) return
+    // Only a Catch Mech decline is groupless, and those are never Pending.
+    if (!request?.smallGroupId) return
 
     const personName = request.guest
       ? `${request.guest.firstName} ${request.guest.lastName}`

@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import Link from "next/link"
 import { IconArrowLeft } from "@tabler/icons-react"
@@ -12,6 +13,16 @@ import { FormConfigEditor } from "@/app/(dashboard)/forms/form-config-editor"
 import { RegistrationFormFields } from "@/components/forms/registration-form-fields"
 import { RegistrationPageTab } from "@/components/forms/registration-page-tab"
 import { VolunteerInfoUrlCopier } from "@/components/forms/volunteer-info-url-copier"
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ key: string }>
+}): Promise<Metadata> {
+  const { key } = await params
+  const meta = FORM_REGISTRY[key as FormKey]
+  return { title: meta ? meta.label : "Forms" }
+}
 
 export default async function EventFormEditorPage({
   params,

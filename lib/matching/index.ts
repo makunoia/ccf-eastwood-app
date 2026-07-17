@@ -199,12 +199,15 @@ async function getGuestCooldownGroupIds(): Promise<Set<string>> {
   const recent = await db.smallGroupMemberRequest.findMany({
     where: {
       guestId: { not: null },
+      smallGroupId: { not: null },
       status: { in: ["Pending", "Confirmed"] },
       createdAt: { gte: cutoff },
     },
     select: { smallGroupId: true },
   })
-  return new Set(recent.map((r) => r.smallGroupId))
+  return new Set(
+    recent.map((r) => r.smallGroupId).filter((id): id is string => id !== null)
+  )
 }
 
 /**
@@ -319,16 +322,16 @@ export async function matchSmallGroups(
   const rejectedGroupIds = new Set<string>()
   if ("guestId" in params) {
     const rejected = await db.smallGroupMemberRequest.findMany({
-      where: { guestId: params.guestId, status: "Rejected" },
+      where: { guestId: params.guestId, status: "Rejected", smallGroupId: { not: null } },
       select: { smallGroupId: true },
     })
-    for (const r of rejected) rejectedGroupIds.add(r.smallGroupId)
+    for (const r of rejected) if (r.smallGroupId) rejectedGroupIds.add(r.smallGroupId)
   } else {
     const rejected = await db.smallGroupMemberRequest.findMany({
-      where: { memberId: params.memberId, status: "Rejected" },
+      where: { memberId: params.memberId, status: "Rejected", smallGroupId: { not: null } },
       select: { smallGroupId: true },
     })
-    for (const r of rejected) rejectedGroupIds.add(r.smallGroupId)
+    for (const r of rejected) if (r.smallGroupId) rejectedGroupIds.add(r.smallGroupId)
   }
 
   const eligible = groups.filter((g) => {
@@ -428,10 +431,11 @@ export async function matchCouplesGroups(
     where: {
       memberId: { in: [params.memberIdA, params.memberIdB] },
       status: "Rejected",
+      smallGroupId: { not: null },
     },
     select: { smallGroupId: true },
   })
-  for (const r of rejected) excludedGroupIds.add(r.smallGroupId)
+  for (const r of rejected) if (r.smallGroupId) excludedGroupIds.add(r.smallGroupId)
 
   const [groups, weights] = await Promise.all([
     db.smallGroup.findMany({

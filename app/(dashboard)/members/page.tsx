@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { Gender, Prisma } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
@@ -10,6 +11,10 @@ import { MembersTable } from "./members-table"
 import { MembersToolbar } from "./toolbar"
 import { MembersFilters } from "./members-filters"
 import { deleteMembersBatch, setMembersLifeStageBatch } from "./actions"
+
+export const metadata: Metadata = {
+  title: "Members",
+}
 
 async function getMembers(where: Prisma.MemberWhereInput): Promise<MemberRow[]> {
   const members = await db.member.findMany({
