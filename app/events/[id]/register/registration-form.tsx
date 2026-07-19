@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { IconCheck } from "@tabler/icons-react"
 import { toast } from "sonner"
 
@@ -164,15 +165,9 @@ const DIETARY_OPTIONS: { value: Exclude<DietaryValue, "">; label: string }[] = [
 ]
 
 
-export type WalkInSuccess = {
-  registrantId: string
-  name: string
-  nickname: string | null
-  breakoutGroup: AssignedBreakout
-}
-
-// Walk-in mode (check-in kiosk): the check-in board embeds this form when a
-// lookup finds no registration. Same steps as public registration — the person
+// Walk-in mode (check-in kiosk): the check-in board sends people here when a
+// lookup finds no registration, so the registration page itself is the single
+// source of truth for the form. Same steps as public registration — the person
 // is registered via createRegistrant(..., walkIn) and checked in immediately.
 type WalkInConfig = {
   occurrenceId: string | null
@@ -184,8 +179,8 @@ type WalkInConfig = {
     birthMonth?: string
     birthYear?: string
   }
-  onSuccess: (result: WalkInSuccess) => void
-  onBack: () => void
+  // Where "Back" / "Done" returns to — the check-in board this walk-in came from.
+  backHref: string
 }
 
 type Props = {
@@ -578,19 +573,6 @@ export function RegistrationForm({
     setSubmitting(false)
 
     if (result.success) {
-      if (walkIn) {
-        // The check-in board owns the success screen in walk-in mode
-        const source = confirmedMemberId || confirmedGuestId ? (confirmedMember ?? matchedMember) : null
-        walkIn.onSuccess({
-          registrantId: result.data.id,
-          name: source
-            ? `${source.firstName} ${source.lastName}`.trim()
-            : `${form.firstName} ${form.lastName}`.trim(),
-          nickname: form.nickname.trim() || null,
-          breakoutGroup: result.data.breakoutGroup,
-        })
-        return
-      }
       setAssignedBreakout(result.data.breakoutGroup)
       setStep("done")
     } else {
@@ -599,7 +581,11 @@ export function RegistrationForm({
   }
 
   if (step === "done") {
-    const displayName = form.nickname.trim() || form.firstName.trim()
+    // A confirmed member/guest keeps their own name — the form fields stay blank
+    // when the person was matched by mobile rather than typed in.
+    const matchedSource = confirmedMember ?? matchedMember
+    const displayName =
+      form.nickname.trim() || form.firstName.trim() || matchedSource?.firstName.trim() || ""
     const displayBreakout: AssignedBreakout | null =
       assignedBreakout ??
       (selectedBreakoutId
@@ -632,9 +618,11 @@ export function RegistrationForm({
               Welcome{displayName ? `, ${displayName}` : ""}!
             </p>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              {eventName
-                ? `You're all set for ${eventName}. We're so glad you're coming — feel free to bring a friend!`
-                : "You're all set! We're so glad you're joining us. Feel free to bring a friend — see you soon!"}
+              {walkIn
+                ? "You're registered and checked in. Enjoy the event!"
+                : eventName
+                  ? `You're all set for ${eventName}. We're so glad you're coming — feel free to bring a friend!`
+                  : "You're all set! We're so glad you're joining us. Feel free to bring a friend — see you soon!"}
             </p>
             {displayBreakout && (
               <div className="mt-3 rounded-xl border bg-muted/40 px-4 py-3 text-left space-y-0.5">
@@ -648,9 +636,15 @@ export function RegistrationForm({
               </div>
             )}
           </div>
-          <Button className="w-full" onClick={handleReset}>
-            Register another person
-          </Button>
+          {walkIn ? (
+            <Button className="w-full" asChild>
+              <Link href={walkIn.backHref}>Back to check-in</Link>
+            </Button>
+          ) : (
+            <Button className="w-full" onClick={handleReset}>
+              Register another person
+            </Button>
+          )}
         </CardContent>
       </FormShell>
     )
@@ -673,8 +667,8 @@ export function RegistrationForm({
             </p>
           </div>
           {walkIn ? (
-            <Button className="w-full" variant="outline" onClick={walkIn.onBack}>
-              Back to check-in
+            <Button className="w-full" variant="outline" asChild>
+              <Link href={walkIn.backHref}>Back to check-in</Link>
             </Button>
           ) : (
             <Button className="w-full" variant="outline" onClick={handleReset}>
@@ -1471,8 +1465,8 @@ export function RegistrationForm({
                   Back
                 </Button>
               ) : walkIn ? (
-                <Button type="button" variant="outline" onClick={walkIn.onBack}>
-                  Back
+                <Button type="button" variant="outline" asChild>
+                  <Link href={walkIn.backHref}>Back</Link>
                 </Button>
               ) : null}
               {formStep < sections.length ? (
@@ -1491,8 +1485,8 @@ export function RegistrationForm({
                 {submitting ? "Checking…" : walkIn ? "Register & Check In" : "Register"}
               </Button>
               {walkIn && (
-                <Button type="button" variant="ghost" className="w-full" onClick={walkIn.onBack}>
-                  Back
+                <Button type="button" variant="ghost" className="w-full" asChild>
+                  <Link href={walkIn.backHref}>Back</Link>
                 </Button>
               )}
             </div>

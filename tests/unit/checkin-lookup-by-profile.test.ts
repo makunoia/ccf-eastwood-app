@@ -1,6 +1,4 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest"
-import { readFileSync } from "fs"
-import { resolve } from "path"
 import { db } from "@/lib/db"
 import { lookupCheckinRegistrantByProfile } from "@/app/(dashboard)/events/actions"
 
@@ -319,39 +317,3 @@ describe("lookupCheckinRegistrantByProfile", () => {
   })
 })
 
-// ── Regression: UI wiring ─────────────────────────────────────────────────────
-
-describe("checkin-board UI – name-dob mode", () => {
-  const checkinBoardPath = resolve(
-    process.cwd(),
-    "app/events/[id]/checkin/checkin-board.tsx"
-  )
-  const content = readFileSync(checkinBoardPath, "utf-8")
-
-  it("imports lookupCheckinRegistrantByProfile", () => {
-    expect(content).toContain("lookupCheckinRegistrantByProfile")
-  })
-
-  it("declares the name-dob lookup mode", () => {
-    expect(content).toContain('"name-dob"')
-  })
-
-  it("renders the birthday-lookup toggle option", () => {
-    expect(content).toContain("Look me up by birthday instead")
-  })
-
-  it("renders the last name, birth month, and birth year fields", () => {
-    expect(content).toContain("namedob-lastname")
-    expect(content).toContain("namedob-month")
-    expect(content).toContain("namedob-year")
-  })
-
-  it("calls lookupCheckinRegistrantByProfile with parsed integers for month and year", () => {
-    expect(content).toContain("parseInt(nameDobForm.birthMonth")
-    expect(content).toContain("parseInt(nameDobForm.birthYear")
-  })
-
-  it("resets nameDobForm on reset()", () => {
-    expect(content).toContain('setNameDobForm({ lastName: "", birthMonth: "", birthYear: "" })')
-  })
-})

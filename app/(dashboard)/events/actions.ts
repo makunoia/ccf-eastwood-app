@@ -1498,10 +1498,12 @@ function findEventRegistrantsForLookup(eventId: string) {
       mobileNumber: true,
       attendedAt: true,
       guestId: true,
+      memberId: true,
       member: {
         select: {
           firstName: true,
           lastName: true,
+          nickname: true,
           email: true,
           phone: true,
           birthMonth: true,
@@ -1512,6 +1514,7 @@ function findEventRegistrantsForLookup(eventId: string) {
         select: {
           firstName: true,
           lastName: true,
+          nickname: true,
           email: true,
           phone: true,
           birthMonth: true,
@@ -1602,7 +1605,8 @@ async function resolveRegistrantCandidate(
     kind: "registrant" as const,
     subjectId: matched.id,
     name,
-    nickname: matched.nickname,
+    // The per-event nickname wins; otherwise fall back to the one on the profile.
+    nickname: matched.nickname ?? matched.member?.nickname ?? matched.guest?.nickname ?? null,
     alreadyCheckedIn,
     contactHint: contactHintFrom(
       matched.member?.phone ?? matched.guest?.phone ?? matched.mobileNumber,
@@ -1612,21 +1616,77 @@ async function resolveRegistrantCandidate(
   }
 }
 
-// A volunteer is never a registrant: if a volunteer matches, their volunteer record is
-// the canonical check-in subject. Suppress any registrant match for the same lookup so
-// the volunteer isn't forced to disambiguate against a stray registrant record.
+// One person can own several rows for the same event — two registrations from a
+// duplicate sign-up, or a volunteer who also registered. Keying on the underlying
+// Member/Guest collapses those into a single check-in subject; rows with no linked
+// profile fall back to name + contact.
+function registrantIdentityKey(r: RegistrantLookupRow): string {
+  if (r.memberId) return `member:${r.memberId}`
+  if (r.guestId) return `guest:${r.guestId}`
+  const name = normalizeNameInput(`${r.firstName ?? ""} ${r.lastName ?? ""}`)
+  const contact = (r.mobileNumber ?? r.email ?? "").toLowerCase().replace(/\s+/g, "")
+  return `anon:${name}|${contact}`
+}
+
+// Keeps one candidate per identity, preferring a record that is already checked in
+// so the board never offers to check in someone it just recorded.
+function dedupeCheckinCandidates(
+  entries: { key: string; candidate: CheckinRegistrantResult }[]
+): CheckinRegistrantResult[] {
+  const byKey = new Map<string, CheckinRegistrantResult>()
+  for (const { key, candidate } of entries) {
+    const existing = byKey.get(key)
+    if (!existing || (!existing.alreadyCheckedIn && candidate.alreadyCheckedIn)) {
+      byKey.set(key, candidate)
+    }
+  }
+  return [...byKey.values()]
+}
+
+async function resolveCheckinCandidates(
+  matchedRegistrants: RegistrantLookupRow[],
+  matchedVolunteers: VolunteerLookupRow[],
+  occurrenceId: string | null
+): Promise<{ volunteers: CheckinRegistrantResult[]; registrants: CheckinRegistrantResult[] }> {
+  // A volunteer is never a registrant: if someone matches as a volunteer, their
+  // volunteer record is the canonical check-in subject, so drop their registrant rows.
+  const volunteerMemberIds = new Set(matchedVolunteers.map((v) => v.memberId))
+  const registrantRows = matchedRegistrants.filter(
+    (r) => !(r.memberId && volunteerMemberIds.has(r.memberId))
+  )
+
+  const [volunteerEntries, registrantEntries] = await Promise.all([
+    Promise.all(
+      matchedVolunteers.map(async (v) => ({
+        key: `member:${v.memberId}`,
+        candidate: await resolveVolunteerCandidate(v, occurrenceId),
+      }))
+    ),
+    Promise.all(
+      registrantRows.map(async (r) => ({
+        key: registrantIdentityKey(r),
+        candidate: await resolveRegistrantCandidate(r, occurrenceId),
+      }))
+    ),
+  ])
+
+  return {
+    volunteers: dedupeCheckinCandidates(volunteerEntries),
+    registrants: dedupeCheckinCandidates(registrantEntries),
+  }
+}
+
 async function finishCheckinLookup(
   matchedRegistrants: RegistrantLookupRow[],
   matchedVolunteers: VolunteerLookupRow[],
   occurrenceId: string | null
 ): Promise<CheckinRegistrantResult | CheckinAmbiguousResult | null> {
-  const volunteerCandidates = await Promise.all(
-    matchedVolunteers.map((v) => resolveVolunteerCandidate(v, occurrenceId))
+  const { volunteers, registrants } = await resolveCheckinCandidates(
+    matchedRegistrants,
+    matchedVolunteers,
+    occurrenceId
   )
-  const candidates: CheckinRegistrantResult[] =
-    volunteerCandidates.length > 0
-      ? volunteerCandidates
-      : await Promise.all(matchedRegistrants.map((m) => resolveRegistrantCandidate(m, occurrenceId)))
+  const candidates = volunteers.length > 0 ? volunteers : registrants
 
   if (candidates.length === 0) return null
   if (candidates.length > 1) return { matchType: "ambiguous", candidates }
@@ -1710,9 +1770,11 @@ export async function lookupCheckinRegistrantByName(
 type VolunteerLookupRow = {
   id: string
   attendedAt: Date | null
+  memberId: string
   member: {
     firstName: string
     lastName: string
+    nickname: string | null
     email: string | null
     phone: string | null
     birthMonth: number | null
@@ -1726,10 +1788,12 @@ function findEventVolunteersForLookup(eventId: string): Promise<VolunteerLookupR
     select: {
       id: true,
       attendedAt: true,
+      memberId: true,
       member: {
         select: {
           firstName: true,
           lastName: true,
+          nickname: true,
           email: true,
           phone: true,
           birthMonth: true,
@@ -1759,7 +1823,7 @@ async function resolveVolunteerCandidate(
     kind: "volunteer",
     subjectId: v.id,
     name: `${v.member.firstName} ${v.member.lastName}`.trim(),
-    nickname: null,
+    nickname: v.member.nickname,
     alreadyCheckedIn,
     contactHint: contactHintFrom(v.member.phone, v.member.email),
     guestSmallGroupPrompt: null,
@@ -1821,10 +1885,12 @@ export async function searchCheckinByName(
   if (!q || q.length < 2) return { success: true, data: [] }
   const words = q.split(/\s+/).filter(Boolean)
 
-  function nameContains(first: string, last: string, nickname: string | null): boolean {
+  // Every word must appear somewhere in the name or in a nickname, so "kuya jun
+  // santos" still finds "Junior Santos" nicknamed "Kuya Jun".
+  function nameContains(first: string, last: string, nicknames: (string | null)[]): boolean {
     const full = normalizeNameInput(`${first} ${last}`)
-    const nick = nickname ? normalizeNameInput(nickname) : ""
-    return words.every((w) => full.includes(w) || nick.includes(w))
+    const nicks = nicknames.filter(Boolean).map((n) => normalizeNameInput(n as string))
+    return words.every((w) => full.includes(w) || nicks.some((n) => n.includes(w)))
   }
 
   try {
@@ -1832,22 +1898,27 @@ export async function searchCheckinByName(
     const matchedRegistrants = allRegistrants.filter((r) => {
       const first = r.member?.firstName ?? r.guest?.firstName ?? r.firstName ?? ""
       const last = r.member?.lastName ?? r.guest?.lastName ?? r.lastName ?? ""
-      return nameContains(first, last, r.nickname)
+      return nameContains(first, last, [
+        r.nickname,
+        r.member?.nickname ?? null,
+        r.guest?.nickname ?? null,
+      ])
     })
 
     const allVolunteers = await findEventVolunteersForLookup(eventId)
     const matchedVolunteers = allVolunteers.filter((v) =>
-      nameContains(v.member.firstName, v.member.lastName, null)
+      nameContains(v.member.firstName, v.member.lastName, [v.member.nickname])
     )
 
-    const [registrantCandidates, volunteerCandidates] = await Promise.all([
-      Promise.all(matchedRegistrants.map((r) => resolveRegistrantCandidate(r, occurrenceId))),
-      Promise.all(matchedVolunteers.map((v) => resolveVolunteerCandidate(v, occurrenceId))),
-    ])
+    const { volunteers, registrants } = await resolveCheckinCandidates(
+      matchedRegistrants,
+      matchedVolunteers,
+      occurrenceId
+    )
 
     return {
       success: true,
-      data: [...volunteerCandidates, ...registrantCandidates].slice(0, 15),
+      data: [...volunteers, ...registrants].slice(0, 15),
     }
   } catch {
     return { success: false, error: "Search failed. Please try again." }

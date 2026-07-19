@@ -60,17 +60,53 @@ export async function generateMetadata({
   return { title: { absolute: name ? `Register · ${name}` : "Register" } }
 }
 
+// Walk-in mode: the check-in board links here instead of embedding its own copy
+// of the form, so kiosk registration and public registration can never drift.
+// `checkin=1` is a OneTime event; `checkin=<occurrenceId>` is a MultiDay/Recurring
+// session. Either way the registrant is checked in on submit.
+async function parseWalkIn(
+  eventId: string,
+  checkin: string | undefined,
+  mobile: string | undefined
+) {
+  if (!checkin) return undefined
+  const occurrenceId = checkin === "1" ? null : checkin
+  // A hand-edited or stale occurrence id would otherwise render a form that only
+  // fails on submit — reject it here instead.
+  if (occurrenceId) {
+    const occurrence = await db.eventOccurrence.findFirst({
+      where: { id: occurrenceId, eventId },
+      select: { id: true },
+    })
+    if (!occurrence) notFound()
+  }
+  return {
+    occurrenceId,
+    prefill: mobile ? { mobileNumber: mobile } : {},
+    backHref: occurrenceId
+      ? `/events/${eventId}/checkin/${occurrenceId}`
+      : `/events/${eventId}/checkin`,
+  }
+}
+
 export default async function RegisterPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>
+  searchParams: Promise<{ checkin?: string; mobile?: string }>
 }) {
   const { id } = await params
+  const { checkin, mobile } = await searchParams
   const event = await getEvent(id)
   if (!event) notFound()
 
+  const walkIn = await parseWalkIn(id, checkin, mobile)
+
   const formConfig = await getFormConfig("EventRegistration", id)
-  if (!formConfig.isOpen) return <FormClosed />
+  // Walk-ins are staff-supervised at the door — a closed public form must not
+  // block someone standing in front of the kiosk.
+  if (!formConfig.isOpen && !walkIn) return <FormClosed />
 
   const lifeStages = event.formIncludeSmallGroup
     ? await db.lifeStage.findMany({
@@ -97,7 +133,10 @@ export default async function RegisterPage({
 
   const breakoutCandidates = event.autoAssignBreakout
     ? []
-    : await fetchBreakoutCandidates(event.id, breakoutOccurrenceId, false)
+    : walkIn
+      ? // At the door, only groups whose facilitator has already checked in are offered.
+        await fetchBreakoutCandidates(event.id, walkIn.occurrenceId, true)
+      : await fetchBreakoutCandidates(event.id, breakoutOccurrenceId, false)
 
   const brand = resolveEventBrand(event)
   const ministryNames = event.ministries.map((em) => em.ministry.name).join(" · ")
@@ -111,7 +150,9 @@ export default async function RegisterPage({
   // EventRegistration uses its dedicated columns for the page theme; FormConfig
   // overrides (which are unused for this key) fall through to these defaults.
   const theme = resolveFormTheme(formConfig, {
-    title: event.registrationPageTitle || `${event.name} Registration`,
+    title: walkIn
+      ? `${event.name} Walk-in`
+      : event.registrationPageTitle || `${event.name} Registration`,
     description:
       event.registrationPageDescription ||
       [ministryNames, event.type !== "Recurring" ? dateLabel : ""].filter(Boolean).join(" · "),
@@ -146,6 +187,7 @@ export default async function RegisterPage({
         lifeStages={lifeStages}
         defaultLifeStageId={defaultLifeStageId}
         breakoutCandidates={breakoutCandidates}
+        walkIn={walkIn}
       />
     </PublicFormShell>
   )
