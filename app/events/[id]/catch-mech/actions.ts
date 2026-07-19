@@ -585,13 +585,10 @@ async function resolveConfirmations(
     // status === "confirmed" from here
     if (registrant.guestId && registrant.guest && !registrant.guest.memberId) {
       const guest = registrant.guest
-      // Check capacity (must run inside tx to reflect members added earlier in this loop)
-      const sg = await tx.smallGroup.findUnique({
-        where: { id: smallGroupId },
-        select: { memberLimit: true, _count: { select: { members: true } } },
-      })
-      if (sg?.memberLimit != null && sg._count.members >= sg.memberLimit) continue
-
+      // No capacity gate here: a facilitator's explicit confirmation always wins.
+      // memberLimit is a soft target that steers auto-matching suggestions, never a
+      // hard wall — silently dropping a confirmed person (no member, no request, no
+      // error) left them stuck on the form with the status never transitioning.
       const newMember = await tx.member.create({
         data: {
           firstName: guest.firstName,

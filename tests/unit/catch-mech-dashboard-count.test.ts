@@ -191,6 +191,71 @@ describe("catch-mech AlreadyInSmallGroup bucket split", () => {
   })
 })
 
+/** One breakout group holding a single guest registrant. */
+function groupWithGuest(guest: {
+  guestId: string
+  memberId: string | null
+  firstName?: string
+  lastName?: string
+}): AggBreakoutGroup[] {
+  return [
+    {
+      id: "bg1",
+      name: "Table 1",
+      facilitator: {
+        member: { id: "lead", firstName: "L", lastName: "E", ledGroups: [{ id: "sg1", name: "G" }] },
+      },
+      members: [
+        {
+          registrant: {
+            id: `r-${guest.guestId}`,
+            memberId: null,
+            guestId: guest.guestId,
+            member: null,
+            guest: {
+              firstName: guest.firstName ?? "Gee",
+              lastName: guest.lastName ?? "Guest",
+              memberId: guest.memberId,
+            },
+          },
+        },
+      ],
+    },
+  ]
+}
+
+describe("catch-mech promoted-guest exclusion (Pending count/list parity)", () => {
+  it("excludes a guest promoted to Member outside catch mech (no request)", () => {
+    // Guest.memberId is set (promoted elsewhere) and there's no catch-mech request →
+    // not tracked, exactly as the list's pending derivation skips them.
+    const { stats } = buildCatchMechGroupRows(
+      groupWithGuest({ guestId: "g1", memberId: "m-promoted" }),
+      []
+    )
+    expect(stats.totalCohort).toBe(0)
+    expect(stats.totalPending).toBe(0)
+  })
+
+  it("still counts a guest that has an actual pending request", () => {
+    const { stats } = buildCatchMechGroupRows(
+      groupWithGuest({ guestId: "g2", memberId: null }),
+      [] // no resolved request → derived Pending
+    )
+    expect(stats.totalPending).toBe(1)
+  })
+
+  it("REGRESSION: a confirmed guest still counts even though confirming set guest.memberId", () => {
+    // Confirming a guest promotes them to a Member, which sets guest.memberId. Without
+    // the `!req` guard the new skip would erase this person from the Confirmed count.
+    const { stats } = buildCatchMechGroupRows(
+      groupWithGuest({ guestId: "g3", memberId: "m-from-confirm" }),
+      [{ id: "req1", breakoutGroupId: "bg1", memberId: null, guestId: "g3", status: "Confirmed", declineReason: null }]
+    )
+    expect(stats.totalConfirmed).toBe(1)
+    expect(stats.totalPending).toBe(0)
+  })
+})
+
 describe("catch-mech dashboard count — integration", () => {
   beforeEach(async () => {
     vi.clearAllMocks()
@@ -263,7 +328,7 @@ describe("catch-mech dashboard count — integration", () => {
                   select: {
                     id: true, memberId: true, guestId: true,
                     member: { select: { firstName: true, lastName: true, smallGroupId: true } },
-                    guest: { select: { firstName: true, lastName: true } },
+                    guest: { select: { firstName: true, lastName: true, memberId: true } },
                   },
                 },
               },

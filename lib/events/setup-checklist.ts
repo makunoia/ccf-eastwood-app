@@ -79,14 +79,14 @@ export async function getEventSetupChecklist(
     },
     {
       key: "volunteers",
-      label: "Import volunteers",
+      label: "Add volunteers",
       description: "Add the people serving and assign them to committees.",
       done: volunteerCount > 0,
       href: `${base}/volunteers`,
     },
     {
       key: "breakouts",
-      label: "Import breakout groups",
+      label: "Add breakout groups",
       description: "Set up breakout groups and assign facilitators.",
       done: breakoutCount > 0,
       href: `${base}/breakouts`,

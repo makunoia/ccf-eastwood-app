@@ -107,6 +107,48 @@ const declineOf = (registrantId: string): ConfirmDecision => ({
   declineReason: "NotInterested",
 })
 
+describe("confirming into a group at its member limit", () => {
+  it("REGRESSION: a facilitator's confirm goes through even when the group is full", async () => {
+    // A full group used to silently drop the confirm — no member, no request, no
+    // error — so the guest stayed on the form and never transitioned. Only the one
+    // facilitator whose group had a memberLimit hit it.
+    const s = await seed({ ledGroups: ["Full Group"] })
+    await db.smallGroup.update({
+      where: { id: s.ledGroups[0].id },
+      data: { memberLimit: 1 },
+    })
+    await db.member.create({
+      data: {
+        firstName: "Existing",
+        lastName: "Member",
+        dateJoined: new Date(),
+        language: [],
+        smallGroupId: s.ledGroups[0].id,
+        groupStatus: "Member",
+      },
+    })
+
+    const result = await submitCatchMechConfirmations(s.session.token, [
+      { registrantId: s.attendees[0].registrant.id, status: "confirmed" },
+    ])
+    expect(result).toEqual({ success: true, requiresGroupName: false })
+
+    // The guest was promoted and placed despite the group being over its limit.
+    const promoted = await db.guest.findUnique({
+      where: { id: s.attendees[0].guest.id },
+      select: { member: { select: { smallGroupId: true } } },
+    })
+    expect(promoted?.member?.smallGroupId).toBe(s.ledGroups[0].id)
+
+    const confirmed = await db.smallGroupMemberRequest.findFirst({ where: { status: "Confirmed" } })
+    expect(confirmed).not.toBeNull()
+
+    // And they no longer appear on the facilitator's form.
+    const data = await getSessionData(s.session.token)
+    expect(data?.rows).toHaveLength(0)
+  })
+})
+
 describe("faci leading multiple small groups", () => {
   it("REGRESSION: submits instead of hard-erroring when unlinked and leading 2+ groups", async () => {
     const s = await seed({ ledGroups: ["Makati East", "BGC Young Pros"] })
