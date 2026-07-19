@@ -22,7 +22,7 @@ export type AggBreakoutGroup = {
       memberId: string | null
       guestId: string | null
       member: { firstName: string; lastName: string; smallGroupId: string | null } | null
-      guest: { firstName: string; lastName: string } | null
+      guest: { firstName: string; lastName: string; memberId: string | null } | null
     }
   }[]
 }
@@ -99,6 +99,13 @@ export function buildCatchMechGroupRows(
       // bucket at all; someone declined as AlreadyInSmallGroup was surfaced by the flow
       // and needs to be visible. Don't "unify" these — they're different populations.
       if (!req && r.memberId && r.member?.smallGroupId) continue
+
+      // Same rule for a guest who was promoted to a Member outside catch mech (their
+      // Guest.memberId is now set): not tracked here. The `!req` guard is essential —
+      // CONFIRMING a guest promotes them too, which also sets guest.memberId, so an
+      // unguarded skip would erase every confirmed guest. This mirrors the list's
+      // pending-derivation skip in [status]/page.tsx, keeping card and list in step.
+      if (!req && r.guestId && r.guest?.memberId) continue
 
       // Resolve display name
       let name = "Unknown"

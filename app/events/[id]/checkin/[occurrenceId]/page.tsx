@@ -3,7 +3,6 @@ import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { getEventName } from "@/lib/metadata"
 import { CheckinBoard } from "../checkin-board"
-import { fetchBreakoutCandidates } from "@/lib/breakout-suggestion-server"
 
 async function getOccurrenceWithEvent(occurrenceId: string) {
   return db.eventOccurrence.findUnique({
@@ -188,11 +187,6 @@ export default async function OccurrenceCheckinPage({
     )
   }
 
-  // Picker shows only when not auto-assigning. Auto-assign mode doesn't need the list client-side.
-  const breakoutCandidates = occurrence.event.autoAssignBreakout
-    ? []
-    : await fetchBreakoutCandidates(id, occurrenceId)
-
   return (
     <div className="relative min-h-svh bg-muted">
       {bannerUrl && (
@@ -214,14 +208,9 @@ export default async function OccurrenceCheckinPage({
           <CheckinBoard
             eventId={id}
             occurrenceId={occurrenceId}
-            eventName={occurrence.event.name}
-            includeSmallGroup={occurrence.event.formIncludeSmallGroup}
-            includeDietary={occurrence.event.formIncludeDietary}
             lifeStages={lifeStages}
             defaultLifeStageId={defaultLifeStageId}
             autoAssignBreakout={occurrence.event.autoAssignBreakout}
-            breakoutCandidates={breakoutCandidates}
-            allowPayment={occurrence.event.formIncludePayment}
           />
         </div>
       </div>

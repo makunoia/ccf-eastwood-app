@@ -3,7 +3,6 @@ import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { getEventName } from "@/lib/metadata"
 import { CheckinBoard } from "./checkin-board"
-import { fetchBreakoutCandidates } from "@/lib/breakout-suggestion-server"
 
 async function getEvent(id: string) {
   return db.event.findUnique({
@@ -145,12 +144,8 @@ export default async function CheckinPage({
     )
   }
 
-  const breakoutCandidates = event.autoAssignBreakout
-    ? []
-    : await fetchBreakoutCandidates(id, null)
-
-  // Walk-in registration renders the shared RegistrationForm, which needs the
-  // same small-group inputs as the public registration page.
+  // Small-group prompt after check-in; walk-in registration itself lives on the
+  // registration page (linked with ?checkin=…), not here.
   const lifeStages = event.formIncludeSmallGroup
     ? await db.lifeStage.findMany({
         orderBy: { order: "asc" },
@@ -177,14 +172,9 @@ export default async function CheckinPage({
           <CheckinBoard
             eventId={event.id}
             occurrenceId={null}
-            eventName={event.name}
-            includeSmallGroup={event.formIncludeSmallGroup}
-            includeDietary={event.formIncludeDietary}
             lifeStages={lifeStages}
             defaultLifeStageId={defaultLifeStageId}
             autoAssignBreakout={event.autoAssignBreakout}
-            breakoutCandidates={breakoutCandidates}
-            allowPayment={event.formIncludePayment}
           />
         </div>
       </div>

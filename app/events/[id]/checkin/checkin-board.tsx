@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { IconCheck, IconLoader2, IconUserQuestion, IconArrowLeft } from "@tabler/icons-react"
 
 import { Button } from "@/components/ui/button"
@@ -21,7 +22,6 @@ import {
   markCheckinAttendance,
   checkInToOccurrence,
 } from "@/app/(dashboard)/events/actions"
-import { RegistrationForm, type WalkInSuccess } from "../register/registration-form"
 import { autoAssignRegistrantToBreakout } from "@/app/(dashboard)/events/breakout-actions"
 import {
   saveGuestMatchingProfile,
@@ -30,7 +30,6 @@ import {
   type GuestMatchingProfileInput,
 } from "@/app/(dashboard)/guests/actions"
 import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
-import { type BreakoutCandidate } from "@/lib/breakout-suggestion"
 
 type LifeStage = { id: string; name: string }
 type LeaderResult = { id: string; firstName: string; lastName: string; ledGroups: { id: string; name: string }[] }
@@ -56,7 +55,6 @@ type Step =
   | "already-in"
   | "success"
   | "not-found-prompt"
-  | "walk-in"
   | "sg-prompt"
   | "sg-profile"
   | "sg-leader-search"
@@ -81,29 +79,19 @@ type MatchedState = {
   name: string
   nickname: string | null
   guestSmallGroupPrompt: GuestSmallGroupPrompt | null
-  breakoutGroup?: { id: string; name: string } | null
 }
 
 type Props = {
   eventId: string
   occurrenceId: string | null
-  eventName?: string
-  includeSmallGroup?: boolean
-  includeDietary?: boolean
   lifeStages?: LifeStage[]
   defaultLifeStageId?: string
   autoAssignBreakout?: boolean
-  breakoutCandidates?: BreakoutCandidate[]
-  allowPayment?: boolean
 }
 
 const AUTO_RESET_MS = 4000
 
-function queryIsPhone(q: string): boolean {
-  return !q.includes("@")
-}
-
-export function CheckinBoard({ eventId, occurrenceId, eventName = "", includeSmallGroup = false, includeDietary = false, lifeStages = [], defaultLifeStageId = "", autoAssignBreakout = false, breakoutCandidates = [], allowPayment = false }: Props) {
+export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], defaultLifeStageId = "", autoAssignBreakout = false }: Props) {
   const [step, setStep] = React.useState<Step>("lookup")
   const [query, setQuery] = React.useState("")
   const [loading, setLoading] = React.useState(false)
@@ -256,21 +244,12 @@ export function CheckinBoard({ eventId, occurrenceId, eventName = "", includeSma
     scheduleReset()
   }
 
-  // Walk-in registration is handled by the shared RegistrationForm (same steps
-  // as public registration); it registers + checks in via createRegistrant's
-  // walk-in mode, then hands control back here for the success screen.
-  function handleWalkInSuccess(result: WalkInSuccess) {
-    setMatched({
-      kind: "registrant",
-      subjectId: result.registrantId,
-      name: result.name,
-      nickname: result.nickname,
-      guestSmallGroupPrompt: null,
-      breakoutGroup: result.breakoutGroup,
-    })
-    setStep("success")
-    scheduleReset()
-  }
+  // Walk-ins go to the real registration page in check-in mode rather than an
+  // embedded copy of the form — one form, one set of rules, no drift. It
+  // registers + checks in on submit and links back here when done.
+  const walkInHref = `/events/${eventId}/register?checkin=${occurrenceId ?? "1"}${
+    query.trim() ? `&mobile=${encodeURIComponent(query.trim())}` : ""
+  }`
 
   // ── Lookup ───────────────────────────────────────────────────────────────
   if (step === "lookup") {
@@ -328,14 +307,13 @@ export function CheckinBoard({ eventId, occurrenceId, eventName = "", includeSma
 
             {!nameSearchLoading && nameQuery.trim().length >= 2 && nameResults.length === 0 && (
               <p className="text-sm text-muted-foreground text-center">
-                No results for &ldquo;{nameQuery.trim()}&rdquo;. Try mobile or email below, or{" "}
-                <button
-                  type="button"
+                No results for &ldquo;{nameQuery.trim()}&rdquo;. Try your mobile number below, or{" "}
+                <Link
+                  href={walkInHref}
                   className="underline decoration-dashed underline-offset-2 hover:text-foreground transition-colors"
-                  onClick={() => setStep("walk-in")}
                 >
                   register as a walk-in
-                </button>
+                </Link>
                 .
               </p>
             )}
@@ -382,13 +360,12 @@ export function CheckinBoard({ eventId, occurrenceId, eventName = "", includeSma
 
             <p className="text-center text-sm text-muted-foreground">
               Can&apos;t find yourself?{" "}
-              <button
-                type="button"
+              <Link
+                href={walkInHref}
                 className="underline decoration-dashed underline-offset-2 hover:text-foreground transition-colors"
-                onClick={() => setStep("walk-in")}
               >
                 Register as a walk-in
-              </button>
+              </Link>
             </p>
           </form>
         </div>
@@ -576,12 +553,6 @@ export function CheckinBoard({ eventId, occurrenceId, eventName = "", includeSma
             </h2>
             <p className="text-sm text-muted-foreground">You&apos;re checked in.</p>
           </div>
-          {matched.breakoutGroup && (
-            <div className="rounded-xl border bg-muted/40 px-6 py-4">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Your breakout group</p>
-              <p className="mt-1 text-base font-medium">{matched.breakoutGroup.name}</p>
-            </div>
-          )}
           <p className="text-xs text-muted-foreground">Returning to start in a moment…</p>
         </div>
       </div>
@@ -627,11 +598,8 @@ export function CheckinBoard({ eventId, occurrenceId, eventName = "", includeSma
             </p>
           </div>
           <div className="flex flex-col gap-3">
-            <Button
-              className="w-full"
-              onClick={() => setStep("walk-in")}
-            >
-              Register now
+            <Button className="w-full" asChild>
+              <Link href={walkInHref}>Register now</Link>
             </Button>
             <Button
               variant="ghost"
@@ -642,39 +610,6 @@ export function CheckinBoard({ eventId, occurrenceId, eventName = "", includeSma
             </Button>
           </div>
         </div>
-      </div>
-    )
-  }
-
-  // ── Walk-in registration (shared with public registration) ───────────────
-  if (step === "walk-in") {
-    return (
-      <div className="px-6">
-        <RegistrationForm
-          eventId={eventId}
-          eventName={eventName}
-          includeSmallGroup={includeSmallGroup}
-          includeDietary={includeDietary}
-          includePayment={allowPayment}
-          lifeStages={lifeStages}
-          defaultLifeStageId={defaultLifeStageId}
-          breakoutCandidates={breakoutCandidates}
-          frame="plain"
-          walkIn={{
-            occurrenceId,
-            prefill:
-              queryIsPhone(query)
-                ? { mobileNumber: query }
-                : query
-                  ? { email: query }
-                  : {},
-            onSuccess: handleWalkInSuccess,
-            onBack: () => {
-              setError(null)
-              setStep("not-found-prompt")
-            },
-          }}
-        />
       </div>
     )
   }

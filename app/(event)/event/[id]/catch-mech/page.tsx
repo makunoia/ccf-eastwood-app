@@ -48,7 +48,7 @@ async function getCatchMechData(eventId: string) {
                   memberId: true,
                   guestId: true,
                   member: { select: { firstName: true, lastName: true, smallGroupId: true } },
-                  guest: { select: { firstName: true, lastName: true } },
+                  guest: { select: { firstName: true, lastName: true, memberId: true } },
                 },
               },
             },

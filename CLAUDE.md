@@ -234,6 +234,17 @@ Weighted scoring engine for SmallGroup suggestions and Breakout auto-assignment.
 
 ---
 
+## AI Assistant
+
+SuperAdmin-only chat assistant (floating button, right-side Sheet) mounted in the dashboard and event-workspace layouts. Built on the Vercel AI SDK (`ai` v7) + `@ai-sdk/anthropic` (`ANTHROPIC_API_KEY` required; model constant in `lib/assistant/config.ts`).
+
+- **Server**: `lib/assistant/` — `config.ts` (model + cost caps), `system-prompt.ts`, `serializers.ts` (compact JSON projections; never return raw Prisma rows from a tool), `queries.ts` (read-only helpers, row-capped), `tools.ts` (`buildAssistantTools(session)` — tools close over the session and re-check `canRead`/`canWrite`/`canAccessEvent` per call), `agent.ts` (`ToolLoopAgent` per request). Route: `app/api/assistant/route.ts` (401 unauthenticated / 403 non-SuperAdmin).
+- **Writes**: every write tool is listed in `WRITE_TOOL_NAMES` and gated by `toolApproval: 'user-approval'` — the client renders an Approve/Cancel card before execution. Write tools delegate to the existing server actions (which re-run `requireWrite()` + Zod). No delete tools — ever.
+- **Client**: `components/assistant/` — panel, message list, per-tool renderers (tables/chart/cards), approval card. Conversation state is in-memory only (resets on reload).
+- **Adding a tool**: define it in `tools.ts` (zod `inputSchema`, permission check first line of `execute`, serialize via `serializers.ts`); if it writes, add its name to `WRITE_TOOL_NAMES` and a title in `approval-card.tsx`; add a renderer case in `tool-renderers.tsx` + a loading label; ship schema + integration tests like `tests/integration/assistant-tools.test.ts`.
+
+---
+
 ## Development Conventions
 
 ### Migrations
