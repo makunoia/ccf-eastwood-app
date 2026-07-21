@@ -236,6 +236,7 @@ async function getMemberActivityData(memberId: string) {
         include: {
           smallGroup: { select: { id: true, name: true } },
           performedByUser: { select: { name: true } },
+          performedByMember: { select: { firstName: true, lastName: true } },
         },
       }),
       guest
@@ -245,6 +246,7 @@ async function getMemberActivityData(memberId: string) {
             include: {
               smallGroup: { select: { id: true, name: true } },
               performedByUser: { select: { name: true } },
+          performedByMember: { select: { firstName: true, lastName: true } },
             },
           })
         : Promise.resolve([]),
@@ -290,6 +292,7 @@ async function getMemberActivityData(memberId: string) {
       description: log.description,
       smallGroup: log.smallGroup,
       performedByUser: log.performedByUser,
+      performedByMember: log.performedByMember,
       createdAt: log.createdAt,
     })),
     ...guestLogs.map((log) => ({
@@ -299,6 +302,7 @@ async function getMemberActivityData(memberId: string) {
       description: log.description,
       smallGroup: log.smallGroup,
       performedByUser: log.performedByUser,
+      performedByMember: log.performedByMember,
       createdAt: log.createdAt,
     })),
     ...memberRegistrations.map((r) => ({

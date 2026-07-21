@@ -158,6 +158,7 @@ const LOG_ACTION_LABELS: Record<string, string> = {
   TempAssignmentCreated: "Temp assignment created",
   TempAssignmentConfirmed: "Assignment confirmed",
   TempAssignmentRejected: "Assignment rejected/cancelled",
+  ConfirmationSubmitted: "Confirmation form submitted",
 }
 
 function formatRelativeTime(date: Date): string {

@@ -7,6 +7,11 @@ import {
   resolveCatchMechTargets,
   type CandidateGroup,
 } from "@/lib/catch-mech/targets"
+import {
+  recordConfirmationSubmission,
+  submitterName,
+  tallyDecisions,
+} from "@/lib/catch-mech/submission-log"
 import { revalidatePath } from "next/cache"
 
 type ActionResult<T = void> =
@@ -156,6 +161,7 @@ export async function submitCatchMechConfirmations(
   const session = await db.catchMechSession.findUnique({
     where: { token },
     select: {
+      id: true,
       eventId: true,
       facilitatorVolunteerId: true,
       breakoutGroupId: true,
@@ -171,6 +177,8 @@ export async function submitCatchMechConfirmations(
           member: {
             select: {
               id: true,
+              firstName: true,
+              lastName: true,
               ledGroups: {
                 select: { id: true, name: true },
                 orderBy: { createdAt: "asc" },
@@ -197,6 +205,9 @@ export async function submitCatchMechConfirmations(
   // need no group and persist right here.
   if (candidates.length === 0) {
     if (decisions.some((d) => d.status === "confirmed")) {
+      // Deliberately not recorded: nothing is persisted here and the same logical
+      // submission completes in createSmallGroupForTimothy, which logs it. Logging
+      // both would double-count one answer.
       return { success: true, requiresGroupName: true }
     }
     return persistGrouplessDeclines(session, decisions)
@@ -227,8 +238,21 @@ export async function submitCatchMechConfirmations(
         registrantMap,
         takenEmails,
         tx,
-        eventName
+        eventName,
+        session.facilitator.member.id
       )
+
+      await recordConfirmationSubmission(tx, {
+        source: "CatchMech",
+        sessionId: session.id,
+        eventId: session.eventId,
+        breakoutGroupId: session.breakoutGroupId,
+        facilitatorVolunteerId: session.facilitatorVolunteerId,
+        submittedByMemberId: session.facilitator.member.id,
+        submittedByName: submitterName(session.facilitator.member),
+        decisions,
+        ...tallyDecisions(decisions),
+      })
     }, { timeout: 30000 })
   } catch (err) {
     console.error("[submitCatchMechConfirmations]", err)
@@ -248,19 +272,23 @@ export async function submitCatchMechConfirmations(
  */
 async function persistGrouplessDeclines(
   session: {
+    id: string
     eventId: string
     breakoutGroupId: string
     facilitatorVolunteerId: string
+    facilitator: { member: { id: string; firstName: string; lastName: string } }
   },
   decisions: ConfirmDecision[]
 ): Promise<ConfirmResult> {
   const declined = decisions.filter((d) => d.status === "declined")
-  if (declined.length === 0) return { success: true, requiresGroupName: false }
 
   const { registrantMap } = await prefetchRegistrantData(declined)
 
   try {
     await db.$transaction(async (tx) => {
+      // No early return on an empty decline list — this is the one path where a
+      // faci's answer can produce zero member requests, so the submission row is
+      // the only record that they responded at all.
       for (const d of declined) {
         const registrant = registrantMap.get(d.registrantId)
         if (!registrant) continue
@@ -294,6 +322,18 @@ async function persistGrouplessDeclines(
           },
         })
       }
+
+      await recordConfirmationSubmission(tx, {
+        source: "CatchMech",
+        sessionId: session.id,
+        eventId: session.eventId,
+        breakoutGroupId: session.breakoutGroupId,
+        facilitatorVolunteerId: session.facilitatorVolunteerId,
+        submittedByMemberId: session.facilitator.member.id,
+        submittedByName: submitterName(session.facilitator.member),
+        decisions,
+        ...tallyDecisions(decisions),
+      })
     }, { timeout: 30000 })
   } catch (err) {
     console.error("[persistGrouplessDeclines]", err)
@@ -324,6 +364,7 @@ export async function createSmallGroupForTimothy(
   const session = await db.catchMechSession.findUnique({
     where: { token },
     select: {
+      id: true,
       eventId: true,
       facilitatorVolunteerId: true,
       breakoutGroupId: true,
@@ -334,6 +375,8 @@ export async function createSmallGroupForTimothy(
           member: {
             select: {
               id: true,
+              firstName: true,
+              lastName: true,
               ledGroups: { select: { id: true }, take: 1 },
             },
           },
@@ -377,6 +420,7 @@ export async function createSmallGroupForTimothy(
         data: {
           smallGroupId: created.id,
           action: "GroupCreated",
+          performedByMemberId: faciMember.id,
           description: `Group "${groupName.trim()}" was created via Catch Mech${eventName ? ` of ${eventName}` : ""}`,
         },
       })
@@ -405,8 +449,22 @@ export async function createSmallGroupForTimothy(
         registrantMap,
         takenEmails,
         tx,
-        eventName
+        eventName,
+        faciMember.id
       )
+
+      await recordConfirmationSubmission(tx, {
+        source: "CatchMech",
+        sessionId: session.id,
+        eventId: session.eventId,
+        breakoutGroupId: session.breakoutGroupId,
+        facilitatorVolunteerId: session.facilitatorVolunteerId,
+        submittedByMemberId: faciMember.id,
+        submittedByName: submitterName(faciMember),
+        createdGroupId: created.id,
+        decisions,
+        ...tallyDecisions(decisions),
+      })
     }, { timeout: 30000 })
 
     revalidatePath("/small-groups")
@@ -516,7 +574,9 @@ async function resolveConfirmations(
   registrantMap: Map<string, FetchedRegistrant>,
   takenEmails: Set<string>,
   tx: Prisma.TransactionClient,
-  eventName: string | null
+  eventName: string | null,
+  /** The faci's Member — public flow has no User, so this is the only attribution. */
+  actorMemberId: string | null
 ): Promise<void> {
   const now = new Date()
 
@@ -576,6 +636,7 @@ async function resolveConfirmations(
           action: "TempAssignmentRejected",
           guestId: registrant.guestId ?? null,
           memberId: registrant.memberId ?? null,
+          performedByMemberId: actorMemberId,
           description: `${personName}'s membership was declined via Catch Mech${eventName ? ` of ${eventName}` : ""}`,
         },
       })
@@ -635,6 +696,7 @@ async function resolveConfirmations(
           smallGroupId,
           action: "MemberAdded",
           memberId: newMember.id,
+          performedByMemberId: actorMemberId,
           description: `${guest.firstName} ${guest.lastName} confirmed via Catch Mech${eventName ? ` of ${eventName}` : ""} and joined the group`,
         },
       })
@@ -669,6 +731,7 @@ async function resolveConfirmations(
           smallGroupId,
           action: "MemberAdded",
           memberId: registrant.memberId,
+          performedByMemberId: actorMemberId,
           description: `${member.firstName} ${member.lastName} confirmed via Catch Mech${eventName ? ` of ${eventName}` : ""} and joined the group`,
         },
       })

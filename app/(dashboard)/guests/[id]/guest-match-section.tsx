@@ -468,6 +468,7 @@ export const GuestMatchSection = React.forwardRef<
                     {level.matches.map((r: MatchResult) => (
                       <SmallGroupMatchCard
                         key={r.groupId}
+                        showBreakdown
                         result={r}
                         onAssign={() => { void handleAssign(r.groupId) }}
                         assigning={assigningId === r.groupId}
@@ -680,6 +681,7 @@ export const GuestMatchSection = React.forwardRef<
                   {level.matches.map((r: MatchResult) => (
                     <SmallGroupMatchCard
                       key={r.groupId}
+                      showBreakdown
                       result={r}
                       onAssign={() => { void handleAssign(r.groupId) }}
                       assigning={assigningId === r.groupId}

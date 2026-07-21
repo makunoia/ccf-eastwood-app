@@ -214,23 +214,32 @@ Facilitator-led confirmation flow that converts breakout group attendees into Sm
 
 ## Matching Algorithm
 
-Weighted scoring engine for SmallGroup suggestions and Breakout auto-assignment. Each parameter scores 0.0–1.0, multiplied by its weight, summed to a compatibility score.
+Scoring engine for SmallGroup suggestions and Breakout auto-assignment. Each factor is scored 0.0–1.0 **and flagged `known`** (was it actually measurable, or is 0.5 a placeholder for missing data). Only the six **weighted factors** feed the score; the three **hard gates** are pass/fail eligibility filters applied before scoring.
 
-| Parameter | Scoring logic |
+**Hard eligibility gates** (a group failing any is excluded entirely — never scored, never weighted):
+
+| Gate | Rule |
 |---|---|
-| Life Stage | 1.0 match, 0.5 group has none set, 0.0 mismatch |
-| Gender | 1.0 match or Mixed, 0.0 mismatch |
-| Language | 1.0 same primary, 0.0 no overlap |
-| Age | 1.0 in range, linear decay to 0.0 outside |
-| Schedule | Overlap ratio of time windows |
-| Work City | 1.0 same, 0.0 different |
-| Meeting Preference | 1.0 exact, 0.5 Hybrid↔Online/InPerson, 0.0 incompatible |
-| Career/Industry | Ratio of existing members in same industry |
-| Capacity | `(memberLimit - currentCount) / memberLimit` |
+| Life Stage | 1.0 match; excluded on mismatch; unknown (0.5, no filter) when group sets none or candidate has none |
+| Gender | 1.0 match or group is Mixed/none; excluded on mismatch; unknown when candidate gender missing |
+| Schedule | Excluded when candidate's availability doesn't overlap the group's meeting time |
 
-**MatchingWeightConfig:** `{ context (SmallGroup|Breakout), lifeStage, gender, language, age, schedule, location, mode, career, capacity }` — all floats summing to 1.0. Configured per context in **Settings → Matching Weights**.
+**Weighted factors** (0.0–1.0 × weight, normalised over the active-weight total):
 
-**Code:** `lib/matching/` — `types.ts`, `scorers.ts`, `engine.ts` (pure/no DB), `index.ts` (DB-aware entry points).
+| Factor | Scoring logic |
+|---|---|
+| Language | 1.0 any overlap, 0.0 no overlap; unknown when either side empty |
+| Age | 1.0 in range, linear decay over 10 years to 0.0 outside; unknown without birth year or group range |
+| Work City | 1.0 same, 0.0 different; unknown when either missing |
+| Meeting Preference | 1.0 exact, 0.5 Hybrid↔Online/InPerson, 0.0 incompatible; unknown when either missing |
+| Career/Industry | Peer-count ladder: 0→0.25, 1→0.70, 2→0.85, 3+→1.0 (group-size independent); unknown without candidate industry or group roster |
+| Capacity | `null` limit → unknown (0.5); else `0.4 + 0.6·min(1, openSlots/3)` — gentle load-balancing (full groups already gate-excluded) |
+
+Each result also carries `breakdown` (all nine sub-scores), `coverage` (per-factor `known` flags), `confidence` (share of active weight backed by measured factors), and `groupSummary` (group-side facts for the UI, with `industryPeerCount` in place of the member roster — safe for the public join page). Results sort by score, then by confidence as a tie-break.
+
+**MatchingWeightConfig:** `{ context (SmallGroup|Breakout), lifeStage, gender, language, age, schedule, location, mode, career, capacity, guestCooldownDays }`. Weights are **normalised at scoring time over the six active factors** (`ACTIVE_WEIGHT_KEYS` in `lib/validations/matching-weights.ts`) — they do NOT need to sum to 1. The three gate columns (`lifeStage`, `gender`, `schedule`) are retained but unweighted (kept at 0); they exist so a gate could be re-promoted to a weighted factor without a schema migration. Configured per context in **Settings → Matching Weights** (six sliders + a read-only "Requirements" section for the gates).
+
+**Code:** `lib/matching/` — `types.ts`, `scorers.ts` (`scoreXDetailed` returns `{score, known}`; plain `scoreX` wrappers), `engine.ts` (pure/no DB — normalisation + confidence + groupSummary), `index.ts` (DB-aware entry points). UI: `components/small-group-match-card.tsx` (`buildFitReasons` → `{strengths, considerations}`, `MatchBreakdown` grid behind `showBreakdown`, admin-only), `components/matching/factor-meta.tsx` (icons/colours/`scoreBand`, client-only).
 
 ---
 

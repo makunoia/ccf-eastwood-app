@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { SmallGroupMatchCard } from "@/components/small-group-match-card"
+import { BreakoutGroupDetailSheet } from "@/components/breakout-group-detail-sheet"
 import {
   findBreakoutGroupMatches,
   assignRegistrantToBreakout,
@@ -40,6 +41,8 @@ export function BreakoutSection({ registrantId, eventId, facilitatedGroup, allEv
   const [matchState, setMatchState] = React.useState<"idle" | "loading" | "done">("idle")
   const [matchResults, setMatchResults] = React.useState<MatchResult[]>([])
   const [assigningId, setAssigningId] = React.useState<string | null>(null)
+  const [selectedGroupId, setSelectedGroupId] = React.useState<string | null>(null)
+  const [sheetOpen, setSheetOpen] = React.useState(false)
 
   // ── Facilitator view ──────────────────────────────────────────────────────
 
@@ -79,6 +82,11 @@ export function BreakoutSection({ registrantId, eventId, facilitatedGroup, allEv
     else toast.error(res.error)
   }
 
+  function openDetails(groupId: string) {
+    setSelectedGroupId(groupId)
+    setSheetOpen(true)
+  }
+
   const autoMatchContent = (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -109,9 +117,11 @@ export function BreakoutSection({ registrantId, eventId, facilitatedGroup, allEv
             {matchResults.map((r) => (
               <SmallGroupMatchCard
                 key={r.groupId}
+                showBreakdown
                 result={r}
                 onAssign={() => { void handleAssign(r.groupId) }}
                 assigning={assigningId === r.groupId}
+                onGroupClick={() => openDetails(r.groupId)}
               />
             ))}
           </div>
@@ -130,7 +140,13 @@ export function BreakoutSection({ registrantId, eventId, facilitatedGroup, allEv
           return (
             <div key={g.id} className="flex items-center justify-between rounded-lg border px-3 py-2.5 gap-3">
               <div>
-                <p className="text-sm font-medium">{g.name}</p>
+                <button
+                  type="button"
+                  onClick={() => openDetails(g.id)}
+                  className="text-sm font-medium text-left underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors cursor-pointer"
+                >
+                  {g.name}
+                </button>
                 {g.memberLimit !== null && (
                   <p className="text-xs text-muted-foreground">
                     {g.currentCount} / {g.memberLimit} members
@@ -181,6 +197,13 @@ export function BreakoutSection({ registrantId, eventId, facilitatedGroup, allEv
       </div>
 
       {mode === "auto" ? autoMatchContent : browseContent}
+
+      <BreakoutGroupDetailSheet
+        groupId={selectedGroupId}
+        eventId={eventId}
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+      />
     </div>
   )
 }

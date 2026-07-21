@@ -7,6 +7,7 @@ import {
   matchingWeightsSchema,
   guestCooldownDaysSchema,
   DEFAULT_WEIGHTS,
+  ACTIVE_WEIGHT_KEYS,
   type MatchingWeightsFormValues,
 } from "@/lib/validations/matching-weights"
 
@@ -26,9 +27,12 @@ export async function upsertMatchingWeights(
   const { lifeStage, gender, language, age, schedule, location, mode, career, capacity } =
     parsed.data
 
-  const sum = lifeStage + gender + language + age + schedule + location + mode + career + capacity
-  if (Math.abs(sum - 1) > 0.001) {
-    return { success: false, error: "Weights must sum to 1.00" }
+  // Only the active (non-gate) factors carry weight, and the engine normalises
+  // by their sum — so the invariant is "at least one active factor is on",
+  // not "everything sums to 1".
+  const activeSum = ACTIVE_WEIGHT_KEYS.reduce((s, k) => s + parsed.data[k], 0)
+  if (activeSum <= 0) {
+    return { success: false, error: "At least one matching factor must be turned on" }
   }
 
   try {

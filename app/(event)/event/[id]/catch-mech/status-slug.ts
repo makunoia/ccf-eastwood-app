@@ -9,6 +9,11 @@ import type { Prisma } from "@/app/generated/prisma/client"
  * aren't already in a small group, so an `AlreadyInSmallGroup` decline isn't a
  * rejection: those people were never candidates.
  */
+/**
+ * Reserved: "submissions" is a static sibling route (facilitator response
+ * tracking). Next.js resolves it before this dynamic segment, so it must never
+ * be added here.
+ */
 export const CATCH_MECH_SLUGS = [
   "confirmed",
   "rejected",

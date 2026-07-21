@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { IconCalendar, IconCheck, IconClock, IconMessageCircle, IconUserCheck, IconX } from "@tabler/icons-react"
 import { TimelineEntry } from "@/components/ui/timeline-entry"
+import { logActorName } from "@/lib/small-group-log"
 
 type SmallGroupLogEntry = {
   kind: "smallGroupLog"
@@ -22,6 +23,7 @@ type SmallGroupLogEntry = {
   performedByUser: {
     name: string | null
   } | null
+  performedByMember: { firstName: string; lastName: string } | null
 }
 
 type EventRegistrationEntry = {
@@ -196,8 +198,8 @@ export function GuestActivityLog({ entries }: { entries: ActivityEntry[] }) {
             icon={iconForSmallGroupAction(entry.action)}
             isLast={isLast}
           >
-            {entry.performedByUser?.name && (
-              <p className="text-xs text-muted-foreground">Action by {entry.performedByUser.name}</p>
+            {logActorName(entry) && (
+              <p className="text-xs text-muted-foreground">Action by {logActorName(entry)}</p>
             )}
             <p className="text-sm font-medium">
               {entry.description ?? ACTION_LABEL[entry.action]}

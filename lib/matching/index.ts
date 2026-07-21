@@ -9,6 +9,12 @@ import type { CandidateProfile, GroupProfile, MatchResult, WeightConfig, Escalat
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+// Rank by score, then break ties toward the more confident match — a 70% built
+// on measured data should sit above a 70% built on placeholder 0.5s.
+function byScoreThenConfidence(a: MatchResult, b: MatchResult): number {
+  return b.totalScore - a.totalScore || b.confidence - a.confidence
+}
+
 function buildCandidateFromMember(m: {
   lifeStageId: string | null
   gender: "Male" | "Female" | null
@@ -75,7 +81,7 @@ function buildSmallGroupProfile(
   g: {
     id: string
     name: string
-    lifeStages: { id: string }[]
+    lifeStages: { id: string; name: string }[]
     genderFocus: "Male" | "Female" | "Mixed" | null
     language: string[]
     ageRangeMin: number | null
@@ -96,6 +102,7 @@ function buildSmallGroupProfile(
     id: g.id,
     name: g.name,
     lifeStageIds: g.lifeStages.map((ls) => ls.id),
+    lifeStageNames: g.lifeStages.map((ls) => ls.name),
     genderFocus: g.genderFocus,
     language: g.language,
     ageRangeMin: g.ageRangeMin,
@@ -119,7 +126,7 @@ const SMALL_GROUP_SCORE_SELECT = {
   id: true,
   name: true,
   groupType: true,
-  lifeStages: { select: { id: true } },
+  lifeStages: { select: { id: true, name: true } },
   genderFocus: true,
   language: true,
   ageRangeMin: true,
@@ -363,7 +370,7 @@ export async function matchSmallGroups(
       ...scoreGroup(candidate, buildSmallGroupProfile(g), weights),
       onCooldown: isOnCooldown(g.id),
     }))
-    .sort((a, b) => b.totalScore - a.totalScore)
+    .sort(byScoreThenConfidence)
     .slice(0, options?.limit ?? 10)
 }
 
@@ -452,6 +459,7 @@ export async function matchCouplesGroups(
       if (g.memberLimit !== null && g._count.members + 2 > g.memberLimit) return false
       const gp = buildSmallGroupProfile(g)
       for (const candidate of [candidateA, candidateB]) {
+        if (scoreGender(candidate.gender, gp.genderFocus) === 0.0) return false
         if (scoreLifeStage(candidate.lifeStageId, gp.lifeStageIds) === 0.0) return false
         if (scoreSchedule(candidate.scheduleSlots, gp.scheduleSlots) === 0.0) return false
       }
@@ -594,7 +602,7 @@ export async function matchSmallGroupsWithEscalation(
   }))
 
   const sortByScore = (arr: typeof scored) =>
-    arr.map((s) => s.result).sort((a, b) => b.totalScore - a.totalScore)
+    arr.map((s) => s.result).sort(byScoreThenConfidence)
 
   const l1Scored = scored.filter((s) => level1Ids.has(s.id))
   const l2Scored = scored.filter((s) => level2Ids.has(s.id))
@@ -708,7 +716,7 @@ export async function matchBreakoutGroups(
     select: {
       id: true,
       name: true,
-      lifeStages: { select: { id: true } },
+      lifeStages: { select: { id: true, name: true } },
       genderFocus: true,
       language: true,
       ageRangeMin: true,
@@ -778,6 +786,7 @@ export async function matchBreakoutGroups(
         id: g.id,
         name: g.name,
         lifeStageIds: g.lifeStages.map((ls) => ls.id),
+        lifeStageNames: g.lifeStages.map((ls) => ls.name),
         genderFocus: effectiveGenderFocus,
         language: g.language,
         ageRangeMin: g.ageRangeMin,
@@ -796,6 +805,6 @@ export async function matchBreakoutGroups(
 
       return scoreGroup(candidate, profile, weights)
     })
-    .sort((a, b) => b.totalScore - a.totalScore)
+    .sort(byScoreThenConfidence)
     .slice(0, options?.limit ?? 5)
 }

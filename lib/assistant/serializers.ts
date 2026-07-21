@@ -350,7 +350,12 @@ type MatchResultSource = {
   onCooldown?: boolean
 }
 
-/** Drops the bulky candidateProfile from engine results — token economy. */
+/**
+ * Drops the bulky per-result fields the model doesn't need — token economy.
+ * Explicit allow-list projection: candidateProfile, groupSummary, coverage and
+ * confidence all stay out. (An explicit projection also means new MatchResult
+ * fields never leak into the assistant surface by accident.)
+ */
 export function toAssistantMatchRow(m: MatchResultSource): AssistantMatchRow {
   return {
     groupId: m.groupId,

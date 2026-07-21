@@ -28,6 +28,9 @@ async function getCatchMechData(eventId: string) {
           id: true,
           name: true,
           facilitatorId: true,
+          // coFacilitatorId is needed only for the response tally — a co-faci gets
+          // their own session and their own form, so they are a separate responder.
+          coFacilitatorId: true,
           facilitator: {
             select: {
               member: {
@@ -87,7 +90,24 @@ async function getCatchMechData(eventId: string) {
   // Build per-group rows + aggregate stats (pure, see aggregate.ts)
   const { groupRows, stats } = buildCatchMechGroupRows(event.breakoutGroups, allRequests)
 
-  return { groupRows, stats, weeklyBuckets }
+  // Facilitator response rate — distinct responders over everyone expected to answer.
+  // Counted from submissions, not sessions: a session exists as soon as a faci
+  // verifies their mobile, which is not the same as answering the form.
+  const submitted = await db.confirmationSubmission.findMany({
+    where: { eventId, source: "CatchMech", facilitatorVolunteerId: { not: null } },
+    select: { facilitatorVolunteerId: true },
+    distinct: ["facilitatorVolunteerId"],
+  })
+  const expectedResponders = event.breakoutGroups.flatMap((bg) =>
+    [bg.facilitatorId, bg.coFacilitatorId].filter((v): v is string => v !== null)
+  )
+  const respondedSet = new Set(submitted.map((s) => s.facilitatorVolunteerId))
+  const response = {
+    responded: expectedResponders.filter((v) => respondedSet.has(v)).length,
+    expected: expectedResponders.length,
+  }
+
+  return { groupRows, stats, weeklyBuckets, response }
 }
 
 /** Whole-number percentage, guarding a zero denominator. */
@@ -150,7 +170,7 @@ export default async function CatchMechAdminPage({
   const data = await getCatchMechData(id)
   if (!data) notFound()
 
-  const { groupRows, stats, weeklyBuckets } = data
+  const { groupRows, stats, weeklyBuckets, response } = data
 
   const session = await auth()
   const canViewMember = canRead(session, "Members")
@@ -166,7 +186,7 @@ export default async function CatchMechAdminPage({
           people catch mech is actually trying to place — so the three sum to 100%.
           In Small Group is measured against the full cohort instead: it's the share
           who were never candidates. */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <CatchMechStatCard
           label="To Match"
           value={stats.matchable}
@@ -199,6 +219,13 @@ export default async function CatchMechAdminPage({
           sub={`${pct(stats.totalPending, stats.matchable)}% of to match`}
           color="text-amber-600"
           href={`/event/${id}/catch-mech/pending`}
+        />
+        <CatchMechStatCard
+          label="Responded"
+          value={response.responded}
+          sub={`of ${response.expected} facilitators`}
+          color="text-violet-600"
+          href={`/event/${id}/catch-mech/submissions`}
         />
       </div>
 

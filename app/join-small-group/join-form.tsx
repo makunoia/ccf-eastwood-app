@@ -91,7 +91,7 @@ function ResultCard({
   onSelect: () => void
 }) {
   const [detailsOpen, setDetailsOpen] = React.useState(false)
-  const reasons = buildFitReasons(result)
+  const { strengths, considerations } = buildFitReasons(result)
 
   const scheduleText = result.scheduleTimeStart
     ? `${formatDay(result.scheduleDayOfWeek)}s · ${formatTime(result.scheduleTimeStart)}${
@@ -145,15 +145,37 @@ function ResultCard({
               {score === 100 ? "Perfect fit based on your profile" : `${score}% overall match`}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Why this group fits you
-            </p>
-            <ul className="space-y-1.5 text-sm text-muted-foreground">
-              {reasons.map((reason) => (
-                <li key={reason}>• {reason}</li>
-              ))}
-            </ul>
+          <div className="space-y-4 py-2">
+            {strengths.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Why this group fits you
+                </p>
+                <ul className="space-y-1.5 text-sm text-muted-foreground">
+                  {strengths.map((reason) => (
+                    <li key={reason}>• {reason}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {considerations.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Worth considering
+                </p>
+                <ul className="space-y-1.5 text-sm text-muted-foreground">
+                  {considerations.map((reason) => (
+                    <li key={reason}>• {reason}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {strengths.length === 0 && considerations.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                We matched you on the details you shared — add more to your profile
+                for an even better fit.
+              </p>
+            )}
           </div>
         </DialogContent>
       </Dialog>

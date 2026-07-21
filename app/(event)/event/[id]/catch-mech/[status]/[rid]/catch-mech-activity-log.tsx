@@ -7,6 +7,7 @@ import { IconCheck, IconClock, IconMessageCircle, IconX } from "@tabler/icons-re
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { TimelineEntry } from "@/components/ui/timeline-entry"
+import { logActorName } from "@/lib/small-group-log"
 import { toast } from "sonner"
 import { addCatchMechComment } from "../../matching-actions"
 
@@ -25,6 +26,7 @@ type SmallGroupLogEntry = {
   createdAt: Date
   smallGroup: { id: string; name: string }
   performedByUser: { name: string | null } | null
+  performedByMember: { firstName: string; lastName: string } | null
 }
 
 type CommentEntry = {
@@ -137,8 +139,8 @@ export function CatchMechActivityLog({ entries, requestId, canViewSmallGroup }: 
                 icon={iconForAction(entry.action)}
                 isLast={isLast}
               >
-                {entry.performedByUser?.name && (
-                  <p className="text-xs text-muted-foreground">Action by {entry.performedByUser.name}</p>
+                {logActorName(entry) && (
+                  <p className="text-xs text-muted-foreground">Action by {logActorName(entry)}</p>
                 )}
                 <p className="text-sm font-medium">
                   {entry.description ?? ACTION_LABEL[entry.action]}

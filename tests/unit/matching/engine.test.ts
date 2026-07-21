@@ -20,6 +20,7 @@ const BASE_GROUP: GroupProfile = {
   id: "group-1",
   name: "Young Professionals",
   lifeStageIds: [],
+  lifeStageNames: [],
   genderFocus: null,
   language: [],
   ageRangeMin: null,
@@ -57,12 +58,68 @@ describe("scoreGroup", () => {
   })
 
   it("returns correct totalScore when candidate and group have no data", () => {
-    // scoreGender(null, null) = 1.0  — no gender focus means group accepts all (positive)
-    // scoreCapacity(null, 0) = 1.0   — no member limit means unlimited (positive)
-    // all other scorers return 0.5 for null/empty inputs
-    // totalScore = (0.5 × 7 + 1.0 × 2) / 9 = 5.5/9 ≈ 0.6111
+    // Gate factors (lifeStage, gender, schedule) carry no weight — only the six
+    // active factors are scored, and all six return 0.5 for empty inputs, so
+    // the normalised total is 0.5.
     const result = scoreGroup(EMPTY_CANDIDATE, BASE_GROUP, EQUAL_WEIGHTS)
-    expect(result.totalScore).toBeCloseTo(5.5 / 9, 5)
+    expect(result.totalScore).toBeCloseTo(0.5, 5)
+  })
+
+  it("ignores gate-factor weights entirely (they are hard filters, not weights)", () => {
+    // lifeStage is a gate. Piling weight onto it must not move the score,
+    // because eligibility is decided upstream, never here.
+    const candidate: CandidateProfile = { ...EMPTY_CANDIDATE, lifeStageId: "ls-1" }
+    const group: GroupProfile = { ...BASE_GROUP, lifeStageIds: ["ls-1"] }
+
+    const heavyGate = scoreGroup(candidate, group, {
+      ...EQUAL_WEIGHTS,
+      lifeStage: 0.9,
+    })
+    const noGate = scoreGroup(candidate, group, { ...EQUAL_WEIGHTS, lifeStage: 0 })
+
+    expect(heavyGate.totalScore).toBeCloseTo(noGate.totalScore, 10)
+  })
+
+  it("reports coverage and confidence", () => {
+    const result = scoreGroup(EMPTY_CANDIDATE, BASE_GROUP, EQUAL_WEIGHTS)
+    // No active factor is measurable for an empty candidate → zero confidence.
+    // (A group with no gender focus is a "known" pass, but gender is a gate and
+    // doesn't count toward confidence.)
+    expect(result.confidence).toBe(0)
+    expect(result.coverage.language).toBe(false)
+    expect(result.coverage.age).toBe(false)
+    expect(result.coverage.capacity).toBe(false)
+  })
+
+  it("confidence rises as more active factors are measured", () => {
+    const candidate: CandidateProfile = {
+      ...EMPTY_CANDIDATE,
+      language: ["English"],
+      workCity: "Makati",
+    }
+    const group: GroupProfile = {
+      ...BASE_GROUP,
+      language: ["English"],
+      locationCity: "Makati",
+    }
+    const result = scoreGroup(candidate, group, EQUAL_WEIGHTS)
+
+    expect(result.coverage.language).toBe(true)
+    expect(result.coverage.location).toBe(true)
+    expect(result.coverage.age).toBe(false)
+    expect(result.confidence).toBeGreaterThan(0)
+    expect(result.confidence).toBeLessThan(1)
+  })
+
+  it("falls back to default weights when every active weight is zero", () => {
+    const allGateWeights: WeightConfig = {
+      lifeStage: 0.5, gender: 0.3, schedule: 0.2,
+      language: 0, age: 0, location: 0, mode: 0, career: 0, capacity: 0,
+    }
+    const result = scoreGroup(EMPTY_CANDIDATE, BASE_GROUP, allGateWeights)
+    // Would be NaN without the fallback
+    expect(Number.isFinite(result.totalScore)).toBe(true)
+    expect(result.totalScore).toBeCloseTo(0.5, 5)
   })
 
   it("returns higher score for well-matched candidate", () => {
@@ -133,32 +190,30 @@ describe("scoreGroup", () => {
     expect(result.totalScore).toBeLessThan(0.3)
   })
 
-  it("respects weights — higher weight for a matched dimension increases total score", () => {
+  it("respects weights — higher weight for a matched active dimension increases total score", () => {
     const candidate: CandidateProfile = {
       ...EMPTY_CANDIDATE,
-      lifeStageId: "ls-1",
+      language: ["Filipino"],
     }
     const group: GroupProfile = {
       ...BASE_GROUP,
-      lifeStageIds: ["ls-1"],
+      language: ["Filipino"],
     }
 
-    // Weights that heavily favour lifeStage
-    const heavyLifeStageWeights: WeightConfig = {
-      lifeStage: 0.8,
-      gender: 0.025,
-      language: 0.025,
-      age: 0.025,
-      schedule: 0.025,
-      location: 0.025,
-      mode: 0.025,
-      career: 0.025,
-      capacity: 0.025,
+    // Weights that heavily favour language (an active factor)
+    const heavyLanguageWeights: WeightConfig = {
+      lifeStage: 0, gender: 0, schedule: 0,
+      language: 0.75,
+      age: 0.05,
+      location: 0.05,
+      mode: 0.05,
+      career: 0.05,
+      capacity: 0.05,
     }
 
-    const result = scoreGroup(candidate, group, heavyLifeStageWeights)
-    // lifeStage=1.0 * 0.8 + rest * ~0.5 → > 0.9
-    expect(result.totalScore).toBeGreaterThan(0.9)
+    const result = scoreGroup(candidate, group, heavyLanguageWeights)
+    // language=1.0 * 0.75 + rest * ~0.5 (of 1.0 active total) → > 0.85
+    expect(result.totalScore).toBeGreaterThan(0.85)
   })
 
   it("full group (at capacity) scores lower than a group with open slots (all else equal)", () => {
@@ -169,5 +224,48 @@ describe("scoreGroup", () => {
     const openResult = scoreGroup(EMPTY_CANDIDATE, openGroup, EQUAL_WEIGHTS)
 
     expect(openResult.totalScore).toBeGreaterThan(fullResult.totalScore)
+  })
+
+  it("scores a legacy row (nonzero gate weights) identically to a renormalised one", () => {
+    // This is why no data migration is needed: because the engine normalises by
+    // the active-weight total and ignores gates, a config carrying leftover gate
+    // weight produces the same score as one where those columns are zeroed and
+    // the six active weights are renormalised to sum to 1.
+    const candidate: CandidateProfile = {
+      ...EMPTY_CANDIDATE,
+      language: ["Filipino"],
+      workCity: "Makati",
+      workIndustry: "Tech",
+    }
+    const group: GroupProfile = {
+      ...BASE_GROUP,
+      language: ["Filipino"],
+      locationCity: "Makati",
+      memberLimit: 10,
+      currentCount: 4,
+      memberIndustries: ["Tech", "Finance"],
+    }
+
+    // The pre-change defaults — gates still carrying weight, everything sums to 1
+    const legacy: WeightConfig = {
+      lifeStage: 0.2, gender: 0.1, schedule: 0.15,
+      language: 0.1, age: 0.15, location: 0.1, mode: 0.05, career: 0.05, capacity: 0.1,
+    }
+    // Same six active values, gates zeroed, renormalised to sum to 1
+    const activeSum = 0.1 + 0.15 + 0.1 + 0.05 + 0.05 + 0.1
+    const renormalised: WeightConfig = {
+      lifeStage: 0, gender: 0, schedule: 0,
+      language: 0.1 / activeSum,
+      age: 0.15 / activeSum,
+      location: 0.1 / activeSum,
+      mode: 0.05 / activeSum,
+      career: 0.05 / activeSum,
+      capacity: 0.1 / activeSum,
+    }
+
+    const legacyScore = scoreGroup(candidate, group, legacy).totalScore
+    const renormScore = scoreGroup(candidate, group, renormalised).totalScore
+
+    expect(legacyScore).toBeCloseTo(renormScore, 10)
   })
 })

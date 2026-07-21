@@ -58,6 +58,7 @@ import {
   addRegistrantToBreakout,
   setFacilitator,
 } from "@/app/(dashboard)/events/breakout-actions"
+import { formatSchedule } from "@/lib/format/schedule"
 
 const UNASSIGNED = "__unassigned__"
 
@@ -75,6 +76,7 @@ type LedGroup = {
   locationCity: string | null
   scheduleDayOfWeek: number | null
   scheduleTimeStart: string | null
+  scheduleTimeEnd: string | null
 }
 
 type FacilitatorVolunteer = {
@@ -149,7 +151,7 @@ export type BreakoutDetailData = {
   locationCity: string | null
   memberLimit: number | null
   members: BreakoutMemberRow[]
-  schedules: { dayOfWeek: number; timeStart: string }[]
+  schedules: { dayOfWeek: number; timeStart: string; timeEnd: string | null }[]
   eventType: string
   totalOccurrences: number
 }
@@ -180,15 +182,6 @@ const GENDER_FOCUS_LABELS: Record<string, string> = {
   Mixed: "Mixed",
 }
 
-const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-
-function formatTime(t: string) {
-  const [hStr, mStr] = t.split(":")
-  const h = parseInt(hStr)
-  const ampm = h >= 12 ? "PM" : "AM"
-  const hour = h % 12 || 12
-  return `${hour}:${mStr} ${ampm}`
-}
 
 // ─── Facilitator small group card ───────────────────────────────────────────────
 
@@ -205,7 +198,10 @@ function SmallGroupCard({ group }: { group: LedGroup }) {
   if (group.meetingFormat) details.push({ label: "Format", value: MEETING_FORMAT_LABELS[group.meetingFormat] ?? group.meetingFormat })
   if (group.locationCity) details.push({ label: "Location", value: group.locationCity })
   if (group.scheduleDayOfWeek != null && group.scheduleTimeStart) {
-    details.push({ label: "Schedule", value: `${DAY_LABELS[group.scheduleDayOfWeek]} ${formatTime(group.scheduleTimeStart)}` })
+    details.push({
+      label: "Schedule",
+      value: formatSchedule(group.scheduleDayOfWeek, group.scheduleTimeStart, group.scheduleTimeEnd),
+    })
   }
 
   return (
@@ -813,6 +809,19 @@ export function BreakoutDetail({
           availableVolunteers={availableVolunteers}
         />
       </div>
+
+      {group.schedules.length > 0 && (
+        <div className="space-y-1">
+          <p className="type-label text-muted-foreground">Schedule</p>
+          <div className="flex flex-wrap gap-2">
+            {group.schedules.map((s, i) => (
+              <Badge key={`${s.dayOfWeek}-${s.timeStart}-${i}`} variant="secondary">
+                {formatSchedule(s.dayOfWeek, s.timeStart, s.timeEnd)}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      )}
 
       <Separator />
 

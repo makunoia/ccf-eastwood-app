@@ -111,6 +111,7 @@ async function getDetailData(registrantId: string, eventId: string, prismaStatus
         createdAt: true,
         smallGroup: { select: { id: true, name: true } },
         performedByUser: { select: { name: true } },
+          performedByMember: { select: { firstName: true, lastName: true } },
       },
     }),
   ])
@@ -235,6 +236,7 @@ export default async function CatchMechDetailPage({
       createdAt: log.createdAt,
       smallGroup: log.smallGroup,
       performedByUser: log.performedByUser,
+      performedByMember: log.performedByMember,
     })),
     ...(request?.comments ?? []).map((c) => ({
       kind: "comment" as const,

@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { mapCouplesInRoster } from "@/lib/family-links"
+import { logActorName } from "@/lib/small-group-log"
 import { SmallGroupForm } from "../small-group-form"
 import { type SmallGroupRow } from "../columns"
 
@@ -69,6 +70,7 @@ async function getSmallGroup(id: string): Promise<(SmallGroupRow & {
           description: true,
           createdAt: true,
           performedByUser: { select: { name: true } },
+          performedByMember: { select: { firstName: true, lastName: true } },
         },
       },
     },
@@ -88,13 +90,40 @@ async function getSmallGroup(id: string): Promise<(SmallGroupRow & {
     createdAt: req.createdAt,
   }))
 
-  const logs: GroupLogEntry[] = g.logs.map((l) => ({
-    id: l.id,
-    action: l.action,
-    description: l.description,
-    performedByName: l.performedByUser?.name ?? null,
-    createdAt: l.createdAt,
-  }))
+  // Leader confirmation submissions are event-less, so they have no place on the
+  // event workspace's submissions page — this timeline is where they surface. They
+  // matter most when they changed nothing (everything deferred), which leaves no
+  // SmallGroupLog row at all.
+  const submissions = await db.confirmationSubmission.findMany({
+    where: { smallGroupId: id, source: "SmallGroupLeader" },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+    select: {
+      id: true,
+      submittedByName: true,
+      confirmedCount: true,
+      declinedCount: true,
+      deferredCount: true,
+      createdAt: true,
+    },
+  })
+
+  const logs: GroupLogEntry[] = [
+    ...g.logs.map((l) => ({
+      id: l.id,
+      action: l.action as string,
+      description: l.description,
+      performedByName: logActorName(l),
+      createdAt: l.createdAt,
+    })),
+    ...submissions.map((s) => ({
+      id: `submission-${s.id}`,
+      action: "ConfirmationSubmitted",
+      description: `${s.submittedByName} submitted the confirmation form — ${s.confirmedCount} confirmed, ${s.declinedCount} declined, ${s.deferredCount} deferred`,
+      performedByName: null,
+      createdAt: s.createdAt,
+    })),
+  ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
 
   // Couples groups: pair roster members via shared Father/Mother family links
   const couples =
