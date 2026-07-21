@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { db } from "@/lib/db"
+import { findSpouse, type SpouseInfo } from "@/lib/family-links"
 
 type ActionResult<T = void> =
   | { success: true; data: T }
@@ -221,6 +222,204 @@ export async function updateLedGroupSchedule(
   }
 }
 
+// ─── Led groups: details ─────────────────────────────────────────────────────
+
+/** Leader-editable subset of the group profile — logistics, matching fields, and
+ *  group type. Remaining structural fields (leader, parent, life stage) stay
+ *  admin-only. Couples groups always host married pairs → gender focus is Mixed. */
+const nullableCity = z
+  .string()
+  .optional()
+  .transform((v) => (v == null || v.trim() === "" ? null : v.trim()))
+
+const nullablePositiveInt = z
+  .union([z.string(), z.number(), z.null(), z.undefined()])
+  .transform((v) =>
+    v == null || v === "" ? null : typeof v === "number" ? v : parseInt(v, 10)
+  )
+  .pipe(z.number().int().positive().nullable())
+
+const ledGroupDetailsSchema = z
+  .object({
+    name: z.string().min(1, "Group name is required").trim(),
+    groupType: z.preprocess(
+      (v) => (v === "" || v == null ? "Regular" : v),
+      z.enum(["Regular", "Couples"])
+    ),
+    meetingFormat: z.enum(["Online", "Hybrid", "InPerson"]),
+    locationCity: nullableCity,
+    language: z.array(z.string()).default([]),
+    ageRangeMin: nullablePositiveInt,
+    ageRangeMax: nullablePositiveInt,
+    memberLimit: nullablePositiveInt,
+    scheduleDayOfWeek: z.number().int().min(0).max(6),
+    scheduleTimeStart: z.string().regex(/^\d{2}:\d{2}$/, "Invalid start time"),
+    scheduleTimeEnd: z.string().regex(/^\d{2}:\d{2}$/, "Invalid end time"),
+  })
+  .refine((v) => v.scheduleTimeStart < v.scheduleTimeEnd, {
+    message: "End time must be after start time",
+    path: ["scheduleTimeEnd"],
+  })
+  .refine(
+    (v) =>
+      v.ageRangeMin == null ||
+      v.ageRangeMax == null ||
+      v.ageRangeMin <= v.ageRangeMax,
+    { message: "Max age must be greater than or equal to min age", path: ["ageRangeMax"] }
+  )
+
+export type LedGroupDetailsInput = {
+  name: string
+  groupType: string
+  meetingFormat: string
+  locationCity: string
+  language: string[]
+  ageRangeMin: string
+  ageRangeMax: string
+  memberLimit: string
+  scheduleDayOfWeek: number
+  scheduleTimeStart: string
+  scheduleTimeEnd: string
+}
+
+/** Creates a brand-new small group led by the token holder. Remaining structural
+ *  fields (life stage, parent) are left at their defaults for an admin to refine.
+ *  Couples groups are created with Mixed gender focus. */
+export async function createLedGroup(
+  token: string,
+  raw: LedGroupDetailsInput
+): Promise<ActionResult<{ id: string }>> {
+  try {
+    const member = await getMemberByToken(token)
+    if (!member) return { success: false, error: "Invalid or expired link" }
+
+    const parsed = ledGroupDetailsSchema.safeParse(raw)
+    if (!parsed.success) {
+      return {
+        success: false,
+        error: parsed.error.issues[0]?.message ?? "Invalid group details",
+      }
+    }
+
+    const {
+      name,
+      groupType,
+      meetingFormat,
+      locationCity,
+      language,
+      ageRangeMin,
+      ageRangeMax,
+      memberLimit,
+      scheduleDayOfWeek,
+      scheduleTimeStart,
+      scheduleTimeEnd,
+    } = parsed.data
+
+    const leaderName = `${member.firstName} ${member.lastName}`
+    const created = await db.$transaction(async (tx) => {
+      const group = await tx.smallGroup.create({
+        data: {
+          name,
+          leaderId: member.id,
+          groupType,
+          // Couples groups host married pairs — gender focus is always Mixed.
+          genderFocus: groupType === "Couples" ? "Mixed" : undefined,
+          meetingFormat,
+          locationCity,
+          language,
+          ageRangeMin,
+          ageRangeMax,
+          memberLimit,
+          scheduleDayOfWeek,
+          scheduleTimeStart,
+          scheduleTimeEnd,
+        },
+        select: { id: true },
+      })
+      await tx.smallGroupLog.create({
+        data: {
+          smallGroupId: group.id,
+          action: "GroupCreated",
+          performedByMemberId: member.id,
+          description: `Group "${name}" was created by ${leaderName} via the member portal`,
+        },
+      })
+      return group
+    })
+
+    revalidateGroupPages(created.id)
+    return { success: true, data: { id: created.id } }
+  } catch {
+    return { success: false, error: "Failed to create group" }
+  }
+}
+
+export async function updateLedGroupDetails(
+  token: string,
+  groupId: string,
+  raw: LedGroupDetailsInput
+): Promise<ActionResult> {
+  try {
+    const ctx = await getLedGroup(token, groupId)
+    if (!ctx) return { success: false, error: "Invalid or expired link" }
+
+    const parsed = ledGroupDetailsSchema.safeParse(raw)
+    if (!parsed.success) {
+      return {
+        success: false,
+        error: parsed.error.issues[0]?.message ?? "Invalid group details",
+      }
+    }
+
+    const {
+      name,
+      groupType,
+      meetingFormat,
+      locationCity,
+      language,
+      ageRangeMin,
+      ageRangeMax,
+      memberLimit,
+      scheduleDayOfWeek,
+      scheduleTimeStart,
+      scheduleTimeEnd,
+    } = parsed.data
+
+    // A leader can't set a limit below the current roster size.
+    if (memberLimit !== null && ctx.group._count.members > memberLimit) {
+      return {
+        success: false,
+        error: `This group already has ${ctx.group._count.members} members — the limit can't be lower than that`,
+      }
+    }
+
+    await db.smallGroup.update({
+      where: { id: groupId },
+      data: {
+        name,
+        groupType,
+        // Couples groups host married pairs — gender focus is always Mixed.
+        // Leave gender focus untouched when a group isn't Couples.
+        ...(groupType === "Couples" ? { genderFocus: "Mixed" } : {}),
+        meetingFormat,
+        locationCity,
+        language,
+        ageRangeMin,
+        ageRangeMax,
+        memberLimit,
+        scheduleDayOfWeek,
+        scheduleTimeStart,
+        scheduleTimeEnd,
+      },
+    })
+
+    revalidateGroupPages(groupId)
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to update group details" }
+  }
+}
+
 // ─── Led groups: roster ──────────────────────────────────────────────────────
 
 export type MemberSearchResult = {
@@ -342,6 +541,102 @@ export async function addMemberToLedGroup(
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to add member" }
+  }
+}
+
+/** Token-authed spouse lookup (from Family data) for the couples add flow. */
+export async function getSpouseForLedGroupMember(
+  token: string,
+  memberId: string
+): Promise<ActionResult<SpouseInfo | null>> {
+  try {
+    const member = await getMemberByToken(token)
+    if (!member) return { success: false, error: "Invalid or expired link" }
+    const spouse = await findSpouse(memberId)
+    return { success: true, data: spouse }
+  } catch {
+    return { success: false, error: "Failed to look up spouse" }
+  }
+}
+
+/**
+ * Adds a married couple to a Couples group the token holder leads, in one
+ * transaction. Each spouse's one-group-per-member rule applies — their
+ * smallGroupId is set to this group, moving them out of any previous group.
+ */
+export async function addCoupleToLedGroup(
+  token: string,
+  groupId: string,
+  memberId: string,
+  spouseMemberId: string
+): Promise<ActionResult> {
+  try {
+    const ctx = await getLedGroup(token, groupId)
+    if (!ctx) return { success: false, error: "Invalid or expired link" }
+    const { group, member: leader } = ctx
+
+    if (memberId === spouseMemberId) {
+      return { success: false, error: "A member cannot be their own spouse" }
+    }
+
+    if (
+      group.memberLimit !== null &&
+      group._count.members + 2 > group.memberLimit
+    ) {
+      return {
+        success: false,
+        error: `Adding both spouses would exceed the member limit of ${group.memberLimit}`,
+      }
+    }
+
+    const [member, spouse] = await Promise.all([
+      db.member.findUnique({
+        where: { id: memberId },
+        select: { firstName: true, lastName: true, smallGroupId: true },
+      }),
+      db.member.findUnique({
+        where: { id: spouseMemberId },
+        select: { firstName: true, lastName: true, smallGroupId: true },
+      }),
+    ])
+    if (!member || !spouse) return { success: false, error: "Member not found" }
+
+    const leaderName = `${leader.firstName} ${leader.lastName}`
+    const fromGroupIds = new Set(
+      [member.smallGroupId, spouse.smallGroupId].filter(
+        (id): id is string => !!id && id !== groupId
+      )
+    )
+
+    await db.$transaction(async (tx) => {
+      for (const [id, person, from] of [
+        [memberId, member, member.smallGroupId],
+        [spouseMemberId, spouse, spouse.smallGroupId],
+      ] as const) {
+        await tx.member.update({
+          where: { id },
+          data: { smallGroupId: groupId, groupStatus: "Member" },
+        })
+        const transferred = !!from && from !== groupId
+        await tx.smallGroupLog.create({
+          data: {
+            smallGroupId: groupId,
+            action: transferred ? "MemberTransferred" : "MemberAdded",
+            memberId: id,
+            fromGroupId: transferred ? from : null,
+            toGroupId: transferred ? groupId : null,
+            performedByMemberId: leader.id,
+            description: `${person.firstName} ${person.lastName} was added to the group as a couple by ${leaderName} via the member portal`,
+          },
+        })
+      }
+    })
+
+    revalidateGroupPages(groupId)
+    for (const from of fromGroupIds) revalidatePath(`/small-groups/${from}`)
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to add couple" }
   }
 }
 
