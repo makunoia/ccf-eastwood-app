@@ -9,6 +9,15 @@ import {
   scoreMode,
   scoreCareer,
   scoreCapacity,
+  scoreLifeStageDetailed,
+  scoreGenderDetailed,
+  scoreLanguageDetailed,
+  scoreAgeDetailed,
+  scoreScheduleDetailed,
+  scoreLocationDetailed,
+  scoreModeDetailed,
+  scoreCareerDetailed,
+  scoreCapacityDetailed,
 } from "@/lib/matching/scorers"
 
 // ---------------------------------------------------------------------------
@@ -260,12 +269,28 @@ describe("scoreCareer", () => {
     expect(scoreCareer("Tech", ["Tech", "Tech", "Tech"])).toBe(1.0)
   })
 
-  it("returns ratio of matching members", () => {
-    expect(scoreCareer("Tech", ["Tech", "Finance", "Tech", "Law"])).toBe(0.5)
+  it("scores on peer count, saturating at three", () => {
+    expect(scoreCareer("Tech", ["Tech", "Finance"])).toBe(0.7)
+    expect(scoreCareer("Tech", ["Tech", "Tech", "Finance"])).toBe(0.85)
+    expect(scoreCareer("Tech", ["Tech", "Tech", "Tech", "Finance"])).toBe(1.0)
+    expect(scoreCareer("Tech", ["Tech", "Tech", "Tech", "Tech", "Finance"])).toBe(1.0)
   })
 
-  it("returns 0.0 when no members share the industry", () => {
-    expect(scoreCareer("Tech", ["Finance", "Law", "Healthcare"])).toBe(0.0)
+  it("returns a weak but non-zero score when no members share the industry", () => {
+    // Being the only person in your field is not disqualifying
+    expect(scoreCareer("Tech", ["Finance", "Law", "Healthcare"])).toBe(0.25)
+  })
+
+  it("REGRESSION: more industry peers never scores worse, regardless of group size", () => {
+    // Previously matchCount/length, so a big group with many peers lost to a
+    // tiny group with one: 3/10 = 0.30 vs 1/2 = 0.50.
+    const bigGroupManyPeers = scoreCareer("Tech", [
+      "Tech", "Tech", "Tech",
+      "Finance", "Finance", "Law", "Law", "Health", "Health", "Retail",
+    ])
+    const smallGroupOnePeer = scoreCareer("Tech", ["Tech", "Finance"])
+
+    expect(bigGroupManyPeers).toBeGreaterThan(smallGroupOnePeer)
   })
 })
 
@@ -273,16 +298,13 @@ describe("scoreCareer", () => {
 // scoreCapacity
 // ---------------------------------------------------------------------------
 describe("scoreCapacity", () => {
-  it("returns 1.0 when group has no member limit", () => {
-    expect(scoreCapacity(null, 50)).toBe(1.0)
+  it("returns a neutral 0.5 when the group has no member limit", () => {
+    // Unknown, not ideal — see the regression test below
+    expect(scoreCapacity(null, 50)).toBe(0.5)
   })
 
   it("returns 1.0 when group is completely empty", () => {
     expect(scoreCapacity(10, 0)).toBe(1.0)
-  })
-
-  it("returns 0.5 when group is half full", () => {
-    expect(scoreCapacity(10, 5)).toBe(0.5)
   })
 
   it("returns 0.0 when group is full", () => {
@@ -293,8 +315,99 @@ describe("scoreCapacity", () => {
     expect(scoreCapacity(10, 12)).toBe(0.0)
   })
 
-  it("returns proportional score for varying capacities", () => {
-    expect(scoreCapacity(4, 1)).toBe(0.75)
-    expect(scoreCapacity(4, 3)).toBe(0.25)
+  it("scores on absolute open seats, saturating at three", () => {
+    expect(scoreCapacity(10, 9)).toBeCloseTo(0.6) // 1 seat
+    expect(scoreCapacity(10, 8)).toBeCloseTo(0.8) // 2 seats
+    expect(scoreCapacity(10, 7)).toBeCloseTo(1.0) // 3 seats
+    expect(scoreCapacity(10, 5)).toBeCloseTo(1.0) // 5 seats
+  })
+
+  it("REGRESSION: an unconfigured group no longer outranks one with open seats", () => {
+    // memberLimit: null used to score 1.0, so not setting a limit beat every
+    // group whose leader had actually configured one.
+    expect(scoreCapacity(null, 50)).toBeLessThan(scoreCapacity(10, 5))
+  })
+
+  it("REGRESSION: equal open seats score equally regardless of limit size", () => {
+    // Previously openSlots/memberLimit, so a 20-cap group with 1 member (0.95)
+    // beat a 4-cap group with 1 member (0.75) despite both simply having room.
+    expect(scoreCapacity(20, 1)).toBe(scoreCapacity(4, 1))
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Detailed scorers — the `known` flag
+//
+// `known: false` means the factor could not be measured, so its 0.5 is a
+// placeholder rather than a real half-fit. This is what separates "we checked
+// and it's middling" from "we have no idea", and it feeds match confidence.
+// ---------------------------------------------------------------------------
+describe("detailed scorers — known flag", () => {
+  it("marks life stage unknown when either side has no data", () => {
+    expect(scoreLifeStageDetailed("a", [])).toEqual({ score: 0.5, known: false })
+    expect(scoreLifeStageDetailed(null, ["a"])).toEqual({ score: 0.5, known: false })
+    expect(scoreLifeStageDetailed("a", ["a"])).toEqual({ score: 1.0, known: true })
+    expect(scoreLifeStageDetailed("a", ["b"])).toEqual({ score: 0.0, known: true })
+  })
+
+  it("treats an open group as a known pass for gender but unknown candidate as unknown", () => {
+    // No focus set means everyone qualifies — that is measured, not missing
+    expect(scoreGenderDetailed(null, null)).toEqual({ score: 1.0, known: true })
+    expect(scoreGenderDetailed(null, "Mixed")).toEqual({ score: 1.0, known: true })
+    // A gendered group with no candidate gender on file genuinely is unknown
+    expect(scoreGenderDetailed(null, "Female")).toEqual({ score: 0.5, known: false })
+    expect(scoreGenderDetailed("Female", "Female")).toEqual({ score: 1.0, known: true })
+  })
+
+  it("marks language unknown when either side is empty", () => {
+    expect(scoreLanguageDetailed([], ["English"])).toEqual({ score: 0.5, known: false })
+    expect(scoreLanguageDetailed(["English"], [])).toEqual({ score: 0.5, known: false })
+    expect(scoreLanguageDetailed(["English"], ["English"])).toEqual({ score: 1.0, known: true })
+  })
+
+  it("marks age unknown without a birth year or a group range", () => {
+    expect(scoreAgeDetailed(1, null, 20, 30)).toEqual({ score: 0.5, known: false })
+    expect(scoreAgeDetailed(1, 1990, null, null)).toEqual({ score: 0.5, known: false })
+    expect(scoreAgeDetailed(1, 1990, 0, 200).known).toBe(true)
+  })
+
+  it("marks schedule unknown when either side has no slots", () => {
+    const slot = { dayOfWeek: 1, timeStart: "19:00", timeEnd: "21:00" }
+    expect(scoreScheduleDetailed([], [slot])).toEqual({ score: 0.5, known: false })
+    expect(scoreScheduleDetailed([slot], [])).toEqual({ score: 0.5, known: false })
+    expect(scoreScheduleDetailed([slot], [slot])).toEqual({ score: 1.0, known: true })
+  })
+
+  it("marks location unknown when either city is missing", () => {
+    expect(scoreLocationDetailed(null, "Makati")).toEqual({ score: 0.5, known: false })
+    expect(scoreLocationDetailed("Makati", null)).toEqual({ score: 0.5, known: false })
+    expect(scoreLocationDetailed("Makati", "Makati")).toEqual({ score: 1.0, known: true })
+    expect(scoreLocationDetailed("Makati", "Cebu")).toEqual({ score: 0.0, known: true })
+  })
+
+  it("marks mode unknown when either preference is missing", () => {
+    expect(scoreModeDetailed(null, "Online")).toEqual({ score: 0.5, known: false })
+    expect(scoreModeDetailed("Online", null)).toEqual({ score: 0.5, known: false })
+    // A Hybrid half-match is measured, not missing — same number, different meaning
+    expect(scoreModeDetailed("Hybrid", "Online")).toEqual({ score: 0.5, known: true })
+  })
+
+  it("marks career unknown without a candidate industry or group roster", () => {
+    expect(scoreCareerDetailed(null, ["Tech"])).toEqual({ score: 0.5, known: false })
+    expect(scoreCareerDetailed("Tech", [])).toEqual({ score: 0.5, known: false })
+    expect(scoreCareerDetailed("Tech", ["Tech"])).toEqual({ score: 0.7, known: true })
+  })
+
+  it("marks capacity unknown when no member limit is set", () => {
+    expect(scoreCapacityDetailed(null, 5)).toEqual({ score: 0.5, known: false })
+    expect(scoreCapacityDetailed(10, 0)).toEqual({ score: 1.0, known: true })
+  })
+
+  it("keeps each plain scorer in step with its detailed counterpart", () => {
+    expect(scoreCareer("Tech", ["Tech", "Tech"])).toBe(
+      scoreCareerDetailed("Tech", ["Tech", "Tech"]).score
+    )
+    expect(scoreCapacity(10, 8)).toBe(scoreCapacityDetailed(10, 8).score)
+    expect(scoreGender("Male", "Female")).toBe(scoreGenderDetailed("Male", "Female").score)
   })
 })

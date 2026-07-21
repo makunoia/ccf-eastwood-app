@@ -109,4 +109,25 @@ describe("toAssistantMatchRow", () => {
       breakdown: { lifeStage: 1, gender: 0.33 },
     })
   })
+
+  it("never forwards groupSummary, coverage or confidence to the model", () => {
+    // These ride on MatchResult but must stay out of the assistant surface —
+    // the projection is an explicit allow-list, so it drops them even when
+    // present on the source object.
+    const row = toAssistantMatchRow({
+      groupId: "g1",
+      groupName: "YP Friday",
+      totalScore: 0.9,
+      breakdown: { lifeStage: 1 },
+      groupSummary: { currentCount: 5, memberLimit: 10, industryPeerCount: 2 },
+      coverage: { lifeStage: true },
+      confidence: 0.75,
+      candidateProfile: { language: ["English"] },
+    } as Parameters<typeof toAssistantMatchRow>[0])
+
+    expect(row).not.toHaveProperty("groupSummary")
+    expect(row).not.toHaveProperty("coverage")
+    expect(row).not.toHaveProperty("confidence")
+    expect(row).not.toHaveProperty("candidateProfile")
+  })
 })

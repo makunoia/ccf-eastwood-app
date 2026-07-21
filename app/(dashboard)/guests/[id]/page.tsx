@@ -124,6 +124,7 @@ async function getGuestActivityLogs(guestId: string) {
     include: {
       smallGroup: { select: { id: true, name: true } },
       performedByUser: { select: { name: true } },
+          performedByMember: { select: { firstName: true, lastName: true } },
     },
   })
 }
@@ -253,6 +254,7 @@ export default async function GuestDetailPage({
       description: log.description,
       smallGroup: log.smallGroup,
       performedByUser: log.performedByUser,
+      performedByMember: log.performedByMember,
       createdAt: log.createdAt,
     })),
     // Event registration entries

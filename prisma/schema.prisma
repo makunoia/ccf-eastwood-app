@@ -128,6 +128,11 @@ enum SmallGroupType {
   Couples
 }
 
+enum ConfirmationSubmissionSource {
+  CatchMech
+  SmallGroupLeader
+}
+
 enum UserRole {
   SuperAdmin
   Staff
@@ -298,9 +303,11 @@ model Member {
   eventRegistrations  EventRegistrant[]
   guest               Guest?              // set if this Member was promoted from a Guest
   groupRequests       SmallGroupMemberRequest[]
-  smallGroupLogs      SmallGroupLog[]
+  smallGroupLogs      SmallGroupLog[]      @relation("SmallGroupLogSubject")
+  performedGroupLogs  SmallGroupLog[]      @relation("SmallGroupLogActor")
   logs                MemberLog[]
   familyMemberships   FamilyMember[]
+  confirmationSubmissions ConfirmationSubmission[] @relation("ConfirmationSubmissionSubmitter")
 }
 
 model Guest {
@@ -434,6 +441,7 @@ model SmallGroup {
   incomingTransfers SmallGroupMemberRequest[] @relation("TransferFrom")
   logs             SmallGroupLog[]
   linkedBreakoutGroups BreakoutGroup[]  @relation("BreakoutLinkedGroup")
+  confirmationSubmissions ConfirmationSubmission[] @relation("ConfirmationSubmissionGroup")
 }
 
 model Ministry {
@@ -499,6 +507,7 @@ model Event {
   baptismOptIns  BaptismOptIn[]
   buses             Bus[]
   userAccess        UserEventAccess[]
+  confirmationSubmissions ConfirmationSubmission[]
   catchMechSessions CatchMechSession[]
   memberLogs        MemberLog[]
   formConfigs       FormConfig[]
@@ -648,6 +657,7 @@ model BreakoutGroup {
   schedules         BreakoutGroupSchedule[]
   catchMechSessions CatchMechSession[]
   subFacilitators   OccurrenceSubFacilitator[]
+  confirmationSubmissions ConfirmationSubmission[]
 }
 
 model BreakoutGroupSchedule {
@@ -724,6 +734,7 @@ model Volunteer {
   declinedRequests      SmallGroupMemberRequest[] @relation("DeclinedRequests")
   subFacilitatorSlots   OccurrenceSubFacilitator[]
   occurrenceAttendances OccurrenceAttendee[]
+  confirmationSubmissions ConfirmationSubmission[] @relation("ConfirmationSubmissionFacilitator")
 }
 
 model MatchingWeightConfig {
@@ -845,7 +856,7 @@ model SmallGroupLog {
 
   // Subject (who was affected)
   memberId     String?
-  member       Member?             @relation(fields: [memberId], references: [id])
+  member       Member?             @relation("SmallGroupLogSubject", fields: [memberId], references: [id])
   guestId      String?
   guest        Guest?              @relation(fields: [guestId], references: [id])
 
@@ -853,9 +864,12 @@ model SmallGroupLog {
   fromGroupId  String?
   toGroupId    String?
 
-  // Actor
+  // Actor — an admin User for dashboard writes, or a Member for the public
+  // token flows (Catch Mech facilitators and small group leaders never log in).
   performedByUserId String?
   performedByUser   User?          @relation(fields: [performedByUserId], references: [id])
+  performedByMemberId String?
+  performedByMember   Member?      @relation("SmallGroupLogActor", fields: [performedByMemberId], references: [id], onDelete: SetNull)
 
   description  String?
   createdAt    DateTime            @default(now())
@@ -884,6 +898,8 @@ model CatchMechSession {
   facilitatorVolunteerId String
   facilitator            Volunteer     @relation(fields: [facilitatorVolunteerId], references: [id], onDelete: Cascade)
   createdAt              DateTime      @default(now())
+
+  submissions            ConfirmationSubmission[]
 }
 
 model CatchMechComment {
@@ -894,6 +910,50 @@ model CatchMechComment {
   author    User                    @relation(fields: [authorId], references: [id])
   text      String
   createdAt DateTime                @default(now())
+}
+
+// ─── Confirmation submissions ────────────────────────────────────────────────
+// One row per time a facilitator (Catch Mech) or a small group leader answers
+// their confirmation form. Written unconditionally — a submission that changes
+// nothing (everything deferred, a Timothy declining with no group yet, a repeat
+// submission) is exactly the case the per-person SmallGroupLog cannot record.
+model ConfirmationSubmission {
+  id     String                       @id @default(cuid())
+  source ConfirmationSubmissionSource
+
+  // Catch Mech context (null for leader submissions)
+  sessionId              String?
+  session                CatchMechSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  eventId                String?
+  event                  Event?            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  breakoutGroupId        String?
+  breakoutGroup          BreakoutGroup?    @relation(fields: [breakoutGroupId], references: [id], onDelete: SetNull)
+  facilitatorVolunteerId String?
+  facilitator            Volunteer?        @relation("ConfirmationSubmissionFacilitator", fields: [facilitatorVolunteerId], references: [id], onDelete: SetNull)
+
+  // Leader context (null for Catch Mech submissions)
+  smallGroupId String?
+  smallGroup   SmallGroup? @relation("ConfirmationSubmissionGroup", fields: [smallGroupId], references: [id], onDelete: SetNull)
+
+  // Submitter — a Member in both flows (the faci's member, or the group's leader).
+  // The name is denormalized so the audit row stays readable after a delete.
+  submittedByMemberId String?
+  submittedByMember   Member? @relation("ConfirmationSubmissionSubmitter", fields: [submittedByMemberId], references: [id], onDelete: SetNull)
+  submittedByName     String
+
+  confirmedCount Int @default(0)
+  declinedCount  Int @default(0)
+  deferredCount  Int @default(0)
+
+  createdGroupId String? // set when the Timothy path created a new SmallGroup
+  decisions      Json    // raw decisions payload, for dispute resolution
+
+  createdAt DateTime @default(now())
+
+  @@index([eventId, createdAt])
+  @@index([breakoutGroupId])
+  @@index([facilitatorVolunteerId])
+  @@index([smallGroupId])
 }
 
 // ─── Site Settings ────────────────────────────────────────────────────────────

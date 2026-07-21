@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select"
 import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
 import { SmallGroupMatchCard } from "@/components/small-group-match-card"
+import { SmallGroupDetailSheet } from "@/components/small-group-detail-sheet"
 import { findSmallGroupMatchesForMember, assignMemberToSmallGroup } from "../matching-actions"
 import { assignMemberTransferTemporarily } from "@/app/(dashboard)/small-groups/actions"
 import { saveMemberMatchingPreferences } from "../actions"
@@ -76,6 +77,8 @@ export function MemberMatchSection({
   const [dirty, setDirty] = React.useState(false)
   const [results, setResults] = React.useState<MatchResult[]>([])
   const [assigningId, setAssigningId] = React.useState<string | null>(null)
+  const [selectedGroupId, setSelectedGroupId] = React.useState<string | null>(null)
+  const [sheetOpen, setSheetOpen] = React.useState(false)
 
   const [prefs, setPrefs] = React.useState<MatchingPrefs>(initialPrefs)
   function setPref<K extends keyof MatchingPrefs>(key: K, value: MatchingPrefs[K]) {
@@ -310,17 +313,28 @@ export function MemberMatchSection({
               {results.map((r: MatchResult) => (
                 <SmallGroupMatchCard
                   key={r.groupId}
+                  showBreakdown
                   result={r}
                   onAssign={() => { void handleAssign(r.groupId) }}
                   assigning={assigningId === r.groupId}
                   assignLabel={hasGroup ? "Transfer" : "Assign"}
                   assigningLabel={hasGroup ? "Transferring…" : "Assigning…"}
+                  onGroupClick={() => {
+                    setSelectedGroupId(r.groupId)
+                    setSheetOpen(true)
+                  }}
                 />
               ))}
             </div>
           )}
         </>
       )}
+
+      <SmallGroupDetailSheet
+        groupId={selectedGroupId}
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+      />
     </div>
   )
 }

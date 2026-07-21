@@ -3,6 +3,11 @@
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
 import { repointFamilyLinks } from "@/lib/family-links"
+import {
+  recordConfirmationSubmission,
+  submitterName,
+  tallyDecisions,
+} from "@/lib/catch-mech/submission-log"
 
 type ActionResult<T = void> =
   | { success: true; data: T }
@@ -20,7 +25,13 @@ export async function submitMemberConfirmations(
 ): Promise<ActionResult> {
   const group = await db.smallGroup.findUnique({
     where: { leaderConfirmationToken: token },
-    select: { id: true, name: true, leaderId: true, status: true },
+    select: {
+      id: true,
+      name: true,
+      leaderId: true,
+      status: true,
+      leader: { select: { id: true, firstName: true, lastName: true } },
+    },
   })
   if (!group) {
     return { success: false, error: "Confirmation link not found or has expired." }
@@ -195,6 +206,7 @@ export async function submitMemberConfirmations(
                   action: "TempAssignmentConfirmed",
                   guestId: req.guestId,
                   memberId: resolvedMemberId,
+                  performedByMemberId: group.leaderId,
                   description: `${guest.firstName} ${guest.lastName} was confirmed by the group leader${catchMechContext} and promoted to member`,
                 },
               })
@@ -203,6 +215,7 @@ export async function submitMemberConfirmations(
                   smallGroupId: group.id,
                   action: "MemberAdded",
                   memberId: resolvedMemberId,
+                  performedByMemberId: group.leaderId,
                   description: `${guest.firstName} ${guest.lastName} joined the group${catchMechContext}`,
                 },
               })
@@ -232,6 +245,7 @@ export async function submitMemberConfirmations(
                 memberId: req.memberId,
                 fromGroupId: req.fromGroupId ?? null,
                 toGroupId: group.id,
+                performedByMemberId: group.leaderId,
                 description: `${memberName}'s transfer was confirmed by the group leader${catchMechContext}`,
               },
             })
@@ -242,6 +256,7 @@ export async function submitMemberConfirmations(
                 memberId: req.memberId,
                 fromGroupId: req.fromGroupId ?? null,
                 toGroupId: group.id,
+                performedByMemberId: group.leaderId,
                 description: `${memberName} transferred into this group${catchMechContext}`,
               },
             })
@@ -255,6 +270,7 @@ export async function submitMemberConfirmations(
                   memberId: req.memberId,
                   fromGroupId: req.fromGroupId,
                   toGroupId: group.id,
+                  performedByMemberId: group.leaderId,
                   description: `${memberName} transferred out of this group`,
                 },
               })
@@ -273,6 +289,7 @@ export async function submitMemberConfirmations(
               action: "TempAssignmentRejected",
               guestId: req.guestId ?? null,
               memberId: req.memberId ?? null,
+              performedByMemberId: group.leaderId,
               description: `${personName}'s membership was declined by the group leader${catchMechContext}`,
             },
           })
@@ -295,6 +312,19 @@ export async function submitMemberConfirmations(
       if (group.status === "Pending" && memberConfirmed) {
         await tx.smallGroup.update({ where: { id: group.id }, data: { status: "Active" } })
       }
+
+      // Always recorded, even when every decision was deferred or every request was
+      // already resolved. Those submissions write nothing else, so without this row
+      // "the leader answered and deferred" is indistinguishable from "never opened
+      // the link" — which is the whole reason this log exists.
+      await recordConfirmationSubmission(tx, {
+        source: "SmallGroupLeader",
+        smallGroupId: group.id,
+        submittedByMemberId: group.leaderId,
+        submittedByName: submitterName(group.leader),
+        decisions,
+        ...tallyDecisions(decisions),
+      })
     })
 
     revalidatePath(`/small-groups`)

@@ -245,6 +245,7 @@ export const CatchMechMatchSection = React.forwardRef<CatchMechMatchSectionHandl
                   {level.matches.map((r: CatchMechMatchResult) => (
                     <SmallGroupMatchCard
                       key={r.groupId}
+                      showBreakdown
                       result={r}
                       onAssign={() => { void handleAssign(r.groupId) }}
                       assigning={assigningId === r.groupId}

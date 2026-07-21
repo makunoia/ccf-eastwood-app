@@ -20,6 +20,7 @@ type SmallGroupDetails = {
   memberLimit: number | null
   scheduleDayOfWeek: number | null
   scheduleTimeStart: string | null
+  scheduleTimeEnd: string | null
   members: {
     id: string
     firstName: string
@@ -47,6 +48,7 @@ export async function getSmallGroupDetails(
         memberLimit: true,
         scheduleDayOfWeek: true,
         scheduleTimeStart: true,
+        scheduleTimeEnd: true,
         members: {
           select: {
             id: true,

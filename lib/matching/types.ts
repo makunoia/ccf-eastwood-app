@@ -32,6 +32,7 @@ export type GroupProfile = {
   id: string
   name: string
   lifeStageIds: string[]
+  lifeStageNames: string[]
   genderFocus: "Male" | "Female" | "Mixed" | null
   language: string[]
   ageRangeMin: number | null
@@ -41,6 +42,28 @@ export type GroupProfile = {
   memberLimit: number | null
   currentCount: number
   memberIndustries: string[] // workIndustry of all current group members
+  scheduleSlots: TimeSlot[]
+}
+
+/**
+ * The group-side facts the match breakdown UI needs, projected off GroupProfile.
+ *
+ * Deliberately NOT the full GroupProfile: `memberIndustries[]` is collapsed to
+ * `industryPeerCount` (how many current members share the candidate's industry)
+ * so no member roster leaks — this rides on MatchResult, which is serialized to
+ * the unauthenticated public join page via JoinMatchResult.
+ */
+export type GroupSummary = {
+  lifeStageNames: string[]
+  genderFocus: "Male" | "Female" | "Mixed" | null
+  language: string[]
+  ageRangeMin: number | null
+  ageRangeMax: number | null
+  meetingFormat: "Online" | "Hybrid" | "InPerson" | null
+  locationCity: string | null
+  memberLimit: number | null
+  currentCount: number
+  industryPeerCount: number
   scheduleSlots: TimeSlot[]
 }
 
@@ -58,11 +81,21 @@ export type ScoreBreakdown = {
 
 export type WeightConfig = ScoreBreakdown
 
+/** Per-factor flag: was the factor actually measured, or is its score a
+ *  neutral placeholder because one side had no data? */
+export type ScoreCoverage = Record<keyof ScoreBreakdown, boolean>
+
 export type MatchResult = {
   groupId: string
   groupName: string
   totalScore: number
   breakdown: ScoreBreakdown
+  coverage: ScoreCoverage
+  /** Share of active weight backed by measured factors (0–1). A high score
+   *  built entirely on unknowns has low confidence; used as a ranking
+   *  tie-breaker and surfaced in the UI. */
+  confidence: number
+  groupSummary: GroupSummary
   candidateProfile: CandidateProfile
   // True when the group recently received a guest assignment and is only shown
   // because no other eligible groups remain (cooldown fallback).
