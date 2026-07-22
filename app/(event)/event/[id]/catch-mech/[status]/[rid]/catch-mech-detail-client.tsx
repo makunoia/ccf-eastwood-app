@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation"
 import { IconHeart } from "@tabler/icons-react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
+import { GroupTypeBadge } from "@/components/group-type-badge"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -381,7 +382,7 @@ export function CatchMechDetailClient(props: Props) {
                     />
                   )}
                 </div>
-                <p className="text-sm">
+                <div className="flex items-center gap-2 text-sm">
                   {props.canViewSmallGroup ? (
                     <Link
                       href={`/small-groups/${props.request.smallGroup.id}`}
@@ -392,7 +393,8 @@ export function CatchMechDetailClient(props: Props) {
                   ) : (
                     <span className="font-medium">{props.request.smallGroup.name}</span>
                   )}
-                </p>
+                  <GroupTypeBadge groupType={props.request.smallGroup.groupType} />
+                </div>
                 {props.request.smallGroup.leader && (
                   <p className="text-sm text-muted-foreground">
                     Led by {props.request.smallGroup.leader.firstName} {props.request.smallGroup.leader.lastName}
@@ -404,7 +406,7 @@ export function CatchMechDetailClient(props: Props) {
             {props.status === "pending" && props.request?.smallGroup && (
               <div className="rounded-lg border bg-muted/40 p-4 space-y-2">
                 <p className="text-sm font-medium">Awaiting leader confirmation</p>
-                <p className="text-sm">
+                <div className="flex items-center gap-2 text-sm">
                   {props.canViewSmallGroup ? (
                     <Link
                       href={`/small-groups/${props.request.smallGroup.id}`}
@@ -415,7 +417,8 @@ export function CatchMechDetailClient(props: Props) {
                   ) : (
                     <span className="font-medium">{props.request.smallGroup.name}</span>
                   )}
-                </p>
+                  <GroupTypeBadge groupType={props.request.smallGroup.groupType} />
+                </div>
                 {props.request.smallGroup.leader && (
                   <p className="text-sm text-muted-foreground">
                     Led by {props.request.smallGroup.leader.firstName} {props.request.smallGroup.leader.lastName}

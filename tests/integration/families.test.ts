@@ -54,13 +54,40 @@ describe("Family CRUD", () => {
     expect(result.success).toBe(false)
   })
 
+  it("tracks a childless couple as a family (no Child role required)", async () => {
+    const husband = await seedMember("Juan")
+    const wife = await seedMember("Maria")
+    const created = await createFamily({ name: "Santos Family", notes: "" })
+    expect(created.success).toBe(true)
+    if (!created.success) return
+
+    const addH = await addFamilyMember(created.data.id, {
+      memberId: husband.id,
+      guestId: null,
+      role: "FatherHusband",
+    })
+    const addW = await addFamilyMember(created.data.id, {
+      memberId: wife.id,
+      guestId: null,
+      role: "MotherWife",
+    })
+    expect(addH.success).toBe(true)
+    expect(addW.success).toBe(true)
+
+    const links = await db.familyMember.findMany({
+      where: { familyId: created.data.id },
+    })
+    expect(links).toHaveLength(2)
+    expect(links.some((l) => l.role === "Child")).toBe(false)
+  })
+
   it("deleting a family keeps its members and guests", async () => {
     const father = await seedMember("Father")
     const guest = await seedGuest("GuestChild")
     const family = await db.family.create({ data: { name: "F" } })
     await db.familyMember.createMany({
       data: [
-        { familyId: family.id, memberId: father.id, role: "Father" },
+        { familyId: family.id, memberId: father.id, role: "FatherHusband" },
         { familyId: family.id, guestId: guest.id, role: "Child" },
       ],
     })
@@ -82,7 +109,7 @@ describe("addFamilyMember / removeFamilyMember", () => {
     const r1 = await addFamilyMember(family.id, {
       memberId: mother.id,
       guestId: null,
-      role: "Mother",
+      role: "MotherWife",
     })
     const r2 = await addFamilyMember(family.id, {
       memberId: null,
@@ -100,7 +127,7 @@ describe("addFamilyMember / removeFamilyMember", () => {
     const father = await seedMember("Father")
     const family = await db.family.create({ data: { name: "F" } })
 
-    await addFamilyMember(family.id, { memberId: father.id, guestId: null, role: "Father" })
+    await addFamilyMember(family.id, { memberId: father.id, guestId: null, role: "FatherHusband" })
     const dup = await addFamilyMember(family.id, {
       memberId: father.id,
       guestId: null,
@@ -123,7 +150,7 @@ describe("addFamilyMember / removeFamilyMember", () => {
     const asFather = await addFamilyMember(ownFamily.id, {
       memberId: adult.id,
       guestId: null,
-      role: "Father",
+      role: "FatherHusband",
     })
     expect(asChild.success).toBe(true)
     expect(asFather.success).toBe(true)
@@ -132,7 +159,7 @@ describe("addFamilyMember / removeFamilyMember", () => {
       where: { memberId: adult.id },
       orderBy: { createdAt: "asc" },
     })
-    expect(links.map((l) => l.role).sort()).toEqual(["Child", "Father"])
+    expect(links.map((l) => l.role).sort()).toEqual(["Child", "FatherHusband"])
   })
 
   it("rejects adding an already-promoted guest as a guest", async () => {
@@ -199,7 +226,7 @@ describe("guest promotion repoints family links", () => {
     const guest = await seedGuest("Duplicate")
     const family = await db.family.create({ data: { name: "F" } })
     await db.familyMember.create({
-      data: { familyId: family.id, memberId: member.id, role: "Father" },
+      data: { familyId: family.id, memberId: member.id, role: "FatherHusband" },
     })
     await db.familyMember.create({
       data: { familyId: family.id, guestId: guest.id, role: "Other" },
@@ -212,7 +239,7 @@ describe("guest promotion repoints family links", () => {
     const links = await db.familyMember.findMany({ where: { familyId: family.id } })
     expect(links).toHaveLength(1)
     expect(links[0].memberId).toBe(member.id)
-    expect(links[0].role).toBe("Father") // existing member's role wins
+    expect(links[0].role).toBe("FatherHusband") // existing member's role wins
   })
 
   it("repoints back from member to guest (promotion undo direction)", async () => {
@@ -220,7 +247,7 @@ describe("guest promotion repoints family links", () => {
     const guest = await seedGuest("Restored")
     const family = await db.family.create({ data: { name: "F" } })
     await db.familyMember.create({
-      data: { familyId: family.id, memberId: member.id, role: "Mother" },
+      data: { familyId: family.id, memberId: member.id, role: "MotherWife" },
     })
 
     await db.$transaction(async (tx) => {
@@ -233,7 +260,7 @@ describe("guest promotion repoints family links", () => {
     expect(links).toHaveLength(1)
     expect(links[0].guestId).toBe(guest.id)
     expect(links[0].memberId).toBeNull()
-    expect(links[0].role).toBe("Mother")
+    expect(links[0].role).toBe("MotherWife")
   })
 
   it("repoints links across multiple families at once", async () => {
@@ -244,7 +271,7 @@ describe("guest promotion repoints family links", () => {
     await db.familyMember.createMany({
       data: [
         { familyId: famA.id, guestId: guest.id, role: "Child" },
-        { familyId: famB.id, guestId: guest.id, role: "Father" },
+        { familyId: famB.id, guestId: guest.id, role: "FatherHusband" },
       ],
     })
 
@@ -268,8 +295,8 @@ describe("cascade behavior", () => {
     const family = await db.family.create({ data: { name: "F" } })
     await db.familyMember.createMany({
       data: [
-        { familyId: family.id, memberId: father.id, role: "Father" },
-        { familyId: family.id, memberId: mother.id, role: "Mother" },
+        { familyId: family.id, memberId: father.id, role: "FatherHusband" },
+        { familyId: family.id, memberId: mother.id, role: "MotherWife" },
       ],
     })
 

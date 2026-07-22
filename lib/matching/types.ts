@@ -31,6 +31,8 @@ export const EMPTY_CANDIDATE: CandidateProfile = {
 export type GroupProfile = {
   id: string
   name: string
+  /** Small groups carry a Regular/Couples type; breakout groups do not. */
+  groupType?: "Regular" | "Couples"
   lifeStageIds: string[]
   lifeStageNames: string[]
   genderFocus: "Male" | "Female" | "Mixed" | null
@@ -54,6 +56,8 @@ export type GroupProfile = {
  * the unauthenticated public join page via JoinMatchResult.
  */
 export type GroupSummary = {
+  /** Regular/Couples for small groups; null for breakout groups (no type). */
+  groupType: "Regular" | "Couples" | null
   lifeStageNames: string[]
   genderFocus: "Male" | "Female" | "Mixed" | null
   language: string[]

@@ -78,6 +78,7 @@ export function scoreGroup(
     coverage,
     confidence,
     groupSummary: {
+      groupType: group.groupType ?? null,
       lifeStageNames: group.lifeStageNames,
       genderFocus: group.genderFocus,
       language: group.language,

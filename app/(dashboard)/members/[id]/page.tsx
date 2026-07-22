@@ -73,12 +73,13 @@ async function getMemberSmallGroupInfo(memberId: string) {
     db.member.findUnique({
       where: { id: memberId },
       select: {
-        smallGroup: { select: { id: true, name: true } },
+        smallGroup: { select: { id: true, name: true, groupType: true } },
         groupStatus: true,
         ledGroups: {
           select: {
             id: true,
             name: true,
+            groupType: true,
             _count: { select: { members: true } },
           },
           orderBy: { name: "asc" },
@@ -102,13 +103,17 @@ async function getMemberSmallGroupInfo(memberId: string) {
           id: m.smallGroup.id,
           name: m.smallGroup.name,
           groupStatus: m.groupStatus ?? null,
+          groupType: m.smallGroup.groupType,
         }
       : null,
-    ledGroups: m.ledGroups.map((g: { id: string; name: string; _count: { members: number } }) => ({
-      id: g.id,
-      name: g.name,
-      memberCount: g._count.members,
-    })),
+    ledGroups: m.ledGroups.map(
+      (g: { id: string; name: string; groupType: "Regular" | "Couples"; _count: { members: number } }) => ({
+        id: g.id,
+        name: g.name,
+        memberCount: g._count.members,
+        groupType: g.groupType,
+      }),
+    ),
     pendingTransfer: pendingTransferReq?.smallGroup
       ? {
           id: pendingTransferReq.id,

@@ -327,8 +327,8 @@ function MemberRow({
 }
 
 const ROLE_ORDER: Record<FamilyRoleValue, number> = {
-  Father: 0,
-  Mother: 1,
+  FatherHusband: 0,
+  MotherWife: 1,
   Guardian: 2,
   Child: 3,
   Other: 4,

@@ -28,8 +28,8 @@ async function seedCouple(familyName = "Couple Family") {
   const family = await db.family.create({ data: { name: familyName } })
   await db.familyMember.createMany({
     data: [
-      { familyId: family.id, memberId: husband.id, role: "Father" },
-      { familyId: family.id, memberId: wife.id, role: "Mother" },
+      { familyId: family.id, memberId: husband.id, role: "FatherHusband" },
+      { familyId: family.id, memberId: wife.id, role: "MotherWife" },
     ],
   })
   return { husband, wife, family }
@@ -81,8 +81,8 @@ describe("findSpouse — derivation from Family data", () => {
     const ownFamily = await db.family.create({ data: { name: "Own" } })
     await db.familyMember.createMany({
       data: [
-        { familyId: ownFamily.id, memberId: adult.id, role: "Father" },
-        { familyId: ownFamily.id, memberId: adultsWife.id, role: "Mother" },
+        { familyId: ownFamily.id, memberId: adult.id, role: "FatherHusband" },
+        { familyId: ownFamily.id, memberId: adultsWife.id, role: "MotherWife" },
       ],
     })
 
@@ -98,8 +98,8 @@ describe("findSpouse — derivation from Family data", () => {
     const family = await db.family.create({ data: { name: "F" } })
     await db.familyMember.createMany({
       data: [
-        { familyId: family.id, memberId: husband.id, role: "Father" },
-        { familyId: family.id, guestId: guestWife.id, role: "Mother" },
+        { familyId: family.id, memberId: husband.id, role: "FatherHusband" },
+        { familyId: family.id, guestId: guestWife.id, role: "MotherWife" },
       ],
     })
 

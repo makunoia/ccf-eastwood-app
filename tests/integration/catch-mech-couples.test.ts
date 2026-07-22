@@ -39,8 +39,8 @@ async function seedGuestCouple() {
   const family = await db.family.create({ data: { name: "Cruz Family" } })
   await db.familyMember.createMany({
     data: [
-      { familyId: family.id, guestId: husband.id, role: "Father" },
-      { familyId: family.id, guestId: wife.id, role: "Mother" },
+      { familyId: family.id, guestId: husband.id, role: "FatherHusband" },
+      { familyId: family.id, guestId: wife.id, role: "MotherWife" },
     ],
   })
   return { husband, wife, family }
@@ -69,8 +69,8 @@ describe("findSpouseOfPerson — guest-capable derivation", () => {
     const family = await db.family.create({ data: { name: "F" } })
     await db.familyMember.createMany({
       data: [
-        { familyId: family.id, guestId: guestHusband.id, role: "Father" },
-        { familyId: family.id, memberId: memberWife.id, role: "Mother" },
+        { familyId: family.id, guestId: guestHusband.id, role: "FatherHusband" },
+        { familyId: family.id, memberId: memberWife.id, role: "MotherWife" },
       ],
     })
 

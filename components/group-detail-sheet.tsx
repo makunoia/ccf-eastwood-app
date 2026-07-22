@@ -11,6 +11,7 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet"
 import { Skeleton } from "@/components/ui/skeleton"
+import { GroupTypeBadge } from "@/components/group-type-badge"
 import { formatSchedule } from "@/lib/format/schedule"
 
 // ─── Normalized shape ─────────────────────────────────────────────────────────
@@ -33,6 +34,8 @@ export type GroupDetailMember = {
 
 export type GroupDetailData = {
   name: string
+  /** Regular/Couples for small groups; null for breakout groups (no type). */
+  groupType?: "Regular" | "Couples" | null
   /** e.g. "Led by Jane Cruz" or facilitator info; null → no subtitle. */
   subtitle: string | null
   lifeStages: string[]
@@ -79,7 +82,10 @@ export function GroupDetailSheet({
         ) : (
           <>
             <SheetHeader>
-              <SheetTitle>{data.name}</SheetTitle>
+              <div className="flex items-center gap-2">
+                <SheetTitle>{data.name}</SheetTitle>
+                <GroupTypeBadge groupType={data.groupType} />
+              </div>
               {data.subtitle && <SheetDescription>{data.subtitle}</SheetDescription>}
             </SheetHeader>
 

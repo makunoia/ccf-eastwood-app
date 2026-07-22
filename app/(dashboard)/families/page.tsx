@@ -14,7 +14,7 @@ export const metadata: Metadata = {
   title: "Families",
 }
 
-const PARENT_ROLES = ["Father", "Mother", "Guardian"] as const
+const PARENT_ROLES = ["FatherHusband", "MotherWife", "Guardian"] as const
 
 function personName(fm: {
   member: { firstName: string; lastName: string } | null

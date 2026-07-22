@@ -28,6 +28,7 @@ type GuestData = {
   claimedSmallGroup: {
     id: string
     name: string
+    groupType: "Regular" | "Couples"
     leader: { id: string; firstName: string; lastName: string } | null
   } | null
   pendingGroupName: string | null

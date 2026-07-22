@@ -40,6 +40,15 @@ describe("scoreGroup", () => {
     expect(result.groupName).toBe("Young Professionals")
   })
 
+  it("carries the group's Couples/Regular type into groupSummary (null when unset)", () => {
+    const noType = scoreGroup(EMPTY_CANDIDATE, BASE_GROUP, EQUAL_WEIGHTS)
+    expect(noType.groupSummary.groupType).toBeNull()
+
+    const couples: GroupProfile = { ...BASE_GROUP, groupType: "Couples" }
+    const result = scoreGroup(EMPTY_CANDIDATE, couples, EQUAL_WEIGHTS)
+    expect(result.groupSummary.groupType).toBe("Couples")
+  })
+
   it("returns a breakdown with all 9 dimension scores", () => {
     const result = scoreGroup(EMPTY_CANDIDATE, BASE_GROUP, EQUAL_WEIGHTS)
     const keys: (keyof typeof result.breakdown)[] = [

@@ -7,6 +7,7 @@ import { IconDots, IconPencil, IconTrash } from "@tabler/icons-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
+import { CouplesBadge } from "@/components/group-type-badge"
 import {
   Dialog,
   DialogContent,
@@ -151,11 +152,7 @@ export function buildColumns(selectable = false): ColumnDef<SmallGroupRow>[] {
           >
             {row.original.name}
           </Link>
-          {row.original.groupType === "Couples" && (
-            <span className="inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-800">
-              Couples
-            </span>
-          )}
+          {row.original.groupType === "Couples" && <CouplesBadge />}
           {row.original.status === "Pending" && (
             <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
               Pending
