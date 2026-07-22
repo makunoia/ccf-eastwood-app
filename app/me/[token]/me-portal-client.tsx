@@ -6,19 +6,27 @@ import { toast } from "sonner"
 import {
   IconArrowsExchange,
   IconClock,
+  IconDeviceLaptop,
+  IconHeart,
+  IconMapPin,
+  IconPencil,
   IconPlus,
   IconSearch,
   IconTrash,
   IconUsers,
   IconX,
 } from "@tabler/icons-react"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { MultiSelect } from "@/components/ui/multi-select"
 import { ScheduleInput } from "@/components/ui/schedule-input"
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
@@ -39,17 +47,30 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
 import {
+  addCoupleToLedGroup,
   addMemberToLedGroup,
   cancelGroupChange,
+  createLedGroup,
+  getSpouseForLedGroupMember,
   removeMemberFromLedGroup,
   requestGroupChange,
   searchMembersToAdd,
-  updateLedGroupSchedule,
+  updateLedGroupDetails,
   type MemberSearchResult,
 } from "./actions"
+import type { SpouseInfo } from "@/lib/family-links"
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+
+const MEETING_FORMAT_LABELS: Record<string, string> = {
+  Online: "Online",
+  Hybrid: "Hybrid",
+  InPerson: "In Person",
+}
+
+const NO_CITY = "_none"
 
 function formatTime(hhmm: string): string {
   const [h, m] = hhmm.split(":").map(Number)
@@ -64,12 +85,62 @@ function formatSchedule(day: number | null, start: string | null, end: string | 
   return `${DAY_NAMES[day]} · ${time}`
 }
 
+function modeLabel(format: string | null): string | null {
+  if (!format) return null
+  return MEETING_FORMAT_LABELS[format] ?? format
+}
+
+// Compact one-line summary used inside the group dropdown rows. Group type is
+// shown separately as a badge (Couples), so it's left out of this line.
+function groupSummaryLine(g: GroupOption): string {
+  const parts = [
+    formatSchedule(g.scheduleDayOfWeek, g.scheduleTimeStart, g.scheduleTimeEnd),
+    modeLabel(g.meetingFormat),
+  ].filter(Boolean)
+  return parts.join(" · ")
+}
+
+function CouplesBadge() {
+  return (
+    <Badge className="gap-1 bg-rose-100 text-rose-800 border-transparent hover:bg-rose-100">
+      <IconHeart className="size-3" />
+      Couples
+    </Badge>
+  )
+}
+
+function GroupDetailRow({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode
+  label: string
+  value: React.ReactNode
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <dt className="flex items-center gap-1.5 text-muted-foreground">
+        {icon}
+        {label}
+      </dt>
+      <dd className="font-medium text-right">{value || "—"}</dd>
+    </div>
+  )
+}
+
 type GroupStatus = "Member" | "Timothy" | "Leader" | null
 
 type LedGroup = {
   id: string
   name: string
+  groupType: string
   memberLimit: number | null
+  meetingFormat: "Online" | "Hybrid" | "InPerson" | null
+  locationCity: string | null
+  language: string[]
+  ageRangeMin: number | null
+  ageRangeMax: number | null
   scheduleDayOfWeek: number | null
   scheduleTimeStart: string | null
   scheduleTimeEnd: string | null
@@ -78,7 +149,25 @@ type LedGroup = {
     firstName: string
     lastName: string
     groupStatus: GroupStatus
+    /** For Couples groups: roster memberId of this member's spouse, if also in the group. */
+    spouseId: string | null
   }[]
+}
+
+type GroupOption = {
+  id: string
+  name: string
+  groupType: string
+  meetingFormat: "Online" | "Hybrid" | "InPerson" | string | null
+  scheduleDayOfWeek: number | null
+  scheduleTimeStart: string | null
+  scheduleTimeEnd: string | null
+}
+
+type LeaderOption = {
+  id: string
+  name: string
+  groups: GroupOption[]
 }
 
 type Props = {
@@ -98,7 +187,7 @@ type Props = {
   } | null
   pendingRequest: { id: string; groupId: string; groupName: string } | null
   ledGroups: LedGroup[]
-  groupOptions: { id: string; name: string; leaderName: string | null }[]
+  leaderOptions: LeaderOption[]
 }
 
 export function MePortalClient({
@@ -107,7 +196,7 @@ export function MePortalClient({
   myGroup,
   pendingRequest,
   ledGroups,
-  groupOptions,
+  leaderOptions,
 }: Props) {
   return (
     <div className="min-h-screen bg-background">
@@ -125,27 +214,59 @@ export function MePortalClient({
           token={token}
           myGroup={myGroup}
           pendingRequest={pendingRequest}
-          groupOptions={groupOptions}
+          leaderOptions={leaderOptions}
         />
 
         {ledGroups.length > 0 && (
-          <section className="space-y-3">
-            <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-              Groups You Lead
-            </h2>
-            <div className="space-y-4">
-              {ledGroups.map((g) => (
-                <LedGroupCard
-                  key={`${g.id}-${g.scheduleDayOfWeek}-${g.scheduleTimeStart}-${g.scheduleTimeEnd}`}
-                  token={token}
-                  group={g}
-                />
-              ))}
-            </div>
-          </section>
+          <LedGroupsSection token={token} ledGroups={ledGroups} />
         )}
       </div>
     </div>
+  )
+}
+
+// ─── Groups you lead ─────────────────────────────────────────────────────────
+
+function LedGroupsSection({
+  token,
+  ledGroups,
+}: {
+  token: string
+  ledGroups: LedGroup[]
+}) {
+  const [createOpen, setCreateOpen] = React.useState(false)
+  // Bumped each time the create dialog opens so it remounts with empty fields.
+  const [createKey, setCreateKey] = React.useState(0)
+
+  function openCreate() {
+    setCreateKey((k) => k + 1)
+    setCreateOpen(true)
+  }
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          Groups You Lead
+        </h2>
+        <Button variant="outline" size="sm" onClick={openCreate}>
+          <IconPlus className="size-4" />
+          Add group
+        </Button>
+      </div>
+      <div className="space-y-4">
+        {ledGroups.map((g) => (
+          <LedGroupCard key={g.id} token={token} group={g} />
+        ))}
+      </div>
+
+      <LedGroupFormDialog
+        key={createKey}
+        token={token}
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+      />
+    </section>
   )
 }
 
@@ -155,10 +276,11 @@ function MyGroupSection({
   token,
   myGroup,
   pendingRequest,
-  groupOptions,
-}: Pick<Props, "token" | "myGroup" | "pendingRequest" | "groupOptions">) {
+  leaderOptions,
+}: Pick<Props, "token" | "myGroup" | "pendingRequest" | "leaderOptions">) {
   const router = useRouter()
   const [dialogOpen, setDialogOpen] = React.useState(false)
+  const [selectedLeaderId, setSelectedLeaderId] = React.useState("")
   const [selectedGroupId, setSelectedGroupId] = React.useState("")
   const [submitting, setSubmitting] = React.useState(false)
   const [cancelling, setCancelling] = React.useState(false)
@@ -166,6 +288,27 @@ function MyGroupSection({
   const schedule = myGroup
     ? formatSchedule(myGroup.scheduleDayOfWeek, myGroup.scheduleTimeStart, myGroup.scheduleTimeEnd)
     : null
+
+  const selectedLeader = leaderOptions.find((l) => l.id === selectedLeaderId)
+  const selectedGroup =
+    selectedLeader?.groups.find((g) => g.id === selectedGroupId) ?? null
+
+  function resetSelection() {
+    setSelectedLeaderId("")
+    setSelectedGroupId("")
+  }
+
+  function handleLeaderChange(leaderId: string) {
+    setSelectedLeaderId(leaderId)
+    // Auto-pick the group when the chosen leader has exactly one.
+    const leader = leaderOptions.find((l) => l.id === leaderId)
+    setSelectedGroupId(leader && leader.groups.length === 1 ? leader.groups[0].id : "")
+  }
+
+  function handleDialogOpenChange(open: boolean) {
+    setDialogOpen(open)
+    if (!open) resetSelection()
+  }
 
   async function handleRequest() {
     if (!selectedGroupId) return
@@ -178,7 +321,7 @@ function MyGroupSection({
     }
     toast.success("Request submitted — the group leader will confirm it")
     setDialogOpen(false)
-    setSelectedGroupId("")
+    resetSelection()
     router.refresh()
   }
 
@@ -249,30 +392,112 @@ function MyGroupSection({
         </Button>
       )}
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={dialogOpen} onOpenChange={handleDialogOpenChange}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
               {myGroup ? "Change small group" : "Join a small group"}
             </DialogTitle>
             <DialogDescription>
-              Your request will be sent to the group leader for confirmation.
+              Choose the leader first, then pick their group. Your request will
+              be sent to that leader for confirmation.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <Select value={selectedGroupId} onValueChange={setSelectedGroupId}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a group" />
-              </SelectTrigger>
-              <SelectContent>
-                {groupOptions.map((g) => (
-                  <SelectItem key={g.id} value={g.id}>
-                    {g.name}
-                    {g.leaderName ? ` — ${g.leaderName}` : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {/* Step 1 — leader */}
+            <div className="space-y-2">
+              <Label>1. Group leader</Label>
+              <Select value={selectedLeaderId} onValueChange={handleLeaderChange}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select a leader" />
+                </SelectTrigger>
+                <SelectContent>
+                  {leaderOptions.map((l) => (
+                    <SelectItem key={l.id} value={l.id}>
+                      {l.name}
+                      {l.groups.length > 1 ? ` (${l.groups.length} groups)` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Step 2 — group */}
+            <div className="space-y-2">
+              <Label className={selectedLeader ? "" : "text-muted-foreground"}>
+                2. Small group
+              </Label>
+              <Select
+                value={selectedGroupId}
+                onValueChange={setSelectedGroupId}
+                disabled={!selectedLeader}
+              >
+                {/* Custom trigger content keeps the trigger to a single line
+                    while the dropdown rows below carry the full details. */}
+                <SelectTrigger className="w-full">
+                  {selectedGroup ? (
+                    <span className="truncate">{selectedGroup.name}</span>
+                  ) : (
+                    <span className="text-muted-foreground">
+                      {selectedLeader ? "Select a group" : "Choose a leader first"}
+                    </span>
+                  )}
+                </SelectTrigger>
+                <SelectContent>
+                  {selectedLeader?.groups.map((g) => {
+                    const summary = groupSummaryLine(g)
+                    return (
+                      <SelectItem key={g.id} value={g.id} className="py-2">
+                        <div className="flex flex-col gap-1">
+                          <span className="flex items-center gap-2 font-medium">
+                            {g.name}
+                            {g.groupType === "Couples" && <CouplesBadge />}
+                          </span>
+                          {summary && (
+                            <span className="text-xs text-muted-foreground">
+                              {summary}
+                            </span>
+                          )}
+                        </div>
+                      </SelectItem>
+                    )
+                  })}
+                </SelectContent>
+              </Select>
+
+              {/* Details of the chosen group — stays visible after the
+                  dropdown closes so the member can confirm before submitting. */}
+              {selectedGroup && (
+                <dl className="mt-1 space-y-1.5 rounded-lg border bg-muted/30 p-3 text-sm">
+                  <GroupDetailRow
+                    icon={<IconUsers className="size-3.5" />}
+                    label="Type"
+                    value={
+                      selectedGroup.groupType === "Couples" ? (
+                        <CouplesBadge />
+                      ) : (
+                        "Regular"
+                      )
+                    }
+                  />
+                  <GroupDetailRow
+                    icon={<IconClock className="size-3.5" />}
+                    label="Schedule"
+                    value={formatSchedule(
+                      selectedGroup.scheduleDayOfWeek,
+                      selectedGroup.scheduleTimeStart,
+                      selectedGroup.scheduleTimeEnd
+                    )}
+                  />
+                  <GroupDetailRow
+                    icon={<IconDeviceLaptop className="size-3.5" />}
+                    label="Mode"
+                    value={modeLabel(selectedGroup.meetingFormat)}
+                  />
+                </dl>
+              )}
+            </div>
+
             <Button
               className="w-full"
               disabled={!selectedGroupId || submitting}
@@ -291,12 +516,7 @@ function MyGroupSection({
 
 function LedGroupCard({ token, group }: { token: string; group: LedGroup }) {
   const router = useRouter()
-  const [day, setDay] = React.useState(
-    group.scheduleDayOfWeek === null ? "" : String(group.scheduleDayOfWeek)
-  )
-  const [timeStart, setTimeStart] = React.useState(group.scheduleTimeStart ?? "")
-  const [timeEnd, setTimeEnd] = React.useState(group.scheduleTimeEnd ?? "")
-  const [savingSchedule, setSavingSchedule] = React.useState(false)
+  const [editOpen, setEditOpen] = React.useState(false)
   const [addOpen, setAddOpen] = React.useState(false)
   const [removeTarget, setRemoveTarget] = React.useState<{
     id: string
@@ -304,30 +524,35 @@ function LedGroupCard({ token, group }: { token: string; group: LedGroup }) {
   } | null>(null)
   const [removing, setRemoving] = React.useState(false)
 
-  const scheduleDirty =
-    day !== (group.scheduleDayOfWeek === null ? "" : String(group.scheduleDayOfWeek)) ||
-    timeStart !== (group.scheduleTimeStart ?? "") ||
-    timeEnd !== (group.scheduleTimeEnd ?? "")
+  const schedule = formatSchedule(
+    group.scheduleDayOfWeek,
+    group.scheduleTimeStart,
+    group.scheduleTimeEnd
+  )
 
-  async function handleSaveSchedule() {
-    if (!day || !timeStart || !timeEnd) {
-      toast.error("Please set the meeting day, start time, and end time")
-      return
+  const isCouples = group.groupType === "Couples"
+  const members = group.members
+  const rosterNameById = new Map(
+    members.map((m) => [m.id, `${m.firstName} ${m.lastName}`])
+  )
+  // Couples groups: order the roster so spouses sit next to each other.
+  const orderedMembers = React.useMemo(() => {
+    if (!isCouples) return members
+    const byId = new Map(members.map((m) => [m.id, m]))
+    const seen = new Set<string>()
+    const ordered: typeof members = []
+    for (const m of members) {
+      if (seen.has(m.id)) continue
+      seen.add(m.id)
+      ordered.push(m)
+      const partner = m.spouseId ? byId.get(m.spouseId) : undefined
+      if (partner && !seen.has(partner.id)) {
+        seen.add(partner.id)
+        ordered.push(partner)
+      }
     }
-    setSavingSchedule(true)
-    const result = await updateLedGroupSchedule(token, group.id, {
-      dayOfWeek: parseInt(day, 10),
-      timeStart,
-      timeEnd,
-    })
-    setSavingSchedule(false)
-    if (!result.success) {
-      toast.error(result.error)
-      return
-    }
-    toast.success("Schedule updated")
-    router.refresh()
-  }
+    return ordered
+  }, [members, isCouples])
 
   async function handleRemove() {
     if (!removeTarget) return
@@ -345,36 +570,50 @@ function LedGroupCard({ token, group }: { token: string; group: LedGroup }) {
 
   return (
     <div className="rounded-2xl border bg-card p-4 space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <p className="font-medium">{group.name}</p>
-        <span className="flex items-center gap-1 text-xs text-muted-foreground">
-          <IconUsers className="size-3" />
-          {group.members.length}
-          {group.memberLimit !== null && ` / ${group.memberLimit}`}{" "}
-          {group.members.length === 1 && group.memberLimit === null
-            ? "member"
-            : "members"}
-        </span>
-      </div>
-
-      {/* Schedule */}
-      <div className="space-y-2">
-        <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-          Meeting Schedule
-        </p>
-        <ScheduleInput
-          dayOfWeek={day}
-          timeStart={timeStart}
-          timeEnd={timeEnd}
-          onDayChange={setDay}
-          onTimeStartChange={setTimeStart}
-          onTimeEndChange={setTimeEnd}
-        />
-        {scheduleDirty && (
-          <Button size="sm" onClick={handleSaveSchedule} disabled={savingSchedule}>
-            {savingSchedule ? "Saving…" : "Save schedule"}
-          </Button>
-        )}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 space-y-1">
+          <p className="flex items-center gap-2 font-medium">
+            {group.name}
+            {group.groupType === "Couples" && <CouplesBadge />}
+          </p>
+          <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <IconUsers className="size-3" />
+              {group.members.length}
+              {group.memberLimit !== null && ` / ${group.memberLimit}`}{" "}
+              {group.members.length === 1 && group.memberLimit === null
+                ? "member"
+                : "members"}
+            </span>
+            {schedule && (
+              <span className="flex items-center gap-1">
+                <IconClock className="size-3" />
+                {schedule}
+              </span>
+            )}
+            {group.meetingFormat && (
+              <span className="flex items-center gap-1">
+                <IconDeviceLaptop className="size-3" />
+                {MEETING_FORMAT_LABELS[group.meetingFormat]}
+              </span>
+            )}
+            {group.locationCity && (
+              <span className="flex items-center gap-1">
+                <IconMapPin className="size-3" />
+                {group.locationCity}
+              </span>
+            )}
+          </div>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="shrink-0"
+          onClick={() => setEditOpen(true)}
+        >
+          <IconPencil className="size-4" />
+          Edit
+        </Button>
       </div>
 
       {/* Members */}
@@ -390,12 +629,25 @@ function LedGroupCard({ token, group }: { token: string; group: LedGroup }) {
         </div>
         {group.members.length > 0 ? (
           <ul className="divide-y rounded-lg border">
-            {group.members.map((m) => (
+            {orderedMembers.map((m) => (
               <li key={m.id} className="flex items-center justify-between gap-3 px-3 py-2">
                 <div className="min-w-0">
-                  <p className="text-sm font-medium truncate">
-                    {m.firstName} {m.lastName}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium truncate">
+                      {m.firstName} {m.lastName}
+                    </p>
+                    {isCouples &&
+                      (m.spouseId ? (
+                        <Badge className="shrink-0 gap-1 bg-rose-100 text-rose-800 border-transparent hover:bg-rose-100">
+                          <IconHeart className="size-3" />
+                          {rosterNameById.get(m.spouseId)?.split(" ")[0] ?? "Couple"}
+                        </Badge>
+                      ) : (
+                        <Badge className="shrink-0 bg-amber-100 text-amber-700 border-transparent">
+                          No partner in group
+                        </Badge>
+                      ))}
+                  </div>
                   {m.groupStatus && m.groupStatus !== "Member" && (
                     <p className="text-xs text-muted-foreground">{m.groupStatus}</p>
                   )}
@@ -418,10 +670,20 @@ function LedGroupCard({ token, group }: { token: string; group: LedGroup }) {
         )}
       </div>
 
+      <LedGroupFormDialog
+        // Remount with fresh field state whenever the saved group data changes.
+        key={`${group.name}-${group.groupType}-${group.meetingFormat}-${group.locationCity}-${group.memberLimit}-${group.ageRangeMin}-${group.ageRangeMax}-${group.scheduleDayOfWeek}-${group.scheduleTimeStart}-${group.scheduleTimeEnd}-${group.language.join(",")}`}
+        token={token}
+        group={group}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+      />
+
       <AddMemberDialog
         token={token}
         groupId={group.id}
         groupName={group.name}
+        isCouples={isCouples}
         open={addOpen}
         onOpenChange={setAddOpen}
       />
@@ -459,18 +721,260 @@ function LedGroupCard({ token, group }: { token: string; group: LedGroup }) {
   )
 }
 
+// ─── Led group form dialog (create + edit) ───────────────────────────────────
+
+function LedGroupFormDialog({
+  token,
+  group,
+  open,
+  onOpenChange,
+}: {
+  token: string
+  /** Omitted when creating a new group. */
+  group?: LedGroup
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const router = useRouter()
+  const isEdit = !!group
+  const [name, setName] = React.useState(group?.name ?? "")
+  const [groupType, setGroupType] = React.useState(group?.groupType ?? "Regular")
+  const [meetingFormat, setMeetingFormat] = React.useState(group?.meetingFormat ?? "")
+  const [locationCity, setLocationCity] = React.useState(group?.locationCity ?? "")
+  const [memberLimit, setMemberLimit] = React.useState(
+    group?.memberLimit != null ? String(group.memberLimit) : ""
+  )
+  const [language, setLanguage] = React.useState<string[]>(group?.language ?? [])
+  const [ageMin, setAgeMin] = React.useState(
+    group?.ageRangeMin != null ? String(group.ageRangeMin) : ""
+  )
+  const [ageMax, setAgeMax] = React.useState(
+    group?.ageRangeMax != null ? String(group.ageRangeMax) : ""
+  )
+  const [day, setDay] = React.useState(
+    group?.scheduleDayOfWeek == null ? "" : String(group.scheduleDayOfWeek)
+  )
+  const [timeStart, setTimeStart] = React.useState(group?.scheduleTimeStart ?? "")
+  const [timeEnd, setTimeEnd] = React.useState(group?.scheduleTimeEnd ?? "")
+  const [saving, setSaving] = React.useState(false)
+
+  async function handleSave() {
+    if (!name.trim()) {
+      toast.error("Group name is required")
+      return
+    }
+    if (!meetingFormat) {
+      toast.error("Please select a meeting format")
+      return
+    }
+    if (!day || !timeStart || !timeEnd) {
+      toast.error("Please set the meeting day, start time, and end time")
+      return
+    }
+    const payload = {
+      name,
+      groupType,
+      meetingFormat,
+      locationCity,
+      language,
+      ageRangeMin: ageMin,
+      ageRangeMax: ageMax,
+      memberLimit,
+      scheduleDayOfWeek: parseInt(day, 10),
+      scheduleTimeStart: timeStart,
+      scheduleTimeEnd: timeEnd,
+    }
+    setSaving(true)
+    const result = isEdit
+      ? await updateLedGroupDetails(token, group.id, payload)
+      : await createLedGroup(token, payload)
+    setSaving(false)
+    if (!result.success) {
+      toast.error(result.error)
+      return
+    }
+    toast.success(isEdit ? "Group updated" : "Group created")
+    onOpenChange(false)
+    router.refresh()
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md max-h-[90dvh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{isEdit ? "Edit group" : "Create a group"}</DialogTitle>
+          <DialogDescription>
+            {isEdit
+              ? "Update your group's details."
+              : "Set up a new small group you'll lead. An admin can refine matching settings later."}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="led-name">
+              Group name <span className="text-destructive">*</span>
+            </Label>
+            <Input
+              id="led-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Victory Group Alpha"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="led-type">
+              Group type <span className="text-destructive">*</span>
+            </Label>
+            <Select value={groupType} onValueChange={setGroupType}>
+              <SelectTrigger id="led-type" className="w-full">
+                <SelectValue placeholder="Select group type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Regular">Regular</SelectItem>
+                <SelectItem value="Couples">Couples</SelectItem>
+              </SelectContent>
+            </Select>
+            {groupType === "Couples" && (
+              <p className="text-xs text-muted-foreground">
+                Couples groups host married pairs. Members are added together with
+                their spouse (from Family records), and gender focus is set to Mixed.
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label>
+              Meeting schedule <span className="text-destructive">*</span>
+            </Label>
+            <ScheduleInput
+              dayOfWeek={day}
+              timeStart={timeStart}
+              timeEnd={timeEnd}
+              onDayChange={setDay}
+              onTimeStartChange={setTimeStart}
+              onTimeEndChange={setTimeEnd}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="led-format">
+                Meeting format <span className="text-destructive">*</span>
+              </Label>
+              <Select value={meetingFormat} onValueChange={setMeetingFormat}>
+                <SelectTrigger id="led-format" className="w-full">
+                  <SelectValue placeholder="Select" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Online">Online</SelectItem>
+                  <SelectItem value="Hybrid">Hybrid</SelectItem>
+                  <SelectItem value="InPerson">In Person</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="led-city">City</Label>
+              <Select
+                value={locationCity || NO_CITY}
+                onValueChange={(v) => setLocationCity(v === NO_CITY ? "" : v)}
+              >
+                <SelectTrigger id="led-city" className="w-full">
+                  <SelectValue placeholder="Select city" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_CITY}>No preference</SelectItem>
+                  {CITY_OPTIONS.map((city) => (
+                    <SelectItem key={city} value={city}>
+                      {city}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Language</Label>
+            <MultiSelect
+              className="w-full"
+              options={LANGUAGE_OPTIONS}
+              value={language}
+              onChange={setLanguage}
+              placeholder="Any language"
+            />
+          </div>
+
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="led-age-min">Min age</Label>
+              <Input
+                id="led-age-min"
+                type="number"
+                min={1}
+                value={ageMin}
+                onChange={(e) => setAgeMin(e.target.value)}
+                placeholder="18"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="led-age-max">Max age</Label>
+              <Input
+                id="led-age-max"
+                type="number"
+                min={1}
+                value={ageMax}
+                onChange={(e) => setAgeMax(e.target.value)}
+                placeholder="35"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="led-limit">Limit</Label>
+              <Input
+                id="led-limit"
+                type="number"
+                min={1}
+                value={memberLimit}
+                onChange={(e) => setMemberLimit(e.target.value)}
+                placeholder="12"
+              />
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+            Cancel
+          </Button>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving
+              ? isEdit
+                ? "Saving…"
+                : "Creating…"
+              : isEdit
+                ? "Save changes"
+                : "Create group"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // ─── Add member dialog ───────────────────────────────────────────────────────
 
 function AddMemberDialog({
   token,
   groupId,
   groupName,
+  isCouples,
   open,
   onOpenChange,
 }: {
   token: string
   groupId: string
   groupName: string
+  isCouples: boolean
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
@@ -479,6 +983,12 @@ function AddMemberDialog({
   const [results, setResults] = React.useState<MemberSearchResult[]>([])
   const [searching, setSearching] = React.useState(false)
   const [addingId, setAddingId] = React.useState<string | null>(null)
+  // Couples flow: a chosen member awaiting spouse resolution.
+  const [selected, setSelected] = React.useState<MemberSearchResult | null>(null)
+  const [spouseInfo, setSpouseInfo] = React.useState<SpouseInfo | null>(null)
+  const [spouseLookupDone, setSpouseLookupDone] = React.useState(false)
+  const [loadingSpouse, setLoadingSpouse] = React.useState(false)
+  const [adding, setAdding] = React.useState(false)
 
   React.useEffect(() => {
     if (!open) return
@@ -495,18 +1005,28 @@ function AddMemberDialog({
     return () => clearTimeout(timer)
   }, [open, query, token, groupId])
 
+  function resetSelection() {
+    setSelected(null)
+    setSpouseInfo(null)
+    setSpouseLookupDone(false)
+    setLoadingSpouse(false)
+  }
+
   function handleOpenChange(next: boolean) {
     if (!next) {
       setQuery("")
       setResults([])
+      resetSelection()
     }
     onOpenChange(next)
   }
 
-  async function handleAdd(memberId: string) {
+  async function handleAddIndividual(memberId: string) {
     setAddingId(memberId)
+    setAdding(true)
     const result = await addMemberToLedGroup(token, groupId, memberId)
     setAddingId(null)
+    setAdding(false)
     if (!result.success) {
       toast.error(result.error)
       return
@@ -516,56 +1036,149 @@ function AddMemberDialog({
     router.refresh()
   }
 
+  async function handleSelectForCouple(m: MemberSearchResult) {
+    setSelected(m)
+    setSpouseInfo(null)
+    setSpouseLookupDone(false)
+    setLoadingSpouse(true)
+    const result = await getSpouseForLedGroupMember(token, m.id)
+    setLoadingSpouse(false)
+    if (result.success) setSpouseInfo(result.data)
+    setSpouseLookupDone(true)
+  }
+
+  const spouseAlreadyInGroup = spouseInfo?.smallGroupId === groupId
+  const canAddCouple = !!spouseInfo && !spouseAlreadyInGroup
+
+  async function handleAddCouple() {
+    if (!selected || !spouseInfo) return
+    setAdding(true)
+    const result = await addCoupleToLedGroup(
+      token,
+      groupId,
+      selected.id,
+      spouseInfo.memberId
+    )
+    setAdding(false)
+    if (!result.success) {
+      toast.error(result.error)
+      return
+    }
+    toast.success("Couple added")
+    handleOpenChange(false)
+    router.refresh()
+  }
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Add member to {groupName}</DialogTitle>
+          <DialogTitle>
+            {isCouples ? "Add couple to" : "Add member to"} {groupName}
+          </DialogTitle>
           <DialogDescription>
-            Search existing members by name. Members in another group will be
-            transferred.
+            {isCouples
+              ? "Search for a member — their spouse (from Family records) is added together with them."
+              : "Search existing members by name. Members in another group will be transferred."}
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-3">
-          <div className="relative">
-            <IconSearch className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search members…"
-              className="pl-9"
-              autoFocus
-            />
+
+        {isCouples && selected ? (
+          /* Couples resolution panel */
+          <div className="space-y-3">
+            <button
+              type="button"
+              onClick={resetSelection}
+              className="text-xs font-medium text-muted-foreground hover:text-foreground"
+            >
+              ← Back to search
+            </button>
+            <div className="rounded-lg border p-3 text-sm">
+              <p className="font-medium">{selected.name}</p>
+              {loadingSpouse ? (
+                <p className="mt-1 text-muted-foreground">Looking up spouse…</p>
+              ) : spouseInfo && spouseAlreadyInGroup ? (
+                <p className="mt-1 text-muted-foreground">
+                  Spouse{" "}
+                  <span className="font-medium">
+                    {spouseInfo.firstName} {spouseInfo.lastName}
+                  </span>{" "}
+                  is already in this group — {selected.name.split(" ")[0]} will be
+                  added individually.
+                </p>
+              ) : spouseInfo ? (
+                <p className="mt-1">
+                  Will be added together with spouse{" "}
+                  <span className="font-medium">
+                    {spouseInfo.firstName} {spouseInfo.lastName}
+                  </span>
+                  {spouseInfo.smallGroupId && spouseInfo.smallGroupId !== groupId && (
+                    <span className="text-muted-foreground"> (currently in another group)</span>
+                  )}
+                  .
+                </p>
+              ) : spouseLookupDone ? (
+                <p className="mt-1 rounded-md bg-amber-50 p-2 text-amber-800">
+                  No spouse on record. You can add them individually and link their
+                  family under Families later.
+                </p>
+              ) : null}
+            </div>
+            <Button
+              className="w-full"
+              disabled={adding || loadingSpouse}
+              onClick={
+                canAddCouple ? handleAddCouple : () => handleAddIndividual(selected.id)
+              }
+            >
+              {adding ? "Adding…" : canAddCouple ? "Add couple" : "Add member"}
+            </Button>
           </div>
-          {searching ? (
-            <p className="text-sm text-muted-foreground">Searching…</p>
-          ) : results.length > 0 ? (
-            <ul className="divide-y rounded-lg border max-h-64 overflow-y-auto">
-              {results.map((m) => (
-                <li key={m.id} className="flex items-center justify-between gap-3 px-3 py-2">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium truncate">{m.name}</p>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {m.currentGroupName
-                        ? `Currently in ${m.currentGroupName}`
-                        : "Not in a group"}
-                    </p>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={addingId !== null}
-                    onClick={() => handleAdd(m.id)}
-                  >
-                    {addingId === m.id ? "Adding…" : "Add"}
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          ) : query.trim().length >= 2 ? (
-            <p className="text-sm text-muted-foreground">No members found</p>
-          ) : null}
-        </div>
+        ) : (
+          /* Search */
+          <div className="space-y-3">
+            <div className="relative">
+              <IconSearch className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search members…"
+                className="pl-9"
+                autoFocus
+              />
+            </div>
+            {searching ? (
+              <p className="text-sm text-muted-foreground">Searching…</p>
+            ) : results.length > 0 ? (
+              <ul className="divide-y rounded-lg border max-h-64 overflow-y-auto">
+                {results.map((m) => (
+                  <li key={m.id} className="flex items-center justify-between gap-3 px-3 py-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{m.name}</p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {m.currentGroupName
+                          ? `Currently in ${m.currentGroupName}`
+                          : "Not in a group"}
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={addingId !== null}
+                      onClick={() =>
+                        isCouples ? handleSelectForCouple(m) : handleAddIndividual(m.id)
+                      }
+                    >
+                      {addingId === m.id ? "Adding…" : isCouples ? "Select" : "Add"}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            ) : query.trim().length >= 2 ? (
+              <p className="text-sm text-muted-foreground">No members found</p>
+            ) : null}
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   )
