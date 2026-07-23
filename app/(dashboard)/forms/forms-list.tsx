@@ -17,7 +17,7 @@ export type FormListRow = {
   isOpen: boolean
 }
 
-function FormRow({ row }: { row: FormListRow }) {
+function FormRow({ row, eventId }: { row: FormListRow; eventId: string | null }) {
   const [isOpen, setIsOpen] = React.useState(row.isOpen)
   const [pending, setPending] = React.useState(false)
 
@@ -25,7 +25,7 @@ function FormRow({ row }: { row: FormListRow }) {
     setPending(true)
     // Optimistic — revert on failure.
     setIsOpen(next)
-    const result = await setFormOpen(row.key, null, next)
+    const result = await setFormOpen(row.key, eventId, next)
     setPending(false)
     if (result.success) {
       toast.success(next ? "Form opened" : "Form closed")
@@ -64,11 +64,17 @@ function FormRow({ row }: { row: FormListRow }) {
   )
 }
 
-export function FormsList({ rows }: { rows: FormListRow[] }) {
+export function FormsList({
+  rows,
+  eventId = null,
+}: {
+  rows: FormListRow[]
+  eventId?: string | null
+}) {
   return (
     <div className="flex flex-col gap-3">
       {rows.map((row) => (
-        <FormRow key={row.key} row={row} />
+        <FormRow key={row.key} row={row} eventId={eventId} />
       ))}
     </div>
   )
