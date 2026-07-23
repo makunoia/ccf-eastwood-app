@@ -21,7 +21,6 @@ export default async function FormsPage() {
     description: form.description,
     href: `/forms/${form.key}`,
     isOpen: openByScope.get(scopeKeyFor(form.key)) ?? true,
-    icon: form.icon,
   }))
 
   return (

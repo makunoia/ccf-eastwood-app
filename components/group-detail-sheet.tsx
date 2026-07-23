@@ -11,7 +11,6 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet"
 import { Skeleton } from "@/components/ui/skeleton"
-import { GroupTypeBadge } from "@/components/group-type-badge"
 import { formatSchedule } from "@/lib/format/schedule"
 
 // ─── Normalized shape ─────────────────────────────────────────────────────────
@@ -81,12 +80,19 @@ export function GroupDetailSheet({
           </SheetHeader>
         ) : (
           <>
-            <SheetHeader>
-              <div className="flex items-center gap-2">
-                <SheetTitle>{data.name}</SheetTitle>
-                <GroupTypeBadge groupType={data.groupType} />
-              </div>
-              {data.subtitle && <SheetDescription>{data.subtitle}</SheetDescription>}
+            <SheetHeader className="relative overflow-hidden">
+              {data.groupType === "Couples" && (
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute inset-0 animate-in fade-in duration-1000"
+                >
+                  <div className="couples-accent-breathe h-full w-full bg-linear-to-br from-rose-200/50 via-rose-100/20 via-30% to-transparent to-60% dark:from-rose-500/15 dark:via-rose-500/6 dark:to-transparent" />
+                </div>
+              )}
+              <SheetTitle className="relative">{data.name}</SheetTitle>
+              {data.subtitle && (
+                <SheetDescription className="relative">{data.subtitle}</SheetDescription>
+              )}
             </SheetHeader>
 
             <div className="px-4 space-y-6">

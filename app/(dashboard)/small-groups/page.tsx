@@ -73,7 +73,9 @@ async function getSmallGroups(where: Prisma.SmallGroupWhereInput): Promise<Small
 
 async function getPendingRequests(): Promise<RequestRow[]> {
   const requests = await db.smallGroupMemberRequest.findMany({
-    where: { status: MemberRequestStatus.Pending, smallGroupId: { not: null } },
+    // Breakout/catch-mech placements set breakoutGroupId — those live in the event
+    // workspace and on the group's own temp-member count, not this top-level tab.
+    where: { status: MemberRequestStatus.Pending, smallGroupId: { not: null }, breakoutGroupId: null },
     orderBy: { createdAt: "asc" },
     include: {
       guest: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
@@ -151,7 +153,7 @@ export default async function SmallGroupsPage({
 
   const [session, pendingRequestCount, groups, lifeStages, requests] = await Promise.all([
     auth(),
-    db.smallGroupMemberRequest.count({ where: { status: MemberRequestStatus.Pending } }),
+    db.smallGroupMemberRequest.count({ where: { status: MemberRequestStatus.Pending, breakoutGroupId: null } }),
     tab === "all" ? getSmallGroups(where) : Promise.resolve([]),
     tab === "all"
       ? db.lifeStage.findMany({ orderBy: { order: "asc" }, select: { id: true, name: true } })
