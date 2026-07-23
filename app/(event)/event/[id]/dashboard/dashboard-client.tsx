@@ -282,7 +282,7 @@ export function EventDashboardClient({
   const pipelineData = [
     { stage: "Registered", value: event.pipeline.registered },
     { stage: "Attended", value: event.pipeline.attended },
-    { stage: "In small group", value: event.pipeline.inSmallGroup },
+    { stage: "In DGroup", value: event.pipeline.inSmallGroup },
     { stage: "New Timothy", value: event.pipeline.newTimothys },
     { stage: "New Leader", value: event.pipeline.newLeaders },
   ]
@@ -371,7 +371,7 @@ export function EventDashboardClient({
         <div className="rounded-lg border px-5 py-5 flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <p className="text-[11px] font-semibold tracking-[0.15em] uppercase text-muted-foreground">
-              Not In Small Group Yet
+              Not In DGroup Yet
             </p>
             <span className="text-muted-foreground/40">
               <IconUserQuestion className="size-4" />
@@ -527,7 +527,7 @@ export function EventDashboardClient({
       <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         <Card className="flex flex-col">
           <CardHeader>
-            <CardTitle>Small Group Placement</CardTitle>
+            <CardTitle>DGroup Placement</CardTitle>
             <CardDescription>Participants assigned vs still unassigned</CardDescription>
           </CardHeader>
           <CardContent className="flex-1">
@@ -665,7 +665,7 @@ export function EventDashboardClient({
             <CardFooter>
               <p className="text-xs text-muted-foreground">
                 {event.confirmedGuestsCount.toLocaleString()}{" "}
-                {event.confirmedGuestsCount === 1 ? "guest" : "guests"} confirmed to a small group
+                {event.confirmedGuestsCount === 1 ? "guest" : "guests"} confirmed to a DGroup
                 this period
               </p>
             </CardFooter>

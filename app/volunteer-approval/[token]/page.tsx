@@ -53,7 +53,7 @@ export default async function LeaderApprovalPage({
           </div>
           <h1 className="text-2xl font-semibold">Leader Approval</h1>
           <p className="text-sm text-muted-foreground">
-            A member in your small group has applied to volunteer.
+            A member in your DGroup has applied to volunteer.
           </p>
         </div>
 

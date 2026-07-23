@@ -22,7 +22,7 @@ import { RequestsTable, type RequestRow } from "./requests-table"
 import { deleteSmallGroupsBatch, setSmallGroupsLifeStageBatch } from "./actions"
 
 export const metadata: Metadata = {
-  title: "Small Groups",
+  title: "DGroups",
 }
 
 async function getSmallGroups(where: Prisma.SmallGroupWhereInput): Promise<SmallGroupRow[]> {
@@ -171,12 +171,12 @@ export default async function SmallGroupsPage({
     >
       <div className="flex flex-1 flex-col gap-4 p-6">
         <PageHeader
-          title="Small Groups"
+          title="DGroups"
           description="Manage fellowship groups and their hierarchy"
           actions={
             tab === "all" ? (
               <BatchActionHeader
-                entityLabel="small group"
+                entityLabel="DGroup"
                 lifeStages={lifeStages}
                 onDelete={deleteSmallGroupsBatch}
                 onSetLifeStage={setSmallGroupsLifeStageBatch}

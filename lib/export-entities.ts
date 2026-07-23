@@ -27,7 +27,7 @@ export type MemberExportRow = {
 
 const MEMBER_HEADERS = [
   "First Name", "Last Name", "Nickname", "Date Joined", "Email", "Phone", "Address",
-  "Small Group", "Life Stage", "Gender", "Language",
+  "DGroup", "Life Stage", "Gender", "Language",
   "Birth Month", "Birth Year", "Work City", "Work Industry",
   "Meeting Preference", "Notes",
 ]

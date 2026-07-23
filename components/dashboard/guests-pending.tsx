@@ -29,7 +29,7 @@ export function GuestsPending({
       <CardHeader>
         <CardTitle>Guests Awaiting Connection</CardTitle>
         <CardDescription>
-          {totalActiveGuests} guest{totalActiveGuests !== 1 ? "s" : ""} not yet in a small group
+          {totalActiveGuests} guest{totalActiveGuests !== 1 ? "s" : ""} not yet in a DGroup
         </CardDescription>
         <CardAction>
           <Link
@@ -43,7 +43,7 @@ export function GuestsPending({
       <CardContent>
         {guests.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
-            All guests have been connected to small groups.
+            All guests have been connected to DGroups.
           </p>
         ) : (
           <div className="divide-y">

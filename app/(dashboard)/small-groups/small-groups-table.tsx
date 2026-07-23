@@ -90,7 +90,7 @@ export function SmallGroupsTable({
         {groups.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
             <IconUsersGroup className="size-8" />
-            <p className="text-sm">No small groups yet</p>
+            <p className="text-sm">No DGroups yet</p>
           </div>
         ) : (
           groups.map((group) => (
@@ -107,7 +107,7 @@ export function SmallGroupsTable({
           emptyState={
             <>
               <IconUsersGroup className="size-8" />
-              <p className="text-sm">No small groups yet</p>
+              <p className="text-sm">No DGroups yet</p>
             </>
           }
         />

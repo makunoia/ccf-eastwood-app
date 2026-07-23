@@ -261,7 +261,7 @@ export function ConfirmationClient({ token, groupName: _groupName, pendingReques
               Confirm
             </span>
             <p className="text-xs text-foreground/75">
-              They&apos;re joining your small group
+              They&apos;re joining your DGroup
             </p>
           </div>
           <div className="flex items-center gap-2.5">

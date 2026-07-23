@@ -21,7 +21,7 @@ import { Label } from "@/components/ui/label"
 import { MultiSelect } from "@/components/ui/multi-select"
 import { OptionalEmailInput } from "@/components/ui/optional-email-input"
 import { OptionalPhonePHInput } from "@/components/ui/optional-phone-ph-input"
-import { YearInput } from "@/components/ui/year-input"
+import { BirthMonthYearInput } from "@/components/ui/birth-month-year-input"
 import { PrivacyPolicyCheckbox } from "@/components/ui/privacy-policy-checkbox"
 import {
   Select,
@@ -308,7 +308,7 @@ export function RegistrationForm({
 
   const sections: { key: string; title: string }[] = [
     { key: "personal", title: "Personal Information" },
-    ...(includeSmallGroup && !skipSmallGroup ? [{ key: "smallgroup", title: "Small Group Info" }] : []),
+    ...(includeSmallGroup && !skipSmallGroup ? [{ key: "smallgroup", title: "DGroup Info" }] : []),
     ...(showBreakoutSection ? [{ key: "breakout", title: "Breakout Group" }] : []),
     ...(includeDietary ? [{ key: "dietary", title: "Dietary Preferences" }] : []),
     ...(includePayment ? [{ key: "payment", title: "Payment" }] : []),
@@ -990,45 +990,12 @@ export function RegistrationForm({
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label>Birthday</Label>
-                <div className="flex gap-2">
-                  <Select
-                    value={form.birthMonth}
-                    onValueChange={(v) => set("birthMonth", v === "_none" ? "" : v)}
-                  >
-                    <SelectTrigger className="flex-1">
-                      <SelectValue placeholder="Month" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="_none">Month</SelectItem>
-                      {[
-                        "January",
-                        "February",
-                        "March",
-                        "April",
-                        "May",
-                        "June",
-                        "July",
-                        "August",
-                        "September",
-                        "October",
-                        "November",
-                        "December",
-                      ].map((name, i) => (
-                        <SelectItem key={i + 1} value={String(i + 1)}>
-                          {name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <YearInput
-                    value={form.birthYear}
-                    onChange={(v) => set("birthYear", v)}
-                    className="w-24"
-                  />
-                </div>
-              </div>
+              <BirthMonthYearInput
+                month={form.birthMonth}
+                year={form.birthYear}
+                onMonthChange={(v) => set("birthMonth", v)}
+                onYearChange={(v) => set("birthYear", v)}
+              />
 
               <div className="space-y-2">
                 <Label>Gender</Label>
@@ -1057,13 +1024,13 @@ export function RegistrationForm({
             <>
               {!isMultiStep && (
                 <div className="pt-2 border-t">
-                  <p className="text-sm font-medium text-foreground">Small Group</p>
+                  <p className="text-sm font-medium text-foreground">DGroup</p>
                 </div>
               )}
 
               {confirmedMember?.recordType === "member" && !confirmedMember.smallGroupId && (
                 <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-foreground">
-                  You&apos;re not in a Small Group yet — joining one is a great next step!
+                  You&apos;re not in a DGroup yet — joining one is a great next step!
                 </div>
               )}
 
@@ -1077,7 +1044,7 @@ export function RegistrationForm({
                     className="mt-0.5"
                   />
                   <Label htmlFor="wantsSmallGroup" className="text-sm font-normal leading-snug">
-                    Join a Small Group
+                    Join a DGroup
                   </Label>
                 </div>
               ) : (
@@ -1091,7 +1058,7 @@ export function RegistrationForm({
                       className="mt-0.5"
                     />
                     <Label htmlFor="wantsSmallGroup" className="text-sm font-normal leading-snug">
-                      I want to join a Small Group
+                      I want to join a DGroup
                     </Label>
                   </div>
                   <div className="flex items-start gap-2">
@@ -1109,7 +1076,7 @@ export function RegistrationForm({
                       className="mt-0.5"
                     />
                     <Label htmlFor="alreadyInSmallGroup" className="text-sm font-normal leading-snug">
-                      I&apos;m already part of a Small Group
+                      I&apos;m already part of a DGroup
                     </Label>
                   </div>
                 </div>
@@ -1164,7 +1131,7 @@ export function RegistrationForm({
                     <div className="flex items-center justify-between rounded-lg border border-primary bg-primary/5 px-4 py-3">
                       <div>
                         <p className="text-sm font-medium">{claimedGroupQuery}</p>
-                        <p className="text-xs text-muted-foreground">Small Group selected</p>
+                        <p className="text-xs text-muted-foreground">DGroup selected</p>
                       </div>
                       <button
                         type="button"

@@ -344,7 +344,7 @@ export function VolunteerForm({ members, events, volunteer }: Props) {
               <p className="text-sm font-medium">Leader Approval</p>
               {volunteer!.status !== "Confirmed" && (
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Share this link with the volunteer&apos;s Small Group leader to request
+                  Share this link with the volunteer&apos;s DGroup leader to request
                   approval.
                 </p>
               )}

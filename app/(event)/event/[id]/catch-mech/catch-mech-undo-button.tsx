@@ -46,7 +46,7 @@ export function CatchMechUndoButton({ requestId, eventId, decision }: Props) {
 
   const body =
     decision === "Confirmed"
-      ? "This removes the person from the small group and moves them back to Pending. If they were promoted from a guest, their member record is deleted and the guest is restored."
+      ? "This removes the person from the DGroup and moves them back to Pending. If they were promoted from a guest, their member record is deleted and the guest is restored."
       : "This reopens the rejection and moves the person back to Pending, awaiting the leader's decision again."
 
   return (

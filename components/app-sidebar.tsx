@@ -36,7 +36,7 @@ const navMain: NavItem[] = [
   { title: "Guests", url: "/guests", icon: IconUserScan, feature: "Guests" },
   { title: "Members", url: "/members", icon: IconUsers, feature: "Members" },
   { title: "Families", url: "/families", icon: IconHome, feature: "Members" },
-  { title: "Small Groups", url: "/small-groups", icon: IconUsersGroup, feature: "SmallGroups" },
+  { title: "DGroups", url: "/small-groups", icon: IconUsersGroup, feature: "SmallGroups" },
   { title: "Ministries", url: "/ministries", icon: IconBuilding, feature: "Ministries" },
   { title: "Events", url: "/events", icon: IconCalendar, feature: "Events" },
   { title: "Volunteers", url: "/volunteers", icon: IconHeart, feature: "Volunteers" },

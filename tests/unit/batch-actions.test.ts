@@ -156,7 +156,7 @@ describe("deleteMembersBatch", () => {
       expect(result.data.failed).toHaveLength(1)
       expect(result.data.failed[0].id).toBe(linked.id)
       expect(result.data.failed[0].reason).toBe(
-        "leads a small group or has linked records"
+        "leads a DGroup or has linked records"
       )
     }
 

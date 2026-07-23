@@ -5,7 +5,7 @@ import { FormClosed } from "@/components/form-closed"
 import { getFormConfig, resolveFormTheme } from "@/lib/forms/config"
 
 export const metadata: Metadata = {
-  title: { absolute: "Find Your Small Group" },
+  title: { absolute: "Find Your DGroup" },
 }
 
 async function getPageData() {
@@ -17,10 +17,10 @@ async function getPageData() {
   return {
     // SiteSettings join-page fields are the fallback; Forms-hub overrides supersede them.
     fallback: {
-      title: settings?.joinPageTitle || "Find Your Small Group",
+      title: settings?.joinPageTitle || "Find Your DGroup",
       description:
         settings?.joinPageDescription ||
-        "Tell us about yourself and we'll suggest the best small groups for you.",
+        "Tell us about yourself and we'll suggest the best DGroups for you.",
       logoUrl: settings?.joinPageLogoUrl || null,
       bannerUrl: settings?.joinPageBackgroundImageUrl || null,
       primaryColor: settings?.joinPageAccentColor || null,

@@ -55,7 +55,7 @@ function MemberCard({ member, allIds }: { member: MemberRow; allIds: string[] })
               <span>{member.email ?? <span className="text-muted-foreground">—</span>}</span>
               <span className="text-muted-foreground">Mobile</span>
               <span>{member.phone ?? <span className="text-muted-foreground">—</span>}</span>
-              <span className="text-muted-foreground">Small Group</span>
+              <span className="text-muted-foreground">DGroup</span>
               <span>{member.smallGroupName ?? <span className="text-muted-foreground">—</span>}</span>
               <span className="text-muted-foreground">Life Stage</span>
               <span>{member.lifeStage ?? <span className="text-muted-foreground">—</span>}</span>

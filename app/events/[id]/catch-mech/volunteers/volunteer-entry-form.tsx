@@ -35,7 +35,7 @@ export function VolunteerEntryForm({ eventId }: { eventId: string }) {
       <div className="space-y-1 text-center">
         <h1 className="text-xl font-semibold">Volunteer follow-up</h1>
         <p className="text-sm text-muted-foreground">
-          Let us know which event participants have joined your small group.
+          Let us know which event participants have joined your DGroup.
         </p>
       </div>
       <div className="space-y-2">

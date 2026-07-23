@@ -810,7 +810,7 @@ export function EventSettingsClient({
             <SettingCard
               icon={IconFish}
               title="Catch Mech"
-              description="Enable facilitators to confirm breakout group members into their small groups via a weekly link."
+              description="Enable facilitators to confirm breakout group members into their DGroups via a weekly link."
               control={
                 <Switch
                   checked={modules.has("CatchMech")}

@@ -128,7 +128,7 @@ export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy
         <p className="font-semibold text-lg">Done!</p>
         {createdGroupName ? (
           <p className="text-sm text-muted-foreground">
-            Your small group <span className="font-medium text-foreground">&quot;{createdGroupName}&quot;</span> has been created and your members are in.
+            Your DGroup <span className="font-medium text-foreground">&quot;{createdGroupName}&quot;</span> has been created and your members are in.
           </p>
         ) : (
           <p className="text-sm text-muted-foreground">
@@ -147,13 +147,13 @@ export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy
           <div className="text-3xl">🎊</div>
           <p className="font-semibold">You confirmed your first member!</p>
           <p className="text-sm text-muted-foreground">
-            Let&apos;s set up your small group. Give it a name to get started.
+            Let&apos;s set up your DGroup. Give it a name to get started.
           </p>
         </div>
 
         <div className="space-y-2">
           <label htmlFor="groupName" className="text-sm font-medium">
-            Small Group Name
+            DGroup Name
           </label>
           <input
             id="groupName"
@@ -399,7 +399,7 @@ export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy
             <span className="shrink-0 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold bg-green-600 text-white">
               Confirm
             </span>
-            <p className="text-xs text-foreground/75">Joining your small group</p>
+            <p className="text-xs text-foreground/75">Joining your DGroup</p>
           </div>
           <div className="flex items-center gap-2.5">
             <span className="shrink-0 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold bg-amber-500 text-white">

@@ -29,7 +29,7 @@ export default async function MePage() {
                 CCF Eastwood
               </p>
               <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-                Your small groups
+                Your DGroups
               </h1>
               <p className="max-w-sm text-sm leading-6 text-muted-foreground">
                 Use your mobile number to see your group and manage the groups you lead.

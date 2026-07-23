@@ -58,7 +58,7 @@ const STATUS_BADGE_CLASS: Record<MemberEntry["status"], string> = {
 const STATUS_LABEL: Record<MemberEntry["status"], string> = {
   Confirmed: "Confirmed",
   Rejected: "Rejected",
-  InSmallGroup: "In Small Group",
+  InSmallGroup: "In DGroup",
   Pending: "Pending",
 }
 

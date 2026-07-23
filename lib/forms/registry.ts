@@ -39,9 +39,9 @@ export type FormMeta = {
 export const FORM_REGISTRY: Record<FormKey, FormMeta> = {
   JoinSmallGroup: {
     key: "JoinSmallGroup",
-    label: "Join a Small Group",
+    label: "Join a DGroup",
     description:
-      "Public page where guests share their preferences and request to join a small group.",
+      "Public page where guests share their preferences and request to join a DGroup.",
     scope: "global",
     icon: IconDoorEnter,
     publicPath: () => "/join-small-group",
@@ -51,7 +51,7 @@ export const FORM_REGISTRY: Record<FormKey, FormMeta> = {
     key: "MemberSelfService",
     label: "Member Portal",
     description:
-      "Self-service page where members verify by mobile to view and manage their small group.",
+      "Self-service page where members verify by mobile to view and manage their DGroup.",
     scope: "global",
     icon: IconUserCircle,
     publicPath: () => "/me",
@@ -59,9 +59,9 @@ export const FORM_REGISTRY: Record<FormKey, FormMeta> = {
   },
   SmallGroupConfirmation: {
     key: "SmallGroupConfirmation",
-    label: "Small Group Confirmation",
+    label: "DGroup Confirmation",
     description:
-      "Page where small group leaders verify by mobile to confirm pending member requests.",
+      "Page where DGroup leaders verify by mobile to confirm pending member requests.",
     scope: "global",
     icon: IconUsersGroup,
     publicPath: () => "/small-group-confirmation",
@@ -92,7 +92,7 @@ export const FORM_REGISTRY: Record<FormKey, FormMeta> = {
     key: "VolunteerInfo",
     label: "Volunteer Info Update",
     description:
-      "Link volunteers use to update their personal info, small group membership, and availability.",
+      "Link volunteers use to update their personal info, DGroup membership, and availability.",
     scope: "event",
     icon: IconUserEdit,
     publicPath: (eventId) => `/events/${eventId}/volunteer-info`,
@@ -102,7 +102,7 @@ export const FORM_REGISTRY: Record<FormKey, FormMeta> = {
     key: "VolunteerApproval",
     label: "Volunteer Approval",
     description:
-      "Per-volunteer link a small group leader opens to approve or reject a volunteer sign-up.",
+      "Per-volunteer link a DGroup leader opens to approve or reject a volunteer sign-up.",
     scope: "event",
     icon: IconShieldCheck,
     themeFields: [],
@@ -111,7 +111,7 @@ export const FORM_REGISTRY: Record<FormKey, FormMeta> = {
     key: "CatchMech",
     label: "Catch Mech",
     description:
-      "Facilitator check-in that confirms breakout members into small groups via a weekly link.",
+      "Facilitator check-in that confirms breakout members into DGroups via a weekly link.",
     scope: "event",
     icon: IconFish,
     publicPath: (eventId) => `/events/${eventId}/catch-mech`,

@@ -151,7 +151,7 @@ export function buildAssistantTools(session: Session) {
 
     get_member_details: tool({
       description:
-        "Full profile of one member: contact info, matching profile, small group, led groups, and recent event registrations.",
+        "Full profile of one member: contact info, matching profile, DGroup, led groups, and recent event registrations.",
       inputSchema: z.object({ memberId: z.string() }),
       execute: async ({ memberId }) => {
         if (!read("Members")) return PERMISSION_DENIED("Members")
@@ -202,7 +202,7 @@ export function buildAssistantTools(session: Session) {
 
     search_small_groups: tool({
       description:
-        "Search small groups by group or leader name. Filter by life stage, meeting day (0=Sunday…6=Saturday), or group type.",
+        "Search DGroups by group or leader name. Filter by life stage, meeting day (0=Sunday…6=Saturday), or group type.",
       inputSchema: z.object({
         query: z.string().optional(),
         lifeStageId: z.string().optional(),
@@ -211,25 +211,25 @@ export function buildAssistantTools(session: Session) {
         limit: limitField,
       }),
       execute: async (input) => {
-        if (!read("SmallGroups")) return PERMISSION_DENIED("Small Groups")
+        if (!read("SmallGroups")) return PERMISSION_DENIED("DGroups")
         return querySmallGroups(input)
       },
     }),
 
     get_small_group_details: tool({
       description:
-        "Full detail of one small group: leader, matching attributes, schedule, full roster, and pending member requests.",
+        "Full detail of one DGroup: leader, matching attributes, schedule, full roster, and pending member requests.",
       inputSchema: z.object({ groupId: z.string() }),
       execute: async ({ groupId }) => {
-        if (!read("SmallGroups")) return PERMISSION_DENIED("Small Groups")
+        if (!read("SmallGroups")) return PERMISSION_DENIED("DGroups")
         const detail = await getSmallGroupDetail(groupId)
-        return detail ?? { error: "Small group not found." }
+        return detail ?? { error: "DGroup not found." }
       },
     }),
 
     match_small_groups: tool({
       description:
-        "Run the matching engine to suggest compatible small groups for a guest or a member (exactly one of guestId/memberId). Returns ranked matches with 0–1 scores.",
+        "Run the matching engine to suggest compatible DGroups for a guest or a member (exactly one of guestId/memberId). Returns ranked matches with 0–1 scores.",
       inputSchema: z
         .object({
           guestId: z.string().optional(),
@@ -240,7 +240,7 @@ export function buildAssistantTools(session: Session) {
           message: "Provide exactly one of guestId or memberId",
         }),
       execute: async ({ guestId, memberId, limit }) => {
-        if (!read("SmallGroups")) return PERMISSION_DENIED("Small Groups")
+        if (!read("SmallGroups")) return PERMISSION_DENIED("DGroups")
         if (guestId && !read("Guests")) return PERMISSION_DENIED("Guests")
         if (memberId && !read("Members")) return PERMISSION_DENIED("Members")
         const params = guestId ? { guestId } : { memberId: memberId! }
@@ -335,7 +335,7 @@ export function buildAssistantTools(session: Session) {
 
     get_entity_counts: tool({
       description:
-        "Overview counts: total members, active guests, small groups, ministries, upcoming events, and volunteers.",
+        "Overview counts: total members, active guests, DGroups, ministries, upcoming events, and volunteers.",
       inputSchema: z.object({}),
       execute: async () =>
         getEntityCounts({
@@ -479,40 +479,40 @@ export function buildAssistantTools(session: Session) {
 
     promote_guest_to_member: tool({
       description:
-        "Promote a guest to member by adding them to a small group. Requires user approval. Creates the Member record and links history.",
+        "Promote a guest to member by adding them to a DGroup. Requires user approval. Creates the Member record and links history.",
       inputSchema: z.object({
         guestId: z.string(),
-        groupId: z.string().describe("The small group the new member joins"),
+        groupId: z.string().describe("The DGroup the new member joins"),
       }),
       execute: async ({ guestId, groupId }) => {
         if (!write("Guests")) return PERMISSION_DENIED("Guests")
-        if (!write("SmallGroups")) return PERMISSION_DENIED("Small Groups")
+        if (!write("SmallGroups")) return PERMISSION_DENIED("DGroups")
         return promoteGuestToMember(guestId, groupId)
       },
     }),
 
     add_member_to_small_group: tool({
       description:
-        "Add an existing member to a small group (members belong to at most one group). Requires user approval.",
+        "Add an existing member to a DGroup (members belong to at most one group). Requires user approval.",
       inputSchema: z.object({
         memberId: z.string(),
         groupId: z.string(),
       }),
       execute: async ({ memberId, groupId }) => {
-        if (!write("SmallGroups")) return PERMISSION_DENIED("Small Groups")
+        if (!write("SmallGroups")) return PERMISSION_DENIED("DGroups")
         return addMemberToGroup(groupId, memberId)
       },
     }),
 
     assign_guest_to_group_temporarily: tool({
       description:
-        "Create a pending (temporary) assignment of a guest to a small group, awaiting leader confirmation. Requires user approval.",
+        "Create a pending (temporary) assignment of a guest to a DGroup, awaiting leader confirmation. Requires user approval.",
       inputSchema: z.object({
         guestId: z.string(),
         groupId: z.string(),
       }),
       execute: async ({ guestId, groupId }) => {
-        if (!write("SmallGroups")) return PERMISSION_DENIED("Small Groups")
+        if (!write("SmallGroups")) return PERMISSION_DENIED("DGroups")
         return assignGuestToGroupTemporarily(groupId, guestId)
       },
     }),

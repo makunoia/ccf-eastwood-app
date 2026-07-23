@@ -37,7 +37,7 @@ import { MultiSelect } from "@/components/ui/multi-select"
 import { ScheduleInput } from "@/components/ui/schedule-input"
 import { OptionalEmailInput } from "@/components/ui/optional-email-input"
 import { PhonePHInput } from "@/components/ui/phone-ph-input"
-import { YearInput } from "@/components/ui/year-input"
+import { BirthMonthYearInput } from "@/components/ui/birth-month-year-input"
 import { PrivacyPolicyCheckbox } from "@/components/ui/privacy-policy-checkbox"
 import { LANGUAGE_OPTIONS, DAYS_OF_WEEK } from "@/lib/constants/group-options"
 import { buildFitReasons } from "@/components/small-group-match-card"
@@ -236,7 +236,7 @@ export function JoinForm({ lifeStages }: { lifeStages: LifeStage[] }) {
     if (!personal.phone.trim()) return toast.error("Mobile number is required")
     if (!personal.gender) return toast.error("Gender is required")
     if (!personal.lifeStageId) return toast.error("Life stage is required")
-    if (!personal.birthMonth || !personal.birthYear) return toast.error("Birthday is required")
+    if (!personal.birthMonth || !personal.birthYear) return toast.error("Birth month and year are required")
     setStep("prefs")
   }
 
@@ -453,38 +453,13 @@ export function JoinForm({ lifeStages }: { lifeStages: LifeStage[] }) {
                 </Select>
               </div>
 
-              <div className="flex flex-col gap-1.5">
-                <Label>Birthday <span className="text-destructive">*</span></Label>
-                <div className="flex gap-2">
-                  <Select
-                    value={personal.birthMonth || "_none"}
-                    onValueChange={(v) =>
-                      setPersonal((p) => ({ ...p, birthMonth: v === "_none" ? "" : v }))
-                    }
-                  >
-                    <SelectTrigger className="flex-1">
-                      <SelectValue placeholder="Month" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="_none">Month</SelectItem>
-                      {[
-                        "January", "February", "March", "April",
-                        "May", "June", "July", "August",
-                        "September", "October", "November", "December",
-                      ].map((name, i) => (
-                        <SelectItem key={i + 1} value={String(i + 1)}>
-                          {name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <YearInput
-                    value={personal.birthYear ?? ""}
-                    onChange={(v) => setPersonal((p) => ({ ...p, birthYear: v }))}
-                    className="w-24"
-                  />
-                </div>
-              </div>
+              <BirthMonthYearInput
+                required
+                month={personal.birthMonth || ""}
+                year={personal.birthYear ?? ""}
+                onMonthChange={(v) => setPersonal((p) => ({ ...p, birthMonth: v }))}
+                onYearChange={(v) => setPersonal((p) => ({ ...p, birthYear: v }))}
+              />
 
               <PrivacyPolicyCheckbox
                 checked={privacyAccepted}

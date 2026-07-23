@@ -56,7 +56,7 @@ export default async function MatchingWeightsPage() {
 
       <Tabs defaultValue="small-group">
         <TabsList>
-          <TabsTrigger value="small-group">Small Group</TabsTrigger>
+          <TabsTrigger value="small-group">DGroup</TabsTrigger>
           <TabsTrigger value="breakout">Breakout</TabsTrigger>
         </TabsList>
 

@@ -24,7 +24,7 @@ import type { UserRow, EventOption } from "./columns"
 const FEATURE_LABELS: Record<FeatureArea, string> = {
   Members: "Members",
   Guests: "Guests",
-  SmallGroups: "Small Groups",
+  SmallGroups: "DGroups",
   Ministries: "Ministries",
   Events: "Events",
   Volunteers: "Volunteers",

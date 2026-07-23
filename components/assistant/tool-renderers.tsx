@@ -100,7 +100,7 @@ function MembersTable({ list }: { list: AssistantList<AssistantMemberRow> }) {
         },
         { header: "Phone", render: (m) => m.phone ?? "—" },
         { header: "Life stage", render: (m) => m.lifeStage ?? "—" },
-        { header: "Small group", render: (m) => m.smallGroup ?? "—" },
+        { header: "DGroup", render: (m) => m.smallGroup ?? "—" },
       ]}
     />
   )
@@ -136,7 +136,7 @@ function GroupsTable({ list }: { list: AssistantList<AssistantGroupRow> }) {
   return (
     <ResultTable
       list={list}
-      emptyLabel="No small groups found."
+      emptyLabel="No DGroups found."
       columns={[
         {
           header: "Group",
@@ -375,7 +375,7 @@ export const TOOL_LOADING_LABELS: Record<string, string> = {
   search_guests: "Searching guests…",
   get_guest_details: "Loading guest profile…",
   check_duplicate_contact: "Checking for duplicates…",
-  search_small_groups: "Searching small groups…",
+  search_small_groups: "Searching DGroups…",
   get_small_group_details: "Loading group details…",
   match_small_groups: "Running the matching engine…",
   list_ministries: "Loading ministries…",

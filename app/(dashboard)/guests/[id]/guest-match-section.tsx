@@ -49,7 +49,7 @@ function buildScheduleSlot(prefs: MatchingPrefs): { dayOfWeek: number; timeStart
 const LEVEL_LABEL: Record<1 | 2 | 3, string> = {
   1: "Breakout facilitator's group",
   2: "Other event volunteer groups",
-  3: "All small groups",
+  3: "All DGroups",
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -286,7 +286,7 @@ export const GuestMatchSection = React.forwardRef<
               {matchedBreakout.linkedSmallGroup ? (
                 <>
                   <div className="flex gap-2">
-                    <span className="text-muted-foreground w-32 shrink-0">Small Group</span>
+                    <span className="text-muted-foreground w-32 shrink-0">DGroup</span>
                     <span>{matchedBreakout.linkedSmallGroup.name}</span>
                   </div>
                   <div className="flex gap-2">
@@ -315,7 +315,7 @@ export const GuestMatchSection = React.forwardRef<
           <section className="space-y-4">
             <div>
               <h3 className="text-sm font-semibold">
-                Small Group Matching
+                DGroup Matching
                 {dirty && (
                   <span className="ml-2 inline-block size-2 rounded-full bg-amber-500 align-middle" />
                 )}
@@ -541,7 +541,7 @@ export const GuestMatchSection = React.forwardRef<
       <section className="space-y-4">
         <div>
           <h3 className="text-sm font-semibold">
-            Small Group Matching
+            DGroup Matching
             {dirty && (
               <span className="ml-2 inline-block size-2 rounded-full bg-amber-500 align-middle" />
             )}

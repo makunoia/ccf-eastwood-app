@@ -21,9 +21,9 @@ const FIELDS: {
   {
     key: "SmallGroup",
     icon: IconUsers,
-    title: "Small Group",
+    title: "DGroup",
     description:
-      "Collect matching preferences so registrants can be placed into a Small Group or Breakout.",
+      "Collect matching preferences so registrants can be placed into a DGroup or Breakout.",
   },
   {
     key: "Dietary",

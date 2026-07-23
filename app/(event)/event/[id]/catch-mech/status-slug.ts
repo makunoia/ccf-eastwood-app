@@ -53,7 +53,7 @@ export const SLUG_CONFIG: Record<CatchMechSlug, SlugConfig> = {
   },
   "in-small-group": {
     prismaStatus: "Rejected",
-    label: "In Small Group",
+    label: "In DGroup",
     declineReasonWhere: { declineReason: "AlreadyInSmallGroup" },
   },
 }

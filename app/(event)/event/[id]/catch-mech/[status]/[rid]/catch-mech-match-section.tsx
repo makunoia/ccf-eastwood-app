@@ -122,7 +122,7 @@ export const CatchMechMatchSection = React.forwardRef<CatchMechMatchSectionHandl
     <div className="space-y-4">
       {/* Scope selector */}
       <div>
-        <h3 className="text-sm font-medium mb-2">Small Group Matching</h3>
+        <h3 className="text-sm font-medium mb-2">DGroup Matching</h3>
         <div className="flex rounded-lg border overflow-hidden w-fit">
           {(["volunteers", "all"] as const).map((s) => (
             <button
@@ -141,8 +141,8 @@ export const CatchMechMatchSection = React.forwardRef<CatchMechMatchSectionHandl
         </div>
         <p className="text-xs text-muted-foreground mt-1.5">
           {scope === "volunteers"
-            ? "Candidates are small groups whose leader is a confirmed volunteer in this event."
-            : "All small groups in the database."}
+            ? "Candidates are DGroups whose leader is a confirmed volunteer in this event."
+            : "All DGroups in the database."}
         </p>
       </div>
 
@@ -240,7 +240,7 @@ export const CatchMechMatchSection = React.forwardRef<CatchMechMatchSectionHandl
               {levels.map((level) => (
                 <div key={level.level} className="space-y-3">
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    {level.source === "event-volunteers" ? "Volunteers in this event" : "All small groups"}
+                    {level.source === "event-volunteers" ? "Volunteers in this event" : "All DGroups"}
                   </p>
                   {level.matches.map((r: CatchMechMatchResult) => (
                     <SmallGroupMatchCard

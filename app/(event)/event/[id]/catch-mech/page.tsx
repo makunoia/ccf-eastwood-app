@@ -194,12 +194,12 @@ export default async function CatchMechAdminPage({
     <div className="flex flex-1 flex-col gap-6 p-6">
       <PageHeader
         title="Catch Mech"
-        description="Track small group confirmations from breakout groups"
+        description="Track DGroup confirmations from breakout groups"
       />
 
       {/* Confirmed/Rejected/Pending are measured against the matchable pool — the
           people catch mech is actually trying to place — so the three sum to 100%.
-          In Small Group is measured against the full cohort instead: it's the share
+          In DGroup is measured against the full cohort instead: it's the share
           who were never candidates. */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
         <CatchMechStatCard
@@ -222,7 +222,7 @@ export default async function CatchMechAdminPage({
           href={`/event/${id}/catch-mech/rejected`}
         />
         <CatchMechStatCard
-          label="In Small Group"
+          label="In DGroup"
           value={stats.totalInSmallGroup}
           sub={`${pct(stats.totalInSmallGroup, stats.totalCohort)}% of all ${stats.totalCohort}`}
           color="text-sky-600"

@@ -176,7 +176,7 @@ function SpouseCard({
             : `Pending for ${spouse.pendingRequest.smallGroupName}`
           : spouse.currentGroupName
             ? `Member of ${spouse.currentGroupName}`
-            : "No small group or pending request"}
+            : "No DGroup or pending request"}
       </p>
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
@@ -334,7 +334,7 @@ export function CatchMechDetailClient(props: Props) {
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
             <TabsTrigger value="details">Details</TabsTrigger>
-            <TabsTrigger value="small-group">Small Group</TabsTrigger>
+            <TabsTrigger value="small-group">DGroup</TabsTrigger>
             <TabsTrigger value="activity">Activity</TabsTrigger>
           </TabsList>
 
@@ -436,7 +436,7 @@ export function CatchMechDetailClient(props: Props) {
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-sm font-medium">
                     {props.status === "in-small-group"
-                      ? "Already in a small group"
+                      ? "Already in a DGroup"
                       : "Declined by leader"}
                   </p>
                   {props.requestId && (
@@ -468,7 +468,7 @@ export function CatchMechDetailClient(props: Props) {
             )}
 
             {(props.status === "confirmed" || props.status === "pending") && !props.request?.smallGroup && (
-              <p className="text-sm text-muted-foreground">No small group assigned.</p>
+              <p className="text-sm text-muted-foreground">No DGroup assigned.</p>
             )}
           </TabsContent>
 

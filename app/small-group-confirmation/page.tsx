@@ -5,7 +5,7 @@ import { FormClosed } from "@/components/form-closed"
 import { getFormConfig } from "@/lib/forms/config"
 
 export const metadata: Metadata = {
-  title: { absolute: "Small Group Confirmation" },
+  title: { absolute: "DGroup Confirmation" },
 }
 
 export default async function SmallGroupConfirmationEntryPage() {

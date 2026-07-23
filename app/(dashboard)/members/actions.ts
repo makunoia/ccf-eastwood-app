@@ -161,7 +161,7 @@ export async function deleteMembersBatch(
       ids,
       names,
       deleteOne: (id) => db.member.delete({ where: { id } }).then(() => undefined),
-      fkReason: "leads a small group or has linked records",
+      fkReason: "leads a DGroup or has linked records",
     })
 
     revalidatePath("/members")

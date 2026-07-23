@@ -307,7 +307,7 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
 
             {form.facilitatorId && ledGroups.length > 1 && (
               <div className="space-y-1.5">
-                <Label>Source small group <span className="text-muted-foreground font-normal">(matching profile + DGroup assignment)</span></Label>
+                <Label>Source DGroup <span className="text-muted-foreground font-normal">(matching profile + DGroup assignment)</span></Label>
                 <Select value={sourceGroupId} onValueChange={handleSourceGroupChange}>
                   <SelectTrigger><SelectValue placeholder="Select a group…" /></SelectTrigger>
                   <SelectContent>
@@ -321,7 +321,7 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
 
             {isFacilitatorTimothy && (
               <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5">
-                This volunteer does not lead a small group yet (Timothy). Set the profile below — it will be used to create their small group when their first member is confirmed.
+                This volunteer does not lead a DGroup yet (Timothy). Set the profile below — it will be used to create their DGroup when their first member is confirmed.
               </p>
             )}
           </div>
@@ -330,7 +330,7 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
           <div className="space-y-4">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
               {isFacilitatorTimothy
-                ? <>Future Small Group Profile <span className="normal-case font-normal text-destructive">(Timothy — required)</span></>
+                ? <>Future DGroup Profile <span className="normal-case font-normal text-destructive">(Timothy — required)</span></>
                 : <>Matching Profile <span className="normal-case font-normal">(used for auto-assign)</span></>
               }
             </p>
@@ -534,7 +534,7 @@ function buildColumns(
     },
     {
       id: "linkedSmallGroup",
-      header: "Linked Small Group",
+      header: "Linked DGroup",
       accessorFn: (row) => row.linkedSmallGroup?.name ?? "",
       cell: ({ row }) =>
         row.original.linkedSmallGroup ? (
@@ -766,7 +766,7 @@ export function BreakoutGroupsTable({
               <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
                 <span className="text-muted-foreground">Facilitator</span>
                 <span>{group.facilitator ? volunteerName(group.facilitator) : <span className="text-muted-foreground">Unassigned</span>}</span>
-                <span className="text-muted-foreground">Small Group</span>
+                <span className="text-muted-foreground">DGroup</span>
                 <span>{group.linkedSmallGroup?.name ?? <span className="text-muted-foreground">—</span>}</span>
                 <span className="text-muted-foreground">Members</span>
                 <span>{group.memberLimit != null ? `${group.memberCount} / ${group.memberLimit}` : group.memberCount}</span>

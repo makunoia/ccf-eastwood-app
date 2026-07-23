@@ -109,10 +109,10 @@ export async function submitCatchMechVolunteerPlacements(
 
     const allowedGroupIds = new Set(session.volunteer.member.ledGroups.map((group) => group.id))
     if (placements.some((placement) => !allowedGroupIds.has(placement.smallGroupId))) {
-      return { success: false, error: "You can only place participants in a small group you lead" }
+      return { success: false, error: "You can only place participants in a DGroup you lead" }
     }
     if (placements.length > 0 && allowedGroupIds.size === 0) {
-      return { success: false, error: "You do not lead a small group for these placements" }
+      return { success: false, error: "You do not lead a DGroup for these placements" }
     }
 
     const registrants = await db.eventRegistrant.findMany({
@@ -133,7 +133,7 @@ export async function submitCatchMechVolunteerPlacements(
       const eligibleGuest = !!registrant.guestId && !registrant.guest?.memberId
       const eligibleMember = !!registrant.memberId && !registrant.member?.smallGroupId
       if (!eligibleGuest && !eligibleMember) {
-        return { success: false, error: "One or more selected participants are already in a small group" }
+        return { success: false, error: "One or more selected participants are already in a DGroup" }
       }
     }
 

@@ -51,7 +51,7 @@ export function VolunteerPlacementForm({
         <p className="text-sm text-muted-foreground">
           {completedCount === 0
             ? "Your response has been recorded."
-            : `${completedCount} participant${completedCount === 1 ? "" : "s"} joined your small group.`}
+            : `${completedCount} participant${completedCount === 1 ? "" : "s"} joined your DGroup.`}
         </p>
       </div>
     )
@@ -62,7 +62,7 @@ export function VolunteerPlacementForm({
       <div className="space-y-3 py-3 text-center">
         <h1 className="text-xl font-semibold">Everyone is already connected</h1>
         <p className="text-sm text-muted-foreground">
-          There are no event participants waiting to join a small group.
+          There are no event participants waiting to join a DGroup.
         </p>
       </div>
     )
@@ -70,11 +70,11 @@ export function VolunteerPlacementForm({
 
   async function handleSubmit() {
     if (groups.length === 0 && selectedParticipants.length > 0) {
-      setError("You need to lead a small group before placing participants.")
+      setError("You need to lead a DGroup before placing participants.")
       return
     }
     if (selectedParticipants.some((participant) => !destinations[participant.id])) {
-      setError("Choose a small group for every selected participant")
+      setError("Choose a DGroup for every selected participant")
       return
     }
 
@@ -101,13 +101,13 @@ export function VolunteerPlacementForm({
       <div className="space-y-1">
         <h1 className="text-xl font-semibold">Hi, {volunteerName}</h1>
         <p className="text-sm text-muted-foreground">
-          Select the event participants who have joined your small group.
+          Select the event participants who have joined your DGroup.
         </p>
       </div>
 
       {groups.length === 0 && (
         <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">
-          You do not lead a small group yet. You can still tell us that you did not absorb anyone.
+          You do not lead a DGroup yet. You can still tell us that you did not absorb anyone.
         </p>
       )}
 
@@ -138,8 +138,8 @@ export function VolunteerPlacementForm({
                     setError("")
                   }}
                 >
-                  <SelectTrigger aria-label={`Small group for ${participant.name}`}>
-                    <SelectValue placeholder="Choose your small group" />
+                  <SelectTrigger aria-label={`DGroup for ${participant.name}`}>
+                    <SelectValue placeholder="Choose your DGroup" />
                   </SelectTrigger>
                   <SelectContent>
                     {groups.map((group) => (

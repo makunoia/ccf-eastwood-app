@@ -99,7 +99,7 @@ export default function VerifyOtpPage() {
       </div>
 
       <p className="relative mt-12 text-[11px] tracking-widest text-muted-foreground/40 uppercase">
-        Members · Events · Small Groups · Ministries
+        Members · Events · DGroups · Ministries
       </p>
     </div>
   )

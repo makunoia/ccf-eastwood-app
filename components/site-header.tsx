@@ -10,7 +10,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   dashboard: "Dashboard",
   members: "Members",
   guests: "Guests",
-  "small-groups": "Small Groups",
+  "small-groups": "DGroups",
   ministries: "Ministries",
   events: "Events",
   volunteers: "Volunteers",

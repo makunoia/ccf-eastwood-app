@@ -143,7 +143,7 @@ export function MemberMatchSection({
   if (pendingTransfer) {
     return (
       <div className="max-w-2xl space-y-3">
-        <h3 className="text-sm font-semibold">Small Group Matching</h3>
+        <h3 className="text-sm font-semibold">DGroup Matching</h3>
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
           <div className="flex items-start gap-3">
             <IconClock className="mt-0.5 size-4 shrink-0 text-amber-600" />
@@ -166,15 +166,15 @@ export function MemberMatchSection({
       <section className="space-y-4">
         <div>
           <h3 className="text-sm font-semibold">
-            Small Group Matching
+            DGroup Matching
             {dirty && (
               <span className="ml-2 inline-block size-2 rounded-full bg-amber-500 align-middle" />
             )}
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
             {hasGroup
-              ? "Find a better-fit small group for this member. Matching will create a transfer request pending leader confirmation."
-              : "Find the best-fit small group based on this member's profile."}
+              ? "Find a better-fit DGroup for this member. Matching will create a transfer request pending leader confirmation."
+              : "Find the best-fit DGroup based on this member's profile."}
           </p>
         </div>
 

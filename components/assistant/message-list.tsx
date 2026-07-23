@@ -93,7 +93,7 @@ export function MessageList({
         <div className="py-10 text-center text-sm text-muted-foreground">
           <p className="font-medium text-foreground">How can I help?</p>
           <p className="mt-1.5">
-            Ask about members, guests, small groups, events, or volunteers — or ask me to
+            Ask about members, guests, DGroups, events, or volunteers — or ask me to
             update records for you.
           </p>
         </div>

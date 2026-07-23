@@ -236,7 +236,7 @@ export async function promoteGuestToMember(
         _count: { select: { members: true } },
       },
     })
-    if (!group) return { success: false, error: "Small group not found" }
+    if (!group) return { success: false, error: "DGroup not found" }
     if (group.memberLimit !== null && group._count.members >= group.memberLimit) {
       return {
         success: false,
@@ -379,7 +379,7 @@ export async function saveGuestClaimedGroup(
 
   try {
     const group = await db.smallGroup.findUnique({ where: { id: smallGroupId }, select: { id: true } })
-    if (!group) return { success: false, error: "Small group not found" }
+    if (!group) return { success: false, error: "DGroup not found" }
     await db.guest.update({
       where: { id: guestId },
       data: { claimedSmallGroupId: smallGroupId },
@@ -387,7 +387,7 @@ export async function saveGuestClaimedGroup(
     revalidatePath(`/guests/${guestId}`)
     return { success: true, data: undefined }
   } catch {
-    return { success: false, error: "Failed to save small group" }
+    return { success: false, error: "Failed to save DGroup" }
   }
 }
 

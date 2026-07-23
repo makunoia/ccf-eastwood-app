@@ -119,10 +119,10 @@ function validateTargets(
   for (const d of decisions) {
     if (d.status !== "confirmed") continue
     if (!d.targetGroupId) {
-      return "Please choose which small group each confirmed person will join"
+      return "Please choose which DGroup each confirmed person will join"
     }
     if (!candidates.some((c) => c.id === d.targetGroupId)) {
-      return "You can only confirm people into a small group you lead"
+      return "You can only confirm people into a DGroup you lead"
     }
   }
   return null
@@ -397,7 +397,7 @@ export async function createSmallGroupForTimothy(
 
   // Guard: must still be a Timothy (no leading group)
   if (faciMember.ledGroups.length > 0) {
-    return { success: false, error: "You already lead a small group" }
+    return { success: false, error: "You already lead a DGroup" }
   }
 
   // Pre-fetch all reads outside the transaction
@@ -503,7 +503,7 @@ export async function createSmallGroupForTimothy(
     return { success: true, data: undefined }
   } catch (err) {
     console.error("[createSmallGroupForTimothy]", err)
-    return { success: false, error: "Failed to create small group" }
+    return { success: false, error: "Failed to create DGroup" }
   }
 }
 

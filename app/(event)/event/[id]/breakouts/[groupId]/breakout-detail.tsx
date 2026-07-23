@@ -217,7 +217,7 @@ function SmallGroupCard({ group }: { group: LedGroup }) {
         <SheetContent side="right" className="overflow-y-auto">
           <SheetHeader>
             <SheetTitle>{group.name}</SheetTitle>
-            <SheetDescription>Small group profile</SheetDescription>
+            <SheetDescription>DGroup profile</SheetDescription>
           </SheetHeader>
 
           {details.length > 0 ? (
@@ -330,14 +330,14 @@ function FacilitatorSection({
           </div>
           {volunteer.member.ledGroups.length > 0 && (
             <div className="ml-10 space-y-1.5">
-              <p className="text-xs text-muted-foreground">Leads {volunteer.member.ledGroups.length === 1 ? "this small group" : "these small groups"}:</p>
+              <p className="text-xs text-muted-foreground">Leads {volunteer.member.ledGroups.length === 1 ? "this DGroup" : "these DGroups"}:</p>
               {volunteer.member.ledGroups.map((g) => (
                 <SmallGroupCard key={g.id} group={g} />
               ))}
             </div>
           )}
           {volunteer.member.ledGroups.length === 0 && (
-            <p className="ml-10 text-xs text-muted-foreground">Does not lead a small group</p>
+            <p className="ml-10 text-xs text-muted-foreground">Does not lead a DGroup</p>
           )}
         </div>
       ) : (
@@ -374,7 +374,7 @@ function FacilitatorSection({
           </div>
           {role === "facilitator" && selectedId !== UNASSIGNED && ledGroups.length > 1 && (
             <div className="space-y-1.5">
-              <Label>Linked small group <span className="text-muted-foreground font-normal">(for DGroup assignment)</span></Label>
+              <Label>Linked DGroup <span className="text-muted-foreground font-normal">(for DGroup assignment)</span></Label>
               <Select value={linkedGroupId} onValueChange={setLinkedGroupId}>
                 <SelectTrigger><SelectValue placeholder="Select a group…" /></SelectTrigger>
                 <SelectContent>
@@ -675,7 +675,7 @@ function MembersTable({
               <TableHead>Name</TableHead>
               <TableHead>Type</TableHead>
               <TableHead>{attendanceHeader}</TableHead>
-              <TableHead>Small Group</TableHead>
+              <TableHead>DGroup</TableHead>
               <TableHead>SG Status</TableHead>
               <TableHead className="w-10" />
             </TableRow>

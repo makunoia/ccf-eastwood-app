@@ -482,7 +482,7 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], defaultLi
           <div className="space-y-1 text-center">
             <h2 className="text-2xl font-semibold tracking-tight">One quick question</h2>
             <p className="text-sm text-muted-foreground">
-              Are you interested in joining a Small Group?
+              Are you interested in joining a DGroup?
             </p>
           </div>
 
@@ -680,7 +680,7 @@ function ProfileForm({ guestId, existingProfile, lifeStages, defaultLifeStageId 
         <div className="space-y-1">
           <h2 className="text-xl font-semibold tracking-tight">Tell us about yourself</h2>
           <p className="text-sm text-muted-foreground">
-            This helps us find the right Small Group for you.
+            This helps us find the right DGroup for you.
           </p>
         </div>
 
@@ -885,7 +885,7 @@ function LeaderSearch({ guestId, onSave, onBack }: LeaderSearchProps) {
         <div className="space-y-1">
           <h2 className="text-xl font-semibold tracking-tight">Find your leader</h2>
           <p className="text-sm text-muted-foreground">
-            Search by your Small Group leader&apos;s name.
+            Search by your DGroup leader&apos;s name.
           </p>
         </div>
 

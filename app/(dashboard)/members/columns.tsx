@@ -167,7 +167,7 @@ export function buildColumns(selectable = false): ColumnDef<MemberRow>[] {
     },
     {
       accessorKey: "smallGroupName",
-      header: "Small Group",
+      header: "DGroup",
       cell: ({ row }) =>
         row.original.smallGroupName ?? (
           <span className="text-muted-foreground">—</span>
