@@ -34,7 +34,6 @@ export default async function EventFormsPage({
     description: form.description,
     href: `/event/${id}/forms/${form.key}`,
     isOpen: openByScope.get(scopeKeyFor(form.key, id)) ?? true,
-    icon: form.icon,
   }))
 
   return (
@@ -43,7 +42,7 @@ export default async function EventFormsPage({
         title="Forms"
         description="Manage public access and theming for this event's forms"
       />
-      <FormsList rows={rows} />
+      <FormsList rows={rows} eventId={id} />
     </div>
   )
 }
