@@ -90,7 +90,7 @@ export const SMALL_GROUP_FIELDS: FieldDefinition[] = [
 // group, so those columns are intentionally omitted from the import.
 export const BREAKOUT_GROUP_FIELDS: FieldDefinition[] = [
   { key: "name",              label: "Group Name",         required: true },
-  { key: "facilitatorMobile", label: "Facilitator Mobile", required: false, hint: "Matched by mobile against an existing event volunteer. Their small group is linked automatically." },
+  { key: "facilitatorMobile", label: "Facilitator Mobile", required: false, hint: "Matched by mobile against an existing event volunteer. Their DGroup is linked automatically." },
   { key: "memberLimit",       label: "Member Limit",       required: false },
 ]
 
@@ -123,7 +123,7 @@ export function getEntityLabel(entity: ImportEntity): string {
     case "event-registrant":   return "Event Registrants"
     case "volunteer":          return "Volunteers"
     case "guest":              return "Guests"
-    case "small-group":        return "Small Groups"
+    case "small-group":        return "DGroups"
     case "breakout-group":     return "Breakout Groups"
     case "session-attendance": return "Session Attendance"
   }

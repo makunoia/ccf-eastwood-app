@@ -28,7 +28,7 @@ export function SmallGroupsOverview({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Recent Small Groups</CardTitle>
+        <CardTitle>Recent DGroups</CardTitle>
         <CardDescription>
           {totalGroups} group{totalGroups !== 1 ? "s" : ""} in the network
         </CardDescription>
@@ -44,7 +44,7 @@ export function SmallGroupsOverview({
       <CardContent>
         {groups.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
-            No small groups have been created yet.
+            No DGroups have been created yet.
           </p>
         ) : (
           <div className="divide-y">

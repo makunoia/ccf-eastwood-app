@@ -4,7 +4,7 @@ import { db } from "@/lib/db"
 import { ConfirmationClient } from "./confirmation-client"
 
 export const metadata: Metadata = {
-  title: { absolute: "Confirm Small Group Members" },
+  title: { absolute: "Confirm DGroup Members" },
 }
 
 async function getGroupByToken(token: string) {

@@ -191,7 +191,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { id } = await params
   const group = await db.smallGroup.findUnique({ where: { id }, select: { name: true } })
-  return { title: { absolute: group ? `${group.name} · Small Groups` : "Small Groups" } }
+  return { title: { absolute: group ? `${group.name} · DGroups` : "DGroups" } }
 }
 
 export default async function SmallGroupDetailPage({

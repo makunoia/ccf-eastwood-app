@@ -3,7 +3,7 @@ import { db } from "@/lib/db"
 import { SmallGroupForm } from "../small-group-form"
 
 export const metadata: Metadata = {
-  title: "New Small Group",
+  title: "New DGroup",
 }
 
 async function getData() {

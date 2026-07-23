@@ -15,10 +15,10 @@ const STAGE_LABEL: Record<GuestPipelineStatus, string> = {
 const STAGE_DESCRIPTION: Record<GuestPipelineStatus, string> = {
   New: "Registered but has not yet attended an event.",
   EventAttendee: "Has attended at least one event but hasn't been placed in a breakout group yet.",
-  Matched: "Was placed in a breakout group at an event and is ready to be connected to a small group.",
-  Declined: "Was placed in a breakout group but membership was declined by the group leader. Assign to another small group.",
-  Pending: "Has a pending small group assignment — awaiting confirmation from the group leader.",
-  Member: "Has joined a small group and been promoted to a full member.",
+  Matched: "Was placed in a breakout group at an event and is ready to be connected to a DGroup.",
+  Declined: "Was placed in a breakout group but membership was declined by the group leader. Assign to another DGroup.",
+  Pending: "Has a pending DGroup assignment — awaiting confirmation from the group leader.",
+  Member: "Has joined a DGroup and been promoted to a full member.",
 }
 
 const CHEVRON = 18

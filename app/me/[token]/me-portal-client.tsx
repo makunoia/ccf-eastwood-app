@@ -387,7 +387,7 @@ function MyGroupSection({
         </div>
       ) : (
         <div className="rounded-xl border border-dashed bg-background px-5 py-6 text-sm leading-6 text-muted-foreground">
-          You&apos;re not part of a small group yet. You can send a request to join one below.
+          You&apos;re not part of a DGroup yet. You can send a request to join one below.
         </div>
       )}
 
@@ -419,7 +419,7 @@ function MyGroupSection({
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
-              {myGroup ? "Change small group" : "Join a small group"}
+              {myGroup ? "Change DGroup" : "Join a DGroup"}
             </DialogTitle>
             <DialogDescription>
               Choose the leader first, then pick their group. Your request will
@@ -448,7 +448,7 @@ function MyGroupSection({
             {/* Step 2 — group */}
             <div className="space-y-2">
               <Label className={selectedLeader ? "" : "text-muted-foreground"}>
-                2. Small group
+                2. DGroup
               </Label>
               <Select
                 value={selectedGroupId}
@@ -722,7 +722,7 @@ function LedGroupCard({ token, group }: { token: string; group: LedGroup }) {
             <AlertDialogTitle>Remove member?</AlertDialogTitle>
             <AlertDialogDescription>
               {removeTarget?.name} will be removed from {group.name}. They will
-              no longer belong to any small group.
+              no longer belong to any DGroup.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -829,7 +829,7 @@ function LedGroupFormDialog({
           <DialogDescription>
             {isEdit
               ? "Update your group's details."
-              : "Set up a new small group you'll lead. An admin can refine matching settings later."}
+              : "Set up a new DGroup you'll lead. An admin can refine matching settings later."}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">

@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 const FEATURE_LABELS: Record<string, string> = {
   Members: "Members",
   Guests: "Guests",
-  SmallGroups: "Small Groups",
+  SmallGroups: "DGroups",
   Ministries: "Ministries",
   Events: "Events",
   Volunteers: "Volunteers",

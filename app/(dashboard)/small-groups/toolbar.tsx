@@ -49,7 +49,7 @@ export function SmallGroupsToolbar({ groups, canImport, canExport }: Props) {
       return
     }
     exportSmallGroupsCSV(groups.map(toExportRow))
-    toast.success(`Exported ${groups.length} small group${groups.length === 1 ? "" : "s"}.`)
+    toast.success(`Exported ${groups.length} DGroup${groups.length === 1 ? "" : "s"}.`)
   }
 
   const actions: PageAction[] = [

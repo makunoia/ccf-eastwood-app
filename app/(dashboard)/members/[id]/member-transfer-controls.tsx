@@ -109,7 +109,7 @@ export function MemberTransferControls({
         <div>
           <h3 className="text-sm font-semibold">Transfer</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Move this member to a different small group.
+            Move this member to a different DGroup.
           </p>
         </div>
         <DropdownMenu>

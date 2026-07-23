@@ -52,8 +52,8 @@ export type ActivityEntry = SmallGroupLogEntry | EventRegistrationEntry | Promot
 
 const ACTION_LABEL: Record<SmallGroupLogEntry["action"], string> = {
   GroupCreated: "Group created",
-  MemberAdded: "Added to small group",
-  MemberRemoved: "Removed from small group",
+  MemberAdded: "Added to DGroup",
+  MemberRemoved: "Removed from DGroup",
   MemberTransferred: "Transferred to another group",
   TempAssignmentCreated: "Temporary assignment created",
   TempAssignmentConfirmed: "Temporary assignment confirmed",

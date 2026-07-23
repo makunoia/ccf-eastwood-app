@@ -240,7 +240,7 @@ export default async function CatchMechConfirmPage({
           </p>
           <h1 className={`text-2xl font-bold ${hasBg ? "text-white" : ""}`}>Hi, {data.faciName}!</h1>
           <p className={`text-sm leading-relaxed ${hasBg ? "text-white/75" : "text-muted-foreground"}`}>
-            Review the people from your table. Confirm who will join your small group, mark others as pending, or decline with a reason.
+            Review the people from your table. Confirm who will join your DGroup, mark others as pending, or decline with a reason.
           </p>
         </div>
       </div>

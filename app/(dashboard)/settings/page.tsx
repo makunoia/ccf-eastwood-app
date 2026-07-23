@@ -22,7 +22,7 @@ const sections = [
   },
   {
     title: "Matching Weights",
-    description: "Tune the scoring weights used to suggest small group and breakout group assignments",
+    description: "Tune the scoring weights used to suggest DGroup and breakout group assignments",
     icon: IconAdjustmentsHorizontal,
     href: "/settings/matching",
   },
@@ -34,7 +34,7 @@ const sections = [
   },
   {
     title: "Join Page",
-    description: "Customize the public page where guests can find and request to join a small group",
+    description: "Customize the public page where guests can find and request to join a DGroup",
     icon: IconDoorEnter,
     href: "/settings/join-page",
   },

@@ -37,7 +37,7 @@ export function JoinPageSettingsForm({ initial }: { initial: JoinPageSettingsVal
             id="joinPageTitle"
             value={form.joinPageTitle}
             onChange={(e) => set("joinPageTitle", e.target.value)}
-            placeholder="Find Your Small Group"
+            placeholder="Find Your DGroup"
           />
         </div>
 
@@ -47,7 +47,7 @@ export function JoinPageSettingsForm({ initial }: { initial: JoinPageSettingsVal
             id="joinPageDescription"
             value={form.joinPageDescription}
             onChange={(e) => set("joinPageDescription", e.target.value)}
-            placeholder="Tell us about yourself and we'll suggest the best small groups for you."
+            placeholder="Tell us about yourself and we'll suggest the best DGroups for you."
             rows={3}
           />
         </div>

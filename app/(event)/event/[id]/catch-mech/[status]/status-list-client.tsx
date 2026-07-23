@@ -115,7 +115,7 @@ export function StatusListClient({ rows, status, eventId, breakoutGroups }: Prop
               <TableHead>Name</TableHead>
               <TableHead>Type</TableHead>
               <TableHead>Breakout Group</TableHead>
-              {isDeclined ? <TableHead>Reason</TableHead> : <TableHead>Small Group</TableHead>}
+              {isDeclined ? <TableHead>Reason</TableHead> : <TableHead>DGroup</TableHead>}
               {isDeclined && <TableHead>Declined by</TableHead>}
               {canUndo && <TableHead className="w-10" />}
             </TableRow>
@@ -125,7 +125,7 @@ export function StatusListClient({ rows, status, eventId, breakoutGroups }: Prop
               <TableRow>
                 <TableCell colSpan={colCount} className="py-6 text-center text-muted-foreground">
                   {status === "in-small-group"
-                    ? "No registrants were declined as already in a small group."
+                    ? "No registrants were declined as already in a DGroup."
                     : `No ${label.toLowerCase()} registrants.`}
                 </TableCell>
               </TableRow>

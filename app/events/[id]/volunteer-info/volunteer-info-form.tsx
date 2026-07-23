@@ -434,7 +434,7 @@ export function VolunteerInfoForm({ eventId, lifeStages }: Props) {
       {/* Section 2: Leadership */}
       <section className="rounded-xl border bg-card p-6 space-y-4">
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-          Small Group Leadership
+          DGroup Leadership
         </h2>
 
         {identity && identity.ledGroups.length > 0 ? (
@@ -474,7 +474,7 @@ export function VolunteerInfoForm({ eventId, lifeStages }: Props) {
         ) : (
           <>
             <p className="text-sm text-muted-foreground">
-              What is your current small group leadership status?
+              What is your current DGroup leadership status?
             </p>
 
             <div className="flex gap-2">

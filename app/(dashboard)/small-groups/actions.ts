@@ -113,7 +113,7 @@ export async function createSmallGroup(
     }
     return { success: true, data: { id: group.id } }
   } catch {
-    return { success: false, error: "Failed to create small group" }
+    return { success: false, error: "Failed to create DGroup" }
   }
 }
 
@@ -211,7 +211,7 @@ export async function updateSmallGroup(
     }
     return { success: true, data: undefined }
   } catch {
-    return { success: false, error: "Failed to update small group" }
+    return { success: false, error: "Failed to update DGroup" }
   }
 }
 
@@ -224,7 +224,7 @@ export async function deleteSmallGroup(id: string): Promise<ActionResult> {
     revalidatePath("/small-groups")
     return { success: true, data: undefined }
   } catch {
-    return { success: false, error: "Failed to delete small group" }
+    return { success: false, error: "Failed to delete DGroup" }
   }
 }
 
@@ -254,7 +254,7 @@ export async function deleteSmallGroupsBatch(
     revalidatePath("/small-groups")
     return { success: true, data: result }
   } catch {
-    return { success: false, error: "Failed to delete small groups" }
+    return { success: false, error: "Failed to delete DGroups" }
   }
 }
 

@@ -4,7 +4,7 @@ export const DECLINE_REASON_LABELS: Record<DeclineReason, string> = {
   NotInterested: "Not Interested",
   Unresponsive: "Unresponsive",
   EndorsedToAnotherLeader: "Endorsed to another leader",
-  AlreadyInSmallGroup: "Already part of a Small Group",
+  AlreadyInSmallGroup: "Already part of a DGroup",
   Others: "Others",
 }
 

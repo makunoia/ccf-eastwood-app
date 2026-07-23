@@ -789,16 +789,15 @@ export function RegistrantsClient({
                       </td>
                     ) : (
                       <td className="px-4 py-3 whitespace-nowrap">
-                        <Button
-                          size="sm"
-                          variant={r.attendedAt ? "secondary" : "outline"}
-                          onClick={() => toggleAttendance(r)}
-                          disabled={togglingAttendance === r.id}
-                        >
-                          {r.attendedAt
-                            ? <><IconCheck className="mr-1 size-3.5" />Attended</>
-                            : <><IconX className="mr-1 size-3.5" />Absent</>}
-                        </Button>
+                        {r.attendedAt ? (
+                          <Badge className="border-transparent bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400">
+                            <IconCheck className="mr-1 size-3.5" />Attended
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-muted-foreground">
+                            <IconX className="mr-1 size-3.5" />Absent
+                          </Badge>
+                        )}
                       </td>
                     )}
                   </tr>

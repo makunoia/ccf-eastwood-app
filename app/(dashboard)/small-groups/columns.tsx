@@ -66,7 +66,7 @@ export function RowActions({ row }: { row: SmallGroupRow }) {
     const result = await deleteSmallGroup(row.id)
     setDeleting(false)
     if (result.success) {
-      toast.success("Small group deleted")
+      toast.success("DGroup deleted")
       setDeleteOpen(false)
     } else {
       toast.error(result.error)
@@ -103,7 +103,7 @@ export function RowActions({ row }: { row: SmallGroupRow }) {
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete small group</DialogTitle>
+            <DialogTitle>Delete DGroup</DialogTitle>
             <DialogDescription>
               Are you sure you want to delete{" "}
               <span className="font-medium">{row.name}</span>? This action

@@ -79,13 +79,13 @@ export function MembersFilters({
         </Select>
       </FilterField>
 
-      <FilterField label="Small Group">
+      <FilterField label="DGroup">
         <Select
           value={smallGroupId || "all"}
           onValueChange={(v) => setFilter("smallGroupId", v === "all" ? "" : v)}
         >
           <SelectTrigger className="w-full">
-            <SelectValue placeholder="Small Group" />
+            <SelectValue placeholder="DGroup" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Groups</SelectItem>

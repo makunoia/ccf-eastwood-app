@@ -8,9 +8,9 @@ const STAGE_LABEL: Record<Stage, string> = {
 }
 
 const STAGE_DESCRIPTION: Record<Stage, string> = {
-  Member:  "Active member of this small group.",
+  Member:  "Active member of this DGroup.",
   Timothy: "Being mentored and developed toward a future leadership role.",
-  Leader:  "Leading this small group.",
+  Leader:  "Leading this DGroup.",
 }
 
 export function MemberGroupStepper({ status }: { status: Stage }) {

@@ -115,7 +115,7 @@ export default async function EventFormEditorPage({
         <SettingCard
           className="max-w-2xl"
           title="Share link"
-          description="Share this link with volunteers so they can update their personal info, small group membership, and availability."
+          description="Share this link with volunteers so they can update their personal info, DGroup membership, and availability."
         >
           <VolunteerInfoUrlCopier eventId={id} />
         </SettingCard>

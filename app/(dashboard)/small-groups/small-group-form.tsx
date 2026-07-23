@@ -472,7 +472,7 @@ export function SmallGroupForm({
     setSaving(false)
 
     if (result.success) {
-      toast.success(isEdit ? "Small group updated" : "Small group created")
+      toast.success(isEdit ? "DGroup updated" : "DGroup created")
       router.push("/small-groups")
     } else {
       toast.error(result.error)
@@ -484,7 +484,7 @@ export function SmallGroupForm({
     const result = await deleteSmallGroup(group!.id)
     setDeleting(false)
     if (result.success) {
-      toast.success("Small group deleted")
+      toast.success("DGroup deleted")
       router.push("/small-groups")
     } else {
       toast.error(result.error)
@@ -501,7 +501,7 @@ export function SmallGroupForm({
       )}
 
       <DetailPageHeader
-        title={isEdit ? group!.name : "New Small Group"}
+        title={isEdit ? group!.name : "New DGroup"}
         couplesAccent={isEdit && form.groupType === "Couples"}
         initials={isEdit ? getInitials(group!.name) : undefined}
         prevHref={isEdit ? (prev ? `/small-groups/${prev}` : null) : undefined}
@@ -509,7 +509,7 @@ export function SmallGroupForm({
         subtitle={
           !isEdit ? (
             <p className="text-sm text-muted-foreground">
-              Fill in the details to create a new small group.
+              Fill in the details to create a new DGroup.
             </p>
           ) : undefined
         }
@@ -770,7 +770,7 @@ export function SmallGroupForm({
               <div className="mt-12 max-w-2xl border-t pt-6">
                 <div className="flex items-center justify-between gap-4">
                   <div>
-                    <p className="text-sm font-medium">Delete small group</p>
+                    <p className="text-sm font-medium">Delete DGroup</p>
                     <p className="text-xs text-muted-foreground">
                       Permanently removes this group and all associated data. This cannot be undone.
                     </p>
@@ -1298,7 +1298,7 @@ export function SmallGroupForm({
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete small group</DialogTitle>
+            <DialogTitle>Delete DGroup</DialogTitle>
             <DialogDescription>
               Are you sure you want to delete{" "}
               <span className="font-medium">{group?.name}</span>? This action

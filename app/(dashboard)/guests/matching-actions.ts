@@ -63,7 +63,7 @@ export async function getSmallGroupDetails(
     })
 
     if (!group) {
-      return { success: false, error: "Small group not found" }
+      return { success: false, error: "DGroup not found" }
     }
 
     return {
@@ -74,7 +74,7 @@ export async function getSmallGroupDetails(
       },
     }
   } catch {
-    return { success: false, error: "Failed to load small group details" }
+    return { success: false, error: "Failed to load DGroup details" }
   }
 }
 

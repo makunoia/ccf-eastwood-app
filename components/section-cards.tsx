@@ -59,11 +59,11 @@ export function SectionCards({ stats }: { stats: DashboardStats }) {
         label="Active Guests"
         value={stats.activeGuests}
         delta={`+${stats.newGuestsThisWeek} this week`}
-        sub="Awaiting small group placement"
+        sub="Awaiting DGroup placement"
         icon={<IconUserPlus className="size-4" />}
       />
       <StatCard
-        label="Small Groups"
+        label="DGroups"
         value={stats.totalSmallGroups}
         delta={`+${stats.newGroupsThisMonth} this month`}
         icon={<IconUsersGroup className="size-4" />}
@@ -79,7 +79,7 @@ export function SectionCards({ stats }: { stats: DashboardStats }) {
         label="Leaders"
         value={stats.totalLeaders}
         delta={`${leaderPercentage}% of total members`}
-        sub="Active small group leaders"
+        sub="Active DGroup leaders"
         icon={<IconUserStar className="size-4" />}
       />
     </div>

@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { YearInput } from "@/components/ui/year-input"
+import { BirthMonthYearInput } from "@/components/ui/birth-month-year-input"
 import { OptionalEmailInput } from "@/components/ui/optional-email-input"
 import { OptionalPhonePHInput } from "@/components/ui/optional-phone-ph-input"
 import {
@@ -202,7 +202,7 @@ export function MemberForm({ member, groupStatus, eventHistory, activityHistory,
             <TabsList variant="line" className="mt-1">
               <TabsTrigger value="profile" className="after:-bottom-px">Profile</TabsTrigger>
               {smallGroups && (
-                <TabsTrigger value="small-groups" className="after:-bottom-px">Small Groups</TabsTrigger>
+                <TabsTrigger value="small-groups" className="after:-bottom-px">DGroups</TabsTrigger>
               )}
               {family && (
                 <TabsTrigger value="family" className="after:-bottom-px">Family</TabsTrigger>
@@ -331,32 +331,12 @@ export function MemberForm({ member, groupStatus, eventHistory, activityHistory,
               />
             </div>
 
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Birth Month</Label>
-                <Select
-                  value={form.birthMonth}
-                  onValueChange={(v) => set("birthMonth", v)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Month" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {["January","February","March","April","May","June","July","August","September","October","November","December"].map((name, i) => (
-                      <SelectItem key={i + 1} value={String(i + 1)}>{name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="birthYear">Birth Year</Label>
-                <YearInput
-                  id="birthYear"
-                  value={form.birthYear}
-                  onChange={(val) => set("birthYear", val)}
-                />
-              </div>
-            </div>
+            <BirthMonthYearInput
+              month={form.birthMonth}
+              year={form.birthYear}
+              onMonthChange={(v) => set("birthMonth", v)}
+              onYearChange={(val) => set("birthYear", val)}
+            />
           </section>
 
           {/* Notes */}

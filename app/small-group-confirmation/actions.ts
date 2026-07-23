@@ -42,7 +42,7 @@ export async function verifyLeaderMobile(
   })
 
   if (groups.length === 0) {
-    return { success: false, error: "You are not registered as a small group leader" }
+    return { success: false, error: "You are not registered as a DGroup leader" }
   }
 
   const results: GroupResult[] = await Promise.all(

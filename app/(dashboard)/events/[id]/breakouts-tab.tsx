@@ -336,7 +336,7 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
           {/* Source group selector — only when facilitator leads 2+ groups */}
           {form.facilitatorId && ledGroups.length > 1 && (
             <div className="space-y-1.5">
-              <Label>Source small group <span className="text-muted-foreground font-normal">(matching profile + DGroup assignment)</span></Label>
+              <Label>Source DGroup <span className="text-muted-foreground font-normal">(matching profile + DGroup assignment)</span></Label>
               <Select
                 value={sourceGroupId}
                 onValueChange={handleSourceGroupChange}
@@ -356,7 +356,7 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
           {/* Hint when facilitator leads no groups */}
           {form.facilitatorId && ledGroups.length === 0 && (
             <p className="text-xs text-muted-foreground">
-              This volunteer does not lead any small group — set the matching profile manually.
+              This volunteer does not lead any DGroup — set the matching profile manually.
             </p>
           )}
 
@@ -576,7 +576,7 @@ function AssignFacilitatorDialog({
         {/* Linked small group — only for facilitator role when volunteer leads 2+ groups */}
         {role === "facilitator" && selectedId && ledGroups.length > 1 && (
           <div className="space-y-1.5">
-            <Label>Linked small group <span className="text-muted-foreground font-normal">(for DGroup assignment)</span></Label>
+            <Label>Linked DGroup <span className="text-muted-foreground font-normal">(for DGroup assignment)</span></Label>
             <Select value={linkedGroupId} onValueChange={setLinkedGroupId}>
               <SelectTrigger>
                 <SelectValue placeholder="Select a group…" />

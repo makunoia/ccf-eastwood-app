@@ -10,7 +10,7 @@ const WRITE_TOOL_TITLES: Record<string, string> = {
   create_guest: "Create guest",
   update_guest: "Update guest",
   promote_guest_to_member: "Promote guest to member",
-  add_member_to_small_group: "Add member to small group",
+  add_member_to_small_group: "Add member to DGroup",
   assign_guest_to_group_temporarily: "Assign guest to group (pending leader confirmation)",
   mark_registrant_paid: "Mark registrant as paid",
   mark_registrant_attended: "Mark registrant as attended",
