@@ -2,6 +2,7 @@
 
 import { db } from "@/lib/db"
 import { revalidatePath } from "next/cache"
+import { formatPhilippinePhone } from "@/lib/utils"
 import { volunteerInfoSchema, type VolunteerIdentity, type VolunteerInfoInput } from "./types"
 
 type ActionResult<T = void> =
@@ -19,7 +20,7 @@ export async function lookupVolunteer(
   }
 
   const member = await db.member.findFirst({
-    where: { phone: phone.trim() },
+    where: { phone: formatPhilippinePhone(phone.trim()) },
     select: {
       id: true,
       firstName: true,
@@ -202,7 +203,7 @@ export async function submitVolunteerInfo(
           firstName: firstName.trim(),
           lastName: lastName.trim(),
           email: email?.trim() || null,
-          phone: phone.trim(),
+          phone: formatPhilippinePhone(phone.trim()),
           ...(leadershipStatus !== "none" ? { groupStatus: newGroupStatus } : {}),
         },
       })

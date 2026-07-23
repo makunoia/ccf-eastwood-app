@@ -130,6 +130,7 @@ enum SmallGroupType {
 
 enum ConfirmationSubmissionSource {
   CatchMech
+  CatchMechVolunteer
   SmallGroupLeader
 }
 
@@ -509,6 +510,7 @@ model Event {
   userAccess        UserEventAccess[]
   confirmationSubmissions ConfirmationSubmission[]
   catchMechSessions CatchMechSession[]
+  catchMechVolunteerSessions CatchMechVolunteerSession[]
   memberLogs        MemberLog[]
   formConfigs       FormConfig[]
 }
@@ -731,6 +733,7 @@ model Volunteer {
   coFacilitatedGroups   BreakoutGroup[] @relation("CoFacilitatedGroups")
   busPassengers         BusPassenger[]
   catchMechSessions     CatchMechSession[]
+  catchMechVolunteerSessions CatchMechVolunteerSession[]
   declinedRequests      SmallGroupMemberRequest[] @relation("DeclinedRequests")
   subFacilitatorSlots   OccurrenceSubFacilitator[]
   occurrenceAttendances OccurrenceAttendee[]
@@ -902,6 +905,21 @@ model CatchMechSession {
   submissions            ConfirmationSubmission[]
 }
 
+model CatchMechVolunteerSession {
+  id           String   @id @default(cuid())
+  token        String   @unique @default(cuid())
+  eventId      String
+  event        Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  volunteerId  String
+  volunteer    Volunteer @relation(fields: [volunteerId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+
+  submissions ConfirmationSubmission[]
+
+  @@unique([eventId, volunteerId])
+  @@index([eventId, createdAt])
+}
+
 model CatchMechComment {
   id        String                  @id @default(cuid())
   requestId String
@@ -924,6 +942,8 @@ model ConfirmationSubmission {
   // Catch Mech context (null for leader submissions)
   sessionId              String?
   session                CatchMechSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  volunteerSessionId     String?
+  volunteerSession       CatchMechVolunteerSession? @relation(fields: [volunteerSessionId], references: [id], onDelete: SetNull)
   eventId                String?
   event                  Event?            @relation(fields: [eventId], references: [id], onDelete: Cascade)
   breakoutGroupId        String?
@@ -953,6 +973,7 @@ model ConfirmationSubmission {
   @@index([eventId, createdAt])
   @@index([breakoutGroupId])
   @@index([facilitatorVolunteerId])
+  @@index([volunteerSessionId])
   @@index([smallGroupId])
 }
 

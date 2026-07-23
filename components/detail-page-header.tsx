@@ -14,6 +14,9 @@ type DetailPageHeaderProps = {
   action?: React.ReactNode
   status?: React.ReactNode
   tabs?: React.ReactNode
+  /** Paints a soft, slowly-breathing light-pink glow along the bottom of the
+   *  header — the ambient cue for Couples small groups (replaces a pill badge). */
+  couplesAccent?: boolean
 }
 
 export function DetailPageHeader({
@@ -25,12 +28,21 @@ export function DetailPageHeader({
   action,
   status,
   tabs,
+  couplesAccent,
 }: DetailPageHeaderProps) {
   const router = useRouter()
 
   return (
-    <div className="border-b">
-      <div className="px-6 pt-4 pb-0">
+    <div className="relative overflow-hidden border-b">
+      {couplesAccent && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 animate-in fade-in duration-1000"
+        >
+          <div className="couples-accent-breathe h-full w-full bg-linear-to-br from-rose-200/50 via-rose-100/20 via-30% to-transparent to-60% dark:from-rose-500/15 dark:via-rose-500/6 dark:to-transparent" />
+        </div>
+      )}
+      <div className="relative px-6 pt-4 pb-0">
         {/* Identity row */}
         <div className="flex items-center gap-4 pb-4">
           {initials && (

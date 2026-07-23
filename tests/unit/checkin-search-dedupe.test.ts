@@ -258,7 +258,9 @@ describe("register page – walk-in mode", () => {
   })
 
   it("does not show the closed-form screen to a walk-in at the door", () => {
-    expect(page).toContain("if (!formConfig.isOpen && !walkIn) return <FormClosed />")
+    // The gate may combine the manual toggle with the Opens/Closes window, but the
+    // `&& !walkIn` carve-out must remain so a kiosk walk-in is never blocked.
+    expect(page).toContain(") && !walkIn) return <FormClosed />")
   })
 
   it("only offers breakout groups whose facilitator has checked in", () => {

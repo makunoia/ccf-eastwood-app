@@ -21,6 +21,7 @@ import {
   rangesOverlap,
   seriesContainsDate,
 } from "@/lib/events/occurrence-series"
+import { isWithinRegistrationWindow } from "@/lib/events/registration-window"
 import { formatPhilippinePhone } from "@/lib/utils"
 import type { Gender, MeetingFormat } from "@/app/generated/prisma/client"
 
@@ -607,6 +608,21 @@ export async function createRegistrant(
   }
 
   try {
+    // Enforce the event's Opens/Closes window server-side. Walk-ins are exempt:
+    // they're staff-supervised at the door and must go through even after close.
+    if (!walkIn) {
+      const event = await db.event.findUnique({
+        where: { id: eventId },
+        select: { registrationStart: true, registrationEnd: true },
+      })
+      if (!event) {
+        return { success: false, error: "Event not found." }
+      }
+      if (!isWithinRegistrationWindow(event.registrationStart, event.registrationEnd)) {
+        return { success: false, error: "Registration for this event is closed." }
+      }
+    }
+
     if (confirmedMemberId) {
       // Volunteer guard — volunteers don't need to register as attendees
       const volunteerRecord = await db.volunteer.findFirst({

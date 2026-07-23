@@ -2,7 +2,9 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
+import { IconArrowRight } from "@tabler/icons-react"
 import { PhonePHInput } from "@/components/ui/phone-ph-input"
+import { Button } from "@/components/ui/button"
 import { verifyMemberMobile } from "./actions"
 
 export function VerifyForm() {
@@ -25,9 +27,9 @@ export function VerifyForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="space-y-1.5">
-        <label htmlFor="mobile" className="text-sm font-medium">
+    <form onSubmit={handleSubmit} className="space-y-5">
+      <div className="space-y-2">
+        <label htmlFor="mobile" className="text-sm font-medium text-foreground">
           Mobile number
         </label>
         <PhonePHInput
@@ -39,15 +41,23 @@ export function VerifyForm() {
           }}
           autoFocus
         />
-        {error && <p className="text-xs text-destructive">{error}</p>}
+        <p className="text-xs leading-5 text-muted-foreground">
+          Enter the number connected to your CCF Eastwood member record.
+        </p>
+        {error && (
+          <p className="text-xs font-medium text-destructive" role="alert">
+            {error}
+          </p>
+        )}
       </div>
-      <button
+      <Button
         type="submit"
         disabled={loading || !mobile.trim()}
-        className="w-full rounded-lg bg-primary text-primary-foreground py-2.5 text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
+        className="w-full"
       >
-        {loading ? "Verifying…" : "Continue"}
-      </button>
+        {loading ? "Verifying..." : "Continue"}
+        {!loading && <IconArrowRight className="size-4" />}
+      </Button>
     </form>
   )
 }

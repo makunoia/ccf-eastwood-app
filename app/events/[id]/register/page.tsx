@@ -8,6 +8,7 @@ import { PublicFormShell } from "@/components/public-form-shell"
 import { FormClosed } from "@/components/form-closed"
 import { getFormConfig, resolveFormTheme } from "@/lib/forms/config"
 import { resolveEventBrand } from "@/lib/forms/event-brand"
+import { isWithinRegistrationWindow } from "@/lib/events/registration-window"
 
 async function getEvent(id: string) {
   const event = await db.event.findUnique({
@@ -104,9 +105,14 @@ export default async function RegisterPage({
   const walkIn = await parseWalkIn(id, checkin, mobile)
 
   const formConfig = await getFormConfig("EventRegistration", id)
-  // Walk-ins are staff-supervised at the door — a closed public form must not
-  // block someone standing in front of the kiosk.
-  if (!formConfig.isOpen && !walkIn) return <FormClosed />
+  // The public form is open only when the manual toggle is on AND we're inside the
+  // event's Opens/Closes window. Walk-ins are staff-supervised at the door — neither
+  // a closed toggle nor a passed close date must block someone at the kiosk.
+  const withinWindow = isWithinRegistrationWindow(
+    event.registrationStart,
+    event.registrationEnd
+  )
+  if ((!formConfig.isOpen || !withinWindow) && !walkIn) return <FormClosed />
 
   const lifeStages = event.formIncludeSmallGroup
     ? await db.lifeStage.findMany({

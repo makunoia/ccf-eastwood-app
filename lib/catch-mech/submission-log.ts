@@ -41,9 +41,10 @@ export function tallyDecisions(decisions: readonly { status: string }[]): Submis
 }
 
 export type RecordSubmissionInput = {
-  source: "CatchMech" | "SmallGroupLeader"
+  source: "CatchMech" | "CatchMechVolunteer" | "SmallGroupLeader"
   // Catch Mech context
   sessionId?: string | null
+  volunteerSessionId?: string | null
   eventId?: string | null
   breakoutGroupId?: string | null
   facilitatorVolunteerId?: string | null
@@ -69,6 +70,7 @@ export async function recordConfirmationSubmission(
     data: {
       source: input.source,
       sessionId: input.sessionId ?? null,
+      volunteerSessionId: input.volunteerSessionId ?? null,
       eventId: input.eventId ?? null,
       breakoutGroupId: input.breakoutGroupId ?? null,
       facilitatorVolunteerId: input.facilitatorVolunteerId ?? null,

@@ -22,6 +22,10 @@ async function getCatchMechData(eventId: string) {
       id: true,
       name: true,
       modules: { select: { type: true } },
+      volunteers: {
+        where: { status: "Confirmed" },
+        select: { id: true },
+      },
       breakoutGroups: {
         orderBy: { name: "asc" },
         select: {
@@ -107,7 +111,18 @@ async function getCatchMechData(eventId: string) {
     expected: expectedResponders.length,
   }
 
-  return { groupRows, stats, weeklyBuckets, response }
+  const volunteerSubmissions = await db.confirmationSubmission.findMany({
+    where: { eventId, source: "CatchMechVolunteer", facilitatorVolunteerId: { not: null } },
+    select: { facilitatorVolunteerId: true },
+    distinct: ["facilitatorVolunteerId"],
+  })
+  const volunteerResponded = new Set(volunteerSubmissions.map((submission) => submission.facilitatorVolunteerId))
+  const volunteerResponse = {
+    responded: event.volunteers.filter((volunteer) => volunteerResponded.has(volunteer.id)).length,
+    expected: event.volunteers.length,
+  }
+
+  return { groupRows, stats, weeklyBuckets, response, volunteerResponse }
 }
 
 /** Whole-number percentage, guarding a zero denominator. */
@@ -170,7 +185,7 @@ export default async function CatchMechAdminPage({
   const data = await getCatchMechData(id)
   if (!data) notFound()
 
-  const { groupRows, stats, weeklyBuckets, response } = data
+  const { groupRows, stats, weeklyBuckets, response, volunteerResponse } = data
 
   const session = await auth()
   const canViewMember = canRead(session, "Members")
@@ -186,7 +201,7 @@ export default async function CatchMechAdminPage({
           people catch mech is actually trying to place — so the three sum to 100%.
           In Small Group is measured against the full cohort instead: it's the share
           who were never candidates. */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
         <CatchMechStatCard
           label="To Match"
           value={stats.matchable}
@@ -226,6 +241,13 @@ export default async function CatchMechAdminPage({
           sub={`of ${response.expected} facilitators`}
           color="text-violet-600"
           href={`/event/${id}/catch-mech/submissions`}
+        />
+        <CatchMechStatCard
+          label="Volunteer Follow-up"
+          value={volunteerResponse.responded}
+          sub={`of ${volunteerResponse.expected} volunteers`}
+          color="text-violet-600"
+          href={`/event/${id}/catch-mech/volunteers`}
         />
       </div>
 

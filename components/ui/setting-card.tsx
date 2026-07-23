@@ -49,7 +49,7 @@ export function SettingCard({
               )}
             </div>
           </div>
-          {control && <div className="shrink-0">{control}</div>}
+          {control && <div className="shrink-0 self-center">{control}</div>}
         </div>
       </CardHeader>
       {children && <CardContent className="px-4">{children}</CardContent>}

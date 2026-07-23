@@ -1,6 +1,7 @@
 "use server"
 
 import { db } from "@/lib/db"
+import { formatPhilippinePhone } from "@/lib/utils"
 
 export async function lookupMemberByMobile(mobile: string): Promise<{
   id: string
@@ -9,7 +10,7 @@ export async function lookupMemberByMobile(mobile: string): Promise<{
   email: string | null
 } | null> {
   const member = await db.member.findFirst({
-    where: { phone: mobile.trim() },
+    where: { phone: formatPhilippinePhone(mobile.trim()) },
     select: { id: true, firstName: true, lastName: true, email: true },
   })
   return member

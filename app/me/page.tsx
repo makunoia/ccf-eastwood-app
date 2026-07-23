@@ -1,5 +1,5 @@
 import type { Metadata } from "next"
-import { IconUserCircle } from "@tabler/icons-react"
+import { IconLock, IconUserCircle } from "@tabler/icons-react"
 import { VerifyForm } from "./verify-form"
 import { FormClosed } from "@/components/form-closed"
 import { getFormConfig } from "@/lib/forms/config"
@@ -13,21 +13,36 @@ export default async function MePage() {
   if (!formConfig.isOpen) return <FormClosed />
 
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6">
-      <div className="w-full max-w-md space-y-8">
-        <div className="text-center space-y-2">
-          <div className="flex justify-center">
-            <div className="rounded-full bg-primary/10 p-3">
-              <IconUserCircle className="size-6 text-primary" />
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-muted/40 px-4 py-10 sm:px-6">
+      <div
+        aria-hidden="true"
+        className="absolute inset-x-0 top-0 h-72 bg-primary/[0.07]"
+      />
+      <div className="relative w-full max-w-md">
+        <div className="rounded-2xl border bg-background p-6 shadow-sm sm:p-8">
+          <div className="mb-8 space-y-4">
+            <div className="flex size-11 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+              <IconUserCircle className="size-6" />
+            </div>
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
+                CCF Eastwood
+              </p>
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+                Your small groups
+              </h1>
+              <p className="max-w-sm text-sm leading-6 text-muted-foreground">
+                Use your mobile number to see your group and manage the groups you lead.
+              </p>
             </div>
           </div>
-          <h1 className="text-2xl font-semibold">My Small Groups</h1>
-          <p className="text-sm text-muted-foreground">
-            Enter your mobile number to view and manage your small group
-          </p>
+          <VerifyForm />
+          <div className="mt-6 flex items-center gap-2 border-t pt-5 text-xs leading-5 text-muted-foreground">
+            <IconLock className="size-3.5 shrink-0" />
+            Your information is only used to find your member record.
+          </div>
         </div>
-        <VerifyForm />
       </div>
-    </div>
+    </main>
   )
 }

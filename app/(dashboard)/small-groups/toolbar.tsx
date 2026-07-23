@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { IconDownload, IconExternalLink, IconPlus, IconUpload } from "@tabler/icons-react"
+import { IconDownload, IconPlus, IconUpload } from "@tabler/icons-react"
 import { toast } from "sonner"
 import { PageActions, type PageAction } from "@/components/page-header"
 import { ImportWizard } from "@/components/import/import-wizard"
@@ -53,12 +53,6 @@ export function SmallGroupsToolbar({ groups, canImport, canExport }: Props) {
   }
 
   const actions: PageAction[] = [
-    {
-      label: "Confirmation Form",
-      icon: <IconExternalLink className="size-4" />,
-      href: "/small-group-confirmation",
-      newTab: true,
-    },
     ...(canExport
       ? [{
           label: "Export",

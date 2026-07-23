@@ -13,6 +13,7 @@ import {
   tallyDecisions,
 } from "@/lib/catch-mech/submission-log"
 import { revalidatePath } from "next/cache"
+import { formatPhilippinePhone } from "@/lib/utils"
 
 type ActionResult<T = void> =
   | { success: true; data: T }
@@ -30,7 +31,7 @@ export async function verifyCatchMechFaci(
   }
 
   const member = await db.member.findFirst({
-    where: { phone: mobile.trim() },
+    where: { phone: formatPhilippinePhone(mobile.trim()) },
     select: { id: true },
   })
   if (!member) {
@@ -128,7 +129,7 @@ function validateTargets(
 }
 
 /** A decision paired with the group it resolves to (null = groupless decline). */
-type ResolvedDecision = ConfirmDecision & { groupId: string | null }
+export type ResolvedDecision = ConfirmDecision & { groupId: string | null }
 
 function resolveTargets(
   decisions: ConfirmDecision[],
@@ -239,7 +240,8 @@ export async function submitCatchMechConfirmations(
         takenEmails,
         tx,
         eventName,
-        session.facilitator.member.id
+        session.facilitator.member.id,
+        "Catch Mech"
       )
 
       await recordConfirmationSubmission(tx, {
@@ -450,7 +452,8 @@ export async function createSmallGroupForTimothy(
         takenEmails,
         tx,
         eventName,
-        faciMember.id
+        faciMember.id,
+        "Catch Mech"
       )
 
       await recordConfirmationSubmission(tx, {
@@ -535,7 +538,7 @@ const registrantSelect = {
 
 type FetchedRegistrant = Prisma.EventRegistrantGetPayload<{ select: typeof registrantSelect }>
 
-async function prefetchRegistrantData(decisions: ConfirmDecision[]): Promise<{
+export async function prefetchRegistrantData(decisions: ConfirmDecision[]): Promise<{
   registrantMap: Map<string, FetchedRegistrant>
   takenEmails: Set<string>
 }> {
@@ -567,16 +570,17 @@ async function prefetchRegistrantData(decisions: ConfirmDecision[]): Promise<{
 
 // ─── Shared confirmation resolver (writes only — reads pre-fetched) ───────────
 
-async function resolveConfirmations(
-  breakoutGroupId: string,
-  faciVolunteerId: string,
+export async function resolveConfirmations(
+  breakoutGroupId: string | null,
+  faciVolunteerId: string | null,
   decisions: ResolvedDecision[],
   registrantMap: Map<string, FetchedRegistrant>,
   takenEmails: Set<string>,
   tx: Prisma.TransactionClient,
   eventName: string | null,
   /** The faci's Member — public flow has no User, so this is the only attribution. */
-  actorMemberId: string | null
+  actorMemberId: string | null,
+  sourceLabel: string
 ): Promise<void> {
   const now = new Date()
 
@@ -637,7 +641,7 @@ async function resolveConfirmations(
           guestId: registrant.guestId ?? null,
           memberId: registrant.memberId ?? null,
           performedByMemberId: actorMemberId,
-          description: `${personName}'s membership was declined via Catch Mech${eventName ? ` of ${eventName}` : ""}`,
+          description: `${personName}'s membership was declined via ${sourceLabel}${eventName ? ` of ${eventName}` : ""}`,
         },
       })
       continue
@@ -697,7 +701,7 @@ async function resolveConfirmations(
           action: "MemberAdded",
           memberId: newMember.id,
           performedByMemberId: actorMemberId,
-          description: `${guest.firstName} ${guest.lastName} confirmed via Catch Mech${eventName ? ` of ${eventName}` : ""} and joined the group`,
+          description: `${guest.firstName} ${guest.lastName} confirmed via ${sourceLabel}${eventName ? ` of ${eventName}` : ""} and joined the group`,
         },
       })
       const updated = await tx.smallGroupMemberRequest.updateMany({
@@ -732,7 +736,7 @@ async function resolveConfirmations(
           action: "MemberAdded",
           memberId: registrant.memberId,
           performedByMemberId: actorMemberId,
-          description: `${member.firstName} ${member.lastName} confirmed via Catch Mech${eventName ? ` of ${eventName}` : ""} and joined the group`,
+          description: `${member.firstName} ${member.lastName} confirmed via ${sourceLabel}${eventName ? ` of ${eventName}` : ""} and joined the group`,
         },
       })
       const updated = await tx.smallGroupMemberRequest.updateMany({

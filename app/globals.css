@@ -187,6 +187,22 @@
   100% { left: 107%;  right: -8%;  }
 }
 
+/* Couples small-group header accent — a soft light-pink glow that breathes
+   gently along the bottom of the detail header (darker shade at the base). */
+@keyframes couples-accent-breathe {
+  0%, 100% { opacity: 0.65; }
+  50%      { opacity: 1; }
+}
+.couples-accent-breathe {
+  animation: couples-accent-breathe 5s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .couples-accent-breathe {
+    animation: none;
+    opacity: 0.85;
+  }
+}
+
 /* Sidebar gradient — outside @layer so it overrides bg-sidebar utility */
 [data-sidebar="sidebar"] {
   background: linear-gradient(175deg, oklch(0.36 0.14 222) 0%, oklch(0.22 0.12 215) 100%);
