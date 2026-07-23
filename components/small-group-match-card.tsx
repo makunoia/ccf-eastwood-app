@@ -11,6 +11,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog"
 import { FIELD_META, scoreBand } from "@/components/matching/factor-meta"
+import { GroupTypeBadge } from "@/components/group-type-badge"
 import {
   ACTIVE_WEIGHT_FIELDS,
   GATE_FIELDS,
@@ -222,17 +223,20 @@ export function SmallGroupMatchCard({
       <div className="rounded-lg border p-4">
         <div className="flex items-center justify-between gap-3">
           <div>
-            {onGroupClick ? (
-              <button
-                type="button"
-                onClick={onGroupClick}
-                className="font-medium text-left underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors cursor-pointer"
-              >
-                {result.groupName}
-              </button>
-            ) : (
-              <p className="font-medium">{result.groupName}</p>
-            )}
+            <div className="flex items-center gap-2">
+              {onGroupClick ? (
+                <button
+                  type="button"
+                  onClick={onGroupClick}
+                  className="font-medium text-left underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors cursor-pointer"
+                >
+                  {result.groupName}
+                </button>
+              ) : (
+                <p className="font-medium">{result.groupName}</p>
+              )}
+              <GroupTypeBadge groupType={result.groupSummary.groupType} />
+            </div>
             <div className="flex items-center gap-2">
               <p className="text-sm text-muted-foreground">{score}% match</p>
               {result.onCooldown && (

@@ -24,6 +24,7 @@ import { SmallGroupMatchCard } from "@/components/small-group-match-card"
 import { SmallGroupDetailSheet } from "@/components/small-group-detail-sheet"
 import { findSmallGroupMatchesWithEscalation } from "../matching-actions"
 import { clearGuestClaimedGroup, saveGuestMatchingProfile } from "../actions"
+import { GroupTypeBadge } from "@/components/group-type-badge"
 import { assignGuestToGroupTemporarily } from "../../small-groups/actions"
 import type { MatchResult, EscalationLevel } from "@/lib/matching/types"
 import type { GuestPipelineStatus } from "@/lib/guest-utils"
@@ -56,6 +57,7 @@ const LEVEL_LABEL: Record<1 | 2 | 3, string> = {
 type ClaimedGroup = {
   id: string
   name: string
+  groupType: "Regular" | "Couples"
   leader: { id: string; firstName: string; lastName: string } | null
 } | null
 
@@ -500,7 +502,10 @@ export const GuestMatchSection = React.forwardRef<
       {localClaimedGroup && (
         <div className="rounded-lg border bg-muted/40 p-4 space-y-3">
           <div>
-            <p className="text-sm font-semibold">Interested in joining a group</p>
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-semibold">Interested in joining a group</p>
+              <GroupTypeBadge groupType={localClaimedGroup.groupType} />
+            </div>
             <p className="text-sm text-muted-foreground">
               {localClaimedGroup.name}
               {localClaimedGroup.leader && (

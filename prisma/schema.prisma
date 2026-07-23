@@ -80,8 +80,8 @@ enum MemberGroupStatus {
 }
 
 enum FamilyRole {
-  Father
-  Mother
+  FatherHusband
+  MotherWife
   Child
   Guardian
   Other

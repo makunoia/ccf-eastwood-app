@@ -61,6 +61,7 @@ import {
   type MemberSearchResult,
 } from "./actions"
 import type { SpouseInfo } from "@/lib/family-links"
+import { CouplesBadge } from "@/components/group-type-badge"
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 
@@ -100,14 +101,6 @@ function groupSummaryLine(g: GroupOption): string {
   return parts.join(" · ")
 }
 
-function CouplesBadge() {
-  return (
-    <Badge className="gap-1 bg-rose-100 text-rose-800 border-transparent hover:bg-rose-100">
-      <IconHeart className="size-3" />
-      Couples
-    </Badge>
-  )
-}
 
 function GroupDetailRow({
   icon,

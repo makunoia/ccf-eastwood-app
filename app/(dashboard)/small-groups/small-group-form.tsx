@@ -15,6 +15,7 @@ import {
 import { toast } from "sonner"
 
 import { DetailPageHeader } from "@/components/detail-page-header"
+import { CouplesBadge } from "@/components/group-type-badge"
 import { useListNavigation } from "@/lib/hooks/use-list-navigation"
 import { BreadcrumbOverride } from "@/components/breadcrumb-context"
 import { Button } from "@/components/ui/button"
@@ -502,6 +503,7 @@ export function SmallGroupForm({
 
       <DetailPageHeader
         title={isEdit ? group!.name : "New Small Group"}
+        status={isEdit && form.groupType === "Couples" ? <CouplesBadge /> : undefined}
         initials={isEdit ? getInitials(group!.name) : undefined}
         prevHref={isEdit ? (prev ? `/small-groups/${prev}` : null) : undefined}
         nextHref={isEdit ? (next ? `/small-groups/${next}` : null) : undefined}

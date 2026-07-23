@@ -370,8 +370,8 @@ describe("couples groups", () => {
     const family = await db.family.create({ data: { name: "Santos" } })
     await db.familyMember.createMany({
       data: [
-        { familyId: family.id, memberId: husband.id, role: "Father" },
-        { familyId: family.id, memberId: wife.id, role: "Mother" },
+        { familyId: family.id, memberId: husband.id, role: "FatherHusband" },
+        { familyId: family.id, memberId: wife.id, role: "MotherWife" },
       ],
     })
     return { husband, wife }

@@ -81,6 +81,7 @@ function buildSmallGroupProfile(
   g: {
     id: string
     name: string
+    groupType: "Regular" | "Couples"
     lifeStages: { id: string; name: string }[]
     genderFocus: "Male" | "Female" | "Mixed" | null
     language: string[]
@@ -101,6 +102,7 @@ function buildSmallGroupProfile(
   return {
     id: g.id,
     name: g.name,
+    groupType: g.groupType,
     lifeStageIds: g.lifeStages.map((ls) => ls.id),
     lifeStageNames: g.lifeStages.map((ls) => ls.name),
     genderFocus: g.genderFocus,

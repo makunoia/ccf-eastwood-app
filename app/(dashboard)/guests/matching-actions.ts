@@ -11,6 +11,7 @@ type ActionResult<T> =
 type SmallGroupDetails = {
   id: string
   name: string
+  groupType: "Regular" | "Couples"
   leader: { firstName: string; lastName: string } | null
   lifeStages: { name: string }[]
   genderFocus: "Male" | "Female" | "Mixed" | null
@@ -39,6 +40,7 @@ export async function getSmallGroupDetails(
       select: {
         id: true,
         name: true,
+        groupType: true,
         leader: { select: { firstName: true, lastName: true } },
         lifeStages: { select: { name: true }, orderBy: { order: "asc" } },
         genderFocus: true,

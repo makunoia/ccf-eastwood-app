@@ -1,11 +1,11 @@
 import { z } from "zod"
 
-export const FAMILY_ROLES = ["Father", "Mother", "Child", "Guardian", "Other"] as const
+export const FAMILY_ROLES = ["FatherHusband", "MotherWife", "Child", "Guardian", "Other"] as const
 export type FamilyRoleValue = (typeof FAMILY_ROLES)[number]
 
 export const FAMILY_ROLE_LABELS: Record<FamilyRoleValue, string> = {
-  Father: "Father",
-  Mother: "Mother",
+  FatherHusband: "Father/Husband",
+  MotherWife: "Mother/Wife",
   Child: "Child",
   Guardian: "Guardian",
   Other: "Other",

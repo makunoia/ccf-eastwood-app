@@ -1,16 +1,20 @@
 import Link from "next/link"
 import { IconUsers } from "@tabler/icons-react"
 
+import { GroupTypeBadge } from "@/components/group-type-badge"
+
 type Props = {
   memberOf: {
     id: string
     name: string
     groupStatus: "Member" | "Timothy" | "Leader" | null
+    groupType: "Regular" | "Couples"
   } | null
   ledGroups: {
     id: string
     name: string
     memberCount: number
+    groupType: "Regular" | "Couples"
   }[]
 }
 
@@ -21,12 +25,15 @@ export function MemberSmallGroups({ memberOf, ledGroups }: Props) {
         <h3 className="type-label text-muted-foreground">Member Of</h3>
         {memberOf ? (
           <div className="flex items-center justify-between rounded-lg border p-3">
-            <Link
-              href={`/small-groups/${memberOf.id}`}
-              className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-            >
-              {memberOf.name}
-            </Link>
+            <div className="flex items-center gap-2">
+              <Link
+                href={`/small-groups/${memberOf.id}`}
+                className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+              >
+                {memberOf.name}
+              </Link>
+              <GroupTypeBadge groupType={memberOf.groupType} />
+            </div>
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">
@@ -44,12 +51,15 @@ export function MemberSmallGroups({ memberOf, ledGroups }: Props) {
                 key={g.id}
                 className="flex items-center justify-between rounded-lg border p-3"
               >
-                <Link
-                  href={`/small-groups/${g.id}`}
-                  className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-                >
-                  {g.name}
-                </Link>
+                <div className="flex items-center gap-2">
+                  <Link
+                    href={`/small-groups/${g.id}`}
+                    className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+                  >
+                    {g.name}
+                  </Link>
+                  <GroupTypeBadge groupType={g.groupType} />
+                </div>
                 <span className="flex items-center gap-1 text-xs text-muted-foreground">
                   <IconUsers className="size-3" />
                   {g.memberCount} {g.memberCount === 1 ? "member" : "members"}

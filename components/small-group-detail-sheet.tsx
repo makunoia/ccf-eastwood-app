@@ -37,6 +37,7 @@ export function SmallGroupDetailSheet({
       const g = res.data
       setData({
         name: g.name,
+        groupType: g.groupType,
         subtitle: g.leader
           ? `Led by ${g.leader.firstName} ${g.leader.lastName}`
           : "No leader assigned",

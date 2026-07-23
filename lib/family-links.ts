@@ -3,7 +3,7 @@ import { db } from "@/lib/db"
 type TxClient = Parameters<Parameters<typeof db.$transaction>[0]>[0]
 
 /** Roles that mark someone as one half of a couple within a family. */
-const SPOUSE_ROLES = ["Father", "Mother"] as const
+const SPOUSE_ROLES = ["FatherHusband", "MotherWife"] as const
 
 export type SpouseInfo = {
   memberId: string

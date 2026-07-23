@@ -17,6 +17,7 @@ async function getGuest(id: string) {
           select: {
             id: true,
             name: true,
+            groupType: true,
             leader: { select: { id: true, firstName: true, lastName: true } },
           },
         },

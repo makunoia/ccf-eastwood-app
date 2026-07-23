@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest"
-import { familySchema, familyMemberSchema } from "@/lib/validations/family"
+import {
+  familySchema,
+  familyMemberSchema,
+  FAMILY_ROLE_LABELS,
+} from "@/lib/validations/family"
 
 describe("familySchema", () => {
   it("requires a non-empty name", () => {
@@ -22,7 +26,7 @@ describe("familySchema", () => {
 describe("familyMemberSchema", () => {
   it("accepts exactly one of memberId / guestId", () => {
     expect(
-      familyMemberSchema.safeParse({ memberId: "m1", role: "Father" }).success
+      familyMemberSchema.safeParse({ memberId: "m1", role: "FatherHusband" }).success
     ).toBe(true)
     expect(
       familyMemberSchema.safeParse({ guestId: "g1", role: "Child" }).success
@@ -31,15 +35,15 @@ describe("familyMemberSchema", () => {
 
   it("rejects both memberId and guestId set", () => {
     expect(
-      familyMemberSchema.safeParse({ memberId: "m1", guestId: "g1", role: "Father" })
+      familyMemberSchema.safeParse({ memberId: "m1", guestId: "g1", role: "FatherHusband" })
         .success
     ).toBe(false)
   })
 
   it("rejects neither set (including empty strings)", () => {
-    expect(familyMemberSchema.safeParse({ role: "Mother" }).success).toBe(false)
+    expect(familyMemberSchema.safeParse({ role: "MotherWife" }).success).toBe(false)
     expect(
-      familyMemberSchema.safeParse({ memberId: "", guestId: "", role: "Mother" })
+      familyMemberSchema.safeParse({ memberId: "", guestId: "", role: "MotherWife" })
         .success
     ).toBe(false)
   })
@@ -48,5 +52,10 @@ describe("familyMemberSchema", () => {
     expect(
       familyMemberSchema.safeParse({ memberId: "m1", role: "Cousin" }).success
     ).toBe(false)
+  })
+
+  it("labels the spouse roles as Father/Husband and Mother/Wife", () => {
+    expect(FAMILY_ROLE_LABELS.FatherHusband).toBe("Father/Husband")
+    expect(FAMILY_ROLE_LABELS.MotherWife).toBe("Mother/Wife")
   })
 })
