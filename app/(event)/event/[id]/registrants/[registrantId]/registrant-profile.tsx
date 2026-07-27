@@ -37,6 +37,7 @@ type GuestData = {
   lifeStageId: string | null
   gender: string | null
   language: string[]
+  ageRangeBucketId: string | null
   workCity: string | null
   workIndustry: string | null
   meetingPreference: string | null
@@ -54,6 +55,7 @@ function toFormValues(guest: GuestData): GuestFormValues {
     lifeStageId: guest.lifeStageId ?? "",
     gender: guest.gender ?? "",
     language: guest.language,
+    ageRangeBucketId: guest.ageRangeBucketId ?? "",
     workCity: guest.workCity ?? "",
     workIndustry: guest.workIndustry ?? "",
     meetingPreference: guest.meetingPreference ?? "",

@@ -21,6 +21,7 @@ function buildCandidateFromMember(m: {
   language: string[]
   birthMonth: number | null
   birthYear: number | null
+  ageRangeBucket?: { minAge: number | null; maxAge: number | null } | null
   workCity: string | null
   workIndustry: string | null
   meetingPreference: "Online" | "Hybrid" | "InPerson" | null
@@ -32,6 +33,7 @@ function buildCandidateFromMember(m: {
     language: m.language,
     birthMonth: m.birthMonth,
     birthYear: m.birthYear,
+    ageRange: m.ageRangeBucket ?? null,
     workCity: m.workCity,
     workIndustry: m.workIndustry,
     meetingPreference: m.meetingPreference,
@@ -49,6 +51,7 @@ function buildCandidateFromGuest(g: {
   language: string[]
   birthMonth: number | null
   birthYear: number | null
+  ageRangeBucket?: { minAge: number | null; maxAge: number | null } | null
   workCity: string | null
   workIndustry: string | null
   meetingPreference: "Online" | "Hybrid" | "InPerson" | null
@@ -62,6 +65,7 @@ function buildCandidateFromGuest(g: {
     language: g.language,
     birthMonth: g.birthMonth,
     birthYear: g.birthYear,
+    ageRange: g.ageRangeBucket ?? null,
     workCity: g.workCity,
     workIndustry: g.workIndustry,
     meetingPreference: g.meetingPreference,
@@ -265,6 +269,7 @@ export async function matchSmallGroups(
         language: true,
         birthMonth: true,
         birthYear: true,
+        ageRangeBucket: { select: { minAge: true, maxAge: true } },
         workCity: true,
         workIndustry: true,
         meetingPreference: true,
@@ -285,6 +290,7 @@ export async function matchSmallGroups(
         language: true,
         birthMonth: true,
         birthYear: true,
+        ageRangeBucket: { select: { minAge: true, maxAge: true } },
         workCity: true,
         workIndustry: true,
         meetingPreference: true,
@@ -395,6 +401,7 @@ const MEMBER_CANDIDATE_SELECT = {
   language: true,
   birthMonth: true,
   birthYear: true,
+  ageRangeBucket: { select: { minAge: true, maxAge: true } },
   workCity: true,
   workIndustry: true,
   meetingPreference: true,
@@ -511,6 +518,7 @@ export async function matchSmallGroupsWithEscalation(
       language: true,
       birthMonth: true,
       birthYear: true,
+      ageRangeBucket: { select: { minAge: true, maxAge: true } },
       workCity: true,
       workIndustry: true,
       meetingPreference: true,
@@ -675,6 +683,7 @@ export async function matchBreakoutGroups(
           language: true,
           birthMonth: true,
           birthYear: true,
+          ageRangeBucket: { select: { minAge: true, maxAge: true } },
           workCity: true,
           workIndustry: true,
           meetingPreference: true,
@@ -690,6 +699,7 @@ export async function matchBreakoutGroups(
           language: true,
           birthMonth: true,
           birthYear: true,
+          ageRangeBucket: { select: { minAge: true, maxAge: true } },
           workCity: true,
           workIndustry: true,
           meetingPreference: true,

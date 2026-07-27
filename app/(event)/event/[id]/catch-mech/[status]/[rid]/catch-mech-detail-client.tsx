@@ -60,6 +60,7 @@ type GuestData = {
   lifeStageId: string | null
   gender: string | null
   language: string[]
+  ageRangeBucketId: string | null
   workCity: string | null
   workIndustry: string | null
   meetingPreference: string | null

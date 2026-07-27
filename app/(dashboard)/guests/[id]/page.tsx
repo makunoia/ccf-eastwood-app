@@ -101,6 +101,7 @@ async function getGuest(id: string) {
     language: g.language,
     birthMonth: g.birthMonth,
     birthYear: g.birthYear,
+    ageRangeBucketId: g.ageRangeBucketId,
     workCity: g.workCity,
     workIndustry: g.workIndustry,
     meetingPreference: g.meetingPreference as string | null,
@@ -186,6 +187,13 @@ async function getLifeStages() {
   })
 }
 
+async function getAgeRanges() {
+  return db.ageRangeBucket.findMany({
+    orderBy: { order: "asc" },
+    select: { id: true, label: true },
+  })
+}
+
 async function getGuestEventRegistrations(guestId: string) {
   return db.eventRegistrant.findMany({
     where: { guestId },
@@ -219,9 +227,10 @@ export default async function GuestDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const [guest, lifeStages, registrations, activityLogs, catchMechComments] = await Promise.all([
+  const [guest, lifeStages, ageRanges, registrations, activityLogs, catchMechComments] = await Promise.all([
     getGuest(id),
     getLifeStages(),
+    getAgeRanges(),
     getGuestEventRegistrations(id),
     getGuestActivityLogs(id),
     getGuestCatchMechComments(id),
@@ -283,6 +292,7 @@ export default async function GuestDetailPage({
     <GuestDetailContent
       guest={guest}
       lifeStages={lifeStages}
+      ageRanges={ageRanges}
       pipelineStatus={pipelineStatus}
       sourceEvent={sourceEvent}
       eventHistory={<GuestEventHistory registrations={registrations} />}

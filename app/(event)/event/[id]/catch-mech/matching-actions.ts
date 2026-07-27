@@ -47,6 +47,7 @@ async function buildCandidateForRegistrant(
           birthYear: true,
           workCity: true,
           workIndustry: true,
+          ageRangeBucketId: true,
           meetingPreference: true,
           scheduleDayOfWeek: true,
           scheduleTimeStart: true,
@@ -61,6 +62,7 @@ async function buildCandidateForRegistrant(
           birthYear: true,
           workCity: true,
           workIndustry: true,
+          ageRangeBucketId: true,
           meetingPreference: true,
           schedulePreferences: {
             select: { dayOfWeek: true, timeStart: true },
@@ -535,6 +537,7 @@ type CoupleRequestRecord = {
     birthYear: number | null
     workCity: string | null
     workIndustry: string | null
+    ageRangeBucketId: string | null
     meetingPreference: "Online" | "Hybrid" | "InPerson" | null
     scheduleDayOfWeek: number | null
     scheduleTimeStart: string | null
@@ -566,6 +569,7 @@ const COUPLE_REQUEST_SELECT = {
       birthYear: true,
       workCity: true,
       workIndustry: true,
+      ageRangeBucketId: true,
       meetingPreference: true,
       scheduleDayOfWeek: true,
       scheduleTimeStart: true,
@@ -665,6 +669,8 @@ export async function confirmCatchMechCoupleRequests(
                   birthYear: guest.birthYear ?? null,
                   workCity: guest.workCity ?? null,
                   workIndustry: guest.workIndustry ?? null,
+                  // Carried over so a bracket collected at registration survives promotion.
+                  ageRangeBucketId: guest.ageRangeBucketId ?? null,
                   meetingPreference: guest.meetingPreference ?? null,
                   dateJoined: now,
                   smallGroupId: group.id,

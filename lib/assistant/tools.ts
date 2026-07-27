@@ -377,6 +377,9 @@ export function buildAssistantTools(session: Session) {
           language: input.language ?? [],
           birthMonth: numStr(input.birthMonth),
           birthYear: numStr(input.birthYear),
+          // Not offered as a tool input: the assistant has no way to look up a
+          // bucket id. Set it on the member page instead.
+          ageRangeBucketId: "",
           workCity: str(input.workCity),
           workIndustry: str(input.workIndustry),
           meetingPreference: str(input.meetingPreference),
@@ -411,6 +414,9 @@ export function buildAssistantTools(session: Session) {
           language: p.language ?? m.language,
           birthMonth: p.birthMonth !== undefined ? String(p.birthMonth) : numStr(m.birthMonth),
           birthYear: p.birthYear !== undefined ? String(p.birthYear) : numStr(m.birthYear),
+          // Not patchable by the assistant — pass through so an update can't
+          // erase a bracket the person gave at registration.
+          ageRangeBucketId: str(m.ageRangeBucketId),
           workCity: p.workCity ?? str(m.workCity),
           workIndustry: p.workIndustry ?? str(m.workIndustry),
           meetingPreference: p.meetingPreference ?? str(m.meetingPreference),
@@ -437,6 +443,8 @@ export function buildAssistantTools(session: Session) {
           language: input.language ?? [],
           birthMonth: numStr(input.birthMonth),
           birthYear: numStr(input.birthYear),
+          // Not offered as a tool input — see create_member.
+          ageRangeBucketId: "",
           workCity: str(input.workCity),
           workIndustry: str(input.workIndustry),
           meetingPreference: str(input.meetingPreference),
@@ -469,6 +477,8 @@ export function buildAssistantTools(session: Session) {
           language: p.language ?? g.language,
           birthMonth: p.birthMonth !== undefined ? String(p.birthMonth) : numStr(g.birthMonth),
           birthYear: p.birthYear !== undefined ? String(p.birthYear) : numStr(g.birthYear),
+          // Not patchable by the assistant — see update_member.
+          ageRangeBucketId: str(g.ageRangeBucketId),
           workCity: p.workCity ?? str(g.workCity),
           workIndustry: p.workIndustry ?? str(g.workIndustry),
           meetingPreference: p.meetingPreference ?? str(g.meetingPreference),

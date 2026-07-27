@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { IconAdjustmentsHorizontal, IconAlertTriangle, IconDoorEnter, IconTags, IconUsers } from "@tabler/icons-react"
+import { IconAdjustmentsHorizontal, IconAlertTriangle, IconDoorEnter, IconNumbers, IconTags, IconUsers } from "@tabler/icons-react"
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
 export const metadata: Metadata = {
@@ -19,6 +19,12 @@ const sections = [
     description: "Configure the life stage categories used for members and ministries",
     icon: IconTags,
     href: "/settings/life-stages",
+  },
+  {
+    title: "Age Ranges",
+    description: "Configure the age brackets registration forms can offer as an alternative to birth year",
+    icon: IconNumbers,
+    href: "/settings/age-ranges",
   },
   {
     title: "Matching Weights",

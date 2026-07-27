@@ -22,6 +22,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   manifest: "Manifest",
   occurrences: "Occurrences",
   "life-stages": "Life Stages",
+  "age-ranges": "Age Ranges",
   matching: "Matching",
   users: "Users",
   "duplicate-profiles": "Duplicate Profiles",

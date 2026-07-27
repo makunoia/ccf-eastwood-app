@@ -177,51 +177,6 @@ export async function cancelGroupChange(
   }
 }
 
-// ─── Led groups: schedule ────────────────────────────────────────────────────
-
-const scheduleSchema = z
-  .object({
-    dayOfWeek: z.number().int().min(0).max(6),
-    timeStart: z.string().regex(/^\d{2}:\d{2}$/, "Invalid start time"),
-    timeEnd: z.string().regex(/^\d{2}:\d{2}$/, "Invalid end time"),
-  })
-  .refine((v) => v.timeStart < v.timeEnd, {
-    message: "End time must be after start time",
-  })
-
-export async function updateLedGroupSchedule(
-  token: string,
-  groupId: string,
-  raw: { dayOfWeek: number; timeStart: string; timeEnd: string }
-): Promise<ActionResult> {
-  try {
-    const ctx = await getLedGroup(token, groupId)
-    if (!ctx) return { success: false, error: "Invalid or expired link" }
-
-    const parsed = scheduleSchema.safeParse(raw)
-    if (!parsed.success) {
-      return {
-        success: false,
-        error: parsed.error.issues[0]?.message ?? "Invalid schedule",
-      }
-    }
-
-    await db.smallGroup.update({
-      where: { id: groupId },
-      data: {
-        scheduleDayOfWeek: parsed.data.dayOfWeek,
-        scheduleTimeStart: parsed.data.timeStart,
-        scheduleTimeEnd: parsed.data.timeEnd,
-      },
-    })
-
-    revalidateGroupPages(groupId)
-    return { success: true, data: undefined }
-  } catch {
-    return { success: false, error: "Failed to update schedule" }
-  }
-}
-
 // ─── Led groups: details ─────────────────────────────────────────────────────
 
 /** Leader-editable subset of the group profile — logistics, matching fields, and

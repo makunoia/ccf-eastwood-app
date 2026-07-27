@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { db } from "@/lib/db"
 import { GuestForm } from "../guest-form"
 
 export const metadata: Metadata = {
@@ -6,5 +7,9 @@ export const metadata: Metadata = {
 }
 
 export default async function NewGuestPage() {
-  return <GuestForm />
+  const ageRanges = await db.ageRangeBucket.findMany({
+    orderBy: { order: "asc" },
+    select: { id: true, label: true },
+  })
+  return <GuestForm ageRanges={ageRanges} />
 }

@@ -3,7 +3,7 @@ import { db } from "@/lib/db"
 type TxClient = Parameters<Parameters<typeof db.$transaction>[0]>[0]
 
 /** Roles that mark someone as one half of a couple within a family. */
-const SPOUSE_ROLES = ["FatherHusband", "MotherWife"] as const
+export const SPOUSE_ROLES = ["FatherHusband", "MotherWife"] as const
 
 export type SpouseInfo = {
   memberId: string
@@ -162,6 +162,36 @@ export async function mapCouplesInRoster(
 export type FamilyPersonRef =
   | { memberId: string; guestId?: never }
   | { guestId: string; memberId?: never }
+
+/**
+ * The family a person heads as one half of its couple — the inverse of
+ * `findSpouseOfPerson`, and the identity rule for household registration
+ * (CCF-122): a household is deduped by its Father/Husband + Mother/Wife records,
+ * not by matching individual members.
+ *
+ * Spouses reliably carry their own mobile number, so they resolve cleanly
+ * through the normal phone → email → name+birthday ladder; children, who
+ * usually have no contact details, are then matched *within* the family this
+ * returns rather than guessed at globally.
+ *
+ * Only spouse-role links count. Someone who is a Child in their parents' family
+ * does not match through that family — they'd only match the family they head
+ * themselves.
+ */
+export async function findFamilyBySpouse(
+  person: FamilyPersonRef,
+  client: TxClient | typeof db = db
+): Promise<{ id: string; name: string } | null> {
+  const link = await client.familyMember.findFirst({
+    where: {
+      ...(person.memberId ? { memberId: person.memberId } : { guestId: person.guestId }),
+      role: { in: [...SPOUSE_ROLES] },
+    },
+    select: { family: { select: { id: true, name: true } } },
+    orderBy: { createdAt: "asc" },
+  })
+  return link?.family ?? null
+}
 
 /**
  * Re-points every FamilyMember row from one person onto another, preserving

@@ -7,6 +7,7 @@ import { fetchBreakoutCandidates } from "@/lib/breakout-suggestion-server"
 import { PublicFormShell } from "@/components/public-form-shell"
 import { FormClosed } from "@/components/form-closed"
 import { getFormConfig, resolveFormTheme } from "@/lib/forms/config"
+import { getEventFormConfig } from "@/lib/forms/context-config-server"
 import { resolveEventBrand } from "@/lib/forms/event-brand"
 import { isWithinRegistrationWindow } from "@/lib/events/registration-window"
 
@@ -26,9 +27,6 @@ async function getEvent(id: string) {
       brandMinistryId: true,
       logoUrl: true,
       themeColorPrimary: true,
-      formIncludeSmallGroup: true,
-      formIncludeDietary: true,
-      formIncludePayment: true,
       autoAssignBreakout: true,
       registrationPageTitle: true,
       registrationPageDescription: true,
@@ -114,10 +112,20 @@ export default async function RegisterPage({
   )
   if ((!formConfig.isOpen || !withinWindow) && !walkIn) return <FormClosed />
 
-  const lifeStages = event.formIncludeSmallGroup
+  // Walk-ins are the same form as Register but a separate configured context.
+  const formFields = await getEventFormConfig(id, walkIn ? "WalkIn" : "Register")
+
+  const lifeStages = formFields.fieldLifeStage
     ? await db.lifeStage.findMany({
         orderBy: { order: "asc" },
         select: { id: true, name: true },
+      })
+    : []
+
+  const ageRanges = formFields.fieldAgeRange
+    ? await db.ageRangeBucket.findMany({
+        orderBy: { order: "asc" },
+        select: { id: true, label: true },
       })
     : []
 
@@ -126,10 +134,14 @@ export default async function RegisterPage({
       ? event.ministries[0].ministry.lifeStageId
       : undefined
 
-  // Breakout picker section only renders when not in auto-assign mode AND groups exist.
+  // Breakout picker renders when this context enables the section, the event isn't
+  // auto-assigning, AND groups exist. Auto-assign wins: there is nothing to pick
+  // when placement happens on submit.
+  const offerBreakoutPicker = formFields.sectionBreakout && !event.autoAssignBreakout
+
   // For Recurring events, only show groups whose facilitator has checked in to the open session.
   let breakoutOccurrenceId: string | null = null
-  if (!event.autoAssignBreakout && event.type === "Recurring") {
+  if (offerBreakoutPicker && event.type === "Recurring") {
     const openOccurrence = await db.eventOccurrence.findFirst({
       where: { eventId: event.id, isOpen: true },
       select: { id: true },
@@ -137,7 +149,7 @@ export default async function RegisterPage({
     breakoutOccurrenceId = openOccurrence?.id ?? null
   }
 
-  const breakoutCandidates = event.autoAssignBreakout
+  const breakoutCandidates = !offerBreakoutPicker
     ? []
     : walkIn
       ? // At the door, only groups whose facilitator has already checked in are offered.
@@ -187,10 +199,9 @@ export default async function RegisterPage({
       <RegistrationForm
         eventId={event.id}
         eventName={event.name}
-        includeSmallGroup={event.formIncludeSmallGroup}
-        includeDietary={event.formIncludeDietary}
-        includePayment={event.formIncludePayment}
+        config={formFields}
         lifeStages={lifeStages}
+        ageRanges={ageRanges}
         defaultLifeStageId={defaultLifeStageId}
         breakoutCandidates={breakoutCandidates}
         walkIn={walkIn}

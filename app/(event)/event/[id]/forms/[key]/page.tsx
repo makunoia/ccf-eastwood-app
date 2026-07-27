@@ -10,7 +10,9 @@ import { SettingCard } from "@/components/ui/setting-card"
 import { FORM_REGISTRY } from "@/lib/forms/registry"
 import { getFormConfig } from "@/lib/forms/config"
 import { FormConfigEditor } from "@/app/(dashboard)/forms/form-config-editor"
-import { RegistrationFormFields } from "@/components/forms/registration-form-fields"
+import { getEventFormConfigs } from "@/lib/forms/context-config-server"
+import { EventFormBuilder } from "@/components/forms/event-form-builder"
+import { BreakoutAssignmentSetting } from "@/components/forms/breakout-assignment-setting"
 import { RegistrationPageTab } from "@/components/forms/registration-page-tab"
 import { VolunteerInfoUrlCopier } from "@/components/forms/volunteer-info-url-copier"
 import { PublicLinkCopier } from "@/components/forms/public-link-copier"
@@ -40,9 +42,6 @@ export default async function EventFormEditorPage({
       id: true,
       type: true,
       modules: { select: { type: true } },
-      formIncludeSmallGroup: true,
-      formIncludeDietary: true,
-      formIncludePayment: true,
       autoAssignBreakout: true,
       registrationPageTitle: true,
       registrationPageDescription: true,
@@ -57,6 +56,8 @@ export default async function EventFormEditorPage({
   }
 
   const cfg = await getFormConfig(meta.key, id)
+  const needsFormConfigs = meta.key === "EventRegistration" || meta.key === "EventCheckIn"
+  const formConfigs = needsFormConfigs ? await getEventFormConfigs(id) : null
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">
@@ -72,33 +73,41 @@ export default async function EventFormEditorPage({
         <PageHeader title={meta.label} description={meta.description} />
       </div>
 
-      <FormConfigEditor
-        formKey={meta.key}
-        eventId={id}
-        initialIsOpen={cfg.isOpen}
-        initialTheme={{
-          title: cfg.title ?? "",
-          description: cfg.description ?? "",
-          logoUrl: cfg.logoUrl ?? "",
-          bannerUrl: cfg.bannerUrl ?? "",
-          primaryColor: cfg.primaryColor ?? "",
-        }}
-        themeFields={meta.themeFields}
-        publicUrl={meta.publicPath?.(id)}
-      />
+      {/* Check-in opts out: it opens and closes per session, so a global toggle
+          here would be a control that fights the one admins actually use. It gets
+          a plain link copier below instead. */}
+      {!meta.omitsFormConfigEditor && (
+        <FormConfigEditor
+          formKey={meta.key}
+          eventId={id}
+          initialIsOpen={cfg.isOpen}
+          initialTheme={{
+            title: cfg.title ?? "",
+            description: cfg.description ?? "",
+            logoUrl: cfg.logoUrl ?? "",
+            bannerUrl: cfg.bannerUrl ?? "",
+            primaryColor: cfg.primaryColor ?? "",
+          }}
+          themeFields={meta.themeFields}
+          publicUrl={meta.publicPath?.(id)}
+        />
+      )}
 
       {/* Dedicated config — relocated from Event Settings */}
       {meta.key === "EventRegistration" && (
         <div className="flex flex-col gap-8">
-          <RegistrationFormFields
-            eventId={id}
-            initial={{
-              SmallGroup: event.formIncludeSmallGroup,
-              Dietary: event.formIncludeDietary,
-              Payment: event.formIncludePayment,
-              AutoAssignBreakout: event.autoAssignBreakout,
-            }}
-          />
+          {formConfigs && (
+            <EventFormBuilder
+              eventId={id}
+              initial={formConfigs}
+              // Check-in is configured on its own Forms entry. Register and Walk-in
+              // stay together here because they render the same component.
+              contexts={["Register", "WalkIn"]}
+              heading="Registration form"
+              blurb="Register and Walk-in are configured separately. Name, mobile number, and email are always collected — everything else is opt-in."
+            />
+          )}
+          <BreakoutAssignmentSetting eventId={id} initial={event.autoAssignBreakout} />
           <section className="space-y-4">
             <h3 className="type-label text-muted-foreground">Registration &amp; check-in page</h3>
             <RegistrationPageTab
@@ -110,14 +119,45 @@ export default async function EventFormEditorPage({
               }}
             />
           </section>
+        </div>
+      )}
 
-          {event.type === "OneTime" && (
+      {meta.key === "EventCheckIn" && (
+        <div className="flex flex-col gap-8">
+          {formConfigs && (
+            <EventFormBuilder
+              eventId={id}
+              initial={formConfigs}
+              contexts={["CheckIn"]}
+              heading="Check-in form"
+              blurb="What someone checking in for the first time is asked for. Returning attendees just confirm who they are."
+            />
+          )}
+
+          <SettingCard
+            className="max-w-2xl"
+            title="Check-in link"
+            description={
+              event.type === "OneTime"
+                ? "Share this link at the event so attendees and volunteers can check themselves in."
+                : "Share this link at the event. It opens whichever session is currently accepting check-ins."
+            }
+          >
+            <PublicLinkCopier path={`/events/${id}/checkin`} />
+          </SettingCard>
+
+          {event.type !== "OneTime" && (
             <SettingCard
               className="max-w-2xl"
-              title="Check-in link"
-              description="Share this link at the event so attendees and volunteers can check themselves in."
+              title="Opening and closing check-in"
+              description="Check-in is opened per session rather than globally — open the session you're running from Sessions."
             >
-              <PublicLinkCopier path={`/events/${id}/checkin`} />
+              <Link
+                href={`/event/${id}/sessions`}
+                className="text-sm font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 transition-colors hover:decoration-foreground"
+              >
+                Go to Sessions
+              </Link>
             </SettingCard>
           )}
         </div>

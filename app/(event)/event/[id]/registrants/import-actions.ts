@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
+import { getEventFormConfig } from "@/lib/forms/context-config-server"
 import { auth } from "@/lib/auth"
 import { canWrite, canImport } from "@/lib/permissions"
 import { enrichArray, enrichNullable, enrichText } from "@/lib/import/enrich"
@@ -317,16 +318,18 @@ export async function importEventRegistrants(
   // Verify event exists
   const event = await db.event.findUnique({
     where: { id: eventId },
-    select: { id: true, formIncludePayment: true },
+    select: { id: true },
   })
   if (!event) return { success: false, error: "Event not found" }
+  // Payment references only import when the Register form actually collects one.
+  const collectsPayment = (await getEventFormConfig(eventId, "Register")).sectionPayment
 
   for (let i = 0; i < rows.length; i++) {
     const { mapped, resolution, existingId, existingType } = rows[i]
     try {
       const firstName = mapped.firstName ? toTitleCase(mapped.firstName) : ""
       const lastName  = mapped.lastName  ? toTitleCase(mapped.lastName)  : ""
-      const paymentReference = event.formIncludePayment
+      const paymentReference = collectsPayment
         ? mapped.paymentReference?.trim() || null
         : null
       const registrantData = buildRegistrantData(mapped, paymentReference)

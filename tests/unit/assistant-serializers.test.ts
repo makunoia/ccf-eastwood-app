@@ -6,6 +6,7 @@ import {
   isoDate,
   toAssistantEventRow,
   toAssistantList,
+  toAssistantGuestRow,
   toAssistantMatchRow,
   toAssistantMemberRow,
 } from "@/lib/assistant/serializers"
@@ -62,6 +63,7 @@ describe("toAssistantMemberRow", () => {
       groupStatus: "Member",
       lifeStage: { name: "Young Pro" },
       smallGroup: { name: "Eastwood YP 1" },
+      ageRangeBucket: { label: "30 – 39" },
     })
     expect(row).toEqual({
       id: "m1",
@@ -72,8 +74,49 @@ describe("toAssistantMemberRow", () => {
       smallGroup: "Eastwood YP 1",
       groupStatus: "Member",
       gender: "Female",
+      ageRange: "30 – 39",
       dateJoined: "2025-01-15",
     })
+  })
+
+  it("leaves ageRange null when the person never picked a bracket", () => {
+    const row = toAssistantMemberRow({
+      id: "m2",
+      firstName: "Jun",
+      lastName: "Cruz",
+      nickname: null,
+      email: null,
+      phone: null,
+      gender: null,
+      dateJoined: new Date("2025-01-15T00:00:00Z"),
+      groupStatus: null,
+      lifeStage: null,
+      smallGroup: null,
+      ageRangeBucket: null,
+    })
+    expect(row.ageRange).toBeNull()
+  })
+})
+
+describe("toAssistantGuestRow", () => {
+  it("surfaces the age bracket label, or null when unset", () => {
+    const base = {
+      id: "g1",
+      firstName: "Ella",
+      lastName: "Santos",
+      nickname: null,
+      email: null,
+      phone: "+63 917 222 3333",
+      gender: null,
+      memberId: null,
+      createdAt: new Date("2026-02-01T00:00:00Z"),
+      lifeStage: null,
+      claimedSmallGroup: null,
+    }
+    expect(
+      toAssistantGuestRow({ ...base, ageRangeBucket: { label: "18 – 29" } }).ageRange
+    ).toBe("18 – 29")
+    expect(toAssistantGuestRow({ ...base, ageRangeBucket: null }).ageRange).toBeNull()
   })
 })
 

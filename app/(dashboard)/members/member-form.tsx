@@ -51,6 +51,8 @@ import { MemberGroupStepper } from "./[id]/member-group-stepper"
 
 type Props = {
   member?: MemberRow
+  /** Age Range buckets from Settings → Age Ranges; empty hides the field. */
+  ageRanges?: { id: string; label: string }[]
   groupStatus?: "Member" | "Timothy" | "Leader" | null
   eventHistory?: React.ReactNode
   activityHistory?: React.ReactNode
@@ -73,13 +75,14 @@ function toFormValues(member: MemberRow): MemberFormValues {
     language: member.language,
     birthMonth: member.birthMonth != null ? String(member.birthMonth) : "",
     birthYear: member.birthYear != null ? String(member.birthYear) : "",
+    ageRangeBucketId: member.ageRangeBucketId ?? "",
     workCity: member.workCity ?? "",
     workIndustry: member.workIndustry ?? "",
     meetingPreference: member.meetingPreference ?? "",
   }
 }
 
-export function MemberForm({ member, groupStatus, eventHistory, activityHistory, smallGroups, family }: Props) {
+export function MemberForm({ member, ageRanges = [], groupStatus, eventHistory, activityHistory, smallGroups, family }: Props) {
   const router = useRouter()
   const isEdit = !!member
   const [form, setForm] = React.useState<MemberFormValues>(
@@ -337,6 +340,33 @@ export function MemberForm({ member, groupStatus, eventHistory, activityHistory,
               onMonthChange={(v) => set("birthMonth", v)}
               onYearChange={(val) => set("birthYear", val)}
             />
+
+            {/* Hidden when no buckets are configured. The stored value still
+                rides along in form state, so it survives a save either way. */}
+            {ageRanges.length > 0 && (
+              <div className="space-y-2">
+                <Label htmlFor="ageRange">Age Range</Label>
+                <Select
+                  value={form.ageRangeBucketId || "none"}
+                  onValueChange={(v) => set("ageRangeBucketId", v === "none" ? "" : v)}
+                >
+                  <SelectTrigger id="ageRange">
+                    <SelectValue placeholder="Select age range" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Not specified</SelectItem>
+                    {ageRanges.map((r) => (
+                      <SelectItem key={r.id} value={r.id}>
+                        {r.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Used for matching only when birth year is missing.
+                </p>
+              </div>
+            )}
           </section>
 
           {/* Notes */}

@@ -44,6 +44,7 @@ export type MemberRow = {
   language: string[]
   birthMonth: number | null
   birthYear: number | null
+  ageRangeBucketId: string | null
   workCity: string | null
   workIndustry: string | null
   meetingPreference: string | null

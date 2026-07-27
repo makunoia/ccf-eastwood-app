@@ -78,6 +78,7 @@ export async function queryMembers(filters: {
         groupStatus: true,
         lifeStage: { select: { name: true } },
         smallGroup: { select: { name: true } },
+        ageRangeBucket: { select: { label: true } },
       },
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
       take,
@@ -109,6 +110,7 @@ export async function getMemberDetail(memberId: string) {
       meetingPreference: true,
       groupStatus: true,
       lifeStage: { select: { name: true } },
+      ageRangeBucket: { select: { label: true } },
       smallGroup: { select: { id: true, name: true } },
       ledGroups: { select: { id: true, name: true } },
       eventRegistrations: {
@@ -135,6 +137,7 @@ export async function getMemberDetail(memberId: string) {
     language: m.language,
     birthMonth: m.birthMonth,
     birthYear: m.birthYear,
+    ageRange: m.ageRangeBucket?.label ?? null,
     workCity: m.workCity,
     workIndustry: m.workIndustry,
     meetingPreference: m.meetingPreference,
@@ -182,6 +185,7 @@ export async function queryGuests(filters: {
         createdAt: true,
         lifeStage: { select: { name: true } },
         claimedSmallGroup: { select: { name: true } },
+        ageRangeBucket: { select: { label: true } },
       },
       orderBy: { createdAt: "desc" },
       take,
@@ -214,6 +218,7 @@ export async function getGuestDetail(guestId: string) {
       memberId: true,
       createdAt: true,
       lifeStage: { select: { name: true } },
+      ageRangeBucket: { select: { label: true } },
       claimedSmallGroup: { select: { id: true, name: true } },
       groupRequests: {
         select: {
@@ -246,6 +251,7 @@ export async function getGuestDetail(guestId: string) {
     language: g.language,
     birthMonth: g.birthMonth,
     birthYear: g.birthYear,
+    ageRange: g.ageRangeBucket?.label ?? null,
     workCity: g.workCity,
     workIndustry: g.workIndustry,
     meetingPreference: g.meetingPreference,

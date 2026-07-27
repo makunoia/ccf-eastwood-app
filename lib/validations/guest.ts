@@ -45,6 +45,9 @@ export const guestSchema = z.object({
   language: z.string().array().default([]),
   birthMonth: nullableInt,
   birthYear: nullableInt,
+  // Coarse age bracket — an alternative to an exact birth year for people who
+  // would rather not give one. Matching still prefers birthYear when present.
+  ageRangeBucketId: nullableString,
   workCity: nullableString,
   workIndustry: nullableString,
   meetingPreference: z.preprocess(
@@ -67,6 +70,7 @@ export type GuestFormValues = {
   language: string[]
   birthMonth: string
   birthYear: string
+  ageRangeBucketId: string
   workCity: string
   workIndustry: string
   meetingPreference: string
@@ -84,6 +88,7 @@ export const defaultGuestForm: GuestFormValues = {
   language: [],
   birthMonth: "",
   birthYear: "",
+  ageRangeBucketId: "",
   workCity: "",
   workIndustry: "",
   meetingPreference: "",

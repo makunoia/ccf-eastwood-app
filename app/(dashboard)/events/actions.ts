@@ -22,6 +22,18 @@ import {
   seriesContainsDate,
 } from "@/lib/events/occurrence-series"
 import { isWithinRegistrationWindow } from "@/lib/events/registration-window"
+import { getEventFormConfig } from "@/lib/forms/context-config-server"
+import {
+  resolveBreakoutSelection,
+  sanitizeHouseholdMember,
+  sanitizeRegistrantPayload,
+} from "@/lib/forms/registration-payload"
+import { findFamilyBySpouse, type FamilyPersonRef } from "@/lib/family-links"
+import {
+  deriveFamilyName,
+  householdMemberSchema,
+  householdSchema,
+} from "@/lib/validations/household"
 import { formatPhilippinePhone } from "@/lib/utils"
 import type { Gender, MeetingFormat } from "@/app/generated/prisma/client"
 
@@ -127,6 +139,8 @@ const registrantSchema = z.object({
   // Birthday — used as fallback matching field when no mobile or email
   birthMonth: z.number().int().min(1).max(12).optional().nullable(),
   birthYear: z.number().int().min(1900).max(2100).optional().nullable(),
+  // Coarse age bracket (CCF-123) — an alternative to birth year, not a replacement.
+  ageRangeBucketId: z.string().optional().nullable().transform((v) => v || null),
   // Optional matching fields — collected when the event's Small Group registration module is enabled
   lifeStageId: z.string().optional().nullable().transform((v) => v || null),
   gender: z.enum(["Male", "Female"]).optional().nullable(),
@@ -623,6 +637,18 @@ export async function createRegistrant(
       }
     }
 
+    // Enforce the form config server-side. The public form already withholds
+    // disabled fields, so this changes nothing for real traffic — it stops a
+    // crafted POST from storing a field the admin turned off. Mutating the parsed
+    // payload in place (rather than threading a second variable through every
+    // branch below) keeps one source of truth: there is no path that can read the
+    // unsanitised value by accident.
+    const formConfig = await getEventFormConfig(eventId, walkIn ? "WalkIn" : "Register")
+    Object.assign(parsed.data, sanitizeRegistrantPayload(formConfig, parsed.data))
+    // A submitted breakout pick counts only where the picker is offered. Auto-assign
+    // runs off a null selection, so it is unaffected.
+    const breakoutPick = resolveBreakoutSelection(formConfig, selectedBreakoutGroupId)
+
     if (confirmedMemberId) {
       // Volunteer guard — volunteers don't need to register as attendees
       const volunteerRecord = await db.volunteer.findFirst({
@@ -650,6 +676,11 @@ export async function createRegistrant(
         select: {
           email: true, phone: true, birthMonth: true, birthYear: true,
           lifeStageId: true, gender: true, language: true, meetingPreference: true, workCity: true,
+          ageRangeBucketId: true,
+          // A member's availability lives in a relation, not a scalar column —
+          // needed to know whether the registration form's Schedule answer is
+          // new information or would be overwriting what they already told us.
+          schedulePreferences: { select: { id: true }, take: 1 },
         },
       })
       const memberUpdates: Record<string, unknown> = {}
@@ -662,6 +693,23 @@ export async function createRegistrant(
       if (!existing.language?.length && parsed.data.language?.length) memberUpdates.language = parsed.data.language
       if (!existing.meetingPreference && parsed.data.meetingPreference) memberUpdates.meetingPreference = parsed.data.meetingPreference
       if (!existing.workCity && parsed.data.workCity) memberUpdates.workCity = parsed.data.workCity
+      if (!existing.ageRangeBucketId && parsed.data.ageRangeBucketId) memberUpdates.ageRangeBucketId = parsed.data.ageRangeBucketId
+      // Schedule is a `SchedulePreference` relation for members (guests keep it in
+      // scalar columns). Without this the form's Schedule field was collected and
+      // then thrown away for anyone who confirmed as a member.
+      if (
+        existing.schedulePreferences.length === 0 &&
+        parsed.data.scheduleDayOfWeek != null &&
+        parsed.data.scheduleTimeStart
+      ) {
+        memberUpdates.schedulePreferences = {
+          create: {
+            dayOfWeek: parsed.data.scheduleDayOfWeek,
+            timeStart: parsed.data.scheduleTimeStart,
+            timeEnd: parsed.data.scheduleTimeEnd ?? null,
+          },
+        }
+      }
 
       let registrantId: string
       if (alreadyRegistered) {
@@ -690,7 +738,7 @@ export async function createRegistrant(
       const breakoutGroup = await assignBreakoutForRegistrant(
         registrantId,
         eventId,
-        selectedBreakoutGroupId ?? null,
+        breakoutPick,
         {
           gender: (parsed.data.gender ?? existing.gender) as Gender | null,
           birthYear: parsed.data.birthYear ?? existing.birthYear,
@@ -718,6 +766,7 @@ export async function createRegistrant(
         select: {
           email: true, phone: true, birthMonth: true, birthYear: true,
           lifeStageId: true, gender: true, language: true, meetingPreference: true, workCity: true,
+          ageRangeBucketId: true,
           scheduleDayOfWeek: true, scheduleTimeStart: true, scheduleTimeEnd: true, claimedSmallGroupId: true,
         },
       })
@@ -731,6 +780,7 @@ export async function createRegistrant(
       if (!existing.language?.length && parsed.data.language?.length) guestUpdates.language = parsed.data.language
       if (!existing.meetingPreference && parsed.data.meetingPreference) guestUpdates.meetingPreference = parsed.data.meetingPreference
       if (!existing.workCity && parsed.data.workCity) guestUpdates.workCity = parsed.data.workCity
+      if (!existing.ageRangeBucketId && parsed.data.ageRangeBucketId) guestUpdates.ageRangeBucketId = parsed.data.ageRangeBucketId
       if (existing.scheduleDayOfWeek == null && parsed.data.scheduleDayOfWeek != null) guestUpdates.scheduleDayOfWeek = parsed.data.scheduleDayOfWeek
       if (!existing.scheduleTimeStart && parsed.data.scheduleTimeStart) guestUpdates.scheduleTimeStart = parsed.data.scheduleTimeStart
       if (!existing.scheduleTimeEnd && parsed.data.scheduleTimeEnd) guestUpdates.scheduleTimeEnd = parsed.data.scheduleTimeEnd
@@ -763,7 +813,7 @@ export async function createRegistrant(
       const breakoutGroup = await assignBreakoutForRegistrant(
         registrantId,
         eventId,
-        selectedBreakoutGroupId ?? null,
+        breakoutPick,
         {
           gender: (parsed.data.gender ?? existing.gender) as Gender | null,
           birthYear: parsed.data.birthYear ?? existing.birthYear,
@@ -783,6 +833,7 @@ export async function createRegistrant(
         language: parsed.data.language?.length ? parsed.data.language : undefined,
         meetingPreference: parsed.data.meetingPreference ?? null,
         workCity: parsed.data.workCity ?? null,
+        ageRangeBucketId: parsed.data.ageRangeBucketId ?? null,
         scheduleDayOfWeek: parsed.data.scheduleDayOfWeek ?? null,
         scheduleTimeStart: parsed.data.scheduleTimeStart ?? null,
         scheduleTimeEnd: parsed.data.scheduleTimeEnd ?? null,
@@ -836,6 +887,7 @@ export async function createRegistrant(
             ...(matchingProfile.language !== undefined && { language: matchingProfile.language }),
             ...(matchingProfile.meetingPreference !== null && { meetingPreference: matchingProfile.meetingPreference }),
             ...(matchingProfile.workCity !== null && { workCity: matchingProfile.workCity }),
+            ...(matchingProfile.ageRangeBucketId !== null && { ageRangeBucketId: matchingProfile.ageRangeBucketId }),
             ...(matchingProfile.scheduleDayOfWeek !== null && {
               scheduleDayOfWeek: matchingProfile.scheduleDayOfWeek,
               scheduleTimeStart: matchingProfile.scheduleTimeStart,
@@ -858,6 +910,7 @@ export async function createRegistrant(
             gender: matchingProfile.gender,
             meetingPreference: matchingProfile.meetingPreference,
             workCity: matchingProfile.workCity,
+            ageRangeBucketId: matchingProfile.ageRangeBucketId,
             scheduleDayOfWeek: matchingProfile.scheduleDayOfWeek,
             scheduleTimeStart: matchingProfile.scheduleTimeStart,
             scheduleTimeEnd: matchingProfile.scheduleTimeEnd,
@@ -895,7 +948,7 @@ export async function createRegistrant(
       const breakoutGroup = await assignBreakoutForRegistrant(
         registrantId,
         eventId,
-        selectedBreakoutGroupId ?? null,
+        breakoutPick,
         {
           gender: (parsed.data.gender ?? null) as Gender | null,
           birthYear: parsed.data.birthYear ?? null,
@@ -932,21 +985,6 @@ export async function markCheckinAttendance(
   } catch {
     return { success: false, error: "Failed to mark attendance" }
   }
-}
-
-export async function getCheckinRegistrants(eventId: string) {
-  return db.eventRegistrant.findMany({
-    where: { eventId },
-    orderBy: { createdAt: "asc" },
-    include: {
-      member: {
-        select: { id: true, firstName: true, lastName: true, phone: true },
-      },
-      guest: {
-        select: { id: true, firstName: true, lastName: true, phone: true },
-      },
-    },
-  })
 }
 
 export async function markRegistrantPaid(
@@ -1469,6 +1507,7 @@ type GuestSmallGroupPrompt = {
     scheduleDayOfWeek: number | null
     scheduleTimeStart: string | null
     scheduleTimeEnd: string | null
+    ageRangeBucketId: string | null
   }
 }
 
@@ -1543,6 +1582,7 @@ function findEventRegistrantsForLookup(eventId: string) {
           scheduleDayOfWeek: true,
           scheduleTimeStart: true,
           scheduleTimeEnd: true,
+          ageRangeBucketId: true,
           claimedSmallGroupId: true,
           groupRequests: { select: { status: true } },
         },
@@ -1612,6 +1652,7 @@ async function resolveRegistrantCandidate(
           scheduleDayOfWeek: g.scheduleDayOfWeek,
           scheduleTimeStart: g.scheduleTimeStart,
           scheduleTimeEnd: g.scheduleTimeEnd,
+          ageRangeBucketId: g.ageRangeBucketId,
         },
       }
     }
@@ -1747,42 +1788,7 @@ export async function lookupCheckinRegistrant(
   }
 }
 
-export async function lookupCheckinRegistrantByName(
-  eventId: string,
-  firstName: string,
-  lastName: string,
-  occurrenceId: string | null
-): Promise<ActionResult<CheckinRegistrantResult | CheckinAmbiguousResult | null>> {
-  const fn = normalizeNameInput(firstName)
-  const ln = normalizeNameInput(lastName)
-  if (!fn || !ln) return { success: true, data: null }
-
-  try {
-    const matchedRegistrants = (await findEventRegistrantsForLookup(eventId)).filter((r) => {
-      const rowFirst = r.member?.firstName ?? r.guest?.firstName ?? r.firstName ?? ""
-      const rowLast = r.member?.lastName ?? r.guest?.lastName ?? r.lastName ?? ""
-      if (normalizeNameInput(rowLast) !== ln) return false
-      if (normalizeNameInput(rowFirst) === fn) return true
-      // Accept the registration nickname in place of the first name ("JR" for "Junior").
-      return r.nickname !== null && normalizeNameInput(r.nickname) === fn
-    })
-
-    const matchedVolunteers = (await findEventVolunteersForLookup(eventId)).filter(
-      (v) =>
-        normalizeNameInput(v.member.lastName) === ln &&
-        normalizeNameInput(v.member.firstName) === fn
-    )
-
-    return {
-      success: true,
-      data: await finishCheckinLookup(matchedRegistrants, matchedVolunteers, occurrenceId),
-    }
-  } catch {
-    return { success: false, error: "Lookup failed. Please try again." }
-  }
-}
-
-// Shared loader/resolver for volunteer check-in subjects, used by both lookup paths.
+// Loader/resolver for volunteer check-in subjects, shared by the lookup paths below.
 type VolunteerLookupRow = {
   id: string
   attendedAt: Date | null
@@ -1938,5 +1944,682 @@ export async function searchCheckinByName(
     }
   } catch {
     return { success: false, error: "Search failed. Please try again." }
+  }
+}
+
+// ─── Household registration (CCF-122) ────────────────────────────────────────
+
+/**
+ * Register a whole household in one submission: the primary registrant plus
+ * every other member, each as its own `EventRegistrant`, all linked to one
+ * `Family`.
+ *
+ * Family identity is the **spouse pair** — a household is deduped by its
+ * Father/Husband and Mother/Wife records, never by matching individual members.
+ * Spouses reliably carry their own mobile number, so they resolve through the
+ * normal dedup ladder; children, who usually have none, are then matched
+ * *within* the resolved family instead of being guessed at globally.
+ *
+ * Family records are created here and only here. Check-in surfaces an existing
+ * household and checks its members in, but never creates or edits family
+ * structure — the door is not allowed to invent it.
+ */
+export async function createHouseholdRegistration(
+  eventId: string,
+  primaryRaw: z.input<typeof registrantSchema>,
+  householdRaw: z.input<typeof householdSchema>,
+  confirmedMemberId: string | null,
+  confirmedGuestId?: string | null,
+  skipDeduplication?: boolean,
+  selectedBreakoutGroupId?: string | null,
+  walkIn?: { occurrenceId: string | null }
+): Promise<
+  ActionResult<{
+    id: string
+    familyId: string
+    breakoutGroup: AssignedBreakout
+    householdRegistrantIds: string[]
+    /** Household members who are serving as volunteers, so were not registered. */
+    skippedVolunteers: string[]
+  }>
+> {
+  const parsedHousehold = householdSchema.safeParse(householdRaw)
+  if (!parsedHousehold.success) {
+    return {
+      success: false,
+      error: parsedHousehold.error.issues[0]?.message ?? "Invalid household details",
+    }
+  }
+  const parsedContext = walkIn ? "WalkIn" : "Register"
+  const householdConfig = await getEventFormConfig(eventId, parsedContext)
+
+  // Household capture is itself a section toggle. With it off, a crafted POST must
+  // not be able to invent a Family — so the extra members are refused outright
+  // rather than quietly dropped, which would look like a successful registration
+  // that lost people.
+  if (!householdConfig.sectionFamily && parsedHousehold.data.members.length > 0) {
+    return {
+      success: false,
+      error: "This event isn't collecting household details.",
+    }
+  }
+
+  const household = {
+    ...parsedHousehold.data,
+    // Per-person demographics obey the same field toggles as the primary's.
+    members: parsedHousehold.data.members.map((m) =>
+      sanitizeHouseholdMember(householdConfig, m)
+    ),
+  }
+
+  // The primary goes through the normal path so the registration window, the
+  // volunteer guard, dedup, breakout assignment and walk-in check-in all apply
+  // exactly as they do for a solo registration.
+  const primaryResult = await createRegistrant(
+    eventId,
+    primaryRaw,
+    confirmedMemberId,
+    confirmedGuestId,
+    skipDeduplication,
+    selectedBreakoutGroupId,
+    walkIn
+  )
+  if (!primaryResult.success) return primaryResult
+
+  const primaryRegistrantId = primaryResult.data.id
+
+  try {
+    const primaryRegistrant = await db.eventRegistrant.findUniqueOrThrow({
+      where: { id: primaryRegistrantId },
+      select: {
+        memberId: true,
+        guestId: true,
+        member: { select: { lastName: true } },
+        guest: { select: { lastName: true } },
+      },
+    })
+
+    const primaryRef: FamilyPersonRef = primaryRegistrant.memberId
+      ? { memberId: primaryRegistrant.memberId }
+      : { guestId: primaryRegistrant.guestId as string }
+
+    const primaryLastName =
+      primaryRegistrant.member?.lastName ??
+      primaryRegistrant.guest?.lastName ??
+      (typeof primaryRaw.lastName === "string" ? primaryRaw.lastName : "")
+
+    // ── Resolve the family ──────────────────────────────────────────────────
+    // Matching keys on the PRIMARY's spouse-role link only. "Either spouse is
+    // enough to match" holds because whichever spouse fills the form is the
+    // primary, and the primary has already been deduped by their own contact
+    // details in createRegistrant above.
+    //
+    // A spouse entered as a *household member* carries only a name and birth
+    // date (contact details belong to the primary), so matching a family
+    // through them would be exactly the fragile name-based guess that keying
+    // family identity on the spouse pair exists to avoid. We don't try.
+    //
+    // Two different existing families are likewise never merged here — that's
+    // destructive and belongs to an admin in the Families module.
+    let familyId: string | null = null
+    const primaryFamily = await findFamilyBySpouse(primaryRef)
+    if (primaryFamily) familyId = primaryFamily.id
+
+    const familyName = household.familyName ?? deriveFamilyName(primaryLastName)
+
+    if (!familyId) {
+      familyId = (
+        await db.family.create({
+          data: { name: familyName },
+          select: { id: true },
+        })
+      ).id
+    }
+
+    // The primary's own family link. An existing role is left alone so this
+    // never stomps an admin correction.
+    const existingPrimaryLink = await db.familyMember.findFirst({
+      where: {
+        familyId,
+        ...(primaryRef.memberId
+          ? { memberId: primaryRef.memberId }
+          : { guestId: primaryRef.guestId }),
+      },
+      select: { id: true },
+    })
+    if (!existingPrimaryLink) {
+      await db.familyMember.create({
+        data: {
+          familyId,
+          memberId: primaryRef.memberId ?? null,
+          guestId: primaryRef.guestId ?? null,
+          role: household.primaryRole,
+        },
+      })
+    }
+
+    // ── Household members ───────────────────────────────────────────────────
+    const householdRegistrantIds: string[] = []
+    const skippedVolunteers: string[] = []
+
+    for (const person of household.members) {
+      // Match inside the family first — this is the whole point of keying family
+      // identity on the spouse pair. A child with no contact details is
+      // identified by name within their own household, not against every Guest
+      // in the database.
+      const familyRoster = await db.familyMember.findMany({
+        where: { familyId },
+        select: {
+          role: true,
+          memberId: true,
+          guestId: true,
+          member: { select: { id: true, firstName: true, lastName: true, birthYear: true } },
+          guest: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              birthYear: true,
+              ageRangeBucketId: true,
+            },
+          },
+        },
+      })
+
+      const sameName = (a: string, b: string) =>
+        a.trim().toLowerCase() === b.trim().toLowerCase()
+
+      // Identity within a family is name + role (+ birth year when both sides
+      // have one). Role matters: without it, a household listing two people who
+      // share a name in different roles collapses them into one person.
+      const existingInFamily = familyRoster.find((link) => {
+        const p = link.member ?? link.guest
+        if (!p) return false
+        if (!sameName(p.firstName, person.firstName)) return false
+        if (!sameName(p.lastName, person.lastName)) return false
+        if (link.role !== person.role) return false
+        // Birth year, when both sides have one, must agree — distinguishes a
+        // junior sharing a parent's name and role.
+        if (person.birthYear != null && p.birthYear != null) {
+          return p.birthYear === person.birthYear
+        }
+        return true
+      })
+
+      let personRef: FamilyPersonRef
+      if (existingInFamily) {
+        personRef = existingInFamily.memberId
+          ? { memberId: existingInFamily.memberId }
+          : { guestId: existingInFamily.guestId as string }
+        // Backfill only what's missing; never overwrite known data.
+        if (existingInFamily.guestId) {
+          const g = existingInFamily.guest
+          await db.guest.update({
+            where: { id: existingInFamily.guestId },
+            data: {
+              ...(g?.birthYear == null && person.birthYear != null
+                ? { birthYear: person.birthYear, birthMonth: person.birthMonth ?? null }
+                : {}),
+              ...(g?.ageRangeBucketId == null && person.ageRangeBucketId != null
+                ? { ageRangeBucketId: person.ageRangeBucketId }
+                : {}),
+            },
+          })
+        }
+      } else {
+        const newGuest = await db.guest.create({
+          data: {
+            firstName: person.firstName,
+            lastName: person.lastName,
+            nickname: person.nickname,
+            // Contact details stay on the primary — see lib/validations/household.ts.
+            email: null,
+            phone: null,
+            birthMonth: person.birthMonth ?? null,
+            birthYear: person.birthYear ?? null,
+            gender: person.gender ?? null,
+            ageRangeBucketId: person.ageRangeBucketId,
+            language: [],
+          },
+          select: { id: true },
+        })
+        personRef = { guestId: newGuest.id }
+        await db.familyMember.create({
+          data: { familyId, guestId: newGuest.id, role: person.role },
+        })
+      }
+
+      // Ensure a family link exists even when the person was matched by an
+      // earlier registration that predates their family membership.
+      const hasLink = await db.familyMember.findFirst({
+        where: {
+          familyId,
+          ...(personRef.memberId ? { memberId: personRef.memberId } : { guestId: personRef.guestId }),
+        },
+        select: { id: true },
+      })
+      if (!hasLink) {
+        await db.familyMember.create({
+          data: {
+            familyId,
+            memberId: personRef.memberId ?? null,
+            guestId: personRef.guestId ?? null,
+            role: person.role,
+          },
+        })
+      }
+
+      // Volunteers don't register as attendees. The primary path errors out for
+      // this; for a household member, erroring the whole submission would be
+      // harsh, so they keep their family link and are reported back instead.
+      if (personRef.memberId) {
+        const servingVolunteer = await db.volunteer.findFirst({
+          where: { memberId: personRef.memberId, eventId },
+          select: { id: true },
+        })
+        if (servingVolunteer) {
+          skippedVolunteers.push(`${person.firstName} ${person.lastName}`.trim())
+          continue
+        }
+      }
+
+      // One registrant per person per event — reuse an existing row.
+      const existingRegistrant = await db.eventRegistrant.findFirst({
+        where: {
+          eventId,
+          ...(personRef.memberId
+            ? { memberId: personRef.memberId }
+            : { guestId: personRef.guestId }),
+        },
+        select: { id: true },
+      })
+
+      const registrantId =
+        existingRegistrant?.id ??
+        (
+          await db.eventRegistrant.create({
+            data: {
+              eventId,
+              memberId: personRef.memberId ?? null,
+              guestId: personRef.guestId ?? null,
+            },
+            select: { id: true },
+          })
+        ).id
+
+      // Deliberately NO breakout assignment for household members. Age-based
+      // auto-assign would scatter siblings across different groups, and breakout
+      // grouping is itself optional per event (CCF-128) — a family event that
+      // uses breakouts should place a household together, which is an admin
+      // decision rather than something to infer per person here.
+
+      if (walkIn) {
+        await checkInWalkInRegistrant(registrantId, walkIn.occurrenceId)
+      } else {
+        await autoCheckinIfOpenRecurringSession(registrantId, eventId)
+      }
+
+      if (!householdRegistrantIds.includes(registrantId)) {
+        householdRegistrantIds.push(registrantId)
+      }
+    }
+
+    revalidatePath(`/event/${eventId}/registrants`)
+    revalidatePath("/families")
+
+    return {
+      success: true,
+      data: {
+        id: primaryRegistrantId,
+        familyId,
+        breakoutGroup: primaryResult.data.breakoutGroup,
+        householdRegistrantIds,
+        skippedVolunteers,
+      },
+    }
+  } catch {
+    // The primary is already registered at this point; surface that rather than
+    // implying nothing happened.
+    return {
+      success: false,
+      error: "You're registered, but we couldn't save your household. Please contact an admin.",
+    }
+  }
+}
+
+// ─── Household check-in (CCF-122) ────────────────────────────────────────────
+
+export type HouseholdCheckinMember = {
+  registrantId: string
+  name: string
+  nickname: string | null
+  role: string
+  alreadyCheckedIn: boolean
+  /** The person filling in at the kiosk — rendered as "you" and pre-selected. */
+  isSubject: boolean
+}
+
+export type HouseholdCheckin = {
+  familyId: string
+  familyName: string
+  members: HouseholdCheckinMember[]
+}
+
+/**
+ * Surface the household of an already-checked-in registrant so staff can check
+ * the rest of them in together.
+ *
+ * Read-only: this never creates or edits family structure — that's
+ * `addHouseholdMemberAtCheckin`, which is an explicit admin action at the door.
+ *
+ * Returns the household even when the subject is its only registered member, so
+ * the caller can still offer "+ Add family member". Returns null only when the
+ * person belongs to no family at all; lazy creation then happens on the first
+ * add.
+ */
+export async function lookupHouseholdForCheckin(
+  eventId: string,
+  registrantId: string,
+  occurrenceId: string | null
+): Promise<ActionResult<HouseholdCheckin | null>> {
+  try {
+    const registrant = await db.eventRegistrant.findFirst({
+      where: { id: registrantId, eventId },
+      select: { id: true, memberId: true, guestId: true },
+    })
+    if (!registrant) return { success: true, data: null }
+
+    const link = await db.familyMember.findFirst({
+      where: registrant.memberId
+        ? { memberId: registrant.memberId }
+        : { guestId: registrant.guestId as string },
+      select: { familyId: true, family: { select: { id: true, name: true } } },
+      orderBy: { createdAt: "asc" },
+    })
+    if (!link) return { success: true, data: null }
+
+    const roster = await db.familyMember.findMany({
+      where: { familyId: link.familyId },
+      select: {
+        role: true,
+        memberId: true,
+        guestId: true,
+        member: { select: { firstName: true, lastName: true, nickname: true } },
+        guest: { select: { firstName: true, lastName: true, nickname: true } },
+      },
+    })
+
+    const memberIds = roster.flatMap((r) => (r.memberId ? [r.memberId] : []))
+    const guestIds = roster.flatMap((r) => (r.guestId ? [r.guestId] : []))
+
+    const registrants = await db.eventRegistrant.findMany({
+      where: {
+        eventId,
+        OR: [
+          ...(memberIds.length ? [{ memberId: { in: memberIds } }] : []),
+          ...(guestIds.length ? [{ guestId: { in: guestIds } }] : []),
+        ],
+      },
+      select: {
+        id: true,
+        memberId: true,
+        guestId: true,
+        attendedAt: true,
+        occurrenceAttendances: occurrenceId
+          ? { where: { occurrenceId }, select: { id: true } }
+          : false,
+      },
+    })
+
+    const members: HouseholdCheckinMember[] = []
+    for (const r of registrants) {
+      const rosterEntry = roster.find((x) =>
+        r.memberId ? x.memberId === r.memberId : x.guestId === r.guestId
+      )
+      if (!rosterEntry) continue
+      const p = rosterEntry.member ?? rosterEntry.guest
+      if (!p) continue
+
+      const alreadyCheckedIn = occurrenceId
+        ? (r.occurrenceAttendances?.length ?? 0) > 0
+        : r.attendedAt !== null
+
+      members.push({
+        registrantId: r.id,
+        name: `${p.firstName} ${p.lastName}`.trim(),
+        nickname: p.nickname,
+        role: rosterEntry.role,
+        alreadyCheckedIn,
+        isSubject: r.id === registrant.id,
+      })
+    }
+
+    // Subject first, then everyone still to be checked in, then those already in.
+    members.sort((a, b) => {
+      if (a.isSubject !== b.isSubject) return a.isSubject ? -1 : 1
+      if (a.alreadyCheckedIn !== b.alreadyCheckedIn) return a.alreadyCheckedIn ? 1 : -1
+      return a.name.localeCompare(b.name)
+    })
+
+    return {
+      success: true,
+      data: { familyId: link.family.id, familyName: link.family.name, members },
+    }
+  } catch {
+    return { success: false, error: "Failed to look up household" }
+  }
+}
+
+/**
+ * Check in several registrants from one household in a single action. Records
+ * attendance only — never touches family structure.
+ */
+export async function checkInHousehold(
+  eventId: string,
+  registrantIds: string[],
+  occurrenceId: string | null
+): Promise<ActionResult<{ checkedIn: number }>> {
+  if (registrantIds.length === 0) {
+    return { success: false, error: "Select at least one person to check in." }
+  }
+  try {
+    // Scope to this event so a hand-crafted id can't check someone into an
+    // event they aren't registered for.
+    const valid = await db.eventRegistrant.findMany({
+      where: { id: { in: registrantIds }, eventId },
+      select: { id: true },
+    })
+    if (valid.length === 0) {
+      return { success: false, error: "Those registrations don't belong to this event." }
+    }
+
+    for (const r of valid) {
+      if (occurrenceId) {
+        await db.occurrenceAttendee.upsert({
+          where: { occurrenceId_registrantId: { occurrenceId, registrantId: r.id } },
+          create: { occurrenceId, registrantId: r.id },
+          update: {},
+        })
+      } else {
+        await db.eventRegistrant.update({
+          where: { id: r.id },
+          data: { attendedAt: new Date() },
+        })
+      }
+    }
+
+    revalidatePath(`/event/${eventId}/registrants`)
+    return { success: true, data: { checkedIn: valid.length } }
+  } catch {
+    return { success: false, error: "Failed to check in household" }
+  }
+}
+
+/**
+ * Add someone to the subject's household at the door and check them in.
+ *
+ * This is the one check-in path allowed to create family structure. It lazily
+ * creates the `Family` when the subject has none — nothing is forced until
+ * there's a second person, so a solo attendee never gets a spurious family
+ * record just for checking in.
+ *
+ * The subject is back-linked as `Other` rather than a guessed spouse role:
+ * inferring Father/Mother from a kiosk interaction would be a guess, and roles
+ * are correctable in the Families module. Note that a family created this way
+ * won't participate in spouse-pair dedupe until someone sets a spouse role.
+ */
+export async function addHouseholdMemberAtCheckin(
+  eventId: string,
+  subjectRegistrantId: string,
+  raw: z.input<typeof householdMemberSchema>,
+  occurrenceId: string | null
+): Promise<ActionResult<{ familyId: string; registrantId: string }>> {
+  const parsed = householdMemberSchema.safeParse(raw)
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid details" }
+  }
+
+  // This is the one check-in path that creates family structure, so it obeys the
+  // Check-in context's Family section. Surfacing and checking in an existing
+  // household stays available either way — only inventing new links is gated.
+  const checkinConfig = await getEventFormConfig(eventId, "CheckIn")
+  if (!checkinConfig.sectionFamily) {
+    return { success: false, error: "This event isn't collecting household details." }
+  }
+  const person = sanitizeHouseholdMember(checkinConfig, parsed.data)
+
+  try {
+    const subject = await db.eventRegistrant.findFirst({
+      where: { id: subjectRegistrantId, eventId },
+      select: {
+        memberId: true,
+        guestId: true,
+        member: { select: { lastName: true } },
+        guest: { select: { lastName: true } },
+      },
+    })
+    if (!subject) {
+      return { success: false, error: "That registration doesn't belong to this event." }
+    }
+
+    const subjectRef: FamilyPersonRef = subject.memberId
+      ? { memberId: subject.memberId }
+      : { guestId: subject.guestId as string }
+
+    // ── Lazy family creation ────────────────────────────────────────────────
+    let familyId: string
+    const existingLink = await db.familyMember.findFirst({
+      where: subjectRef.memberId
+        ? { memberId: subjectRef.memberId }
+        : { guestId: subjectRef.guestId },
+      select: { familyId: true },
+      orderBy: { createdAt: "asc" },
+    })
+
+    if (existingLink) {
+      familyId = existingLink.familyId
+    } else {
+      const lastName = subject.member?.lastName ?? subject.guest?.lastName ?? ""
+      const family = await db.family.create({
+        data: { name: deriveFamilyName(lastName) },
+        select: { id: true },
+      })
+      familyId = family.id
+      await db.familyMember.create({
+        data: {
+          familyId,
+          memberId: subjectRef.memberId ?? null,
+          guestId: subjectRef.guestId ?? null,
+          role: "Other",
+        },
+      })
+    }
+
+    // ── Resolve the person, scoped to the family ────────────────────────────
+    const roster = await db.familyMember.findMany({
+      where: { familyId },
+      select: {
+        memberId: true,
+        guestId: true,
+        member: { select: { firstName: true, lastName: true, birthYear: true } },
+        guest: { select: { firstName: true, lastName: true, birthYear: true } },
+      },
+    })
+    const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase()
+    const match = roster.find((link) => {
+      const p = link.member ?? link.guest
+      if (!p) return false
+      if (!sameName(p.firstName, person.firstName)) return false
+      if (!sameName(p.lastName, person.lastName)) return false
+      if (person.birthYear != null && p.birthYear != null) return p.birthYear === person.birthYear
+      return true
+    })
+
+    let personRef: FamilyPersonRef
+    if (match) {
+      personRef = match.memberId
+        ? { memberId: match.memberId }
+        : { guestId: match.guestId as string }
+    } else {
+      const guest = await db.guest.create({
+        data: {
+          firstName: person.firstName,
+          lastName: person.lastName,
+          nickname: person.nickname,
+          birthMonth: person.birthMonth ?? null,
+          birthYear: person.birthYear ?? null,
+          gender: person.gender ?? null,
+          ageRangeBucketId: person.ageRangeBucketId,
+          language: [],
+        },
+        select: { id: true },
+      })
+      personRef = { guestId: guest.id }
+      await db.familyMember.create({
+        data: { familyId, guestId: guest.id, role: person.role },
+      })
+    }
+
+    // ── Registrant, deduped at the registrant level ──────────────────────────
+    // One registrant per person per event, so attendance counts once.
+    const existingRegistrant = await db.eventRegistrant.findFirst({
+      where: {
+        eventId,
+        ...(personRef.memberId ? { memberId: personRef.memberId } : { guestId: personRef.guestId }),
+      },
+      select: { id: true },
+    })
+    const registrantId =
+      existingRegistrant?.id ??
+      (
+        await db.eventRegistrant.create({
+          data: {
+            eventId,
+            memberId: personRef.memberId ?? null,
+            guestId: personRef.guestId ?? null,
+          },
+          select: { id: true },
+        })
+      ).id
+
+    // No breakout assignment — see createHouseholdRegistration.
+    if (occurrenceId) {
+      await db.occurrenceAttendee.upsert({
+        where: { occurrenceId_registrantId: { occurrenceId, registrantId } },
+        create: { occurrenceId, registrantId },
+        update: {},
+      })
+    } else {
+      await db.eventRegistrant.update({
+        where: { id: registrantId },
+        data: { attendedAt: new Date() },
+      })
+    }
+
+    revalidatePath(`/event/${eventId}/registrants`)
+    revalidatePath("/families")
+    return { success: true, data: { familyId, registrantId } }
+  } catch {
+    return { success: false, error: "Failed to add household member" }
   }
 }

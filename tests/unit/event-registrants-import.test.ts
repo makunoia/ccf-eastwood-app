@@ -9,10 +9,12 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await db.$executeRaw`TRUNCATE
-    "EventRegistrant", "Event", "Guest", "SchedulePreference", "Member"
+    "EventRegistrant", "EventFormConfig", "Event", "Guest", "SchedulePreference", "Member"
     RESTART IDENTITY CASCADE`
 })
 
+// Payment-reference import follows the Register context's `sectionPayment`
+// toggle (CCF-119/120), not the retired flat Event column.
 async function seedEvent(overrides: { formIncludePayment?: boolean } = {}) {
   return db.event.create({
     data: {
@@ -20,7 +22,12 @@ async function seedEvent(overrides: { formIncludePayment?: boolean } = {}) {
       type: "OneTime",
       startDate: new Date("2026-06-01T00:00:00Z"),
       endDate: new Date("2026-06-01T00:00:00Z"),
-      formIncludePayment: overrides.formIncludePayment ?? false,
+      eventFormConfigs: {
+        create: {
+          context: "Register",
+          sectionPayment: overrides.formIncludePayment ?? false,
+        },
+      },
     },
     select: { id: true },
   })

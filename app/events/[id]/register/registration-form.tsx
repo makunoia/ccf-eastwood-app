@@ -6,6 +6,10 @@ import { IconCheck } from "@tabler/icons-react"
 import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
+import {
+  BARE_EVENT_FORM_CONFIG,
+  type EventFormConfigData,
+} from "@/lib/forms/context-config"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -32,11 +36,18 @@ import {
 } from "@/components/ui/select"
 import {
   createRegistrant,
+  createHouseholdRegistration,
   lookupMemberForRegistration,
   type AssignedBreakout,
 } from "@/app/(dashboard)/events/actions"
 import { searchMembersForLeaderLookup } from "@/app/(dashboard)/guests/actions"
 import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
+import { FAMILY_ROLES, FAMILY_ROLE_LABELS, type FamilyRoleValue } from "@/lib/validations/family"
+import {
+  MAX_HOUSEHOLD_MEMBERS,
+  defaultHouseholdMember,
+  type HouseholdFormMember,
+} from "@/lib/validations/household"
 import {
   suggestBreakoutGroup,
   filterCompatibleCandidates,
@@ -61,6 +72,7 @@ function formatTime(time: string): string {
 type Step = "form" | "confirm" | "disambiguate" | "early-confirm" | "early-disambiguate" | "done" | "volunteer-blocked"
 
 type LifeStage = { id: string; name: string }
+type AgeRangeBucket = { id: string; label: string }
 
 type DietaryValue =
   | ""
@@ -82,6 +94,7 @@ type FormValues = {
   mobileNumber: string
   birthMonth: string
   birthYear: string
+  ageRangeBucketId: string
   lifeStageId: string
   gender: string
   language: string[]
@@ -139,6 +152,7 @@ const defaultForm: FormValues = {
   mobileNumber: "",
   birthMonth: "",
   birthYear: "",
+  ageRangeBucketId: "",
   lifeStageId: "",
   gender: "",
   language: [],
@@ -186,10 +200,14 @@ type WalkInConfig = {
 type Props = {
   eventId: string
   eventName?: string
-  includeSmallGroup?: boolean
-  includeDietary?: boolean
-  includePayment?: boolean
+  /**
+   * Which sections and fields this context collects (CCF-119/120). Omitted →
+   * bare: only the mandatory identity fields.
+   */
+  config?: Partial<EventFormConfigData>
   lifeStages?: LifeStage[]
+  /** Configurable age brackets (CCF-123), shown when the Age Range field is on. */
+  ageRanges?: AgeRangeBucket[]
   defaultLifeStageId?: string
   breakoutCandidates?: BreakoutCandidate[]
   // "plain" drops the Card chrome so the form can be embedded inside another
@@ -214,16 +232,22 @@ function FormShell({
 export function RegistrationForm({
   eventId,
   eventName = "",
-  includeSmallGroup = false,
-  includeDietary = false,
-  includePayment = false,
+  config,
   lifeStages = [],
+  ageRanges = [],
   defaultLifeStageId = "",
   breakoutCandidates = [],
   frame = "card",
   walkIn,
 }: Props) {
   const plain = frame === "plain"
+  const cfg = React.useMemo<EventFormConfigData>(
+    () => ({ ...BARE_EVENT_FORM_CONFIG, ...config }),
+    [config]
+  )
+  const includeSmallGroup = cfg.sectionSmallGroup
+  const includeDietary = cfg.sectionDietary
+  const includePayment = cfg.sectionPayment
   const [step, setStep] = React.useState<Step>("form")
   const [form, setForm] = React.useState<FormValues>({
     ...defaultForm,
@@ -257,6 +281,21 @@ export function RegistrationForm({
   const [assignedBreakout, setAssignedBreakout] = React.useState<AssignedBreakout | null>(null)
   const [formStep, setFormStep] = React.useState(1)
   const [privacyAccepted, setPrivacyAccepted] = React.useState(false)
+  const [primaryRole, setPrimaryRole] = React.useState<FamilyRoleValue>("FatherHusband")
+  const [householdMembers, setHouseholdMembers] = React.useState<HouseholdFormMember[]>([])
+
+  // Spouse-only mode keeps a single slot in `householdMembers` so the submit
+  // path is identical to full-household mode. The spouse's role is the opposite
+  // half of the couple rather than something the person picks.
+  const spouseRole: FamilyRoleValue =
+    primaryRole === "FatherHusband" ? "MotherWife" : "FatherHusband"
+  const spouse = householdMembers[0] ?? defaultHouseholdMember
+  function setSpouseField(field: keyof HouseholdFormMember, value: string) {
+    setHouseholdMembers((prev) => {
+      const current = prev[0] ?? { ...defaultHouseholdMember }
+      return [{ ...current, [field]: value, role: spouseRole }]
+    })
+  }
   const cardRef = React.useRef<HTMLDivElement>(null)
 
   const showBreakoutSection = breakoutCandidates.length > 0
@@ -310,6 +349,7 @@ export function RegistrationForm({
     { key: "personal", title: "Personal Information" },
     ...(includeSmallGroup && !skipSmallGroup ? [{ key: "smallgroup", title: "DGroup Info" }] : []),
     ...(showBreakoutSection ? [{ key: "breakout", title: "Breakout Group" }] : []),
+    ...(cfg.sectionFamily ? [{ key: "household", title: "Your Household" }] : []),
     ...(includeDietary ? [{ key: "dietary", title: "Dietary Preferences" }] : []),
     ...(includePayment ? [{ key: "payment", title: "Payment" }] : []),
   ]
@@ -344,6 +384,20 @@ export function RegistrationForm({
   }
 
   async function handleNext() {
+    // A half-filled household row would otherwise be silently dropped at submit,
+    // leaving someone thinking they registered a family member who wasn't saved.
+    if (currentSectionKey === "household") {
+      const partial = householdMembers.some(
+        (m) =>
+          (m.firstName.trim() || m.lastName.trim()) &&
+          !(m.firstName.trim() && m.lastName.trim())
+      )
+      if (partial) {
+        toast.error("Give every household member both a first and last name, or remove them.")
+        return
+      }
+    }
+
     if (formStep === 1) {
       if (!form.firstName.trim()) {
         toast.error("First name is required.")
@@ -444,6 +498,7 @@ export function RegistrationForm({
       true,
       includeSmallGroup && !willSkipSmallGroup,
       showBreakoutSection,
+      cfg.sectionFamily,
       includeDietary,
       includePayment,
     ].filter(Boolean).length
@@ -530,29 +585,35 @@ export function RegistrationForm({
   ) {
     setSubmitting(true)
     const includeMatching = includeSmallGroup && smallGroupIntent === "wants"
-    const result = await createRegistrant(
-      eventId,
-      {
+    const registrantPayload = {
         firstName: form.firstName,
         lastName: form.lastName,
         nickname: form.nickname,
         email: form.email,
         mobileNumber: form.mobileNumber,
-        birthMonth: form.birthMonth ? parseInt(form.birthMonth, 10) : null,
-        birthYear: form.birthYear ? parseInt(form.birthYear, 10) : null,
-        lifeStageId: includeMatching ? form.lifeStageId || null : null,
-        gender: (form.gender || null) as "Male" | "Female" | null,
-        language: includeMatching ? form.language : [],
-        meetingPreference: includeMatching
-          ? ((form.meetingPreference || null) as "Online" | "Hybrid" | "InPerson" | null)
-          : null,
-        workCity: includeMatching ? form.workCity || null : null,
+        // A disabled field must never submit a value, even one seeded into state
+        // (e.g. defaultLifeStageId) or left over from a since-hidden step.
+        birthMonth: cfg.fieldBirthDate && form.birthMonth ? parseInt(form.birthMonth, 10) : null,
+        birthYear: cfg.fieldBirthDate && form.birthYear ? parseInt(form.birthYear, 10) : null,
+        ageRangeBucketId: cfg.fieldAgeRange ? form.ageRangeBucketId || null : null,
+        // Life Stage lives in Personal Information now, so it is not conditional on
+        // the DGroup step or on the person wanting a group.
+        lifeStageId: cfg.fieldLifeStage ? form.lifeStageId || null : null,
+        gender: (cfg.fieldGender ? form.gender || null : null) as "Male" | "Female" | null,
+        language: includeMatching && cfg.fieldLanguage ? form.language : [],
+        meetingPreference:
+          includeMatching && cfg.fieldMeetingPreference
+            ? ((form.meetingPreference || null) as "Online" | "Hybrid" | "InPerson" | null)
+            : null,
+        workCity: includeMatching && cfg.fieldWorkCity ? form.workCity || null : null,
         scheduleDayOfWeek:
-          includeMatching && form.scheduleDayOfWeek !== ""
+          includeMatching && cfg.fieldSchedule && form.scheduleDayOfWeek !== ""
             ? parseInt(form.scheduleDayOfWeek, 10)
             : null,
-        scheduleTimeStart: includeMatching ? form.scheduleTimeStart || null : null,
-        scheduleTimeEnd: includeMatching ? form.scheduleTimeEnd || null : null,
+        scheduleTimeStart:
+          includeMatching && cfg.fieldSchedule ? form.scheduleTimeStart || null : null,
+        scheduleTimeEnd:
+          includeMatching && cfg.fieldSchedule ? form.scheduleTimeEnd || null : null,
         claimedSmallGroupId:
           includeSmallGroup && smallGroupIntent === "already_in" ? claimedSmallGroupId || null : null,
         dietaryPreference: includeDietary
@@ -563,17 +624,62 @@ export function RegistrationForm({
         dietaryOther:
           includeDietary && form.dietaryPreference === "Other" ? form.dietaryOther || null : null,
         paymentReference: includePayment ? form.paymentReference || null : null,
-      },
-      confirmedMemberId,
-      confirmedGuestId,
-      skipDeduplication,
-      selectedBreakoutId || null,
-      walkIn ? { occurrenceId: walkIn.occurrenceId } : undefined
-    )
+    }
+
+    // Household mode registers everyone in one call and links them to a Family;
+    // otherwise this is an ordinary single-person registration.
+    const result = cfg.sectionFamily
+      ? await createHouseholdRegistration(
+          eventId,
+          registrantPayload,
+          {
+            primaryRole,
+            familyName: null,
+            members: householdMembers
+              .filter((m) => m.firstName.trim() && m.lastName.trim())
+              .map((m) => ({
+                firstName: m.firstName,
+                lastName: m.lastName,
+                nickname: m.nickname || null,
+                role: m.role,
+                birthMonth: m.birthMonth ? parseInt(m.birthMonth, 10) : null,
+                birthYear: m.birthYear ? parseInt(m.birthYear, 10) : null,
+                gender: (m.gender || null) as "Male" | "Female" | null,
+                ageRangeBucketId: m.ageRangeBucketId || null,
+              })),
+          },
+          confirmedMemberId,
+          confirmedGuestId,
+          skipDeduplication,
+          selectedBreakoutId || null,
+          walkIn ? { occurrenceId: walkIn.occurrenceId } : undefined
+        )
+      : await createRegistrant(
+          eventId,
+          registrantPayload,
+          confirmedMemberId,
+          confirmedGuestId,
+          skipDeduplication,
+          selectedBreakoutId || null,
+          walkIn ? { occurrenceId: walkIn.occurrenceId } : undefined
+        )
     setSubmitting(false)
 
     if (result.success) {
       setAssignedBreakout(result.data.breakoutGroup)
+      // Household members who are serving as volunteers aren't registered as
+      // attendees — say so rather than letting them silently vanish.
+      const skipped: string[] =
+        "skippedVolunteers" in result.data && Array.isArray(result.data.skippedVolunteers)
+          ? result.data.skippedVolunteers
+          : []
+      if (skipped.length > 0) {
+        toast.info(
+          `${skipped.join(", ")} ${skipped.length === 1 ? "is" : "are"} serving as a volunteer at this event and ${
+            skipped.length === 1 ? "doesn't" : "don't"
+          } need to register as an attendee.`
+        )
+      }
       setStep("done")
     } else {
       toast.error(result.error)
@@ -990,32 +1096,83 @@ export function RegistrationForm({
                 />
               </div>
 
-              <BirthMonthYearInput
-                month={form.birthMonth}
-                year={form.birthYear}
-                onMonthChange={(v) => set("birthMonth", v)}
-                onYearChange={(v) => set("birthYear", v)}
-              />
-
-              <div className="space-y-2">
-                <Label>Gender</Label>
-                <div className="flex gap-3">
-                  {["Male", "Female"].map((g) => (
-                    <button
-                      key={g}
-                      type="button"
-                      onClick={() => set("gender", form.gender === g ? "" : g)}
-                      className={`flex-1 rounded-lg border py-2.5 text-sm font-medium transition-colors ${
-                        form.gender === g
-                          ? "border-primary bg-primary text-primary-foreground"
-                          : "border-border bg-background hover:bg-muted"
-                      }`}
-                    >
-                      {g}
-                    </button>
-                  ))}
+              {/* Life Stage sits with the other demographics rather than in the
+                  DGroup step: it describes the person, and ministries are scoped by
+                  it, so it's worth asking whether or not they want a group. */}
+              {cfg.fieldLifeStage && lifeStages.length > 0 && (
+                <div className="space-y-2">
+                  <Label htmlFor="lifeStage">Life Stage</Label>
+                  <Select
+                    value={form.lifeStageId || "_none"}
+                    onValueChange={(v) => set("lifeStageId", v === "_none" ? "" : v)}
+                  >
+                    <SelectTrigger id="lifeStage">
+                      <SelectValue placeholder="Select life stage" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_none">Prefer not to say</SelectItem>
+                      {lifeStages.map((ls) => (
+                        <SelectItem key={ls.id} value={ls.id}>
+                          {ls.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-              </div>
+              )}
+
+              {cfg.fieldBirthDate && (
+                <BirthMonthYearInput
+                  month={form.birthMonth}
+                  year={form.birthYear}
+                  onMonthChange={(v) => set("birthMonth", v)}
+                  onYearChange={(v) => set("birthYear", v)}
+                />
+              )}
+
+              {cfg.fieldAgeRange && ageRanges.length > 0 && (
+                <div className="space-y-2">
+                  <Label htmlFor="ageRange">Age Range</Label>
+                  <Select
+                    value={form.ageRangeBucketId || "_none"}
+                    onValueChange={(v) => set("ageRangeBucketId", v === "_none" ? "" : v)}
+                  >
+                    <SelectTrigger id="ageRange">
+                      <SelectValue placeholder="Select age range" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_none">Prefer not to say</SelectItem>
+                      {ageRanges.map((r) => (
+                        <SelectItem key={r.id} value={r.id}>
+                          {r.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {cfg.fieldGender && (
+                <div className="space-y-2">
+                  <Label>Gender</Label>
+                  <div className="flex gap-3">
+                    {["Male", "Female"].map((g) => (
+                      <button
+                        key={g}
+                        type="button"
+                        onClick={() => set("gender", form.gender === g ? "" : g)}
+                        className={`flex-1 rounded-lg border py-2.5 text-sm font-medium transition-colors ${
+                          form.gender === g
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-border bg-background hover:bg-muted"
+                        }`}
+                      >
+                        {g}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </>
           )}
 
@@ -1158,88 +1315,74 @@ export function RegistrationForm({
                     </p>
                   </div>
 
-                  {lifeStages.length > 0 && (
+                  {cfg.fieldLanguage && (
                     <div className="space-y-2">
-                      <Label>Life Stage</Label>
+                      <Label>Primary Language</Label>
+                      <MultiSelect
+                        options={LANGUAGE_OPTIONS}
+                        value={form.language}
+                        onChange={(v) => setForm((prev) => ({ ...prev, language: v }))}
+                        placeholder="Select language(s)"
+                      />
+                    </div>
+                  )}
+
+                  {cfg.fieldMeetingPreference && (
+                    <div className="space-y-2">
+                      <Label>Meeting Preference</Label>
                       <Select
-                        value={form.lifeStageId}
-                        onValueChange={(v) => set("lifeStageId", v === "none" ? "" : v)}
+                        value={form.meetingPreference}
+                        onValueChange={(v) => set("meetingPreference", v === "none" ? "" : v)}
                       >
                         <SelectTrigger>
-                          <SelectValue placeholder="Select life stage" />
+                          <SelectValue placeholder="Select preference" />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="none">No preference</SelectItem>
-                          {lifeStages.map((ls) => (
-                            <SelectItem key={ls.id} value={ls.id}>
-                              {ls.name}
+                          <SelectItem value="Online">Online</SelectItem>
+                          <SelectItem value="Hybrid">Hybrid</SelectItem>
+                          <SelectItem value="InPerson">In Person</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {cfg.fieldSchedule && (
+                    <div className="space-y-2">
+                      <Label>Best time to meet</Label>
+                      <ScheduleInput
+                        allowAny
+                        dayOfWeek={form.scheduleDayOfWeek}
+                        timeStart={form.scheduleTimeStart}
+                        timeEnd={form.scheduleTimeEnd}
+                        onDayChange={(v) => set("scheduleDayOfWeek", v)}
+                        onTimeStartChange={(v) => set("scheduleTimeStart", v)}
+                        onTimeEndChange={(v) => set("scheduleTimeEnd", v)}
+                      />
+                    </div>
+                  )}
+
+                  {cfg.fieldWorkCity && (
+                    <div className="space-y-2">
+                      <Label>Work / Home City</Label>
+                      <Select
+                        value={form.workCity || "_none"}
+                        onValueChange={(v) => set("workCity", v === "_none" ? "" : v)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select city" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="_none">No preference</SelectItem>
+                          {CITY_OPTIONS.map((city) => (
+                            <SelectItem key={city} value={city}>
+                              {city}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     </div>
                   )}
-
-                  <div className="space-y-2">
-                    <Label>Primary Language</Label>
-                    <MultiSelect
-                      options={LANGUAGE_OPTIONS}
-                      value={form.language}
-                      onChange={(v) => setForm((prev) => ({ ...prev, language: v }))}
-                      placeholder="Select language(s)"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Meeting Preference</Label>
-                    <Select
-                      value={form.meetingPreference}
-                      onValueChange={(v) => set("meetingPreference", v === "none" ? "" : v)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select preference" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">No preference</SelectItem>
-                        <SelectItem value="Online">Online</SelectItem>
-                        <SelectItem value="Hybrid">Hybrid</SelectItem>
-                        <SelectItem value="InPerson">In Person</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Best time to meet</Label>
-                    <ScheduleInput
-                      allowAny
-                      dayOfWeek={form.scheduleDayOfWeek}
-                      timeStart={form.scheduleTimeStart}
-                      timeEnd={form.scheduleTimeEnd}
-                      onDayChange={(v) => set("scheduleDayOfWeek", v)}
-                      onTimeStartChange={(v) => set("scheduleTimeStart", v)}
-                      onTimeEndChange={(v) => set("scheduleTimeEnd", v)}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Work / Home City</Label>
-                    <Select
-                      value={form.workCity || "_none"}
-                      onValueChange={(v) => set("workCity", v === "_none" ? "" : v)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select city" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="_none">No preference</SelectItem>
-                        {CITY_OPTIONS.map((city) => (
-                          <SelectItem key={city} value={city}>
-                            {city}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
                 </>
               )}
             </>
@@ -1325,6 +1468,275 @@ export function RegistrationForm({
                   </SelectContent>
                 </Select>
               </div>
+            </>
+          )}
+
+          {/* ── Household ── */}
+          {cfg.sectionFamily && (!isMultiStep || currentSectionKey === "household") && (
+            <>
+              {!isMultiStep && (
+                <div className="pt-2 border-t">
+                  <p className="text-sm font-medium text-foreground">Your Household</p>
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">
+                {cfg.familySpouseOnly
+                  ? "Optional — tell us about your spouse so we can keep you together."
+                  : "Register the rest of your household here so you can all be checked in together. Only your own contact details are needed."}
+              </p>
+
+              <div className="space-y-2">
+                <Label htmlFor="primaryRole">Your role at home</Label>
+                <Select
+                  value={primaryRole}
+                  onValueChange={(v) => setPrimaryRole(v as FamilyRoleValue)}
+                >
+                  <SelectTrigger id="primaryRole">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(cfg.familySpouseOnly
+                      ? (["FatherHusband", "MotherWife"] as const)
+                      : FAMILY_ROLES
+                    ).map((role) => (
+                      <SelectItem key={role} value={role}>
+                        {FAMILY_ROLE_LABELS[role]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {cfg.familySpouseOnly ? (
+                <div className="space-y-3 rounded-lg border p-3">
+                  <p className="text-sm font-medium">
+                    Your spouse{" "}
+                    <span className="font-normal text-muted-foreground">
+                      ({FAMILY_ROLE_LABELS[spouseRole]}) — optional
+                    </span>
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="spouse-first">First Name</Label>
+                      <Input
+                        id="spouse-first"
+                        value={spouse.firstName}
+                        onChange={(e) => setSpouseField("firstName", e.target.value)}
+                        placeholder="Maria"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="spouse-last">Last Name</Label>
+                      <Input
+                        id="spouse-last"
+                        value={spouse.lastName}
+                        onChange={(e) => setSpouseField("lastName", e.target.value)}
+                        placeholder="dela Cruz"
+                      />
+                    </div>
+                  </div>
+
+                  {cfg.fieldBirthDate && (
+                    <BirthMonthYearInput
+                      month={spouse.birthMonth}
+                      year={spouse.birthYear}
+                      onMonthChange={(v) => setSpouseField("birthMonth", v)}
+                      onYearChange={(v) => setSpouseField("birthYear", v)}
+                    />
+                  )}
+
+                  {cfg.fieldGender && (
+                    <div className="space-y-2">
+                      <Label>Gender</Label>
+                      <div className="flex gap-3">
+                        {["Male", "Female"].map((g) => (
+                          <button
+                            key={g}
+                            type="button"
+                            onClick={() =>
+                              setSpouseField("gender", spouse.gender === g ? "" : g)
+                            }
+                            className={`flex-1 rounded-lg border py-2 text-sm font-medium transition-colors ${
+                              spouse.gender === g
+                                ? "border-primary bg-primary text-primary-foreground"
+                                : "border-border bg-background hover:bg-muted"
+                            }`}
+                          >
+                            {g}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+              householdMembers.map((member, index) => (
+                <div key={index} className="space-y-3 rounded-lg border p-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium">Household member {index + 1}</p>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        setHouseholdMembers((prev) => prev.filter((_, i) => i !== index))
+                      }
+                    >
+                      Remove
+                    </Button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label htmlFor={`hm-first-${index}`}>
+                        First Name <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        id={`hm-first-${index}`}
+                        value={member.firstName}
+                        onChange={(e) =>
+                          setHouseholdMembers((prev) =>
+                            prev.map((m, i) =>
+                              i === index ? { ...m, firstName: e.target.value } : m
+                            )
+                          )
+                        }
+                        placeholder="Juan"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor={`hm-last-${index}`}>
+                        Last Name <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        id={`hm-last-${index}`}
+                        value={member.lastName}
+                        onChange={(e) =>
+                          setHouseholdMembers((prev) =>
+                            prev.map((m, i) =>
+                              i === index ? { ...m, lastName: e.target.value } : m
+                            )
+                          )
+                        }
+                        placeholder="dela Cruz"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor={`hm-role-${index}`}>Relationship</Label>
+                    <Select
+                      value={member.role}
+                      onValueChange={(v) =>
+                        setHouseholdMembers((prev) =>
+                          prev.map((m, i) =>
+                            i === index ? { ...m, role: v as FamilyRoleValue } : m
+                          )
+                        )
+                      }
+                    >
+                      <SelectTrigger id={`hm-role-${index}`}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {FAMILY_ROLES.map((role) => (
+                          <SelectItem key={role} value={role}>
+                            {FAMILY_ROLE_LABELS[role]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {cfg.fieldBirthDate && (
+                    <BirthMonthYearInput
+                      month={member.birthMonth}
+                      year={member.birthYear}
+                      onMonthChange={(v) =>
+                        setHouseholdMembers((prev) =>
+                          prev.map((m, i) => (i === index ? { ...m, birthMonth: v } : m))
+                        )
+                      }
+                      onYearChange={(v) =>
+                        setHouseholdMembers((prev) =>
+                          prev.map((m, i) => (i === index ? { ...m, birthYear: v } : m))
+                        )
+                      }
+                    />
+                  )}
+
+                  {cfg.fieldAgeRange && ageRanges.length > 0 && (
+                    <div className="space-y-2">
+                      <Label htmlFor={`hm-age-${index}`}>Age Range</Label>
+                      <Select
+                        value={member.ageRangeBucketId || "_none"}
+                        onValueChange={(v) =>
+                          setHouseholdMembers((prev) =>
+                            prev.map((m, i) =>
+                              i === index
+                                ? { ...m, ageRangeBucketId: v === "_none" ? "" : v }
+                                : m
+                            )
+                          )
+                        }
+                      >
+                        <SelectTrigger id={`hm-age-${index}`}>
+                          <SelectValue placeholder="Select age range" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="_none">Prefer not to say</SelectItem>
+                          {ageRanges.map((r) => (
+                            <SelectItem key={r.id} value={r.id}>
+                              {r.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {cfg.fieldGender && (
+                    <div className="space-y-2">
+                      <Label>Gender</Label>
+                      <div className="flex gap-3">
+                        {["Male", "Female"].map((g) => (
+                          <button
+                            key={g}
+                            type="button"
+                            onClick={() =>
+                              setHouseholdMembers((prev) =>
+                                prev.map((m, i) =>
+                                  i === index ? { ...m, gender: m.gender === g ? "" : g } : m
+                                )
+                              )
+                            }
+                            className={`flex-1 rounded-lg border py-2 text-sm font-medium transition-colors ${
+                              member.gender === g
+                                ? "border-primary bg-primary text-primary-foreground"
+                                : "border-border bg-background hover:bg-muted"
+                            }`}
+                          >
+                            {g}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )))}
+
+              {!cfg.familySpouseOnly && householdMembers.length < MAX_HOUSEHOLD_MEMBERS && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() =>
+                    setHouseholdMembers((prev) => [...prev, { ...defaultHouseholdMember }])
+                  }
+                >
+                  Add household member
+                </Button>
+              )}
             </>
           )}
 

@@ -43,6 +43,7 @@ async function getMembers(where: Prisma.MemberWhereInput): Promise<MemberRow[]> 
     language: m.language,
     birthMonth: m.birthMonth,
     birthYear: m.birthYear,
+    ageRangeBucketId: m.ageRangeBucketId,
     workCity: m.workCity,
     workIndustry: m.workIndustry,
     meetingPreference: m.meetingPreference,

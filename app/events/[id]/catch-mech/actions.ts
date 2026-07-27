@@ -529,6 +529,7 @@ const registrantSelect = {
       birthYear: true,
       workCity: true,
       workIndustry: true,
+      ageRangeBucketId: true,
       meetingPreference: true,
       scheduleDayOfWeek: true,
       scheduleTimeStart: true,
@@ -668,6 +669,8 @@ export async function resolveConfirmations(
           birthYear: guest.birthYear ?? null,
           workCity: guest.workCity ?? null,
           workIndustry: guest.workIndustry ?? null,
+          // Carried over so a bracket collected at registration survives promotion.
+          ageRangeBucketId: guest.ageRangeBucketId ?? null,
           meetingPreference: guest.meetingPreference ?? null,
           dateJoined: now,
           smallGroupId,

@@ -2,7 +2,7 @@
 
 import { matchSmallGroups, matchSmallGroupsWithEscalation } from "@/lib/matching"
 import { db } from "@/lib/db"
-import type { MatchResult, EscalationLevel } from "@/lib/matching/types"
+import type { EscalationLevel } from "@/lib/matching/types"
 
 type ActionResult<T> =
   | { success: true; data: T }
@@ -75,17 +75,6 @@ export async function getSmallGroupDetails(
     }
   } catch {
     return { success: false, error: "Failed to load DGroup details" }
-  }
-}
-
-export async function findSmallGroupMatchesForGuest(
-  guestId: string
-): Promise<ActionResult<MatchResult[]>> {
-  try {
-    const results = await matchSmallGroups({ guestId }, { limit: 10 })
-    return { success: true, data: results }
-  } catch {
-    return { success: false, error: "Failed to compute matches" }
   }
 }
 

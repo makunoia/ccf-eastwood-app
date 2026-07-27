@@ -10,6 +10,11 @@ export type CandidateProfile = {
   language: string[]
   birthMonth: number | null
   birthYear: number | null
+  /**
+   * Self-reported age bracket (CCF-123). Only consulted by the age scorer when
+   * birthYear is absent — an exact birth year always wins.
+   */
+  ageRange?: { minAge: number | null; maxAge: number | null } | null
   workCity: string | null
   workIndustry: string | null
   meetingPreference: "Online" | "Hybrid" | "InPerson" | null
@@ -22,6 +27,7 @@ export const EMPTY_CANDIDATE: CandidateProfile = {
   language: [],
   birthMonth: null,
   birthYear: null,
+  ageRange: null,
   workCity: null,
   workIndustry: null,
   meetingPreference: null,

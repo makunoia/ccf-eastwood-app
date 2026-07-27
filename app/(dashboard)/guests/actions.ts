@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
+import type { Prisma } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import { canWrite } from "@/lib/permissions"
@@ -56,6 +57,7 @@ export async function createGuest(
         language: parsed.data.language,
         birthMonth: parsed.data.birthMonth ?? null,
         birthYear: parsed.data.birthYear ?? null,
+        ageRangeBucketId: parsed.data.ageRangeBucketId ?? null,
         workCity: parsed.data.workCity ?? null,
         workIndustry: parsed.data.workIndustry ?? null,
         meetingPreference: parsed.data.meetingPreference ?? null,
@@ -106,6 +108,7 @@ export async function updateGuest(
         language: parsed.data.language,
         birthMonth: parsed.data.birthMonth ?? null,
         birthYear: parsed.data.birthYear ?? null,
+        ageRangeBucketId: parsed.data.ageRangeBucketId ?? null,
         workCity: parsed.data.workCity ?? null,
         workIndustry: parsed.data.workIndustry ?? null,
         meetingPreference: parsed.data.meetingPreference ?? null,
@@ -209,6 +212,7 @@ export async function promoteGuestToMember(
         birthYear: true,
         workCity: true,
         workIndustry: true,
+        ageRangeBucketId: true,
         meetingPreference: true,
         scheduleDayOfWeek: true,
         scheduleTimeStart: true,
@@ -265,6 +269,8 @@ export async function promoteGuestToMember(
           birthYear: guest.birthYear ?? null,
           workCity: guest.workCity ?? null,
           workIndustry: guest.workIndustry ?? null,
+          // Carried over so a bracket collected at registration survives promotion.
+          ageRangeBucketId: guest.ageRangeBucketId ?? null,
           meetingPreference: guest.meetingPreference ?? null,
           dateJoined: new Date(),
           smallGroupId: groupId,
@@ -331,10 +337,43 @@ const guestMatchingProfileSchema = z.object({
   scheduleDayOfWeek: z.number().int().min(0).max(6).nullable().optional(),
   scheduleTimeStart: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
   scheduleTimeEnd: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
+  ageRangeBucketId: z.string().nullable().optional(),
 })
 
 export type GuestMatchingProfileInput = z.infer<typeof guestMatchingProfileSchema>
 
+/**
+ * Every column this action may write. Order is irrelevant — the list exists so
+ * a new profile column can only be added in one place.
+ */
+const GUEST_PROFILE_KEYS = [
+  "lifeStageId",
+  "gender",
+  "language",
+  "meetingPreference",
+  "workCity",
+  "workIndustry",
+  "birthMonth",
+  "birthYear",
+  "ageRangeBucketId",
+  "scheduleDayOfWeek",
+  "scheduleTimeStart",
+  "scheduleTimeEnd",
+] as const satisfies readonly (keyof GuestMatchingProfileInput)[]
+
+/**
+ * Saves the guest's matching profile.
+ *
+ * **Only columns the caller actually sent are written.** This used to overwrite
+ * every column unconditionally, which meant any caller that didn't know about a
+ * field silently erased it: the guest detail page's match section omits
+ * `birthMonth`/`birthYear`/`ageRangeBucketId`, and the catch-mech match section
+ * additionally omits `gender` and the whole schedule — so a single "Find
+ * matches" click wiped data collected at registration.
+ *
+ * An explicitly-sent `null` still clears the column, so callers that mean to
+ * clear a field are unaffected. Absent key = leave alone.
+ */
 export async function saveGuestMatchingProfile(
   guestId: string,
   raw: GuestMatchingProfileInput
@@ -347,22 +386,20 @@ export async function saveGuestMatchingProfile(
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
   }
   try {
-    await db.guest.update({
-      where: { id: guestId },
-      data: {
-        lifeStageId: parsed.data.lifeStageId ?? null,
-        gender: parsed.data.gender ?? null,
-        language: parsed.data.language ?? [],
-        meetingPreference: parsed.data.meetingPreference ?? null,
-        workCity: parsed.data.workCity ?? null,
-        workIndustry: parsed.data.workIndustry ?? null,
-        birthMonth: parsed.data.birthMonth ?? null,
-        birthYear: parsed.data.birthYear ?? null,
-        scheduleDayOfWeek: parsed.data.scheduleDayOfWeek ?? null,
-        scheduleTimeStart: parsed.data.scheduleTimeStart ?? null,
-        scheduleTimeEnd: parsed.data.scheduleTimeEnd ?? null,
-      },
-    })
+    const data: Prisma.GuestUpdateInput = {}
+    for (const key of GUEST_PROFILE_KEYS) {
+      // Zod strips absent optional keys, so `in` distinguishes "not sent" from
+      // "sent as null".
+      if (!(key in parsed.data)) continue
+      if (key === "language") {
+        data.language = parsed.data.language ?? []
+      } else {
+        // Every other profile column is nullable.
+        ;(data as Record<string, unknown>)[key] = parsed.data[key] ?? null
+      }
+    }
+
+    await db.guest.update({ where: { id: guestId }, data })
     revalidatePath(`/guests/${guestId}`)
     return { success: true, data: undefined }
   } catch {

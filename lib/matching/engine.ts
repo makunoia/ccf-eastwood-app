@@ -28,7 +28,7 @@ export function scoreGroup(
     lifeStage: scoreLifeStageDetailed(candidate.lifeStageId, group.lifeStageIds),
     gender:    scoreGenderDetailed(candidate.gender, group.genderFocus),
     language:  scoreLanguageDetailed(candidate.language, group.language),
-    age:       scoreAgeDetailed(candidate.birthMonth, candidate.birthYear, group.ageRangeMin, group.ageRangeMax),
+    age:       scoreAgeDetailed(candidate.birthMonth, candidate.birthYear, group.ageRangeMin, group.ageRangeMax, candidate.ageRange ?? null),
     schedule:  scoreScheduleDetailed(candidate.scheduleSlots, group.scheduleSlots),
     location:  scoreLocationDetailed(candidate.workCity, group.locationCity),
     mode:      scoreModeDetailed(candidate.meetingPreference, group.meetingFormat),
