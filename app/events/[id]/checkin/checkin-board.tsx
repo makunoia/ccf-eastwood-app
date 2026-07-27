@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { ScheduleInput } from "@/components/ui/schedule-input"
 import { Label } from "@/components/ui/label"
 import { PhonePHInput } from "@/components/ui/phone-ph-input"
+import { MultiSelect } from "@/components/ui/multi-select"
 import {
   Select,
   SelectContent,
@@ -22,7 +23,10 @@ import {
   markCheckinAttendance,
   checkInToOccurrence,
 } from "@/app/(dashboard)/events/actions"
-import { autoAssignRegistrantToBreakout } from "@/app/(dashboard)/events/breakout-actions"
+import {
+  autoAssignRegistrantToBreakout,
+  getRegistrantBreakoutGroupName,
+} from "@/app/(dashboard)/events/breakout-actions"
 import {
   saveGuestMatchingProfile,
   saveGuestClaimedGroup,
@@ -79,6 +83,9 @@ type MatchedState = {
   name: string
   nickname: string | null
   guestSmallGroupPrompt: GuestSmallGroupPrompt | null
+  // Breakout group the registrant belongs to, resolved after check-in.
+  // Null for volunteers, walk-ins with no match, or unassigned registrants.
+  breakoutGroupName: string | null
 }
 
 type Props = {
@@ -166,6 +173,7 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], defaultLi
       name: c.name,
       nickname: c.nickname,
       guestSmallGroupPrompt: c.guestSmallGroupPrompt,
+      breakoutGroupName: null,
     })
     if (c.alreadyCheckedIn) {
       setStep("already-in")
@@ -214,20 +222,28 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], defaultLi
         ? await checkInToOccurrence(occurrenceId, subject)
         : await markCheckinAttendance(subject)
 
-    setLoading(false)
-
     if (!result.success) {
+      setLoading(false)
       setError(result.error)
       return
     }
 
-    // Silently auto-assign to best breakout group in the background — only when
-    // the event opts in to auto-assignment. Otherwise the registrant either picked
-    // a group at registration or stays unassigned by choice. Volunteers are not
-    // breakout participants, so they are never auto-assigned.
-    if (occurrenceId !== null && autoAssignBreakout && matched.kind === "registrant") {
-      void autoAssignRegistrantToBreakout(matched.subjectId, eventId)
+    // Resolve the registrant's breakout group so the success screen can show it.
+    // Volunteers are not breakout participants, so they are never assigned or shown.
+    if (matched.kind === "registrant") {
+      // Auto-assign to the best breakout group first — only when the event opts in.
+      // Otherwise the registrant either picked a group at registration or stays
+      // unassigned by choice. We await so the assignment exists before we read it.
+      if (occurrenceId !== null && autoAssignBreakout) {
+        await autoAssignRegistrantToBreakout(matched.subjectId, eventId)
+      }
+      const breakout = await getRegistrantBreakoutGroupName(matched.subjectId, eventId)
+      if (breakout) {
+        setMatched((prev) => (prev ? { ...prev, breakoutGroupName: breakout.name } : prev))
+      }
     }
+
+    setLoading(false)
 
     // If this guest should be asked about a small group, show prompt first
     if (matched.guestSmallGroupPrompt !== null) {
@@ -400,6 +416,7 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], defaultLi
                     name: c.name,
                     nickname: c.nickname,
                     guestSmallGroupPrompt: c.guestSmallGroupPrompt,
+                    breakoutGroupName: null,
                   })
                   if (c.alreadyCheckedIn) {
                     setStep("already-in")
@@ -553,6 +570,16 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], defaultLi
             </h2>
             <p className="text-sm text-muted-foreground">You&apos;re checked in.</p>
           </div>
+          {matched.breakoutGroupName && (
+            <div className="mx-auto w-full max-w-xs rounded-xl border bg-muted/40 px-4 py-3">
+              <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                Your group
+              </p>
+              <p className="mt-1 text-lg font-semibold tracking-tight">
+                {matched.breakoutGroupName}
+              </p>
+            </div>
+          )}
           <p className="text-xs text-muted-foreground">Returning to start in a moment…</p>
         </div>
       </div>
@@ -618,6 +645,18 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], defaultLi
 }
 
 // ── Profile Form Sub-component ────────────────────────────────────────────────
+//
+// The "Tell us about yourself" DGroup-matching screen. It appears only when ALL
+// of the following hold, so it is skipped for anyone already accounted for:
+//   1. The checked-in subject is a matched *guest* (not a member, not a volunteer),
+//   2. who is *not yet in a DGroup* — i.e. the lookup returned a `guestSmallGroupPrompt`, and
+//   3. who taps "Yes, I'm interested" on the preceding "Are you interested in
+//      joining a DGroup?" prompt (`sg-prompt` step).
+// Members and guests already in a group never reach this step.
+//
+// Fields mirror the public registration form (`registration-form.tsx`): shared
+// MultiSelect for Language, Select for Meeting Preference / Life Stage / City —
+// intentionally the same components so the two forms stay visually in sync.
 
 type ProfileFormProps = {
   guestId: string
@@ -642,15 +681,6 @@ function ProfileForm({ guestId, existingProfile, lifeStages, defaultLifeStageId 
     scheduleTimeStart: existingProfile.scheduleTimeStart ?? "",
     scheduleTimeEnd: existingProfile.scheduleTimeEnd ?? "",
   })
-
-  function toggleLanguage(lang: string) {
-    setForm((prev) => ({
-      ...prev,
-      language: prev.language.includes(lang)
-        ? prev.language.filter((l) => l !== lang)
-        : [...prev.language, lang],
-    }))
-  }
 
   async function handleSave() {
     setSaving(true)
@@ -727,50 +757,34 @@ function ProfileForm({ guestId, existingProfile, lifeStages, defaultLifeStageId 
             </div>
           </div>
 
-          {/* Language */}
+          {/* Language — shared MultiSelect, matching the registration & small-group forms */}
           <div className="space-y-2">
-            <Label>Language</Label>
-            <div className="flex flex-wrap gap-2">
-              {LANGUAGE_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => toggleLanguage(opt.value)}
-                  className={`rounded-full border px-3 py-1 text-sm transition-colors ${
-                    form.language.includes(opt.value)
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-border bg-background hover:bg-muted"
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
+            <Label>Primary Language</Label>
+            <MultiSelect
+              options={LANGUAGE_OPTIONS}
+              value={form.language}
+              onChange={(v) => setForm((p) => ({ ...p, language: v }))}
+              placeholder="Select language(s)"
+            />
           </div>
 
           {/* Meeting Preference */}
           <div className="space-y-2">
-            <Label>How do you prefer to meet?</Label>
-            <div className="flex gap-2">
-              {[
-                { value: "InPerson", label: "In Person" },
-                { value: "Online", label: "Online" },
-                { value: "Hybrid", label: "Hybrid" },
-              ].map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setForm((p) => ({ ...p, meetingPreference: p.meetingPreference === opt.value ? "" : opt.value }))}
-                  className={`flex-1 rounded-lg border py-2.5 text-sm font-medium transition-colors ${
-                    form.meetingPreference === opt.value
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-border bg-background hover:bg-muted"
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
+            <Label>Meeting Preference</Label>
+            <Select
+              value={form.meetingPreference}
+              onValueChange={(v) => setForm((p) => ({ ...p, meetingPreference: v === "none" ? "" : v }))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select preference" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No preference</SelectItem>
+                <SelectItem value="Online">Online</SelectItem>
+                <SelectItem value="Hybrid">Hybrid</SelectItem>
+                <SelectItem value="InPerson">In Person</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Schedule */}
@@ -789,7 +803,7 @@ function ProfileForm({ guestId, existingProfile, lifeStages, defaultLifeStageId 
 
           {/* City */}
           <div className="space-y-2">
-            <Label>Work city</Label>
+            <Label>Work / Home City</Label>
             <Select
               value={form.workCity}
               onValueChange={(v) => setForm((p) => ({ ...p, workCity: v === "_none" ? "" : v }))}

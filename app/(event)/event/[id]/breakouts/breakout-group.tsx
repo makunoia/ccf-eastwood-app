@@ -4,10 +4,10 @@ import * as React from "react"
 import Link from "next/link"
 import {
   IconDots,
-  IconLoader,
+  // IconLoader, // CCF-124: re-enable with the Auto-Assign button
   IconPencil,
   IconPlus,
-  IconSparkles,
+  // IconSparkles, // CCF-124: re-enable with the Auto-Assign button
   IconTrash,
   IconUpload,
   IconUsers,
@@ -60,7 +60,7 @@ import {
   createBreakoutGroup,
   updateBreakoutGroup,
   deleteBreakoutGroup,
-  autoAssignBreakouts,
+  // autoAssignBreakouts, // CCF-124: re-enable with the Auto-Assign button
 } from "@/app/(dashboard)/events/breakout-actions"
 import { checkBreakoutDuplicates, importBreakoutGroups } from "./import-actions"
 
@@ -613,7 +613,7 @@ export function BreakoutGroupsTable({
   const [importOpen, setImportOpen] = React.useState(false)
   const [editingGroup, setEditingGroup] = React.useState<BreakoutGroupRow | null>(null)
   const [deletingGroup, setDeletingGroup] = React.useState<BreakoutGroupRow | null>(null)
-  const [autoAssigning, setAutoAssigning] = React.useState(false)
+  // CCF-124: auto-assign UI hidden — const [autoAssigning, setAutoAssigning] = React.useState(false)
 
   const filtered = React.useMemo(() => {
     let rows = breakoutGroups
@@ -641,37 +641,41 @@ export function BreakoutGroupsTable({
     [eventId, saveBreakoutIds]
   )
 
-  async function handleAutoAssign() {
-    setAutoAssigning(true)
-    const result = await autoAssignBreakouts(eventId)
-    setAutoAssigning(false)
-    if (result.success) {
-      const { assigned, skipped } = result.data
-      if (assigned === 0) {
-        toast.info("No registrants could be assigned — all groups may be at capacity.")
-      } else if (skipped > 0) {
-        toast.success(`${assigned} registrant${assigned !== 1 ? "s" : ""} assigned. ${skipped} skipped (no suitable group with capacity).`)
-      } else {
-        toast.success(`${assigned} registrant${assigned !== 1 ? "s" : ""} auto-assigned.`)
-      }
-    } else {
-      toast.error(result.error)
-    }
-  }
+  // CCF-124: auto-assign handler hidden pending refinement — re-enable with the button below.
+  // async function handleAutoAssign() {
+  //   setAutoAssigning(true)
+  //   const result = await autoAssignBreakouts(eventId)
+  //   setAutoAssigning(false)
+  //   if (result.success) {
+  //     const { assigned, skipped } = result.data
+  //     if (assigned === 0) {
+  //       toast.info("No registrants could be assigned — all groups may be at capacity.")
+  //     } else if (skipped > 0) {
+  //       toast.success(`${assigned} registrant${assigned !== 1 ? "s" : ""} assigned. ${skipped} skipped (no suitable group with capacity).`)
+  //     } else {
+  //       toast.success(`${assigned} registrant${assigned !== 1 ? "s" : ""} auto-assigned.`)
+  //     }
+  //   } else {
+  //     toast.error(result.error)
+  //   }
+  // }
 
   const headerActions: PageAction[] = [
-    ...(unassignedCount > 0 && breakoutGroups.length > 0
-      ? [{
-          label: autoAssigning ? "Assigning…" : "Auto-Assign",
-          icon: autoAssigning ? (
-            <IconLoader className="size-4 animate-spin" />
-          ) : (
-            <IconSparkles className="size-4" />
-          ),
-          onSelect: () => { void handleAutoAssign() },
-          disabled: autoAssigning,
-        }]
-      : []),
+    // CCF-124: Auto-Assign action temporarily hidden pending refinement of the
+    // matching behavior. The flow (handleAutoAssign → autoAssignBreakouts) is
+    // intact — uncomment to re-enable. See https://marknoya.atlassian.net/browse/CCF-124
+    // ...(unassignedCount > 0 && breakoutGroups.length > 0
+    //   ? [{
+    //       label: autoAssigning ? "Assigning…" : "Auto-Assign",
+    //       icon: autoAssigning ? (
+    //         <IconLoader className="size-4 animate-spin" />
+    //       ) : (
+    //         <IconSparkles className="size-4" />
+    //       ),
+    //       onSelect: () => { void handleAutoAssign() },
+    //       disabled: autoAssigning,
+    //     }]
+    //   : []),
     ...(canImport
       ? [{
           label: "Import",

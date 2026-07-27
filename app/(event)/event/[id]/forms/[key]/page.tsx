@@ -13,6 +13,7 @@ import { FormConfigEditor } from "@/app/(dashboard)/forms/form-config-editor"
 import { RegistrationFormFields } from "@/components/forms/registration-form-fields"
 import { RegistrationPageTab } from "@/components/forms/registration-page-tab"
 import { VolunteerInfoUrlCopier } from "@/components/forms/volunteer-info-url-copier"
+import { PublicLinkCopier } from "@/components/forms/public-link-copier"
 
 export async function generateMetadata({
   params,
@@ -37,6 +38,7 @@ export default async function EventFormEditorPage({
     where: { id },
     select: {
       id: true,
+      type: true,
       modules: { select: { type: true } },
       formIncludeSmallGroup: true,
       formIncludeDietary: true,
@@ -108,6 +110,16 @@ export default async function EventFormEditorPage({
               }}
             />
           </section>
+
+          {event.type === "OneTime" && (
+            <SettingCard
+              className="max-w-2xl"
+              title="Check-in link"
+              description="Share this link at the event so attendees and volunteers can check themselves in."
+            >
+              <PublicLinkCopier path={`/events/${id}/checkin`} />
+            </SettingCard>
+          )}
         </div>
       )}
 
