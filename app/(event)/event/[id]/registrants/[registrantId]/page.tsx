@@ -14,6 +14,19 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { YearInput } from "@/components/ui/year-input"
 import { Textarea } from "@/components/ui/textarea"
+import {
+  buildRegistrationFieldRows,
+  buildRegistrationSectionRows,
+  formatBirthDate,
+  formatDietary,
+  formatLanguages,
+  formatMeetingPreference,
+  formatPayment,
+  formatSchedule,
+  mergeFormConfigs,
+} from "@/lib/forms/registration-responses"
+import { getEventFormConfigs } from "@/lib/forms/context-config-server"
+import { RegistrationResponsesSection } from "./registration-responses-section"
 import { BreakoutSection } from "./breakout-match-section"
 import { RegistrantGuestDetail } from "./registrant-guest-detail"
 import { RegistrantNavHeader } from "./registrant-nav-header"
@@ -38,6 +51,8 @@ async function getRegistrant(registrantId: string, eventId: string) {
       mobileNumber: true,
       isPaid: true,
       paymentReference: true,
+      dietaryPreference: true,
+      dietaryOther: true,
       attendedAt: true,
       member: {
         select: {
@@ -52,6 +67,16 @@ async function getRegistrant(registrantId: string, eventId: string) {
           birthMonth: true,
           birthYear: true,
           gender: true,
+          lifeStage: { select: { name: true } },
+          ageRangeBucket: { select: { label: true } },
+          language: true,
+          workCity: true,
+          meetingPreference: true,
+          schedulePreferences: {
+            select: { dayOfWeek: true, timeStart: true, timeEnd: true },
+            orderBy: { dayOfWeek: "asc" },
+            take: 1,
+          },
         },
       },
       guest: {
@@ -70,6 +95,15 @@ async function getRegistrant(registrantId: string, eventId: string) {
           workCity: true,
           workIndustry: true,
           meetingPreference: true,
+          lifeStage: { select: { name: true } },
+          // The id feeds the editable profile form (which must pass it through
+          // on save); the label feeds the read-only responses list.
+          ageRangeBucketId: true,
+          ageRangeBucket: { select: { label: true } },
+          scheduleDayOfWeek: true,
+          scheduleTimeStart: true,
+          scheduleTimeEnd: true,
+          claimedSmallGroup: { select: { name: true } },
         },
       },
       breakoutGroupMemberships: {
@@ -79,6 +113,23 @@ async function getRegistrant(registrantId: string, eventId: string) {
       },
     },
   })
+}
+
+/** The household this person belongs to, plus who else in it is registered here. */
+async function getHouseholdLabel(
+  eventId: string,
+  ref: { memberId: string | null; guestId: string | null }
+): Promise<string | null> {
+  const link = await db.familyMember.findFirst({
+    where: ref.memberId ? { memberId: ref.memberId } : { guestId: ref.guestId as string },
+    select: { family: { select: { id: true, name: true, _count: { select: { members: true } } } } },
+    orderBy: { createdAt: "asc" },
+  })
+  if (!link) return null
+  const others = link.family._count.members - 1
+  return others > 0
+    ? `${link.family.name} (+${others} ${others === 1 ? "member" : "members"})`
+    : link.family.name
 }
 
 /** Returns the breakout group this member facilitates or co-facilitates in this event, if any. */
@@ -180,6 +231,56 @@ export default async function RegistrantDetailPage({
   )
 
   // Breakout group section — always first
+  // ── Registration responses ──────────────────────────────────────────────
+  // Union across contexts: we don't record which surface someone came through,
+  // so a field counts as "asked" if any context collects it.
+  const [formConfigs, familyLabel] = await Promise.all([
+    getEventFormConfigs(eventId),
+    getHouseholdLabel(eventId, {
+      memberId: registrant.memberId,
+      guestId: registrant.guestId,
+    }),
+  ])
+  const formConfig = mergeFormConfigs(formConfigs)
+  const person = registrant.member ?? registrant.guest ?? null
+  const guestOnly = registrant.guest
+  const memberSchedule = registrant.member?.schedulePreferences?.[0] ?? null
+
+  const responseFieldRows = buildRegistrationFieldRows(formConfig, {
+    fieldLifeStage: person?.lifeStage?.name ?? null,
+    fieldGender: person?.gender ?? null,
+    fieldBirthDate: formatBirthDate(person?.birthMonth ?? null, person?.birthYear ?? null),
+    fieldAgeRange: person?.ageRangeBucket?.label ?? null,
+    fieldWorkCity: person?.workCity ?? null,
+    fieldLanguage: formatLanguages(person?.language),
+    fieldSchedule: guestOnly
+      ? formatSchedule(
+          guestOnly.scheduleDayOfWeek,
+          guestOnly.scheduleTimeStart,
+          guestOnly.scheduleTimeEnd
+        )
+      : formatSchedule(
+          memberSchedule?.dayOfWeek ?? null,
+          memberSchedule?.timeStart ?? null,
+          memberSchedule?.timeEnd ?? null
+        ),
+    fieldMeetingPreference: formatMeetingPreference(person?.meetingPreference ?? null),
+  })
+
+  const responseSectionRows = buildRegistrationSectionRows(formConfig, {
+    sectionSmallGroup: guestOnly?.claimedSmallGroup?.name ?? null,
+    sectionDietary: formatDietary(registrant.dietaryPreference, registrant.dietaryOther),
+    sectionPayment: formatPayment(registrant.isPaid, registrant.paymentReference),
+    sectionFamily: familyLabel,
+  })
+
+  const responsesSection = (
+    <RegistrationResponsesSection
+      fieldRows={responseFieldRows}
+      sectionRows={responseSectionRows}
+    />
+  )
+
   const breakoutSection = (
     <section className="space-y-3">
       {isAssigned ? (
@@ -232,6 +333,7 @@ export default async function RegistrantDetailPage({
           title={name}
           subtitle={subtitle}
           guest={registrant.guest}
+          responsesSlot={responsesSection}
           breakoutSlot={breakoutSection}
           deleteSlot={deleteSection}
         />
@@ -255,6 +357,7 @@ export default async function RegistrantDetailPage({
 
       <div className="flex flex-1 flex-col gap-6 p-6">
       <div className="max-w-2xl space-y-8">
+        {responsesSection}
         {breakoutSection}
 
         {registrant.member && (

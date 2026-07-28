@@ -16,6 +16,7 @@ type Props = {
   title: string
   subtitle?: React.ReactNode
   guest: GuestData
+  responsesSlot: React.ReactNode
   breakoutSlot: React.ReactNode
   deleteSlot: React.ReactNode
 }
@@ -27,6 +28,7 @@ export function RegistrantGuestDetail({
   title,
   subtitle,
   guest,
+  responsesSlot,
   breakoutSlot,
   deleteSlot,
 }: Props) {
@@ -53,6 +55,7 @@ export function RegistrantGuestDetail({
 
       <div className="flex flex-1 flex-col gap-6 p-6">
         <div className="max-w-2xl space-y-8">
+          {responsesSlot}
           {breakoutSlot}
           <RegistrantGuestProfile
             guest={guest}

@@ -13,6 +13,7 @@ export type SetupStepKey =
   | "volunteers"
   | "breakouts"
   | "sessions"
+  | "form"
   | "register"
   | "checkin"
 
@@ -48,6 +49,7 @@ export async function getEventSetupChecklist(
     volunteerCount,
     breakoutCount,
     sessionCount,
+    formConfigCount,
     registrantCount,
     checkinCount,
   ] = await Promise.all([
@@ -58,6 +60,9 @@ export async function getEventSetupChecklist(
     isOneTime
       ? Promise.resolve(0)
       : db.eventOccurrence.count({ where: { eventId } }),
+    // New events start with no config rows at all ("bare"), so the presence of
+    // any row is the signal that the admin has been through the form builder.
+    db.eventFormConfig.count({ where: { eventId } }),
     db.eventRegistrant.count({ where: { eventId } }),
     // OneTime attendance lives on EventRegistrant.attendedAt; MultiDay/Recurring
     // use OccurrenceAttendee (participant rows only — volunteer check-ins have a
@@ -104,6 +109,14 @@ export async function getEventSetupChecklist(
   }
 
   steps.push(
+    {
+      key: "form",
+      label: "Set up the registration form",
+      description:
+        "Choose what Register, Walk-in, and Check-in each ask for. New events start with just name and contact details.",
+      done: formConfigCount > 0,
+      href: `${base}/forms/EventRegistration`,
+    },
     {
       key: "register",
       label: "Open registration",

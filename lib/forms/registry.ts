@@ -34,6 +34,14 @@ export type FormMeta = {
   usesDedicatedConfig?: boolean
   /** Event form only listed when this module is enabled on the event. */
   requiresEventModule?: EventModuleType
+  /**
+   * Skip the shared open/closed + theme editor for this form.
+   *
+   * Only Check-in: its availability is already governed per session by
+   * `EventOccurrence.isOpen`, so a second global toggle here would be a control
+   * that either does nothing or silently fights the one admins actually use.
+   */
+  omitsFormConfigEditor?: boolean
 }
 
 export const FORM_REGISTRY: Record<FormKey, FormMeta> = {
@@ -71,12 +79,25 @@ export const FORM_REGISTRY: Record<FormKey, FormMeta> = {
     key: "EventRegistration",
     label: "Registration Form",
     description:
-      "Public registration form and page. Configure which fields appear and the page banner & copy.",
+      "Public registration form and page — what Register and Walk-in ask for, plus the page banner & copy.",
     scope: "event",
     icon: IconClipboardList,
     publicPath: (eventId) => `/events/${eventId}/register`,
     themeFields: [],
     usesDedicatedConfig: true,
+  },
+  EventCheckIn: {
+    key: "EventCheckIn",
+    label: "Check-in Form",
+    description:
+      "The surface people use on the day to check themselves in. Configure what a first-time attendee is asked for.",
+    scope: "event",
+    icon: IconDoorEnter,
+    publicPath: (eventId) => `/events/${eventId}/checkin`,
+    themeFields: [],
+    usesDedicatedConfig: true,
+    // Check-in opens and closes per session, not globally — see the flag's docs.
+    omitsFormConfigEditor: true,
   },
   VolunteerSignUp: {
     key: "VolunteerSignUp",

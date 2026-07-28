@@ -60,14 +60,39 @@ export function scoreLanguageDetailed(
   return known(candidateLanguages.some((l) => groupLanguages.includes(l)) ? 1.0 : 0.0)
 }
 
+/**
+ * A candidate's self-reported age bracket (CCF-123). Only consulted when birth
+ * year is absent — birth year stays the source of truth because it's exact.
+ * Both bounds are inclusive; nulls are open-ended ("under 18", "60+").
+ */
+export type CandidateAgeRange = { minAge: number | null; maxAge: number | null }
+
 export function scoreAgeDetailed(
   candidateBirthMonth: number | null,
   candidateBirthYear: number | null,
   groupAgeRangeMin: number | null,
-  groupAgeRangeMax: number | null
+  groupAgeRangeMax: number | null,
+  candidateAgeRange: CandidateAgeRange | null = null
 ): FactorScore {
-  if (candidateBirthYear === null) return unknown
   if (groupAgeRangeMin === null && groupAgeRangeMax === null) return unknown
+
+  const min = groupAgeRangeMin ?? 0
+  const max = groupAgeRangeMax ?? Infinity
+
+  if (candidateBirthYear === null) {
+    // Fall back to the bracket the person picked, scored as a range overlap
+    // rather than a midpoint so open-ended buckets behave sensibly.
+    if (!candidateAgeRange) return unknown
+    const { minAge, maxAge } = candidateAgeRange
+    if (minAge === null && maxAge === null) return unknown
+
+    const cMin = minAge ?? 0
+    const cMax = maxAge ?? Infinity
+    if (cMin <= max && min <= cMax) return known(1.0)
+
+    const gap = cMin > max ? cMin - max : min - cMax
+    return known(Math.max(0, 1 - gap / AGE_DECAY_YEARS))
+  }
 
   const now = new Date()
   const month = candidateBirthMonth ?? 1
@@ -76,9 +101,6 @@ export function scoreAgeDetailed(
   const age = Math.floor(
     (now.getTime() - approxBirthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000)
   )
-
-  const min = groupAgeRangeMin ?? 0
-  const max = groupAgeRangeMax ?? Infinity
 
   if (age >= min && age <= max) return known(1.0)
 
@@ -190,13 +212,15 @@ export function scoreAge(
   candidateBirthMonth: number | null,
   candidateBirthYear: number | null,
   groupAgeRangeMin: number | null,
-  groupAgeRangeMax: number | null
+  groupAgeRangeMax: number | null,
+  candidateAgeRange: CandidateAgeRange | null = null
 ): number {
   return scoreAgeDetailed(
     candidateBirthMonth,
     candidateBirthYear,
     groupAgeRangeMin,
-    groupAgeRangeMax
+    groupAgeRangeMax,
+    candidateAgeRange
   ).score
 }
 

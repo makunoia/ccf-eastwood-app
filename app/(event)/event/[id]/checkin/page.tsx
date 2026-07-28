@@ -6,7 +6,6 @@ import { buildCheckinStats } from "@/lib/checkin-stats"
 import { DetailPageHeader } from "@/components/detail-page-header"
 import { StatCard } from "@/components/session-stat-card"
 import { CheckinAttendeesTable } from "./checkin-attendees-table"
-import { CopyCheckinLink } from "./copy-checkin-link"
 
 export const metadata: Metadata = {
   title: "Check-in",
@@ -113,7 +112,6 @@ export default async function CheckinPage({
             {dateLabel} · {stats.totalCount} of {totalRegistrants} checked in
           </p>
         }
-        action={<CopyCheckinLink path={`/events/${event.id}/checkin`} />}
       />
 
       <div className="flex flex-1 flex-col gap-6 p-6">

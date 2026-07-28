@@ -41,6 +41,9 @@ async function getDetailData(registrantId: string, eventId: string, prismaStatus
             lifeStageId: true,
             gender: true,
             language: true,
+            // Not editable here, but the profile form writes back every field —
+            // omitting it would blank a bracket collected at registration.
+            ageRangeBucketId: true,
             workCity: true,
             workIndustry: true,
             meetingPreference: true,

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import { canWrite } from "@/lib/permissions"
+import { getEventFormConfig } from "@/lib/forms/context-config-server"
 import { BatchSelectionProvider } from "@/components/batch/batch-selection-provider"
 import { RegistrantsClient } from "./registrants-client"
 
@@ -17,7 +18,6 @@ async function getEventRegistrants(id: string, search: string, typeFilter: strin
       id: true,
       type: true,
       price: true,
-      formIncludePayment: true,
       registrants: {
         orderBy: { createdAt: "asc" },
         select: {
@@ -88,11 +88,15 @@ export default async function RegistrantsPage({
   const search = (sp.search as string) || ""
   const typeFilter = (sp.type as string) || ""
 
-  const [session, event] = await Promise.all([
+  const [session, event, registerConfig] = await Promise.all([
     auth(),
     getEventRegistrants(id, search, typeFilter),
+    getEventFormConfig(id, "Register"),
   ])
   if (!event) notFound()
+
+  // The payment column only makes sense when the Register form collects a reference.
+  const collectsPayment = registerConfig.sectionPayment
 
   const selectionEnabled = canWrite(session, "Events")
 
@@ -105,7 +109,7 @@ export default async function RegistrantsPage({
         eventId={event.id}
         eventType={event.type}
         isPaidEvent={event.price != null}
-        formIncludePayment={event.formIncludePayment}
+        formIncludePayment={collectsPayment}
         search={search}
         typeFilter={typeFilter}
         registrants={event.registrants.map((r) => ({

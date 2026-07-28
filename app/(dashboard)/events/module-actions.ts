@@ -10,12 +10,12 @@ type ActionResult<T = void> =
 
 // ─── Registration form modules ───────────────────────────────────────────────
 
-export type RegistrationFormModule = "SmallGroup" | "Dietary" | "Payment" | "AutoAssignBreakout"
+// Which sections and fields the form collects now lives in EventFormConfig, keyed
+// per (event, context) — see `saveEventFormConfig`. Auto-assign is a placement
+// behavior rather than a form section, so it stays a flat column on Event.
+export type RegistrationFormModule = "AutoAssignBreakout"
 
-const REGISTRATION_FORM_FIELD: Record<RegistrationFormModule, "formIncludeSmallGroup" | "formIncludeDietary" | "formIncludePayment" | "autoAssignBreakout"> = {
-  SmallGroup: "formIncludeSmallGroup",
-  Dietary: "formIncludeDietary",
-  Payment: "formIncludePayment",
+const REGISTRATION_FORM_FIELD: Record<RegistrationFormModule, "autoAssignBreakout"> = {
   AutoAssignBreakout: "autoAssignBreakout",
 }
 

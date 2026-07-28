@@ -298,6 +298,26 @@ export async function autoAssignRegistrantToBreakout(
   }
 }
 
+/**
+ * Reads a registrant's current breakout group assignment for an event.
+ * Used by the public check-in success screen to show the person which breakout
+ * group they belong to. Best-effort — returns null when unassigned or on error.
+ */
+export async function getRegistrantBreakoutGroupName(
+  registrantId: string,
+  eventId: string
+): Promise<{ name: string } | null> {
+  try {
+    const membership = await db.breakoutGroupMember.findFirst({
+      where: { registrantId, breakoutGroup: { eventId } },
+      select: { breakoutGroup: { select: { name: true } } },
+    })
+    return membership ? { name: membership.breakoutGroup.name } : null
+  } catch {
+    return null
+  }
+}
+
 // ─── Auto-assign ─────────────────────────────────────────────────────────────
 
 export async function autoAssignBreakouts(

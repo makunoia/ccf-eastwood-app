@@ -3,6 +3,7 @@ import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { getEventName } from "@/lib/metadata"
 import { CheckinBoard } from "./checkin-board"
+import { getEventFormConfig } from "@/lib/forms/context-config-server"
 
 async function getEvent(id: string) {
   return db.event.findUnique({
@@ -17,9 +18,6 @@ async function getEvent(id: string) {
       themeColorPrimary: true,
       registrationPageBannerUrl: true,
       autoAssignBreakout: true,
-      formIncludeSmallGroup: true,
-      formIncludeDietary: true,
-      formIncludePayment: true,
       ministries: {
         select: {
           ministry: {
@@ -146,10 +144,17 @@ export default async function CheckinPage({
 
   // Small-group prompt after check-in; walk-in registration itself lives on the
   // registration page (linked with ?checkin=…), not here.
-  const lifeStages = event.formIncludeSmallGroup
+  const formFields = await getEventFormConfig(event.id, "CheckIn")
+  const lifeStages = formFields.fieldLifeStage
     ? await db.lifeStage.findMany({
         orderBy: { order: "asc" },
         select: { id: true, name: true },
+      })
+    : []
+  const ageRanges = formFields.fieldAgeRange
+    ? await db.ageRangeBucket.findMany({
+        orderBy: { order: "asc" },
+        select: { id: true, label: true },
       })
     : []
   const defaultLifeStageId =
@@ -173,8 +178,10 @@ export default async function CheckinPage({
             eventId={event.id}
             occurrenceId={null}
             lifeStages={lifeStages}
+            ageRanges={ageRanges}
             defaultLifeStageId={defaultLifeStageId}
             autoAssignBreakout={event.autoAssignBreakout}
+            config={formFields}
           />
         </div>
       </div>

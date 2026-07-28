@@ -18,6 +18,7 @@ type GuestData = {
   language: string[]
   birthMonth: number | null
   birthYear: number | null
+  ageRangeBucketId: string | null
   workCity: string | null
   workIndustry: string | null
   meetingPreference: string | null
@@ -52,16 +53,18 @@ function addOneHour(time: string): string {
 type Props = {
   guest: GuestData
   lifeStages: { id: string; name: string }[]
+  ageRanges: { id: string; label: string }[]
   pipelineStatus: GuestPipelineStatus
   sourceEvent?: { id: string; name: string; date: Date } | null
   eventHistory: React.ReactNode
   activityHistory: React.ReactNode
 }
 
-export function GuestDetailContent({ guest, lifeStages, pipelineStatus, sourceEvent, eventHistory, activityHistory }: Props) {
+export function GuestDetailContent({ guest, lifeStages, ageRanges, pipelineStatus, sourceEvent, eventHistory, activityHistory }: Props) {
   return (
     <GuestForm
       guest={guest}
+      ageRanges={ageRanges}
       sourceEvent={sourceEvent}
       eventHistory={eventHistory}
       activityHistory={activityHistory}

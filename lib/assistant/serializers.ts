@@ -52,6 +52,8 @@ export type AssistantMemberRow = {
   smallGroup: string | null
   groupStatus: string | null
   gender: string | null
+  /** Coarse age bracket label, e.g. "30 – 39"; set only when the person gave one. */
+  ageRange: string | null
   dateJoined: string | null
 }
 
@@ -67,6 +69,7 @@ type MemberRowSource = {
   groupStatus: string | null
   lifeStage: { name: string } | null
   smallGroup: { name: string } | null
+  ageRangeBucket: { label: string } | null
 }
 
 export function toAssistantMemberRow(m: MemberRowSource): AssistantMemberRow {
@@ -79,6 +82,7 @@ export function toAssistantMemberRow(m: MemberRowSource): AssistantMemberRow {
     smallGroup: m.smallGroup?.name ?? null,
     groupStatus: m.groupStatus,
     gender: m.gender,
+    ageRange: m.ageRangeBucket?.label ?? null,
     dateJoined: isoDate(m.dateJoined),
   }
 }
@@ -92,6 +96,8 @@ export type AssistantGuestRow = {
   phone: string | null
   lifeStage: string | null
   gender: string | null
+  /** Coarse age bracket label, e.g. "30 – 39"; set only when the person gave one. */
+  ageRange: string | null
   claimedSmallGroup: string | null
   promoted: boolean
   createdAt: string | null
@@ -109,6 +115,7 @@ type GuestRowSource = {
   createdAt: Date
   lifeStage: { name: string } | null
   claimedSmallGroup: { name: string } | null
+  ageRangeBucket: { label: string } | null
 }
 
 export function toAssistantGuestRow(g: GuestRowSource): AssistantGuestRow {
@@ -119,6 +126,7 @@ export function toAssistantGuestRow(g: GuestRowSource): AssistantGuestRow {
     phone: g.phone,
     lifeStage: g.lifeStage?.name ?? null,
     gender: g.gender,
+    ageRange: g.ageRangeBucket?.label ?? null,
     claimedSmallGroup: g.claimedSmallGroup?.name ?? null,
     promoted: g.memberId !== null,
     createdAt: isoDate(g.createdAt),

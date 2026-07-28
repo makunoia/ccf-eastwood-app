@@ -5,7 +5,6 @@ import {
   requestGroupChange,
   cancelGroupChange,
   createLedGroup,
-  updateLedGroupSchedule,
   updateLedGroupDetails,
   addMemberToLedGroup,
   addCoupleToLedGroup,
@@ -172,53 +171,6 @@ describe("cancelGroupChange", () => {
     await db.member.update({ where: { id: other.id }, data: { selfServiceToken: "tok-other" } })
 
     const result = await cancelGroupChange("tok-other", request!.id)
-    expect(result.success).toBe(false)
-  })
-})
-
-describe("updateLedGroupSchedule", () => {
-  it("updates the schedule of a group the member leads", async () => {
-    const leader = await seedMember()
-    const group = await db.smallGroup.create({ data: { name: "Led", leaderId: leader.id } })
-    await db.member.update({ where: { id: leader.id }, data: { selfServiceToken: "tok-5" } })
-
-    const result = await updateLedGroupSchedule("tok-5", group.id, {
-      dayOfWeek: 5,
-      timeStart: "19:00",
-      timeEnd: "21:00",
-    })
-    expect(result.success).toBe(true)
-
-    const updated = await db.smallGroup.findUnique({ where: { id: group.id } })
-    expect(updated?.scheduleDayOfWeek).toBe(5)
-    expect(updated?.scheduleTimeStart).toBe("19:00")
-    expect(updated?.scheduleTimeEnd).toBe("21:00")
-  })
-
-  it("refuses a group the member does not lead", async () => {
-    const leader = await seedMember()
-    const group = await db.smallGroup.create({ data: { name: "Led", leaderId: leader.id } })
-    const outsider = await seedMember({ firstName: "Outsider" })
-    await db.member.update({ where: { id: outsider.id }, data: { selfServiceToken: "tok-6" } })
-
-    const result = await updateLedGroupSchedule("tok-6", group.id, {
-      dayOfWeek: 1,
-      timeStart: "18:00",
-      timeEnd: "20:00",
-    })
-    expect(result.success).toBe(false)
-  })
-
-  it("rejects end time before start time", async () => {
-    const leader = await seedMember()
-    const group = await db.smallGroup.create({ data: { name: "Led", leaderId: leader.id } })
-    await db.member.update({ where: { id: leader.id }, data: { selfServiceToken: "tok-7" } })
-
-    const result = await updateLedGroupSchedule("tok-7", group.id, {
-      dayOfWeek: 1,
-      timeStart: "20:00",
-      timeEnd: "18:00",
-    })
     expect(result.success).toBe(false)
   })
 })

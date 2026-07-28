@@ -154,10 +154,19 @@ enum FormKey {
   MemberSelfService
   SmallGroupConfirmation
   EventRegistration
+  EventCheckIn
   VolunteerSignUp
   VolunteerInfo
   VolunteerApproval
   CatchMech
+}
+
+/// The three independent surfaces a person can fill in for an event. Each one
+/// configures its own sections and fields (see EventFormConfig).
+enum FormContext {
+  Register
+  WalkIn
+  CheckIn
 }
 
 enum PermissionAction {
@@ -251,6 +260,26 @@ model VerificationToken {
 
 // ─── App Models ──────────────────────────────────────────────────────────────
 
+/// Admin-configurable Age Range buckets — a global taxonomy managed in Settings,
+/// same as LifeStage. Offered as a coarser alternative to Birth Month+Year on
+/// registration forms; Birth Year stays the matching engine's source of truth and
+/// a bucket is only used as a fallback when birth year is absent.
+///
+/// `minAge`/`maxAge` are inclusive. A null `minAge` means "and under"; a null
+/// `maxAge` means "and over" — so the first and last buckets stay open-ended.
+model AgeRangeBucket {
+  id        String   @id @default(cuid())
+  label     String   @unique
+  minAge    Int?
+  maxAge    Int?
+  order     Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members Member[]
+  guests  Guest[]
+}
+
 model LifeStage {
   id          String     @id @default(cuid())
   name        String     @unique
@@ -278,6 +307,9 @@ model Member {
 
   lifeStageId         String?
   lifeStage           LifeStage?          @relation(fields: [lifeStageId], references: [id])
+  // Coarse alternative to birthYear when a form collects only an age bracket.
+  ageRangeBucketId    String?
+  ageRangeBucket      AgeRangeBucket?     @relation(fields: [ageRangeBucketId], references: [id])
 
   smallGroupId        String?
   smallGroup          SmallGroup?         @relation("SmallGroupMembers", fields: [smallGroupId], references: [id])
@@ -323,6 +355,9 @@ model Guest {
   // Matching fields (same set as Member — used for SmallGroup placement)
   lifeStageId      String?
   lifeStage        LifeStage?        @relation(fields: [lifeStageId], references: [id])
+  // Coarse alternative to birthYear when a form collects only an age bracket.
+  ageRangeBucketId String?
+  ageRangeBucket   AgeRangeBucket?   @relation(fields: [ageRangeBucketId], references: [id])
   gender           Gender?
   language         String[]
   birthMonth       Int?
@@ -513,6 +548,7 @@ model Event {
   catchMechVolunteerSessions CatchMechVolunteerSession[]
   memberLogs        MemberLog[]
   formConfigs       FormConfig[]
+  eventFormConfigs  EventFormConfig[]
 }
 
 model EventMinistry {
@@ -1009,5 +1045,50 @@ model FormConfig {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  @@index([eventId])
+}
+
+// ─── Event Form Config (per context) ─────────────────────────────────────────
+// Which sections and fields the Register / Walk-in / Check-in surfaces collect,
+// configured independently per context. Replaces the flat Event.formInclude*
+// booleans, which applied to every context at once.
+//
+// A missing row means "bare" — only the mandatory identity fields. New events
+// start bare by design; existing events were backfilled from their old flat
+// toggles so their live behavior carried over unchanged.
+model EventFormConfig {
+  id      String      @id @default(cuid())
+  eventId String
+  event   Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  context FormContext
+
+  // Section toggles — whole steps in the flow
+  sectionSmallGroup Boolean @default(false)
+  sectionBreakout   Boolean @default(false)
+  sectionDietary    Boolean @default(false)
+  sectionPayment    Boolean @default(false)
+  sectionFamily     Boolean @default(false)
+
+  // Section options — modifiers on a section rather than sections themselves.
+  // Spouse-only narrows Family mode to just the spouse sub-form, which is the
+  // "Spouse-only" capture tier (the three tiers are: sectionFamily off /
+  // sectionFamily + familySpouseOnly / sectionFamily alone = full household).
+  familySpouseOnly  Boolean @default(false)
+
+  // Field toggles — inputs inside Personal Information.
+  // Name + mobile/email are always collected and have no toggle.
+  fieldLifeStage         Boolean @default(false)
+  fieldGender            Boolean @default(false)
+  fieldBirthDate         Boolean @default(false)
+  fieldAgeRange          Boolean @default(false)
+  fieldWorkCity          Boolean @default(false)
+  fieldLanguage          Boolean @default(false)
+  fieldSchedule          Boolean @default(false)
+  fieldMeetingPreference Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([eventId, context])
   @@index([eventId])
 }

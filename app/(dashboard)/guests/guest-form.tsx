@@ -64,6 +64,7 @@ type GuestDetail = {
   language: string[]
   birthMonth: number | null
   birthYear: number | null
+  ageRangeBucketId: string | null
   workCity: string | null
   workIndustry: string | null
   meetingPreference: string | null
@@ -78,6 +79,8 @@ type SourceEvent = {
 
 type Props = {
   guest?: GuestDetail
+  /** Age Range buckets from Settings → Age Ranges; empty hides the field. */
+  ageRanges?: { id: string; label: string }[]
   sourceEvent?: SourceEvent | null
   eventHistory?: React.ReactNode
   activityHistory?: React.ReactNode
@@ -98,13 +101,14 @@ function toFormValues(guest: GuestDetail): GuestFormValues {
     language: guest.language,
     birthMonth: guest.birthMonth != null ? String(guest.birthMonth) : "",
     birthYear: guest.birthYear != null ? String(guest.birthYear) : "",
+    ageRangeBucketId: guest.ageRangeBucketId ?? "",
     workCity: guest.workCity ?? "",
     workIndustry: guest.workIndustry ?? "",
     meetingPreference: guest.meetingPreference ?? "",
   }
 }
 
-export function GuestForm({ guest, sourceEvent, eventHistory, activityHistory, matchSection, pipelineStatus }: Props) {
+export function GuestForm({ guest, ageRanges = [], sourceEvent, eventHistory, activityHistory, matchSection, pipelineStatus }: Props) {
   const router = useRouter()
   const isEdit = !!guest
   const isPromoted = !!guest?.memberId
@@ -366,6 +370,34 @@ export function GuestForm({ guest, sourceEvent, eventHistory, activityHistory, m
                 onYearChange={(val) => set("birthYear", val)}
                 disabled={isPromoted}
               />
+
+              {/* Hidden when no buckets are configured. The stored value still
+                  rides along in form state, so it survives a save either way. */}
+              {ageRanges.length > 0 && (
+                <div className="space-y-2">
+                  <Label htmlFor="ageRange">Age Range</Label>
+                  <Select
+                    value={form.ageRangeBucketId || "none"}
+                    onValueChange={(v) => set("ageRangeBucketId", v === "none" ? "" : v)}
+                    disabled={isPromoted}
+                  >
+                    <SelectTrigger id="ageRange">
+                      <SelectValue placeholder="Select age range" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Not specified</SelectItem>
+                      {ageRanges.map((r) => (
+                        <SelectItem key={r.id} value={r.id}>
+                          {r.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Used for matching only when birth year is missing.
+                  </p>
+                </div>
+              )}
             </section>
 
             {/* Notes */}

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { getEventName } from "@/lib/metadata"
 import { CheckinBoard } from "../checkin-board"
+import { getEventFormConfig } from "@/lib/forms/context-config-server"
 
 async function getOccurrenceWithEvent(occurrenceId: string) {
   return db.eventOccurrence.findUnique({
@@ -22,9 +23,6 @@ async function getOccurrenceWithEvent(occurrenceId: string) {
           themeColorPrimary: true,
           registrationPageBannerUrl: true,
           autoAssignBreakout: true,
-          formIncludeSmallGroup: true,
-          formIncludeDietary: true,
-          formIncludePayment: true,
           ministries: {
             select: {
               ministry: {
@@ -48,6 +46,13 @@ async function getLifeStages() {
   return db.lifeStage.findMany({
     orderBy: { order: "asc" },
     select: { id: true, name: true },
+  })
+}
+
+async function getAgeRanges() {
+  return db.ageRangeBucket.findMany({
+    orderBy: { order: "asc" },
+    select: { id: true, label: true },
   })
 }
 
@@ -125,10 +130,14 @@ export default async function OccurrenceCheckinPage({
   params: Promise<{ id: string; occurrenceId: string }>
 }) {
   const { id, occurrenceId } = await params
-  const [occurrence, lifeStages] = await Promise.all([
+  const [occurrence, allLifeStages, allAgeRanges, formFields] = await Promise.all([
     getOccurrenceWithEvent(occurrenceId),
     getLifeStages(),
+    getAgeRanges(),
+    getEventFormConfig(id, "CheckIn"),
   ])
+  const lifeStages = formFields.fieldLifeStage ? allLifeStages : []
+  const ageRanges = formFields.fieldAgeRange ? allAgeRanges : []
 
   if (!occurrence || occurrence.event.id !== id || occurrence.event.type === "OneTime") {
     notFound()
@@ -209,8 +218,10 @@ export default async function OccurrenceCheckinPage({
             eventId={id}
             occurrenceId={occurrenceId}
             lifeStages={lifeStages}
+            ageRanges={ageRanges}
             defaultLifeStageId={defaultLifeStageId}
             autoAssignBreakout={occurrence.event.autoAssignBreakout}
+            config={formFields}
           />
         </div>
       </div>

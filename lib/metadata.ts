@@ -1,5 +1,7 @@
 import { cache } from "react"
+import type { Metadata } from "next"
 import { db } from "@/lib/db"
+import { resolveEventBrand } from "@/lib/forms/event-brand"
 
 /**
  * Name lookups used only to build page titles. Wrapped in `cache` so a
@@ -10,6 +12,38 @@ export const getEventName = cache(async (id: string): Promise<string | null> => 
   const event = await db.event.findUnique({ where: { id }, select: { name: true } })
   return event?.name ?? null
 })
+
+/**
+ * The event's effective logo URL (honoring the "use ministry brand" toggle),
+ * used to drive the per-event favicon. Cached so generateMetadata and any
+ * co-request render share the single query.
+ */
+export const getEventLogoUrl = cache(async (id: string): Promise<string | null> => {
+  const event = await db.event.findUnique({
+    where: { id },
+    select: {
+      useMinistryBrand: true,
+      brandMinistryId: true,
+      logoUrl: true,
+      themeColorPrimary: true,
+      ministries: {
+        select: {
+          ministry: { select: { id: true, logoUrl: true, themeColorPrimary: true } },
+        },
+      },
+    },
+  })
+  if (!event) return null
+  return resolveEventBrand(event).logoUrl
+})
+
+/**
+ * Builds the Metadata `icons` entry for an event's favicon. Returns undefined
+ * when the event has no logo so pages fall back to the app-wide favicon.
+ */
+export function eventIcons(logoUrl: string | null): Metadata["icons"] | undefined {
+  return logoUrl ? { icon: logoUrl } : undefined
+}
 
 export const getMinistryName = cache(async (id: string): Promise<string | null> => {
   const ministry = await db.ministry.findUnique({ where: { id }, select: { name: true } })

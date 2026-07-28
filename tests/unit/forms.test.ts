@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest"
-import { scopeKeyFor, eventFormsForModules, EVENT_FORMS } from "@/lib/forms/registry"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
+import {
+  scopeKeyFor,
+  eventFormsForModules,
+  EVENT_FORMS,
+  FORM_REGISTRY,
+} from "@/lib/forms/registry"
 import { resolveFormTheme, type FormConfigData } from "@/lib/forms/config"
 
 /**
@@ -84,5 +91,64 @@ describe("forms — resolveFormTheme", () => {
     expect(theme.title).toBeNull()
     expect(theme.bannerUrl).toBeNull()
     expect(theme.primaryColor).toBeNull()
+  })
+})
+
+describe("forms — Check-in is its own event form", () => {
+  /**
+   * Check-in used to be a third tab inside the Registration form editor, which made
+   * that page hard to read: Register and Walk-in drive the same component, whereas
+   * Check-in is a different surface with a different shape (no payment, no breakout
+   * picker, no birth date, matching fields not nested under DGroup). It is now its
+   * own entry on the event Forms page.
+   */
+  it("is registered as an event-scoped form", () => {
+    const checkIn = FORM_REGISTRY.EventCheckIn
+    expect(checkIn.scope).toBe("event")
+    expect(checkIn.label).toBe("Check-in Form")
+    expect(EVENT_FORMS.map((f) => f.key)).toContain("EventCheckIn")
+  })
+
+  it("points at the public check-in URL", () => {
+    expect(FORM_REGISTRY.EventCheckIn.publicPath?.("evt1")).toBe("/events/evt1/checkin")
+  })
+
+  it("is listed regardless of enabled modules", () => {
+    // Unlike Catch Mech, check-in isn't module-gated — every event checks people in.
+    expect(eventFormsForModules([]).map((f) => f.key)).toContain("EventCheckIn")
+  })
+
+  it("omits the shared open/closed editor, since sessions own that", () => {
+    // Rendering an isOpen toggle here would be a dead control: the public check-in
+    // page never reads FormConfig.isOpen — availability comes from
+    // EventOccurrence.isOpen per session.
+    expect(FORM_REGISTRY.EventCheckIn.omitsFormConfigEditor).toBe(true)
+  })
+
+  it("is the only form that opts out of that editor", () => {
+    const opted = Object.values(FORM_REGISTRY).filter((f) => f.omitsFormConfigEditor)
+    expect(opted.map((f) => f.key)).toEqual(["EventCheckIn"])
+  })
+
+  it("has no theme fields — it isn't a branded public page", () => {
+    expect(FORM_REGISTRY.EventCheckIn.themeFields).toEqual([])
+  })
+
+  it("keeps every registry entry's key matching its record key", () => {
+    for (const [key, meta] of Object.entries(FORM_REGISTRY)) {
+      expect(meta.key, key).toBe(key)
+    }
+  })
+})
+
+describe("forms — the public check-in page has no FormConfig gate", () => {
+  it("never reads FormConfig, so no open/closed toggle may claim to control it", () => {
+    // Pins the reason EventCheckIn sets omitsFormConfigEditor. If check-in ever
+    // does start honoring FormConfig.isOpen, this fails and the flag should go.
+    const source = readFileSync(
+      join(process.cwd(), "app/events/[id]/checkin/page.tsx"),
+      "utf8"
+    )
+    expect(source).not.toContain("getFormConfig")
   })
 })

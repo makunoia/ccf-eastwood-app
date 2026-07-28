@@ -52,6 +52,7 @@ async function getMember(id: string): Promise<MemberRow | null> {
     language: m.language,
     birthMonth: m.birthMonth,
     birthYear: m.birthYear,
+    ageRangeBucketId: m.ageRangeBucketId,
     workCity: m.workCity,
     workIndustry: m.workIndustry,
     meetingPreference: m.meetingPreference,
@@ -65,6 +66,13 @@ async function getLifeStages() {
   return db.lifeStage.findMany({
     orderBy: { order: "asc" },
     select: { id: true, name: true },
+  })
+}
+
+async function getAgeRanges() {
+  return db.ageRangeBucket.findMany({
+    orderBy: { order: "asc" },
+    select: { id: true, label: true },
   })
 }
 
@@ -363,10 +371,11 @@ export default async function MemberDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const [session, member, lifeStages, registrations, smallGroupInfo, activityEntries, allSmallGroups, families, spouse] = await Promise.all([
+  const [session, member, lifeStages, ageRanges, registrations, smallGroupInfo, activityEntries, allSmallGroups, families, spouse] = await Promise.all([
     auth(),
     getMember(id),
     getLifeStages(),
+    getAgeRanges(),
     getMemberEventRegistrations(id),
     getMemberSmallGroupInfo(id),
     getMemberActivityData(id),
@@ -380,6 +389,7 @@ export default async function MemberDetailPage({
   return (
     <MemberForm
       member={member}
+      ageRanges={ageRanges}
       groupStatus={smallGroupInfo?.memberOf?.groupStatus ?? null}
       eventHistory={<MemberEventHistory registrations={registrations} />}
       activityHistory={<MemberActivityLog entries={activityEntries} />}

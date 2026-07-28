@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import { notFound, redirect } from "next/navigation"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
-import { getEventName } from "@/lib/metadata"
+import { getEventName, getEventLogoUrl, eventIcons } from "@/lib/metadata"
 import { EventHeader } from "@/components/event-header"
 import { EventSidebar } from "@/components/event-sidebar"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
@@ -86,9 +86,12 @@ export async function generateMetadata({
   params: Promise<{ id: string }>
 }): Promise<Metadata> {
   const { id } = await params
-  const name = await getEventName(id)
+  const [name, logoUrl] = await Promise.all([getEventName(id), getEventLogoUrl(id)])
   if (!name) return { title: "Event" }
-  return { title: { default: name, template: `%s · ${name}` } }
+  return {
+    title: { default: name, template: `%s · ${name}` },
+    icons: eventIcons(logoUrl),
+  }
 }
 
 export default async function EventLayout({
