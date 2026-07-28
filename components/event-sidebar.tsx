@@ -96,13 +96,13 @@ export function EventSidebar({
       title: "Breakout Groups",
       url: `${base}/breakouts`,
       icon: IconUsersGroup,
-      show: true,
+      show: modules.includes("Breakout"),
     },
     {
       title: "Volunteers",
       url: `${base}/volunteers`,
       icon: IconHeart,
-      show: true,
+      show: modules.includes("Volunteers"),
     },
     {
       title: "Baptism",

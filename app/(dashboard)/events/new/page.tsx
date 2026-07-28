@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 async function getMinistries() {
   return db.ministry.findMany({
     orderBy: { name: "asc" },
-    select: { id: true, name: true },
+    select: { id: true, name: true, logoUrl: true },
   })
 }
 

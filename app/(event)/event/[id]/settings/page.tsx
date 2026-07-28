@@ -22,8 +22,7 @@ async function getEventSettings(id: string) {
       startDate: true,
       endDate: true,
       price: true,
-      registrationStart: true,
-      registrationEnd: true,
+      allMinistries: true,
       recurrenceDayOfWeek: true,
       recurrenceFrequency: true,
       recurrenceEndDate: true,
@@ -86,39 +85,53 @@ export default async function EventSettingsPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const [event, allMinistries] = await Promise.all([
+  const [event, ministryOptions] = await Promise.all([
     getEventSettings(id),
-    db.ministry.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    db.ministry.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, logoUrl: true },
+    }),
   ])
   if (!event) notFound()
 
-  const showEmbarkation = event.type !== "Recurring"
-
-  const linkedMinistries = event.ministries.map((em) => em.ministry)
+  // A church-wide event links no ministries, so the Branding tab has to fall back
+  // to the full list or it would claim there's nothing to inherit a brand from.
+  const linkedMinistries = event.allMinistries
+    ? await db.ministry.findMany({
+        orderBy: { name: "asc" },
+        select: {
+          id: true,
+          name: true,
+          logoUrl: true,
+          themeColorPrimary: true,
+          themeColorSecondary: true,
+          themeColorAccent: true,
+        },
+      })
+    : event.ministries.map((em) => em.ministry)
 
   return (
     <EventSettingsClient
       eventId={event.id}
-      allMinistries={allMinistries}
+      eventType={event.type}
+      ministryOptions={ministryOptions}
       details={{
         name: event.name,
         description: event.description ?? "",
         ministryIds: event.ministries.map((em) => em.ministry.id),
+        allMinistries: event.allMinistries,
         type: event.type,
         startDate: toDateInput(event.startDate),
         endDate: toDateInput(event.endDate),
-        price: event.price != null ? (event.price / 100).toFixed(2) : "",
-        registrationStart: toDateInput(event.registrationStart),
-        registrationEnd: toDateInput(event.registrationEnd),
         recurrenceDayOfWeek:
           event.recurrenceDayOfWeek != null ? String(event.recurrenceDayOfWeek) : "",
         recurrenceFrequency: event.recurrenceFrequency ?? "",
         recurrenceEndDate: toDateInput(event.recurrenceEndDate),
       }}
       enabledModules={event.modules.map((m) => m.type)}
+      price={event.price != null ? (event.price / 100).toFixed(2) : ""}
       buses={event.buses}
       committees={event.committees}
-      showEmbarkation={showEmbarkation}
       branding={{
         useMinistryBrand: event.useMinistryBrand,
         brandMinistryId: event.brandMinistryId ?? "",

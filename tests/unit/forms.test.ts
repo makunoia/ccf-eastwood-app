@@ -51,7 +51,7 @@ describe("forms — eventFormsForModules", () => {
     expect(keys).not.toContain("CatchMech")
     // Non-module event forms are always present
     expect(keys).toContain("EventRegistration")
-    expect(keys).toContain("VolunteerSignUp")
+    expect(keys).toContain("EventCheckIn")
   })
 
   it("shows Catch Mech when the module is enabled", () => {
@@ -59,9 +59,19 @@ describe("forms — eventFormsForModules", () => {
     expect(keys).toContain("CatchMech")
   })
 
+  it("gates the three volunteer forms on the Volunteers module", () => {
+    const keys = eventFormsForModules(["Volunteers"]).map((f) => f.key)
+    expect(keys).toContain("VolunteerSignUp")
+    expect(keys).toContain("VolunteerInfo")
+    expect(keys).toContain("VolunteerApproval")
+  })
+
   it("only filters module-gated forms — others stay regardless", () => {
-    expect(eventFormsForModules([]).length).toBe(EVENT_FORMS.length - 1)
-    expect(eventFormsForModules(["CatchMech", "Baptism"]).length).toBe(EVENT_FORMS.length)
+    const gated = EVENT_FORMS.filter((f) => f.requiresEventModule).length
+    expect(eventFormsForModules([]).length).toBe(EVENT_FORMS.length - gated)
+    expect(eventFormsForModules(["CatchMech", "Baptism", "Volunteers"]).length).toBe(
+      EVENT_FORMS.length
+    )
   })
 })
 

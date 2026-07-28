@@ -54,10 +54,12 @@ import {
   type FormToggleKey,
 } from "@/lib/forms/context-config"
 import {
+  copyClusterFormConfig,
   copyEventFormConfig,
+  setClusterFormToggle,
   setEventFormToggle,
 } from "@/app/(dashboard)/events/form-config-actions"
-import type { FormContext } from "@/app/generated/prisma/client"
+import type { EventModuleType, FormContext } from "@/app/generated/prisma/client"
 
 /**
  * Per-context registration form builder (CCF-120). Register / Walk-in / Check-in
@@ -124,6 +126,7 @@ export type EventFormConfigs = Record<FormContext, EventFormConfigData>
 
 export function EventFormBuilder({
   eventId,
+  clusterId,
   initial,
   /**
    * Which surfaces this instance configures. Register and Walk-in live on the
@@ -131,15 +134,37 @@ export function EventFormBuilder({
    * form with its own page, so it passes just `["CheckIn"]`.
    */
   contexts = CONTEXT_ORDER,
+  modules,
   heading = "Registration form",
   blurb = "Each surface is configured on its own, and listed in the order people see it. Name, mobile number, and email are always collected — everything else is opt-in.",
+  notApplicable = [],
 }: {
-  eventId: string
+  eventId?: string
+  /** When set, the builder edits a cluster's shared form config instead of an event's (CCF-132). */
+  clusterId?: string
   initial: EventFormConfigs
   contexts?: readonly FormContext[]
+  /**
+   * The event's enabled modules. Some steps aren't the admin's to choose here —
+   * the payment step follows the Priced module and the breakout step follows the
+   * Breakout module, so offering a toggle would be a second switch fighting the
+   * first. Omitted by the cluster builder, which has no modules.
+   */
+  modules?: readonly EventModuleType[]
   heading?: string
   blurb?: string
+  /** Extra toggles hidden in every context — e.g. the cluster form has no payment/breakout/household. */
+  notApplicable?: readonly FormToggleKey[]
 }) {
+  const moduleDriven: FormToggleKey[] = modules
+    ? [
+        // Both are overlaid onto the stored config in `applyModuleGates`, so a
+        // toggle here would show a control the read path ignores.
+        "sectionPayment",
+        ...(modules.includes("Breakout") ? [] : (["sectionBreakout"] as FormToggleKey[])),
+      ]
+    : []
+  const suppressed: readonly FormToggleKey[] = [...notApplicable, ...moduleDriven]
   const [configs, setConfigs] = React.useState<EventFormConfigs>(initial)
   const [pending, setPending] = React.useState<string | null>(null)
   const [copying, setCopying] = React.useState<FormContext | null>(null)
@@ -150,7 +175,9 @@ export function EventFormBuilder({
     if (!source) return
     setConfirmCopy(null)
     setCopying(target)
-    const result = await copyEventFormConfig(eventId, source, target)
+    const result = clusterId
+      ? await copyClusterFormConfig(clusterId, source, target)
+      : await copyEventFormConfig(eventId!, source, target)
     setCopying(null)
     if (result.success) {
       // The copy is exact, so mirroring local state avoids a refetch.
@@ -171,7 +198,9 @@ export function EventFormBuilder({
       ...prev,
       [context]: { ...prev[context], [key]: next },
     }))
-    const result = await setEventFormToggle(eventId, context, key, next)
+    const result = clusterId
+      ? await setClusterFormToggle(clusterId, context, key, next)
+      : await setEventFormToggle(eventId!, context, key, next)
     setPending(null)
     if (!result.success) {
       setConfigs((prev) => ({
@@ -232,6 +261,7 @@ export function EventFormBuilder({
                   config={configs[context]}
                   pending={pending}
                   onToggle={handleToggle}
+                  notApplicable={suppressed}
                 />
               ))}
             </Accordion>
@@ -323,14 +353,16 @@ function SectionItem({
   config,
   pending,
   onToggle,
+  notApplicable = [],
 }: {
   section: FormLayoutSection
   context: FormContext
   config: EventFormConfigData
   pending: string | null
   onToggle: (context: FormContext, key: FormToggleKey) => void
+  notApplicable?: readonly FormToggleKey[]
 }) {
-  const na = NOT_APPLICABLE[context] ?? []
+  const na = [...(NOT_APPLICABLE[context] ?? []), ...notApplicable]
   if (section.key !== "personal" && na.includes(section.key)) return null
 
   const fields = section.fields.filter((f) => !na.includes(f))

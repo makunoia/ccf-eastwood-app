@@ -18,6 +18,7 @@ async function getEvent(id: string): Promise<EventRow | null> {
     name: e.name,
     description: e.description,
     ministries: e.ministries.map((em) => em.ministry),
+    allMinistries: e.allMinistries,
     type: e.type,
     startDate: e.startDate.toISOString().split("T")[0],
     endDate: e.endDate.toISOString().split("T")[0],
@@ -40,7 +41,7 @@ async function getEvent(id: string): Promise<EventRow | null> {
 async function getMinistries() {
   return db.ministry.findMany({
     orderBy: { name: "asc" },
-    select: { id: true, name: true },
+    select: { id: true, name: true, logoUrl: true },
   })
 }
 

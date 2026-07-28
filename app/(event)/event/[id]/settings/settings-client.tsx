@@ -2,13 +2,11 @@
 
 import * as React from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { IconBus, IconCross, IconFish, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react"
+import { IconPencil, IconPlus, IconTrash } from "@tabler/icons-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/page-header"
-import { SettingCard } from "@/components/ui/setting-card"
-import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
@@ -30,6 +28,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   enableModule,
   disableModule,
+  setPricedModule,
   createBus,
   updateBus,
   deleteBus,
@@ -37,9 +36,13 @@ import {
 import { CommitteeManager } from "@/app/(dashboard)/events/[id]/committees"
 import { LogoUploader } from "@/components/logo-uploader"
 import { ColorThemePicker, type ColorTheme } from "@/components/color-theme-picker"
+import { MinistryPicker, type MinistryOption } from "@/components/ministry-picker"
+import { ModuleList, ModulePriceField } from "@/components/module-list"
 import { updateEventBranding, type EventBrandingValues } from "@/app/(dashboard)/events/branding-actions"
 import { updateEvent, deleteEvent } from "@/app/(dashboard)/events/actions"
 import { type EventFormValues } from "@/lib/validations/event"
+import { MODULE_LABELS, formatModuleList } from "@/lib/events/modules"
+import type { EventModuleType, EventType } from "@/app/generated/prisma/client"
 import { Textarea } from "@/components/ui/textarea"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -66,12 +69,14 @@ type LinkedMinistry = {
 
 type Props = {
   eventId: string
+  eventType: EventType
   details: EventFormValues
-  allMinistries: { id: string; name: string }[]
-  enabledModules: string[]
+  ministryOptions: MinistryOption[]
+  enabledModules: EventModuleType[]
+  /** Decimal string ("2500.00"), empty when the event is free. */
+  price: string
   buses: BusRow[]
   committees: Committee[]
-  showEmbarkation: boolean
   branding: EventBrandingValues
   linkedMinistries: LinkedMinistry[]
 }
@@ -343,11 +348,11 @@ const DAY_OF_WEEK_OPTIONS = [
 function DetailsTab({
   eventId,
   initial,
-  allMinistries,
+  ministryOptions,
 }: {
   eventId: string
   initial: EventFormValues
-  allMinistries: { id: string; name: string }[]
+  ministryOptions: MinistryOption[]
 }) {
   const [form, setForm] = React.useState<EventFormValues>(initial)
   const [saving, setSaving] = React.useState(false)
@@ -391,41 +396,15 @@ function DetailsTab({
           />
         </div>
 
-        <div className="space-y-2">
-          <Label>Ministry</Label>
-          <p className="text-xs text-muted-foreground">
-            Select one or more ministries, or leave blank for a ministry-agnostic event.
-          </p>
-          {allMinistries.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No ministries configured.</p>
-          ) : (
-            <div className="space-y-2 rounded-md border p-3">
-              {allMinistries.map((m) => (
-                <div key={m.id} className="flex items-center gap-2">
-                  <Checkbox
-                    id={`ministry-${m.id}`}
-                    checked={form.ministryIds.includes(m.id)}
-                    onCheckedChange={(checked) => {
-                      setDirty(true)
-                      setForm((prev) => ({
-                        ...prev,
-                        ministryIds: checked
-                          ? [...prev.ministryIds, m.id]
-                          : prev.ministryIds.filter((id) => id !== m.id),
-                      }))
-                    }}
-                  />
-                  <label
-                    htmlFor={`ministry-${m.id}`}
-                    className="text-sm leading-none cursor-pointer"
-                  >
-                    {m.name}
-                  </label>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <MinistryPicker
+          ministries={ministryOptions}
+          selectedIds={form.ministryIds}
+          allMinistries={form.allMinistries}
+          onChange={(next) => {
+            setDirty(true)
+            setForm((prev) => ({ ...prev, ...next }))
+          }}
+        />
 
         <div className="space-y-2">
           <Label htmlFor="type">Event Type</Label>
@@ -562,54 +541,10 @@ function DetailsTab({
         </section>
       )}
 
-      {/* Registration — not applicable for Recurring events */}
-      {!isRecurring && (
-        <section className="space-y-4">
-          <h3 className="type-label text-muted-foreground">Registration Window</h3>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="registrationStart">Opens</Label>
-              <Input
-                id="registrationStart"
-                type="date"
-                value={form.registrationStart}
-                onChange={(e) => set("registrationStart", e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="registrationEnd">Closes</Label>
-              <Input
-                id="registrationEnd"
-                type="date"
-                value={form.registrationEnd}
-                onChange={(e) => set("registrationEnd", e.target.value)}
-              />
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* Pricing — not applicable for Recurring events */}
-      {!isRecurring && (
-        <section className="space-y-4">
-          <h3 className="type-label text-muted-foreground">Pricing</h3>
-          <div className="space-y-2">
-            <Label htmlFor="price">Price (PHP)</Label>
-            <Input
-              id="price"
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.price}
-              onChange={(e) => set("price", e.target.value)}
-              placeholder="Leave blank for free"
-            />
-            <p className="text-xs text-muted-foreground">
-              Leave blank if the event is free.
-            </p>
-          </div>
-        </section>
-      )}
+      {/* Pricing lives with the Priced Event module, and the registration window
+          with the form it governs — see the Modules tab and Forms → Registration
+          Form. Keeping them out of this form is also what stops a Details save
+          from overwriting settings this screen no longer shows. */}
 
       {dirty && (
         <Button type="submit" disabled={saving}>
@@ -624,12 +559,13 @@ function DetailsTab({
 
 export function EventSettingsClient({
   eventId,
+  eventType,
   details,
-  allMinistries,
+  ministryOptions,
   enabledModules,
+  price,
   buses,
   committees,
-  showEmbarkation,
   branding,
   linkedMinistries,
 }: Props) {
@@ -638,7 +574,19 @@ export function EventSettingsClient({
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const validTabs = ["details", "modules", "committees", "branding", "danger-zone"]
+  const [modules, setModules] = React.useState<EventModuleType[]>(enabledModules)
+  const [togglingModule, setTogglingModule] = React.useState<string | null>(null)
+
+  const hasVolunteers = modules.includes("Volunteers")
+
+  // Committees exist only to organise volunteers, so the tab goes with the module.
+  const validTabs = [
+    "details",
+    "modules",
+    ...(hasVolunteers ? ["committees"] : []),
+    "branding",
+    "danger-zone",
+  ]
   const tabParam = searchParams.get("tab")
   const activeTab = tabParam && validTabs.includes(tabParam) ? tabParam : "details"
 
@@ -647,9 +595,9 @@ export function EventSettingsClient({
     params.set("tab", value)
     router.replace(`${pathname}?${params.toString()}`, { scroll: false })
   }
-
-  const [modules, setModules] = React.useState<Set<string>>(new Set(enabledModules))
-  const [togglingModule, setTogglingModule] = React.useState<string | null>(null)
+  const [priceInput, setPriceInput] = React.useState(price)
+  const [priceDirty, setPriceDirty] = React.useState(false)
+  const [savingPrice, setSavingPrice] = React.useState(false)
   const [busDialogOpen, setBusDialogOpen] = React.useState(false)
   const [editingBus, setEditingBus] = React.useState<BusRow | undefined>()
   const [deletingBusId, setDeletingBusId] = React.useState<string | null>(null)
@@ -658,19 +606,49 @@ export function EventSettingsClient({
   const [confirmEventName, setConfirmEventName] = React.useState("")
   const [deletingEvent, setDeletingEvent] = React.useState(false)
 
-  async function handleToggleModule(type: string) {
+  async function handleToggleModule(type: EventModuleType) {
     setTogglingModule(type)
-    const enabled = modules.has(type)
-    const result = enabled
-      ? await disableModule(eventId, type as "Baptism" | "Embarkation" | "CatchMech")
-      : await enableModule(eventId, type as "Baptism" | "Embarkation" | "CatchMech")
+    const isEnabled = modules.includes(type)
+
+    if (isEnabled) {
+      const result = await disableModule(eventId, type)
+      setTogglingModule(null)
+      if (!result.success) {
+        toast.error(result.error)
+        return
+      }
+      setModules((prev) => prev.filter((m) => m !== type))
+      if (type === "Priced") setPriceInput("")
+      return
+    }
+
+    const result = await enableModule(eventId, type)
     setTogglingModule(null)
+    if (!result.success) {
+      toast.error(result.error)
+      return
+    }
+    // The server may have enabled requirements alongside the target — mirror
+    // exactly what it did rather than assuming only `type` changed.
+    setModules((prev) => [...new Set([...prev, ...result.data.enabled])])
+    const alsoEnabled = result.data.enabled.filter((m) => m !== type)
+    if (alsoEnabled.length > 0) {
+      toast.success(
+        `${MODULE_LABELS[type]} needs ${formatModuleList(alsoEnabled)} — turned ${
+          alsoEnabled.length > 1 ? "those" : "that"
+        } on too.`
+      )
+    }
+  }
+
+  async function handleSavePrice() {
+    setSavingPrice(true)
+    const result = await setPricedModule(eventId, priceInput)
+    setSavingPrice(false)
     if (result.success) {
-      setModules((prev) => {
-        const next = new Set(prev)
-        if (enabled) { next.delete(type) } else { next.add(type) }
-        return next
-      })
+      setModules((prev) => [...new Set([...prev, "Priced" as EventModuleType])])
+      setPriceDirty(false)
+      toast.success("Price saved")
     } else {
       toast.error(result.error)
     }
@@ -711,81 +689,99 @@ export function EventSettingsClient({
         <TabsList>
           <TabsTrigger value="details">Details</TabsTrigger>
           <TabsTrigger value="modules">Modules</TabsTrigger>
-          <TabsTrigger value="committees">Committees</TabsTrigger>
+          {hasVolunteers && <TabsTrigger value="committees">Committees</TabsTrigger>}
           <TabsTrigger value="branding">Branding</TabsTrigger>
           <TabsTrigger value="danger-zone" className="text-destructive data-[state=active]:text-destructive">Danger Zone</TabsTrigger>
         </TabsList>
 
         <TabsContent value="details" className="mt-6">
-          <DetailsTab eventId={eventId} initial={details} allMinistries={allMinistries} />
+          <DetailsTab eventId={eventId} initial={details} ministryOptions={ministryOptions} />
         </TabsContent>
 
         <TabsContent value="modules" className="mt-6">
-          <section className="space-y-4 max-w-2xl">
-            <h3 className="type-label text-muted-foreground">Add-on Modules</h3>
+          <section className="max-w-2xl space-y-4">
+            <div>
+              <h3 className="text-sm font-medium">Modules</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                What this event uses. The sidebar, the setup steps, and what the
+                registration form collects all follow from these.
+              </p>
+            </div>
 
-            {/* Baptism */}
-            <SettingCard
-              icon={IconCross}
-              title="Baptism"
-              description="Track registrants who will be baptized at this event. Managed mid-event by admin."
-              control={
-                <Switch
-                  checked={modules.has("Baptism")}
-                  onCheckedChange={() => handleToggleModule("Baptism")}
-                  disabled={togglingModule === "Baptism"}
-                />
-              }
-            />
-
-            {/* Embarkation — only for OneTime/MultiDay */}
-            {showEmbarkation && (
-              <SettingCard
-                icon={IconBus}
-                title="Embarkation"
-                description="Assign registrants and volunteers to buses. Print a manifest per bus."
-                control={
-                  <Switch
-                    checked={modules.has("Embarkation")}
-                    onCheckedChange={() => handleToggleModule("Embarkation")}
-                    disabled={togglingModule === "Embarkation"}
+            <ModuleList
+              eventType={eventType}
+              enabled={modules}
+              busy={togglingModule}
+              onToggle={handleToggleModule}
+              rows={{
+                Priced: (
+                  <ModulePriceField
+                    id="module-price"
+                    value={priceInput}
+                    onChange={(next) => {
+                      setPriceDirty(true)
+                      setPriceInput(next)
+                    }}
+                    hint="Turn the module off to make the event free again."
+                    action={
+                      <Button
+                        size="sm"
+                        onClick={handleSavePrice}
+                        disabled={!priceDirty || savingPrice}
+                      >
+                        {savingPrice ? "Saving…" : "Save"}
+                      </Button>
+                    }
                   />
-                }
-              >
-                {modules.has("Embarkation") && (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-medium">Buses</p>
-                      <Button size="sm" variant="outline" onClick={() => { setEditingBus(undefined); setBusDialogOpen(true) }}>
+                ),
+                Embarkation: (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-4">
+                      <p className="text-xs font-medium text-muted-foreground">
+                        {buses.length === 0
+                          ? "No buses yet"
+                          : `${buses.length} ${buses.length === 1 ? "bus" : "buses"}`}
+                      </p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setEditingBus(undefined)
+                          setBusDialogOpen(true)
+                        }}
+                      >
                         <IconPlus className="mr-1 size-3.5" />
                         Add bus
                       </Button>
                     </div>
-                    {buses.length === 0 ? (
-                      <p className="text-sm text-muted-foreground py-2">
-                        No buses added yet.
-                      </p>
-                    ) : (
-                      <div className="space-y-2">
+                    {buses.length > 0 && (
+                      // Flat divided list, not a bordered box: this already sits
+                      // inside the module container, and a box in a box reads as
+                      // nested cards.
+                      <div className="divide-y border-t">
                         {buses.map((bus) => (
                           <div
                             key={bus.id}
-                            className="flex items-center justify-between rounded-lg border px-3 py-2"
+                            className="flex items-center justify-between gap-2 py-2"
                           >
-                            <div>
-                              <p className="text-sm font-medium">{bus.name}</p>
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium">{bus.name}</p>
                               <p className="text-xs text-muted-foreground">
                                 {DIRECTION_LABELS[bus.direction]} ·{" "}
                                 {bus._count.passengers} assigned
                                 {bus.capacity != null && ` / ${bus.capacity}`}
                               </p>
                             </div>
-                            <div className="flex items-center gap-1">
+                            <div className="flex shrink-0 items-center gap-1">
                               <Button
                                 size="icon"
                                 variant="ghost"
                                 className="size-7"
-                                onClick={() => { setEditingBus(bus); setBusDialogOpen(true) }}
+                                aria-label={`Edit ${bus.name}`}
+                                onClick={() => {
+                                  setEditingBus(bus)
+                                  setBusDialogOpen(true)
+                                }}
                               >
                                 <IconPencil className="size-3.5" />
                               </Button>
@@ -793,7 +789,11 @@ export function EventSettingsClient({
                                 size="icon"
                                 variant="ghost"
                                 className="size-7 text-destructive hover:text-destructive"
-                                onClick={() => { setBusToDelete(bus); setDeleteDialogOpen(true) }}
+                                aria-label={`Delete ${bus.name}`}
+                                onClick={() => {
+                                  setBusToDelete(bus)
+                                  setDeleteDialogOpen(true)
+                                }}
                               >
                                 <IconTrash className="size-3.5" />
                               </Button>
@@ -803,28 +803,17 @@ export function EventSettingsClient({
                       </div>
                     )}
                   </div>
-                )}
-              </SettingCard>
-            )}
-            {/* Catch Mech */}
-            <SettingCard
-              icon={IconFish}
-              title="Catch Mech"
-              description="Enable facilitators to confirm breakout group members into their DGroups via a weekly link."
-              control={
-                <Switch
-                  checked={modules.has("CatchMech")}
-                  onCheckedChange={() => handleToggleModule("CatchMech")}
-                  disabled={togglingModule === "CatchMech"}
-                />
-              }
+                ),
+              }}
             />
           </section>
         </TabsContent>
 
-        <TabsContent value="committees" className="mt-6 max-w-2xl">
-          <CommitteeManager eventId={eventId} committees={committees} />
-        </TabsContent>
+        {hasVolunteers && (
+          <TabsContent value="committees" className="mt-6 max-w-2xl">
+            <CommitteeManager eventId={eventId} committees={committees} />
+          </TabsContent>
+        )}
 
         <TabsContent value="branding" className="mt-6">
           <BrandingTab

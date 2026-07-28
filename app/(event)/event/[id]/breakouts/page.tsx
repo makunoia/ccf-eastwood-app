@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
+import { requireEventModule } from "@/lib/events/require-module"
 import { auth } from "@/lib/auth"
 import { canImport } from "@/lib/permissions"
 import { BreakoutGroupsTable } from "./breakout-group"
@@ -144,6 +145,7 @@ export default async function BreakoutsPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
+  await requireEventModule(id, "Breakout")
   const [session, event, lifeStages] = await Promise.all([
     auth(),
     getEventBreakouts(id),

@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { UserCheck, UserPlus, Users } from "lucide-react"
 import { db } from "@/lib/db"
+import { ministryLabel } from "@/lib/events/ministry-label"
 import { buildCheckinStats } from "@/lib/checkin-stats"
 import { DetailPageHeader } from "@/components/detail-page-header"
 import { StatCard } from "@/components/session-stat-card"
@@ -18,6 +19,7 @@ async function getCheckinData(eventId: string) {
       id: true,
       type: true,
       startDate: true,
+      allMinistries: true,
       ministries: { include: { ministry: { select: { name: true } } } },
     },
   })
@@ -99,7 +101,10 @@ export default async function CheckinPage({
     timeZone: "UTC",
   })
 
-  const ministryNames = event.ministries.map((em) => em.ministry.name).join(" · ")
+  const ministryNames = ministryLabel(
+    event.allMinistries,
+    event.ministries.map((em) => em.ministry.name)
+  )
 
   return (
     <>

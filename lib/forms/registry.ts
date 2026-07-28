@@ -108,6 +108,7 @@ export const FORM_REGISTRY: Record<FormKey, FormMeta> = {
     icon: IconHeartHandshake,
     publicPath: (eventId) => `/events/${eventId}/volunteer`,
     themeFields: [],
+    requiresEventModule: "Volunteers",
   },
   VolunteerInfo: {
     key: "VolunteerInfo",
@@ -118,6 +119,7 @@ export const FORM_REGISTRY: Record<FormKey, FormMeta> = {
     icon: IconUserEdit,
     publicPath: (eventId) => `/events/${eventId}/volunteer-info`,
     themeFields: ["logoUrl", "bannerUrl", "primaryColor", "title", "description"],
+    requiresEventModule: "Volunteers",
   },
   VolunteerApproval: {
     key: "VolunteerApproval",
@@ -127,6 +129,7 @@ export const FORM_REGISTRY: Record<FormKey, FormMeta> = {
     scope: "event",
     icon: IconShieldCheck,
     themeFields: [],
+    requiresEventModule: "Volunteers",
   },
   CatchMech: {
     key: "CatchMech",

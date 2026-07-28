@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { isSuperAdmin } from "@/lib/permissions"
 import { PageHeader } from "@/components/page-header"
+import { LinkTabs } from "@/components/link-tabs"
 import { type EventRow } from "./columns"
 import { EventsTable } from "./events-table"
 import { EventsToolbar } from "./toolbar"
@@ -28,6 +29,7 @@ async function getEvents(where: Prisma.EventWhereInput): Promise<EventRow[]> {
     name: e.name,
     description: e.description,
     ministries: e.ministries.map((em) => em.ministry),
+    allMinistries: e.allMinistries,
     type: e.type,
     startDate: e.startDate.toISOString().split("T")[0],
     endDate: e.endDate.toISOString().split("T")[0],
@@ -97,6 +99,13 @@ export default async function EventsPage({
         title="Events"
         description="Manage church events and registrations"
         actions={<EventsToolbar />}
+      />
+
+      <LinkTabs
+        tabs={[
+          { label: "Events", href: "/events", exact: true },
+          { label: "Event Clusters", href: "/events/clusters" },
+        ]}
       />
 
       <EventsFilters

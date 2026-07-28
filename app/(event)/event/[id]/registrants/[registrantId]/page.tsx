@@ -25,7 +25,7 @@ import {
   formatSchedule,
   mergeFormConfigs,
 } from "@/lib/forms/registration-responses"
-import { getEventFormConfigs } from "@/lib/forms/context-config-server"
+import { getEffectiveFormConfigs } from "@/lib/forms/context-config-server"
 import { RegistrationResponsesSection } from "./registration-responses-section"
 import { BreakoutSection } from "./breakout-match-section"
 import { RegistrantGuestDetail } from "./registrant-guest-detail"
@@ -235,7 +235,7 @@ export default async function RegistrantDetailPage({
   // Union across contexts: we don't record which surface someone came through,
   // so a field counts as "asked" if any context collects it.
   const [formConfigs, familyLabel] = await Promise.all([
-    getEventFormConfigs(eventId),
+    getEffectiveFormConfigs(eventId),
     getHouseholdLabel(eventId, {
       memberId: registrant.memberId,
       guestId: registrant.guestId,

@@ -4,6 +4,7 @@ import { db } from "@/lib/db"
 import { EventDashboardClient } from "./dashboard-client"
 import { ensureMultiDayOccurrences } from "@/app/(dashboard)/events/actions"
 import { loadRecurringSeriesSummaries } from "@/lib/events/series-summary"
+import { loadEventAttendanceBreakdown } from "@/lib/events/attendance-breakdown"
 import { getEventSetupChecklist } from "@/lib/events/setup-checklist"
 
 export const metadata: Metadata = {
@@ -45,6 +46,8 @@ async function getEventDashboard(id: string, period: PeriodFilter) {
       registrationStart: true,
       registrationEnd: true,
       setupDismissedAt: true,
+      modules: { select: { type: true } },
+      allMinistries: true,
       recurrenceDayOfWeek: true,
       recurrenceFrequency: true,
       recurrenceEndDate: true,
@@ -151,30 +154,17 @@ async function getEventDashboard(id: string, period: PeriodFilter) {
   const recurringSeriesSummaries =
     event.type === "Recurring" ? await loadRecurringSeriesSummaries(db, event.id) : []
 
-  const uniqueAttendees =
-    event.type === "OneTime"
-      ? new Set(
-          event.registrants
-            .filter((r) => r.attendedAt && r.attendedAt >= periodStart && r.attendedAt <= periodEnd)
-            .map((r) => r.id)
-        ).size
-      : (
-          await db.occurrenceAttendee.findMany({
-            where: {
-              // Participant attendance only — exclude volunteer check-ins.
-              registrantId: { not: null },
-              occurrence: {
-                eventId: event.id,
-                date: {
-                  gte: periodStart,
-                  lte: periodEnd,
-                },
-              },
-            },
-            distinct: ["registrantId"],
-            select: { registrantId: true },
-          })
-        ).length
+  // First-timer / member / DGroup split per Life Stage (CCF-92). Its totals row
+  // is the distinct-participant count for the period, so it also feeds the
+  // "Unique Attendees" KPI — one source of truth for who attended.
+  const attendanceBreakdown = await loadEventAttendanceBreakdown(
+    db,
+    event.id,
+    event.type,
+    periodStart,
+    periodEnd
+  )
+  const uniqueAttendees = attendanceBreakdown.total.attendees
 
   const breakoutGroupIds = event.breakoutGroups.map((bg) => bg.id)
   const confirmedGuestRequests =
@@ -363,6 +353,7 @@ async function getEventDashboard(id: string, period: PeriodFilter) {
     description: event.description,
     type: event.type,
     setupDismissedAt: event.setupDismissedAt,
+    modules: event.modules.map((m) => m.type),
     startDate: event.startDate.toISOString(),
     endDate: event.endDate.toISOString(),
     price: event.price,
@@ -372,6 +363,7 @@ async function getEventDashboard(id: string, period: PeriodFilter) {
     recurrenceFrequency: event.recurrenceFrequency,
     recurrenceEndDate: event.recurrenceEndDate?.toISOString() ?? null,
     ministries: event.ministries.map((em) => em.ministry.name),
+    allMinistries: event.allMinistries,
     registrantCount: event._count.registrants,
     paidCount,
     attendedCount,
@@ -385,6 +377,7 @@ async function getEventDashboard(id: string, period: PeriodFilter) {
       attendees: occurrence._count.attendees,
     })),
     registrationSeries,
+    attendanceBreakdown,
     placement: {
       inGroup,
       membersUnassigned,
@@ -447,7 +440,7 @@ export default async function EventDashboardPage({
   // Setup walkthrough — only built while the admin hasn't dismissed it.
   const setup = event.setupDismissedAt
     ? null
-    : await getEventSetupChecklist(event.id, event.type)
+    : await getEventSetupChecklist(event.id, event.type, event.modules)
 
   return (
     <EventDashboardClient event={event} setup={setup} />

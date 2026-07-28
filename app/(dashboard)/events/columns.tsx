@@ -17,6 +17,7 @@ export type EventRow = {
   id: string
   name: string
   ministries: { id: string; name: string }[]
+  allMinistries: boolean
   startDate: string
   endDate: string
   price: number | null

@@ -1,13 +1,14 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
+import { ministryLabel } from "@/lib/events/ministry-label"
 import { getEventName } from "@/lib/metadata"
 import { RegistrationForm } from "./registration-form"
 import { fetchBreakoutCandidates } from "@/lib/breakout-suggestion-server"
 import { PublicFormShell } from "@/components/public-form-shell"
 import { FormClosed } from "@/components/form-closed"
 import { getFormConfig, resolveFormTheme } from "@/lib/forms/config"
-import { getEventFormConfig } from "@/lib/forms/context-config-server"
+import { getEffectiveFormConfig } from "@/lib/forms/context-config-server"
 import { resolveEventBrand } from "@/lib/forms/event-brand"
 import { isWithinRegistrationWindow } from "@/lib/events/registration-window"
 
@@ -21,6 +22,7 @@ async function getEvent(id: string) {
       startDate: true,
       endDate: true,
       price: true,
+      allMinistries: true,
       registrationStart: true,
       registrationEnd: true,
       useMinistryBrand: true,
@@ -113,7 +115,7 @@ export default async function RegisterPage({
   if ((!formConfig.isOpen || !withinWindow) && !walkIn) return <FormClosed />
 
   // Walk-ins are the same form as Register but a separate configured context.
-  const formFields = await getEventFormConfig(id, walkIn ? "WalkIn" : "Register")
+  const formFields = await getEffectiveFormConfig(id, walkIn ? "WalkIn" : "Register")
 
   const lifeStages = formFields.fieldLifeStage
     ? await db.lifeStage.findMany({
@@ -157,7 +159,10 @@ export default async function RegisterPage({
       : await fetchBreakoutCandidates(event.id, breakoutOccurrenceId, false)
 
   const brand = resolveEventBrand(event)
-  const ministryNames = event.ministries.map((em) => em.ministry.name).join(" · ")
+  const ministryNames = ministryLabel(
+    event.allMinistries,
+    event.ministries.map((em) => em.ministry.name)
+  )
   const dateLabel = event.startDate.toLocaleDateString("en-PH", {
     month: "long",
     day: "numeric",

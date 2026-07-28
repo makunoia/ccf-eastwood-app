@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { canExport } from "@/lib/permissions"
 import { isEstablishedAttendee } from "@/lib/session-stats"
+import { ministryLabel } from "@/lib/events/ministry-label"
 import { BreadcrumbOverride } from "@/components/breadcrumb-context"
 import { DetailPageHeader } from "@/components/detail-page-header"
 import { StatCard } from "@/components/session-stat-card"
@@ -20,6 +21,7 @@ async function getOccurrenceDetail(occurrenceId: string) {
           id: true,
           name: true,
           type: true,
+          allMinistries: true,
           ministries: { include: { ministry: { select: { name: true } } } },
         },
       },
@@ -352,8 +354,13 @@ export default async function OccurrenceDetailPage({
         title={dateLabel}
         subtitle={
           <p className="text-sm text-muted-foreground">
-            {occurrence.event.ministries.map((em) => em.ministry.name).join(" · ")}
-            {occurrence.event.ministries.length > 0 && " · "}
+            {ministryLabel(
+              occurrence.event.allMinistries,
+              occurrence.event.ministries.map((em) => em.ministry.name)
+            )}
+            {(occurrence.event.allMinistries ||
+              occurrence.event.ministries.length > 0) &&
+              " · "}
             {totalCount} attended
           </p>
         }

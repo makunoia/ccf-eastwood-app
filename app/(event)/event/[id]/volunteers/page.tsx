@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
+import { requireEventModule } from "@/lib/events/require-module"
 import { auth } from "@/lib/auth"
 import { canWrite } from "@/lib/permissions"
 import { PageHeader } from "@/components/page-header"
@@ -68,6 +69,7 @@ export default async function VolunteersPage({
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>
 }) {
   const { id } = await params
+  await requireEventModule(id, "Volunteers")
   const sp = await searchParams
   const search = (sp.search as string) || ""
   const status = (sp.status as string) || ""

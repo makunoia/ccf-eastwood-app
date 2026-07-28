@@ -10,12 +10,17 @@ import { SettingCard } from "@/components/ui/setting-card"
 import { FORM_REGISTRY } from "@/lib/forms/registry"
 import { getFormConfig } from "@/lib/forms/config"
 import { FormConfigEditor } from "@/app/(dashboard)/forms/form-config-editor"
-import { getEventFormConfigs } from "@/lib/forms/context-config-server"
+import { getEffectiveFormConfigs } from "@/lib/forms/context-config-server"
 import { EventFormBuilder } from "@/components/forms/event-form-builder"
 import { BreakoutAssignmentSetting } from "@/components/forms/breakout-assignment-setting"
 import { RegistrationPageTab } from "@/components/forms/registration-page-tab"
+import { RegistrationWindowSetting } from "@/components/forms/registration-window-setting"
 import { VolunteerInfoUrlCopier } from "@/components/forms/volunteer-info-url-copier"
 import { PublicLinkCopier } from "@/components/forms/public-link-copier"
+
+function toDateInput(d: Date | null): string {
+  return d ? d.toISOString().split("T")[0] : ""
+}
 
 export async function generateMetadata({
   params,
@@ -43,6 +48,8 @@ export default async function EventFormEditorPage({
       type: true,
       modules: { select: { type: true } },
       autoAssignBreakout: true,
+      registrationStart: true,
+      registrationEnd: true,
       registrationPageTitle: true,
       registrationPageDescription: true,
       registrationPageBannerUrl: true,
@@ -50,14 +57,16 @@ export default async function EventFormEditorPage({
   })
   if (!event) notFound()
 
+  const modules = event.modules.map((m) => m.type)
+
   // Module-gated forms (e.g. Catch Mech) only exist when their module is enabled.
-  if (meta.requiresEventModule && !event.modules.some((m) => m.type === meta.requiresEventModule)) {
+  if (meta.requiresEventModule && !modules.includes(meta.requiresEventModule)) {
     notFound()
   }
 
   const cfg = await getFormConfig(meta.key, id)
   const needsFormConfigs = meta.key === "EventRegistration" || meta.key === "EventCheckIn"
-  const formConfigs = needsFormConfigs ? await getEventFormConfigs(id) : null
+  const formConfigs = needsFormConfigs ? await getEffectiveFormConfigs(id) : null
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">
@@ -96,6 +105,17 @@ export default async function EventFormEditorPage({
       {/* Dedicated config — relocated from Event Settings */}
       {meta.key === "EventRegistration" && (
         <div className="flex flex-col gap-8">
+          {/* Recurring events register first-timers once and check everyone else in
+              per occurrence, so a window would gate the wrong thing. */}
+          {event.type !== "Recurring" && (
+            <RegistrationWindowSetting
+              eventId={id}
+              initial={{
+                registrationStart: toDateInput(event.registrationStart),
+                registrationEnd: toDateInput(event.registrationEnd),
+              }}
+            />
+          )}
           {formConfigs && (
             <EventFormBuilder
               eventId={id}
@@ -103,11 +123,14 @@ export default async function EventFormEditorPage({
               // Check-in is configured on its own Forms entry. Register and Walk-in
               // stay together here because they render the same component.
               contexts={["Register", "WalkIn"]}
+              modules={modules}
               heading="Registration form"
               blurb="Register and Walk-in are configured separately. Name, mobile number, and email are always collected — everything else is opt-in."
             />
           )}
-          <BreakoutAssignmentSetting eventId={id} initial={event.autoAssignBreakout} />
+          {modules.includes("Breakout") && (
+            <BreakoutAssignmentSetting eventId={id} initial={event.autoAssignBreakout} />
+          )}
           <section className="space-y-4">
             <h3 className="type-label text-muted-foreground">Registration &amp; check-in page</h3>
             <RegistrationPageTab
@@ -129,6 +152,7 @@ export default async function EventFormEditorPage({
               eventId={id}
               initial={formConfigs}
               contexts={["CheckIn"]}
+              modules={modules}
               heading="Check-in form"
               blurb="What someone checking in for the first time is asked for. Returning attendees just confirm who they are."
             />

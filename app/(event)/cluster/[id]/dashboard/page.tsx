@@ -1,0 +1,196 @@
+import type { Metadata } from "next"
+import Link from "next/link"
+import { notFound } from "next/navigation"
+import { IconCheck, IconCalendarEvent, IconForms, IconUserCheck, IconUsers } from "@tabler/icons-react"
+import { auth } from "@/lib/auth"
+import { db } from "@/lib/db"
+import { getClusterOverview } from "@/lib/clusters/aggregate"
+import { DetailPageHeader } from "@/components/detail-page-header"
+import { StatCard } from "@/components/session-stat-card"
+import { Badge } from "@/components/ui/badge"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+
+export const metadata: Metadata = {
+  title: "Dashboard",
+}
+
+const EVENT_TYPE_LABEL: Record<string, string> = {
+  OneTime: "One-time",
+  MultiDay: "Multi-day",
+  Recurring: "Recurring",
+}
+
+export default async function ClusterDashboardPage({
+  params,
+}: {
+  params: Promise<{ id: string }>
+}) {
+  const session = await auth()
+  const { id } = await params
+
+  const cluster = await db.eventCluster.findUnique({
+    where: { id },
+    select: { id: true, name: true, date: true, description: true },
+  })
+  if (!cluster) notFound()
+
+  const overview = await getClusterOverview(session, id)
+
+  const dateLabel = cluster.date
+    ? cluster.date.toLocaleDateString("en-PH", {
+        weekday: "long",
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+        timeZone: "UTC",
+      })
+    : null
+
+  return (
+    <>
+      <DetailPageHeader
+        title="Dashboard"
+        subtitle={
+          <p className="text-sm text-muted-foreground">
+            {[dateLabel, cluster.description].filter(Boolean).join(" · ") ||
+              "The whole day at a glance"}
+          </p>
+        }
+      />
+
+      <div className="flex flex-1 flex-col gap-6 p-6">
+        {/* ── Day totals (scoped to the events this user can see) ── */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <StatCard
+            label="Events"
+            value={overview.events.length}
+            icon={<IconCalendarEvent className="size-4" />}
+          />
+          <StatCard
+            label="Unique attendees"
+            value={overview.totals.uniquePeople}
+            icon={<IconUsers className="size-4" />}
+          />
+          <StatCard
+            label="Checked in"
+            value={overview.totals.checkedInPeople}
+            icon={<IconUserCheck className="size-4" />}
+          />
+          <StatCard
+            label="Via shared form"
+            value={overview.totals.viaClusterForm}
+            icon={<IconForms className="size-4" />}
+          />
+        </div>
+
+        {/* ── Per-event tiles ── */}
+        {overview.eventStats.length === 0 ? (
+          <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
+            No events in this cluster yet — add them in{" "}
+            <Link href={`/cluster/${id}/settings`} className="underline underline-offset-2">
+              Settings
+            </Link>
+            .
+          </div>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {overview.eventStats.map((stat) => (
+              <div key={stat.eventId} className="rounded-lg border p-4 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <Link
+                    href={`/event/${stat.eventId}/dashboard`}
+                    className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+                  >
+                    {stat.name}
+                  </Link>
+                  <Badge variant="outline">{EVENT_TYPE_LABEL[stat.type] ?? stat.type}</Badge>
+                </div>
+                <div className="flex gap-6 text-sm">
+                  <div>
+                    <p className="text-2xl font-semibold tabular-nums">{stat.registered}</p>
+                    <p className="text-xs text-muted-foreground">Registered</p>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-semibold tabular-nums">{stat.checkedIn}</p>
+                    <p className="text-xs text-muted-foreground">Checked in</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ── Combined roster matrix (person × events) ── */}
+        {overview.roster.rows.length > 0 && (
+          <div className="space-y-2">
+            <h3 className="type-label text-muted-foreground">Day roster</h3>
+            <div className="overflow-x-auto rounded-lg border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    {overview.events.map((e) => (
+                      <TableHead key={e.id} className="text-center whitespace-nowrap">
+                        {e.name}
+                      </TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {overview.roster.rows.map((person) => (
+                    <TableRow key={person.key}>
+                      <TableCell className="whitespace-nowrap">
+                        <span className="font-medium">
+                          {person.firstName} {person.lastName}
+                        </span>
+                        {person.isMember && (
+                          <Badge variant="secondary" className="ml-2">
+                            Member
+                          </Badge>
+                        )}
+                      </TableCell>
+                      {overview.events.map((e) => {
+                        const cell = person.perEvent[e.id]
+                        return (
+                          <TableCell key={e.id} className="text-center">
+                            {cell ? (
+                              cell.checkedIn ? (
+                                <span className="inline-flex items-center gap-1 text-green-600">
+                                  <IconCheck className="size-4" />
+                                  <span className="sr-only">Checked in</span>
+                                </span>
+                              ) : (
+                                <span
+                                  className="inline-block size-2 rounded-full bg-primary/60"
+                                  title="Registered"
+                                />
+                              )
+                            ) : (
+                              <span className="text-muted-foreground/40">—</span>
+                            )}
+                          </TableCell>
+                        )
+                      })}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              <IconCheck className="inline size-3 text-green-600" /> checked in ·{" "}
+              <span className="inline-block size-2 rounded-full bg-primary/60 align-middle" />{" "}
+              registered · — not registered
+            </p>
+          </div>
+        )}
+      </div>
+    </>
+  )
+}
