@@ -3,6 +3,7 @@ import { notFound } from "next/navigation"
 import { auth } from "@/lib/auth"
 import { canRead } from "@/lib/permissions"
 import { db } from "@/lib/db"
+import { requireEventModule } from "@/lib/events/require-module"
 import { EventVolunteerDetail } from "./volunteer-detail"
 
 async function getData(volunteerId: string, eventId: string) {
@@ -49,6 +50,7 @@ export default async function EventVolunteerDetailPage({
   params: Promise<{ id: string; volunteerId: string }>
 }) {
   const { id: eventId, volunteerId } = await params
+  await requireEventModule(eventId, "Volunteers")
   const { volunteer, committees } = await getData(volunteerId, eventId)
   if (!volunteer) notFound()
 

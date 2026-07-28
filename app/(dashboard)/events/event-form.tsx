@@ -7,7 +7,6 @@ import { DetailPageHeader } from "@/components/detail-page-header"
 import { BreadcrumbOverride } from "@/components/breadcrumb-context"
 
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
@@ -27,15 +26,19 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { MobileFormActions } from "@/components/mobile-form-actions"
+import { MinistryPicker, type MinistryOption } from "@/components/ministry-picker"
+import { ModulePicker } from "@/components/module-picker"
 import {
   defaultEventForm,
+  defaultModuleSelection,
   type EventFormValues,
+  type EventModuleSelection,
 } from "@/lib/validations/event"
 import { createEvent, updateEvent, deleteEvent } from "./actions"
 import { type EventRow } from "./columns"
 
 type Props = {
-  ministries: { id: string; name: string }[]
+  ministries: MinistryOption[]
   event?: EventRow
 }
 
@@ -54,15 +57,10 @@ function toFormValues(event: EventRow): EventFormValues {
     name: event.name,
     description: event.description ?? "",
     ministryIds: event.ministries.map((m) => m.id),
+    allMinistries: event.allMinistries,
     type: event.type,
     startDate: event.startDate,
     endDate: event.endDate,
-    price:
-      event.price != null
-        ? (event.price / 100).toFixed(2)
-        : "",
-    registrationStart: event.registrationStart ?? "",
-    registrationEnd: event.registrationEnd ?? "",
     recurrenceDayOfWeek:
       event.recurrenceDayOfWeek != null
         ? String(event.recurrenceDayOfWeek)
@@ -78,6 +76,10 @@ export function EventForm({ ministries, event }: Props) {
   const [form, setForm] = React.useState<EventFormValues>(
     () => event ? toFormValues(event) : defaultEventForm
   )
+  // Modules are chosen only at creation. Afterwards each one is a live toggle with
+  // its own server action, so editing them belongs in Event Settings → Modules.
+  const [modules, setModules] =
+    React.useState<EventModuleSelection>(defaultModuleSelection)
   const [saving, setSaving] = React.useState(false)
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
@@ -92,6 +94,7 @@ export function EventForm({ ministries, event }: Props) {
 
   function handleRevert() {
     setForm(event ? toFormValues(event) : defaultEventForm)
+    setModules(defaultModuleSelection)
     setDirty(false)
   }
 
@@ -110,7 +113,7 @@ export function EventForm({ ministries, event }: Props) {
         toast.error(result.error)
       }
     } else {
-      const result = await createEvent(form)
+      const result = await createEvent(form, modules)
       setSaving(false)
       if (result.success) {
         toast.success("Event created")
@@ -188,41 +191,15 @@ export function EventForm({ ministries, event }: Props) {
               />
             </div>
 
-            <div className="space-y-2">
-              <Label>Ministry</Label>
-              <p className="text-xs text-muted-foreground">
-                Select one or more ministries, or leave blank for a ministry-agnostic event.
-              </p>
-              {ministries.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No ministries configured.</p>
-              ) : (
-                <div className="space-y-2 rounded-md border p-3">
-                  {ministries.map((m) => (
-                    <div key={m.id} className="flex items-center gap-2">
-                      <Checkbox
-                        id={`ministry-${m.id}`}
-                        checked={form.ministryIds.includes(m.id)}
-                        onCheckedChange={(checked) => {
-                          setDirty(true)
-                          setForm((prev) => ({
-                            ...prev,
-                            ministryIds: checked
-                              ? [...prev.ministryIds, m.id]
-                              : prev.ministryIds.filter((id) => id !== m.id),
-                          }))
-                        }}
-                      />
-                      <label
-                        htmlFor={`ministry-${m.id}`}
-                        className="text-sm leading-none cursor-pointer"
-                      >
-                        {m.name}
-                      </label>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            <MinistryPicker
+              ministries={ministries}
+              selectedIds={form.ministryIds}
+              allMinistries={form.allMinistries}
+              onChange={(next) => {
+                setDirty(true)
+                setForm((prev) => ({ ...prev, ...next }))
+              }}
+            />
 
             <div className="space-y-2">
               <Label htmlFor="type">
@@ -370,57 +347,18 @@ export function EventForm({ ministries, event }: Props) {
             </section>
           )}
 
-          {/* Registration — not applicable for Recurring events */}
-          {!isRecurring && (
-            <section className="space-y-4">
-              <h3 className="type-label text-muted-foreground">
-                Registration Window
-              </h3>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="registrationStart">Opens</Label>
-                  <Input
-                    id="registrationStart"
-                    type="date"
-                    value={form.registrationStart}
-                    onChange={(e) => set("registrationStart", e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="registrationEnd">Closes</Label>
-                  <Input
-                    id="registrationEnd"
-                    type="date"
-                    value={form.registrationEnd}
-                    onChange={(e) => set("registrationEnd", e.target.value)}
-                  />
-                </div>
-              </div>
-            </section>
-          )}
-
-          {/* Pricing — not applicable for Recurring events */}
-          {!isRecurring && (
-            <section className="space-y-4">
-              <h3 className="type-label text-muted-foreground">
-                Pricing
-              </h3>
-              <div className="space-y-2">
-                <Label htmlFor="price">Price (PHP)</Label>
-                <Input
-                  id="price"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={form.price}
-                  onChange={(e) => set("price", e.target.value)}
-                  placeholder="Leave blank for free"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Leave blank if the event is free.
-                </p>
-              </div>
-            </section>
+          {/* Modules — creation only. The registration window is not set here; it
+              lives beside the form's open/closed switch in Forms → Registration
+              Form. Pricing is part of the Priced module below. */}
+          {!isEdit && (
+            <ModulePicker
+              eventType={form.type}
+              value={modules}
+              onChange={(next) => {
+                setDirty(true)
+                setModules(next)
+              }}
+            />
           )}
         </form>
 

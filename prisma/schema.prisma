@@ -59,6 +59,14 @@ enum EventModuleType {
   Baptism
   Embarkation
   CatchMech
+  // Volunteers and Breakout were unconditionally available before CCF-131/CCF-128
+  // made them opt-in. Existing events are backfilled to enabled; new events start
+  // off, like every other module.
+  Volunteers
+  Breakout
+  // Priced is the single gate for payment tracking — it drives both the public
+  // form's payment step and the admin-side Paid / Payment Reference columns.
+  Priced
 }
 
 enum DietaryPreference {
@@ -502,6 +510,9 @@ model Event {
   name                  String
   description           String?
   type                  EventType           @default(OneTime)
+  // Church-wide event. Distinct from having no EventMinistry rows: blank means
+  // "ministry-agnostic", this means "every ministry, including ones created later".
+  allMinistries         Boolean             @default(false)
   startDate             DateTime
   endDate               DateTime
   price                 Int?                // in cents; null = free
@@ -549,6 +560,7 @@ model Event {
   memberLogs        MemberLog[]
   formConfigs       FormConfig[]
   eventFormConfigs  EventFormConfig[]
+  clusterMembership EventClusterEvent?
 }
 
 model EventMinistry {
@@ -559,6 +571,45 @@ model EventMinistry {
   createdAt  DateTime @default(now())
 
   @@id([eventId, ministryId])
+}
+
+// Event Cluster ("Event Day") — a named grouping of events that share one public
+// registration form and one aggregated admin workspace. Member events stay fully
+// independent underneath; the cluster is an aggregation layer on top.
+model EventCluster {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  date        DateTime?
+  publicToken String    @unique @default(cuid())
+  // Manual open/close for the shared public form (mirrors FormConfig.isOpen)
+  isOpen      Boolean   @default(false)
+  registrationStart DateTime?
+  registrationEnd   DateTime?
+  // Registration page customization — mirrors Event's public form fields
+  logoUrl                     String?
+  themeColorPrimary           String?
+  registrationPageTitle       String?
+  registrationPageDescription String?
+  registrationPageBannerUrl   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events      EventClusterEvent[]
+  formConfigs EventFormConfig[]
+  registrants EventRegistrant[]
+}
+
+model EventClusterEvent {
+  clusterId String
+  eventId   String
+  order     Int          @default(0)
+  cluster   EventCluster @relation(fields: [clusterId], references: [id], onDelete: Cascade)
+  event     Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  createdAt DateTime     @default(now())
+
+  @@id([clusterId, eventId])
+  @@unique([eventId]) // one cluster per event
 }
 
 model EventOccurrenceSeries {
@@ -648,6 +699,11 @@ model EventRegistrant {
   nickname     String?
   email        String?
   mobileNumber String?
+
+  // Provenance: set when this registration came in through a cluster's shared
+  // form (analytics only — the registrant is still fully owned by its event).
+  registrationClusterId String?
+  registrationCluster   EventCluster? @relation(fields: [registrationClusterId], references: [id], onDelete: SetNull)
 
   isPaid           Boolean   @default(false)
   paymentReference String?
@@ -1058,8 +1114,12 @@ model FormConfig {
 // toggles so their live behavior carried over unchanged.
 model EventFormConfig {
   id      String      @id @default(cuid())
-  eventId String
-  event   Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  // Exactly one of eventId / clusterId is set (app-layer enforced XOR) — a config
+  // belongs to either a single event or an event cluster's shared form.
+  eventId String?
+  event   Event?      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  clusterId String?
+  cluster   EventCluster? @relation(fields: [clusterId], references: [id], onDelete: Cascade)
   context FormContext
 
   // Section toggles — whole steps in the flow
@@ -1090,5 +1150,7 @@ model EventFormConfig {
   updatedAt DateTime @updatedAt
 
   @@unique([eventId, context])
+  @@unique([clusterId, context])
   @@index([eventId])
+  @@index([clusterId])
 }

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
-import { getEventFormConfig } from "@/lib/forms/context-config-server"
+import { getEffectiveFormConfig } from "@/lib/forms/context-config-server"
 import { auth } from "@/lib/auth"
 import { canWrite, canImport } from "@/lib/permissions"
 import { enrichArray, enrichNullable, enrichText } from "@/lib/import/enrich"
@@ -322,7 +322,7 @@ export async function importEventRegistrants(
   })
   if (!event) return { success: false, error: "Event not found" }
   // Payment references only import when the Register form actually collects one.
-  const collectsPayment = (await getEventFormConfig(eventId, "Register")).sectionPayment
+  const collectsPayment = (await getEffectiveFormConfig(eventId, "Register")).sectionPayment
 
   for (let i = 0; i < rows.length; i++) {
     const { mapped, resolution, existingId, existingType } = rows[i]

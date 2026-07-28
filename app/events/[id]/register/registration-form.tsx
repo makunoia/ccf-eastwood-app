@@ -38,8 +38,12 @@ import {
   createRegistrant,
   createHouseholdRegistration,
   lookupMemberForRegistration,
-  type AssignedBreakout,
 } from "@/app/(dashboard)/events/actions"
+import type { AssignedBreakout } from "@/lib/events/registration-core"
+import {
+  registerForCluster,
+  type ClusterEventRegistrationResult,
+} from "@/app/(dashboard)/events/cluster-actions"
 import { searchMembersForLeaderLookup } from "@/app/(dashboard)/guests/actions"
 import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
 import { FAMILY_ROLES, FAMILY_ROLE_LABELS, type FamilyRoleValue } from "@/lib/validations/family"
@@ -197,8 +201,16 @@ type WalkInConfig = {
   backHref: string
 }
 
+// Cluster mode (CCF-132): the shared "Event Day" form. Identity + profile are
+// collected once, an Events step asks which of the day's events the person is
+// attending, and submission fans out one registration per selected event.
+type ClusterConfig = {
+  token: string
+  events: { id: string; name: string; meta?: string | null }[]
+}
+
 type Props = {
-  eventId: string
+  eventId?: string
   eventName?: string
   /**
    * Which sections and fields this context collects (CCF-119/120). Omitted →
@@ -214,6 +226,8 @@ type Props = {
   // container (e.g. the check-in board's card).
   frame?: "card" | "plain"
   walkIn?: WalkInConfig
+  /** Cluster shared form — exactly one of eventId / cluster is provided. */
+  cluster?: ClusterConfig
 }
 
 // Card wrapper that can render chrome-less for embedding. Defined at module
@@ -239,6 +253,7 @@ export function RegistrationForm({
   breakoutCandidates = [],
   frame = "card",
   walkIn,
+  cluster,
 }: Props) {
   const plain = frame === "plain"
   const cfg = React.useMemo<EventFormConfigData>(
@@ -279,6 +294,10 @@ export function RegistrationForm({
   } | null>(null)
   const [selectedBreakoutId, setSelectedBreakoutId] = React.useState<string>("")
   const [assignedBreakout, setAssignedBreakout] = React.useState<AssignedBreakout | null>(null)
+  // Cluster mode: which of the day's events the person is attending, and the
+  // per-event outcomes shown on the success screen (partial success).
+  const [selectedEventIds, setSelectedEventIds] = React.useState<string[]>([])
+  const [clusterResults, setClusterResults] = React.useState<ClusterEventRegistrationResult[] | null>(null)
   const [formStep, setFormStep] = React.useState(1)
   const [privacyAccepted, setPrivacyAccepted] = React.useState(false)
   const [primaryRole, setPrimaryRole] = React.useState<FamilyRoleValue>("FatherHusband")
@@ -347,6 +366,7 @@ export function RegistrationForm({
 
   const sections: { key: string; title: string }[] = [
     { key: "personal", title: "Personal Information" },
+    ...(cluster ? [{ key: "events", title: "Events" }] : []),
     ...(includeSmallGroup && !skipSmallGroup ? [{ key: "smallgroup", title: "DGroup Info" }] : []),
     ...(showBreakoutSection ? [{ key: "breakout", title: "Breakout Group" }] : []),
     ...(cfg.sectionFamily ? [{ key: "household", title: "Your Household" }] : []),
@@ -375,8 +395,16 @@ export function RegistrationForm({
     setCandidates(null)
     setSelectedBreakoutId("")
     setAssignedBreakout(null)
+    setSelectedEventIds([])
+    setClusterResults(null)
     setFormStep(1)
     setPrivacyAccepted(false)
+  }
+
+  function toggleSelectedEvent(id: string) {
+    setSelectedEventIds((prev) =>
+      prev.includes(id) ? prev.filter((e) => e !== id) : [...prev, id]
+    )
   }
 
   function set(field: keyof FormValues, value: string) {
@@ -396,6 +424,12 @@ export function RegistrationForm({
         toast.error("Give every household member both a first and last name, or remove them.")
         return
       }
+    }
+
+    // Cluster mode: the day makes no sense with nothing ticked.
+    if (currentSectionKey === "events" && selectedEventIds.length === 0) {
+      toast.error("Select at least one event to register for.")
+      return
     }
 
     if (formStep === 1) {
@@ -422,7 +456,9 @@ export function RegistrationForm({
             lastName: hasBirthday ? form.lastName : null,
             birthMonth: hasBirthday ? parseInt(form.birthMonth, 10) : null,
             birthYear: hasBirthday ? parseInt(form.birthYear, 10) : null,
-            eventId,
+            // Cluster mode has no single event: volunteer conflicts are per-event
+            // partial results at submit time, not an up-front block.
+            eventId: cluster ? null : eventId,
           })
           setSubmitting(false)
 
@@ -496,6 +532,7 @@ export function RegistrationForm({
     // Compute the new section count to decide whether to advance or submit
     const newSectionsCount = [
       true,
+      !!cluster,
       includeSmallGroup && !willSkipSmallGroup,
       showBreakoutSection,
       cfg.sectionFamily,
@@ -529,6 +566,11 @@ export function RegistrationForm({
       return
     }
 
+    if (cluster && selectedEventIds.length === 0) {
+      toast.error("Select at least one event to register for.")
+      return
+    }
+
     if (!isMultiStep) {
       if (!form.firstName.trim() || !form.lastName.trim()) {
         toast.error("First and last name are required.")
@@ -558,7 +600,7 @@ export function RegistrationForm({
         lastName: hasBirthday ? form.lastName : null,
         birthMonth: hasBirthday ? parseInt(form.birthMonth, 10) : null,
         birthYear: hasBirthday ? parseInt(form.birthYear, 10) : null,
-        eventId,
+        eventId: cluster ? null : eventId,
       })
       setSubmitting(false)
       if (match) {
@@ -626,11 +668,33 @@ export function RegistrationForm({
         paymentReference: includePayment ? form.paymentReference || null : null,
     }
 
+    // Cluster mode resolves the person once server-side, then fans out one
+    // registration per selected event — outcomes come back per event.
+    if (cluster) {
+      const result = await registerForCluster(
+        cluster.token,
+        registrantPayload,
+        confirmedMemberId,
+        confirmedGuestId,
+        skipDeduplication,
+        selectedEventIds,
+        walkIn ? true : undefined
+      )
+      setSubmitting(false)
+      if (result.success) {
+        setClusterResults(result.data.results)
+        setStep("done")
+      } else {
+        toast.error(result.error)
+      }
+      return
+    }
+
     // Household mode registers everyone in one call and links them to a Family;
     // otherwise this is an ordinary single-person registration.
     const result = cfg.sectionFamily
       ? await createHouseholdRegistration(
-          eventId,
+          eventId!,
           registrantPayload,
           {
             primaryRole,
@@ -655,7 +719,7 @@ export function RegistrationForm({
           walkIn ? { occurrenceId: walkIn.occurrenceId } : undefined
         )
       : await createRegistrant(
-          eventId,
+          eventId!,
           registrantPayload,
           confirmedMemberId,
           confirmedGuestId,
@@ -684,6 +748,90 @@ export function RegistrationForm({
     } else {
       toast.error(result.error)
     }
+  }
+
+  if (step === "done" && clusterResults) {
+    // Cluster shared form: partial success is normal — show each event's outcome
+    // rather than a single all-or-nothing message.
+    const matchedSource = confirmedMember ?? matchedMember
+    const displayName =
+      form.nickname.trim() || form.firstName.trim() || matchedSource?.firstName.trim() || ""
+    const anyRegistered = clusterResults.some(
+      (r) => r.status === "registered" || r.status === "already"
+    )
+    const statusLine = (r: ClusterEventRegistrationResult): string => {
+      switch (r.status) {
+        case "registered":
+          return r.checkedIn ? "Registered · checked in" : "Registered"
+        case "already":
+          return r.checkedIn ? "Already registered · checked in" : "Already registered"
+        case "closed":
+          return "Registration for this event is closed"
+        case "volunteer":
+          return "You're serving as a volunteer — already included"
+        case "failed":
+          return "Couldn't register — please ask the team for help"
+      }
+    }
+    const ok = (r: ClusterEventRegistrationResult) =>
+      r.status === "registered" || r.status === "already" || r.status === "volunteer"
+    return (
+      <FormShell plain={plain}>
+        <CardContent className="flex flex-col items-center gap-5 pt-10 pb-6">
+          <div
+            className={cn(
+              "flex size-16 items-center justify-center rounded-full",
+              anyRegistered ? "bg-green-100" : "bg-muted"
+            )}
+          >
+            <IconCheck
+              className={cn("size-8", anyRegistered ? "text-green-600" : "text-muted-foreground")}
+            />
+          </div>
+          <div className="w-full text-center space-y-1.5">
+            <p className="text-xl font-semibold">
+              {anyRegistered
+                ? `You're all set${displayName ? `, ${displayName}` : ""}!`
+                : "Here's where things stand"}
+            </p>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              {anyRegistered
+                ? "We're so glad you're coming — here's how each event went."
+                : "None of the selected events could take your registration."}
+            </p>
+            <div className="mt-3 space-y-2 text-left">
+              {clusterResults.map((r) => (
+                <div key={r.eventId} className="rounded-xl border bg-muted/40 px-4 py-3 space-y-0.5">
+                  <p className="text-sm font-semibold">{r.eventName}</p>
+                  <p
+                    className={cn(
+                      "text-xs",
+                      ok(r) ? "text-muted-foreground" : "text-destructive"
+                    )}
+                  >
+                    {statusLine(r)}
+                  </p>
+                  {r.breakoutGroup && (
+                    <p className="text-xs text-muted-foreground">
+                      Breakout group: {r.breakoutGroup.name}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+          {walkIn ? (
+            <Button className="w-full" asChild>
+              <Link href={walkIn.backHref}>Back to check-in</Link>
+            </Button>
+          ) : (
+            <Button className="w-full" onClick={handleReset}>
+              Register another person
+            </Button>
+          )}
+        </CardContent>
+      </FormShell>
+    )
   }
 
   if (step === "done") {
@@ -1174,6 +1322,39 @@ export function RegistrationForm({
                 </div>
               )}
             </>
+          )}
+
+          {/* ── Events (cluster shared form, CCF-132) ── */}
+          {cluster && (!isMultiStep || currentSectionKey === "events") && (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Tick the events you&apos;ll be joining — at least one.
+              </p>
+              {cluster.events.map((ev) => {
+                const checked = selectedEventIds.includes(ev.id)
+                return (
+                  <label
+                    key={ev.id}
+                    className={cn(
+                      "flex cursor-pointer items-start gap-3 rounded-lg border p-4 transition-colors hover:bg-muted/50",
+                      checked && "border-primary bg-primary/5"
+                    )}
+                  >
+                    <Checkbox
+                      checked={checked}
+                      onCheckedChange={() => toggleSelectedEvent(ev.id)}
+                      className="mt-0.5"
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-medium">{ev.name}</span>
+                      {ev.meta && (
+                        <span className="block text-xs text-muted-foreground">{ev.meta}</span>
+                      )}
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
           )}
 
           {/* ── Small Group Info ── */}

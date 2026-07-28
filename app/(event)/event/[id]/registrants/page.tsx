@@ -3,7 +3,7 @@ import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import { canWrite } from "@/lib/permissions"
-import { getEventFormConfig } from "@/lib/forms/context-config-server"
+import { getEffectiveFormConfig } from "@/lib/forms/context-config-server"
 import { BatchSelectionProvider } from "@/components/batch/batch-selection-provider"
 import { RegistrantsClient } from "./registrants-client"
 
@@ -18,6 +18,7 @@ async function getEventRegistrants(id: string, search: string, typeFilter: strin
       id: true,
       type: true,
       price: true,
+      modules: { select: { type: true } },
       registrants: {
         orderBy: { createdAt: "asc" },
         select: {
@@ -91,11 +92,14 @@ export default async function RegistrantsPage({
   const [session, event, registerConfig] = await Promise.all([
     auth(),
     getEventRegistrants(id, search, typeFilter),
-    getEventFormConfig(id, "Register"),
+    getEffectiveFormConfig(id, "Register"),
   ])
   if (!event) notFound()
 
-  // The payment column only makes sense when the Register form collects a reference.
+  // The Priced module is the single gate for payment: it decides both whether the
+  // Register form collects a reference and whether the admin columns appear, so
+  // the two can't disagree.
+  const isPricedEvent = event.modules.some((m) => m.type === "Priced")
   const collectsPayment = registerConfig.sectionPayment
 
   const selectionEnabled = canWrite(session, "Events")
@@ -108,7 +112,7 @@ export default async function RegistrantsPage({
       <RegistrantsClient
         eventId={event.id}
         eventType={event.type}
-        isPaidEvent={event.price != null}
+        isPaidEvent={isPricedEvent}
         formIncludePayment={collectsPayment}
         search={search}
         typeFilter={typeFilter}

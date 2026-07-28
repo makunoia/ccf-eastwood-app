@@ -15,19 +15,19 @@ beforeEach(async () => {
 
 // Payment-reference import follows the Register context's `sectionPayment`
 // toggle (CCF-119/120), not the retired flat Event column.
+// Payment collection follows the Priced module (CCF-128) rather than a stored form
+// toggle, so seeding "this event takes payment" means enabling that module.
 async function seedEvent(overrides: { formIncludePayment?: boolean } = {}) {
+  const priced = overrides.formIncludePayment ?? false
   return db.event.create({
     data: {
       name: "Encounter Weekend",
       type: "OneTime",
       startDate: new Date("2026-06-01T00:00:00Z"),
       endDate: new Date("2026-06-01T00:00:00Z"),
-      eventFormConfigs: {
-        create: {
-          context: "Register",
-          sectionPayment: overrides.formIncludePayment ?? false,
-        },
-      },
+      price: priced ? 100000 : null,
+      eventFormConfigs: { create: { context: "Register" } },
+      ...(priced ? { modules: { create: { type: "Priced" as const } } } : {}),
     },
     select: { id: true },
   })

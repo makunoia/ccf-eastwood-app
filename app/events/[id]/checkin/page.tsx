@@ -3,7 +3,7 @@ import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { getEventName } from "@/lib/metadata"
 import { CheckinBoard } from "./checkin-board"
-import { getEventFormConfig } from "@/lib/forms/context-config-server"
+import { getEffectiveFormConfig } from "@/lib/forms/context-config-server"
 
 async function getEvent(id: string) {
   return db.event.findUnique({
@@ -144,7 +144,7 @@ export default async function CheckinPage({
 
   // Small-group prompt after check-in; walk-in registration itself lives on the
   // registration page (linked with ?checkin=…), not here.
-  const formFields = await getEventFormConfig(event.id, "CheckIn")
+  const formFields = await getEffectiveFormConfig(event.id, "CheckIn")
   const lifeStages = formFields.fieldLifeStage
     ? await db.lifeStage.findMany({
         orderBy: { order: "asc" },

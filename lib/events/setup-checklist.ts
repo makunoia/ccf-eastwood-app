@@ -1,11 +1,17 @@
 import { db } from "@/lib/db"
+import type { EventModuleType } from "@/app/generated/prisma/client"
 
 /**
  * Event setup walkthrough — derives the recommended setup checklist shown on the
  * event dashboard. Each step is "done" when the event has at least one matching
- * record. The step list adapts to event type: OneTime events omit the "Create
- * Session" step (they record attendance on `EventRegistrant.attendedAt` and have
- * no occurrences), while MultiDay/Recurring show all six steps.
+ * record.
+ *
+ * The list adapts to what the event actually uses, so it never advertises work the
+ * admin has no screen for. OneTime events omit "Create Session" (they record
+ * attendance on `EventRegistrant.attendedAt` and have no occurrences), and the
+ * volunteer and breakout steps appear only with their modules enabled. There is no
+ * "choose your modules" step: that decision is made on the create-event form
+ * (CCF-131), so by the time this checklist renders it has already been answered.
  */
 
 export type SetupStepKey =
@@ -40,9 +46,12 @@ type EventType = "OneTime" | "MultiDay" | "Recurring"
 export async function getEventSetupChecklist(
   eventId: string,
   eventType: EventType,
+  modules: EventModuleType[] = [],
 ): Promise<EventSetupChecklist> {
   const base = `/event/${eventId}`
   const isOneTime = eventType === "OneTime"
+  const hasVolunteers = modules.includes("Volunteers")
+  const hasBreakouts = modules.includes("Breakout")
 
   const [
     committeeCount,
@@ -53,9 +62,12 @@ export async function getEventSetupChecklist(
     registrantCount,
     checkinCount,
   ] = await Promise.all([
-    db.volunteerCommittee.count({ where: { eventId } }),
-    db.volunteer.count({ where: { eventId } }),
-    db.breakoutGroup.count({ where: { eventId } }),
+    // Skip the queries for modules this event doesn't use — their steps are hidden.
+    hasVolunteers
+      ? db.volunteerCommittee.count({ where: { eventId } })
+      : Promise.resolve(0),
+    hasVolunteers ? db.volunteer.count({ where: { eventId } }) : Promise.resolve(0),
+    hasBreakouts ? db.breakoutGroup.count({ where: { eventId } }) : Promise.resolve(0),
     // Sessions are irrelevant for OneTime — skip the query entirely.
     isOneTime
       ? Promise.resolve(0)
@@ -74,29 +86,36 @@ export async function getEventSetupChecklist(
         }),
   ])
 
-  const steps: SetupStep[] = [
-    {
-      key: "committees",
-      label: "Set up committees",
-      description: "Create the volunteer committees and roles for this event.",
-      done: committeeCount > 0,
-      href: `${base}/settings?tab=committees`,
-    },
-    {
-      key: "volunteers",
-      label: "Add volunteers",
-      description: "Add the people serving and assign them to committees.",
-      done: volunteerCount > 0,
-      href: `${base}/volunteers`,
-    },
-    {
+  const steps: SetupStep[] = []
+
+  if (hasVolunteers) {
+    steps.push(
+      {
+        key: "committees",
+        label: "Set up committees",
+        description: "Create the volunteer committees and roles for this event.",
+        done: committeeCount > 0,
+        href: `${base}/settings?tab=committees`,
+      },
+      {
+        key: "volunteers",
+        label: "Add volunteers",
+        description: "Add the people serving and assign them to committees.",
+        done: volunteerCount > 0,
+        href: `${base}/volunteers`,
+      },
+    )
+  }
+
+  if (hasBreakouts) {
+    steps.push({
       key: "breakouts",
       label: "Add breakout groups",
       description: "Set up breakout groups and assign facilitators.",
       done: breakoutCount > 0,
       href: `${base}/breakouts`,
-    },
-  ]
+    })
+  }
 
   if (!isOneTime) {
     steps.push({

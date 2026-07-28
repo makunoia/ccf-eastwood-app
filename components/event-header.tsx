@@ -17,6 +17,10 @@ const SEGMENT_LABELS: Record<string, string> = {
   embarkation: "Embarkation",
   settings: "Settings",
   forms: "Forms",
+  checkin: "Check-in",
+  registration: "Registration Form",
+  "walk-in": "Walk-in Registration",
+  "check-in": "Check-in Forms",
   "catch-mech": "Catch Mech",
   pending: "Pending",
   confirmed: "Confirmed",
@@ -25,15 +29,15 @@ const SEGMENT_LABELS: Record<string, string> = {
 }
 
 type EventHeaderProps = {
-  eventId: string
-  eventType: "OneTime" | "MultiDay" | "Recurring"
+  eventId?: string
+  eventType?: "OneTime" | "MultiDay" | "Recurring"
 }
 
 export function EventHeader({ eventId: _eventId, eventType: _eventType }: EventHeaderProps) {
   const pathname = usePathname()
   const { overrides } = useBreadcrumbContext()
   const segments = pathname.split("/").filter(Boolean)
-  // segments: ["event", id, section, ...subs]
+  // segments: ["event" | "cluster", id, section, ...subs]
 
   const items: { label: string; href: string }[] = []
   let cumulativeHref = ""
@@ -42,6 +46,9 @@ export function EventHeader({ eventId: _eventId, eventType: _eventType }: EventH
     if (segment === "event") {
       cumulativeHref += "/event"
       items.push({ label: "Events", href: "/events" })
+    } else if (segment === "cluster") {
+      cumulativeHref += "/cluster"
+      items.push({ label: "Event Clusters", href: "/events/clusters" })
     } else {
       cumulativeHref += `/${segment}`
       if (SEGMENT_LABELS[segment]) {

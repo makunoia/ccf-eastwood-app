@@ -3,7 +3,7 @@ import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { getEventName } from "@/lib/metadata"
 import { CheckinBoard } from "../checkin-board"
-import { getEventFormConfig } from "@/lib/forms/context-config-server"
+import { getEffectiveFormConfig } from "@/lib/forms/context-config-server"
 
 async function getOccurrenceWithEvent(occurrenceId: string) {
   return db.eventOccurrence.findUnique({
@@ -134,7 +134,7 @@ export default async function OccurrenceCheckinPage({
     getOccurrenceWithEvent(occurrenceId),
     getLifeStages(),
     getAgeRanges(),
-    getEventFormConfig(id, "CheckIn"),
+    getEffectiveFormConfig(id, "CheckIn"),
   ])
   const lifeStages = formFields.fieldLifeStage ? allLifeStages : []
   const ageRanges = formFields.fieldAgeRange ? allAgeRanges : []

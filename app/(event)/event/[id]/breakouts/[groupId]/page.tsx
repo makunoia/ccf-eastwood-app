@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 
 import { db } from "@/lib/db"
+import { requireEventModule } from "@/lib/events/require-module"
 import { BreakoutDetail } from "./breakout-detail"
 import { GroupActions } from "./group-actions"
 import { BreakoutNavHeader } from "./breakout-nav-header"
@@ -190,6 +191,7 @@ export default async function BreakoutGroupDetailPage({
   params: Promise<{ id: string; groupId: string }>
 }) {
   const { id: eventId, groupId } = await params
+  await requireEventModule(eventId, "Breakout")
   const [group, eventData, lifeStages, totalOccurrences] = await Promise.all([
     getBreakoutGroup(groupId, eventId),
     getEventContext(eventId),

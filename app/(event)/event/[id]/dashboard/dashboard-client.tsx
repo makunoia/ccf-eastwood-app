@@ -43,10 +43,29 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableFooter,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 
 import { cn } from "@/lib/utils"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+type AttendanceBreakdownRow = {
+  lifeStageId: string | null
+  lifeStageName: string
+  attendees: number
+  firstTimers: number
+  members: number
+  membersInGroup: number
+  membersNotInGroup: number
+}
 
 type EventDashboardData = {
   id: string
@@ -62,6 +81,8 @@ type EventDashboardData = {
   recurrenceFrequency: "Weekly" | "Biweekly" | "Monthly" | null
   recurrenceEndDate: string | null
   ministries: string[]
+  allMinistries: boolean
+  modules: string[]
   registrantCount: number
   paidCount: number
   attendedCount: number
@@ -78,6 +99,10 @@ type EventDashboardData = {
     date: string
     total: number
   }>
+  attendanceBreakdown: {
+    rows: AttendanceBreakdownRow[]
+    total: AttendanceBreakdownRow
+  }
   placement: {
     inGroup: number
     membersUnassigned: number
@@ -167,6 +192,21 @@ const pipelineChartConfig = {
   },
 } satisfies ChartConfig
 
+const lifeStageChartConfig = {
+  firstTimers: {
+    label: "First-timers",
+    color: "var(--chart-1)",
+  },
+  membersNotInGroup: {
+    label: "Members, no DGroup",
+    color: "var(--chart-4)",
+  },
+  membersInGroup: {
+    label: "Members in a DGroup",
+    color: "var(--chart-2)",
+  },
+} satisfies ChartConfig
+
 const seriesChartConfig = {
   averageAttendance: {
     label: "Avg attendance",
@@ -250,6 +290,9 @@ export function EventDashboardClient({
   const isMultiDay = event.type === "MultiDay"
   const isSeriesEvent = isRecurring || isMultiDay
 
+  // Volunteer figures are only meaningful — and only reachable — with the module on.
+  const hasVolunteers = event.modules.includes("Volunteers")
+
   const totalVolunteers =
     event.confirmedVolunteerCount + event.pendingVolunteerCount + event.rejectedVolunteerCount
 
@@ -278,6 +321,9 @@ export function EventDashboardClient({
     { status: "pending", count: event.pendingVolunteerCount, fill: "var(--color-pending)" },
     { status: "rejected", count: event.rejectedVolunteerCount, fill: "var(--color-rejected)" },
   ].filter((slice) => slice.count > 0)
+
+  const breakdownRows = event.attendanceBreakdown.rows
+  const breakdownTotal = event.attendanceBreakdown.total
 
   const pipelineData = [
     { stage: "Registered", value: event.pipeline.registered },
@@ -386,6 +432,7 @@ export function EventDashboardClient({
           <p className="text-xs text-muted-foreground">Members and guests still unassigned</p>
         </div>
 
+        {hasVolunteers && (
         <div className="rounded-lg border px-5 py-5 flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <p className="text-[11px] font-semibold tracking-[0.15em] uppercase text-muted-foreground">
@@ -406,6 +453,7 @@ export function EventDashboardClient({
                 : `of ${totalVolunteers} total${event.pendingVolunteerCount > 0 ? ` · ${event.pendingVolunteerCount} pending` : ""}${event.rejectedVolunteerCount > 0 ? ` · ${event.rejectedVolunteerCount} rejected` : ""}`}
           </p>
         </div>
+        )}
       </div>
 
       {/* Trend row — attendance per session (series events) + cumulative registrations */}
@@ -575,6 +623,7 @@ export function EventDashboardClient({
           )}
         </Card>
 
+        {hasVolunteers && (
         <Card className="flex flex-col">
           <CardHeader>
             <CardTitle>Volunteer Status</CardTitle>
@@ -622,6 +671,7 @@ export function EventDashboardClient({
             </Link>
           </CardFooter>
         </Card>
+        )}
 
         <Card className="flex flex-col md:col-span-2 xl:col-span-1">
           <CardHeader>
@@ -672,6 +722,130 @@ export function EventDashboardClient({
           )}
         </Card>
       </div>
+
+      {/* Attendance composition per Life Stage — first-timers vs members, and how
+          many of those members already belong to a DGroup */}
+      <Card className="mt-4">
+        <CardHeader>
+          <CardTitle>Attendance by Life Stage</CardTitle>
+          <CardDescription>
+            First-timers vs members — and how many of those members are already in a DGroup.
+            Counts each attendee once for the selected period.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {breakdownTotal.attendees === 0 ? (
+            <ChartEmptyState>No attendance recorded in the selected period yet.</ChartEmptyState>
+          ) : (
+            <div className="grid gap-6 xl:grid-cols-12">
+              <div className="xl:col-span-5">
+                <ChartContainer
+                  config={lifeStageChartConfig}
+                  className="aspect-auto w-full"
+                  style={{ height: Math.max(breakdownRows.length * 52, 120) + 48 }}
+                >
+                  <BarChart data={breakdownRows} layout="vertical" margin={{ left: 0, right: 16 }}>
+                    <XAxis type="number" hide />
+                    <YAxis
+                      dataKey="lifeStageName"
+                      type="category"
+                      tickLine={false}
+                      axisLine={false}
+                      width={116}
+                      tickFormatter={(value: string) =>
+                        value.length > 15 ? `${value.slice(0, 14)}…` : value
+                      }
+                    />
+                    <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+                    <ChartLegend content={<ChartLegendContent />} />
+                    <Bar
+                      dataKey="firstTimers"
+                      stackId="lifeStage"
+                      fill="var(--color-firstTimers)"
+                      radius={[4, 0, 0, 4]}
+                    />
+                    <Bar
+                      dataKey="membersNotInGroup"
+                      stackId="lifeStage"
+                      fill="var(--color-membersNotInGroup)"
+                    />
+                    <Bar
+                      dataKey="membersInGroup"
+                      stackId="lifeStage"
+                      fill="var(--color-membersInGroup)"
+                      radius={[0, 4, 4, 0]}
+                    />
+                  </BarChart>
+                </ChartContainer>
+              </div>
+
+              <div className="xl:col-span-7 overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Life Stage</TableHead>
+                      <TableHead className="text-right">Attendees</TableHead>
+                      <TableHead className="text-right">First-timers</TableHead>
+                      <TableHead className="text-right">Members</TableHead>
+                      <TableHead className="text-right">In a DGroup</TableHead>
+                      <TableHead className="text-right">No DGroup</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {breakdownRows.map((row) => (
+                      <TableRow key={row.lifeStageId ?? "unspecified"}>
+                        <TableCell className="font-medium">{row.lifeStageName}</TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {row.attendees.toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {row.firstTimers.toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {row.members.toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {row.membersInGroup.toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {row.membersNotInGroup.toLocaleString()}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                  <TableFooter>
+                    <TableRow>
+                      <TableCell className="font-medium">All attendees</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {breakdownTotal.attendees.toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {breakdownTotal.firstTimers.toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {breakdownTotal.members.toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {breakdownTotal.membersInGroup.toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {breakdownTotal.membersNotInGroup.toLocaleString()}
+                      </TableCell>
+                    </TableRow>
+                  </TableFooter>
+                </Table>
+              </div>
+            </div>
+          )}
+        </CardContent>
+        {breakdownTotal.attendees > 0 && (
+          <CardFooter>
+            <Link href={`/event/${event.id}/registrants`} className={drillLinkClass}>
+              View registrants →
+            </Link>
+          </CardFooter>
+        )}
+      </Card>
 
       {/* Series comparison — Recurring only */}
       {isRecurring && (

@@ -6,15 +6,29 @@ import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import { canWrite } from "@/lib/permissions"
 import {
+  eventPriceSchema,
   eventSchema,
   occurrenceFormSchema,
   occurrenceGroupingSchema,
   occurrenceSeriesSchema,
+  registrationWindowSchema,
   type EventFormValues,
+  type EventModuleSelection,
+  type RegistrationWindowValues,
 } from "@/lib/validations/event"
-import { suggestBreakoutGroup } from "@/lib/breakout-suggestion"
-import { fetchBreakoutCandidates } from "@/lib/breakout-suggestion-server"
-import { tryCreateSmallGroupRequestFromBreakout } from "@/lib/create-small-group-request"
+import { resolveModuleSelection } from "@/lib/events/modules"
+import {
+  autoCheckinIfOpenRecurringSession,
+  checkInWalkInRegistrant,
+  completeEventRegistration,
+  findEventVolunteerConflict,
+  findExistingEventRegistration,
+  resolveAnonymousGuest,
+  resolveConfirmedGuest,
+  resolveConfirmedMember,
+  type AssignedBreakout,
+} from "@/lib/events/registration-core"
+import { registrantSchema } from "@/lib/validations/event-registrant"
 import {
   findMatchingSeries,
   normalizeUtcDate,
@@ -22,7 +36,7 @@ import {
   seriesContainsDate,
 } from "@/lib/events/occurrence-series"
 import { isWithinRegistrationWindow } from "@/lib/events/registration-window"
-import { getEventFormConfig } from "@/lib/forms/context-config-server"
+import { getEffectiveFormConfig } from "@/lib/forms/context-config-server"
 import {
   resolveBreakoutSelection,
   sanitizeHouseholdMember,
@@ -35,134 +49,7 @@ import {
   householdSchema,
 } from "@/lib/validations/household"
 import { formatPhilippinePhone } from "@/lib/utils"
-import type { Gender, MeetingFormat } from "@/app/generated/prisma/client"
-
-export type AssignedBreakout =
-  | {
-      id: string
-      name: string
-      meetingFormat: MeetingFormat | null
-      locationCity: string | null
-      schedule: { dayOfWeek: number; timeStart: string; timeEnd: string | null } | null
-    }
-  | null
-
-async function fetchAssignedBreakoutDetails(groupId: string): Promise<AssignedBreakout> {
-  const group = await db.breakoutGroup.findUnique({
-    where: { id: groupId },
-    select: {
-      id: true,
-      name: true,
-      meetingFormat: true,
-      locationCity: true,
-      schedules: {
-        select: { dayOfWeek: true, timeStart: true, timeEnd: true },
-        orderBy: { dayOfWeek: "asc" },
-        take: 1,
-      },
-    },
-  })
-  if (!group) return null
-  return {
-    id: group.id,
-    name: group.name,
-    meetingFormat: group.meetingFormat,
-    locationCity: group.locationCity,
-    schedule: group.schedules[0] ?? null,
-  }
-}
-
-/**
- * Assign a registrant to a breakout group based on:
- *  - explicit pick (selectedBreakoutGroupId) — wins if provided & valid & not full
- *  - else autoAssignBreakout on the event — runs the simple Gender/Age/Capacity matcher
- *  - else nothing
- * Best-effort: failures are swallowed and return null.
- */
-async function assignBreakoutForRegistrant(
-  registrantId: string,
-  eventId: string,
-  selectedBreakoutGroupId: string | null,
-  profile: { gender: Gender | null; birthYear: number | null }
-): Promise<AssignedBreakout> {
-  try {
-    let chosenGroupId: string | null = null
-
-    if (selectedBreakoutGroupId) {
-      const picked = await db.breakoutGroup.findUnique({
-        where: { id: selectedBreakoutGroupId },
-        select: {
-          id: true,
-          eventId: true,
-          memberLimit: true,
-          _count: { select: { members: true } },
-        },
-      })
-      if (
-        picked &&
-        picked.eventId === eventId &&
-        (picked.memberLimit == null || picked._count.members < picked.memberLimit)
-      ) {
-        chosenGroupId = picked.id
-      }
-    } else {
-      const event = await db.event.findUnique({
-        where: { id: eventId },
-        select: { autoAssignBreakout: true },
-      })
-      if (event?.autoAssignBreakout) {
-        const candidates = await fetchBreakoutCandidates(eventId, null, false)
-        const best = suggestBreakoutGroup(candidates, profile)
-        if (best) chosenGroupId = best.id
-      }
-    }
-
-    if (!chosenGroupId) return null
-
-    await db.breakoutGroupMember.create({
-      data: { breakoutGroupId: chosenGroupId, registrantId },
-    })
-    await tryCreateSmallGroupRequestFromBreakout(chosenGroupId, registrantId)
-    revalidatePath(`/event/${eventId}/breakouts`)
-    return fetchAssignedBreakoutDetails(chosenGroupId)
-  } catch {
-    return null
-  }
-}
-
-const registrantSchema = z.object({
-  firstName: z.string().min(1, "First name is required").trim(),
-  lastName: z.string().min(1, "Last name is required").trim(),
-  nickname: z.string().nullish().transform((v) => (v === "" || v == null ? null : v.trim())),
-  email: z.string().nullish().transform((v) => (v === "" || v == null ? null : v.trim())),
-  mobileNumber: z.string().nullish().transform((v) => (v === "" || v == null ? null : formatPhilippinePhone(v.trim()))),
-  // Birthday — used as fallback matching field when no mobile or email
-  birthMonth: z.number().int().min(1).max(12).optional().nullable(),
-  birthYear: z.number().int().min(1900).max(2100).optional().nullable(),
-  // Coarse age bracket (CCF-123) — an alternative to birth year, not a replacement.
-  ageRangeBucketId: z.string().optional().nullable().transform((v) => v || null),
-  // Optional matching fields — collected when the event's Small Group registration module is enabled
-  lifeStageId: z.string().optional().nullable().transform((v) => v || null),
-  gender: z.enum(["Male", "Female"]).optional().nullable(),
-  language: z.array(z.string()).optional().default([]),
-  meetingPreference: z.enum(["Online", "Hybrid", "InPerson"]).optional().nullable(),
-  workCity: z.string().optional().nullable().transform((v) => v || null),
-  scheduleDayOfWeek: z.number().int().min(0).max(6).optional().nullable(),
-  scheduleTimeStart: z.string().optional().nullable().transform((v) => v || null),
-  scheduleTimeEnd: z.string().optional().nullable().transform((v) => v || null),
-  claimedSmallGroupId: z.string().optional().nullable().transform((v) => v || null),
-  // Optional dietary fields — collected when the Dietary registration module is enabled
-  dietaryPreference: z
-    .enum([
-      "Vegetarian", "Vegan", "Halal", "Kosher",
-      "GlutenFree", "DairyFree", "NutFree", "Pescatarian", "Other",
-    ])
-    .optional()
-    .nullable(),
-  dietaryOther: z.string().optional().nullable().transform((v) => v || null),
-  // Optional payment reference — collected when the Payment registration module is enabled
-  paymentReference: z.string().optional().nullable().transform((v) => v || null),
-})
+import type { Gender } from "@/app/generated/prisma/client"
 
 type ActionResult<T = void> =
   | { success: true; data: T }
@@ -237,8 +124,20 @@ function revalidateRecurringEventPaths(eventId: string, occurrenceId?: string) {
   }
 }
 
+/**
+ * Create an event, including the modules it starts with (CCF-131).
+ *
+ * Modules are decided here rather than left for the admin to discover in Settings:
+ * everything downstream — which nav items exist, which setup steps are worth
+ * showing, what the registration form collects — follows from this choice, so the
+ * event is created already knowing what it is. Picking none is a valid answer.
+ *
+ * `price` is only read when the selection resolves to include Priced, keeping the
+ * module row and the stored price a single fact rather than two that can drift.
+ */
 export async function createEvent(
-  raw: EventFormValues
+  raw: EventFormValues,
+  moduleSelection?: EventModuleSelection
 ): Promise<ActionResult<{ id: string }>> {
   const authError = await requireWrite()
   if (authError) return { success: false, error: authError.error }
@@ -251,6 +150,25 @@ export async function createEvent(
     }
   }
 
+  const modules = resolveModuleSelection(
+    moduleSelection?.types ?? [],
+    parsed.data.type
+  )
+
+  let price: number | null = null
+  if (modules.includes("Priced")) {
+    const parsedPrice = eventPriceSchema.safeParse({
+      price: moduleSelection?.price ?? "",
+    })
+    if (!parsedPrice.success) {
+      return {
+        success: false,
+        error: parsedPrice.error.issues[0]?.message ?? "Invalid price",
+      }
+    }
+    price = parsedPrice.data.price
+  }
+
   try {
     const event = await db.event.create({
       data: {
@@ -259,14 +177,19 @@ export async function createEvent(
         type: parsed.data.type,
         startDate: parsed.data.startDate,
         endDate: parsed.data.endDate ?? parsed.data.startDate,
-        price: parsed.data.type === "Recurring" ? null : (parsed.data.price ?? null),
-        registrationStart: parsed.data.type === "Recurring" ? null : (parsed.data.registrationStart ?? null),
-        registrationEnd: parsed.data.type === "Recurring" ? null : (parsed.data.registrationEnd ?? null),
+        price,
         recurrenceDayOfWeek: parsed.data.type === "Recurring" ? parsed.data.recurrenceDayOfWeek : null,
         recurrenceFrequency: parsed.data.type === "Recurring" ? (parsed.data.recurrenceFrequency ?? null) : null,
         recurrenceEndDate: parsed.data.type === "Recurring" ? (parsed.data.recurrenceEndDate ?? null) : null,
-        ministries: parsed.data.ministryIds?.length
-          ? { create: parsed.data.ministryIds.map((ministryId) => ({ ministryId })) }
+        allMinistries: parsed.data.allMinistries,
+        // A church-wide event links no ministries — the flag is the statement, and
+        // it keeps covering ministries created after the event.
+        ministries:
+          !parsed.data.allMinistries && parsed.data.ministryIds?.length
+            ? { create: parsed.data.ministryIds.map((ministryId) => ({ ministryId })) }
+            : undefined,
+        modules: modules.length
+          ? { create: modules.map((type) => ({ type })) }
           : undefined,
       },
       select: { id: true },
@@ -314,15 +237,14 @@ export async function updateEvent(
           description: parsed.data.description ?? null,
           startDate: parsed.data.startDate,
           endDate: parsed.data.endDate ?? parsed.data.startDate,
-          price: isRecurring ? null : (parsed.data.price ?? null),
-          registrationStart: isRecurring ? null : (parsed.data.registrationStart ?? null),
-          registrationEnd: isRecurring ? null : (parsed.data.registrationEnd ?? null),
           recurrenceDayOfWeek: isRecurring ? parsed.data.recurrenceDayOfWeek : null,
           recurrenceFrequency: isRecurring ? (parsed.data.recurrenceFrequency ?? null) : null,
           recurrenceEndDate: isRecurring ? (parsed.data.recurrenceEndDate ?? null) : null,
-          ministries: parsed.data.ministryIds?.length
-            ? { create: parsed.data.ministryIds.map((ministryId) => ({ ministryId })) }
-            : undefined,
+          allMinistries: parsed.data.allMinistries,
+          ministries:
+            !parsed.data.allMinistries && parsed.data.ministryIds?.length
+              ? { create: parsed.data.ministryIds.map((ministryId) => ({ ministryId })) }
+              : undefined,
         },
       }),
     ])
@@ -332,6 +254,59 @@ export async function updateEvent(
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to update event" }
+  }
+}
+
+/**
+ * The public registration window, configured on Forms → Registration Form beside
+ * the open/closed switch. Split out of `updateEvent` so saving unrelated event
+ * details can't disturb it.
+ *
+ * Recurring events have no window — first-timers register once and returning
+ * attendees check in per occurrence.
+ */
+export async function updateRegistrationWindow(
+  id: string,
+  raw: RegistrationWindowValues
+): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
+  const parsed = registrationWindowSchema.safeParse(raw)
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Invalid input",
+    }
+  }
+
+  try {
+    const existing = await db.event.findUnique({
+      where: { id },
+      select: { type: true },
+    })
+    if (!existing) return { success: false, error: "Event not found" }
+    if (existing.type === "Recurring") {
+      return {
+        success: false,
+        error: "Recurring events don't use a registration window.",
+      }
+    }
+
+    await db.event.update({
+      where: { id },
+      data: {
+        registrationStart: parsed.data.registrationStart,
+        registrationEnd: parsed.data.registrationEnd,
+      },
+    })
+
+    revalidatePath("/events")
+    revalidatePath(`/event/${id}/forms/EventRegistration`)
+    revalidatePath(`/events/${id}/register`)
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to update the registration window" }
   }
 }
 
@@ -576,35 +551,6 @@ export async function lookupMemberByMobile(
   return member
 }
 
-async function autoCheckinIfOpenRecurringSession(registrantId: string, eventId: string) {
-  const openOccurrence = await db.eventOccurrence.findFirst({
-    where: { eventId, isOpen: true, event: { type: "Recurring" } },
-    select: { id: true },
-  })
-  if (!openOccurrence) return
-  await db.occurrenceAttendee.create({
-    data: { occurrenceId: openOccurrence.id, registrantId, checkedInAt: new Date() },
-  })
-}
-
-// Walk-in mode: check the registrant in immediately after registration.
-// Sessions (MultiDay/Recurring) record an OccurrenceAttendee; OneTime events
-// set attendedAt — only when null, preserving the first check-in time.
-async function checkInWalkInRegistrant(registrantId: string, occurrenceId: string | null) {
-  if (occurrenceId !== null) {
-    await db.occurrenceAttendee.upsert({
-      where: { occurrenceId_registrantId: { occurrenceId, registrantId } },
-      create: { occurrenceId, registrantId },
-      update: {},
-    })
-  } else {
-    await db.eventRegistrant.updateMany({
-      where: { id: registrantId, attendedAt: null },
-      data: { attendedAt: new Date() },
-    })
-  }
-}
-
 export async function createRegistrant(
   eventId: string,
   raw: z.input<typeof registrantSchema>,
@@ -643,323 +589,93 @@ export async function createRegistrant(
     // payload in place (rather than threading a second variable through every
     // branch below) keeps one source of truth: there is no path that can read the
     // unsanitised value by accident.
-    const formConfig = await getEventFormConfig(eventId, walkIn ? "WalkIn" : "Register")
+    const formConfig = await getEffectiveFormConfig(eventId, walkIn ? "WalkIn" : "Register")
     Object.assign(parsed.data, sanitizeRegistrantPayload(formConfig, parsed.data))
     // A submitted breakout pick counts only where the picker is offered. Auto-assign
     // runs off a null selection, so it is unaffected.
     const breakoutPick = resolveBreakoutSelection(formConfig, selectedBreakoutGroupId)
 
+    // The steps below (person resolution → per-event completion) live in
+    // lib/events/registration-core.ts so the cluster shared form (CCF-132) can
+    // resolve the person once and fan out across events. The order here is the
+    // same as before the extraction: guards fire before any profile write.
     if (confirmedMemberId) {
       // Volunteer guard — volunteers don't need to register as attendees
-      const volunteerRecord = await db.volunteer.findFirst({
-        where: { memberId: confirmedMemberId, eventId },
-        select: { id: true },
-      })
-      if (volunteerRecord) {
+      if (await findEventVolunteerConflict(eventId, confirmedMemberId)) {
         return { success: false, error: "You're serving as a volunteer at this event — you don't need to register as an attendee." }
       }
 
       // Duplicate check — member already registered for this event.
       // Walk-in mode reuses the existing registration (the person may have
       // registered under a different contact identifier than they looked up with).
-      const alreadyRegistered = await db.eventRegistrant.findFirst({
-        where: { eventId, memberId: confirmedMemberId },
-        select: { id: true },
+      const existingRegistrationId = await findExistingEventRegistration(eventId, {
+        memberId: confirmedMemberId,
       })
-      if (alreadyRegistered && !walkIn) {
+      if (existingRegistrationId && !walkIn) {
         return { success: false, error: "You're already registered for this event." }
       }
 
-      // Member confirmed — fetch existing record, then fill in only fields that are currently null
-      const existing = await db.member.findUniqueOrThrow({
-        where: { id: confirmedMemberId },
-        select: {
-          email: true, phone: true, birthMonth: true, birthYear: true,
-          lifeStageId: true, gender: true, language: true, meetingPreference: true, workCity: true,
-          ageRangeBucketId: true,
-          // A member's availability lives in a relation, not a scalar column —
-          // needed to know whether the registration form's Schedule answer is
-          // new information or would be overwriting what they already told us.
-          schedulePreferences: { select: { id: true }, take: 1 },
-        },
-      })
-      const memberUpdates: Record<string, unknown> = {}
-      if (!existing.email && parsed.data.email) memberUpdates.email = parsed.data.email
-      if (!existing.phone && parsed.data.mobileNumber) memberUpdates.phone = parsed.data.mobileNumber
-      if (existing.birthMonth == null && parsed.data.birthMonth != null) memberUpdates.birthMonth = parsed.data.birthMonth
-      if (existing.birthYear == null && parsed.data.birthYear != null) memberUpdates.birthYear = parsed.data.birthYear
-      if (!existing.lifeStageId && parsed.data.lifeStageId) memberUpdates.lifeStageId = parsed.data.lifeStageId
-      if (!existing.gender && parsed.data.gender) memberUpdates.gender = parsed.data.gender
-      if (!existing.language?.length && parsed.data.language?.length) memberUpdates.language = parsed.data.language
-      if (!existing.meetingPreference && parsed.data.meetingPreference) memberUpdates.meetingPreference = parsed.data.meetingPreference
-      if (!existing.workCity && parsed.data.workCity) memberUpdates.workCity = parsed.data.workCity
-      if (!existing.ageRangeBucketId && parsed.data.ageRangeBucketId) memberUpdates.ageRangeBucketId = parsed.data.ageRangeBucketId
-      // Schedule is a `SchedulePreference` relation for members (guests keep it in
-      // scalar columns). Without this the form's Schedule field was collected and
-      // then thrown away for anyone who confirmed as a member.
-      if (
-        existing.schedulePreferences.length === 0 &&
-        parsed.data.scheduleDayOfWeek != null &&
-        parsed.data.scheduleTimeStart
-      ) {
-        memberUpdates.schedulePreferences = {
-          create: {
-            dayOfWeek: parsed.data.scheduleDayOfWeek,
-            timeStart: parsed.data.scheduleTimeStart,
-            timeEnd: parsed.data.scheduleTimeEnd ?? null,
-          },
-        }
-      }
-
-      let registrantId: string
-      if (alreadyRegistered) {
-        registrantId = alreadyRegistered.id
-        if (Object.keys(memberUpdates).length > 0) {
-          await db.member.update({ where: { id: confirmedMemberId }, data: memberUpdates })
-        }
-      } else {
-        const [registrant] = await db.$transaction([
-          db.eventRegistrant.create({
-            data: {
-              eventId,
-              memberId: confirmedMemberId,
-              dietaryPreference: parsed.data.dietaryPreference ?? null,
-              dietaryOther: parsed.data.dietaryOther,
-              paymentReference: parsed.data.paymentReference,
-            },
-            select: { id: true },
-          }),
-          ...(Object.keys(memberUpdates).length > 0
-            ? [db.member.update({ where: { id: confirmedMemberId }, data: memberUpdates })]
-            : []),
-        ])
-        registrantId = registrant.id
-      }
-      const breakoutGroup = await assignBreakoutForRegistrant(
-        registrantId,
+      const stored = await resolveConfirmedMember(confirmedMemberId, parsed.data)
+      const result = await completeEventRegistration({
         eventId,
+        person: { memberId: confirmedMemberId },
+        data: parsed.data,
         breakoutPick,
-        {
-          gender: (parsed.data.gender ?? existing.gender) as Gender | null,
-          birthYear: parsed.data.birthYear ?? existing.birthYear,
-        }
-      )
-      if (walkIn) {
-        await checkInWalkInRegistrant(registrantId, walkIn.occurrenceId)
-      } else {
-        await autoCheckinIfOpenRecurringSession(registrantId, eventId)
-      }
-      return { success: true, data: { id: registrantId, breakoutGroup } }
+        profile: {
+          gender: (parsed.data.gender ?? stored.gender) as Gender | null,
+          birthYear: parsed.data.birthYear ?? stored.birthYear,
+        },
+        walkIn,
+        existingRegistrantId: existingRegistrationId,
+      })
+      return { success: true, data: result }
     } else if (confirmedGuestId) {
       // Duplicate check — guest already registered for this event (walk-in reuses it)
-      const alreadyRegistered = await db.eventRegistrant.findFirst({
-        where: { eventId, guestId: confirmedGuestId },
-        select: { id: true },
+      const existingRegistrationId = await findExistingEventRegistration(eventId, {
+        guestId: confirmedGuestId,
       })
-      if (alreadyRegistered && !walkIn) {
+      if (existingRegistrationId && !walkIn) {
         return { success: false, error: "You're already registered for this event." }
       }
 
-      // Guest confirmed — fetch existing record, then fill in only fields that are currently null
-      const existing = await db.guest.findUniqueOrThrow({
-        where: { id: confirmedGuestId },
-        select: {
-          email: true, phone: true, birthMonth: true, birthYear: true,
-          lifeStageId: true, gender: true, language: true, meetingPreference: true, workCity: true,
-          ageRangeBucketId: true,
-          scheduleDayOfWeek: true, scheduleTimeStart: true, scheduleTimeEnd: true, claimedSmallGroupId: true,
-        },
-      })
-      const guestUpdates: Record<string, unknown> = {}
-      if (!existing.email && parsed.data.email) guestUpdates.email = parsed.data.email
-      if (!existing.phone && parsed.data.mobileNumber) guestUpdates.phone = parsed.data.mobileNumber
-      if (existing.birthMonth == null && parsed.data.birthMonth != null) guestUpdates.birthMonth = parsed.data.birthMonth
-      if (existing.birthYear == null && parsed.data.birthYear != null) guestUpdates.birthYear = parsed.data.birthYear
-      if (!existing.lifeStageId && parsed.data.lifeStageId) guestUpdates.lifeStageId = parsed.data.lifeStageId
-      if (!existing.gender && parsed.data.gender) guestUpdates.gender = parsed.data.gender
-      if (!existing.language?.length && parsed.data.language?.length) guestUpdates.language = parsed.data.language
-      if (!existing.meetingPreference && parsed.data.meetingPreference) guestUpdates.meetingPreference = parsed.data.meetingPreference
-      if (!existing.workCity && parsed.data.workCity) guestUpdates.workCity = parsed.data.workCity
-      if (!existing.ageRangeBucketId && parsed.data.ageRangeBucketId) guestUpdates.ageRangeBucketId = parsed.data.ageRangeBucketId
-      if (existing.scheduleDayOfWeek == null && parsed.data.scheduleDayOfWeek != null) guestUpdates.scheduleDayOfWeek = parsed.data.scheduleDayOfWeek
-      if (!existing.scheduleTimeStart && parsed.data.scheduleTimeStart) guestUpdates.scheduleTimeStart = parsed.data.scheduleTimeStart
-      if (!existing.scheduleTimeEnd && parsed.data.scheduleTimeEnd) guestUpdates.scheduleTimeEnd = parsed.data.scheduleTimeEnd
-      if (!existing.claimedSmallGroupId && parsed.data.claimedSmallGroupId) guestUpdates.claimedSmallGroupId = parsed.data.claimedSmallGroupId
-
-      let registrantId: string
-      if (alreadyRegistered) {
-        registrantId = alreadyRegistered.id
-        if (Object.keys(guestUpdates).length > 0) {
-          await db.guest.update({ where: { id: confirmedGuestId }, data: guestUpdates })
-        }
-      } else {
-        const [registrant] = await db.$transaction([
-          db.eventRegistrant.create({
-            data: {
-              eventId,
-              guestId: confirmedGuestId,
-              dietaryPreference: parsed.data.dietaryPreference ?? null,
-              dietaryOther: parsed.data.dietaryOther,
-              paymentReference: parsed.data.paymentReference,
-            },
-            select: { id: true },
-          }),
-          ...(Object.keys(guestUpdates).length > 0
-            ? [db.guest.update({ where: { id: confirmedGuestId }, data: guestUpdates })]
-            : []),
-        ])
-        registrantId = registrant.id
-      }
-      const breakoutGroup = await assignBreakoutForRegistrant(
-        registrantId,
+      const stored = await resolveConfirmedGuest(confirmedGuestId, parsed.data)
+      const result = await completeEventRegistration({
         eventId,
+        person: { guestId: confirmedGuestId },
+        data: parsed.data,
         breakoutPick,
-        {
-          gender: (parsed.data.gender ?? existing.gender) as Gender | null,
-          birthYear: parsed.data.birthYear ?? existing.birthYear,
-        }
-      )
-      if (walkIn) {
-        await checkInWalkInRegistrant(registrantId, walkIn.occurrenceId)
-      } else {
-        await autoCheckinIfOpenRecurringSession(registrantId, eventId)
-      }
-      return { success: true, data: { id: registrantId, breakoutGroup } }
+        profile: {
+          gender: (parsed.data.gender ?? stored.gender) as Gender | null,
+          birthYear: parsed.data.birthYear ?? stored.birthYear,
+        },
+        walkIn,
+        existingRegistrantId: existingRegistrationId,
+      })
+      return { success: true, data: result }
     } else {
-      // Non-member — find or create Guest by phone, then link via guestId
-      const matchingProfile = {
-        lifeStageId: parsed.data.lifeStageId ?? null,
-        gender: parsed.data.gender ?? null,
-        language: parsed.data.language?.length ? parsed.data.language : undefined,
-        meetingPreference: parsed.data.meetingPreference ?? null,
-        workCity: parsed.data.workCity ?? null,
-        ageRangeBucketId: parsed.data.ageRangeBucketId ?? null,
-        scheduleDayOfWeek: parsed.data.scheduleDayOfWeek ?? null,
-        scheduleTimeStart: parsed.data.scheduleTimeStart ?? null,
-        scheduleTimeEnd: parsed.data.scheduleTimeEnd ?? null,
-        claimedSmallGroupId: parsed.data.claimedSmallGroupId ?? null,
-      }
-
-      // Deduplicate guests: try phone first, then email, then last name + birthday
-      // Skip deduplication when user explicitly said "That's not me" to a guest match
-      let existingGuest: { id: string } | null = null
-      if (!skipDeduplication) {
-        if (parsed.data.mobileNumber) {
-          existingGuest = await db.guest.findFirst({
-            where: { phone: parsed.data.mobileNumber },
-            select: { id: true },
-          })
-        }
-        if (!existingGuest && parsed.data.email) {
-          existingGuest = await db.guest.findFirst({
-            where: { email: parsed.data.email },
-            select: { id: true },
-          })
-        }
-        if (
-          !existingGuest &&
-          parsed.data.lastName &&
-          parsed.data.birthMonth != null &&
-          parsed.data.birthYear != null
-        ) {
-          existingGuest = await db.guest.findFirst({
-            where: {
-              lastName: { equals: parsed.data.lastName.trim(), mode: "insensitive" },
-              birthMonth: parsed.data.birthMonth,
-              birthYear: parsed.data.birthYear,
-            },
-            select: { id: true },
-          })
-        }
-      }
-
-      let guestId: string
-      if (existingGuest) {
-        guestId = existingGuest.id
-        // Update matching profile with any newly provided data
-        await db.guest.update({
-          where: { id: guestId },
-          data: {
-            ...(parsed.data.birthMonth != null && { birthMonth: parsed.data.birthMonth }),
-            ...(parsed.data.birthYear != null && { birthYear: parsed.data.birthYear }),
-            ...(matchingProfile.lifeStageId !== null && { lifeStageId: matchingProfile.lifeStageId }),
-            ...(matchingProfile.gender !== null && { gender: matchingProfile.gender }),
-            ...(matchingProfile.language !== undefined && { language: matchingProfile.language }),
-            ...(matchingProfile.meetingPreference !== null && { meetingPreference: matchingProfile.meetingPreference }),
-            ...(matchingProfile.workCity !== null && { workCity: matchingProfile.workCity }),
-            ...(matchingProfile.ageRangeBucketId !== null && { ageRangeBucketId: matchingProfile.ageRangeBucketId }),
-            ...(matchingProfile.scheduleDayOfWeek !== null && {
-              scheduleDayOfWeek: matchingProfile.scheduleDayOfWeek,
-              scheduleTimeStart: matchingProfile.scheduleTimeStart,
-              scheduleTimeEnd: matchingProfile.scheduleTimeEnd,
-            }),
-          ...(matchingProfile.claimedSmallGroupId !== null && { claimedSmallGroupId: matchingProfile.claimedSmallGroupId }),
-          },
-        })
-      } else {
-        const newGuest = await db.guest.create({
-          data: {
-            firstName: parsed.data.firstName,
-            lastName: parsed.data.lastName,
-            email: parsed.data.email ?? null,
-            phone: parsed.data.mobileNumber,
-            birthMonth: parsed.data.birthMonth ?? null,
-            birthYear: parsed.data.birthYear ?? null,
-            language: matchingProfile.language ?? [],
-            lifeStageId: matchingProfile.lifeStageId,
-            gender: matchingProfile.gender,
-            meetingPreference: matchingProfile.meetingPreference,
-            workCity: matchingProfile.workCity,
-            ageRangeBucketId: matchingProfile.ageRangeBucketId,
-            scheduleDayOfWeek: matchingProfile.scheduleDayOfWeek,
-            scheduleTimeStart: matchingProfile.scheduleTimeStart,
-            scheduleTimeEnd: matchingProfile.scheduleTimeEnd,
-            claimedSmallGroupId: matchingProfile.claimedSmallGroupId,
-          },
-          select: { id: true },
-        })
-        guestId = newGuest.id
-      }
+      // Non-member — find or create Guest (dedup ladder: phone → email →
+      // last name + birthday), then link via guestId
+      const { guestId } = await resolveAnonymousGuest(parsed.data, skipDeduplication)
 
       // Duplicate check — guest already registered for this event (walk-in reuses it)
-      const alreadyRegistered = await db.eventRegistrant.findFirst({
-        where: { eventId, guestId },
-        select: { id: true },
-      })
-      if (alreadyRegistered && !walkIn) {
+      const existingRegistrationId = await findExistingEventRegistration(eventId, { guestId })
+      if (existingRegistrationId && !walkIn) {
         return { success: false, error: "You're already registered for this event." }
       }
 
-      const registrantId = alreadyRegistered
-        ? alreadyRegistered.id
-        : (
-            await db.eventRegistrant.create({
-              data: {
-                eventId,
-                guestId,
-                nickname: parsed.data.nickname ?? null,
-                dietaryPreference: parsed.data.dietaryPreference ?? null,
-                dietaryOther: parsed.data.dietaryOther,
-                paymentReference: parsed.data.paymentReference,
-              },
-              select: { id: true },
-            })
-          ).id
-      const breakoutGroup = await assignBreakoutForRegistrant(
-        registrantId,
+      const result = await completeEventRegistration({
         eventId,
+        person: { guestId, nickname: parsed.data.nickname ?? null },
+        data: parsed.data,
         breakoutPick,
-        {
+        profile: {
           gender: (parsed.data.gender ?? null) as Gender | null,
           birthYear: parsed.data.birthYear ?? null,
-        }
-      )
-      if (walkIn) {
-        await checkInWalkInRegistrant(registrantId, walkIn.occurrenceId)
-      } else {
-        await autoCheckinIfOpenRecurringSession(registrantId, eventId)
-      }
-      return { success: true, data: { id: registrantId, breakoutGroup } }
+        },
+        walkIn,
+        existingRegistrantId: existingRegistrationId,
+      })
+      return { success: true, data: result }
     }
   } catch {
     return { success: false, error: "Failed to register. Please try again." }
@@ -1991,7 +1707,7 @@ export async function createHouseholdRegistration(
     }
   }
   const parsedContext = walkIn ? "WalkIn" : "Register"
-  const householdConfig = await getEventFormConfig(eventId, parsedContext)
+  const householdConfig = await getEffectiveFormConfig(eventId, parsedContext)
 
   // Household capture is itself a section toggle. With it off, a crafted POST must
   // not be able to invent a Family — so the extra members are refused outright
@@ -2482,7 +2198,7 @@ export async function addHouseholdMemberAtCheckin(
   // This is the one check-in path that creates family structure, so it obeys the
   // Check-in context's Family section. Surfacing and checking in an existing
   // household stays available either way — only inventing new links is gated.
-  const checkinConfig = await getEventFormConfig(eventId, "CheckIn")
+  const checkinConfig = await getEffectiveFormConfig(eventId, "CheckIn")
   if (!checkinConfig.sectionFamily) {
     return { success: false, error: "This event isn't collecting household details." }
   }

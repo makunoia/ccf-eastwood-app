@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
+import { requireEventModule } from "@/lib/events/require-module"
 import { getEventName } from "@/lib/metadata"
 import { VolunteerInfoForm } from "./volunteer-info-form"
 import { PublicFormShell } from "@/components/public-form-shell"
@@ -56,6 +57,7 @@ export default async function VolunteerInfoPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
+  await requireEventModule(id, "Volunteers")
   const { event, lifeStages } = await getPageData(id)
   if (!event) notFound()
 
