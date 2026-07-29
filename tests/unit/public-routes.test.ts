@@ -59,6 +59,8 @@ describe("isPublicPath", () => {
 
   describe("other public forms and token links", () => {
     it.each([
+      // Regression: the public "Find Your DGroup" form was missing from the
+      // allowlist for the same reason the cluster form was.
       "/join-small-group",
       "/volunteer-approval/tok_1",
       "/small-group-confirmation/tok_1",
@@ -68,6 +70,13 @@ describe("isPublicPath", () => {
       "/api/auth/session",
     ])("allows %s", (path) => {
       expect(isPublicPath(path)).toBe(true)
+    })
+
+    it("anchors /join-small-group so it cannot over-match a sibling route", () => {
+      // The admin /small-groups workspace must stay private, and a prefix-only
+      // match would leak any route merely starting with the same characters.
+      expect(isPublicPath("/join-small-groups-admin")).toBe(false)
+      expect(isPublicPath("/small-groups")).toBe(false)
     })
   })
 
