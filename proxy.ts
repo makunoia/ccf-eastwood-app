@@ -4,33 +4,12 @@ import type { NextRequest } from "next/server"
 import type { Session } from "next-auth"
 import { authConfig } from "./auth.config"
 import { resolveLandingPath } from "@/lib/landing"
+import { isPublicPath } from "@/lib/public-routes"
 import type { FeatureArea } from "@/app/generated/prisma/client"
 import type { UserPermissionEntry } from "@/types/next-auth"
 
 // Create a lightweight Auth.js instance for middleware (no Prisma/DB imports)
 const { auth } = NextAuth(authConfig)
-
-// Paths that never require authentication
-const PUBLIC_PREFIXES = [
-  "/login",
-  "/api/auth",
-  "/_next",
-  "/favicon",
-  "/manifest",
-  "/sw.js",
-  "/workbox-",
-]
-
-const EVENT_PUBLIC_PATTERNS = [
-  /^\/events\/[^/]+\/register/,
-  /^\/events\/[^/]+\/checkin/,
-  /^\/events\/[^/]+\/catch-mech/,
-  /^\/volunteer-approval\//,
-  /^\/small-group-confirmation\//,
-  /^\/ministries\/[^/]+\/volunteer/,
-  /^\/events\/[^/]+\/volunteer/,
-  /^\/me(\/|$)/,
-]
 
 // Paths accessible during the first-login setup flow
 const SETUP_PREFIXES = ["/2fa", "/change-password", "/login"]
@@ -50,13 +29,8 @@ export default auth(function proxy(req: NextRequest & { auth: Session | null }) 
   const { pathname } = req.nextUrl
   const session = req.auth
 
-  // Allow public paths
-  if (PUBLIC_PREFIXES.some((p) => pathname.startsWith(p))) {
-    return NextResponse.next()
-  }
-
-  // Allow public event/volunteer paths
-  if (EVENT_PUBLIC_PATTERNS.some((re) => re.test(pathname))) {
+  // Allow public paths — infrastructure, public forms and token links
+  if (isPublicPath(pathname)) {
     return NextResponse.next()
   }
 
