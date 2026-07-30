@@ -3,6 +3,8 @@ import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { getEventName } from "@/lib/metadata"
 import { CheckinBoard } from "./checkin-board"
+import { FormClosed } from "@/components/form-closed"
+import { getFormConfig } from "@/lib/forms/config"
 import { getEffectiveFormConfig } from "@/lib/forms/context-config-server"
 
 async function getEvent(id: string) {
@@ -141,6 +143,13 @@ export default async function CheckinPage({
       </div>
     )
   }
+
+  // OneTime only, so this is the only surface the Public access switch governs.
+  // MultiDay/Recurring never reach here — they check in per occurrence, and that
+  // occurrence's own `isOpen` is the control, which is why Forms shows them a
+  // pointer to Sessions instead of a switch.
+  const formConfig = await getFormConfig("EventCheckIn", id)
+  if (!formConfig.isOpen) return <FormClosed title="Check-in is currently unavailable" />
 
   // Small-group prompt after check-in; walk-in registration itself lives on the
   // registration page (linked with ?checkin=…), not here.

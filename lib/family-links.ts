@@ -194,6 +194,38 @@ export async function findFamilyBySpouse(
 }
 
 /**
+ * The household a person belongs to, as a display label: the family name plus
+ * how many *other* people are in it ("dela Cruz Family (+2 members)").
+ *
+ * Both refs null returns null rather than querying. A registrant whose person
+ * FKs are both null is either a truly anonymous registrant (name typed straight
+ * onto the row) or an orphan left by a pre-cascade member deletion; neither has
+ * a household. Passing that ref through would build the filter `{ guestId: null }`,
+ * which Postgres reads as `guestId IS NULL` — matching every member-linked
+ * FamilyMember row in the database and labelling the registrant with whichever
+ * family happened to be created first.
+ */
+export async function getHouseholdLabel(
+  ref: { memberId: string | null; guestId: string | null }
+): Promise<string | null> {
+  if (!ref.memberId && !ref.guestId) return null
+
+  const link = await db.familyMember.findFirst({
+    where: ref.memberId ? { memberId: ref.memberId } : { guestId: ref.guestId as string },
+    select: {
+      family: { select: { name: true, _count: { select: { members: true } } } },
+    },
+    orderBy: { createdAt: "asc" },
+  })
+  if (!link) return null
+
+  const others = link.family._count.members - 1
+  return others > 0
+    ? `${link.family.name} (+${others} ${others === 1 ? "member" : "members"})`
+    : link.family.name
+}
+
+/**
  * Re-points every FamilyMember row from one person onto another, preserving
  * family membership across identity changes:
  *

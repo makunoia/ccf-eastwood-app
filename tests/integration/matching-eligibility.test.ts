@@ -181,6 +181,31 @@ describe("matchSmallGroups — hard gates", () => {
     expect(ids(results)).not.toContain(monday.id)
   })
 
+  it("keeps every scheduled group when the candidate gave no availability", async () => {
+    // The candidate schedule is optional on the DGroup Matching forms — a blank
+    // slot must widen the search, never gate groups out.
+    const monday = await seedGroup({
+      name: "Monday",
+      scheduleDayOfWeek: 1,
+      scheduleTimeStart: "19:00",
+      scheduleTimeEnd: "21:00",
+    })
+    const tuesday = await seedGroup({
+      name: "Tuesday",
+      scheduleDayOfWeek: 2,
+      scheduleTimeStart: "19:00",
+      scheduleTimeEnd: "21:00",
+    })
+    const guest = await seedGuest()
+
+    const results = await matchSmallGroups({ guestId: guest.id })
+
+    expect(ids(results)).toContain(monday.id)
+    expect(ids(results)).toContain(tuesday.id)
+    // Schedule is unmeasured, so it must not be counted as known coverage.
+    expect(results.every((r) => r.coverage.schedule)).toBe(false)
+  })
+
   it("excludes a group that is already at its member limit", async () => {
     const full = await seedGroup({ name: "Full", memberLimit: 1 })
     const open = await seedGroup({ name: "Open", memberLimit: 5 })

@@ -8,6 +8,7 @@ import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import {
   BARE_EVENT_FORM_CONFIG,
+  resolveSuccessMessage,
   type EventFormConfigData,
 } from "@/lib/forms/context-config"
 import { Button } from "@/components/ui/button"
@@ -56,6 +57,7 @@ import {
   suggestBreakoutGroup,
   filterCompatibleCandidates,
   type BreakoutCandidate,
+  type BreakoutNoticeKind,
 } from "@/lib/breakout-suggestion"
 
 const DAY_NAMES = ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"]
@@ -71,6 +73,13 @@ function formatTime(time: string): string {
   const period = h >= 12 ? "PM" : "AM"
   const display = h % 12 || 12
   return `${display}:${m.toString().padStart(2, "0")} ${period}`
+}
+
+const BREAKOUT_NOTICE_COPY: Record<BreakoutNoticeKind, { title: string; body: string }> = {
+  "awaiting-facilitator": {
+    title: "No breakout groups are open yet",
+    body: "Groups appear here once their facilitator has checked in. Go ahead and finish registering — a staff member will place you in a group.",
+  },
 }
 
 type Step = "form" | "confirm" | "disambiguate" | "early-confirm" | "early-disambiguate" | "done" | "volunteer-blocked"
@@ -217,11 +226,21 @@ type Props = {
    * bare: only the mandatory identity fields.
    */
   config?: Partial<EventFormConfigData>
+  /**
+   * Admin-configured success screen sub copy (CCF-130). Null/omitted falls back
+   * to the built-in default for this context.
+   */
+  successMessage?: string | null
   lifeStages?: LifeStage[]
   /** Configurable age brackets (CCF-123), shown when the Age Range field is on. */
   ageRanges?: AgeRangeBucket[]
   defaultLifeStageId?: string
   breakoutCandidates?: BreakoutCandidate[]
+  /**
+   * Why the breakout list is empty, when that is worth saying out loud. The step
+   * renders with an explanation instead of disappearing — see `BreakoutNotice`.
+   */
+  breakoutNotice?: BreakoutNoticeKind | null
   // "plain" drops the Card chrome so the form can be embedded inside another
   // container (e.g. the check-in board's card).
   frame?: "card" | "plain"
@@ -247,10 +266,12 @@ export function RegistrationForm({
   eventId,
   eventName = "",
   config,
+  successMessage = null,
   lifeStages = [],
   ageRanges = [],
   defaultLifeStageId = "",
   breakoutCandidates = [],
+  breakoutNotice = null,
   frame = "card",
   walkIn,
   cluster,
@@ -317,15 +338,19 @@ export function RegistrationForm({
   }
   const cardRef = React.useRef<HTMLDivElement>(null)
 
-  const showBreakoutSection = breakoutCandidates.length > 0
+  // A notice keeps the step on screen with nothing to pick. Silently dropping it
+  // is what made the walk-in form look broken: the admin had switched Breakout
+  // on, and the step still wasn't there.
+  const hasBreakoutChoices = breakoutCandidates.length > 0
+  const showBreakoutSection = hasBreakoutChoices || breakoutNotice !== null
 
   const suggestedBreakout = React.useMemo(() => {
-    if (!showBreakoutSection) return null
+    if (!hasBreakoutChoices) return null
     return suggestBreakoutGroup(breakoutCandidates, {
       gender: (form.gender || null) as "Male" | "Female" | null,
       birthYear: form.birthYear ? parseInt(form.birthYear, 10) : null,
     })
-  }, [breakoutCandidates, form.gender, form.birthYear, showBreakoutSection])
+  }, [breakoutCandidates, form.gender, form.birthYear, hasBreakoutChoices])
 
   const browsableCandidates = React.useMemo(() => {
     return filterCompatibleCandidates(breakoutCandidates, {
@@ -658,6 +683,9 @@ export function RegistrationForm({
           includeMatching && cfg.fieldSchedule ? form.scheduleTimeEnd || null : null,
         claimedSmallGroupId:
           includeSmallGroup && smallGroupIntent === "already_in" ? claimedSmallGroupId || null : null,
+        // The intent itself is submitted now, not just used to reveal the
+        // matching questions — the server turns it into a DGroup request (CCF-101).
+        wantsSmallGroup: includeSmallGroup && smallGroupIntent === "wants",
         dietaryPreference: includeDietary
           ? form.dietaryPreference === ""
             ? null
@@ -795,8 +823,12 @@ export function RegistrationForm({
                 : "Here's where things stand"}
             </p>
             <p className="text-sm text-muted-foreground leading-relaxed">
+              {/* A configured message replaces the stock line, but only when
+                  something actually registered — the failure copy has to stay
+                  accurate regardless of what the admin wrote. */}
               {anyRegistered
-                ? "We're so glad you're coming — here's how each event went."
+                ? (successMessage?.trim() ||
+                  "We're so glad you're coming — here's how each event went.")
                 : "None of the selected events could take your registration."}
             </p>
             <div className="mt-3 space-y-2 text-left">
@@ -872,11 +904,7 @@ export function RegistrationForm({
               Welcome{displayName ? `, ${displayName}` : ""}!
             </p>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              {walkIn
-                ? "You're registered and checked in. Enjoy the event!"
-                : eventName
-                  ? `You're all set for ${eventName}. We're so glad you're coming — feel free to bring a friend!`
-                  : "You're all set! We're so glad you're joining us. Feel free to bring a friend — see you soon!"}
+              {resolveSuccessMessage(successMessage, walkIn ? "WalkIn" : "Register", eventName)}
             </p>
             {displayBreakout && (
               <div className="mt-3 rounded-xl border bg-muted/40 px-4 py-3 text-left space-y-0.5">
@@ -1587,6 +1615,17 @@ export function RegistrationForm({
                 </p>
               )}
 
+              {!hasBreakoutChoices && breakoutNotice && (
+                <div className="rounded-lg border border-dashed bg-muted/40 p-4">
+                  <p className="text-sm font-medium">
+                    {BREAKOUT_NOTICE_COPY[breakoutNotice].title}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {BREAKOUT_NOTICE_COPY[breakoutNotice].body}
+                  </p>
+                </div>
+              )}
+
               {suggestedBreakout && (() => {
                 const isSelected = selectedBreakoutId === suggestedBreakout.id
                 return (
@@ -1626,7 +1665,7 @@ export function RegistrationForm({
                 )
               })()}
 
-              <div className="space-y-2">
+              <div className={cn("space-y-2", !hasBreakoutChoices && "hidden")}>
                 <Label>Or browse all groups</Label>
                 <Select
                   value={selectedBreakoutId || "_none"}

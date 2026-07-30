@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import {
+  IconAlertTriangle,
   IconCake,
   IconCalendarTime,
   IconCash,
@@ -10,6 +11,7 @@ import {
   IconHeart,
   IconLanguage,
   IconMapPin,
+  IconMessage2,
   IconNumbers,
   IconSalad,
   IconSitemap,
@@ -41,6 +43,7 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import {
   BARE_EVENT_FORM_CONFIG,
@@ -48,14 +51,22 @@ import {
   FORM_FIELD_META,
   FORM_OPTION_META,
   FORM_TOGGLE_KEYS,
+  SUCCESS_MESSAGE_MAX_LENGTH,
+  defaultSuccessMessage,
   formLayoutFor,
   type EventFormConfigData,
   type FormLayoutSection,
   type FormToggleKey,
 } from "@/lib/forms/context-config"
 import {
+  prerequisiteFor,
+  type TogglePrerequisites,
+} from "@/lib/forms/form-prerequisites"
+import {
   copyClusterFormConfig,
   copyEventFormConfig,
+  saveClusterFormSuccessMessage,
+  saveEventFormSuccessMessage,
   setClusterFormToggle,
   setEventFormToggle,
 } from "@/app/(dashboard)/events/form-config-actions"
@@ -106,6 +117,7 @@ const NOT_APPLICABLE: Partial<Record<FormContext, FormToggleKey[]>> = {
 /** Default tab order when a caller doesn't narrow it. */
 const CONTEXT_ORDER: FormContext[] = ["Register", "WalkIn", "CheckIn"]
 
+
 /**
  * Contexts that can copy their whole config from another, and where from.
  *
@@ -138,6 +150,9 @@ export function EventFormBuilder({
   heading = "Registration form",
   blurb = "Each surface is configured on its own, and listed in the order people see it. Name, mobile number, and email are always collected — everything else is opt-in.",
   notApplicable = [],
+  prerequisites,
+  successMessages,
+  eventName,
 }: {
   eventId?: string
   /** When set, the builder edits a cluster's shared form config instead of an event's (CCF-132). */
@@ -155,6 +170,16 @@ export function EventFormBuilder({
   blurb?: string
   /** Extra toggles hidden in every context — e.g. the cluster form has no payment/breakout/household. */
   notApplicable?: readonly FormToggleKey[]
+  /** Warnings for toggles that are on but can't render for lack of data elsewhere. */
+  prerequisites?: TogglePrerequisites
+  /**
+   * Stored success-screen copy per context (CCF-130). Null for a context means
+   * "unset" — the editor shows the default as placeholder rather than as text, so
+   * an admin can tell configured copy from inherited copy.
+   */
+  successMessages?: Partial<Record<FormContext, string | null>>
+  /** Used only to render the default copy accurately in the editor's placeholder. */
+  eventName?: string
 }) {
   const moduleDriven: FormToggleKey[] = modules
     ? [
@@ -262,9 +287,21 @@ export function EventFormBuilder({
                   pending={pending}
                   onToggle={handleToggle}
                   notApplicable={suppressed}
+                  prerequisites={prerequisites}
                 />
               ))}
             </Accordion>
+
+            {/* Check-in has no success screen — it confirms attendance in place. */}
+            {context !== "CheckIn" && (
+              <SuccessMessageEditor
+                context={context}
+                eventId={eventId}
+                clusterId={clusterId}
+                eventName={eventName}
+                initial={successMessages?.[context] ?? null}
+              />
+            )}
           </TabsContent>
         ))}
       </Tabs>
@@ -347,6 +384,104 @@ function CopyFromSource({
   )
 }
 
+/**
+ * The success screen's sub copy (CCF-130).
+ *
+ * Sits outside the section accordion because it isn't a thing the form *asks* —
+ * it's what the form *says* once someone is done. Left blank it falls back to the
+ * built-in copy, which is shown as the placeholder so an admin can see exactly
+ * what people will read without having to publish first.
+ */
+function SuccessMessageEditor({
+  context,
+  eventId,
+  clusterId,
+  eventName,
+  initial,
+}: {
+  context: FormContext
+  eventId?: string
+  clusterId?: string
+  eventName?: string
+  initial: string | null
+}) {
+  const [value, setValue] = React.useState(initial ?? "")
+  const [saved, setSaved] = React.useState(initial ?? "")
+  const [saving, setSaving] = React.useState(false)
+
+  const fallback = defaultSuccessMessage(context, eventName)
+  const dirty = value.trim() !== saved.trim()
+  const tooLong = value.length > SUCCESS_MESSAGE_MAX_LENGTH
+
+  async function handleSave() {
+    setSaving(true)
+    const next = value.trim()
+    const result = clusterId
+      ? await saveClusterFormSuccessMessage(clusterId, context, next)
+      : await saveEventFormSuccessMessage(eventId!, context, next)
+    setSaving(false)
+    if (result.success) {
+      setSaved(next)
+      setValue(next)
+      toast.success(next ? "Success message saved" : "Reverted to the default message")
+    } else {
+      toast.error(result.error)
+    }
+  }
+
+  return (
+    <div className="space-y-3 rounded-lg border px-4 py-4">
+      <div className="flex items-start gap-3">
+        <IconMessage2 className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+        <div className="min-w-0 flex-1">
+          <p className="flex items-center gap-2 text-sm font-medium">
+            After they submit
+            {!saved.trim() && <Badge variant="outline">Default</Badge>}
+          </p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            The line under &ldquo;Welcome!&rdquo; on the success screen. Blank uses the default.
+          </p>
+        </div>
+      </div>
+
+      <Textarea
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder={fallback}
+        rows={3}
+        aria-label={`Success message on ${FORM_CONTEXT_META[context].label}`}
+        aria-invalid={tooLong}
+      />
+
+      <div className="flex items-center justify-between gap-3">
+        <p
+          className={cn(
+            "text-xs",
+            tooLong ? "text-destructive" : "text-muted-foreground"
+          )}
+        >
+          {value.length} / {SUCCESS_MESSAGE_MAX_LENGTH}
+        </p>
+        <div className="flex items-center gap-2">
+          {dirty && !saving && (
+            <Button type="button" variant="ghost" size="sm" onClick={() => setValue(saved)}>
+              Cancel
+            </Button>
+          )}
+          <Button
+            type="button"
+            size="sm"
+            onClick={handleSave}
+            disabled={!dirty || saving || tooLong}
+          >
+            {saving ? "Saving…" : "Save"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function SectionItem({
   section,
   context,
@@ -354,6 +489,7 @@ function SectionItem({
   pending,
   onToggle,
   notApplicable = [],
+  prerequisites,
 }: {
   section: FormLayoutSection
   context: FormContext
@@ -361,6 +497,7 @@ function SectionItem({
   pending: string | null
   onToggle: (context: FormContext, key: FormToggleKey) => void
   notApplicable?: readonly FormToggleKey[]
+  prerequisites?: TogglePrerequisites
 }) {
   const na = [...(NOT_APPLICABLE[context] ?? []), ...notApplicable]
   if (section.key !== "personal" && na.includes(section.key)) return null
@@ -377,6 +514,11 @@ function SectionItem({
   const enabledCount = [...fields, ...options].filter((k) => config[k]).length
   const total = fields.length + options.length
 
+  // Only worth saying when the section is on — an off section isn't expected to
+  // render, so there is no surprise to explain.
+  const warning =
+    sectionKey !== null && enabled ? prerequisiteFor(prerequisites, sectionKey, context) : null
+
   return (
     <AccordionItem value={section.key} className="px-4">
       <div className="flex items-center gap-3">
@@ -391,8 +533,10 @@ function SectionItem({
                   <span className="text-sm font-medium">{section.title}</span>
                   {sectionKey === null ? (
                     <Badge variant="secondary">Always on</Badge>
+                  ) : !enabled ? (
+                    <Badge variant="outline">Off</Badge>
                   ) : (
-                    !enabled && <Badge variant="outline">Off</Badge>
+                    warning && <Badge variant="outline">Won&apos;t show</Badge>
                   )}
                 </span>
                 {total > 0 && (
@@ -418,6 +562,7 @@ function SectionItem({
       <AccordionContent className="space-y-3 pb-4">
         <p className="text-xs text-muted-foreground">{section.description}</p>
         {section.note && <p className="text-xs text-muted-foreground">{section.note}</p>}
+        {warning && <PrerequisiteNote message={warning} />}
 
         {total > 0 && (
           <div className="space-y-2">
@@ -438,6 +583,9 @@ function SectionItem({
                 context={context}
                 pending={pending}
                 onToggle={onToggle}
+                warning={
+                  enabled && config[key] ? prerequisiteFor(prerequisites, key, context) : null
+                }
               />
             ))}
             {fields.map((key) => (
@@ -449,12 +597,29 @@ function SectionItem({
                 context={context}
                 pending={pending}
                 onToggle={onToggle}
+                warning={
+                  enabled && config[key] ? prerequisiteFor(prerequisites, key, context) : null
+                }
               />
             ))}
           </div>
         )}
       </AccordionContent>
     </AccordionItem>
+  )
+}
+
+/**
+ * Why an enabled toggle still won't appear on the form. Deliberately plain text
+ * rather than an alert box — several can be on screen at once, and the point is
+ * to be noticed while reading the section, not to shout.
+ */
+function PrerequisiteNote({ message }: { message: string }) {
+  return (
+    <p className="flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-500">
+      <IconAlertTriangle className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+      <span>{message}</span>
+    </p>
   )
 }
 
@@ -465,6 +630,7 @@ function FieldRow({
   context,
   pending,
   onToggle,
+  warning = null,
 }: {
   meta: { key: FormToggleKey; label: string; description: string }
   checked: boolean
@@ -472,6 +638,7 @@ function FieldRow({
   context: FormContext
   pending: string | null
   onToggle: (context: FormContext, key: FormToggleKey) => void
+  warning?: string | null
 }) {
   const id = `${context}-${meta.key}`
   return (
@@ -486,6 +653,11 @@ function FieldRow({
       <label htmlFor={id} className="min-w-0 cursor-pointer">
         <span className="block text-sm font-medium">{meta.label}</span>
         <span className="block text-xs text-muted-foreground">{meta.description}</span>
+        {warning && (
+          <span className="mt-1 block">
+            <PrerequisiteNote message={warning} />
+          </span>
+        )}
       </label>
     </div>
   )

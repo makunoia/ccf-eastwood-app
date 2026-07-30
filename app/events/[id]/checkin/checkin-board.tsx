@@ -30,6 +30,7 @@ import {
   lookupHouseholdForCheckin,
   checkInHousehold,
   addHouseholdMemberAtCheckin,
+  recordSmallGroupInterestAtCheckin,
   type HouseholdCheckin,
 } from "@/app/(dashboard)/events/actions"
 import {
@@ -822,7 +823,18 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
           <div className="flex flex-col gap-3">
             <Button
               className="w-full"
-              onClick={() => setStep("sg-profile")}
+              onClick={() => {
+                // Fire-and-forget: the request is admin bookkeeping, and making
+                // someone at a kiosk wait on it (or blocking them if it fails)
+                // would be worse than a missed row.
+                if (matched.guestSmallGroupPrompt) {
+                  void recordSmallGroupInterestAtCheckin(
+                    eventId,
+                    matched.guestSmallGroupPrompt.guestId
+                  )
+                }
+                setStep("sg-profile")
+              }}
             >
               Yes, I&apos;m interested
             </Button>

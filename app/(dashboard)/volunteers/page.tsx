@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { Prisma, VolunteerStatus } from "@/app/generated/prisma/client"
 
 import { db } from "@/lib/db"
+import { personSearchWhere } from "@/lib/search/name-search"
 import { type MemberVolunteerRow } from "./columns"
 import { PageHeader } from "@/components/page-header"
 import { VolunteersTable } from "./volunteers-table"
@@ -85,14 +86,10 @@ export default async function VolunteersPage({
 
   const where: Prisma.VolunteerWhereInput = {
     AND: [
-      search
-        ? {
-            OR: [
-              { member: { firstName: { contains: search, mode: "insensitive" } } },
-              { member: { lastName: { contains: search, mode: "insensitive" } } },
-            ],
-          }
-        : {},
+      (personSearchWhere(search, {
+        fields: ["firstName", "lastName"],
+        prefix: "member",
+      }) as Prisma.VolunteerWhereInput | null) ?? {},
       status ? { status: status as VolunteerStatus } : {},
       eventId ? { eventId } : {},
     ],

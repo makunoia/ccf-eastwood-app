@@ -42,6 +42,7 @@ export const REGISTRANT_FIELD_GATES = {
   scheduleTimeStart: "fieldSchedule",
   scheduleTimeEnd: "fieldSchedule",
   claimedSmallGroupId: "sectionSmallGroup",
+  wantsSmallGroup: "sectionSmallGroup",
   dietaryPreference: "sectionDietary",
   dietaryOther: "sectionDietary",
   paymentReference: "sectionPayment",

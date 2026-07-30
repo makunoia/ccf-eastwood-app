@@ -9,6 +9,7 @@ import { enrichArray, enrichNullable, enrichText } from "@/lib/import/enrich"
 import type { DuplicateMatch, ImportResult, RowResolution } from "@/lib/import/types"
 import { Gender, Prisma } from "@/app/generated/prisma/client"
 import { toTitleCase, formatPhilippinePhone } from "@/lib/utils"
+import { personSearchWhere } from "@/lib/search/name-search"
 
 type ActionResult<T = void> =
   | { success: true; data: T }
@@ -591,22 +592,16 @@ export async function searchPeopleForRegistration(
   if (q.length < 2) return { success: true, data: [] }
 
   try {
-    const matchFields = [
-      { firstName: { contains: q, mode: "insensitive" as const } },
-      { lastName: { contains: q, mode: "insensitive" as const } },
-      { nickname: { contains: q, mode: "insensitive" as const } },
-      { phone: { contains: q, mode: "insensitive" as const } },
-      { email: { contains: q, mode: "insensitive" as const } },
-    ]
+    const matchFields = personSearchWhere(q) ?? {}
 
     const [members, guests, registrants] = await Promise.all([
       db.member.findMany({
-        where: { OR: matchFields },
+        where: matchFields,
         select: { id: true, firstName: true, lastName: true, email: true, phone: true },
         take: 10,
       }),
       db.guest.findMany({
-        where: { memberId: null, OR: matchFields },
+        where: { memberId: null, ...matchFields },
         select: { id: true, firstName: true, lastName: true, email: true, phone: true },
         take: 10,
       }),

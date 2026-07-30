@@ -4,6 +4,7 @@ import { db } from "@/lib/db"
 import { requireEventModule } from "@/lib/events/require-module"
 import { auth } from "@/lib/auth"
 import { canWrite } from "@/lib/permissions"
+import { allTokensMatch } from "@/lib/search/name-search"
 import { PageHeader } from "@/components/page-header"
 import { BatchSelectionProvider } from "@/components/batch/batch-selection-provider"
 import { VolunteersTab, type EventVolunteer } from "@/app/(dashboard)/events/[id]/volunteers-tab"
@@ -31,12 +32,11 @@ async function getEventVolunteers(
             filters.committeeId ? { committeeId: filters.committeeId } : {},
             filters.search
               ? {
-                  member: {
-                    OR: [
-                      { firstName: { contains: filters.search, mode: "insensitive" } },
-                      { lastName: { contains: filters.search, mode: "insensitive" } },
-                    ],
-                  },
+                  member:
+                    allTokensMatch(filters.search, (token) => [
+                      { firstName: { contains: token, mode: "insensitive" as const } },
+                      { lastName: { contains: token, mode: "insensitive" as const } },
+                    ]) ?? {},
                 }
               : {},
           ],

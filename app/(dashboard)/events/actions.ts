@@ -49,6 +49,7 @@ import {
   householdSchema,
 } from "@/lib/validations/household"
 import { formatPhilippinePhone } from "@/lib/utils"
+import { createSeekerRequestFromRegistration } from "@/lib/small-groups/seeker-requests"
 import type { Gender } from "@/app/generated/prisma/client"
 
 type ActionResult<T = void> =
@@ -2044,6 +2045,11 @@ export async function lookupHouseholdForCheckin(
       select: { id: true, memberId: true, guestId: true },
     })
     if (!registrant) return { success: true, data: null }
+    // No person FK — an anonymous registrant, or an orphan from a pre-cascade
+    // member deletion. Neither has a household, and passing the null ref through
+    // would filter on `guestId IS NULL`, matching every member-linked family link
+    // in the database and offering a stranger's household for check-in.
+    if (!registrant.memberId && !registrant.guestId) return { success: true, data: null }
 
     const link = await db.familyMember.findFirst({
       where: registrant.memberId
@@ -2217,6 +2223,15 @@ export async function addHouseholdMemberAtCheckin(
     if (!subject) {
       return { success: false, error: "That registration doesn't belong to this event." }
     }
+    // Same guard as `lookupHouseholdForCheckin`, and it matters more here: this
+    // path writes. Without it a registrant carrying no person FK would resolve
+    // `guestId IS NULL` to an unrelated family and attach the new person to it.
+    if (!subject.memberId && !subject.guestId) {
+      return {
+        success: false,
+        error: "This registration isn't linked to a person, so it has no household.",
+      }
+    }
 
     const subjectRef: FamilyPersonRef = subject.memberId
       ? { memberId: subject.memberId }
@@ -2337,5 +2352,39 @@ export async function addHouseholdMemberAtCheckin(
     return { success: true, data: { familyId, registrantId } }
   } catch {
     return { success: false, error: "Failed to add household member" }
+  }
+}
+
+/**
+ * "Yes, I'm interested" on the check-in DGroup prompt (CCF-101).
+ *
+ * Check-in had the same dead end registration did: the prompt collected a
+ * matching profile and then dropped the intent, so nobody was told a person had
+ * asked to be placed. Recorded at the moment they answer rather than when they
+ * save the profile — the profile step is skippable, and the interest is real
+ * either way.
+ *
+ * Public, like every other check-in action: the board runs unauthenticated at a
+ * kiosk. It can only ever create a Pending request for a guest who is already a
+ * registrant of this event, which is not a meaningful write primitive to expose.
+ */
+export async function recordSmallGroupInterestAtCheckin(
+  eventId: string,
+  guestId: string
+): Promise<ActionResult> {
+  try {
+    // The guest must actually be registered for this event — otherwise the
+    // endpoint would raise requests for arbitrary guest ids.
+    const registrant = await db.eventRegistrant.findFirst({
+      where: { eventId, guestId },
+      select: { id: true },
+    })
+    if (!registrant) return { success: false, error: "Not registered for this event." }
+
+    await createSeekerRequestFromRegistration({ guestId }, eventId)
+    revalidatePath("/small-groups")
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to record DGroup interest" }
   }
 }

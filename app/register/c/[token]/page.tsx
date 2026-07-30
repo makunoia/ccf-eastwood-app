@@ -4,7 +4,10 @@ import { db } from "@/lib/db"
 import { RegistrationForm } from "@/app/events/[id]/register/registration-form"
 import { PublicFormShell } from "@/components/public-form-shell"
 import { FormClosed } from "@/components/form-closed"
-import { getClusterFormConfig } from "@/lib/forms/context-config-server"
+import {
+  getClusterFormConfig,
+  getClusterFormSuccessMessage,
+} from "@/lib/forms/context-config-server"
 import { isWithinRegistrationWindow } from "@/lib/events/registration-window"
 import type { FormTheme } from "@/lib/forms/config"
 
@@ -104,7 +107,11 @@ export default async function ClusterRegisterPage({
     isWithinRegistrationWindow(cluster.registrationStart, cluster.registrationEnd)
   if (!open && !walkIn) return <FormClosed />
 
-  const formFields = await getClusterFormConfig(cluster.id, walkIn ? "WalkIn" : "Register")
+  const formContext = walkIn ? "WalkIn" : "Register"
+  const [formFields, successMessage] = await Promise.all([
+    getClusterFormConfig(cluster.id, formContext),
+    getClusterFormSuccessMessage(cluster.id, formContext),
+  ])
   // Payment and the manual breakout picker are explicitly out of scope for the
   // shared cluster form; household capture doesn't fan out. Per-event
   // auto-assign breakouts still run on submit.
@@ -154,6 +161,7 @@ export default async function ClusterRegisterPage({
         }}
         eventName={cluster.name}
         config={config}
+        successMessage={successMessage}
         lifeStages={lifeStages}
         ageRanges={ageRanges}
         walkIn={walkIn}

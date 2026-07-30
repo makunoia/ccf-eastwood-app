@@ -48,24 +48,31 @@ export function RegistrationWindowSetting({
 
   return (
     <SettingCard
+      // Matches every other block on the Forms page — without it this card was the
+      // only one running the full page width instead of sitting in the column.
+      className="max-w-2xl"
       title="Registration window"
       description="When the public form accepts sign-ups. Leave a date blank for no limit on that side — staff walk-ins are always allowed."
     >
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
+      {/* Date inputs have a wide intrinsic minimum, so they stack rather than
+          overflow once the column gets narrow. */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="min-w-0 space-y-2">
           <Label htmlFor="registrationStart">Opens</Label>
           <Input
             id="registrationStart"
             type="date"
+            className="w-full"
             value={form.registrationStart}
             onChange={(e) => set("registrationStart", e.target.value)}
           />
         </div>
-        <div className="space-y-2">
+        <div className="min-w-0 space-y-2">
           <Label htmlFor="registrationEnd">Closes</Label>
           <Input
             id="registrationEnd"
             type="date"
+            className="w-full"
             value={form.registrationEnd}
             onChange={(e) => set("registrationEnd", e.target.value)}
           />

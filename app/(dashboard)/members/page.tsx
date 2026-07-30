@@ -3,6 +3,7 @@ import { Gender, Prisma } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import { canExport, canImport, canWrite } from "@/lib/permissions"
+import { personSearchWhere } from "@/lib/search/name-search"
 import { type MemberRow } from "./columns"
 import { PageHeader } from "@/components/page-header"
 import { BatchSelectionProvider } from "@/components/batch/batch-selection-provider"
@@ -63,17 +64,7 @@ export default async function MembersPage({
 
   const where: Prisma.MemberWhereInput = {
     AND: [
-      search
-        ? {
-            OR: [
-              { firstName: { contains: search, mode: "insensitive" } },
-              { lastName: { contains: search, mode: "insensitive" } },
-              { nickname: { contains: search, mode: "insensitive" } },
-              { email: { contains: search, mode: "insensitive" } },
-              { phone: { contains: search, mode: "insensitive" } },
-            ],
-          }
-        : {},
+      (personSearchWhere(search) as Prisma.MemberWhereInput | null) ?? {},
       lifeStageId ? { lifeStageId } : {},
       smallGroupId ? { smallGroupId } : {},
       gender ? { gender: gender as Gender } : {},

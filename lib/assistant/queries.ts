@@ -3,6 +3,7 @@
 
 import { db } from "@/lib/db"
 import { formatPhilippinePhone } from "@/lib/utils"
+import { allTokensMatch } from "@/lib/search/name-search"
 import type { Prisma } from "@/app/generated/prisma/client"
 import { clampRowLimit } from "./config"
 import {
@@ -29,20 +30,30 @@ import {
 
 const insensitive = "insensitive" as const
 
-/** Name/email/phone search clauses shared by members and guests. */
-function personSearchClauses(query: string) {
-  const clauses: object[] = [
-    { firstName: { contains: query, mode: insensitive } },
-    { lastName: { contains: query, mode: insensitive } },
-    { nickname: { contains: query, mode: insensitive } },
-    { email: { contains: query, mode: insensitive } },
-  ]
+/**
+ * Name/email/phone search filter shared by members and guests.
+ *
+ * The name half requires every token to match some name field (CCF-115), so
+ * "Maria Santos" finds the person rather than nothing. The phone half stays a
+ * whole-query exact match — a canonical number contains spaces, so tokenizing it
+ * would compare fragments against a normalized string — and is OR'd alongside.
+ */
+function personSearchFilter(query: string): object {
+  const nameMatch = allTokensMatch(query, (token) => [
+    { firstName: { contains: token, mode: insensitive } },
+    { lastName: { contains: token, mode: insensitive } },
+    { nickname: { contains: token, mode: insensitive } },
+    { email: { contains: token, mode: insensitive } },
+  ])
   // A phone-looking query must be normalized to the canonical stored format
   // or the exact match silently fails.
-  if (/\d{4,}/.test(query.replace(/[\s()+-]/g, ""))) {
-    clauses.push({ phone: formatPhilippinePhone(query) })
-  }
-  return clauses
+  const phoneMatch = /\d{4,}/.test(query.replace(/[\s()+-]/g, ""))
+    ? { phone: formatPhilippinePhone(query) }
+    : null
+
+  if (!nameMatch) return phoneMatch ?? {}
+  if (!phoneMatch) return nameMatch
+  return { OR: [nameMatch, phoneMatch] }
 }
 
 // ─── Members ──────────────────────────────────────────────────────────────────
@@ -56,7 +67,7 @@ export async function queryMembers(filters: {
 }): Promise<AssistantList<AssistantMemberRow>> {
   const take = clampRowLimit(filters.limit)
   const where: Prisma.MemberWhereInput = {
-    ...(filters.query ? { OR: personSearchClauses(filters.query) } : {}),
+    ...(filters.query ? personSearchFilter(filters.query) : {}),
     ...(filters.lifeStageId ? { lifeStageId: filters.lifeStageId } : {}),
     ...(filters.gender ? { gender: filters.gender } : {}),
     ...(filters.inSmallGroup === undefined
@@ -166,7 +177,7 @@ export async function queryGuests(filters: {
   const take = clampRowLimit(filters.limit)
   const status = filters.status ?? "active"
   const where: Prisma.GuestWhereInput = {
-    ...(filters.query ? { OR: personSearchClauses(filters.query) } : {}),
+    ...(filters.query ? personSearchFilter(filters.query) : {}),
     ...(filters.lifeStageId ? { lifeStageId: filters.lifeStageId } : {}),
     ...(status === "all" ? {} : { memberId: status === "promoted" ? { not: null } : null }),
   }
@@ -287,15 +298,11 @@ export async function querySmallGroups(filters: {
 }): Promise<AssistantList<AssistantGroupRow>> {
   const take = clampRowLimit(filters.limit)
   const where: Prisma.SmallGroupWhereInput = {
-    ...(filters.query
-      ? {
-          OR: [
-            { name: { contains: filters.query, mode: insensitive } },
-            { leader: { firstName: { contains: filters.query, mode: insensitive } } },
-            { leader: { lastName: { contains: filters.query, mode: insensitive } } },
-          ],
-        }
-      : {}),
+    ...(allTokensMatch(filters.query ?? "", (token) => [
+      { name: { contains: token, mode: insensitive } },
+      { leader: { firstName: { contains: token, mode: insensitive } } },
+      { leader: { lastName: { contains: token, mode: insensitive } } },
+    ]) ?? {}),
     ...(filters.lifeStageId ? { lifeStages: { some: { id: filters.lifeStageId } } } : {}),
     ...(filters.dayOfWeek === undefined ? {} : { scheduleDayOfWeek: filters.dayOfWeek }),
     ...(filters.groupType ? { groupType: filters.groupType } : {}),
@@ -603,18 +610,17 @@ export async function queryEventRegistrants(filters: {
 }): Promise<AssistantList<AssistantRegistrantRow>> {
   const take = clampRowLimit(filters.limit)
   const q = filters.query
-  const nameFilter = q
-    ? {
-        OR: [
-          { firstName: { contains: q, mode: insensitive } },
-          { lastName: { contains: q, mode: insensitive } },
-          { member: { firstName: { contains: q, mode: insensitive } } },
-          { member: { lastName: { contains: q, mode: insensitive } } },
-          { guest: { firstName: { contains: q, mode: insensitive } } },
-          { guest: { lastName: { contains: q, mode: insensitive } } },
-        ],
-      }
-    : {}
+  // A registrant's name lives either on the row itself (anonymous) or on the
+  // linked member/guest, so every token has to match across all three.
+  const nameFilter =
+    allTokensMatch(q ?? "", (token) => [
+      { firstName: { contains: token, mode: insensitive } },
+      { lastName: { contains: token, mode: insensitive } },
+      { member: { firstName: { contains: token, mode: insensitive } } },
+      { member: { lastName: { contains: token, mode: insensitive } } },
+      { guest: { firstName: { contains: token, mode: insensitive } } },
+      { guest: { lastName: { contains: token, mode: insensitive } } },
+    ]) ?? {}
   const where: Prisma.EventRegistrantWhereInput = {
     eventId: filters.eventId,
     ...nameFilter,
@@ -665,12 +671,10 @@ export async function queryVolunteers(filters: {
     ...(filters.status ? { status: filters.status } : {}),
     ...(filters.query
       ? {
-          member: {
-            OR: [
-              { firstName: { contains: filters.query, mode: insensitive } },
-              { lastName: { contains: filters.query, mode: insensitive } },
-            ],
-          },
+          member: allTokensMatch(filters.query, (token) => [
+            { firstName: { contains: token, mode: insensitive } },
+            { lastName: { contains: token, mode: insensitive } },
+          ]) ?? {},
         }
       : {}),
   }

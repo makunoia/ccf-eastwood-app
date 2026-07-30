@@ -3,13 +3,32 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { cn } from "@/lib/utils"
 
-type Tab = "all" | "requests"
+type Tab = "all" | "requests" | "seeking"
 
-export function SmallGroupsTabs({ pendingRequestCount }: { pendingRequestCount: number }) {
+const TAB_LABEL: Record<Tab, string> = {
+  all: "All",
+  requests: "Requests",
+  // People who asked to join but have no group picked yet (CCF-101).
+  seeking: "Seeking",
+}
+
+export function SmallGroupsTabs({
+  pendingRequestCount,
+  seekerCount,
+}: {
+  pendingRequestCount: number
+  seekerCount: number
+}) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const activeTab = (searchParams.get("tab") as Tab) || "all"
+
+  const badgeFor: Record<Tab, number> = {
+    all: 0,
+    requests: pendingRequestCount,
+    seeking: seekerCount,
+  }
 
   function switchTab(tab: Tab) {
     const params = new URLSearchParams()
@@ -20,7 +39,7 @@ export function SmallGroupsTabs({ pendingRequestCount }: { pendingRequestCount: 
 
   return (
     <div className="flex border-b">
-      {(["all", "requests"] as Tab[]).map((tab) => (
+      {(["all", "requests", "seeking"] as Tab[]).map((tab) => (
         <button
           key={tab}
           onClick={() => switchTab(tab)}
@@ -31,10 +50,10 @@ export function SmallGroupsTabs({ pendingRequestCount }: { pendingRequestCount: 
               : "border-transparent text-muted-foreground hover:text-foreground"
           )}
         >
-          {tab === "all" ? "All" : "Requests"}
-          {tab === "requests" && pendingRequestCount > 0 && (
+          {TAB_LABEL[tab]}
+          {badgeFor[tab] > 0 && (
             <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
-              {pendingRequestCount}
+              {badgeFor[tab]}
             </span>
           )}
         </button>

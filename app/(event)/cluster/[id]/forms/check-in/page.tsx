@@ -37,11 +37,26 @@ export default async function ClusterCheckinFormsPage({
         })
       : []
   const openByEvent = new Set(openOccurrences.map((o) => o.eventId))
+
+  // The Public access switch, which only OneTime events have — session-based
+  // check-in is governed per occurrence instead. A missing row means open, so
+  // only explicit `isOpen: false` rows count as closed.
+  const oneTimeEventIds = events.filter((e) => e.type === "OneTime").map((e) => e.id)
+  const closedConfigs =
+    oneTimeEventIds.length > 0
+      ? await db.formConfig.findMany({
+          where: { key: "EventCheckIn", eventId: { in: oneTimeEventIds }, isOpen: false },
+          select: { eventId: true },
+        })
+      : []
+  const closedEventIds = new Set(closedConfigs.map((c) => c.eventId))
+
   const rows: ClusterCheckinFormRow[] = events.map((e) => ({
     eventId: e.id,
     eventName: e.name,
     type: e.type,
     hasOpenSession: openByEvent.has(e.id),
+    isFormOpen: !closedEventIds.has(e.id),
   }))
 
   return (

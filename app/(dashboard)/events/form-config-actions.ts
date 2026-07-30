@@ -8,6 +8,7 @@ import { canWrite } from "@/lib/permissions"
 import {
   FORM_CONTEXTS,
   FORM_TOGGLE_KEYS,
+  SUCCESS_MESSAGE_MAX_LENGTH,
   type EventFormConfigData,
 } from "@/lib/forms/context-config"
 import type { FormContext } from "@/app/generated/prisma/client"
@@ -142,6 +143,92 @@ export async function copyEventFormConfig(
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to copy registration form configuration" }
+  }
+}
+
+// ─── Success screen copy (CCF-130) ───────────────────────────────────────────
+
+/**
+ * Blank means "use the default", so an empty submission stores NULL rather than
+ * an empty string — that keeps "unset" a single value instead of two that the
+ * read path would have to treat alike.
+ */
+const successMessageSchema = z
+  .string()
+  .max(
+    SUCCESS_MESSAGE_MAX_LENGTH,
+    `Keep the message under ${SUCCESS_MESSAGE_MAX_LENGTH} characters.`
+  )
+  .transform((v) => v.trim() || null)
+  .nullable()
+
+/** Set (or clear, with a blank string) one context's success screen sub copy. */
+export async function saveEventFormSuccessMessage(
+  eventId: string,
+  context: FormContext,
+  raw: string | null
+): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
+  const parsedContext = contextSchema.safeParse(context)
+  if (!parsedContext.success) {
+    return { success: false, error: "Unknown form context." }
+  }
+  const parsed = successMessageSchema.safeParse(raw ?? "")
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
+  }
+
+  try {
+    const event = await db.event.findUnique({ where: { id: eventId }, select: { id: true } })
+    if (!event) return { success: false, error: "Event not found." }
+
+    await db.eventFormConfig.upsert({
+      where: { eventId_context: { eventId, context: parsedContext.data } },
+      create: { eventId, context: parsedContext.data, successMessage: parsed.data },
+      update: { successMessage: parsed.data },
+    })
+    revalidateFormSurfaces(eventId)
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to save the success message" }
+  }
+}
+
+/** Cluster shared form equivalent of {@link saveEventFormSuccessMessage}. */
+export async function saveClusterFormSuccessMessage(
+  clusterId: string,
+  context: FormContext,
+  raw: string | null
+): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
+  if (!CLUSTER_FORM_CONTEXTS.includes(context as (typeof CLUSTER_FORM_CONTEXTS)[number])) {
+    return { success: false, error: "Unknown form context." }
+  }
+  const parsed = successMessageSchema.safeParse(raw ?? "")
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
+  }
+
+  try {
+    const cluster = await db.eventCluster.findUnique({
+      where: { id: clusterId },
+      select: { id: true },
+    })
+    if (!cluster) return { success: false, error: "Event cluster not found." }
+
+    await db.eventFormConfig.upsert({
+      where: { clusterId_context: { clusterId, context } },
+      create: { clusterId, context, successMessage: parsed.data },
+      update: { successMessage: parsed.data },
+    })
+    await revalidateClusterFormSurfaces(clusterId)
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to save the success message" }
   }
 }
 

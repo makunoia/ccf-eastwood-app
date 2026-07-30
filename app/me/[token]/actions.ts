@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { db } from "@/lib/db"
 import { findSpouse, type SpouseInfo } from "@/lib/family-links"
+import { PERSON_NAME_FIELDS, personSearchWhere } from "@/lib/search/name-search"
 
 type ActionResult<T = void> =
   | { success: true; data: T }
@@ -400,13 +401,7 @@ export async function searchMembersToAdd(
         AND: [
           // `not` alone would also exclude members with no group (NULL)
           { OR: [{ smallGroupId: null }, { smallGroupId: { not: groupId } }] },
-          {
-            OR: [
-              { firstName: { contains: q, mode: "insensitive" } },
-              { lastName: { contains: q, mode: "insensitive" } },
-              { nickname: { contains: q, mode: "insensitive" } },
-            ],
-          },
+          personSearchWhere(q, { fields: PERSON_NAME_FIELDS }) ?? {},
         ],
       },
       select: {

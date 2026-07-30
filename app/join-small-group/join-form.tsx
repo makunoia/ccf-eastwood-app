@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/select"
 import { MultiSelect } from "@/components/ui/multi-select"
 import { ScheduleInput } from "@/components/ui/schedule-input"
+import { validateOptionalSchedule } from "@/lib/matching/candidate-schedule"
 import { OptionalEmailInput } from "@/components/ui/optional-email-input"
 import { PhonePHInput } from "@/components/ui/phone-ph-input"
 import { BirthMonthYearInput } from "@/components/ui/birth-month-year-input"
@@ -241,6 +242,15 @@ export function JoinForm({ lifeStages }: { lifeStages: LifeStage[] }) {
   }
 
   async function handlePrefsNext() {
+    // Schedule is optional, but a half-filled slot would be dropped on save —
+    // ask for all three fields or none.
+    const scheduleError = validateOptionalSchedule({
+      scheduleDayOfWeek: prefs.scheduleDayOfWeek ?? "",
+      scheduleTimeStart: prefs.scheduleTimeStart ?? "",
+      scheduleTimeEnd: prefs.scheduleTimeEnd ?? "",
+    })
+    if (scheduleError) return toast.error(scheduleError)
+
     setSubmitting(true)
     const result = await submitJoinForm(personal, prefs)
     setSubmitting(false)
@@ -481,10 +491,9 @@ export function JoinForm({ lifeStages }: { lifeStages: LifeStage[] }) {
 
               {/* Schedule */}
               <div className="flex flex-col gap-1.5">
-                <Label>
-                  Best Time to Meet <span className="text-destructive">*</span>
-                </Label>
+                <Label>Best Time to Meet</Label>
                 <ScheduleInput
+                  allowAny
                   dayOfWeek={prefs.scheduleDayOfWeek ?? ""}
                   timeStart={prefs.scheduleTimeStart ?? ""}
                   timeEnd={prefs.scheduleTimeEnd ?? ""}

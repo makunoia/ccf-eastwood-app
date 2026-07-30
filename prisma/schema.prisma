@@ -107,6 +107,12 @@ enum MemberRequestStatus {
   Rejected
 }
 
+// How a SmallGroupMemberRequest came to exist (CCF-101). See the `origin` field.
+enum SmallGroupRequestOrigin {
+  Assignment
+  RegistrationIntent
+}
+
 enum DeclineReason {
   NotInterested
   Unresponsive
@@ -561,6 +567,9 @@ model Event {
   formConfigs       FormConfig[]
   eventFormConfigs  EventFormConfig[]
   clusterMembership EventClusterEvent?
+  // DGroup requests raised by someone ticking "I want to join a DGroup" on this
+  // event's registration form (CCF-101).
+  smallGroupRequests SmallGroupMemberRequest[] @relation("SmallGroupRequestSource")
 }
 
 model EventMinistry {
@@ -687,8 +696,15 @@ model EventRegistrant {
   eventId      String
   event        Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
+  // Cascade, not the Prisma default. An optional relation defaults to SetNull,
+  // which orphaned this row on member deletion: both FKs null and the personal
+  // columns below never populated (they're only written when the registrant had
+  // no FK to begin with), leaving a nameless registrant no query can resolve.
+  // Cascade also makes the two person FKs symmetric — a promoted guest moves its
+  // registrations from guestId to memberId, so anything else means deleting the
+  // same human has different consequences depending on when you do it.
   memberId     String?
-  member       Member?   @relation(fields: [memberId], references: [id])
+  member       Member?   @relation(fields: [memberId], references: [id], onDelete: Cascade)
 
   guestId      String?
   guest        Guest?    @relation(fields: [guestId], references: [id], onDelete: Cascade)
@@ -931,6 +947,19 @@ model SmallGroupMemberRequest {
   // Tracks which breakout group triggered this request (for auto-cancellation on removal)
   breakoutGroupId  String?
 
+  // Where this request came from (CCF-101). `Assignment` is every pre-existing
+  // path — an admin, a facilitator, or the public join page picking a specific
+  // group. `RegistrationIntent` is someone ticking "I want to join a DGroup" on an
+  // event form: real demand with no group chosen yet, so it is the one origin that
+  // legitimately carries a null smallGroupId while still Pending.
+  origin        SmallGroupRequestOrigin @default(Assignment)
+
+  // The event whose registration form produced a RegistrationIntent request, so
+  // the admin triaging it can see where the person came from. Null for every other
+  // origin.
+  sourceEventId String?
+  sourceEvent   Event?  @relation("SmallGroupRequestSource", fields: [sourceEventId], references: [id], onDelete: SetNull)
+
   // The faci who declined via Catch Mech. Only needed to scope a groupless decline
   // (smallGroupId = null) to its author — lead and co-faci share a breakout group,
   // so breakoutGroupId alone cannot tell their lists apart.
@@ -941,6 +970,9 @@ model SmallGroupMemberRequest {
 
   resolvedAt   DateTime?
   createdAt    DateTime            @default(now())
+
+  @@index([sourceEventId])
+  @@index([origin, status])
 }
 
 model SmallGroupLog {
@@ -1145,6 +1177,12 @@ model EventFormConfig {
   fieldLanguage          Boolean @default(false)
   fieldSchedule          Boolean @default(false)
   fieldMeetingPreference Boolean @default(false)
+
+  // Copy shown under "Welcome, <name>!" on the success screen (CCF-130). Null
+  // falls back to the built-in default — the stock copy invites people to bring a
+  // friend, which is wrong for an invite-only event, so it has to be overridable
+  // per event and per context.
+  successMessage String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

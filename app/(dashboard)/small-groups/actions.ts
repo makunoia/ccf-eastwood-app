@@ -768,3 +768,41 @@ async function checkIsDescendant(
   }
   return false
 }
+
+/**
+ * Dismiss a seeker request — someone who asked to join a DGroup at registration
+ * or check-in (CCF-101) but who the admin has decided not to place right now.
+ *
+ * Marks it Rejected rather than deleting, so the ask stays on the record and the
+ * person doesn't silently vanish from the queue with no trace. No SmallGroupLog
+ * entry: that table is scoped to a group, and a seeker has none.
+ */
+export async function dismissSeekerRequest(requestId: string): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
+  try {
+    const request = await db.smallGroupMemberRequest.findUnique({
+      where: { id: requestId },
+      select: { status: true, origin: true, smallGroupId: true },
+    })
+    if (!request) return { success: false, error: "Request not found" }
+    if (request.origin !== "RegistrationIntent" || request.smallGroupId) {
+      // Group-targeted requests are resolved by their leader, not dismissed here.
+      return { success: false, error: "Request not found" }
+    }
+    if (request.status !== "Pending") {
+      return { success: false, error: "This request has already been resolved" }
+    }
+
+    await db.smallGroupMemberRequest.update({
+      where: { id: requestId },
+      data: { status: "Rejected", resolvedAt: new Date() },
+    })
+
+    revalidatePath("/small-groups")
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to dismiss request" }
+  }
+}

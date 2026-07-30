@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import { canWrite } from "@/lib/permissions"
+import { personSearchWhere } from "@/lib/search/name-search"
 import {
   familySchema,
   familyMemberSchema,
@@ -212,19 +213,13 @@ export async function searchPeopleForFamily(
   const q = query.trim()
   if (q.length < 2) return { success: true, data: [] }
 
-  const nameFilter = [
-    { firstName: { contains: q, mode: "insensitive" as const } },
-    { lastName: { contains: q, mode: "insensitive" as const } },
-    { nickname: { contains: q, mode: "insensitive" as const } },
-    { phone: { contains: q, mode: "insensitive" as const } },
-    { email: { contains: q, mode: "insensitive" as const } },
-  ]
+  const nameFilter = personSearchWhere(q) ?? {}
 
   try {
     const [members, guests] = await Promise.all([
       db.member.findMany({
         where: {
-          OR: nameFilter,
+          ...nameFilter,
           ...(excludeFamilyId
             ? { familyMemberships: { none: { familyId: excludeFamilyId } } }
             : {}),
@@ -235,7 +230,7 @@ export async function searchPeopleForFamily(
       db.guest.findMany({
         where: {
           memberId: null, // promoted guests are represented by their member record
-          OR: nameFilter,
+          ...nameFilter,
           ...(excludeFamilyId
             ? { familyMemberships: { none: { familyId: excludeFamilyId } } }
             : {}),

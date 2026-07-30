@@ -4,6 +4,7 @@ import { Prisma } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import { canWrite } from "@/lib/permissions"
+import { allTokensMatch } from "@/lib/search/name-search"
 import { PageHeader } from "@/components/page-header"
 import { type FamilyRow } from "./columns"
 import { FamiliesTable } from "./families-table"
@@ -61,25 +62,23 @@ export default async function FamiliesPage({
   const params = await searchParams
   const search = (params.search as string) || ""
 
-  const where: Prisma.FamilyWhereInput = search
-    ? {
-        OR: [
-          { name: { contains: search, mode: "insensitive" } },
-          {
-            members: {
-              some: {
-                OR: [
-                  { member: { firstName: { contains: search, mode: "insensitive" } } },
-                  { member: { lastName: { contains: search, mode: "insensitive" } } },
-                  { guest: { firstName: { contains: search, mode: "insensitive" } } },
-                  { guest: { lastName: { contains: search, mode: "insensitive" } } },
-                ],
-              },
-            },
-          },
-        ],
-      }
-    : {}
+  // Tokens are ANDed within each branch rather than across the whole family, so
+  // "Maria Santos" needs one household member called that — not a Maria in the
+  // family plus an unrelated Santos.
+  const familyNameMatch = allTokensMatch(search, (token) => [
+    { name: { contains: token, mode: "insensitive" as const } },
+  ]) as Prisma.FamilyWhereInput | null
+  const familyMemberMatch = allTokensMatch(search, (token) => [
+    { member: { firstName: { contains: token, mode: "insensitive" as const } } },
+    { member: { lastName: { contains: token, mode: "insensitive" as const } } },
+    { guest: { firstName: { contains: token, mode: "insensitive" as const } } },
+    { guest: { lastName: { contains: token, mode: "insensitive" as const } } },
+  ]) as Prisma.FamilyMemberWhereInput | null
+
+  const where: Prisma.FamilyWhereInput =
+    familyNameMatch && familyMemberMatch
+      ? { OR: [familyNameMatch, { members: { some: familyMemberMatch } }] }
+      : {}
 
   const [session, families] = await Promise.all([auth(), getFamilies(where)])
   const writable = canWrite(session, "Members")

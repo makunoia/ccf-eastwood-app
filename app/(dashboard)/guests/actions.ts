@@ -10,6 +10,7 @@ import { guestSchema, type GuestFormValues } from "@/lib/validations/guest"
 import { checkDuplicateContactInfo } from "@/lib/duplicate-check"
 import { repointFamilyLinks } from "@/lib/family-links"
 import { runBatchDelete } from "@/lib/batch"
+import { PERSON_NAME_FIELDS, personSearchWhere } from "@/lib/search/name-search"
 import type { BatchDeleteResult } from "@/components/batch/types"
 
 type ActionResult<T = void> =
@@ -459,11 +460,7 @@ export async function searchMembersForLeaderLookup(
   try {
     const members = await db.member.findMany({
       where: {
-        OR: [
-          { firstName: { contains: q, mode: "insensitive" } },
-          { lastName: { contains: q, mode: "insensitive" } },
-          { nickname: { contains: q, mode: "insensitive" } },
-        ],
+        ...(personSearchWhere(q, { fields: PERSON_NAME_FIELDS }) as Prisma.MemberWhereInput),
         ledGroups: { some: {} }, // only members who lead at least one group
       },
       select: {
@@ -499,13 +496,7 @@ export async function searchGuests(
     const guests = await db.guest.findMany({
       where: {
         memberId: null, // only non-promoted guests
-        OR: [
-          { firstName: { contains: q, mode: "insensitive" } },
-          { lastName: { contains: q, mode: "insensitive" } },
-          { nickname: { contains: q, mode: "insensitive" } },
-          { phone: { contains: q, mode: "insensitive" } },
-          { email: { contains: q, mode: "insensitive" } },
-        ],
+        ...(personSearchWhere(q) as Prisma.GuestWhereInput),
       },
       select: { id: true, firstName: true, lastName: true, email: true, phone: true },
       take: 10,
