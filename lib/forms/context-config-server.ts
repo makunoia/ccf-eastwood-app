@@ -118,6 +118,64 @@ export async function getEffectiveFormConfigs(
   ) as Record<FormContext, EventFormConfigData>
 }
 
+// ─── Success screen copy (CCF-130) ───────────────────────────────────────────
+// Kept as its own read rather than folded into `EventFormConfigData`: that type
+// is a `Record<FormToggleKey, boolean>` which the builder, the migration backfill
+// and the copy-between-contexts action all iterate as booleans. A string field
+// riding along inside it would have to be special-cased in every one of them.
+
+/** The configured success sub copy for a context, or null when unset. */
+export async function getEventFormSuccessMessage(
+  eventId: string,
+  context: FormContext
+): Promise<string | null> {
+  const row = await db.eventFormConfig.findUnique({
+    where: { eventId_context: { eventId, context } },
+    select: { successMessage: true },
+  })
+  return row?.successMessage ?? null
+}
+
+/** All three contexts' stored success copy at once — for the builder UI. */
+export async function getEventFormSuccessMessages(
+  eventId: string
+): Promise<Record<FormContext, string | null>> {
+  const rows = await db.eventFormConfig.findMany({
+    where: { eventId },
+    select: { context: true, successMessage: true },
+  })
+  const byContext = new Map(rows.map((r) => [r.context, r.successMessage]))
+  return Object.fromEntries(
+    FORM_CONTEXTS.map((ctx) => [ctx, byContext.get(ctx) ?? null])
+  ) as Record<FormContext, string | null>
+}
+
+/** Cluster shared form: the configured success sub copy for a context. */
+export async function getClusterFormSuccessMessage(
+  clusterId: string,
+  context: FormContext
+): Promise<string | null> {
+  const row = await db.eventFormConfig.findUnique({
+    where: { clusterId_context: { clusterId, context } },
+    select: { successMessage: true },
+  })
+  return row?.successMessage ?? null
+}
+
+/** Cluster shared form: all contexts' stored success copy — for the builder UI. */
+export async function getClusterFormSuccessMessages(
+  clusterId: string
+): Promise<Record<FormContext, string | null>> {
+  const rows = await db.eventFormConfig.findMany({
+    where: { clusterId },
+    select: { context: true, successMessage: true },
+  })
+  const byContext = new Map(rows.map((r) => [r.context, r.successMessage]))
+  return Object.fromEntries(
+    FORM_CONTEXTS.map((ctx) => [ctx, byContext.get(ctx) ?? null])
+  ) as Record<FormContext, string | null>
+}
+
 /** Cluster shared form (CCF-132): read one context's config, bare when no row exists. */
 export async function getClusterFormConfig(
   clusterId: string,

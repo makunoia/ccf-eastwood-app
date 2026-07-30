@@ -10,13 +10,16 @@ import { SettingCard } from "@/components/ui/setting-card"
 import { FORM_REGISTRY } from "@/lib/forms/registry"
 import { getFormConfig } from "@/lib/forms/config"
 import { FormConfigEditor } from "@/app/(dashboard)/forms/form-config-editor"
-import { getEffectiveFormConfigs } from "@/lib/forms/context-config-server"
+import {
+  getEffectiveFormConfigs,
+  getEventFormSuccessMessages,
+} from "@/lib/forms/context-config-server"
 import { EventFormBuilder } from "@/components/forms/event-form-builder"
+import { eventFormPrerequisites } from "@/lib/forms/form-prerequisites-server"
 import { BreakoutAssignmentSetting } from "@/components/forms/breakout-assignment-setting"
 import { RegistrationPageTab } from "@/components/forms/registration-page-tab"
 import { RegistrationWindowSetting } from "@/components/forms/registration-window-setting"
 import { VolunteerInfoUrlCopier } from "@/components/forms/volunteer-info-url-copier"
-import { PublicLinkCopier } from "@/components/forms/public-link-copier"
 
 function toDateInput(d: Date | null): string {
   return d ? d.toISOString().split("T")[0] : ""
@@ -45,6 +48,7 @@ export default async function EventFormEditorPage({
     where: { id },
     select: {
       id: true,
+      name: true,
       type: true,
       modules: { select: { type: true } },
       autoAssignBreakout: true,
@@ -67,6 +71,23 @@ export default async function EventFormEditorPage({
   const cfg = await getFormConfig(meta.key, id)
   const needsFormConfigs = meta.key === "EventRegistration" || meta.key === "EventCheckIn"
   const formConfigs = needsFormConfigs ? await getEffectiveFormConfigs(id) : null
+  const prerequisites = needsFormConfigs
+    ? await eventFormPrerequisites(id, event.autoAssignBreakout)
+    : undefined
+  // Only the registration surfaces have a success screen to word (CCF-130).
+  const successMessages =
+    meta.key === "EventRegistration" ? await getEventFormSuccessMessages(id) : null
+
+  /**
+   * MultiDay and Recurring check-in has no event-wide open state to own: each
+   * occurrence carries its own `isOpen`, and the public link resolves to whichever
+   * one is accepting people. A switch here would be a second, competing control,
+   * so those events get a pointer to the screen that actually holds it. OneTime
+   * has no occurrences at all, so there the switch is the only control there is.
+   */
+  const checkInOpensPerSession = meta.key === "EventCheckIn" && event.type !== "OneTime"
+  // Mirrors the Sessions page header: "Sessions" for Recurring, "Days" for MultiDay.
+  const sessionsLabel = event.type === "Recurring" ? "Sessions" : "Days"
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">
@@ -82,10 +103,25 @@ export default async function EventFormEditorPage({
         <PageHeader title={meta.label} description={meta.description} />
       </div>
 
-      {/* Check-in opts out: it opens and closes per session, so a global toggle
-          here would be a control that fights the one admins actually use. It gets
-          a plain link copier below instead. */}
-      {!meta.omitsFormConfigEditor && (
+      {/* Same Public access slot on every form. Session-based check-in keeps the
+          section but swaps the switch for a link to the screen that owns the
+          state, so the page reads consistently without carrying a dead control. */}
+      {checkInOpensPerSession ? (
+        <SettingCard
+          className="max-w-2xl"
+          title="Public access"
+          description={`Check-in opens and closes per ${
+            event.type === "Recurring" ? "session" : "day"
+          } rather than event-wide — open the one you're running from ${sessionsLabel}.`}
+        >
+          <Link
+            href={`/event/${id}/sessions`}
+            className="text-sm font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 transition-colors hover:decoration-foreground"
+          >
+            Go to {sessionsLabel}
+          </Link>
+        </SettingCard>
+      ) : (
         <FormConfigEditor
           formKey={meta.key}
           eventId={id}
@@ -98,7 +134,10 @@ export default async function EventFormEditorPage({
             primaryColor: cfg.primaryColor ?? "",
           }}
           themeFields={meta.themeFields}
-          publicUrl={meta.publicPath?.(id)}
+          // Check-in is a kiosk surface for attendees, not something an admin
+          // needs to open from here — the registry still keeps its publicPath for
+          // revalidation and for the cluster Forms listing.
+          publicUrl={meta.key === "EventCheckIn" ? undefined : meta.publicPath?.(id)}
         />
       )}
 
@@ -124,8 +163,11 @@ export default async function EventFormEditorPage({
               // stay together here because they render the same component.
               contexts={["Register", "WalkIn"]}
               modules={modules}
+              prerequisites={prerequisites}
               heading="Registration form"
               blurb="Register and Walk-in are configured separately. Name, mobile number, and email are always collected — everything else is opt-in."
+              successMessages={successMessages ?? undefined}
+              eventName={event.name}
             />
           )}
           {modules.includes("Breakout") && (
@@ -153,36 +195,10 @@ export default async function EventFormEditorPage({
               initial={formConfigs}
               contexts={["CheckIn"]}
               modules={modules}
+              prerequisites={prerequisites}
               heading="Check-in form"
               blurb="What someone checking in for the first time is asked for. Returning attendees just confirm who they are."
             />
-          )}
-
-          <SettingCard
-            className="max-w-2xl"
-            title="Check-in link"
-            description={
-              event.type === "OneTime"
-                ? "Share this link at the event so attendees and volunteers can check themselves in."
-                : "Share this link at the event. It opens whichever session is currently accepting check-ins."
-            }
-          >
-            <PublicLinkCopier path={`/events/${id}/checkin`} />
-          </SettingCard>
-
-          {event.type !== "OneTime" && (
-            <SettingCard
-              className="max-w-2xl"
-              title="Opening and closing check-in"
-              description="Check-in is opened per session rather than globally — open the session you're running from Sessions."
-            >
-              <Link
-                href={`/event/${id}/sessions`}
-                className="text-sm font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 transition-colors hover:decoration-foreground"
-              >
-                Go to Sessions
-              </Link>
-            </SettingCard>
           )}
         </div>
       )}

@@ -7,6 +7,7 @@ import { canRead } from "@/lib/permissions"
 import { db } from "@/lib/db"
 import { registrantName, registrantNameSelect } from "@/lib/metadata"
 import { deriveEffectiveGenderFocus } from "@/lib/matching"
+import { getHouseholdLabel } from "@/lib/family-links"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { BreadcrumbOverride } from "@/components/breadcrumb-context"
@@ -115,23 +116,6 @@ async function getRegistrant(registrantId: string, eventId: string) {
   })
 }
 
-/** The household this person belongs to, plus who else in it is registered here. */
-async function getHouseholdLabel(
-  eventId: string,
-  ref: { memberId: string | null; guestId: string | null }
-): Promise<string | null> {
-  const link = await db.familyMember.findFirst({
-    where: ref.memberId ? { memberId: ref.memberId } : { guestId: ref.guestId as string },
-    select: { family: { select: { id: true, name: true, _count: { select: { members: true } } } } },
-    orderBy: { createdAt: "asc" },
-  })
-  if (!link) return null
-  const others = link.family._count.members - 1
-  return others > 0
-    ? `${link.family.name} (+${others} ${others === 1 ? "member" : "members"})`
-    : link.family.name
-}
-
 /** Returns the breakout group this member facilitates or co-facilitates in this event, if any. */
 async function getFacilitatedGroup(memberId: string, eventId: string) {
   return db.breakoutGroup.findFirst({
@@ -236,7 +220,7 @@ export default async function RegistrantDetailPage({
   // so a field counts as "asked" if any context collects it.
   const [formConfigs, familyLabel] = await Promise.all([
     getEffectiveFormConfigs(eventId),
-    getHouseholdLabel(eventId, {
+    getHouseholdLabel({
       memberId: registrant.memberId,
       guestId: registrant.guestId,
     }),

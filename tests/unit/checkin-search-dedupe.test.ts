@@ -264,6 +264,18 @@ describe("register page – walk-in mode", () => {
   })
 
   it("only offers breakout groups whose facilitator has checked in", () => {
-    expect(page).toContain("fetchBreakoutCandidates(event.id, walkIn.occurrenceId, true)")
+    // The last argument is the facilitator gate: on for a walk-in, off for the
+    // public form. `tests/integration/breakout-availability.test.ts` pins what
+    // the gate actually does; this just pins that the kiosk still opts into it.
+    expect(page).toContain(
+      "fetchBreakoutAvailability(event.id, walkIn?.occurrenceId ?? null, !!walkIn)"
+    )
+  })
+
+  it("explains an empty breakout list instead of dropping the step", () => {
+    // Regression: an enabled Breakout toggle produced no step and no explanation
+    // when every group was held back by the facilitator gate.
+    expect(page).toContain("resolveBreakoutNotice(")
+    expect(page).toContain("breakoutNotice={breakoutNotice}")
   })
 })

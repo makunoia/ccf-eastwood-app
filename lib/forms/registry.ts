@@ -34,14 +34,6 @@ export type FormMeta = {
   usesDedicatedConfig?: boolean
   /** Event form only listed when this module is enabled on the event. */
   requiresEventModule?: EventModuleType
-  /**
-   * Skip the shared open/closed + theme editor for this form.
-   *
-   * Only Check-in: its availability is already governed per session by
-   * `EventOccurrence.isOpen`, so a second global toggle here would be a control
-   * that either does nothing or silently fights the one admins actually use.
-   */
-  omitsFormConfigEditor?: boolean
 }
 
 export const FORM_REGISTRY: Record<FormKey, FormMeta> = {
@@ -96,8 +88,6 @@ export const FORM_REGISTRY: Record<FormKey, FormMeta> = {
     publicPath: (eventId) => `/events/${eventId}/checkin`,
     themeFields: [],
     usesDedicatedConfig: true,
-    // Check-in opens and closes per session, not globally — see the flag's docs.
-    omitsFormConfigEditor: true,
   },
   VolunteerSignUp: {
     key: "VolunteerSignUp",

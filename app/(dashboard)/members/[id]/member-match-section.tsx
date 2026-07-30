@@ -23,21 +23,8 @@ import { SmallGroupDetailSheet } from "@/components/small-group-detail-sheet"
 import { findSmallGroupMatchesForMember, assignMemberToSmallGroup } from "../matching-actions"
 import { assignMemberTransferTemporarily } from "@/app/(dashboard)/small-groups/actions"
 import { saveMemberMatchingPreferences } from "../actions"
+import { buildScheduleSlot, validateOptionalSchedule } from "@/lib/matching/candidate-schedule"
 import type { MatchResult } from "@/lib/matching/types"
-
-function buildScheduleSlot(prefs: MatchingPrefs): { dayOfWeek: number; timeStart: string; timeEnd: string } | null {
-  if (!prefs.scheduleDayOfWeek || !prefs.scheduleTimeStart || !prefs.scheduleTimeEnd) {
-    return null
-  }
-  if (prefs.scheduleTimeStart >= prefs.scheduleTimeEnd) {
-    return null
-  }
-  return {
-    dayOfWeek: Number(prefs.scheduleDayOfWeek),
-    timeStart: prefs.scheduleTimeStart,
-    timeEnd: prefs.scheduleTimeEnd,
-  }
-}
 
 type PendingTransfer = {
   id: string
@@ -90,15 +77,8 @@ export function MemberMatchSection({
     if (!prefs.lifeStageId) { toast.error("Life Stage is required"); return }
     if (prefs.language.length === 0) { toast.error("Language is required"); return }
     if (!prefs.meetingPreference) { toast.error("Meeting Preference is required"); return }
-    if (!prefs.scheduleDayOfWeek) { toast.error("Schedule day is required"); return }
-    if (!prefs.scheduleTimeStart || !prefs.scheduleTimeEnd) {
-      toast.error("Schedule time range is required")
-      return
-    }
-    if (prefs.scheduleTimeStart >= prefs.scheduleTimeEnd) {
-      toast.error("Schedule end time must be after start time")
-      return
-    }
+    const scheduleError = validateOptionalSchedule(prefs)
+    if (scheduleError) { toast.error(scheduleError); return }
 
     setState("loading")
 
@@ -178,12 +158,12 @@ export function MemberMatchSection({
           </p>
         </div>
 
-        {/* Schedule — first field */}
+        {/* Schedule — first field. Optional: a blank slot widens the search
+            instead of gating groups out. */}
         <div className="space-y-1.5">
-          <Label>
-            Schedule <span className="text-destructive">*</span>
-          </Label>
+          <Label>Schedule</Label>
           <ScheduleInput
+            allowAny
             dayOfWeek={prefs.scheduleDayOfWeek}
             timeStart={prefs.scheduleTimeStart}
             timeEnd={prefs.scheduleTimeEnd}

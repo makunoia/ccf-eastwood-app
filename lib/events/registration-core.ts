@@ -5,6 +5,7 @@ import { db } from "@/lib/db"
 import { suggestBreakoutGroup } from "@/lib/breakout-suggestion"
 import { fetchBreakoutCandidates } from "@/lib/breakout-suggestion-server"
 import { tryCreateSmallGroupRequestFromBreakout } from "@/lib/create-small-group-request"
+import { createSeekerRequestFromRegistration } from "@/lib/small-groups/seeker-requests"
 import type { RegistrantData } from "@/lib/validations/event-registrant"
 import type { Gender, MeetingFormat } from "@/app/generated/prisma/client"
 
@@ -427,6 +428,13 @@ export async function completeEventRegistration(opts: {
   }
 
   const breakoutGroup = await assignBreakoutForRegistrant(registrantId, eventId, breakoutPick, profile)
+
+  // Someone who asked to join a DGroup becomes a request an admin can actually
+  // see (CCF-101). Raised here rather than in each caller so every entry point —
+  // single event, cluster fan-out, household — gets it for free.
+  if (data.wantsSmallGroup) {
+    await createSeekerRequestFromRegistration(person, eventId)
+  }
 
   if (walkIn) {
     await checkInWalkInRegistrant(registrantId, walkIn.occurrenceId)

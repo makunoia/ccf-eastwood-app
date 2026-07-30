@@ -4,12 +4,18 @@ import {
   MeetingFormat,
   MemberRequestStatus,
   Prisma,
+  SmallGroupRequestOrigin,
   SmallGroupStatus,
   SmallGroupType,
 } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import { canExport, canImport, canWrite } from "@/lib/permissions"
+import { allTokensMatch } from "@/lib/search/name-search"
+import {
+  SEEKER_REQUEST_WHERE,
+  countSeekerRequests,
+} from "@/lib/small-groups/seeker-requests"
 import { PageHeader } from "@/components/page-header"
 import { BatchSelectionProvider } from "@/components/batch/batch-selection-provider"
 import { BatchActionHeader } from "@/components/batch/batch-action-header"
@@ -19,6 +25,7 @@ import { SmallGroupsToolbar } from "./toolbar"
 import { SmallGroupsFilters } from "./small-groups-filters"
 import { SmallGroupsTabs } from "./small-groups-tabs"
 import { RequestsTable, type RequestRow } from "./requests-table"
+import { SeekersTable, type SeekerRow } from "./seekers-table"
 import { deleteSmallGroupsBatch, setSmallGroupsLifeStageBatch } from "./actions"
 
 export const metadata: Metadata = {
@@ -69,6 +76,54 @@ async function getSmallGroups(where: Prisma.SmallGroupWhereInput): Promise<Small
     scheduleTimeStart: g.scheduleTimeStart,
     scheduleTimeEnd: g.scheduleTimeEnd,
   }))
+}
+
+/**
+ * People who asked to join a DGroup with no group picked yet (CCF-101). They can't
+ * live in the Requests table — every column there is about the target group and a
+ * seeker has none — so they get their own tab.
+ */
+async function getSeekers(): Promise<SeekerRow[]> {
+  const requests = await db.smallGroupMemberRequest.findMany({
+    where: SEEKER_REQUEST_WHERE,
+    orderBy: { createdAt: "asc" },
+    select: {
+      id: true,
+      createdAt: true,
+      guest: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+      member: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          phone: true,
+          smallGroup: { select: { id: true, name: true } },
+        },
+      },
+      sourceEvent: { select: { id: true, name: true } },
+    },
+  })
+
+  return requests.flatMap((r) => {
+    const person = r.member ?? r.guest
+    if (!person) return []
+    return [
+      {
+        id: r.id,
+        createdAt: r.createdAt,
+        personName: `${person.firstName} ${person.lastName}`,
+        personType: (r.member ? "Member" : "Guest") as SeekerRow["personType"],
+        personId: person.id,
+        personEmail: person.email ?? null,
+        personPhone: person.phone ?? null,
+        sourceEventId: r.sourceEvent?.id ?? null,
+        sourceEventName: r.sourceEvent?.name ?? null,
+        currentGroupId: r.member?.smallGroup?.id ?? null,
+        currentGroupName: r.member?.smallGroup?.name ?? null,
+      },
+    ]
+  })
 }
 
 async function getPendingRequests(): Promise<RequestRow[]> {
@@ -134,15 +189,13 @@ export default async function SmallGroupsPage({
 
   const where: Prisma.SmallGroupWhereInput = {
     AND: [
-      search
-        ? {
-            OR: [
-              { name: { contains: search, mode: "insensitive" } },
-              { leader: { firstName: { contains: search, mode: "insensitive" } } },
-              { leader: { lastName: { contains: search, mode: "insensitive" } } },
-            ],
-          }
-        : {},
+      // A group is findable by its own name or by its leader's — each token has to
+      // hit one of those, so "Maria Santos" matches the group Maria Santos leads.
+      (allTokensMatch(search, (token) => [
+        { name: { contains: token, mode: "insensitive" as const } },
+        { leader: { firstName: { contains: token, mode: "insensitive" as const } } },
+        { leader: { lastName: { contains: token, mode: "insensitive" as const } } },
+      ]) as Prisma.SmallGroupWhereInput | null) ?? {},
       lifeStageId ? { lifeStages: { some: { id: lifeStageId } } } : {},
       genderFocus ? { genderFocus: genderFocus as GenderFocus } : {},
       meetingFormat ? { meetingFormat: meetingFormat as MeetingFormat } : {},
@@ -151,15 +204,27 @@ export default async function SmallGroupsPage({
     ],
   }
 
-  const [session, pendingRequestCount, groups, lifeStages, requests] = await Promise.all([
-    auth(),
-    db.smallGroupMemberRequest.count({ where: { status: MemberRequestStatus.Pending, breakoutGroupId: null } }),
-    tab === "all" ? getSmallGroups(where) : Promise.resolve([]),
-    tab === "all"
-      ? db.lifeStage.findMany({ orderBy: { order: "asc" }, select: { id: true, name: true } })
-      : Promise.resolve([]),
-    tab === "requests" ? getPendingRequests() : Promise.resolve([]),
-  ])
+  const [session, pendingRequestCount, seekerCount, groups, lifeStages, requests, seekers] =
+    await Promise.all([
+      auth(),
+      db.smallGroupMemberRequest.count({
+        where: {
+          status: MemberRequestStatus.Pending,
+          breakoutGroupId: null,
+          // Seekers are Pending with no breakout too, but they're counted on their
+          // own tab — badging them here would send admins to a table that can't
+          // show them.
+          origin: SmallGroupRequestOrigin.Assignment,
+        },
+      }),
+      countSeekerRequests(),
+      tab === "all" ? getSmallGroups(where) : Promise.resolve([]),
+      tab === "all"
+        ? db.lifeStage.findMany({ orderBy: { order: "asc" }, select: { id: true, name: true } })
+        : Promise.resolve([]),
+      tab === "requests" ? getPendingRequests() : Promise.resolve([]),
+      tab === "seeking" ? getSeekers() : Promise.resolve([]),
+    ])
 
   const writable = canWrite(session, "SmallGroups")
   const selectionEnabled = writable && tab === "all"
@@ -191,10 +256,15 @@ export default async function SmallGroupsPage({
           }
         />
 
-        <SmallGroupsTabs pendingRequestCount={pendingRequestCount} />
+        <SmallGroupsTabs
+          pendingRequestCount={pendingRequestCount}
+          seekerCount={seekerCount}
+        />
 
         {tab === "requests" ? (
           <RequestsTable requests={requests} />
+        ) : tab === "seeking" ? (
+          <SeekersTable seekers={seekers} canWrite={writable} />
         ) : (
           <>
             <SmallGroupsFilters

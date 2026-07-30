@@ -177,6 +177,68 @@ describe("saveMemberMatchingPreferences — SchedulePreference.timeEnd", () => {
     expect(prefs).toHaveLength(1)
     expect(prefs[0].timeEnd).toBe("11:00")
   })
+
+  // The schedule is optional on the DGroup Matching form, so a partly-filled
+  // one has to round-trip rather than vanish on save.
+  it("stores a day with no times as the whole day", async () => {
+    const member = await seedMember()
+
+    await saveMemberMatchingPreferences(member.id, {
+      lifeStageId: "", gender: "", language: [], workCity: "", workIndustry: "",
+      meetingPreference: "", scheduleDayOfWeek: "1",
+      scheduleTimeStart: "", scheduleTimeEnd: "",
+    })
+
+    const pref = await db.schedulePreference.findFirst({ where: { memberId: member.id } })
+    expect(pref?.dayOfWeek).toBe(1)
+    expect(pref?.timeStart).toBe("00:00")
+    expect(pref?.timeEnd).toBe("23:59")
+  })
+
+  it("defaults a missing end time to one hour after the start", async () => {
+    const member = await seedMember()
+
+    await saveMemberMatchingPreferences(member.id, {
+      lifeStageId: "", gender: "", language: [], workCity: "", workIndustry: "",
+      meetingPreference: "", scheduleDayOfWeek: "1",
+      scheduleTimeStart: "09:00", scheduleTimeEnd: "",
+    })
+
+    const pref = await db.schedulePreference.findFirst({ where: { memberId: member.id } })
+    expect(pref?.timeStart).toBe("09:00")
+    expect(pref?.timeEnd).toBe("10:00")
+  })
+
+  it("stores no preference when the schedule is left blank", async () => {
+    const member = await seedMember()
+
+    await saveMemberMatchingPreferences(member.id, {
+      lifeStageId: "", gender: "", language: [], workCity: "", workIndustry: "",
+      meetingPreference: "", scheduleDayOfWeek: "",
+      scheduleTimeStart: "", scheduleTimeEnd: "",
+    })
+
+    const prefs = await db.schedulePreference.findMany({ where: { memberId: member.id } })
+    expect(prefs).toHaveLength(0)
+  })
+
+  it("clears a previously saved preference when the schedule is blanked out", async () => {
+    const member = await seedMember()
+    const base = {
+      lifeStageId: "", gender: "", language: [], workCity: "", workIndustry: "",
+      meetingPreference: "",
+    }
+
+    await saveMemberMatchingPreferences(member.id, {
+      ...base, scheduleDayOfWeek: "1", scheduleTimeStart: "09:00", scheduleTimeEnd: "10:00",
+    })
+    await saveMemberMatchingPreferences(member.id, {
+      ...base, scheduleDayOfWeek: "", scheduleTimeStart: "", scheduleTimeEnd: "",
+    })
+
+    const prefs = await db.schedulePreference.findMany({ where: { memberId: member.id } })
+    expect(prefs).toHaveLength(0)
+  })
 })
 
 describe("createSmallGroup / updateSmallGroup — scheduleTimeEnd", () => {

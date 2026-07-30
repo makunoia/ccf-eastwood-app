@@ -4,11 +4,15 @@ import { db } from "@/lib/db"
 import { ministryLabel } from "@/lib/events/ministry-label"
 import { getEventName } from "@/lib/metadata"
 import { RegistrationForm } from "./registration-form"
-import { fetchBreakoutCandidates } from "@/lib/breakout-suggestion-server"
+import { fetchBreakoutAvailability } from "@/lib/breakout-suggestion-server"
+import { resolveBreakoutNotice } from "@/lib/breakout-suggestion"
 import { PublicFormShell } from "@/components/public-form-shell"
 import { FormClosed } from "@/components/form-closed"
 import { getFormConfig, resolveFormTheme } from "@/lib/forms/config"
-import { getEffectiveFormConfig } from "@/lib/forms/context-config-server"
+import {
+  getEffectiveFormConfig,
+  getEventFormSuccessMessage,
+} from "@/lib/forms/context-config-server"
 import { resolveEventBrand } from "@/lib/forms/event-brand"
 import { isWithinRegistrationWindow } from "@/lib/events/registration-window"
 
@@ -115,7 +119,11 @@ export default async function RegisterPage({
   if ((!formConfig.isOpen || !withinWindow) && !walkIn) return <FormClosed />
 
   // Walk-ins are the same form as Register but a separate configured context.
-  const formFields = await getEffectiveFormConfig(id, walkIn ? "WalkIn" : "Register")
+  const formContext = walkIn ? "WalkIn" : "Register"
+  const [formFields, successMessage] = await Promise.all([
+    getEffectiveFormConfig(id, formContext),
+    getEventFormSuccessMessage(id, formContext),
+  ])
 
   const lifeStages = formFields.fieldLifeStage
     ? await db.lifeStage.findMany({
@@ -141,22 +149,24 @@ export default async function RegisterPage({
   // when placement happens on submit.
   const offerBreakoutPicker = formFields.sectionBreakout && !event.autoAssignBreakout
 
-  // For Recurring events, only show groups whose facilitator has checked in to the open session.
-  let breakoutOccurrenceId: string | null = null
-  if (offerBreakoutPicker && event.type === "Recurring") {
-    const openOccurrence = await db.eventOccurrence.findFirst({
-      where: { eventId: event.id, isOpen: true },
-      select: { id: true },
-    })
-    breakoutOccurrenceId = openOccurrence?.id ?? null
-  }
+  // Two different rules, on purpose:
+  //  - At the door, only groups whose facilitator has already checked in are
+  //    offered — a walk-in shouldn't be sent to a group whose leader isn't here.
+  //  - On the public form, every group is offered. People register days ahead,
+  //    when by definition nobody has checked in to anything.
+  const { candidates: breakoutCandidates, totalGroups: breakoutTotalGroups } =
+    !offerBreakoutPicker
+      ? { candidates: [], totalGroups: 0 }
+      : await fetchBreakoutAvailability(event.id, walkIn?.occurrenceId ?? null, !!walkIn)
 
-  const breakoutCandidates = !offerBreakoutPicker
-    ? []
-    : walkIn
-      ? // At the door, only groups whose facilitator has already checked in are offered.
-        await fetchBreakoutCandidates(event.id, walkIn.occurrenceId, true)
-      : await fetchBreakoutCandidates(event.id, breakoutOccurrenceId, false)
+  // The gate is strict by design, but it must not be silent: when groups exist
+  // and every one of them is held back, say so instead of dropping the step and
+  // leaving the person at the kiosk wondering where it went.
+  const breakoutNotice = resolveBreakoutNotice({
+    offerPicker: offerBreakoutPicker,
+    candidateCount: breakoutCandidates.length,
+    totalGroups: breakoutTotalGroups,
+  })
 
   const brand = resolveEventBrand(event)
   const ministryNames = ministryLabel(
@@ -205,10 +215,12 @@ export default async function RegisterPage({
         eventId={event.id}
         eventName={event.name}
         config={formFields}
+        successMessage={successMessage}
         lifeStages={lifeStages}
         ageRanges={ageRanges}
         defaultLifeStageId={defaultLifeStageId}
         breakoutCandidates={breakoutCandidates}
+        breakoutNotice={breakoutNotice}
         walkIn={walkIn}
       />
     </PublicFormShell>

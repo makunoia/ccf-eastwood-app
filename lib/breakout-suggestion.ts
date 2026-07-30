@@ -87,3 +87,31 @@ export function suggestBreakoutGroup(
   if (eligible.length === 0) return null
   return eligible.slice().sort((a, b) => score(b) - score(a))[0]
 }
+
+/**
+ * Why the breakout step is rendering with nothing to choose from.
+ *
+ * Only `awaiting-facilitator` exists today: the walk-in kiosk offers a group
+ * only once its facilitator has checked in, so before the team arrives every
+ * group is held back. Left as a union so the next such rule gets its own copy
+ * rather than being folded into this one.
+ */
+export type BreakoutNoticeKind = "awaiting-facilitator"
+
+/**
+ * Decides whether an empty breakout list is worth explaining.
+ *
+ * The distinction that matters is "no groups exist" (nothing to say — drop the
+ * step) versus "groups exist but all are gated" (say so). Dropping the step in
+ * the second case is what made an enabled Breakout toggle look like it did
+ * nothing on the walk-in form.
+ */
+export function resolveBreakoutNotice(opts: {
+  offerPicker: boolean
+  candidateCount: number
+  totalGroups: number
+}): BreakoutNoticeKind | null {
+  if (!opts.offerPicker) return null
+  if (opts.candidateCount > 0) return null
+  return opts.totalGroups > 0 ? "awaiting-facilitator" : null
+}

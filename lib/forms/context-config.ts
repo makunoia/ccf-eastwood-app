@@ -60,6 +60,55 @@ export const BARE_EVENT_FORM_CONFIG: EventFormConfigData = Object.freeze(
   Object.fromEntries(FORM_TOGGLE_KEYS.map((k) => [k, false])) as EventFormConfigData,
 )
 
+// ─── Success screen copy (CCF-130) ───────────────────────────────────────────
+
+/**
+ * The sub copy under "Welcome, <name>!" on the registration success screen.
+ *
+ * The stock copy tells people to bring a friend, which is right for an open
+ * event and wrong for an invite-only one — so it's overridable per (event,
+ * context) rather than hardcoded in the form. Null/blank means "use the default",
+ * which keeps every existing event on exactly the copy it had before.
+ *
+ * Walk-in keeps its own default: someone standing at the kiosk has already
+ * arrived, so inviting them to bring a friend reads oddly. Check-in never shows
+ * this screen at all.
+ */
+export const SUCCESS_MESSAGE_MAX_LENGTH = 300
+
+const DEFAULT_SUCCESS_MESSAGE_WITH_EVENT = (eventName: string) =>
+  `You're all set for ${eventName}. We're so glad you're coming — feel free to bring a friend!`
+
+const DEFAULT_SUCCESS_MESSAGE =
+  "You're all set! We're so glad you're joining us. Feel free to bring a friend — see you soon!"
+
+const DEFAULT_WALKIN_SUCCESS_MESSAGE = "You're registered and checked in. Enjoy the event!"
+
+/**
+ * The copy an admin sees as the starting point in the builder, and what the form
+ * renders when nothing is configured.
+ */
+export function defaultSuccessMessage(context: FormContext, eventName?: string): string {
+  if (context === "WalkIn") return DEFAULT_WALKIN_SUCCESS_MESSAGE
+  return eventName
+    ? DEFAULT_SUCCESS_MESSAGE_WITH_EVENT(eventName)
+    : DEFAULT_SUCCESS_MESSAGE
+}
+
+/**
+ * Resolve what the success screen actually shows. A stored message that is blank
+ * or whitespace-only is treated as unset — clearing the textarea is how an admin
+ * goes back to the default.
+ */
+export function resolveSuccessMessage(
+  stored: string | null | undefined,
+  context: FormContext,
+  eventName?: string
+): string {
+  const trimmed = stored?.trim()
+  return trimmed ? trimmed : defaultSuccessMessage(context, eventName)
+}
+
 // ─── Display metadata ────────────────────────────────────────────────────────
 // Pure data only — no icons. Icons are attached client-side so nothing
 // non-serializable crosses the server/client boundary.

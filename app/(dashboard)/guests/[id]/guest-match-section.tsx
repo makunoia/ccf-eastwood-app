@@ -24,25 +24,12 @@ import { SmallGroupMatchCard } from "@/components/small-group-match-card"
 import { SmallGroupDetailSheet } from "@/components/small-group-detail-sheet"
 import { findSmallGroupMatchesWithEscalation } from "../matching-actions"
 import { clearGuestClaimedGroup, saveGuestMatchingProfile } from "../actions"
+import { buildScheduleSlot, validateOptionalSchedule } from "@/lib/matching/candidate-schedule"
 import { GroupTypeBadge } from "@/components/group-type-badge"
 import { assignGuestToGroupTemporarily } from "../../small-groups/actions"
 import type { MatchResult, EscalationLevel } from "@/lib/matching/types"
 import type { GuestPipelineStatus } from "@/lib/guest-utils"
 
-
-function buildScheduleSlot(prefs: MatchingPrefs): { dayOfWeek: number; timeStart: string; timeEnd: string } | null {
-  if (!prefs.scheduleDayOfWeek || !prefs.scheduleTimeStart || !prefs.scheduleTimeEnd) {
-    return null
-  }
-  if (prefs.scheduleTimeStart >= prefs.scheduleTimeEnd) {
-    return null
-  }
-  return {
-    dayOfWeek: Number(prefs.scheduleDayOfWeek),
-    timeStart: prefs.scheduleTimeStart,
-    timeEnd: prefs.scheduleTimeEnd,
-  }
-}
 
 // ─── Level labels ─────────────────────────────────────────────────────────────
 
@@ -164,17 +151,14 @@ export const GuestMatchSection = React.forwardRef<
     if (!prefs.lifeStageId) { toast.error("Life Stage is required"); return }
     if (prefs.language.length === 0) { toast.error("Language is required"); return }
     if (!prefs.meetingPreference) { toast.error("Meeting Preference is required"); return }
-    if (!prefs.scheduleDayOfWeek) { toast.error("Schedule day is required"); return }
-    if (!prefs.scheduleTimeStart || !prefs.scheduleTimeEnd) {
-      toast.error("Schedule time range is required")
-      return
-    }
-    if (prefs.scheduleTimeStart >= prefs.scheduleTimeEnd) {
-      toast.error("Schedule end time must be after start time")
-      return
-    }
+    const scheduleError = validateOptionalSchedule(prefs)
+    if (scheduleError) { toast.error(scheduleError); return }
 
     setState("loading")
+
+    // Store the same normalised slot the search uses, so a partly-filled
+    // schedule survives a reload instead of coming back different.
+    const scheduleSlot = buildScheduleSlot(prefs)
 
     const saveRes = await saveGuestMatchingProfile(guestId, {
       lifeStageId: prefs.lifeStageId || null,
@@ -183,9 +167,9 @@ export const GuestMatchSection = React.forwardRef<
       workCity: prefs.workCity || null,
       workIndustry: prefs.workIndustry || null,
       meetingPreference: (prefs.meetingPreference as "Online" | "Hybrid" | "InPerson") || null,
-      scheduleDayOfWeek: prefs.scheduleDayOfWeek ? Number(prefs.scheduleDayOfWeek) : null,
-      scheduleTimeStart: prefs.scheduleTimeStart || null,
-      scheduleTimeEnd: prefs.scheduleTimeEnd || null,
+      scheduleDayOfWeek: scheduleSlot?.dayOfWeek ?? null,
+      scheduleTimeStart: scheduleSlot?.timeStart ?? null,
+      scheduleTimeEnd: scheduleSlot?.timeEnd ?? null,
     })
     if (!saveRes.success) {
       setState("idle")
@@ -193,7 +177,6 @@ export const GuestMatchSection = React.forwardRef<
       return
     }
 
-    const scheduleSlot = buildScheduleSlot(prefs)
     const res = await findSmallGroupMatchesWithEscalation(guestId, { scheduleSlot })
     setState("done")
     if (res.success) {
@@ -327,10 +310,9 @@ export const GuestMatchSection = React.forwardRef<
             </div>
 
             <div className="space-y-1.5">
-              <Label>
-                Schedule <span className="text-destructive">*</span>
-              </Label>
+              <Label>Schedule</Label>
               <ScheduleInput
+                allowAny
                 dayOfWeek={prefs.scheduleDayOfWeek}
                 timeStart={prefs.scheduleTimeStart}
                 timeEnd={prefs.scheduleTimeEnd}
@@ -552,12 +534,12 @@ export const GuestMatchSection = React.forwardRef<
           </p>
         </div>
 
-        {/* Schedule — first field */}
+        {/* Schedule — first field. Optional: a blank slot widens the search
+            instead of gating groups out. */}
         <div className="space-y-1.5">
-          <Label>
-            Schedule <span className="text-destructive">*</span>
-          </Label>
+          <Label>Schedule</Label>
           <ScheduleInput
+            allowAny
             dayOfWeek={prefs.scheduleDayOfWeek}
             timeStart={prefs.scheduleTimeStart}
             timeEnd={prefs.scheduleTimeEnd}

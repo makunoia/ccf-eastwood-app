@@ -143,6 +143,11 @@ export default async function OccurrenceCheckinPage({
     notFound()
   }
 
+  // No FormConfig.isOpen gate here on purpose: this occurrence's own `isOpen`
+  // (with the date gate below) is the control, and Forms shows session-based
+  // events a link to Sessions rather than a switch. Reading an event-wide flag
+  // that has no UI would strand a converted event closed with no way to reopen.
+
   const { logoUrl, primaryColor } = resolveEventBrand(occurrence.event)
   const bannerUrl = occurrence.event.registrationPageBannerUrl ?? null
   const ministryNames = occurrence.event.ministries.map((em) => em.ministry.name).join(" · ")

@@ -3,10 +3,14 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { IconArrowLeft } from "@tabler/icons-react"
 import { db } from "@/lib/db"
-import { getClusterFormConfigs } from "@/lib/forms/context-config-server"
+import {
+  getClusterFormConfigs,
+  getClusterFormSuccessMessages,
+} from "@/lib/forms/context-config-server"
 import { PageHeader } from "@/components/page-header"
 import { SettingCard } from "@/components/ui/setting-card"
 import { EventFormBuilder } from "@/components/forms/event-form-builder"
+import { clusterFormPrerequisites } from "@/lib/forms/form-prerequisites-server"
 
 export const metadata: Metadata = {
   title: "Walk-in Registration",
@@ -20,11 +24,15 @@ export default async function ClusterWalkInFormPage({
   const { id } = await params
   const cluster = await db.eventCluster.findUnique({
     where: { id },
-    select: { id: true, publicToken: true },
+    select: { id: true, name: true, publicToken: true },
   })
   if (!cluster) notFound()
 
-  const configs = await getClusterFormConfigs(id)
+  const [configs, successMessages, prerequisites] = await Promise.all([
+    getClusterFormConfigs(id),
+    getClusterFormSuccessMessages(id),
+    clusterFormPrerequisites(),
+  ])
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">
@@ -64,6 +72,9 @@ export default async function ClusterWalkInFormPage({
         heading="Walk-in form"
         blurb="What someone registering at the door is asked for — configured separately from the public form, so the door version can ask less."
         notApplicable={["sectionPayment", "sectionBreakout", "sectionFamily", "familySpouseOnly"]}
+        prerequisites={prerequisites}
+        successMessages={successMessages}
+        eventName={cluster.name}
       />
     </div>
   )

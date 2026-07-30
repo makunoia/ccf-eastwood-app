@@ -128,18 +128,6 @@ describe("forms — Check-in is its own event form", () => {
     expect(eventFormsForModules([]).map((f) => f.key)).toContain("EventCheckIn")
   })
 
-  it("omits the shared open/closed editor, since sessions own that", () => {
-    // Rendering an isOpen toggle here would be a dead control: the public check-in
-    // page never reads FormConfig.isOpen — availability comes from
-    // EventOccurrence.isOpen per session.
-    expect(FORM_REGISTRY.EventCheckIn.omitsFormConfigEditor).toBe(true)
-  })
-
-  it("is the only form that opts out of that editor", () => {
-    const opted = Object.values(FORM_REGISTRY).filter((f) => f.omitsFormConfigEditor)
-    expect(opted.map((f) => f.key)).toEqual(["EventCheckIn"])
-  })
-
   it("has no theme fields — it isn't a branded public page", () => {
     expect(FORM_REGISTRY.EventCheckIn.themeFields).toEqual([])
   })
@@ -151,14 +139,85 @@ describe("forms — Check-in is its own event form", () => {
   })
 })
 
-describe("forms — the public check-in page has no FormConfig gate", () => {
-  it("never reads FormConfig, so no open/closed toggle may claim to control it", () => {
-    // Pins the reason EventCheckIn sets omitsFormConfigEditor. If check-in ever
-    // does start honoring FormConfig.isOpen, this fails and the flag should go.
+/**
+ * Where the Public access switch applies to check-in.
+ *
+ * Check-in used to render no open/closed control at all, on the reasoning that
+ * sessions own availability via `EventOccurrence.isOpen`. That covered
+ * MultiDay/Recurring but not OneTime, which has no occurrences — its check-in
+ * link was permanently live with no way to close it.
+ *
+ * The split now follows the data: OneTime gets the switch (its only control),
+ * session-based events keep the Public access section but swap the switch for a
+ * link to Sessions/Days, where the real per-occurrence state lives.
+ */
+describe("forms — the OneTime check-in surface honors FormConfig.isOpen", () => {
+  const source = readFileSync(
+    join(process.cwd(), "app/events/[id]/checkin/page.tsx"),
+    "utf8"
+  )
+
+  it("reads the check-in FormConfig and renders FormClosed", () => {
+    expect(source).toContain('getFormConfig("EventCheckIn"')
+    expect(source).toContain("if (!formConfig.isOpen) return <FormClosed")
+  })
+
+  it("gates only after the MultiDay/Recurring branch has returned", () => {
+    // Session events short-circuit to a "use the session link" signpost above
+    // this point, so the gate is reached for OneTime alone.
+    const branchIdx = source.indexOf('event.type === "Recurring" || event.type === "MultiDay"')
+    const gateIdx = source.indexOf("if (!formConfig.isOpen)")
+    expect(branchIdx).toBeGreaterThan(-1)
+    expect(gateIdx).toBeGreaterThan(branchIdx)
+  })
+})
+
+describe("forms — the per-occurrence check-in surface has no event-wide gate", () => {
+  it("never reads FormConfig, since Forms offers those events no switch to set it", () => {
+    // Reading a flag with no UI behind it would strand an event that was closed
+    // as OneTime and later converted to Recurring: closed, with nothing to reopen it.
     const source = readFileSync(
-      join(process.cwd(), "app/events/[id]/checkin/page.tsx"),
+      join(process.cwd(), "app/events/[id]/checkin/[occurrenceId]/page.tsx"),
       "utf8"
     )
     expect(source).not.toContain("getFormConfig")
+  })
+})
+
+describe("forms — the Public access section appears on every form", () => {
+  const page = readFileSync(
+    join(process.cwd(), "app/(event)/event/[id]/forms/[key]/page.tsx"),
+    "utf8"
+  )
+
+  it("has no per-form opt-out flag any more", () => {
+    // EventCheckIn used to carry `omitsFormConfigEditor` and was the only form
+    // whose config page lacked the section entirely. The flag is gone.
+    const registry = readFileSync(join(process.cwd(), "lib/forms/registry.ts"), "utf8")
+    expect(registry).not.toContain("omitsFormConfigEditor")
+    expect(page).not.toContain("omitsFormConfigEditor")
+  })
+
+  it("swaps the switch for a Sessions link only when check-in opens per session", () => {
+    expect(page).toContain("checkInOpensPerSession")
+    expect(page).toContain('meta.key === "EventCheckIn" && event.type !== "OneTime"')
+    // Both arms render something in the slot — the section never disappears.
+    expect(page).toContain('title="Public access"')
+    expect(page).toContain("<FormConfigEditor")
+  })
+
+  it("omits the View public form link for check-in", () => {
+    // The check-in page is an attendee kiosk — nothing an admin needs to open
+    // from the config screen. The registry keeps publicPath for revalidation
+    // and the cluster listing, so only the editor's link is suppressed.
+    expect(page).toContain('publicUrl={meta.key === "EventCheckIn" ? undefined')
+    expect(FORM_REGISTRY.EventCheckIn.publicPath?.("evt1")).toBe("/events/evt1/checkin")
+  })
+
+  it("labels the destination the way the Sessions page does", () => {
+    // "Sessions" for Recurring, "Days" for MultiDay — sending someone to a screen
+    // by a name it doesn't use is how a redirect stops feeling like one.
+    expect(page).toContain('event.type === "Recurring" ? "Sessions" : "Days"')
+    expect(page).toContain("Go to {sessionsLabel}")
   })
 })

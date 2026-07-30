@@ -25,6 +25,9 @@ export const registrantSchema = z.object({
   scheduleTimeStart: z.string().optional().nullable().transform((v) => v || null),
   scheduleTimeEnd: z.string().optional().nullable().transform((v) => v || null),
   claimedSmallGroupId: z.string().optional().nullable().transform((v) => v || null),
+  // "I want to join a DGroup" (CCF-101). Nullable because the payload sanitizer
+  // neutralises a disabled field by setting it to null, not false.
+  wantsSmallGroup: z.boolean().optional().nullable().transform((v) => v ?? false),
   // Optional dietary fields — collected when the Dietary registration module is enabled
   dietaryPreference: z
     .enum([

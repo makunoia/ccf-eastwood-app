@@ -5,7 +5,9 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
+  DialogClose,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogDescription,
@@ -261,15 +263,15 @@ export function SmallGroupMatchCard({
       </div>
 
       <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="border-b px-6 pt-6 pb-4">
             <DialogTitle>{result.groupName}</DialogTitle>
             <DialogDescription>
               {score === 100 ? "Perfect fit based on the current profile" : `${score}% overall match`}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-2">
+          <div className="flex-1 space-y-4 overflow-y-auto px-6 py-4">
             {lowConfidence && (
               <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
                 Limited profile information — this score is based on only part of the
@@ -277,7 +279,11 @@ export function SmallGroupMatchCard({
               </p>
             )}
 
-            {strengths.length > 0 && (
+            {/* The prose strengths list is the summary for surfaces WITHOUT the
+                breakdown grid. Where the grid renders, it already states every
+                strength — factor, the group's value, and a scored bar — so the
+                list is a second telling of the same thing. */}
+            {!showBreakdown && strengths.length > 0 && (
               <div className="space-y-1.5">
                 <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   Why this group fits
@@ -303,7 +309,7 @@ export function SmallGroupMatchCard({
               </div>
             )}
 
-            {strengths.length === 0 && considerations.length === 0 && (
+            {!showBreakdown && strengths.length === 0 && considerations.length === 0 && (
               <p className="text-sm text-muted-foreground">
                 Ranked on limited profile information — add more detail to the
                 profile for a sharper match.
@@ -312,6 +318,21 @@ export function SmallGroupMatchCard({
 
             {showBreakdown && <MatchBreakdown result={result} />}
           </div>
+
+          <DialogFooter className="border-t px-6 pt-4 pb-6">
+            <DialogClose asChild>
+              <Button variant="outline">Close</Button>
+            </DialogClose>
+            <Button
+              onClick={() => {
+                setDetailsOpen(false)
+                onAssign()
+              }}
+              disabled={assigning}
+            >
+              {assigning ? assigningLabel : assignLabel}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>

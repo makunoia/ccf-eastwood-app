@@ -7,6 +7,7 @@ import { auth } from "@/lib/auth"
 import { canWrite } from "@/lib/permissions"
 import { memberSchema, type MemberFormValues } from "@/lib/validations/member"
 import { checkDuplicateContactInfo } from "@/lib/duplicate-check"
+import { buildScheduleSlot } from "@/lib/matching/candidate-schedule"
 import { runBatchDelete } from "@/lib/batch"
 import type { BatchDeleteResult } from "@/components/batch/types"
 
@@ -214,11 +215,10 @@ export async function saveMemberMatchingPreferences(
   if (authError) return { success: false, error: authError.error }
 
   try {
-    const hasSchedule =
-      prefs.scheduleDayOfWeek !== "" &&
-      prefs.scheduleTimeStart !== "" &&
-      prefs.scheduleTimeEnd !== "" &&
-      prefs.scheduleTimeStart < prefs.scheduleTimeEnd
+    // Schedule is optional and may be partly filled — the shared normaliser
+    // decides what (if anything) that means as a slot, so the saved record and
+    // the search agree.
+    const slot = buildScheduleSlot(prefs)
 
     await db.member.update({
       where: { id: memberId },
@@ -231,12 +231,12 @@ export async function saveMemberMatchingPreferences(
         meetingPreference: (prefs.meetingPreference as "Online" | "Hybrid" | "InPerson") || null,
         schedulePreferences: {
           deleteMany: {},
-          ...(hasSchedule
+          ...(slot
             ? {
                 create: {
-                  dayOfWeek: Number(prefs.scheduleDayOfWeek),
-                  timeStart: prefs.scheduleTimeStart,
-                  timeEnd: prefs.scheduleTimeEnd || null,
+                  dayOfWeek: slot.dayOfWeek,
+                  timeStart: slot.timeStart,
+                  timeEnd: slot.timeEnd,
                 },
               }
             : {}),

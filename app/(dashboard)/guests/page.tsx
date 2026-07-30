@@ -3,6 +3,7 @@ import { Gender, Prisma } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import { canExport, canImport, canWrite } from "@/lib/permissions"
+import { personSearchWhere } from "@/lib/search/name-search"
 import { PageHeader } from "@/components/page-header"
 import { BatchSelectionProvider } from "@/components/batch/batch-selection-provider"
 import { BatchActionHeader } from "@/components/batch/batch-action-header"
@@ -60,17 +61,7 @@ export default async function GuestsPage({
   const where: Prisma.GuestWhereInput = {
     AND: [
       { memberId: null },
-      search
-        ? {
-            OR: [
-              { firstName: { contains: search, mode: "insensitive" } },
-              { lastName: { contains: search, mode: "insensitive" } },
-              { nickname: { contains: search, mode: "insensitive" } },
-              { email: { contains: search, mode: "insensitive" } },
-              { phone: { contains: search, mode: "insensitive" } },
-            ],
-          }
-        : {},
+      (personSearchWhere(search) as Prisma.GuestWhereInput | null) ?? {},
       lifeStageId ? { lifeStageId } : {},
       gender ? { gender: gender as Gender } : {},
     ],

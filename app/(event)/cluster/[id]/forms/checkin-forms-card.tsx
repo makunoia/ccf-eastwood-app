@@ -14,6 +14,8 @@ export type ClusterCheckinFormRow = {
   type: "OneTime" | "MultiDay" | "Recurring"
   /** Sessions events only: whether a session is currently accepting check-ins. */
   hasOpenSession: boolean
+  /** OneTime only: the Public access switch. Always true for session events. */
+  isFormOpen: boolean
 }
 
 const TYPE_LABEL: Record<ClusterCheckinFormRow["type"], string> = {
@@ -45,15 +47,24 @@ export function CheckinFormsCard({ rows }: { rows: ClusterCheckinFormRow[] }) {
                 <div className="min-w-0">
                   <p className="flex items-center gap-2 text-sm font-medium">
                     <span className="truncate">{row.eventName}</span>
-                    {row.type !== "OneTime" && (
-                      <Badge variant={row.hasOpenSession ? "default" : "outline"}>
-                        {row.hasOpenSession ? "Session open" : "No open session"}
-                      </Badge>
+                    {/* Closed outranks the session badge — showing "Session open"
+                        next to a link nobody can use would read as a promise. */}
+                    {!row.isFormOpen ? (
+                      <Badge variant="outline">Closed</Badge>
+                    ) : (
+                      row.type !== "OneTime" && (
+                        <Badge variant={row.hasOpenSession ? "default" : "outline"}>
+                          {row.hasOpenSession ? "Session open" : "No open session"}
+                        </Badge>
+                      )
                     )}
                   </p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
                     {TYPE_LABEL[row.type]}
-                    {row.type !== "OneTime" && " · opens per session from the event's Sessions page"}
+                    {!row.isFormOpen
+                      ? " · check-in is closed for this event"
+                      : row.type !== "OneTime" &&
+                        " · opens per session from the event's Sessions page"}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
