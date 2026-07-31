@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { requireEventModule } from "@/lib/events/require-module"
+import { unassignedCandidateWhere } from "@/lib/breakouts/candidate-pool"
 import { auth } from "@/lib/auth"
 import { canImport } from "@/lib/permissions"
 import { BreakoutGroupsTable } from "./breakout-group"
@@ -91,16 +92,7 @@ async function getEventBreakouts(id: string) {
       _count: { select: { registrants: true } },
       registrants: {
         select: { id: true },
-        where: {
-          breakoutGroupMemberships: { none: {} },
-          NOT: {
-            member: {
-              volunteers: {
-                some: { eventId: id, status: "Confirmed" },
-              },
-            },
-          },
-        },
+        where: unassignedCandidateWhere(id),
       },
       volunteers: {
         where: { status: "Confirmed" },

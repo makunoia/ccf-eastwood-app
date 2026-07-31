@@ -8,7 +8,7 @@ import {
   resolveConfirmations,
   type ConfirmDecision,
   type ResolvedDecision,
-} from "../actions"
+} from "@/lib/catch-mech/confirmations"
 import {
   recordConfirmationSubmission,
   submitterName,

@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { submitCatchMechVolunteerPlacements } from "../actions"
+import { callAction, SUBMIT_NETWORK_ERROR } from "@/lib/forms/call-action"
 
 export type Participant = {
   id: string
@@ -80,15 +81,23 @@ export function VolunteerPlacementForm({
 
     setError("")
     setSubmitting(true)
-    const result = await submitCatchMechVolunteerPlacements(
-      token,
-      selectedParticipants.map((participant) => ({
-        registrantId: participant.id,
-        smallGroupId: destinations[participant.id],
-      }))
+    const result = await callAction(
+      () =>
+        submitCatchMechVolunteerPlacements(
+          token,
+          selectedParticipants.map((participant) => ({
+            registrantId: participant.id,
+            smallGroupId: destinations[participant.id],
+          }))
+        ),
+      "submitCatchMechVolunteerPlacements"
     )
     setSubmitting(false)
 
+    if (!result) {
+      setError(SUBMIT_NETWORK_ERROR)
+      return
+    }
     if (result.success) {
       setCompletedCount(result.data.placedCount)
       return

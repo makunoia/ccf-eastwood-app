@@ -4,6 +4,7 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import { PhonePHInput } from "@/components/ui/phone-ph-input"
 import { verifyCatchMechFaci } from "./actions"
+import { callAction, SUBMIT_NETWORK_ERROR } from "@/lib/forms/call-action"
 
 type Group = { id: string; name: string }
 
@@ -35,9 +36,14 @@ export function CatchMechEntryForm({ eventId, groups }: Props) {
     }
     setError("")
     setSubmitting(true)
-    const result = await verifyCatchMechFaci(eventId, selectedGroupId, mobile)
+    const result = await callAction(
+      () => verifyCatchMechFaci(eventId, selectedGroupId, mobile),
+      "verifyCatchMechFaci"
+    )
     setSubmitting(false)
-    if (result.success) {
+    if (!result) {
+      setError(SUBMIT_NETWORK_ERROR)
+    } else if (result.success) {
       router.push(`/events/${eventId}/catch-mech/${result.data.token}`)
     } else {
       setError(result.error)

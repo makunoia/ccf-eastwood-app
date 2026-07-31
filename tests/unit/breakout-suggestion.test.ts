@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import {
   suggestBreakoutGroup,
-  filterCompatibleCandidates,
+  breakoutPickerOptions,
   type BreakoutCandidate,
 } from "@/lib/breakout-suggestion"
 
@@ -232,73 +232,69 @@ describe("suggestBreakoutGroup", () => {
   })
 })
 
-// ─── filterCompatibleCandidates ───────────────────────────────────────────────
+// ─── breakoutPickerOptions ────────────────────────────────────────────────────
 
-describe("filterCompatibleCandidates", () => {
-  it("excludes Female-focused groups for a male participant", () => {
+describe("breakoutPickerOptions", () => {
+  // The regression this pins: the browse list used to filter by gender and age,
+  // so a registrant with neither recorded — because the form never asked, or
+  // because they answered an age bucket instead of a birth year — saw every
+  // gendered and age-ranged group disappear from the dropdown.
+  it("keeps gendered groups regardless of the registrant's gender", () => {
     const groups = [
       makeGroup({ id: "male-g", genderFocus: "Male" }),
       makeGroup({ id: "female-g", genderFocus: "Female" }),
       makeGroup({ id: "mixed-g", genderFocus: "Mixed" }),
       makeGroup({ id: "open-g", genderFocus: null }),
     ]
-    const result = filterCompatibleCandidates(groups, { gender: "Male", birthYear: null })
-    const ids = result.map((g) => g.id)
-    expect(ids).toContain("male-g")
-    expect(ids).toContain("mixed-g")
-    expect(ids).toContain("open-g")
-    expect(ids).not.toContain("female-g")
+    expect(breakoutPickerOptions(groups).map((g) => g.id)).toEqual([
+      "male-g",
+      "female-g",
+      "mixed-g",
+      "open-g",
+    ])
   })
 
-  it("excludes Male-focused groups for a female participant", () => {
-    const groups = [
-      makeGroup({ id: "male-g", genderFocus: "Male" }),
-      makeGroup({ id: "female-g", genderFocus: "Female" }),
-    ]
-    const result = filterCompatibleCandidates(groups, { gender: "Female", birthYear: null })
-    const ids = result.map((g) => g.id)
-    expect(ids).toContain("female-g")
-    expect(ids).not.toContain("male-g")
-  })
-
-  it("excludes gendered groups for a participant with no gender set", () => {
-    const groups = [
-      makeGroup({ id: "male-g", genderFocus: "Male" }),
-      makeGroup({ id: "female-g", genderFocus: "Female" }),
-      makeGroup({ id: "mixed-g", genderFocus: "Mixed" }),
-      makeGroup({ id: "open-g", genderFocus: null }),
-    ]
-    const result = filterCompatibleCandidates(groups, { gender: null, birthYear: null })
-    const ids = result.map((g) => g.id)
-    expect(ids).not.toContain("male-g")
-    expect(ids).not.toContain("female-g")
-    expect(ids).toContain("mixed-g")
-    expect(ids).toContain("open-g")
-  })
-
-  it("includes full groups (capacity is not filtered in browse list)", () => {
-    const full = makeGroup({ id: "full", memberLimit: 5, memberCount: 5 })
-    const result = filterCompatibleCandidates([full], { gender: null, birthYear: null })
-    expect(result).toHaveLength(1)
-  })
-
-  it("excludes age-restricted groups when birth year is unknown", () => {
+  it("keeps age-restricted groups when the registrant has no birth year", () => {
     const groups = [
       makeGroup({ id: "ranged", ageRangeMin: 20, ageRangeMax: 30 }),
       makeGroup({ id: "open", ageRangeMin: null, ageRangeMax: null }),
     ]
-    const result = filterCompatibleCandidates(groups, { gender: null, birthYear: null })
-    const ids = result.map((g) => g.id)
-    expect(ids).not.toContain("ranged")
-    expect(ids).toContain("open")
+    expect(breakoutPickerOptions(groups).map((g) => g.id)).toEqual(["ranged", "open"])
   })
 
-  it("returns empty array when all groups are filtered out", () => {
+  it("keeps a group whose age range excludes the registrant outright", () => {
+    const groups = [makeGroup({ id: "seniors", ageRangeMin: 60, ageRangeMax: 80 })]
+    expect(breakoutPickerOptions(groups)).toHaveLength(1)
+  })
+
+  it("preserves the order it was given", () => {
     const groups = [
-      makeGroup({ id: "female-g", genderFocus: "Female" }),
-      makeGroup({ id: "female-g2", genderFocus: "Female" }),
+      makeGroup({ id: "c" }),
+      makeGroup({ id: "a" }),
+      makeGroup({ id: "b" }),
     ]
-    const result = filterCompatibleCandidates(groups, { gender: "Male", birthYear: null })
-    expect(result).toHaveLength(0)
+    expect(breakoutPickerOptions(groups).map((g) => g.id)).toEqual(["c", "a", "b"])
+  })
+
+  it("marks a group at its member limit as full without removing it", () => {
+    const [option] = breakoutPickerOptions([
+      makeGroup({ id: "full", memberLimit: 5, memberCount: 5 }),
+    ])
+    expect(option.id).toBe("full")
+    expect(option.isFull).toBe(true)
+  })
+
+  it("marks an over-subscribed group as full", () => {
+    const [option] = breakoutPickerOptions([makeGroup({ memberLimit: 5, memberCount: 6 })])
+    expect(option.isFull).toBe(true)
+  })
+
+  it("never marks a group with no member limit as full", () => {
+    const [option] = breakoutPickerOptions([makeGroup({ memberLimit: null, memberCount: 99 })])
+    expect(option.isFull).toBe(false)
+  })
+
+  it("returns an empty list when the event has no groups", () => {
+    expect(breakoutPickerOptions([])).toEqual([])
   })
 })

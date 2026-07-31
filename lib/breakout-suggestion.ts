@@ -60,23 +60,27 @@ function score(group: BreakoutCandidate): number {
   return s
 }
 
-/** Returns groups compatible by gender/age, ignoring capacity (for browsable lists). */
-export function filterCompatibleCandidates(
-  groups: BreakoutCandidate[],
-  profile: RegistrantProfile
-): BreakoutCandidate[] {
-  return groups.filter((g) => {
-    if (g.genderFocus && g.genderFocus !== "Mixed") {
-      if (!profile.gender || g.genderFocus !== profile.gender) return false
-    }
-    const age = ageFromBirthYear(profile.birthYear)
-    if (g.ageRangeMin != null || g.ageRangeMax != null) {
-      if (age == null) return false
-      if (g.ageRangeMin != null && age < g.ageRangeMin) return false
-      if (g.ageRangeMax != null && age > g.ageRangeMax) return false
-    }
-    return true
-  })
+export type BreakoutPickerOption = BreakoutCandidate & { isFull: boolean }
+
+/**
+ * Every group the caller was handed, in the order it arrived — nothing is ever
+ * removed.
+ *
+ * Deliberately takes no profile. An earlier version filtered the browse list by
+ * gender and age, which meant a registrant who hadn't given (or wasn't asked
+ * for) either one saw every gendered and age-ranged group disappear: missing
+ * data read as a mismatch. The picker's job is to show which groups are in the
+ * room; matching the person to one of them is what `suggestBreakoutGroup` is
+ * for, and that stays a recommendation the registrant can override.
+ *
+ * Capacity is the one real constraint, and it's surfaced rather than applied —
+ * a full group still renders, marked, so it doesn't look like it vanished.
+ */
+export function breakoutPickerOptions(groups: BreakoutCandidate[]): BreakoutPickerOption[] {
+  return groups.map((g) => ({
+    ...g,
+    isFull: g.memberLimit != null && g.memberCount >= g.memberLimit,
+  }))
 }
 
 export function suggestBreakoutGroup(

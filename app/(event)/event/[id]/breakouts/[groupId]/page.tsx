@@ -139,35 +139,6 @@ async function getEventContext(eventId: string) {
           },
         },
       },
-      registrants: {
-        orderBy: { createdAt: "asc" },
-        where: {
-          breakoutGroupMemberships: { none: {} },
-          NOT: {
-            member: {
-              volunteers: {
-                some: {
-                  OR: [
-                    { facilitatedGroups: { some: { eventId } } },
-                    { coFacilitatedGroups: { some: { eventId } } },
-                  ],
-                },
-              },
-            },
-          },
-        },
-        select: {
-          id: true,
-          memberId: true,
-          guestId: true,
-          firstName: true,
-          lastName: true,
-          nickname: true,
-          mobileNumber: true,
-          member: { select: { id: true, firstName: true, lastName: true } },
-          guest: { select: { id: true, firstName: true, lastName: true } },
-        },
-      },
     },
   })
 }
@@ -269,7 +240,6 @@ export default async function BreakoutGroupDetailPage({
           eventType: eventData.type,
           totalOccurrences,
         }}
-        unassignedRegistrants={eventData.registrants}
         availableVolunteers={confirmedVolunteers}
       />
       </div>

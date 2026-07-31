@@ -4,8 +4,13 @@ import * as React from "react"
 import {
   submitCatchMechConfirmations,
   createSmallGroupForTimothy,
-  type ConfirmDecision,
 } from "../actions"
+import {
+  applyDeclineReasons,
+  type ConfirmDecision,
+  type DeclineReasonEntry,
+} from "@/lib/catch-mech/confirmations"
+import { callAction, SUBMIT_NETWORK_ERROR } from "@/lib/forms/call-action"
 import type { DeclineReason } from "@/app/generated/prisma/client"
 import { DECLINE_REASON_OPTIONS } from "@/lib/decline-reason"
 import type { CandidateGroup } from "@/lib/catch-mech/targets"
@@ -18,8 +23,6 @@ import {
 } from "@/components/ui/select"
 
 type RowDecision = "confirm" | "pending" | "decline"
-
-type RejectionEntry = { declineReason: DeclineReason; note?: string }
 
 type RowData = {
   registrantId: string
@@ -103,9 +106,11 @@ export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy
   const [submitting, setSubmitting] = React.useState(false)
   const [error, setError] = React.useState("")
 
-  // Rejection reason collection — queue of declined rows needing a reason
-  const [rejectionQueue, setRejectionQueue] = React.useState<RowData[]>([])
-  const [rejectionReasons, setRejectionReasons] = React.useState<Record<string, RejectionEntry>>({})
+  // Decline-reason collection. The queue is walked by index rather than consumed,
+  // so Back can step to the previous person and re-open their saved answer.
+  const [declineQueue, setDeclineQueue] = React.useState<RowData[]>([])
+  const [reasonIndex, setReasonIndex] = React.useState(0)
+  const [rejectionReasons, setRejectionReasons] = React.useState<Record<string, DeclineReasonEntry>>({})
   const [selectedReason, setSelectedReason] = React.useState<DeclineReason | "">("")
   const [otherReasonText, setOtherReasonText] = React.useState("")
   const [reasonError, setReasonError] = React.useState("")
@@ -173,9 +178,14 @@ export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy
             if (!groupName_.trim()) { setError("Group name is required"); return }
             setError("")
             setSubmitting(true)
-            const result = await createSmallGroupForTimothy(token, groupName_, finalDecisions)
+            const result = await callAction(
+              () => createSmallGroupForTimothy(token, groupName_, finalDecisions),
+              "createSmallGroupForTimothy"
+            )
             setSubmitting(false)
-            if (result.success) {
+            if (!result) {
+              setError(SUBMIT_NETWORK_ERROR)
+            } else if (result.success) {
               setCreatedGroupName(groupName_.trim())
               setDone(true)
             } else {
@@ -191,11 +201,48 @@ export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy
     )
   }
 
-  // ── Rejection reason phase ──────────────────────────────────────────────────
-  if (rejectionQueue.length > 0) {
-    const current = rejectionQueue[0]
-    const remaining = rejectionQueue.length
-    const total = Object.values(decisions).filter((d) => d === "decline").length
+  // ── Decline reason phase ────────────────────────────────────────────────────
+  if (declineQueue.length > 0) {
+    const current = declineQueue[reasonIndex]
+    const total = declineQueue.length
+    const isLast = reasonIndex === total - 1
+
+    /** Re-opens a person's saved answer so Back shows what they already picked. */
+    function openReasonFor(row: RowData, reasons: Record<string, DeclineReasonEntry>) {
+      const saved = reasons[row.registrantId]
+      setSelectedReason(saved?.declineReason ?? "")
+      setOtherReasonText(saved?.note ?? "")
+      setReasonError("")
+    }
+
+    /** Keeps the current pick so stepping away and back doesn't discard it. */
+    function retainCurrentReason(): Record<string, DeclineReasonEntry> {
+      if (!selectedReason) return rejectionReasons
+      const kept = {
+        ...rejectionReasons,
+        [current.registrantId]: {
+          declineReason: selectedReason,
+          ...(selectedReason === "Others" ? { note: otherReasonText.trim() } : {}),
+        },
+      }
+      setRejectionReasons(kept)
+      return kept
+    }
+
+    function handleReasonBack() {
+      const kept = retainCurrentReason()
+      if (reasonIndex === 0) {
+        // Back out to the member list. Decisions are untouched, so every toggle the
+        // faci set is still there — this is an escape hatch for "I picked Decline by
+        // mistake", which was otherwise unreachable without reloading the page.
+        setDeclineQueue([])
+        setReasonError("")
+        return
+      }
+      const previous = declineQueue[reasonIndex - 1]
+      setReasonIndex(reasonIndex - 1)
+      openReasonFor(previous, kept)
+    }
 
     async function handleReasonNext() {
       if (!selectedReason) {
@@ -207,31 +254,35 @@ export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy
         return
       }
       setReasonError("")
-      const entry: RejectionEntry = {
+      const entry: DeclineReasonEntry = {
         declineReason: selectedReason,
         ...(selectedReason === "Others" ? { note: otherReasonText.trim() } : {}),
       }
       const updatedReasons = { ...rejectionReasons, [current.registrantId]: entry }
       setRejectionReasons(updatedReasons)
 
-      const nextQueue = rejectionQueue.slice(1)
-      if (nextQueue.length > 0) {
-        setRejectionQueue(nextQueue)
-        setSelectedReason("")
-        setOtherReasonText("")
+      if (!isLast) {
+        const next = declineQueue[reasonIndex + 1]
+        setReasonIndex(reasonIndex + 1)
+        openReasonFor(next, updatedReasons)
         return
       }
 
       // All reasons collected — build final decisions and submit
-      const fullDecisions: ConfirmDecision[] = stagedDecisions.map((d) => {
-        if (d.status !== "declined") return d
-        const collected = updatedReasons[d.registrantId]
-        return { ...d, declineReason: collected?.declineReason, reason: collected?.note }
-      })
+      const fullDecisions = applyDeclineReasons(stagedDecisions, updatedReasons)
 
       setSubmitting(true)
-      const result = await submitCatchMechConfirmations(token, fullDecisions)
+      const result = await callAction(
+        () => submitCatchMechConfirmations(token, fullDecisions),
+        "submitCatchMechConfirmations"
+      )
       setSubmitting(false)
+      if (!result) {
+        // Same reasoning as below: hold this screen so the collected reasons survive
+        // a retry instead of being thrown away by a bounce back to the list.
+        setReasonError(SUBMIT_NETWORK_ERROR)
+        return
+      }
       if (!result.success) {
         // Stay on this screen. Clearing the queue would drop the faci back to the
         // member list, which reads as "it forgot my declines" — the error is then
@@ -242,7 +293,7 @@ export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy
       if (result.requiresGroupName) {
         setFinalDecisions(fullDecisions)
         setNeedsGroupName(true)
-        setRejectionQueue([])
+        setDeclineQueue([])
         return
       }
       setDone(true)
@@ -253,7 +304,7 @@ export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy
         <div className="space-y-1">
           <div className="flex items-center justify-between">
             <p className="text-sm font-semibold">Why are you declining?</p>
-            <span className="text-xs text-muted-foreground">{remaining} of {total} remaining</span>
+            <span className="text-xs text-muted-foreground">{reasonIndex + 1} of {total}</span>
           </div>
           <p className="text-xs text-muted-foreground">
             A reason is required for every declined member.
@@ -311,14 +362,24 @@ export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy
           {reasonError && <p className="text-xs text-destructive">{reasonError}</p>}
         </div>
 
-        <button
-          type="button"
-          onClick={handleReasonNext}
-          disabled={submitting}
-          className="w-full rounded-lg bg-primary text-primary-foreground py-2.5 text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
-        >
-          {submitting ? "Submitting…" : rejectionQueue.length > 1 ? "Next →" : "Submit"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleReasonBack}
+            disabled={submitting}
+            className="shrink-0 rounded-lg border bg-background px-4 py-2.5 text-sm font-medium hover:bg-muted/50 disabled:opacity-50 transition-colors"
+          >
+            {reasonIndex === 0 ? "← Back to list" : "← Back"}
+          </button>
+          <button
+            type="button"
+            onClick={handleReasonNext}
+            disabled={submitting}
+            className="flex-1 rounded-lg bg-primary text-primary-foreground py-2.5 text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
+          >
+            {submitting ? "Submitting…" : isLast ? "Submit" : "Next →"}
+          </button>
+        </div>
       </div>
     )
   }
@@ -355,18 +416,29 @@ export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy
 
     const declined = pendingRows.filter((r) => decisions[r.registrantId] === "decline")
     if (declined.length > 0) {
-      // Collect rejection reasons one-by-one before submitting
+      // Collect decline reasons one-by-one before submitting. Re-entering after a
+      // Back-to-list re-opens whatever was already answered rather than blanking it.
+      const saved = rejectionReasons[declined[0].registrantId]
       setStagedDecisions(decisionList)
-      setRejectionQueue(declined)
-      setSelectedReason("")
-      setOtherReasonText("")
+      setDeclineQueue(declined)
+      setReasonIndex(0)
+      setSelectedReason(saved?.declineReason ?? "")
+      setOtherReasonText(saved?.note ?? "")
+      setReasonError("")
       return
     }
 
     // No rejections — submit immediately
     setSubmitting(true)
-    const result = await submitCatchMechConfirmations(token, decisionList)
+    const result = await callAction(
+      () => submitCatchMechConfirmations(token, decisionList),
+      "submitCatchMechConfirmations"
+    )
     setSubmitting(false)
+    if (!result) {
+      setError(SUBMIT_NETWORK_ERROR)
+      return
+    }
     if (!result.success) {
       setError(result.error)
       return

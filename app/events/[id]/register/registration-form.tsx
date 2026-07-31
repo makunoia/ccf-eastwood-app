@@ -55,7 +55,7 @@ import {
 } from "@/lib/validations/household"
 import {
   suggestBreakoutGroup,
-  filterCompatibleCandidates,
+  breakoutPickerOptions,
   type BreakoutCandidate,
   type BreakoutNoticeKind,
 } from "@/lib/breakout-suggestion"
@@ -352,12 +352,12 @@ export function RegistrationForm({
     })
   }, [breakoutCandidates, form.gender, form.birthYear, hasBreakoutChoices])
 
-  const browsableCandidates = React.useMemo(() => {
-    return filterCompatibleCandidates(breakoutCandidates, {
-      gender: (form.gender || null) as "Male" | "Female" | null,
-      birthYear: form.birthYear ? parseInt(form.birthYear, 10) : null,
-    })
-  }, [breakoutCandidates, form.gender, form.birthYear])
+  // Every group in the room, unfiltered — the profile only drives the suggestion
+  // above, never what the registrant is allowed to browse.
+  const browsableCandidates = React.useMemo(
+    () => breakoutPickerOptions(breakoutCandidates),
+    [breakoutCandidates]
+  )
 
   React.useEffect(() => {
     return () => { if (claimedGroupDebounceRef.current) clearTimeout(claimedGroupDebounceRef.current) }
@@ -1676,15 +1676,12 @@ export function RegistrationForm({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="_none">No selection</SelectItem>
-                    {browsableCandidates.map((g) => {
-                      const isFull = g.memberLimit != null && g.memberCount >= g.memberLimit
-                      return (
-                        <SelectItem key={g.id} value={g.id} disabled={isFull}>
-                          {g.name}
-                          {isFull ? " (full)" : ""}
-                        </SelectItem>
-                      )
-                    })}
+                    {browsableCandidates.map((g) => (
+                      <SelectItem key={g.id} value={g.id} disabled={g.isFull}>
+                        {g.name}
+                        {g.isFull ? " (full)" : ""}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
