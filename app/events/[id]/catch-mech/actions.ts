@@ -5,11 +5,13 @@ import { resolveCatchMechTargets } from "@/lib/catch-mech/targets"
 import {
   prefetchRegistrantData,
   resolveConfirmations,
+} from "@/lib/catch-mech/confirmations"
+import {
   resolveTargets,
   validateDecisions,
   validateTargets,
   type ConfirmDecision,
-} from "@/lib/catch-mech/confirmations"
+} from "@/lib/catch-mech/decisions"
 import {
   recordConfirmationSubmission,
   submitterName,

@@ -6,9 +6,8 @@ import { formatPhilippinePhone } from "@/lib/utils"
 import {
   prefetchRegistrantData,
   resolveConfirmations,
-  type ConfirmDecision,
-  type ResolvedDecision,
 } from "@/lib/catch-mech/confirmations"
+import type { ConfirmDecision, ResolvedDecision } from "@/lib/catch-mech/decisions"
 import {
   recordConfirmationSubmission,
   submitterName,

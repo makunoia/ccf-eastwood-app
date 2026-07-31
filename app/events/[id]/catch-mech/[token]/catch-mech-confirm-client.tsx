@@ -9,7 +9,7 @@ import {
   applyDeclineReasons,
   type ConfirmDecision,
   type DeclineReasonEntry,
-} from "@/lib/catch-mech/confirmations"
+} from "@/lib/catch-mech/decisions"
 import { callAction, SUBMIT_NETWORK_ERROR } from "@/lib/forms/call-action"
 import type { DeclineReason } from "@/app/generated/prisma/client"
 import { DECLINE_REASON_OPTIONS } from "@/lib/decline-reason"

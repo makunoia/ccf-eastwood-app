@@ -3,8 +3,8 @@ import { describe, it, expect } from "vitest"
 import {
   resolveConfirmations,
   type FetchedRegistrant,
-  type ResolvedDecision,
 } from "@/lib/catch-mech/confirmations"
+import type { ResolvedDecision } from "@/lib/catch-mech/decisions"
 
 /**
  * Round-trip guard for resolveConfirmations.

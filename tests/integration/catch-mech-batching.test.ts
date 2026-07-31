@@ -4,8 +4,8 @@ import { db } from "@/lib/db"
 import {
   prefetchRegistrantData,
   resolveConfirmations,
-  type ResolvedDecision,
 } from "@/lib/catch-mech/confirmations"
+import type { ResolvedDecision } from "@/lib/catch-mech/decisions"
 
 /**
  * resolveConfirmations was rewritten to batch its reads and inserts instead of

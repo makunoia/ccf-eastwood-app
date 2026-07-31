@@ -1,104 +1,22 @@
 /**
- * Shared decision plumbing for every Catch Mech confirmation surface — the faci
- * form, the Timothy group-creation step, and the volunteer follow-up form.
+ * The database half of Catch Mech confirmations, shared by every surface — the
+ * faci form, the Timothy group-creation step, and the volunteer follow-up form.
  *
  * These live here rather than in a route's `actions.ts` on purpose. Everything
  * exported from a `"use server"` file becomes a publicly callable endpoint, so
  * `prefetchRegistrantData` sitting there meant anyone could POST registrant ids
  * and read back guest emails, phones and notes without authenticating. They are
  * internal helpers, not actions: the callers are already server-side.
+ *
+ * Server-only — this module imports `@/lib/db`. The decision shapes and the pure
+ * validate/resolve rules live in `./decisions.ts` so client surfaces can reach
+ * them without pulling Prisma into the browser bundle.
  */
 
-import { DeclineReason, type Prisma } from "@/app/generated/prisma/client"
+import type { DeclineReason, Prisma } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import { repointFamilyLinksBatch } from "@/lib/family-links"
-import type { CandidateGroup } from "@/lib/catch-mech/targets"
-
-export type ConfirmDecision = {
-  registrantId: string
-  status: "confirmed" | "pending" | "declined"
-  // Which of the faci's groups absorbs this person. Required on confirm when the
-  // faci has more than one candidate group; ignored otherwise.
-  targetGroupId?: string
-  declineReason?: DeclineReason
-  // Free-text detail, only used when declineReason is "Others"
-  reason?: string
-}
-
-/** A decision paired with the group it resolves to (null = groupless decline). */
-export type ResolvedDecision = ConfirmDecision & { groupId: string | null }
-
-// ─── Validation (pure) ───────────────────────────────────────────────────────
-
-export function validateDecisions(decisions: ConfirmDecision[]): string | null {
-  for (const d of decisions) {
-    if (d.status !== "declined") continue
-    if (!d.declineReason || !(d.declineReason in DeclineReason)) {
-      return "A decline reason is required for every declined member"
-    }
-    if (d.declineReason === "Others" && !d.reason?.trim()) {
-      return "Please specify the reason when declining with Others"
-    }
-  }
-  return null
-}
-
-/**
- * A faci leading several groups picks a destination per confirmed person. With one
- * candidate the picker never renders, so the single group is implied.
- */
-export function validateTargets(
-  decisions: ConfirmDecision[],
-  candidates: CandidateGroup[]
-): string | null {
-  if (candidates.length <= 1) return null
-  for (const d of decisions) {
-    if (d.status !== "confirmed") continue
-    if (!d.targetGroupId) {
-      return "Please choose which DGroup each confirmed person will join"
-    }
-    if (!candidates.some((c) => c.id === d.targetGroupId)) {
-      return "You can only confirm people into a DGroup you lead"
-    }
-  }
-  return null
-}
-
-/** What the faci picked on the decline-reason step, keyed by registrant. */
-export type DeclineReasonEntry = { declineReason: DeclineReason; note?: string }
-
-/**
- * Folds the separately-collected decline reasons back into the staged decisions.
- *
- * The reason step walks declined people one at a time and can be stepped back
- * through, so a registrant's entry may be overwritten before submit. Reading the
- * map at submit time — rather than at the moment each reason was picked — is what
- * makes going back and changing an answer actually take effect.
- */
-export function applyDeclineReasons(
-  decisions: ConfirmDecision[],
-  reasons: Record<string, DeclineReasonEntry>
-): ConfirmDecision[] {
-  return decisions.map((d) => {
-    if (d.status !== "declined") return d
-    const collected = reasons[d.registrantId]
-    return { ...d, declineReason: collected?.declineReason, reason: collected?.note }
-  })
-}
-
-export function resolveTargets(
-  decisions: ConfirmDecision[],
-  candidates: CandidateGroup[],
-  declineGroupId: string | null
-): ResolvedDecision[] {
-  return decisions.map((d) => {
-    if (d.status === "confirmed") {
-      return { ...d, groupId: d.targetGroupId ?? candidates[0]?.id ?? null }
-    }
-    if (d.status === "declined") return { ...d, groupId: declineGroupId }
-    return { ...d, groupId: null }
-  })
-}
+import type { ConfirmDecision, ResolvedDecision } from "@/lib/catch-mech/decisions"
 
 // ─── Pre-fetch registrant data in bulk (outside transaction) ─────────────────
 

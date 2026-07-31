@@ -14,7 +14,7 @@ import {
   submitCatchMechConfirmations,
   createSmallGroupForTimothy,
 } from "@/app/events/[id]/catch-mech/actions"
-import type { ConfirmDecision } from "@/lib/catch-mech/confirmations"
+import type { ConfirmDecision } from "@/lib/catch-mech/decisions"
 import { getSessionData } from "@/app/events/[id]/catch-mech/[token]/page"
 import { SLUG_CONFIG } from "@/app/(event)/event/[id]/catch-mech/status-slug"
 

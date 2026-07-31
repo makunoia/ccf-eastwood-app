@@ -6,7 +6,7 @@ import {
   validateDecisions,
   validateTargets,
   type ConfirmDecision,
-} from "@/lib/catch-mech/confirmations"
+} from "@/lib/catch-mech/decisions"
 
 /**
  * These three were private to app/events/[id]/catch-mech/actions.ts, which put them
