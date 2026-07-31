@@ -195,6 +195,12 @@ const nullablePositiveInt = z
   )
   .pipe(z.number().int().positive().nullable())
 
+const nullableTime = (message: string) =>
+  z
+    .union([z.string(), z.null(), z.undefined()])
+    .transform((v) => (v == null || v === "" ? null : v))
+    .pipe(z.string().regex(/^\d{2}:\d{2}$/, message).nullable())
+
 const ledGroupDetailsSchema = z
   .object({
     name: z.string().min(1, "Group name is required").trim(),
@@ -209,13 +215,20 @@ const ledGroupDetailsSchema = z
     ageRangeMax: nullablePositiveInt,
     memberLimit: nullablePositiveInt,
     scheduleDayOfWeek: z.number().int().min(0).max(6),
-    scheduleTimeStart: z.string().regex(/^\d{2}:\d{2}$/, "Invalid start time"),
-    scheduleTimeEnd: z.string().regex(/^\d{2}:\d{2}$/, "Invalid end time"),
+    // Times are optional — a leader may only know the day the group meets.
+    scheduleTimeStart: nullableTime("Invalid start time"),
+    scheduleTimeEnd: nullableTime("Invalid end time"),
   })
-  .refine((v) => v.scheduleTimeStart < v.scheduleTimeEnd, {
-    message: "End time must be after start time",
-    path: ["scheduleTimeEnd"],
-  })
+  .refine(
+    (v) =>
+      v.scheduleTimeStart == null ||
+      v.scheduleTimeEnd == null ||
+      v.scheduleTimeStart < v.scheduleTimeEnd,
+    {
+      message: "End time must be after start time",
+      path: ["scheduleTimeEnd"],
+    }
+  )
   .refine(
     (v) =>
       v.ageRangeMin == null ||

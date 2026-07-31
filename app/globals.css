@@ -203,6 +203,52 @@
   }
 }
 
+/* Couples small-group header accent, part two — a handful of tiny hearts that
+   drift up through the glow. Each heart sets its own --heart-* custom props so
+   the loop reads as ambient rather than a synchronised march.
+
+   The rise is applied to a full-header-height track, not to the heart itself:
+   a percentage translate resolves against the element's own box, so animating
+   the 12px heart directly only ever moved it ~12px. */
+@keyframes couples-heart-rise {
+  0% {
+    transform: translate3d(0, 20%, 0);
+    opacity: 0;
+  }
+  15% {
+    opacity: var(--heart-peak, 0.5);
+  }
+  78% {
+    opacity: var(--heart-peak, 0.5);
+  }
+  100% {
+    transform: translate3d(var(--heart-drift, 8px), -100%, 0);
+    opacity: 0;
+  }
+}
+@keyframes couples-heart-sway {
+  0%,
+  100% {
+    transform: rotate(-10deg) scale(0.85);
+  }
+  50% {
+    transform: rotate(10deg) scale(1);
+  }
+}
+.couples-heart-track {
+  animation: couples-heart-rise var(--heart-duration, 11s) linear
+    var(--heart-delay, 0s) infinite;
+}
+.couples-heart {
+  animation: couples-heart-sway calc(var(--heart-duration, 11s) / 3) ease-in-out
+    var(--heart-delay, 0s) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .couples-heart-track {
+    display: none;
+  }
+}
+
 /* Sidebar gradient — outside @layer so it overrides bg-sidebar utility */
 [data-sidebar="sidebar"] {
   background: linear-gradient(175deg, oklch(0.36 0.14 222) 0%, oklch(0.22 0.12 215) 100%);

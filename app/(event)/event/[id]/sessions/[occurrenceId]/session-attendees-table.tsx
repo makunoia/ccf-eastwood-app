@@ -5,10 +5,8 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { CheckCircle2, XCircle, ArrowLeftRight, SearchIcon, XIcon } from "lucide-react"
 import { Popover as PopoverPrimitive } from "radix-ui"
-import { IconUpload } from "@tabler/icons-react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import {
   Select,
   SelectContent,
@@ -26,17 +24,12 @@ import {
 } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-import { ImportWizard } from "@/components/import/import-wizard"
 import {
   sortSessionAttendees,
   type AttendeeSortDirection,
 } from "@/lib/session-attendees"
 import { cn } from "@/lib/utils"
 import type { PersonComboboxOption } from "@/components/ui/person-combobox"
-import {
-  checkSessionAttendanceDuplicates,
-  importSessionAttendance,
-} from "./import-actions"
 import {
   assignSubFacilitator,
   removeSubFacilitator,
@@ -105,12 +98,10 @@ export function SessionAttendeesTable({
   breakoutStats: BreakoutStatRow[]
   volunteerOptions: PersonComboboxOption[]
 }) {
-  const router = useRouter()
   const [activeTab, setActiveTab] = useState<SessionTab>("attendees")
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all")
   const [breakoutFilter, setBreakoutFilter] = useState("all")
   const [statusSortDirection, setStatusSortDirection] = useState<AttendeeSortDirection>("asc")
-  const [importOpen, setImportOpen] = useState(false)
 
   const filtered = useMemo(
     () =>
@@ -135,21 +126,14 @@ export function SessionAttendeesTable({
       onValueChange={(value) => setActiveTab(value as SessionTab)}
       className="space-y-3"
     >
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <TabsList variant="line">
-          <TabsTrigger value="attendees" className="after:-bottom-px">
-            Attendees
-          </TabsTrigger>
-          <TabsTrigger value="breakouts" className="after:-bottom-px">
-            Breakout Groups
-          </TabsTrigger>
-        </TabsList>
-
-        <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>
-          <IconUpload className="mr-1.5 size-3.5" />
-          Import
-        </Button>
-      </div>
+      <TabsList variant="line">
+        <TabsTrigger value="attendees" className="after:-bottom-px">
+          Attendees
+        </TabsTrigger>
+        <TabsTrigger value="breakouts" className="after:-bottom-px">
+          Breakout Groups
+        </TabsTrigger>
+      </TabsList>
 
       {activeTab === "attendees" && (
         <div className="space-y-2">
@@ -461,22 +445,6 @@ export function SessionAttendeesTable({
           </>
         )}
       </TabsContent>
-
-      <ImportWizard
-        config={{
-          entity: "session-attendance",
-          onSuccess: () => router.refresh(),
-        }}
-        open={importOpen}
-        onOpenChange={setImportOpen}
-        onCheckDuplicates={(rows) =>
-          checkSessionAttendanceDuplicates(
-            occurrenceId,
-            rows.map((r) => ({ email: r.email, phone: r.phone })),
-          )
-        }
-        onImport={(rows) => importSessionAttendance(occurrenceId, rows)}
-      />
     </Tabs>
   )
 }

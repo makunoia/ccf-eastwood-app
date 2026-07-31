@@ -49,7 +49,7 @@ async function validateTimothyProfile(
     genderFocus?: string | null
     language?: string[]
     meetingFormat?: string | null
-    schedule?: { dayOfWeek: number; timeStart: string; timeEnd: string } | null
+    schedule?: { dayOfWeek: number; timeStart: string | null; timeEnd: string | null } | null
   }
 ): Promise<string | null> {
   if (!facilitatorId) return null

@@ -49,7 +49,7 @@ export type BreakoutGroupDetails = {
   locationCity: string | null
   meetingFormat: "Online" | "Hybrid" | "InPerson" | null
   memberLimit: number | null
-  schedules: { dayOfWeek: number; timeStart: string; timeEnd: string | null }[]
+  schedules: { dayOfWeek: number; timeStart: string | null; timeEnd: string | null }[]
   members: { id: string; name: string }[]
   currentCount: number
 }

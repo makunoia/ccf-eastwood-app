@@ -61,13 +61,31 @@ export function validateOptionalSchedule(fields: CandidateScheduleFields): strin
  *   to a stored preference with no end time.
  */
 export function buildScheduleSlot(fields: CandidateScheduleFields): TimeSlot | null {
-  if (fields.scheduleDayOfWeek === "") return null
   if (validateOptionalSchedule(fields) !== null) return null
 
-  const timeStart = fields.scheduleTimeStart || DAY_START
-  const timeEnd =
-    fields.scheduleTimeEnd ||
-    (fields.scheduleTimeStart ? addOneHour(fields.scheduleTimeStart) : DAY_END)
+  return buildStoredScheduleSlot(
+    fields.scheduleDayOfWeek === "" ? null : Number(fields.scheduleDayOfWeek),
+    fields.scheduleTimeStart || null,
+    fields.scheduleTimeEnd || null
+  )
+}
 
-  return { dayOfWeek: Number(fields.scheduleDayOfWeek), timeStart, timeEnd }
+/**
+ * The stored-record twin of `buildScheduleSlot` — same normalisation, applied to
+ * nullable DB columns (a SmallGroup's inline schedule, a BreakoutGroupSchedule
+ * row, a member's SchedulePreference). Meeting times are optional everywhere, so
+ * a day-only schedule must still produce a slot the engine can match against.
+ */
+export function buildStoredScheduleSlot(
+  dayOfWeek: number | null | undefined,
+  timeStart: string | null | undefined,
+  timeEnd: string | null | undefined
+): TimeSlot | null {
+  if (dayOfWeek == null) return null
+
+  return {
+    dayOfWeek,
+    timeStart: timeStart || DAY_START,
+    timeEnd: timeEnd || (timeStart ? addOneHour(timeStart) : DAY_END),
+  }
 }

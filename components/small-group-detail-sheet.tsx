@@ -46,8 +46,9 @@ export function SmallGroupDetailSheet({
         language: g.language,
         locationCity: g.locationCity,
         meetingFormat: g.meetingFormat,
+        // Times are optional — a day-only schedule is still a schedule.
         schedules:
-          g.scheduleDayOfWeek != null && g.scheduleTimeStart
+          g.scheduleDayOfWeek != null
             ? [{ dayOfWeek: g.scheduleDayOfWeek, timeStart: g.scheduleTimeStart, timeEnd: g.scheduleTimeEnd }]
             : [],
         memberLimit: g.memberLimit,

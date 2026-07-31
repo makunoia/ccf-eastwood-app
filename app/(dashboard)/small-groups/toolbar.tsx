@@ -19,6 +19,7 @@ function toExportRow(g: SmallGroupRow): SmallGroupExportRow {
     leaderEmail: g.leaderEmail,
     leaderMobile: g.leaderPhone,
     parentGroupName: g.parentGroupName,
+    parentSatellite: g.parentSatellite,
     lifeStage: g.lifeStages.map((ls) => ls.name).join("; ") || null,
     genderFocus: g.genderFocus,
     language: g.language,

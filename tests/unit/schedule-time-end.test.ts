@@ -247,7 +247,7 @@ describe("createSmallGroup / updateSmallGroup — scheduleTimeEnd", () => {
     const leader = await seedMember()
 
     const result = await createSmallGroup({
-      name: "Group A", leaderId: leader.id, parentGroupId: "", groupType: "Regular",
+      name: "Group A", leaderId: leader.id, parentScope: "none" as const, parentGroupId: "", parentSatellite: "", groupType: "Regular",
       lifeStageIds: [lifeStage.id], genderFocus: "Mixed", language: [],
       ageRangeMin: "", ageRangeMax: "", meetingFormat: "InPerson",
       locationCity: "", memberLimit: "",
@@ -268,7 +268,7 @@ describe("createSmallGroup / updateSmallGroup — scheduleTimeEnd", () => {
     const group = await seedSmallGroup(leader.id, { scheduleTimeStart: "09:00", scheduleTimeEnd: "10:00" })
 
     const result = await updateSmallGroup(group.id, {
-      name: "Group A", leaderId: leader.id, parentGroupId: "", groupType: "Regular",
+      name: "Group A", leaderId: leader.id, parentScope: "none" as const, parentGroupId: "", parentSatellite: "", groupType: "Regular",
       lifeStageIds: [lifeStage.id], genderFocus: "Mixed", language: [],
       ageRangeMin: "", ageRangeMax: "", meetingFormat: "InPerson",
       locationCity: "", memberLimit: "",

@@ -420,7 +420,9 @@ export async function saveGuestClaimedGroup(
     if (!group) return { success: false, error: "DGroup not found" }
     await db.guest.update({
       where: { id: guestId },
-      data: { claimedSmallGroupId: smallGroupId },
+      // Naming one of our groups supersedes an earlier "my DGroup is at
+      // another satellite" answer — the two can't both be true.
+      data: { claimedSmallGroupId: smallGroupId, claimedSatellite: null },
     })
     revalidatePath(`/guests/${guestId}`)
     return { success: true, data: undefined }
@@ -436,7 +438,7 @@ export async function clearGuestClaimedGroup(guestId: string): Promise<ActionRes
   try {
     await db.guest.update({
       where: { id: guestId },
-      data: { claimedSmallGroupId: null },
+      data: { claimedSmallGroupId: null, claimedSatellite: null },
     })
     revalidatePath(`/guests/${guestId}`)
     return { success: true, data: undefined }

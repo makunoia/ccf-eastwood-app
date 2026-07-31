@@ -7,6 +7,7 @@
 import { describe, it, expect } from "vitest"
 import {
   buildScheduleSlot,
+  buildStoredScheduleSlot,
   isScheduleBlank,
   validateOptionalSchedule,
 } from "@/lib/matching/candidate-schedule"
@@ -91,5 +92,59 @@ describe("buildScheduleSlot", () => {
 
   it("returns null for an inverted range", () => {
     expect(buildScheduleSlot({ ...full, scheduleTimeEnd: "18:00" })).toBeNull()
+  })
+})
+
+/**
+ * Meeting times are optional on the group side too, so stored records can hold a
+ * day with no start time. The engine still has to score those groups instead of
+ * silently dropping their schedule.
+ */
+describe("buildStoredScheduleSlot", () => {
+  it("builds a slot from a complete stored schedule", () => {
+    expect(buildStoredScheduleSlot(2, "19:00", "21:00")).toEqual({
+      dayOfWeek: 2,
+      timeStart: "19:00",
+      timeEnd: "21:00",
+    })
+  })
+
+  it("treats a stored day with no times as the whole day", () => {
+    expect(buildStoredScheduleSlot(2, null, null)).toEqual({
+      dayOfWeek: 2,
+      timeStart: "00:00",
+      timeEnd: "23:59",
+    })
+  })
+
+  it("defaults a missing end time to one hour after the start", () => {
+    expect(buildStoredScheduleSlot(2, "19:00", null)).toEqual({
+      dayOfWeek: 2,
+      timeStart: "19:00",
+      timeEnd: "20:00",
+    })
+  })
+
+  it("starts at midnight when only an end time is stored", () => {
+    expect(buildStoredScheduleSlot(2, null, "21:00")).toEqual({
+      dayOfWeek: 2,
+      timeStart: "00:00",
+      timeEnd: "21:00",
+    })
+  })
+
+  it("keeps day 0 (Sunday) rather than reading it as absent", () => {
+    expect(buildStoredScheduleSlot(0, null, null)?.dayOfWeek).toBe(0)
+  })
+
+  it("returns null without a day", () => {
+    expect(buildStoredScheduleSlot(null, "19:00", "21:00")).toBeNull()
+    expect(buildStoredScheduleSlot(undefined, null, null)).toBeNull()
+  })
+
+  it("agrees with the form-side builder for the same schedule", () => {
+    expect(buildStoredScheduleSlot(2, null, null)).toEqual(
+      buildScheduleSlot({ ...blank, scheduleDayOfWeek: "2" })
+    )
   })
 })

@@ -99,6 +99,8 @@ export type AssistantGuestRow = {
   /** Coarse age bracket label, e.g. "30 – 39"; set only when the person gave one. */
   ageRange: string | null
   claimedSmallGroup: string | null
+  /** Set instead of claimedSmallGroup when their DGroup is at another CCF satellite. */
+  claimedSatellite: string | null
   promoted: boolean
   createdAt: string | null
 }
@@ -115,6 +117,7 @@ type GuestRowSource = {
   createdAt: Date
   lifeStage: { name: string } | null
   claimedSmallGroup: { name: string } | null
+  claimedSatellite: string | null
   ageRangeBucket: { label: string } | null
 }
 
@@ -128,6 +131,7 @@ export function toAssistantGuestRow(g: GuestRowSource): AssistantGuestRow {
     gender: g.gender,
     ageRange: g.ageRangeBucket?.label ?? null,
     claimedSmallGroup: g.claimedSmallGroup?.name ?? null,
+    claimedSatellite: g.claimedSatellite,
     promoted: g.memberId !== null,
     createdAt: isoDate(g.createdAt),
   }

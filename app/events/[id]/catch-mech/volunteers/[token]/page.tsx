@@ -4,7 +4,7 @@ import { FormClosed } from "@/components/form-closed"
 import { PublicFormShell } from "@/components/public-form-shell"
 import { getFormConfig, resolveFormTheme } from "@/lib/forms/config"
 import { resolveEventBrand } from "@/lib/forms/event-brand"
-import { VolunteerPlacementForm, type Participant } from "./volunteer-placement-form"
+import { VolunteerPlacementForm } from "./volunteer-placement-form"
 
 async function getSessionData(token: string) {
   const session = await db.catchMechVolunteerSession.findUnique({
@@ -26,16 +26,6 @@ async function getSessionData(token: string) {
               ministry: {
                 select: { id: true, logoUrl: true, themeColorPrimary: true },
               },
-            },
-          },
-          registrants: {
-            orderBy: { createdAt: "asc" },
-            select: {
-              id: true,
-              memberId: true,
-              guestId: true,
-              member: { select: { firstName: true, lastName: true, smallGroupId: true } },
-              guest: { select: { firstName: true, lastName: true, memberId: true } },
             },
           },
         },
@@ -65,22 +55,19 @@ async function getSessionData(token: string) {
     return null
   }
 
-  const participants = session.event.registrants.flatMap((registrant): Participant[] => {
-    if (registrant.memberId && registrant.member && !registrant.member.smallGroupId) {
-      return [{
-        id: registrant.id,
-        name: `${registrant.member.firstName} ${registrant.member.lastName}`,
-        kind: "Member",
-      }]
-    }
-    if (registrant.guestId && registrant.guest && !registrant.guest.memberId) {
-      return [{
-        id: registrant.id,
-        name: `${registrant.guest.firstName} ${registrant.guest.lastName}`,
-        kind: "Guest",
-      }]
-    }
-    return []
+  // Participants are searched on demand rather than shipped with the page — an
+  // event can have hundreds, and the volunteer only ever needs the handful they
+  // absorbed. This count exists purely to decide between the search form and the
+  // "everyone is already connected" empty state; the eligibility rule matches
+  // `searchCatchMechVolunteerParticipants` so the two can never disagree.
+  const eligibleCount = await db.eventRegistrant.count({
+    where: {
+      eventId: session.eventId,
+      OR: [
+        { member: { is: { smallGroupId: null } } },
+        { guest: { is: { memberId: null } } },
+      ],
+    },
   })
 
   return {
@@ -88,7 +75,7 @@ async function getSessionData(token: string) {
     event: session.event,
     volunteerName: `${session.volunteer.member.firstName} ${session.volunteer.member.lastName}`,
     groups: session.volunteer.member.ledGroups,
-    participants,
+    eligibleCount,
   }
 }
 
@@ -119,7 +106,7 @@ export default async function CatchMechVolunteerPlacementPage({
         <VolunteerPlacementForm
           token={token}
           volunteerName={data.volunteerName}
-          participants={data.participants}
+          hasEligibleParticipants={data.eligibleCount > 0}
           groups={data.groups}
         />
       </div>

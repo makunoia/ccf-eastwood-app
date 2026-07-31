@@ -105,6 +105,7 @@ async function getRegistrant(registrantId: string, eventId: string) {
           scheduleTimeStart: true,
           scheduleTimeEnd: true,
           claimedSmallGroup: { select: { name: true } },
+          claimedSatellite: true,
         },
       },
       breakoutGroupMemberships: {
@@ -252,7 +253,9 @@ export default async function RegistrantDetailPage({
   })
 
   const responseSectionRows = buildRegistrationSectionRows(formConfig, {
-    sectionSmallGroup: guestOnly?.claimedSmallGroup?.name ?? null,
+    sectionSmallGroup:
+      guestOnly?.claimedSmallGroup?.name ??
+      (guestOnly?.claimedSatellite ? `${guestOnly.claimedSatellite} (another satellite)` : null),
     sectionDietary: formatDietary(registrant.dietaryPreference, registrant.dietaryOther),
     sectionPayment: formatPayment(registrant.isPaid, registrant.paymentReference),
     sectionFamily: familyLabel,

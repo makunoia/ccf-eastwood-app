@@ -144,6 +144,7 @@ async function getSmallGroup(id: string): Promise<(SmallGroupRow & {
     leaderPhone: g.leader?.phone ?? null,
     parentGroupId: g.parentGroupId,
     parentGroupName: g.parentGroup?.name ?? null,
+    parentSatellite: g.parentSatellite,
     memberCount: g.members.length,
     tempMemberCount: pendingRequests.length,
     lifeStages: g.lifeStages,

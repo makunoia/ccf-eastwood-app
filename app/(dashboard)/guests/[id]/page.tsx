@@ -111,6 +111,7 @@ async function getGuest(id: string) {
     memberId: g.memberId,
     memberCreatedAt: g.member?.createdAt ?? null,
     claimedSmallGroup: g.claimedSmallGroup,
+    claimedSatellite: g.claimedSatellite,
     eventRegistrations: g.eventRegistrations,
     pendingGroupName: pendingRequest?.smallGroup?.name ?? null,
     pendingGroupId: pendingRequest?.smallGroup?.id ?? null,

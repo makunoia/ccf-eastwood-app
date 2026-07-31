@@ -138,7 +138,7 @@ export type BreakoutDetailData = {
   locationCity: string | null
   memberLimit: number | null
   members: BreakoutMemberRow[]
-  schedules: { dayOfWeek: number; timeStart: string; timeEnd: string | null }[]
+  schedules: { dayOfWeek: number; timeStart: string | null; timeEnd: string | null }[]
   eventType: string
   totalOccurrences: number
 }
@@ -184,7 +184,8 @@ function SmallGroupCard({ group }: { group: LedGroup }) {
   }
   if (group.meetingFormat) details.push({ label: "Format", value: MEETING_FORMAT_LABELS[group.meetingFormat] ?? group.meetingFormat })
   if (group.locationCity) details.push({ label: "Location", value: group.locationCity })
-  if (group.scheduleDayOfWeek != null && group.scheduleTimeStart) {
+  // The meeting times are optional — a day-only schedule still shows.
+  if (group.scheduleDayOfWeek != null) {
     details.push({
       label: "Schedule",
       value: formatSchedule(group.scheduleDayOfWeek, group.scheduleTimeStart, group.scheduleTimeEnd),
@@ -489,20 +490,12 @@ function MembersTable({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h3 className="font-semibold">
-          Members{" "}
-          <span className="font-normal text-muted-foreground text-sm">
-            ({memberLimit != null ? `${members.length} / ${memberLimit}` : members.length})
-          </span>
-        </h3>
-        {!isFull && (
-          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setAddOpen(true)}>
-            <IconUserPlus className="size-4" />
-            Add Registrant
-          </Button>
-        )}
-      </div>
+      <h3 className="font-semibold">
+        Members{" "}
+        <span className="font-normal text-muted-foreground text-sm">
+          ({memberLimit != null ? `${members.length} / ${memberLimit}` : members.length})
+        </span>
+      </h3>
 
       <FilterBar
         searchValue={search}
@@ -517,6 +510,14 @@ function MembersTable({
           setTypeFilter("all")
           setAttendanceFilter("all")
         }}
+        actions={
+          !isFull && (
+            <Button variant="outline" className="gap-1.5" onClick={() => setAddOpen(true)}>
+              <IconUserPlus className="size-4" />
+              <span className="sr-only sm:not-sr-only">Add Registrant</span>
+            </Button>
+          )
+        }
       >
         <FilterField label="Type">
           <Select

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
 import { repointFamilyLinks } from "@/lib/family-links"
+import { buildStoredScheduleSlot } from "@/lib/matching/candidate-schedule"
 import {
   recordConfirmationSubmission,
   submitterName,
@@ -95,6 +96,7 @@ export async function submitMemberConfirmations(
                 meetingPreference: true,
                 scheduleDayOfWeek: true,
                 scheduleTimeStart: true,
+                scheduleTimeEnd: true,
                 memberId: true,
               },
             },
@@ -175,17 +177,26 @@ export async function submitMemberConfirmations(
                     dateJoined: now,
                     smallGroupId: group.id,
                     groupStatus: "Member",
-                    ...(guest.scheduleDayOfWeek !== null &&
-                    guest.scheduleTimeStart !== null
-                      ? {
-                          schedulePreferences: {
-                            create: {
-                              dayOfWeek: guest.scheduleDayOfWeek,
-                              timeStart: guest.scheduleTimeStart!,
+                    // Times are optional — a day-only availability is normalised
+                    // into a whole-day slot rather than lost on promotion.
+                    ...(() => {
+                      const slot = buildStoredScheduleSlot(
+                        guest.scheduleDayOfWeek,
+                        guest.scheduleTimeStart,
+                        guest.scheduleTimeEnd
+                      )
+                      return slot
+                        ? {
+                            schedulePreferences: {
+                              create: {
+                                dayOfWeek: slot.dayOfWeek,
+                                timeStart: slot.timeStart,
+                                timeEnd: slot.timeEnd,
+                              },
                             },
-                          },
-                        }
-                      : {}),
+                          }
+                        : {}
+                    })(),
                   },
                   select: { id: true },
                 })

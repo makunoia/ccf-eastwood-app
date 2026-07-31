@@ -32,6 +32,7 @@ type GuestData = {
     groupType: "Regular" | "Couples"
     leader: { id: string; firstName: string; lastName: string } | null
   } | null
+  claimedSatellite: string | null
   pendingGroupName: string | null
   pendingGroupId: string | null
   matchedBreakout: {
@@ -74,6 +75,7 @@ export function GuestDetailContent({ guest, lifeStages, ageRanges, pipelineStatu
           guestId={guest.id}
           pipelineStatus={pipelineStatus}
           claimedGroup={guest.claimedSmallGroup}
+          claimedSatellite={guest.claimedSatellite}
           pendingGroupName={guest.pendingGroupName}
           pendingGroupId={guest.pendingGroupId}
           matchedBreakout={guest.matchedBreakout}

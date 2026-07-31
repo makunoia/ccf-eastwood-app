@@ -28,6 +28,8 @@ import { OptionalEmailInput } from "@/components/ui/optional-email-input"
 import { OptionalPhonePHInput } from "@/components/ui/optional-phone-ph-input"
 import { BirthMonthYearInput } from "@/components/ui/birth-month-year-input"
 import { PrivacyPolicyCheckbox } from "@/components/ui/privacy-policy-checkbox"
+import { PersonCombobox } from "@/components/ui/person-combobox"
+import { EXTERNAL_SATELLITES_BY_REGION } from "@/lib/constants/ccf-satellites"
 import {
   Select,
   SelectContent,
@@ -301,10 +303,21 @@ export function RegistrationForm({
   const [noEmail, setNoEmail] = React.useState(false)
   const [smallGroupIntent, setSmallGroupIntent] = React.useState<null | "wants" | "already_in">(null)
   const [claimedSmallGroupId, setClaimedSmallGroupId] = React.useState("")
+  // "…and my DGroup is at another CCF satellite" — swaps the leader search for a
+  // satellite picker, since there's no local group to find.
+  const [claimedElsewhere, setClaimedElsewhere] = React.useState(false)
+  const [claimedSatellite, setClaimedSatellite] = React.useState("")
   const [claimedGroupQuery, setClaimedGroupQuery] = React.useState("")
   const [claimedGroupResults, setClaimedGroupResults] = React.useState<Array<{ id: string; name: string; leaderName: string }>>([])
   const [claimedGroupSearching, setClaimedGroupSearching] = React.useState(false)
   const claimedGroupDebounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const satelliteOptions = React.useMemo(
+    () =>
+      EXTERNAL_SATELLITES_BY_REGION.flatMap(({ region, satellites }) =>
+        satellites.map((name) => ({ value: name, label: name, hint: region }))
+      ),
+    []
+  )
   const [submitting, setSubmitting] = React.useState(false)
   const [matchedMember, setMatchedMember] = React.useState<MatchedMember | null>(null)
   const [confirmedMember, setConfirmedMember] = React.useState<MatchedMember | null>(null)
@@ -682,7 +695,13 @@ export function RegistrationForm({
         scheduleTimeEnd:
           includeMatching && cfg.fieldSchedule ? form.scheduleTimeEnd || null : null,
         claimedSmallGroupId:
-          includeSmallGroup && smallGroupIntent === "already_in" ? claimedSmallGroupId || null : null,
+          includeSmallGroup && smallGroupIntent === "already_in" && !claimedElsewhere
+            ? claimedSmallGroupId || null
+            : null,
+        claimedSatellite:
+          includeSmallGroup && smallGroupIntent === "already_in" && claimedElsewhere
+            ? claimedSatellite || null
+            : null,
         // The intent itself is submitted now, not just used to reveal the
         // matching questions — the server turns it into a DGroup request (CCF-101).
         wantsSmallGroup: includeSmallGroup && smallGroupIntent === "wants",
@@ -885,7 +904,15 @@ export function RegistrationForm({
     const meta = displayBreakout
       ? [
           displayBreakout.schedule
-            ? `${DAY_NAMES[displayBreakout.schedule.dayOfWeek]} · ${formatTime(displayBreakout.schedule.timeStart)}`
+            ? // The meeting time is optional — fall back to the day alone.
+              [
+                DAY_NAMES[displayBreakout.schedule.dayOfWeek],
+                displayBreakout.schedule.timeStart
+                  ? formatTime(displayBreakout.schedule.timeStart)
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")
             : null,
           displayBreakout.meetingFormat
             ? MEETING_FORMAT_LABEL[displayBreakout.meetingFormat]
@@ -1437,6 +1464,8 @@ export function RegistrationForm({
                           setClaimedSmallGroupId("")
                           setClaimedGroupQuery("")
                           setClaimedGroupResults([])
+                          setClaimedElsewhere(false)
+                          setClaimedSatellite("")
                         }
                       }}
                       className="mt-0.5"
@@ -1450,6 +1479,48 @@ export function RegistrationForm({
 
               {/* Already in a group — leader/group search */}
               {smallGroupIntent === "already_in" && (
+                <div className="space-y-3">
+                  <div className="flex items-start gap-2">
+                    <Checkbox
+                      id="claimedElsewhere"
+                      checked={claimedElsewhere}
+                      onCheckedChange={(v) => {
+                        const on = v === true
+                        setClaimedElsewhere(on)
+                        // Only one answer survives — drop whichever the person left behind.
+                        if (on) {
+                          setClaimedSmallGroupId("")
+                          setClaimedGroupQuery("")
+                          setClaimedGroupResults([])
+                        } else {
+                          setClaimedSatellite("")
+                        }
+                      }}
+                      className="mt-0.5"
+                    />
+                    <Label htmlFor="claimedElsewhere" className="text-sm font-normal leading-snug">
+                      My DGroup is at another CCF satellite
+                    </Label>
+                  </div>
+
+                  {claimedElsewhere && (
+                    <div className="space-y-1.5">
+                      <Label htmlFor="claimedSatellite">Which satellite?</Label>
+                      <PersonCombobox
+                        id="claimedSatellite"
+                        options={satelliteOptions}
+                        value={claimedSatellite}
+                        onValueChange={setClaimedSatellite}
+                        placeholder="Select a CCF satellite"
+                        searchPlaceholder="Search satellites…"
+                        emptyText="No satellite found."
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {smallGroupIntent === "already_in" && !claimedElsewhere && (
                 <div className="space-y-3">
                   <div className="space-y-1.5">
                     <Label htmlFor="claimedGroupSearch">Search by leader&apos;s name</Label>

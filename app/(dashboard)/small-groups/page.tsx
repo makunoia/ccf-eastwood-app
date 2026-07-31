@@ -62,6 +62,7 @@ async function getSmallGroups(where: Prisma.SmallGroupWhereInput): Promise<Small
     leaderPhone: g.leader?.phone ?? null,
     parentGroupId: g.parentGroupId,
     parentGroupName: g.parentGroup?.name ?? null,
+    parentSatellite: g.parentSatellite,
     memberCount: g._count.members,
     tempMemberCount: g._count.memberRequests,
     lifeStages: g.lifeStages,

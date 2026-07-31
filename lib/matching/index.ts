@@ -3,6 +3,7 @@ import { db } from "@/lib/db"
 import { MatchingContext } from "@/app/generated/prisma/client"
 import { DEFAULT_WEIGHTS, DEFAULT_GUEST_COOLDOWN_DAYS } from "@/lib/validations/matching-weights"
 import { scoreGroup, combineCoupleScores } from "./engine"
+import { buildStoredScheduleSlot } from "./candidate-schedule"
 import { scoreGender, scoreLifeStage, scoreSchedule } from "./scorers"
 import { EMPTY_CANDIDATE } from "./types"
 import type { CandidateProfile, GroupProfile, MatchResult, WeightConfig, EscalationLevel, TimeSlot } from "./types"
@@ -25,7 +26,7 @@ function buildCandidateFromMember(m: {
   workCity: string | null
   workIndustry: string | null
   meetingPreference: "Online" | "Hybrid" | "InPerson" | null
-  schedulePreferences: { dayOfWeek: number; timeStart: string; timeEnd: string | null }[]
+  schedulePreferences: { dayOfWeek: number; timeStart: string | null; timeEnd: string | null }[]
 }): CandidateProfile {
   return {
     lifeStageId: m.lifeStageId,
@@ -37,11 +38,9 @@ function buildCandidateFromMember(m: {
     workCity: m.workCity,
     workIndustry: m.workIndustry,
     meetingPreference: m.meetingPreference,
-    scheduleSlots: m.schedulePreferences.map((s) => ({
-      dayOfWeek: s.dayOfWeek,
-      timeStart: s.timeStart,
-      timeEnd: s.timeEnd ?? addOneHour(s.timeStart),
-    })),
+    scheduleSlots: m.schedulePreferences
+      .map((s) => buildStoredScheduleSlot(s.dayOfWeek, s.timeStart, s.timeEnd))
+      .filter((s) => s !== null),
   }
 }
 
@@ -69,16 +68,18 @@ function buildCandidateFromGuest(g: {
     workCity: g.workCity,
     workIndustry: g.workIndustry,
     meetingPreference: g.meetingPreference,
-    scheduleSlots:
-      g.scheduleDayOfWeek !== null && g.scheduleTimeStart !== null
-        ? [{ dayOfWeek: g.scheduleDayOfWeek, timeStart: g.scheduleTimeStart, timeEnd: g.scheduleTimeEnd ?? addOneHour(g.scheduleTimeStart) }]
-        : [],
+    scheduleSlots: slotList(g.scheduleDayOfWeek, g.scheduleTimeStart, g.scheduleTimeEnd),
   }
 }
 
-function addOneHour(time: string): string {
-  const [h, m] = time.split(":").map(Number)
-  return `${String((h + 1) % 24).padStart(2, "0")}:${String(m).padStart(2, "0")}`
+/** 0-or-1 slot from an inline (day, start, end) triple where only day is certain. */
+function slotList(
+  dayOfWeek: number | null,
+  timeStart: string | null,
+  timeEnd: string | null
+): TimeSlot[] {
+  const slot = buildStoredScheduleSlot(dayOfWeek, timeStart, timeEnd)
+  return slot ? [slot] : []
 }
 
 function buildSmallGroupProfile(
@@ -120,10 +121,7 @@ function buildSmallGroupProfile(
     memberIndustries:
       overrideIndustries ??
       (g.members.map((m) => m.workIndustry).filter(Boolean) as string[]),
-    scheduleSlots:
-      g.scheduleDayOfWeek !== null && g.scheduleTimeStart !== null
-        ? [{ dayOfWeek: g.scheduleDayOfWeek, timeStart: g.scheduleTimeStart, timeEnd: g.scheduleTimeEnd ?? addOneHour(g.scheduleTimeStart) }]
-        : [],
+    scheduleSlots: slotList(g.scheduleDayOfWeek, g.scheduleTimeStart, g.scheduleTimeEnd),
   }
 }
 
@@ -720,7 +718,7 @@ type BreakoutGroupScoreRow = {
       guest: { workIndustry: string | null } | null
     }
   }[]
-  schedules: { dayOfWeek: number; timeStart: string; timeEnd: string | null }[]
+  schedules: { dayOfWeek: number; timeStart: string | null; timeEnd: string | null }[]
   facilitator: { member: { gender: "Male" | "Female" | null } } | null
   coFacilitator: { member: { gender: "Male" | "Female" | null } } | null
   linkedSmallGroup: { genderFocus: "Male" | "Female" | "Mixed" | null } | null
@@ -750,11 +748,9 @@ export function buildBreakoutGroupProfile(g: BreakoutGroupScoreRow): GroupProfil
     memberLimit: g.memberLimit,
     currentCount: g._count.members,
     memberIndustries,
-    scheduleSlots: g.schedules.map((s) => ({
-      dayOfWeek: s.dayOfWeek,
-      timeStart: s.timeStart,
-      timeEnd: s.timeEnd ?? addOneHour(s.timeStart),
-    })),
+    scheduleSlots: g.schedules
+      .map((s) => buildStoredScheduleSlot(s.dayOfWeek, s.timeStart, s.timeEnd))
+      .filter((s) => s !== null),
   }
 }
 

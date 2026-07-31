@@ -112,6 +112,7 @@ describe("toAssistantGuestRow", () => {
       createdAt: new Date("2026-02-01T00:00:00Z"),
       lifeStage: null,
       claimedSmallGroup: null,
+      claimedSatellite: null,
     }
     expect(
       toAssistantGuestRow({ ...base, ageRangeBucket: { label: "18 – 29" } }).ageRange

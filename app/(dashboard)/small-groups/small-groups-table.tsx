@@ -59,7 +59,12 @@ function SmallGroupCard({ group, allIds }: { group: SmallGroupRow; allIds: strin
               <span className="text-muted-foreground">Leader</span>
               <span>{group.leaderName ?? <span className="text-muted-foreground">No leader</span>}</span>
               <span className="text-muted-foreground">Parent Group</span>
-              <span>{group.parentGroupName ?? <span className="text-muted-foreground">—</span>}</span>
+              <span>
+                {group.parentGroupName ??
+                  (group.parentSatellite
+                    ? <span className="text-muted-foreground">{group.parentSatellite}</span>
+                    : <span className="text-muted-foreground">—</span>)}
+              </span>
               <span className="text-muted-foreground">Members</span>
               <span>{group.memberCount}</span>
               <span className="text-muted-foreground">Life Stage</span>

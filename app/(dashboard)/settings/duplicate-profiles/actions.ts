@@ -328,6 +328,7 @@ async function mergeIntoMember(tx: TxClient, keeperId: string, losers: LoserRef[
       delete fill.memberId
       delete fill.notes // notes handled separately to avoid clobbering
       delete fill.claimedSmallGroupId
+      delete fill.claimedSatellite
       delete fill.scheduleDayOfWeek
       delete fill.scheduleTimeStart
       delete fill.scheduleTimeEnd

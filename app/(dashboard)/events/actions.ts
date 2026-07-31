@@ -49,6 +49,7 @@ import {
   householdSchema,
 } from "@/lib/validations/household"
 import { formatPhilippinePhone } from "@/lib/utils"
+import { contactHintFrom } from "@/lib/contact-hint"
 import { createSeekerRequestFromRegistration } from "@/lib/small-groups/seeker-requests"
 import type { Gender } from "@/app/generated/prisma/client"
 
@@ -1301,6 +1302,7 @@ function findEventRegistrantsForLookup(eventId: string) {
           scheduleTimeEnd: true,
           ageRangeBucketId: true,
           claimedSmallGroupId: true,
+          claimedSatellite: true,
           groupRequests: { select: { status: true } },
         },
       },
@@ -1312,23 +1314,6 @@ type RegistrantLookupRow = Awaited<ReturnType<typeof findEventRegistrantsForLook
 
 function normalizeNameInput(v: string): string {
   return v.trim().replace(/\s+/g, " ").toLowerCase()
-}
-
-function maskPhone(phone: string): string {
-  const digits = phone.replace(/\D/g, "")
-  return `+63 ••• ••• ${digits.slice(-4)}`
-}
-
-function maskEmail(email: string): string {
-  const [local, domain] = email.split("@")
-  if (!domain) return "•••"
-  return `${local.slice(0, 1)}•••@${domain}`
-}
-
-function contactHintFrom(phone: string | null, email: string | null): string | null {
-  if (phone) return maskPhone(phone)
-  if (email) return maskEmail(email)
-  return null
 }
 
 async function resolveRegistrantCandidate(
@@ -1353,7 +1338,9 @@ async function resolveRegistrantCandidate(
   let guestSmallGroupPrompt: GuestSmallGroupPrompt | null = null
   if (matched.guestId && matched.guest) {
     const g = matched.guest
-    const noClaimedGroup = !g.claimedSmallGroupId
+    // A guest who named a satellite has already told us they're in a DGroup —
+    // there's just no local group to link. Don't ask them again at check-in.
+    const noClaimedGroup = !g.claimedSmallGroupId && !g.claimedSatellite
     const hasPendingRequest = g.groupRequests.some(
       (r) => r.status === "Pending" || r.status === "Confirmed"
     )

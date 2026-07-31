@@ -41,6 +41,7 @@ export type SmallGroupRow = {
   leaderPhone: string | null
   parentGroupId: string | null
   parentGroupName: string | null
+  parentSatellite: string | null
   memberCount: number
   tempMemberCount: number
   lifeStages: { id: string; name: string }[]
@@ -175,12 +176,20 @@ export function buildColumns(selectable = false): ColumnDef<SmallGroupRow>[] {
         ),
     },
     {
-      accessorKey: "parentGroupName",
+      id: "parentGroupName",
+      // A group's parent is either a DGroup here or an outside satellite, so the
+      // column falls back to the satellite name rather than showing an empty cell.
+      accessorFn: (row) => row.parentGroupName ?? row.parentSatellite ?? "",
       header: "Parent Group",
       cell: ({ row }) =>
-        row.original.parentGroupName ?? (
+        row.original.parentGroupName ??
+        (row.original.parentSatellite ? (
+          <span className="text-muted-foreground">
+            {row.original.parentSatellite}
+          </span>
+        ) : (
           <span className="text-muted-foreground">—</span>
-        ),
+        )),
     },
     {
       accessorKey: "memberCount",

@@ -104,6 +104,7 @@ export type SmallGroupExportRow = {
   leaderEmail: string | null
   leaderMobile: string | null
   parentGroupName: string | null
+  parentSatellite: string | null
   lifeStage: string | null
   genderFocus: string | null
   language: string[]
@@ -121,7 +122,7 @@ export type SmallGroupExportRow = {
 const SMALL_GROUP_HEADERS = [
   "Group Name", "Status", "Group Type",
   "Leader First Name", "Leader Last Name", "Leader Mobile", "Leader Email",
-  "Parent Group", "Life Stage", "Gender Focus", "Language",
+  "Parent Group", "Parent Satellite", "Life Stage", "Gender Focus", "Language",
   "Min Age", "Max Age", "Meeting Format", "Location City",
   "Member Limit", "Current Members",
   "Meeting Day", "Meeting Time Start", "Meeting Time End",
@@ -131,7 +132,7 @@ function smallGroupToCells(g: SmallGroupExportRow): CSVCell[] {
   return [
     g.name, g.status, g.groupType,
     g.leaderFirstName, g.leaderLastName, g.leaderMobile, g.leaderEmail,
-    g.parentGroupName, g.lifeStage, g.genderFocus, g.language.join("; "),
+    g.parentGroupName, g.parentSatellite, g.lifeStage, g.genderFocus, g.language.join("; "),
     g.ageRangeMin, g.ageRangeMax, g.meetingFormat, g.locationCity,
     g.memberLimit, g.memberCount,
     formatDayOfWeek(g.scheduleDayOfWeek), g.scheduleTimeStart, g.scheduleTimeEnd,
