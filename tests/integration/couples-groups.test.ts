@@ -37,7 +37,9 @@ async function seedCouple(familyName = "Couple Family") {
 
 const baseGroupForm = {
   name: "Test Group",
+  parentScope: "none" as const,
   parentGroupId: "",
+  parentSatellite: "",
   language: [],
   ageRangeMin: "",
   ageRangeMax: "",

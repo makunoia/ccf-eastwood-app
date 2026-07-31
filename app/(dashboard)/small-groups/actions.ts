@@ -50,6 +50,7 @@ export async function createSmallGroup(
           name: parsed.data.name,
           leaderId: parsed.data.leaderId,
           parentGroupId: parsed.data.parentGroupId ?? null,
+          parentSatellite: parsed.data.parentSatellite ?? null,
           groupType: parsed.data.groupType,
           lifeStages: { connect: parsed.data.lifeStageIds.map((id) => ({ id })) },
           genderFocus: parsed.data.genderFocus ?? null,
@@ -176,6 +177,7 @@ export async function updateSmallGroup(
           name: parsed.data.name,
           leaderId: parsed.data.leaderId,
           parentGroupId: parsed.data.parentGroupId ?? null,
+          parentSatellite: parsed.data.parentSatellite ?? null,
           groupType: parsed.data.groupType,
           lifeStages: { set: parsed.data.lifeStageIds.map((id) => ({ id })) },
           genderFocus: parsed.data.genderFocus ?? null,
@@ -201,6 +203,19 @@ export async function updateSmallGroup(
             smallGroupId: parsed.data.parentGroupId,
             groupStatus: "Member",
           },
+        })
+      }
+
+      // Moving the parent to an outside satellite undoes that auto-assignment:
+      // the leader now reports elsewhere, so drop the membership this created.
+      // Scoped to the old parent so a hand-picked group is never touched.
+      if (parsed.data.parentSatellite && parentChanged && current?.parentGroupId) {
+        await tx.member.updateMany({
+          where: {
+            id: current.leaderId ?? parsed.data.leaderId,
+            smallGroupId: current.parentGroupId,
+          },
+          data: { smallGroupId: null, groupStatus: null },
         })
       }
     })

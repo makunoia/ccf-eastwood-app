@@ -3,6 +3,7 @@ import { db } from "@/lib/db"
 import { MatchingContext } from "@/app/generated/prisma/client"
 import { DEFAULT_WEIGHTS, DEFAULT_GUEST_COOLDOWN_DAYS } from "@/lib/validations/matching-weights"
 import { scoreGroup, combineCoupleScores } from "./engine"
+import { buildStoredScheduleSlot } from "./candidate-schedule"
 import { scoreGender, scoreLifeStage, scoreSchedule } from "./scorers"
 import { EMPTY_CANDIDATE } from "./types"
 import type { CandidateProfile, GroupProfile, MatchResult, WeightConfig, EscalationLevel, TimeSlot } from "./types"
@@ -25,7 +26,7 @@ function buildCandidateFromMember(m: {
   workCity: string | null
   workIndustry: string | null
   meetingPreference: "Online" | "Hybrid" | "InPerson" | null
-  schedulePreferences: { dayOfWeek: number; timeStart: string; timeEnd: string | null }[]
+  schedulePreferences: { dayOfWeek: number; timeStart: string | null; timeEnd: string | null }[]
 }): CandidateProfile {
   return {
     lifeStageId: m.lifeStageId,
@@ -37,11 +38,9 @@ function buildCandidateFromMember(m: {
     workCity: m.workCity,
     workIndustry: m.workIndustry,
     meetingPreference: m.meetingPreference,
-    scheduleSlots: m.schedulePreferences.map((s) => ({
-      dayOfWeek: s.dayOfWeek,
-      timeStart: s.timeStart,
-      timeEnd: s.timeEnd ?? addOneHour(s.timeStart),
-    })),
+    scheduleSlots: m.schedulePreferences
+      .map((s) => buildStoredScheduleSlot(s.dayOfWeek, s.timeStart, s.timeEnd))
+      .filter((s) => s !== null),
   }
 }
 
@@ -69,16 +68,18 @@ function buildCandidateFromGuest(g: {
     workCity: g.workCity,
     workIndustry: g.workIndustry,
     meetingPreference: g.meetingPreference,
-    scheduleSlots:
-      g.scheduleDayOfWeek !== null && g.scheduleTimeStart !== null
-        ? [{ dayOfWeek: g.scheduleDayOfWeek, timeStart: g.scheduleTimeStart, timeEnd: g.scheduleTimeEnd ?? addOneHour(g.scheduleTimeStart) }]
-        : [],
+    scheduleSlots: slotList(g.scheduleDayOfWeek, g.scheduleTimeStart, g.scheduleTimeEnd),
   }
 }
 
-function addOneHour(time: string): string {
-  const [h, m] = time.split(":").map(Number)
-  return `${String((h + 1) % 24).padStart(2, "0")}:${String(m).padStart(2, "0")}`
+/** 0-or-1 slot from an inline (day, start, end) triple where only day is certain. */
+function slotList(
+  dayOfWeek: number | null,
+  timeStart: string | null,
+  timeEnd: string | null
+): TimeSlot[] {
+  const slot = buildStoredScheduleSlot(dayOfWeek, timeStart, timeEnd)
+  return slot ? [slot] : []
 }
 
 function buildSmallGroupProfile(
@@ -120,10 +121,7 @@ function buildSmallGroupProfile(
     memberIndustries:
       overrideIndustries ??
       (g.members.map((m) => m.workIndustry).filter(Boolean) as string[]),
-    scheduleSlots:
-      g.scheduleDayOfWeek !== null && g.scheduleTimeStart !== null
-        ? [{ dayOfWeek: g.scheduleDayOfWeek, timeStart: g.scheduleTimeStart, timeEnd: g.scheduleTimeEnd ?? addOneHour(g.scheduleTimeStart) }]
-        : [],
+    scheduleSlots: slotList(g.scheduleDayOfWeek, g.scheduleTimeStart, g.scheduleTimeEnd),
   }
 }
 
@@ -665,158 +663,270 @@ export function deriveEffectiveGenderFocus(
   return null
 }
 
+/** Everything `buildBreakoutGroupProfile` needs off a BreakoutGroup row. */
+const BREAKOUT_GROUP_SCORE_SELECT = {
+  id: true,
+  name: true,
+  lifeStages: { select: { id: true, name: true } },
+  genderFocus: true,
+  language: true,
+  ageRangeMin: true,
+  ageRangeMax: true,
+  meetingFormat: true,
+  locationCity: true,
+  memberLimit: true,
+  _count: { select: { members: true } },
+  members: {
+    select: {
+      registrant: {
+        select: {
+          member: { select: { workIndustry: true } },
+          guest: { select: { workIndustry: true } },
+        },
+      },
+    },
+  },
+  schedules: {
+    select: { dayOfWeek: true, timeStart: true, timeEnd: true },
+  },
+  facilitator: {
+    select: { member: { select: { gender: true } } },
+  },
+  coFacilitator: {
+    select: { member: { select: { gender: true } } },
+  },
+  linkedSmallGroup: {
+    select: { genderFocus: true },
+  },
+} as const
+
+type BreakoutGroupScoreRow = {
+  id: string
+  name: string
+  lifeStages: { id: string; name: string }[]
+  genderFocus: "Male" | "Female" | "Mixed" | null
+  language: string[]
+  ageRangeMin: number | null
+  ageRangeMax: number | null
+  meetingFormat: "Online" | "Hybrid" | "InPerson" | null
+  locationCity: string | null
+  memberLimit: number | null
+  _count: { members: number }
+  members: {
+    registrant: {
+      member: { workIndustry: string | null } | null
+      guest: { workIndustry: string | null } | null
+    }
+  }[]
+  schedules: { dayOfWeek: number; timeStart: string | null; timeEnd: string | null }[]
+  facilitator: { member: { gender: "Male" | "Female" | null } } | null
+  coFacilitator: { member: { gender: "Male" | "Female" | null } } | null
+  linkedSmallGroup: { genderFocus: "Male" | "Female" | "Mixed" | null } | null
+}
+
+export function buildBreakoutGroupProfile(g: BreakoutGroupScoreRow): GroupProfile {
+  const memberIndustries = g.members
+    .map((m) => m.registrant.member?.workIndustry ?? m.registrant.guest?.workIndustry)
+    .filter((i): i is string => i != null)
+
+  return {
+    id: g.id,
+    name: g.name,
+    lifeStageIds: g.lifeStages.map((ls) => ls.id),
+    lifeStageNames: g.lifeStages.map((ls) => ls.name),
+    genderFocus: deriveEffectiveGenderFocus(
+      g.genderFocus,
+      g.facilitator?.member.gender,
+      g.coFacilitator?.member.gender,
+      g.linkedSmallGroup?.genderFocus
+    ),
+    language: g.language,
+    ageRangeMin: g.ageRangeMin,
+    ageRangeMax: g.ageRangeMax,
+    meetingFormat: g.meetingFormat,
+    locationCity: g.locationCity,
+    memberLimit: g.memberLimit,
+    currentCount: g._count.members,
+    memberIndustries,
+    scheduleSlots: g.schedules
+      .map((s) => buildStoredScheduleSlot(s.dayOfWeek, s.timeStart, s.timeEnd))
+      .filter((s) => s !== null),
+  }
+}
+
+/**
+ * The breakout eligibility gates: gender and life stage. Unlike small groups,
+ * schedule is not a gate here — a breakout table meets during the event.
+ *
+ * `matchBreakoutGroups` uses this to *exclude* groups. The admin-facing
+ * candidate picker uses it to *label* people who don't meet the group's
+ * criteria while still allowing an override.
+ */
+export function passesBreakoutGates(
+  candidate: CandidateProfile,
+  profile: GroupProfile
+): boolean {
+  if (scoreGender(candidate.gender, profile.genderFocus) === 0.0) return false
+  if (scoreLifeStage(candidate.lifeStageId, profile.lifeStageIds) === 0.0) return false
+  return true
+}
+
+/** Everything `buildCandidateFrom{Member,Guest}` needs off an EventRegistrant row. */
+const CANDIDATE_PROFILE_SELECT = {
+  member: {
+    select: {
+      lifeStageId: true,
+      gender: true,
+      language: true,
+      birthMonth: true,
+      birthYear: true,
+      ageRangeBucket: { select: { minAge: true, maxAge: true } },
+      workCity: true,
+      workIndustry: true,
+      meetingPreference: true,
+      schedulePreferences: {
+        select: { dayOfWeek: true, timeStart: true, timeEnd: true },
+      },
+    },
+  },
+  guest: {
+    select: {
+      lifeStageId: true,
+      gender: true,
+      language: true,
+      birthMonth: true,
+      birthYear: true,
+      ageRangeBucket: { select: { minAge: true, maxAge: true } },
+      workCity: true,
+      workIndustry: true,
+      meetingPreference: true,
+      scheduleDayOfWeek: true,
+      scheduleTimeStart: true,
+      scheduleTimeEnd: true,
+    },
+  },
+} as const
+
+/**
+ * Resolve each registrant to a matching profile. A registrant with neither a
+ * Member nor a Guest behind it (an anonymous walk-in) has nothing to match on
+ * and gets EMPTY_CANDIDATE — every factor scores as unknown.
+ */
+async function loadCandidateProfiles(
+  registrantIds: string[]
+): Promise<Map<string, CandidateProfile>> {
+  if (registrantIds.length === 0) return new Map()
+
+  const rows = await db.eventRegistrant.findMany({
+    where: { id: { in: registrantIds } },
+    select: { id: true, ...CANDIDATE_PROFILE_SELECT },
+  })
+
+  return new Map(
+    rows.map((r) => [
+      r.id,
+      r.member
+        ? buildCandidateFromMember(r.member)
+        : r.guest
+        ? buildCandidateFromGuest(r.guest)
+        : EMPTY_CANDIDATE,
+    ])
+  )
+}
+
 export async function matchBreakoutGroups(
   registrantId: string,
   eventId: string,
   options?: { excludeAssigned?: boolean; limit?: number }
 ): Promise<MatchResult[]> {
-  const registrant = await db.eventRegistrant.findUnique({
-    where: { id: registrantId },
-    select: {
-      memberId: true,
-      guestId: true,
-      breakoutGroupMemberships: { select: { breakoutGroupId: true } },
-      member: {
-        select: {
-          lifeStageId: true,
-          gender: true,
-          language: true,
-          birthMonth: true,
-          birthYear: true,
-          ageRangeBucket: { select: { minAge: true, maxAge: true } },
-          workCity: true,
-          workIndustry: true,
-          meetingPreference: true,
-          schedulePreferences: {
-            select: { dayOfWeek: true, timeStart: true, timeEnd: true },
-          },
-        },
-      },
-      guest: {
-        select: {
-          lifeStageId: true,
-          gender: true,
-          language: true,
-          birthMonth: true,
-          birthYear: true,
-          ageRangeBucket: { select: { minAge: true, maxAge: true } },
-          workCity: true,
-          workIndustry: true,
-          meetingPreference: true,
-          scheduleDayOfWeek: true,
-          scheduleTimeStart: true,
-          scheduleTimeEnd: true,
-        },
-      },
-    },
-  })
+  const [profiles, assignments] = await Promise.all([
+    loadCandidateProfiles([registrantId]),
+    db.breakoutGroupMember.findMany({
+      where: { registrantId },
+      select: { breakoutGroupId: true },
+    }),
+  ])
 
-  if (!registrant) return []
+  const candidate = profiles.get(registrantId)
+  if (!candidate) return []
 
-  const candidate: CandidateProfile = registrant.member
-    ? buildCandidateFromMember(registrant.member)
-    : registrant.guest
-    ? buildCandidateFromGuest(registrant.guest)
-    : EMPTY_CANDIDATE
-
-  const assignedGroupIds = new Set(
-    registrant.breakoutGroupMemberships.map((m) => m.breakoutGroupId)
-  )
+  const assignedGroupIds = new Set(assignments.map((m) => m.breakoutGroupId))
 
   const groups = await db.breakoutGroup.findMany({
     where: { eventId },
-    select: {
-      id: true,
-      name: true,
-      lifeStages: { select: { id: true, name: true } },
-      genderFocus: true,
-      language: true,
-      ageRangeMin: true,
-      ageRangeMax: true,
-      meetingFormat: true,
-      locationCity: true,
-      memberLimit: true,
-      _count: { select: { members: true } },
-      members: {
-        select: {
-          registrant: {
-            select: {
-              member: { select: { workIndustry: true } },
-              guest: { select: { workIndustry: true } },
-            },
-          },
-        },
-      },
-      schedules: {
-        select: { dayOfWeek: true, timeStart: true, timeEnd: true },
-      },
-      facilitator: {
-        select: { member: { select: { gender: true } } },
-      },
-      coFacilitator: {
-        select: { member: { select: { gender: true } } },
-      },
-      linkedSmallGroup: {
-        select: { genderFocus: true },
-      },
-    },
+    select: BREAKOUT_GROUP_SCORE_SELECT,
   })
 
   const weights = await loadBreakoutWeights()
 
-  const eligible = groups.filter((g) => {
-    if (options?.excludeAssigned && assignedGroupIds.has(g.id)) return false
-    if (g.memberLimit !== null && g._count.members >= g.memberLimit) return false
-    const effectiveGenderFocus = deriveEffectiveGenderFocus(
-      g.genderFocus,
-      g.facilitator?.member.gender,
-      g.coFacilitator?.member.gender,
-      g.linkedSmallGroup?.genderFocus
-    )
-    if (scoreGender(candidate.gender, effectiveGenderFocus) === 0.0) return false
-    if (scoreLifeStage(candidate.lifeStageId, g.lifeStages.map((ls) => ls.id)) === 0.0) return false
-    return true
-  })
-
-  return eligible
-    .map((g) => {
-      const memberIndustries = g.members
-        .map(
-          (m) =>
-            m.registrant.member?.workIndustry ?? m.registrant.guest?.workIndustry
-        )
-        .filter((i): i is string => i != null)
-
-      const effectiveGenderFocus = deriveEffectiveGenderFocus(
-        g.genderFocus,
-        g.facilitator?.member.gender,
-        g.coFacilitator?.member.gender,
-        g.linkedSmallGroup?.genderFocus
-      )
-
-      const profile: GroupProfile = {
-        id: g.id,
-        name: g.name,
-        lifeStageIds: g.lifeStages.map((ls) => ls.id),
-        lifeStageNames: g.lifeStages.map((ls) => ls.name),
-        genderFocus: effectiveGenderFocus,
-        language: g.language,
-        ageRangeMin: g.ageRangeMin,
-        ageRangeMax: g.ageRangeMax,
-        meetingFormat: g.meetingFormat,
-        locationCity: g.locationCity,
-        memberLimit: g.memberLimit,
-        currentCount: g._count.members,
-        memberIndustries,
-        scheduleSlots: g.schedules.map((s) => ({
-          dayOfWeek: s.dayOfWeek,
-          timeStart: s.timeStart,
-          timeEnd: s.timeEnd ?? addOneHour(s.timeStart),
-        })),
-      }
-
-      return scoreGroup(candidate, profile, weights)
+  return groups
+    .map((g) => ({ row: g, profile: buildBreakoutGroupProfile(g) }))
+    .filter(({ row, profile }) => {
+      if (options?.excludeAssigned && assignedGroupIds.has(row.id)) return false
+      if (profile.memberLimit !== null && profile.currentCount >= profile.memberLimit) return false
+      return passesBreakoutGates(candidate, profile)
     })
+    .map(({ profile }) => scoreGroup(candidate, profile, weights))
     .sort(byScoreThenConfidence)
     .slice(0, options?.limit ?? 5)
+}
+
+export type BreakoutCandidateMatch = {
+  registrantId: string
+  result: MatchResult
+  /** False when the candidate fails the group's gender or life stage gate. */
+  passesGates: boolean
+}
+
+/**
+ * Turn a registrant's linked person into a matching profile.
+ *
+ * Exported so a caller that already selected the person columns for its own
+ * purposes can build the profile from those rows instead of making the matching
+ * layer re-query the same people. Anyone with neither a Member nor a Guest
+ * behind them is an anonymous walk-in: nothing to match on, so every factor
+ * scores as unknown.
+ */
+export function buildCandidateFromRegistrant(r: {
+  member: Parameters<typeof buildCandidateFromMember>[0] | null
+  guest: Parameters<typeof buildCandidateFromGuest>[0] | null
+}): CandidateProfile {
+  return r.member
+    ? buildCandidateFromMember(r.member)
+    : r.guest
+    ? buildCandidateFromGuest(r.guest)
+    : EMPTY_CANDIDATE
+}
+
+/**
+ * Score many candidates against ONE breakout group — the inverse of
+ * `matchBreakoutGroups`, for the admin candidate picker. It needs a fit signal
+ * for everyone in the pool, *including* people who fail the group's gates,
+ * since an admin must still be able to place them deliberately.
+ *
+ * Takes pre-built profiles rather than ids: the picker has already read these
+ * people to render them, and re-reading them here would double the cost of
+ * opening the sheet. Returns unsorted; callers decide the ordering.
+ */
+export async function scoreCandidatesForBreakout(
+  groupId: string,
+  eventId: string,
+  profiles: Map<string, CandidateProfile>
+): Promise<BreakoutCandidateMatch[]> {
+  if (profiles.size === 0) return []
+
+  const group = await db.breakoutGroup.findFirst({
+    where: { id: groupId, eventId },
+    select: BREAKOUT_GROUP_SCORE_SELECT,
+  })
+  if (!group) return []
+
+  const weights = await loadBreakoutWeights()
+  const groupProfile = buildBreakoutGroupProfile(group)
+
+  return [...profiles.entries()].map(([registrantId, candidate]) => ({
+    registrantId,
+    result: scoreGroup(candidate, groupProfile, weights),
+    passesGates: passesBreakoutGates(candidate, groupProfile),
+  }))
 }

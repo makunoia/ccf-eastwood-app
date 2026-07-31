@@ -10,7 +10,18 @@ import { scoreGroup } from "@/lib/matching/engine"
 import { scoreGender, scoreLifeStage, scoreSchedule } from "@/lib/matching/scorers"
 import { DEFAULT_WEIGHTS } from "@/lib/validations/matching-weights"
 import { MatchingContext } from "@/app/generated/prisma/client"
-import type { MatchResult, CandidateProfile } from "@/lib/matching/types"
+import { buildStoredScheduleSlot } from "@/lib/matching/candidate-schedule"
+import type { MatchResult, CandidateProfile, TimeSlot } from "@/lib/matching/types"
+
+/** Meeting times are optional — a day-only schedule still yields a slot. */
+function slotList(
+  dayOfWeek: number | null,
+  timeStart: string | null,
+  timeEnd: string | null
+): TimeSlot[] {
+  const slot = buildStoredScheduleSlot(dayOfWeek, timeStart, timeEnd)
+  return slot ? [slot] : []
+}
 
 type ActionResult<T> = { success: true; data: T } | { success: false; error: string }
 
@@ -51,6 +62,7 @@ async function buildCandidateForRegistrant(
           meetingPreference: true,
           scheduleDayOfWeek: true,
           scheduleTimeStart: true,
+          scheduleTimeEnd: true,
         },
       },
       member: {
@@ -65,7 +77,7 @@ async function buildCandidateForRegistrant(
           ageRangeBucketId: true,
           meetingPreference: true,
           schedulePreferences: {
-            select: { dayOfWeek: true, timeStart: true },
+            select: { dayOfWeek: true, timeStart: true, timeEnd: true },
           },
         },
       },
@@ -73,11 +85,6 @@ async function buildCandidateForRegistrant(
   })
 
   if (!registrant) return null
-
-  function addOneHour(time: string): string {
-    const [h, m] = time.split(":").map(Number)
-    return `${String((h + 1) % 24).padStart(2, "0")}:${String(m).padStart(2, "0")}`
-  }
 
   if (registrant.guest) {
     const g = registrant.guest
@@ -90,10 +97,7 @@ async function buildCandidateForRegistrant(
       workCity: g.workCity,
       workIndustry: g.workIndustry,
       meetingPreference: g.meetingPreference,
-      scheduleSlots:
-        g.scheduleDayOfWeek !== null && g.scheduleTimeStart !== null
-          ? [{ dayOfWeek: g.scheduleDayOfWeek, timeStart: g.scheduleTimeStart, timeEnd: addOneHour(g.scheduleTimeStart) }]
-          : [],
+      scheduleSlots: slotList(g.scheduleDayOfWeek, g.scheduleTimeStart, g.scheduleTimeEnd),
     }
   }
 
@@ -108,11 +112,9 @@ async function buildCandidateForRegistrant(
       workCity: m.workCity,
       workIndustry: m.workIndustry,
       meetingPreference: m.meetingPreference,
-      scheduleSlots: m.schedulePreferences.map((s) => ({
-        dayOfWeek: s.dayOfWeek,
-        timeStart: s.timeStart,
-        timeEnd: addOneHour(s.timeStart),
-      })),
+      scheduleSlots: m.schedulePreferences
+        .map((s) => buildStoredScheduleSlot(s.dayOfWeek, s.timeStart, s.timeEnd))
+        .filter((s) => s !== null),
     }
   }
 
@@ -148,11 +150,6 @@ export async function findCatchMechSmallGroupMatches(
       where: { context: MatchingContext.SmallGroup },
     })
     const weights = weightConfig ?? DEFAULT_WEIGHTS
-
-    function addOneHour(time: string): string {
-      const [h, m] = time.split(":").map(Number)
-      return `${String((h + 1) % 24).padStart(2, "0")}:${String(m).padStart(2, "0")}`
-    }
 
     if (scope === "volunteers") {
       // Fetch confirmed volunteers who lead a small group
@@ -211,6 +208,7 @@ export async function findCatchMechSmallGroupMatches(
         memberLimit: true,
         scheduleDayOfWeek: true,
         scheduleTimeStart: true,
+        scheduleTimeEnd: true,
         _count: { select: { members: true } },
         members: { select: { workIndustry: true } },
       } as const
@@ -223,10 +221,7 @@ export async function findCatchMechSmallGroupMatches(
       const eligible = groups.filter((g) => {
         if (g.groupType === "Couples" && !hasSpouse) return false
         if (g.memberLimit !== null && g._count.members >= g.memberLimit) return false
-        const scheduleSlots =
-          g.scheduleDayOfWeek !== null && g.scheduleTimeStart !== null
-            ? [{ dayOfWeek: g.scheduleDayOfWeek, timeStart: g.scheduleTimeStart, timeEnd: addOneHour(g.scheduleTimeStart) }]
-            : []
+        const scheduleSlots = slotList(g.scheduleDayOfWeek, g.scheduleTimeStart, g.scheduleTimeEnd)
         if (scoreGender(candidate.gender, g.genderFocus) === 0.0) return false
         if (scoreLifeStage(candidate.lifeStageId, g.lifeStages.map((ls) => ls.id)) === 0.0) return false
         if (scheduleSlots.length > 0 && scoreSchedule(candidate.scheduleSlots, scheduleSlots) === 0.0) return false
@@ -252,10 +247,7 @@ export async function findCatchMechSmallGroupMatches(
             memberLimit: g.memberLimit,
             currentCount: g._count.members,
             memberIndustries,
-            scheduleSlots:
-              g.scheduleDayOfWeek !== null && g.scheduleTimeStart !== null
-                ? [{ dayOfWeek: g.scheduleDayOfWeek, timeStart: g.scheduleTimeStart, timeEnd: addOneHour(g.scheduleTimeStart) }]
-                : [],
+            scheduleSlots: slotList(g.scheduleDayOfWeek, g.scheduleTimeStart, g.scheduleTimeEnd),
           }
           const result = scoreGroup(candidate, profile, weights)
           return {
@@ -655,6 +647,11 @@ export async function confirmCatchMechCoupleRequests(
               })
               promotedMemberId = existingByEmail.id
             } else {
+              const promotedSchedule = buildStoredScheduleSlot(
+                guest.scheduleDayOfWeek,
+                guest.scheduleTimeStart,
+                guest.scheduleTimeEnd
+              )
               const newMember = await tx.member.create({
                 data: {
                   firstName: guest.firstName,
@@ -675,13 +672,15 @@ export async function confirmCatchMechCoupleRequests(
                   dateJoined: now,
                   smallGroupId: group.id,
                   groupStatus: "Member",
-                  ...(guest.scheduleDayOfWeek !== null && guest.scheduleTimeStart !== null
+                  // Times are optional — a day-only availability is normalised
+                  // into a whole-day slot rather than lost on promotion.
+                  ...(promotedSchedule
                     ? {
                         schedulePreferences: {
                           create: {
-                            dayOfWeek: guest.scheduleDayOfWeek,
-                            timeStart: guest.scheduleTimeStart,
-                            timeEnd: guest.scheduleTimeEnd ?? null,
+                            dayOfWeek: promotedSchedule.dayOfWeek,
+                            timeStart: promotedSchedule.timeStart,
+                            timeEnd: promotedSchedule.timeEnd,
                           },
                         },
                       }

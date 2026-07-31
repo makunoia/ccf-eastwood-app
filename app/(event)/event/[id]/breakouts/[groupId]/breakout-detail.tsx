@@ -22,7 +22,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
   Select,
@@ -55,9 +54,9 @@ import {
 } from "@/components/ui/tooltip"
 import {
   removeRegistrantFromBreakout,
-  addRegistrantToBreakout,
   setFacilitator,
 } from "@/app/(dashboard)/events/breakout-actions"
+import { AddRegistrantSheet } from "./add-registrant-sheet"
 import { formatSchedule } from "@/lib/format/schedule"
 
 const UNASSIGNED = "__unassigned__"
@@ -115,18 +114,6 @@ type BreakoutMemberRow = {
   }
 }
 
-type UnassignedRegistrant = {
-  id: string
-  memberId: string | null
-  guestId: string | null
-  firstName: string | null
-  lastName: string | null
-  nickname: string | null
-  mobileNumber: string | null
-  member: { id: string; firstName: string; lastName: string } | null
-  guest: { id: string; firstName: string; lastName: string } | null
-}
-
 type AvailableVolunteer = {
   id: string
   member: { id: string; firstName: string; lastName: string; ledGroups: { id: string; name: string }[] }
@@ -151,7 +138,7 @@ export type BreakoutDetailData = {
   locationCity: string | null
   memberLimit: number | null
   members: BreakoutMemberRow[]
-  schedules: { dayOfWeek: number; timeStart: string; timeEnd: string | null }[]
+  schedules: { dayOfWeek: number; timeStart: string | null; timeEnd: string | null }[]
   eventType: string
   totalOccurrences: number
 }
@@ -197,7 +184,8 @@ function SmallGroupCard({ group }: { group: LedGroup }) {
   }
   if (group.meetingFormat) details.push({ label: "Format", value: MEETING_FORMAT_LABELS[group.meetingFormat] ?? group.meetingFormat })
   if (group.locationCity) details.push({ label: "Location", value: group.locationCity })
-  if (group.scheduleDayOfWeek != null && group.scheduleTimeStart) {
+  // The meeting times are optional — a day-only schedule still shows.
+  if (group.scheduleDayOfWeek != null) {
     details.push({
       label: "Schedule",
       value: formatSchedule(group.scheduleDayOfWeek, group.scheduleTimeStart, group.scheduleTimeEnd),
@@ -395,106 +383,6 @@ function FacilitatorSection({
   )
 }
 
-// ─── Add registrant dialog ──────────────────────────────────────────────────────
-
-function AddRegistrantDialog({
-  open,
-  onOpenChange,
-  groupId,
-  eventId,
-  unassignedRegistrants,
-  memberLimit,
-  memberCount,
-}: {
-  open: boolean
-  onOpenChange: (v: boolean) => void
-  groupId: string
-  eventId: string
-  unassignedRegistrants: UnassignedRegistrant[]
-  memberLimit: number | null
-  memberCount: number
-}) {
-  const [search, setSearch] = React.useState("")
-  const [assigning, setAssigning] = React.useState<string | null>(null)
-
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  React.useEffect(() => { if (open) setSearch("") }, [open])
-
-  const filtered = unassignedRegistrants.filter((r) => {
-    const name = registrantDisplayName(r).toLowerCase()
-    const mobile = r.mobileNumber ?? ""
-    return name.includes(search.toLowerCase()) || mobile.includes(search)
-  })
-
-  const isFull = memberLimit != null && memberCount >= memberLimit
-
-  async function handleAssign(registrantId: string) {
-    setAssigning(registrantId)
-    const result = await addRegistrantToBreakout(groupId, registrantId, eventId)
-    setAssigning(null)
-    if (result.success) {
-      toast.success("Registrant added to group")
-      if (unassignedRegistrants.length <= 1) onOpenChange(false)
-    } else {
-      toast.error(result.error)
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Add registrant</DialogTitle>
-          <DialogDescription>
-            {isFull
-              ? "This group is at capacity."
-              : `${unassignedRegistrants.length} unassigned registrant${unassignedRegistrants.length !== 1 ? "s" : ""} available.`}
-          </DialogDescription>
-        </DialogHeader>
-        {!isFull && (
-          <>
-            <Input
-              placeholder="Search by name or mobile…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              autoFocus
-            />
-            <div className="max-h-72 overflow-y-auto -mx-1 space-y-0.5">
-              {filtered.length === 0 ? (
-                <p className="px-1 py-4 text-sm text-center text-muted-foreground">
-                  {search ? "No matches" : "All registrants have been assigned"}
-                </p>
-              ) : (
-                filtered.map((r) => (
-                  <div key={r.id} className="flex items-center justify-between gap-3 rounded px-2 py-2 hover:bg-muted/50">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-sm font-medium truncate">{registrantDisplayName(r)}</span>
-                      <Badge variant="outline" className="shrink-0 text-xs">
-                        {r.memberId ? "Member" : "Guest"}
-                      </Badge>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={assigning === r.id}
-                      onClick={() => handleAssign(r.id)}
-                    >
-                      {assigning === r.id ? "Adding…" : "Add"}
-                    </Button>
-                  </div>
-                ))
-              )}
-            </div>
-          </>
-        )}
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Done</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
 // ─── Occurrence attendance cell ─────────────────────────────────────────────────
 
 function OccurrenceAttendanceCell({
@@ -549,7 +437,6 @@ function MembersTable({
   members,
   groupId,
   eventId,
-  unassignedRegistrants,
   eventType,
   totalOccurrences,
   memberLimit,
@@ -557,7 +444,6 @@ function MembersTable({
   members: BreakoutMemberRow[]
   groupId: string
   eventId: string
-  unassignedRegistrants: UnassignedRegistrant[]
   eventType: string
   totalOccurrences: number
   memberLimit: number | null
@@ -604,20 +490,12 @@ function MembersTable({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h3 className="font-semibold">
-          Members{" "}
-          <span className="font-normal text-muted-foreground text-sm">
-            ({memberLimit != null ? `${members.length} / ${memberLimit}` : members.length})
-          </span>
-        </h3>
-        {!isFull && (
-          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setAddOpen(true)}>
-            <IconUserPlus className="size-4" />
-            Add Registrant
-          </Button>
-        )}
-      </div>
+      <h3 className="font-semibold">
+        Members{" "}
+        <span className="font-normal text-muted-foreground text-sm">
+          ({memberLimit != null ? `${members.length} / ${memberLimit}` : members.length})
+        </span>
+      </h3>
 
       <FilterBar
         searchValue={search}
@@ -632,6 +510,14 @@ function MembersTable({
           setTypeFilter("all")
           setAttendanceFilter("all")
         }}
+        actions={
+          !isFull && (
+            <Button variant="outline" className="gap-1.5" onClick={() => setAddOpen(true)}>
+              <IconUserPlus className="size-4" />
+              <span className="sr-only sm:not-sr-only">Add Registrant</span>
+            </Button>
+          )
+        }
       >
         <FilterField label="Type">
           <Select
@@ -762,14 +648,11 @@ function MembersTable({
         </Table>
       </div>
 
-      <AddRegistrantDialog
+      <AddRegistrantSheet
         open={addOpen}
         onOpenChange={setAddOpen}
         groupId={groupId}
         eventId={eventId}
-        unassignedRegistrants={unassignedRegistrants}
-        memberLimit={memberLimit}
-        memberCount={members.length}
       />
     </div>
   )
@@ -779,11 +662,9 @@ function MembersTable({
 
 export function BreakoutDetail({
   group,
-  unassignedRegistrants,
   availableVolunteers,
 }: {
   group: BreakoutDetailData
-  unassignedRegistrants: UnassignedRegistrant[]
   availableVolunteers: AvailableVolunteer[]
 }) {
   return (
@@ -829,7 +710,6 @@ export function BreakoutDetail({
         members={group.members}
         groupId={group.id}
         eventId={group.eventId}
-        unassignedRegistrants={unassignedRegistrants}
         eventType={group.eventType}
         totalOccurrences={group.totalOccurrences}
         memberLimit={group.memberLimit}

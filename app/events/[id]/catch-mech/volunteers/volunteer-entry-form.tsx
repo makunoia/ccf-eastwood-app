@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { PhonePHInput } from "@/components/ui/phone-ph-input"
 import { Button } from "@/components/ui/button"
 import { verifyCatchMechVolunteer } from "./actions"
+import { callAction, SUBMIT_NETWORK_ERROR } from "@/lib/forms/call-action"
 
 export function VolunteerEntryForm({ eventId }: { eventId: string }) {
   const router = useRouter()
@@ -20,9 +21,16 @@ export function VolunteerEntryForm({ eventId }: { eventId: string }) {
 
     setError("")
     setSubmitting(true)
-    const result = await verifyCatchMechVolunteer(eventId, mobile)
+    const result = await callAction(
+      () => verifyCatchMechVolunteer(eventId, mobile),
+      "verifyCatchMechVolunteer"
+    )
     setSubmitting(false)
 
+    if (!result) {
+      setError(SUBMIT_NETWORK_ERROR)
+      return
+    }
     if (result.success) {
       router.push(`/events/${eventId}/catch-mech/volunteers/${result.data.token}`)
       return

@@ -15,14 +15,23 @@ export const breakoutGroupSchema = z
     meetingFormat: z.enum(["Online", "Hybrid", "InPerson"]).nullable().optional(),
     locationCity: z.string().nullable().optional(),
     linkedSmallGroupId: z.string().nullable().optional(),
+    // Times are optional — a group may only know which day it meets.
     schedule: z
       .object({
         dayOfWeek: z.coerce.number().int().min(0).max(6),
-        timeStart: z.string().min(1, "Start time required"),
-        timeEnd: z.string().min(1, "End time required"),
+        timeStart: z.string().nullable().optional().transform((v) => v || null),
+        timeEnd: z.string().nullable().optional().transform((v) => v || null),
       })
       .nullable()
-      .optional(),
+      .optional()
+      .refine(
+        (s) =>
+          s == null ||
+          s.timeStart == null ||
+          s.timeEnd == null ||
+          s.timeStart < s.timeEnd,
+        { message: "End time must be after start time" }
+      ),
   })
   .refine(
     (data) => {

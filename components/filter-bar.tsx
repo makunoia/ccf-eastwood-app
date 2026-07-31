@@ -30,6 +30,8 @@ type FilterBarProps = {
   onClear?: () => void
   /** Filter controls, rendered inside the drawer. Wrap each in a FilterField. */
   children?: React.ReactNode
+  /** Optional actions pinned to the far right of the bar (e.g. an "Add" button). */
+  actions?: React.ReactNode
 }
 
 export function FilterBar({
@@ -40,6 +42,7 @@ export function FilterBar({
   hasActive,
   onClear,
   children,
+  actions,
 }: FilterBarProps) {
   const isMobile = useIsMobile()
   const showClear = hasActive ?? activeCount > 0
@@ -94,6 +97,9 @@ export function FilterBar({
           <IconX className="size-4" />
           <span className="sr-only sm:not-sr-only">Clear</span>
         </Button>
+      )}
+      {actions && (
+        <div className="ml-auto flex shrink-0 items-center gap-2">{actions}</div>
       )}
     </div>
   )

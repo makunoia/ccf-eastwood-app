@@ -6,6 +6,7 @@ import { suggestBreakoutGroup } from "@/lib/breakout-suggestion"
 import { fetchBreakoutCandidates } from "@/lib/breakout-suggestion-server"
 import { tryCreateSmallGroupRequestFromBreakout } from "@/lib/create-small-group-request"
 import { createSeekerRequestFromRegistration } from "@/lib/small-groups/seeker-requests"
+import { buildStoredScheduleSlot } from "@/lib/matching/candidate-schedule"
 import type { RegistrantData } from "@/lib/validations/event-registrant"
 import type { Gender, MeetingFormat } from "@/app/generated/prisma/client"
 
@@ -24,7 +25,7 @@ export type AssignedBreakout =
       name: string
       meetingFormat: MeetingFormat | null
       locationCity: string | null
-      schedule: { dayOfWeek: number; timeStart: string; timeEnd: string | null } | null
+      schedule: { dayOfWeek: number; timeStart: string | null; timeEnd: string | null } | null
     }
   | null
 
@@ -228,17 +229,23 @@ export async function resolveConfirmedMember(
   // Schedule is a `SchedulePreference` relation for members (guests keep it in
   // scalar columns). Without this the form's Schedule field was collected and
   // then thrown away for anyone who confirmed as a member.
-  if (
-    existing.schedulePreferences.length === 0 &&
-    data.scheduleDayOfWeek != null &&
-    data.scheduleTimeStart
-  ) {
-    memberUpdates.schedulePreferences = {
-      create: {
-        dayOfWeek: data.scheduleDayOfWeek,
-        timeStart: data.scheduleTimeStart,
-        timeEnd: data.scheduleTimeEnd ?? null,
-      },
+  // Times are optional — a day-only answer ("Tuesdays, any time") is still a
+  // real preference, so it is normalised into a whole-day slot rather than
+  // dropped.
+  if (existing.schedulePreferences.length === 0 && data.scheduleDayOfWeek != null) {
+    const slot = buildStoredScheduleSlot(
+      data.scheduleDayOfWeek,
+      data.scheduleTimeStart,
+      data.scheduleTimeEnd
+    )
+    if (slot) {
+      memberUpdates.schedulePreferences = {
+        create: {
+          dayOfWeek: slot.dayOfWeek,
+          timeStart: slot.timeStart,
+          timeEnd: slot.timeEnd,
+        },
+      }
     }
   }
 
@@ -259,7 +266,8 @@ export async function resolveConfirmedGuest(
       email: true, phone: true, birthMonth: true, birthYear: true,
       lifeStageId: true, gender: true, language: true, meetingPreference: true, workCity: true,
       ageRangeBucketId: true,
-      scheduleDayOfWeek: true, scheduleTimeStart: true, scheduleTimeEnd: true, claimedSmallGroupId: true,
+      scheduleDayOfWeek: true, scheduleTimeStart: true, scheduleTimeEnd: true,
+      claimedSmallGroupId: true, claimedSatellite: true,
     },
   })
   const guestUpdates: Record<string, unknown> = {}
@@ -276,7 +284,11 @@ export async function resolveConfirmedGuest(
   if (existing.scheduleDayOfWeek == null && data.scheduleDayOfWeek != null) guestUpdates.scheduleDayOfWeek = data.scheduleDayOfWeek
   if (!existing.scheduleTimeStart && data.scheduleTimeStart) guestUpdates.scheduleTimeStart = data.scheduleTimeStart
   if (!existing.scheduleTimeEnd && data.scheduleTimeEnd) guestUpdates.scheduleTimeEnd = data.scheduleTimeEnd
-  if (!existing.claimedSmallGroupId && data.claimedSmallGroupId) guestUpdates.claimedSmallGroupId = data.claimedSmallGroupId
+  // Either side counts as "already answered" — filling one while the other is
+  // set would leave the guest claiming two different DGroups.
+  const claimsNoGroup = !existing.claimedSmallGroupId && !existing.claimedSatellite
+  if (claimsNoGroup && data.claimedSmallGroupId) guestUpdates.claimedSmallGroupId = data.claimedSmallGroupId
+  if (claimsNoGroup && data.claimedSatellite) guestUpdates.claimedSatellite = data.claimedSatellite
 
   if (Object.keys(guestUpdates).length > 0) {
     await db.guest.update({ where: { id: guestId }, data: guestUpdates })
@@ -305,6 +317,7 @@ export async function resolveAnonymousGuest(
     scheduleTimeStart: data.scheduleTimeStart ?? null,
     scheduleTimeEnd: data.scheduleTimeEnd ?? null,
     claimedSmallGroupId: data.claimedSmallGroupId ?? null,
+    claimedSatellite: data.claimedSatellite ?? null,
   }
 
   let existingGuest: { id: string } | null = null
@@ -356,7 +369,14 @@ export async function resolveAnonymousGuest(
           scheduleTimeStart: matchingProfile.scheduleTimeStart,
           scheduleTimeEnd: matchingProfile.scheduleTimeEnd,
         }),
-        ...(matchingProfile.claimedSmallGroupId !== null && { claimedSmallGroupId: matchingProfile.claimedSmallGroupId }),
+        ...(matchingProfile.claimedSmallGroupId !== null && {
+          claimedSmallGroupId: matchingProfile.claimedSmallGroupId,
+          claimedSatellite: null,
+        }),
+        ...(matchingProfile.claimedSatellite !== null && {
+          claimedSatellite: matchingProfile.claimedSatellite,
+          claimedSmallGroupId: null,
+        }),
       },
     })
     return { guestId: existingGuest.id }
@@ -380,6 +400,7 @@ export async function resolveAnonymousGuest(
       scheduleTimeStart: matchingProfile.scheduleTimeStart,
       scheduleTimeEnd: matchingProfile.scheduleTimeEnd,
       claimedSmallGroupId: matchingProfile.claimedSmallGroupId,
+      claimedSatellite: matchingProfile.claimedSatellite,
     },
     select: { id: true },
   })

@@ -1,7 +1,22 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest"
 
+// These tests exercise the Timothy profile validation, not permissions —
+// breakout-actions now requires an authenticated writer, so hand it one.
 vi.mock("@/lib/auth", () => ({
-  auth: vi.fn().mockResolvedValue(null),
+  auth: vi.fn().mockResolvedValue({
+    user: {
+      id: undefined,
+      name: "Test Admin",
+      email: "test@example.com",
+      username: "test-admin",
+      role: "SuperAdmin",
+      permissions: [],
+      eventAccess: [],
+      totpEnabled: false,
+      mustChangePassword: false,
+      requiresTotpSetup: false,
+    },
+  }),
 }))
 
 import { db } from "@/lib/db"

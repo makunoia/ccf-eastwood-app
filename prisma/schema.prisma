@@ -388,6 +388,11 @@ model Guest {
   // Self-reported small group from check-in prompt
   claimedSmallGroupId String?
   claimedSmallGroup   SmallGroup? @relation("GuestClaimedGroup", fields: [claimedSmallGroupId], references: [id])
+  // Set instead of claimedSmallGroupId when the self-reported DGroup meets at
+  // another CCF satellite, so there is no local group to point at. Holds a
+  // satellite name from lib/constants/ccf-satellites.ts; the two are mutually
+  // exclusive (app-enforced).
+  claimedSatellite    String?
 
   // Promotion — set when Guest is added to a Small Group and becomes a Member
   memberId    String?  @unique
@@ -458,6 +463,10 @@ model SmallGroup {
   parentGroupId String?
   parentGroup   SmallGroup?    @relation("SmallGroupHierarchy", fields: [parentGroupId], references: [id])
   childGroups   SmallGroup[]   @relation("SmallGroupHierarchy")
+  // Upward accountability when the leader reports to someone outside CCF Eastwood.
+  // Holds a satellite name from lib/constants/ccf-satellites.ts and is mutually
+  // exclusive with parentGroupId — the parent is either a DGroup here or a satellite.
+  parentSatellite String?
 
   // Matching fields
   lifeStages    LifeStage[]    @relation("SmallGroupLifeStages")
@@ -775,7 +784,7 @@ model BreakoutGroupSchedule {
   breakoutGroupId String
   breakoutGroup   BreakoutGroup @relation(fields: [breakoutGroupId], references: [id], onDelete: Cascade)
   dayOfWeek       Int           // 0 = Sunday, 6 = Saturday
-  timeStart       String        // HH:MM
+  timeStart       String?       // HH:MM — optional, day-only schedules are valid
   timeEnd         String?       // HH:MM
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt

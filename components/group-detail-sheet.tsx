@@ -21,7 +21,7 @@ import { formatSchedule } from "@/lib/format/schedule"
 
 export type GroupDetailScheduleSlot = {
   dayOfWeek: number
-  timeStart: string
+  timeStart: string | null
   timeEnd: string | null
 }
 

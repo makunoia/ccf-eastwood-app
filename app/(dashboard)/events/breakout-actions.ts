@@ -1,10 +1,17 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { z } from "zod"
 import { db } from "@/lib/db"
+import { auth } from "@/lib/auth"
+import { canWrite, canAccessEvent } from "@/lib/permissions"
 import { breakoutGroupSchema } from "@/lib/validations/breakout-group"
 import type { BreakoutGroupFormValues } from "@/lib/validations/breakout-group"
 import { matchBreakoutGroups } from "@/lib/matching"
+import { unassignedCandidateWhere } from "@/lib/breakouts/candidate-pool"
+import { MAX_BREAKOUT_BATCH } from "@/lib/breakouts/candidate-filters"
+import { registrantName, registrantNameSelect } from "@/lib/metadata"
+import type { BatchFailure } from "@/components/batch/types"
 import {
   tryCreateSmallGroupRequestFromBreakout,
   tryCancelSmallGroupRequestFromBreakout,
@@ -13,6 +20,21 @@ import {
 type ActionResult<T = void> =
   | { success: true; data: T }
   | { success: false; error: string }
+
+/**
+ * Write access to one event's data.
+ *
+ * Middleware gates `/event/<id>` by feature + event access, but on the *URL's*
+ * event id — a server action carries its own argument, so a user scoped to
+ * event A could otherwise pass event B's id from A's page.
+ */
+async function requireEventWrite(eventId: string): Promise<{ error: string } | null> {
+  const session = await auth()
+  if (!session?.user) return { error: "Not authenticated." }
+  if (!canWrite(session, "Events")) return { error: "Unauthorized." }
+  if (!canAccessEvent(session, eventId)) return { error: "Unauthorized." }
+  return null
+}
 
 // ─── Timothy profile validation ───────────────────────────────────────────────
 
@@ -27,7 +49,7 @@ async function validateTimothyProfile(
     genderFocus?: string | null
     language?: string[]
     meetingFormat?: string | null
-    schedule?: { dayOfWeek: number; timeStart: string; timeEnd: string } | null
+    schedule?: { dayOfWeek: number; timeStart: string | null; timeEnd: string | null } | null
   }
 ): Promise<string | null> {
   if (!facilitatorId) return null
@@ -59,6 +81,9 @@ export async function createBreakoutGroup(
   eventId: string,
   data: BreakoutGroupFormValues
 ): Promise<ActionResult<{ id: string }>> {
+  const denied = await requireEventWrite(eventId)
+  if (denied) return { success: false, error: denied.error }
+
   const parsed = breakoutGroupSchema.safeParse(data)
   if (!parsed.success) {
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
@@ -110,6 +135,9 @@ export async function updateBreakoutGroup(
   eventId: string,
   data: BreakoutGroupFormValues
 ): Promise<ActionResult> {
+  const denied = await requireEventWrite(eventId)
+  if (denied) return { success: false, error: denied.error }
+
   const parsed = breakoutGroupSchema.safeParse(data)
   if (!parsed.success) {
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
@@ -160,6 +188,9 @@ export async function deleteBreakoutGroup(
   groupId: string,
   eventId: string
 ): Promise<ActionResult> {
+  const denied = await requireEventWrite(eventId)
+  if (denied) return { success: false, error: denied.error }
+
   try {
     await db.breakoutGroup.delete({ where: { id: groupId } })
     revalidatePath(`/event/${eventId}/breakouts`)
@@ -171,55 +202,147 @@ export async function deleteBreakoutGroup(
 
 // ─── Registrant assignment ────────────────────────────────────────────────────
 
-export async function addRegistrantToBreakout(
+const breakoutBatchSchema = z.object({
+  groupId: z.string().min(1, "Breakout group is required"),
+  eventId: z.string().min(1, "Event is required"),
+  registrantIds: z
+    .array(z.string().min(1))
+    .max(MAX_BREAKOUT_BATCH, `Cannot add more than ${MAX_BREAKOUT_BATCH} registrants at once`),
+})
+
+/**
+ * Add several registrants to a breakout group in one pass.
+ *
+ * This is the single entry point for placing anyone into a breakout group —
+ * `assignRegistrantToBreakout` (the registrant detail page) delegates here with
+ * a one-element array, so the guards below can't drift between the two callers.
+ *
+ * Every check runs server-side even though the picker pre-filters: its candidate
+ * list is a snapshot that may be stale by the time Add is pressed.
+ */
+export async function addRegistrantsToBreakout(
   groupId: string,
-  registrantId: string,
+  registrantIds: string[],
   eventId: string
-): Promise<ActionResult> {
+): Promise<ActionResult<{ added: number; failed: BatchFailure[] }>> {
+  const denied = await requireEventWrite(eventId)
+  if (denied) return { success: false, error: denied.error }
+
+  const parsed = breakoutBatchSchema.safeParse({ groupId, registrantIds, eventId })
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
+  }
+
+  const ids = [...new Set(parsed.data.registrantIds)]
+  if (ids.length === 0) return { success: true, data: { added: 0, failed: [] } }
+
   try {
-    const registrant = await db.eventRegistrant.findUnique({
-      where: { id: registrantId },
-      select: { memberId: true },
+    // Scoped to the event, so an id from another event simply isn't found.
+    const registrants = await db.eventRegistrant.findMany({
+      where: { id: { in: ids }, eventId },
+      select: {
+        id: true,
+        memberId: true,
+        ...registrantNameSelect,
+        breakoutGroupMemberships: { select: { breakoutGroupId: true }, take: 1 },
+      },
     })
-    if (registrant?.memberId) {
-      const isFacilitator = await db.breakoutGroup.findFirst({
-        where: {
-          eventId,
-          OR: [
-            { facilitator: { memberId: registrant.memberId } },
-            { coFacilitator: { memberId: registrant.memberId } },
-          ],
-        },
-        select: { id: true },
-      })
-      if (isFacilitator) {
-        return {
-          success: false,
-          error: "Facilitators and co-facilitators cannot be added as breakout group members",
-        }
+    const byId = new Map(registrants.map((r) => [r.id, r]))
+
+    // One query for the whole batch instead of a per-row facilitator lookup.
+    const facilitatorGroups = await db.breakoutGroup.findMany({
+      where: { eventId },
+      select: {
+        facilitator: { select: { memberId: true } },
+        coFacilitator: { select: { memberId: true } },
+      },
+    })
+    const facilitatorMemberIds = new Set(
+      facilitatorGroups.flatMap((g) =>
+        [g.facilitator?.memberId, g.coFacilitator?.memberId].filter(
+          (id): id is string => id != null
+        )
+      )
+    )
+
+    const failed: BatchFailure[] = []
+    const eligible: string[] = []
+
+    for (const id of ids) {
+      const registrant = byId.get(id)
+      const name = registrantName(registrant, "Unknown")
+
+      if (!registrant) {
+        failed.push({ id, name, reason: "is not a registrant of this event" })
+      } else if (registrant.breakoutGroupMemberships.length > 0) {
+        failed.push({ id, name, reason: "is already in a breakout group" })
+      } else if (registrant.memberId && facilitatorMemberIds.has(registrant.memberId)) {
+        failed.push({ id, name, reason: "is a facilitator and cannot be a member" })
+      } else {
+        eligible.push(id)
       }
     }
 
-    const group = await db.breakoutGroup.findUnique({
-      where: { id: groupId },
-      select: {
-        memberLimit: true,
-        _count: { select: { members: true } },
-      },
-    })
-    if (!group) return { success: false, error: "Breakout group not found" }
-    if (group.memberLimit !== null && group._count.members >= group.memberLimit) {
-      return {
-        success: false,
-        error: `Group has reached its limit of ${group.memberLimit}`,
+    // Capacity is claimed under a row lock on the group.
+    //
+    // A transaction alone is NOT enough here: under Postgres' default READ
+    // COMMITTED isolation two concurrent batches both read `count = 0`, both
+    // decide there is room, and the group ends up over its limit. Updating the
+    // group row first takes a FOR UPDATE lock, so the second batch blocks until
+    // the first commits and then re-reads the true count (READ COMMITTED takes
+    // a fresh snapshot per statement).
+    const accepted = await db.$transaction(async (tx) => {
+      const locked = await tx.breakoutGroup.updateMany({
+        where: { id: groupId, eventId },
+        data: { updatedAt: new Date() },
+      })
+      if (locked.count === 0) return null
+
+      const group = await tx.breakoutGroup.findFirst({
+        where: { id: groupId, eventId },
+        select: { memberLimit: true, _count: { select: { members: true } } },
+      })
+      if (!group) return null
+
+      const room =
+        group.memberLimit === null ? eligible.length : group.memberLimit - group._count.members
+      const take = Math.max(0, Math.min(eligible.length, room))
+
+      if (take > 0) {
+        await tx.breakoutGroupMember.createMany({
+          data: eligible.slice(0, take).map((registrantId) => ({
+            breakoutGroupId: groupId,
+            registrantId,
+          })),
+          skipDuplicates: true,
+        })
       }
+      return eligible.slice(0, take)
+    })
+
+    if (accepted === null) return { success: false, error: "Breakout group not found" }
+
+    for (const id of eligible.slice(accepted.length)) {
+      failed.push({
+        id,
+        name: registrantName(byId.get(id), "Unknown"),
+        reason: "would exceed the group's member limit",
+      })
     }
-    await db.breakoutGroupMember.create({ data: { breakoutGroupId: groupId, registrantId } })
-    await tryCreateSmallGroupRequestFromBreakout(groupId, registrantId)
+
+    // Best-effort side effect, deliberately outside the transaction: a failure
+    // to raise the small-group request must not roll back the placement.
+    for (const id of accepted) {
+      await tryCreateSmallGroupRequestFromBreakout(groupId, id)
+    }
+
     revalidatePath(`/event/${eventId}/breakouts`)
-    return { success: true, data: undefined }
+    revalidatePath(`/event/${eventId}/breakouts/${groupId}`)
+    revalidatePath(`/event/${eventId}/registrants`)
+
+    return { success: true, data: { added: accepted.length, failed } }
   } catch {
-    return { success: false, error: "Failed to add registrant to breakout group" }
+    return { success: false, error: "Failed to add registrants to breakout group" }
   }
 }
 
@@ -228,6 +351,9 @@ export async function removeRegistrantFromBreakout(
   registrantId: string,
   eventId: string
 ): Promise<ActionResult> {
+  const denied = await requireEventWrite(eventId)
+  if (denied) return { success: false, error: denied.error }
+
   try {
     await db.breakoutGroupMember.delete({
       where: { breakoutGroupId_registrantId: { breakoutGroupId: groupId, registrantId } },
@@ -249,6 +375,9 @@ export async function removeRegistrantFromBreakout(
  * Silently assigns them to the best-matching breakout group if they're not
  * already assigned to one. Never throws — failures are swallowed so they
  * never block the check-in flow.
+ *
+ * Deliberately unguarded: the public check-in page (`/events/[id]/checkin`)
+ * calls this with no session. Same for `getRegistrantBreakoutGroupName` below.
  */
 export async function autoAssignRegistrantToBreakout(
   registrantId: string,
@@ -323,24 +452,12 @@ export async function getRegistrantBreakoutGroupName(
 export async function autoAssignBreakouts(
   eventId: string
 ): Promise<ActionResult<{ assigned: number; skipped: number }>> {
+  const denied = await requireEventWrite(eventId)
+  if (denied) return { success: false, error: denied.error }
+
   try {
     const unassigned = await db.eventRegistrant.findMany({
-      where: {
-        eventId,
-        breakoutGroupMemberships: { none: {} },
-        NOT: {
-          member: {
-            volunteers: {
-              some: {
-                OR: [
-                  { facilitatedGroups: { some: { eventId } } },
-                  { coFacilitatedGroups: { some: { eventId } } },
-                ],
-              },
-            },
-          },
-        },
-      },
+      where: { eventId, ...unassignedCandidateWhere(eventId) },
       select: { id: true },
     })
 
@@ -385,6 +502,9 @@ export async function setFacilitator(
   eventId: string,
   linkedSmallGroupId?: string | null
 ): Promise<ActionResult> {
+  const denied = await requireEventWrite(eventId)
+  if (denied) return { success: false, error: denied.error }
+
   try {
     if (volunteerId !== null) {
       const volunteer = await db.volunteer.findFirst({

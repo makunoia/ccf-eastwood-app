@@ -42,7 +42,9 @@ import { PersonCombobox } from "@/components/ui/person-combobox"
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
@@ -51,6 +53,10 @@ import {
   type SmallGroupFormValues,
 } from "@/lib/validations/small-group"
 import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
+import {
+  EXTERNAL_SATELLITES_BY_REGION,
+  HOME_SATELLITE,
+} from "@/lib/constants/ccf-satellites"
 import {
   createSmallGroup,
   updateSmallGroup,
@@ -134,7 +140,13 @@ function toFormValues(group: SmallGroupRow): SmallGroupFormValues {
   return {
     name: group.name,
     leaderId: group.leaderId ?? "",
+    parentScope: group.parentSatellite
+      ? "satellite"
+      : group.parentGroupId
+        ? "group"
+        : "none",
     parentGroupId: group.parentGroupId ?? "",
+    parentSatellite: group.parentSatellite ?? "",
     groupType: group.groupType ?? "Regular",
     lifeStageIds: group.lifeStages.map((ls) => ls.id),
     genderFocus: group.genderFocus ?? "",
@@ -248,6 +260,35 @@ export function SmallGroupForm({
   }
 
   const isCouplesGroup = group?.groupType === "Couples"
+
+  // Sentinel for the "leader is elsewhere" choice — it shares the Parent Group
+  // select with real group ids, so it needs a value that can't collide with one.
+  const PARENT_SATELLITE_OPTION = "__satellite"
+
+  const parentSelectValue =
+    form.parentScope === "satellite"
+      ? PARENT_SATELLITE_OPTION
+      : form.parentScope === "group" && form.parentGroupId
+        ? form.parentGroupId
+        : "none"
+
+  function setParentSelection(value: string) {
+    const next: Partial<SmallGroupFormValues> =
+      value === PARENT_SATELLITE_OPTION
+        ? { parentScope: "satellite", parentGroupId: "" }
+        : value === "none"
+          ? { parentScope: "none", parentGroupId: "", parentSatellite: "" }
+          : { parentScope: "group", parentGroupId: value, parentSatellite: "" }
+    setForm((prev) => ({ ...prev, ...next }))
+  }
+
+  const satelliteOptions = React.useMemo(
+    () =>
+      EXTERNAL_SATELLITES_BY_REGION.flatMap(({ region, satellites }) =>
+        satellites.map((name) => ({ value: name, label: name, hint: region }))
+      ),
+    []
+  )
 
   function setGroupType(value: string) {
     setForm((prev) => ({
@@ -667,29 +708,62 @@ export function SmallGroupForm({
                     onTimeStartChange={(v) => set("scheduleTimeStart", v)}
                     onTimeEndChange={(v) => set("scheduleTimeEnd", v)}
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Start and end times are optional.
+                  </p>
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="parentGroupId">Parent Group</Label>
                   <Select
-                    value={form.parentGroupId}
-                    onValueChange={(v) =>
-                      set("parentGroupId", v === "none" ? "" : v)
-                    }
+                    value={parentSelectValue}
+                    onValueChange={setParentSelection}
                   >
                     <SelectTrigger id="parentGroupId">
                       <SelectValue placeholder="No parent (top-level group)" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">None</SelectItem>
-                      {parentGroupOptions.map((g) => (
-                        <SelectItem key={g.id} value={g.id}>
-                          {g.name}
-                        </SelectItem>
-                      ))}
+                      <SelectItem value={PARENT_SATELLITE_OPTION}>
+                        Leader is from another CCF satellite
+                      </SelectItem>
+                      {parentGroupOptions.length > 0 && (
+                        <SelectGroup>
+                          <SelectLabel>{HOME_SATELLITE} DGroups</SelectLabel>
+                          {parentGroupOptions.map((g) => (
+                            <SelectItem key={g.id} value={g.id}>
+                              {g.name}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      )}
                     </SelectContent>
                   </Select>
+                  <p className="text-xs text-muted-foreground">
+                    The group this leader belongs to for upward accountability.
+                  </p>
                 </div>
+
+                {form.parentScope === "satellite" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="parentSatellite">
+                      Satellite <span className="text-destructive">*</span>
+                    </Label>
+                    <PersonCombobox
+                      id="parentSatellite"
+                      options={satelliteOptions}
+                      value={form.parentSatellite}
+                      onValueChange={(v) => set("parentSatellite", v)}
+                      placeholder="Select a CCF satellite"
+                      searchPlaceholder="Search satellites…"
+                      emptyText="No satellite found."
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      The leader belongs to a DGroup at this satellite, so there is
+                      no parent group to link here.
+                    </p>
+                  </div>
+                )}
               </section>
 
               {/* Matching Info */}

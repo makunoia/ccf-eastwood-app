@@ -19,6 +19,50 @@ type DetailPageHeaderProps = {
   couplesAccent?: boolean
 }
 
+/** Hand-tuned so the drift never syncs up and the hearts stay off the title. */
+const COUPLES_HEARTS = [
+  { left: "6%", size: 11, delay: "0s", duration: "10s", drift: "14px", peak: 0.45 },
+  { left: "23%", size: 8, delay: "2.5s", duration: "13s", drift: "-10px", peak: 0.3 },
+  { left: "48%", size: 13, delay: "5s", duration: "11s", drift: "16px", peak: 0.4 },
+  { left: "67%", size: 9, delay: "1s", duration: "14s", drift: "-8px", peak: 0.35 },
+  { left: "84%", size: 12, delay: "6.5s", duration: "9s", drift: "12px", peak: 0.45 },
+  { left: "93%", size: 7, delay: "3.5s", duration: "12s", drift: "-13px", peak: 0.28 },
+] as const
+
+function CouplesHearts() {
+  return (
+    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+      {COUPLES_HEARTS.map((h, i) => (
+        <div
+          key={i}
+          className="absolute inset-y-0"
+          style={
+            {
+              left: h.left,
+              "--heart-delay": h.delay,
+              "--heart-duration": h.duration,
+              "--heart-drift": h.drift,
+              "--heart-peak": h.peak,
+            } as React.CSSProperties
+          }
+        >
+          {/* Full-height track carries the rise; the heart only sways inside it. */}
+          <div className="couples-heart-track flex h-full items-end">
+            <svg
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              className="couples-heart text-rose-400 dark:text-rose-300"
+              style={{ width: h.size, height: h.size }}
+            >
+              <path d="M12 21s-7.5-4.7-9.3-9A5.2 5.2 0 0 1 12 6.5 5.2 5.2 0 0 1 21.3 12c-1.8 4.3-9.3 9-9.3 9Z" />
+            </svg>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export function DetailPageHeader({
   prevHref,
   nextHref,
@@ -42,6 +86,7 @@ export function DetailPageHeader({
           <div className="couples-accent-breathe h-full w-full bg-linear-to-br from-rose-200/50 via-rose-100/20 via-30% to-transparent to-60% dark:from-rose-500/15 dark:via-rose-500/6 dark:to-transparent" />
         </div>
       )}
+      {couplesAccent && <CouplesHearts />}
       <div className="relative px-6 pt-4 pb-0">
         {/* Identity row */}
         <div className="flex items-center gap-4 pb-4">

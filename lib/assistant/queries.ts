@@ -196,6 +196,7 @@ export async function queryGuests(filters: {
         createdAt: true,
         lifeStage: { select: { name: true } },
         claimedSmallGroup: { select: { name: true } },
+        claimedSatellite: true,
         ageRangeBucket: { select: { label: true } },
       },
       orderBy: { createdAt: "desc" },
@@ -231,6 +232,7 @@ export async function getGuestDetail(guestId: string) {
       lifeStage: { select: { name: true } },
       ageRangeBucket: { select: { label: true } },
       claimedSmallGroup: { select: { id: true, name: true } },
+      claimedSatellite: true,
       groupRequests: {
         select: {
           id: true,
@@ -272,6 +274,7 @@ export async function getGuestDetail(guestId: string) {
     createdAt: isoDate(g.createdAt),
     lifeStage: g.lifeStage?.name ?? null,
     claimedSmallGroup: g.claimedSmallGroup,
+    claimedSatellite: g.claimedSatellite,
     groupRequests: g.groupRequests.map((r) => ({
       id: r.id,
       status: r.status,

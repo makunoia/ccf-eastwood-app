@@ -82,6 +82,7 @@ export const GuestMatchSection = React.forwardRef<
     guestId: string
     pipelineStatus: GuestPipelineStatus
     claimedGroup: ClaimedGroup
+    claimedSatellite: string | null
     pendingGroupName: string | null
     pendingGroupId: string | null
     matchedBreakout: MatchedBreakout
@@ -93,6 +94,7 @@ export const GuestMatchSection = React.forwardRef<
     guestId,
     pipelineStatus,
     claimedGroup,
+    claimedSatellite,
     pendingGroupName,
     pendingGroupId,
     matchedBreakout,
@@ -108,6 +110,7 @@ export const GuestMatchSection = React.forwardRef<
   const [assigningId, setAssigningId] = React.useState<string | null>(null)
   const [clearingClaimed, setClearingClaimed] = React.useState(false)
   const [localClaimedGroup, setLocalClaimedGroup] = React.useState<ClaimedGroup>(claimedGroup)
+  const [localClaimedSatellite, setLocalClaimedSatellite] = React.useState(claimedSatellite)
   const [selectedGroupId, setSelectedGroupId] = React.useState<string | null>(null)
 
   const prefsRef = React.useRef(initialPrefs)
@@ -205,6 +208,7 @@ export const GuestMatchSection = React.forwardRef<
     setClearingClaimed(false)
     if (res.success) {
       setLocalClaimedGroup(null)
+      setLocalClaimedSatellite(null)
       toast.success("Claimed group cleared")
     } else {
       toast.error(res.error)
@@ -515,6 +519,30 @@ export const GuestMatchSection = React.forwardRef<
           </div>
           <p className="text-xs text-muted-foreground">
             Assignment creates a pending request — the group leader confirms via their link.
+          </p>
+        </div>
+      )}
+
+      {/* Claimed satellite banner — no local group to assign them to, so this is
+          informational: the follow-up is with the other satellite, not with us. */}
+      {localClaimedSatellite && (
+        <div className="rounded-lg border bg-muted/40 p-4 space-y-3">
+          <div>
+            <p className="text-sm font-semibold">Already in a DGroup at another satellite</p>
+            <p className="text-sm text-muted-foreground">{localClaimedSatellite}</p>
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => { void handleClearClaimed() }}
+            disabled={clearingClaimed || assigningId !== null}
+          >
+            {clearingClaimed ? <IconLoader className="size-4 animate-spin" /> : <IconX className="size-4" />}
+            Not their DGroup
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            They already have a DGroup, so they are not looking for a match here.
+            Clear this if they say otherwise.
           </p>
         </div>
       )}

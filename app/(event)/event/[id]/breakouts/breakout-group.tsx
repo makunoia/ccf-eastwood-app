@@ -104,7 +104,7 @@ export type BreakoutGroupRow = {
   ageRangeMax: number | null
   meetingFormat: string | null
   locationCity: string | null
-  schedules: { dayOfWeek: number; timeStart: string; timeEnd: string | null }[]
+  schedules: { dayOfWeek: number; timeStart: string | null; timeEnd: string | null }[]
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
@@ -226,16 +226,29 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
       if (!form.genderFocus) missing.push("Gender Focus")
       if (form.language.length === 0) missing.push("Language")
       if (!form.meetingFormat) missing.push("Meeting Format")
-      if (!form.scheduleDayOfWeek || !form.scheduleTimeStart) missing.push("Meeting Schedule")
+      if (!form.scheduleDayOfWeek) missing.push("Meeting Schedule")
       if (missing.length > 0) {
         toast.error(`Timothy profile requires: ${missing.join(", ")}`)
         return
       }
     }
+    if (
+      form.scheduleTimeStart !== "" &&
+      form.scheduleTimeEnd !== "" &&
+      form.scheduleTimeStart >= form.scheduleTimeEnd
+    ) {
+      toast.error("End time must be after start time")
+      return
+    }
     setSaving(true)
+    // Times are optional — the meeting day alone is enough to record a schedule.
     const schedule =
-      form.scheduleDayOfWeek !== "" && form.scheduleTimeStart !== "" && form.scheduleTimeEnd !== ""
-        ? { dayOfWeek: Number(form.scheduleDayOfWeek), timeStart: form.scheduleTimeStart, timeEnd: form.scheduleTimeEnd }
+      form.scheduleDayOfWeek !== ""
+        ? {
+            dayOfWeek: Number(form.scheduleDayOfWeek),
+            timeStart: form.scheduleTimeStart || null,
+            timeEnd: form.scheduleTimeEnd || null,
+          }
         : null
     const data = {
       name: form.name.trim(),

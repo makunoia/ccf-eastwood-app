@@ -81,8 +81,10 @@ function formatTime(hhmm: string): string {
   return `${hour}:${String(m).padStart(2, "0")} ${period}`
 }
 
+// Times are optional — a group that only declares its meeting day still shows.
 function formatSchedule(day: number | null, start: string | null, end: string | null): string | null {
-  if (day === null || !start) return null
+  if (day === null) return null
+  if (!start) return DAY_NAMES[day]
   const time = end ? `${formatTime(start)} – ${formatTime(end)}` : formatTime(start)
   return `${DAY_NAMES[day]} · ${time}`
 }
@@ -790,8 +792,12 @@ function LedGroupFormDialog({
       toast.error("Please select a meeting format")
       return
     }
-    if (!day || !timeStart || !timeEnd) {
-      toast.error("Please set the meeting day, start time, and end time")
+    if (!day) {
+      toast.error("Please set the meeting day")
+      return
+    }
+    if (timeStart && timeEnd && timeStart >= timeEnd) {
+      toast.error("End time must be after start time")
       return
     }
     const payload = {
@@ -878,6 +884,9 @@ function LedGroupFormDialog({
               onTimeStartChange={setTimeStart}
               onTimeEndChange={setTimeEnd}
             />
+            <p className="text-xs text-muted-foreground">
+              Start and end times are optional.
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">

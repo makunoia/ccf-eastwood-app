@@ -242,29 +242,92 @@ export async function repointFamilyLinks(
   from: FamilyPersonRef,
   to: FamilyPersonRef
 ): Promise<void> {
+  await repointFamilyLinksBatch(tx, [{ from, to }])
+}
+
+/**
+ * Batched `repointFamilyLinks` for callers promoting several people at once.
+ *
+ * Same rules, but the reads collapse to two queries for the whole set instead of
+ * one findMany plus a findFirst per link. Catch Mech runs this inside an
+ * interactive transaction while a facilitator waits, so a table of ten used to
+ * mean a per-person read round trip each — the slowest part of the submission
+ * and the one that grew with the group.
+ */
+export async function repointFamilyLinksBatch(
+  tx: TxClient,
+  pairs: { from: FamilyPersonRef; to: FamilyPersonRef }[]
+): Promise<void> {
+  if (pairs.length === 0) return
+
+  const sourceKey = (ref: FamilyPersonRef) =>
+    ref.memberId ? `m:${ref.memberId}` : `g:${ref.guestId}`
+
   const links = await tx.familyMember.findMany({
-    where: from.memberId ? { memberId: from.memberId } : { guestId: from.guestId },
-    select: { id: true, familyId: true },
+    where: {
+      OR: pairs.map(({ from }) =>
+        from.memberId ? { memberId: from.memberId } : { guestId: from.guestId }
+      ),
+    },
+    select: { id: true, familyId: true, memberId: true, guestId: true },
   })
   if (links.length === 0) return
 
+  // Every family any source belongs to, paired with every target — one read tells
+  // us which targets are already in which family.
+  const familyIds = [...new Set(links.map((l) => l.familyId))]
+  const targetMemberIds = pairs.map((p) => p.to.memberId).filter((id): id is string => !!id)
+  const targetGuestIds = pairs.map((p) => p.to.guestId).filter((id): id is string => !!id)
+
+  const occupied = await tx.familyMember.findMany({
+    where: {
+      familyId: { in: familyIds },
+      OR: [
+        ...(targetMemberIds.length > 0 ? [{ memberId: { in: targetMemberIds } }] : []),
+        ...(targetGuestIds.length > 0 ? [{ guestId: { in: targetGuestIds } }] : []),
+      ],
+    },
+    select: { familyId: true, memberId: true, guestId: true },
+  })
+  const taken = new Set(
+    occupied.map((o) => `${o.familyId}|${o.memberId ? `m:${o.memberId}` : `g:${o.guestId}`}`)
+  )
+
+  const targetBySource = new Map(pairs.map((p) => [sourceKey(p.from), p.to]))
+
+  // The target already holds a place in this family — drop the source row and let
+  // the target's existing role win, mirroring the duplicate-merge "keeper wins" rule.
+  const toDelete: string[] = []
+  // Otherwise carry the row over, grouped by target so each one is a single update.
+  const toRepoint = new Map<string, { to: FamilyPersonRef; ids: string[] }>()
+
   for (const link of links) {
-    const existing = await tx.familyMember.findFirst({
-      where: {
-        familyId: link.familyId,
-        ...(to.memberId ? { memberId: to.memberId } : { guestId: to.guestId }),
-      },
-      select: { id: true },
-    })
-    if (existing) {
-      await tx.familyMember.delete({ where: { id: link.id } })
-    } else {
-      await tx.familyMember.update({
-        where: { id: link.id },
-        data: to.memberId
-          ? { memberId: to.memberId, guestId: null }
-          : { guestId: to.guestId, memberId: null },
-      })
+    const key = link.memberId ? `m:${link.memberId}` : `g:${link.guestId}`
+    const to = targetBySource.get(key)
+    if (!to) continue
+    const targetKey = to.memberId ? `m:${to.memberId}` : `g:${to.guestId}`
+    if (taken.has(`${link.familyId}|${targetKey}`)) {
+      toDelete.push(link.id)
+      continue
     }
+    // Claim the slot now: the sequential version saw its own writes, so a second
+    // row for the same person in the same family collapsed into a delete rather
+    // than landing the target in that family twice.
+    taken.add(`${link.familyId}|${targetKey}`)
+    const bucket = toRepoint.get(targetKey)
+    if (bucket) bucket.ids.push(link.id)
+    else toRepoint.set(targetKey, { to, ids: [link.id] })
+  }
+
+  if (toDelete.length > 0) {
+    await tx.familyMember.deleteMany({ where: { id: { in: toDelete } } })
+  }
+  for (const { to, ids } of toRepoint.values()) {
+    await tx.familyMember.updateMany({
+      where: { id: { in: ids } },
+      data: to.memberId
+        ? { memberId: to.memberId, guestId: null }
+        : { guestId: to.guestId, memberId: null },
+    })
   }
 }

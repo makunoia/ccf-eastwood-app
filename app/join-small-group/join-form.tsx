@@ -94,11 +94,17 @@ function ResultCard({
   const [detailsOpen, setDetailsOpen] = React.useState(false)
   const { strengths, considerations } = buildFitReasons(result)
 
-  const scheduleText = result.scheduleTimeStart
-    ? `${formatDay(result.scheduleDayOfWeek)}s · ${formatTime(result.scheduleTimeStart)}${
-        result.scheduleTimeEnd ? ` – ${formatTime(result.scheduleTimeEnd)}` : ""
-      }`
-    : null
+  // The meeting time is optional — the day alone is still worth showing.
+  const scheduleText =
+    result.scheduleDayOfWeek != null
+      ? `${formatDay(result.scheduleDayOfWeek)}s${
+          result.scheduleTimeStart
+            ? ` · ${formatTime(result.scheduleTimeStart)}${
+                result.scheduleTimeEnd ? ` – ${formatTime(result.scheduleTimeEnd)}` : ""
+              }`
+            : ""
+        }`
+      : null
 
   const score = Math.round(result.totalScore * 100)
 

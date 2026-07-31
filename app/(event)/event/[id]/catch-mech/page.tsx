@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import Link from "next/link"
-import { ChevronRight } from "lucide-react"
+import { ChevronRight, ClipboardCheck, Users } from "lucide-react"
 import { auth } from "@/lib/auth"
 import { canRead } from "@/lib/permissions"
 import { db } from "@/lib/db"
@@ -9,7 +9,7 @@ import { PageHeader } from "@/components/page-header"
 import { CatchMechTable } from "./catch-mech-table"
 import { WeeklyConfirmationsChart } from "./weekly-confirmations-chart"
 import { buildWeeklyBuckets } from "./weekly-buckets"
-import { buildCatchMechGroupRows } from "./aggregate"
+import { buildCatchMechGroupRows, type CatchMechStats } from "./aggregate"
 
 export const metadata: Metadata = {
   title: "Catch Mech",
@@ -130,48 +130,181 @@ function pct(n: number, d: number): number {
   return d > 0 ? Math.round((n / d) * 100) : 0
 }
 
-function CatchMechStatCard({
+const TONE = {
+  green: { text: "text-green-600", fill: "bg-green-500" },
+  amber: { text: "text-amber-600", fill: "bg-amber-500" },
+  red: { text: "text-red-600", fill: "bg-red-500" },
+  sky: { text: "text-sky-600", fill: "bg-sky-500" },
+  violet: { text: "text-violet-600", fill: "bg-violet-500" },
+  teal: { text: "text-teal-600", fill: "bg-teal-500" },
+} as const
+
+type Tone = keyof typeof TONE
+
+const EYEBROW = "text-[11px] font-semibold tracking-[0.15em] uppercase text-muted-foreground"
+
+/**
+ * The matchable pipeline as one part-to-whole bar rather than four separate tiles:
+ * Confirmed + Pending + Rejected sum to "To Match", so a segmented bar states that
+ * relationship directly.
+ *
+ * "In DGroup" joins them in the legend but never in the bar — it is measured
+ * against the full cohort, not the matchable pool. Each cell therefore prints its
+ * own denominator (`% of 128` vs `% of 154`), which is what keeps the four
+ * readable side by side without implying they add up.
+ */
+function PlacementPanel({ eventId, stats }: { eventId: string; stats: CatchMechStats }) {
+  const segments = [
+    {
+      key: "confirmed",
+      label: "Confirmed",
+      value: stats.totalConfirmed,
+      tone: "green" as Tone,
+      href: `/event/${eventId}/catch-mech/confirmed`,
+    },
+    {
+      key: "pending",
+      label: "Pending",
+      value: stats.totalPending,
+      tone: "amber" as Tone,
+      href: `/event/${eventId}/catch-mech/pending`,
+    },
+    {
+      key: "rejected",
+      label: "Rejected",
+      value: stats.totalRejected,
+      tone: "red" as Tone,
+      href: `/event/${eventId}/catch-mech/rejected`,
+    },
+  ]
+
+  const legend = [
+    ...segments.map((s) => ({ ...s, of: stats.matchable })),
+    {
+      key: "in-small-group",
+      label: "In DGroup",
+      value: stats.totalInSmallGroup,
+      tone: "sky" as Tone,
+      href: `/event/${eventId}/catch-mech/in-small-group`,
+      of: stats.totalCohort,
+    },
+  ]
+
+  const resolved = stats.matchable - stats.totalPending
+  const filled = segments.filter((s) => s.value > 0)
+
+  return (
+    <section className="overflow-hidden rounded-xl border">
+      <div className="p-5 pb-4 sm:p-6 sm:pb-5">
+        <p className={EYEBROW}>To Match</p>
+        <div className="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <span className="text-4xl font-semibold tracking-tight">{stats.matchable}</span>
+          <span className="text-sm text-muted-foreground">
+            of {stats.totalCohort} tracked · {pct(resolved, stats.matchable)}% resolved
+          </span>
+        </div>
+      </div>
+
+      <div className="px-5 pb-5 sm:px-6">
+        <div className="flex h-2.5 gap-0.5">
+          {filled.length > 0 ? (
+            filled.map((s) => (
+              <div
+                key={s.key}
+                className={`min-w-1 rounded-full ${TONE[s.tone].fill}`}
+                style={{ flexGrow: s.value }}
+              />
+            ))
+          ) : (
+            <div className="flex-1 rounded-full bg-muted" />
+          )}
+        </div>
+      </div>
+
+      {/* -ml-px tucks each cell's left border under the panel's own, so the 2-up
+          and 4-up layouts both read as an even grid with no doubled lines. */}
+      <div className="-ml-px grid grid-cols-2 lg:grid-cols-4">
+        {legend.map((item) => (
+          <Link
+            key={item.key}
+            href={item.href}
+            className="group flex items-start justify-between gap-2 border-t border-l px-5 py-4 transition-colors hover:bg-muted/50"
+          >
+            <span className="flex min-w-0 flex-col gap-1.5">
+              <span className={`flex items-center gap-2 ${EYEBROW}`}>
+                <span className={`size-2 shrink-0 rounded-full ${TONE[item.tone].fill}`} />
+                {item.label}
+              </span>
+              <span className="flex flex-wrap items-baseline gap-x-2">
+                <span className={`text-2xl font-semibold tracking-tight ${TONE[item.tone].text}`}>
+                  {item.value}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {pct(item.value, item.of)}% of {item.of}
+                </span>
+              </span>
+            </span>
+            <ChevronRight className="mt-0.5 size-4 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-muted-foreground/70" />
+          </Link>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+/** A responded/expected ratio — a meter, not a bare count. */
+function ResponseCard({
   label,
-  value,
-  sub,
-  color,
+  icon,
+  responded,
+  expected,
+  unit,
+  tone,
   href,
 }: {
   label: string
-  value: number
-  sub?: string
-  color?: string
-  href?: string
+  icon: React.ReactNode
+  responded: number
+  expected: number
+  unit: string
+  tone: Tone
+  href: string
 }) {
-  const body = (
-    <>
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex flex-col gap-2">
-          <p className="text-[11px] font-semibold tracking-[0.15em] uppercase text-muted-foreground">
-            {label}
-          </p>
-          <p className={`text-3xl font-semibold tabular-nums tracking-tight ${color ?? "text-foreground"}`}>
-            {value}
-          </p>
-        </div>
-        {href && (
-          <ChevronRight className="h-4 w-4 text-muted-foreground/30 group-hover:text-muted-foreground/70 transition-colors shrink-0 mt-0.5" />
-        )}
-      </div>
-      {sub && <p className="text-xs text-muted-foreground mt-2">{sub}</p>}
-    </>
-  )
-
-  if (!href) {
-    return <div className="rounded-lg border px-5 py-4 flex flex-col justify-between">{body}</div>
-  }
+  const share = expected > 0 ? Math.min(1, responded / expected) : 0
 
   return (
     <Link
       href={href}
-      className="group rounded-lg border px-5 py-4 flex flex-col justify-between hover:bg-muted/60 hover:border-foreground/20 hover:shadow-sm transition-all"
+      className="group flex flex-col gap-3 rounded-xl border p-5 transition-all hover:border-foreground/20 hover:bg-muted/40 hover:shadow-sm sm:p-6"
     >
-      {body}
+      <div className="flex items-center justify-between gap-2">
+        <span className={`flex items-center gap-2 ${EYEBROW}`}>
+          <span className="text-muted-foreground/50">{icon}</span>
+          {label}
+        </span>
+        <ChevronRight className="size-4 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-muted-foreground/70" />
+      </div>
+
+      <div className="flex items-baseline gap-1.5">
+        <span className={`text-3xl font-semibold tracking-tight ${TONE[tone].text}`}>
+          {responded}
+        </span>
+        <span className="text-sm text-muted-foreground">
+          of {expected} {unit}
+        </span>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+          <div
+            className={`h-full rounded-full ${TONE[tone].fill}`}
+            style={{ width: `${share * 100}%` }}
+          />
+        </div>
+        <span className="text-xs tabular-nums text-muted-foreground">
+          {pct(responded, expected)}%
+        </span>
+      </div>
     </Link>
   )
 }
@@ -198,55 +331,29 @@ export default async function CatchMechAdminPage({
       />
 
       {/* Confirmed/Rejected/Pending are measured against the matchable pool — the
-          people catch mech is actually trying to place — so the three sum to 100%.
-          In DGroup is measured against the full cohort instead: it's the share
-          who were never candidates. */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
-        <CatchMechStatCard
-          label="To Match"
-          value={stats.matchable}
-          sub={`of ${stats.totalCohort} total`}
-        />
-        <CatchMechStatCard
-          label="Confirmed"
-          value={stats.totalConfirmed}
-          sub={`${pct(stats.totalConfirmed, stats.matchable)}% of to match`}
-          color="text-green-600"
-          href={`/event/${id}/catch-mech/confirmed`}
-        />
-        <CatchMechStatCard
-          label="Rejected"
-          value={stats.totalRejected}
-          sub={`${pct(stats.totalRejected, stats.matchable)}% of to match`}
-          color="text-red-600"
-          href={`/event/${id}/catch-mech/rejected`}
-        />
-        <CatchMechStatCard
-          label="In DGroup"
-          value={stats.totalInSmallGroup}
-          sub={`${pct(stats.totalInSmallGroup, stats.totalCohort)}% of all ${stats.totalCohort}`}
-          color="text-sky-600"
-          href={`/event/${id}/catch-mech/in-small-group`}
-        />
-        <CatchMechStatCard
-          label="Pending"
-          value={stats.totalPending}
-          sub={`${pct(stats.totalPending, stats.matchable)}% of to match`}
-          color="text-amber-600"
-          href={`/event/${id}/catch-mech/pending`}
-        />
-        <CatchMechStatCard
-          label="Responded"
-          value={response.responded}
-          sub={`of ${response.expected} facilitators`}
-          color="text-violet-600"
+          people catch mech is actually trying to place — so the three sum to 100%
+          and share one segmented bar. In DGroup is measured against the full cohort
+          instead: it's the share who were never candidates, so it sits outside the
+          bar. Form-response rates are a separate concern and get their own row. */}
+      <PlacementPanel eventId={id} stats={stats} />
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <ResponseCard
+          label="Facilitator Responses"
+          icon={<ClipboardCheck className="size-4" />}
+          responded={response.responded}
+          expected={response.expected}
+          unit="facilitators"
+          tone="violet"
           href={`/event/${id}/catch-mech/submissions`}
         />
-        <CatchMechStatCard
+        <ResponseCard
           label="Volunteer Follow-up"
-          value={volunteerResponse.responded}
-          sub={`of ${volunteerResponse.expected} volunteers`}
-          color="text-violet-600"
+          icon={<Users className="size-4" />}
+          responded={volunteerResponse.responded}
+          expected={volunteerResponse.expected}
+          unit="volunteers"
+          tone="teal"
           href={`/event/${id}/catch-mech/volunteers`}
         />
       </div>
