@@ -137,12 +137,16 @@ function resolveParticipant(registrant: {
  * OneTime events record attendance on `EventRegistrant.attendedAt`; MultiDay and
  * Recurring events record it per occurrence via `OccurrenceAttendee`. Either way
  * a person is counted once, no matter how many sessions they attended.
+ *
+ * `periodStart` may be null for "all time" — an event can carry a standalone
+ * session dated before `Event.startDate`, so anchoring the lower bound to the
+ * event start would drop attendees the dashboard claims to be counting.
  */
 export async function loadEventAttendanceBreakdown(
   db: PrismaClient,
   eventId: string,
   eventType: "OneTime" | "MultiDay" | "Recurring",
-  periodStart: Date,
+  periodStart: Date | null,
   periodEnd: Date,
 ): Promise<EventAttendanceBreakdown> {
   const lifeStageSelect = { select: { id: true, name: true, order: true } } as const
@@ -157,9 +161,11 @@ export async function loadEventAttendanceBreakdown(
     },
   } as const
 
+  const dateRange = periodStart ? { gte: periodStart, lte: periodEnd } : { lte: periodEnd }
+
   if (eventType === "OneTime") {
     const registrants = await db.eventRegistrant.findMany({
-      where: { eventId, attendedAt: { gte: periodStart, lte: periodEnd } },
+      where: { eventId, attendedAt: { not: null, ...dateRange } },
       select: registrantSelect,
     })
     return buildAttendanceBreakdown(registrants.map(resolveParticipant))
@@ -169,7 +175,7 @@ export async function loadEventAttendanceBreakdown(
     where: {
       // Participant attendance only — volunteer check-ins carry a null registrantId.
       registrantId: { not: null },
-      occurrence: { eventId, date: { gte: periodStart, lte: periodEnd } },
+      occurrence: { eventId, date: dateRange },
     },
     distinct: ["registrantId"],
     select: { registrant: { select: registrantSelect } },

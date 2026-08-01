@@ -6,6 +6,7 @@ import { EventSetupChecklist } from "@/components/event-setup-checklist"
 import type { EventSetupChecklist as EventSetupChecklistData } from "@/lib/events/setup-checklist"
 import {
   IconCopy,
+  IconTargetArrow,
   IconUserCheck,
   IconUserQuestion,
   IconUsers,
@@ -53,6 +54,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
+import type { AttendanceSeriesPoint } from "@/lib/events/attendance-series"
+import { formatTurnoutRate, type EventTurnout } from "@/lib/events/turnout"
 import { cn } from "@/lib/utils"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -88,13 +91,13 @@ type EventDashboardData = {
   attendedCount: number
   occurrenceCount: number
   totalCheckIns: number
+  totalVolunteerCheckIns: number
+  sessionsInPeriod: number
   period: "7d" | "30d" | "90d" | "all"
   averageAttendance: number
   uniqueAttendees: number
-  attendanceSeries: Array<{
-    date: string
-    attendees: number
-  }>
+  turnout: EventTurnout
+  attendanceSeries: AttendanceSeriesPoint[]
   registrationSeries: Array<{
     date: string
     total: number
@@ -141,10 +144,23 @@ const PERIODS: Array<{ value: EventDashboardData["period"]; label: string }> = [
   { value: "all", label: "All time" },
 ]
 
+/**
+ * Every attendance figure on this page is bounded by the selected window, so any
+ * copy that quotes one has to name the window too — otherwise a 7-day view of an
+ * event that ran last month reads as a total collapse rather than as a filter.
+ */
+function periodPhrase(period: EventDashboardData["period"]) {
+  return period === "all" ? "all time" : `the last ${period.replace("d", "")} days`
+}
+
 const attendanceChartConfig = {
   attendees: {
-    label: "Attendance",
+    label: "Participants",
     color: "var(--primary)",
+  },
+  volunteers: {
+    label: "Volunteers",
+    color: "var(--chart-4)",
   },
 } satisfies ChartConfig
 
@@ -380,8 +396,14 @@ export function EventDashboardClient({
         )}
       </div>
 
-      {/* KPI cards — generous gap above signals a new data section */}
-      <div className="mt-8 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+      {/* KPI cards — generous gap above signals a new data section. The column
+          count tracks the card count so the row always fills exactly. */}
+      <div
+        className={cn(
+          "mt-8 grid grid-cols-1 gap-3 md:grid-cols-2",
+          hasVolunteers ? "xl:grid-cols-5" : "xl:grid-cols-4"
+        )}
+      >
         <div className="rounded-lg border px-5 py-5 flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <p className="text-[11px] font-semibold tracking-[0.15em] uppercase text-muted-foreground">
@@ -395,7 +417,9 @@ export function EventDashboardClient({
             {formatAverage(event.averageAttendance)}
           </p>
           <p className="text-xs text-muted-foreground">
-            {isSeriesEvent ? "Average check-ins per session" : "Attendees for this event"}
+            {isSeriesEvent
+              ? "Average participant check-ins per session"
+              : `Attendees checked in over ${periodPhrase(event.period)}`}
           </p>
         </div>
 
@@ -412,6 +436,28 @@ export function EventDashboardClient({
             {event.uniqueAttendees.toLocaleString()}
           </p>
           <p className="text-xs text-muted-foreground">Distinct participants in selected period</p>
+        </div>
+
+        <div className="rounded-lg border px-5 py-5 flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] font-semibold tracking-[0.15em] uppercase text-muted-foreground">
+              Turnout
+            </p>
+            <span className="text-muted-foreground/40">
+              <IconTargetArrow className="size-4" />
+            </span>
+          </div>
+          <p className="text-3xl font-semibold tabular-nums tracking-tight text-foreground">
+            {formatTurnoutRate(event.turnout.rate)}
+          </p>
+          {/* The numerator is window-bounded, the denominator is the whole
+              roster — so the copy has to say which window, or "12 of 500" reads
+              as a disaster instead of as a filter. */}
+          <p className="text-xs text-muted-foreground">
+            {event.turnout.preRegistered === 0
+              ? "No registrations yet"
+              : `${event.turnout.checkedIn.toLocaleString()} of ${event.turnout.preRegistered.toLocaleString()} registered checked in ${periodPhrase(event.period)} · ${event.turnout.noShows.toLocaleString()} ${event.period === "all" ? `no-show${event.turnout.noShows === 1 ? "" : "s"}` : "not in window"}`}
+          </p>
         </div>
 
         <div className="rounded-lg border px-5 py-5 flex flex-col gap-3">
@@ -464,53 +510,107 @@ export function EventDashboardClient({
               <CardTitle>Attendance by Session</CardTitle>
               <CardDescription>
                 {event.attendanceSeries.length > 0
-                  ? "Attendance trend in selected period"
-                  : "No attendance data yet in selected period"}
+                  ? `Check-ins per session over ${periodPhrase(event.period)}`
+                  : "No sessions in the selected period"}
               </CardDescription>
+              {event.attendanceSeries.length > 0 && (
+                <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 pt-2">
+                  {/* Labelled "participant", never "total" — the Sessions page
+                      badge counts participants *and* volunteers, and a stat
+                      called "total check-ins" that omits volunteers is exactly
+                      the disagreement between the two screens we're closing. */}
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-2xl font-semibold tabular-nums tracking-tight text-foreground">
+                      {event.totalCheckIns.toLocaleString()}
+                    </span>
+                    <span className="text-xs text-muted-foreground">participant check-ins</span>
+                  </div>
+                  {event.totalVolunteerCheckIns > 0 && (
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-sm font-medium tabular-nums text-foreground">
+                        {event.totalVolunteerCheckIns.toLocaleString()}
+                      </span>
+                      <span className="text-xs text-muted-foreground">volunteer check-ins</span>
+                    </div>
+                  )}
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-sm font-medium tabular-nums text-foreground">
+                      {event.sessionsInPeriod.toLocaleString()}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {event.sessionsInPeriod === 1 ? "session" : "sessions"}
+                    </span>
+                  </div>
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-sm font-medium tabular-nums text-foreground">
+                      {formatAverage(event.averageAttendance)}
+                    </span>
+                    <span className="text-xs text-muted-foreground">avg per session</span>
+                  </div>
+                </div>
+              )}
             </CardHeader>
             <CardContent className="px-2 pt-4 sm:px-6 sm:pt-6">
-              <ChartContainer config={attendanceChartConfig} className="aspect-auto h-65 w-full">
-                <AreaChart data={event.attendanceSeries}>
-                  <CartesianGrid vertical={false} />
-                  <XAxis
-                    dataKey="date"
-                    tickLine={false}
-                    axisLine={false}
-                    tickMargin={8}
-                    minTickGap={28}
-                    tickFormatter={formatShortDate}
-                  />
-                  <YAxis
-                    tickLine={false}
-                    axisLine={false}
-                    tickMargin={8}
-                    width={32}
-                    allowDecimals={false}
-                  />
-                  <ChartTooltip
-                    cursor={false}
-                    content={
-                      <ChartTooltipContent
-                        indicator="dot"
-                        labelFormatter={(value) =>
-                          new Date(value).toLocaleDateString("en-PH", {
-                            month: "short",
-                            day: "numeric",
-                            year: "numeric",
-                          })
-                        }
+              {event.attendanceSeries.length === 0 ? (
+                <ChartEmptyState>
+                  No sessions have taken place in the selected period.
+                </ChartEmptyState>
+              ) : (
+                <ChartContainer config={attendanceChartConfig} className="aspect-auto h-65 w-full">
+                  <AreaChart data={event.attendanceSeries}>
+                    <CartesianGrid vertical={false} />
+                    <XAxis
+                      dataKey="date"
+                      tickLine={false}
+                      axisLine={false}
+                      tickMargin={8}
+                      minTickGap={28}
+                      tickFormatter={formatShortDate}
+                    />
+                    <YAxis
+                      tickLine={false}
+                      axisLine={false}
+                      tickMargin={8}
+                      width={32}
+                      allowDecimals={false}
+                    />
+                    <ChartTooltip
+                      cursor={false}
+                      content={
+                        <ChartTooltipContent
+                          indicator="dot"
+                          labelFormatter={(value) =>
+                            new Date(value).toLocaleDateString("en-PH", {
+                              month: "short",
+                              day: "numeric",
+                              year: "numeric",
+                            })
+                          }
+                        />
+                      }
+                    />
+                    <Area
+                      dataKey="attendees"
+                      type="natural"
+                      fill="var(--color-attendees)"
+                      fillOpacity={0.1}
+                      stroke="var(--color-attendees)"
+                    />
+                    {/* Only drawn when volunteers actually checked in — the
+                        Sessions page badge counts these alongside participants. */}
+                    {event.totalVolunteerCheckIns > 0 && (
+                      <Area
+                        dataKey="volunteers"
+                        type="natural"
+                        fill="var(--color-volunteers)"
+                        fillOpacity={0.08}
+                        stroke="var(--color-volunteers)"
+                        strokeDasharray="4 3"
                       />
-                    }
-                  />
-                  <Area
-                    dataKey="attendees"
-                    type="natural"
-                    fill="var(--color-attendees)"
-                    fillOpacity={0.1}
-                    stroke="var(--color-attendees)"
-                  />
-                </AreaChart>
-              </ChartContainer>
+                    )}
+                  </AreaChart>
+                </ChartContainer>
+              )}
             </CardContent>
           </Card>
         )}
