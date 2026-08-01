@@ -214,9 +214,17 @@ describe("getHouseholdLabel", () => {
   })
 })
 
+/** Family check-in is opt-in, so these lookups need the section turned on. */
+async function enableFamilyCheckin(eventId: string) {
+  await db.eventFormConfig.create({
+    data: { eventId, context: "CheckIn", sectionFamily: true },
+  })
+}
+
 describe("check-in household lookups reject an unlinked registrant", () => {
   it("lookupHouseholdForCheckin returns null rather than a stranger's household", async () => {
     const event = await seedEvent()
+    await enableFamilyCheckin(event.id)
     await seedMemberFamily("Espiritu Family", 3)
     const orphan = await db.eventRegistrant.create({
       data: { eventId: event.id },
@@ -231,9 +239,7 @@ describe("check-in household lookups reject an unlinked registrant", () => {
 
   it("addHouseholdMemberAtCheckin refuses to attach anyone to a stranger's family", async () => {
     const event = await seedEvent()
-    await db.eventFormConfig.create({
-      data: { eventId: event.id, context: "CheckIn", sectionFamily: true },
-    })
+    await enableFamilyCheckin(event.id)
     const family = await seedMemberFamily("Espiritu Family", 3)
     const orphan = await db.eventRegistrant.create({
       data: { eventId: event.id },
@@ -255,6 +261,7 @@ describe("check-in household lookups reject an unlinked registrant", () => {
 
   it("still resolves the household for a properly linked registrant", async () => {
     const event = await seedEvent()
+    await enableFamilyCheckin(event.id)
     const family = await db.family.create({ data: { name: "Dela Cruz Family" } })
     const juan = await seedMember("Juan", "Dela Cruz")
     await db.familyMember.create({

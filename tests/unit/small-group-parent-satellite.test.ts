@@ -4,7 +4,10 @@
  * mutually exclusive, and the satellite must be a known Philippine one.
  */
 import { describe, it, expect } from "vitest"
-import { smallGroupSchema } from "@/lib/validations/small-group"
+import {
+  smallGroupSchema,
+  upwardSatelliteSchema,
+} from "@/lib/validations/small-group"
 import {
   CCF_SATELLITES,
   EXTERNAL_SATELLITES,
@@ -197,5 +200,39 @@ describe("smallGroupSchema — parent satellite", () => {
     expect(parsed.success).toBe(true)
     if (!parsed.success) return
     expect(parsed.data.parentGroupId).toBe("group-1")
+  })
+})
+
+describe("upwardSatelliteSchema — member portal", () => {
+  it("accepts an external satellite and trims it", () => {
+    const parsed = upwardSatelliteSchema.safeParse("  CCF Cebu  ")
+    expect(parsed.success).toBe(true)
+    if (parsed.success) expect(parsed.data).toBe("CCF Cebu")
+  })
+
+  it("treats null, undefined and an empty string as clearing the satellite", () => {
+    for (const input of [null, undefined, "", "   "]) {
+      const parsed = upwardSatelliteSchema.safeParse(input)
+      expect(parsed.success, `${String(input)} should parse`).toBe(true)
+      if (parsed.success) expect(parsed.data).toBeNull()
+    }
+  })
+
+  it("rejects a satellite that is not on the Philippine list", () => {
+    const parsed = upwardSatelliteSchema.safeParse("CCF Singapore")
+    expect(parsed.success).toBe(false)
+    if (parsed.success) return
+    expect(parsed.error.issues[0]?.message).toMatch(/unknown ccf satellite/i)
+  })
+
+  it("rejects CCF Eastwood — a leader here reports to a parent DGroup", () => {
+    expect(upwardSatelliteSchema.safeParse(HOME_SATELLITE).success).toBe(false)
+  })
+
+  it("accepts every satellite the portal offers", () => {
+    for (const satellite of EXTERNAL_SATELLITES) {
+      const parsed = upwardSatelliteSchema.safeParse(satellite)
+      expect(parsed.success, `${satellite} should be accepted`).toBe(true)
+    }
   })
 })

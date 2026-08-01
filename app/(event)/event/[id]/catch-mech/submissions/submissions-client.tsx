@@ -2,7 +2,12 @@
 
 import * as React from "react"
 import Link from "next/link"
+import { ChevronRight } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import {
+  SubmissionDecisions,
+  type SubmissionDecision,
+} from "@/components/catch-mech/submission-decisions"
 import { FilterBar, FilterField } from "@/components/filter-bar"
 import { PageHeader } from "@/components/page-header"
 import {
@@ -31,6 +36,8 @@ export type SubmissionRow = {
   declinedCount: number
   deferredCount: number
   createdGroupId: string | null
+  /** The actual people this submission decided on, in submission order. */
+  decisions: SubmissionDecision[]
   createdAt: Date
 }
 
@@ -48,6 +55,8 @@ type Props = {
   respondedCount: number
   expectedCount: number
   breakoutGroups: { id: string; name: string }[]
+  canViewMember: boolean
+  canViewSmallGroup: boolean
 }
 
 function formatDateTime(d: Date): string {
@@ -68,8 +77,20 @@ export function SubmissionsClient({
   respondedCount,
   expectedCount,
   breakoutGroups,
+  canViewMember,
+  canViewSmallGroup,
 }: Props) {
   const [filterGroup, setFilterGroup] = React.useState("all")
+  const [expanded, setExpanded] = React.useState<Set<string>>(new Set())
+
+  function toggleRow(id: string) {
+    setExpanded((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   const filteredRows =
     filterGroup === "all" ? rows : rows.filter((r) => r.breakoutGroupId === filterGroup)
@@ -96,26 +117,32 @@ export function SubmissionsClient({
         title="Submissions"
         description={`${respondedCount} of ${expectedCount} facilitators responded`}
         actions={
-          <FilterBar
-            activeCount={filterGroup === "all" ? 0 : 1}
-            onClear={() => setFilterGroup("all")}
-          >
-            <FilterField label="Group">
-              <Select value={filterGroup} onValueChange={setFilterGroup}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All groups</SelectItem>
-                  {breakoutGroups.map((bg) => (
-                    <SelectItem key={bg.id} value={bg.id}>
-                      {bg.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </FilterField>
-          </FilterBar>
+          <div className="flex items-center gap-2">
+            {/* One event-level entry URL serves every facilitator, so it belongs
+                here rather than repeated down a table column. Per-faci tokens are
+                minted when they verify their mobile — there is no per-row link. */}
+            <CopyCatchMechLink path={`/events/${eventId}/catch-mech`} />
+            <FilterBar
+              activeCount={filterGroup === "all" ? 0 : 1}
+              onClear={() => setFilterGroup("all")}
+            >
+              <FilterField label="Group">
+                <Select value={filterGroup} onValueChange={setFilterGroup}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All groups</SelectItem>
+                    {breakoutGroups.map((bg) => (
+                      <SelectItem key={bg.id} value={bg.id}>
+                        {bg.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FilterField>
+            </FilterBar>
+          </div>
         }
       />
 
@@ -125,6 +152,7 @@ export function SubmissionsClient({
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-10" />
               <TableHead>Facilitator</TableHead>
               <TableHead>Breakout Group</TableHead>
               <TableHead className="text-right">Confirmed</TableHead>
@@ -136,41 +164,87 @@ export function SubmissionsClient({
           <TableBody>
             {filteredRows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="py-6 text-center text-muted-foreground">
+                <TableCell colSpan={7} className="py-6 text-center text-muted-foreground">
                   No submissions yet
                 </TableCell>
               </TableRow>
             ) : (
-              filteredRows.map((row) => (
-                <TableRow key={row.id}>
-                  <TableCell>
-                    <span className="font-medium">{row.submittedByName}</span>
-                    {row.createdGroupId && (
-                      <Badge variant="secondary" className="ml-2">
-                        Created group
-                      </Badge>
+              filteredRows.map((row) => {
+                const isOpen = expanded.has(row.id)
+                // A submission from before this trail existed has counts but no
+                // stored names, so the expander is driven by what we can show.
+                const canExpand = row.decisions.length > 0
+                return (
+                  <React.Fragment key={row.id}>
+                    <TableRow
+                      data-state={isOpen ? "open" : undefined}
+                      className={canExpand ? "cursor-pointer" : undefined}
+                      onClick={canExpand ? () => toggleRow(row.id) : undefined}
+                    >
+                      <TableCell className="pr-0">
+                        {canExpand && (
+                          <button
+                            type="button"
+                            aria-expanded={isOpen}
+                            aria-label={
+                              isOpen
+                                ? `Hide the people ${row.submittedByName} decided on`
+                                : `Show the people ${row.submittedByName} decided on`
+                            }
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              toggleRow(row.id)
+                            }}
+                            className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                          >
+                            <ChevronRight
+                              className={`size-4 transition-transform ${isOpen ? "rotate-90" : ""}`}
+                            />
+                          </button>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <span className="font-medium">{row.submittedByName}</span>
+                        {row.createdGroupId && (
+                          <Badge variant="secondary" className="ml-2">
+                            Created group
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {row.breakoutGroupId && row.breakoutGroupName ? (
+                          <Link
+                            href={`/event/${eventId}/breakouts/${row.breakoutGroupId}`}
+                            className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            {row.breakoutGroupName}
+                          </Link>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{row.confirmedCount}</TableCell>
+                      <TableCell className="text-right tabular-nums">{row.declinedCount}</TableCell>
+                      <TableCell className="text-right tabular-nums">{row.deferredCount}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {formatDateTime(row.createdAt)}
+                      </TableCell>
+                    </TableRow>
+                    {isOpen && canExpand && (
+                      <TableRow className="hover:bg-transparent">
+                        <TableCell colSpan={7} className="bg-muted/30 p-3">
+                          <SubmissionDecisions
+                            decisions={row.decisions}
+                            canViewMember={canViewMember}
+                            canViewSmallGroup={canViewSmallGroup}
+                          />
+                        </TableCell>
+                      </TableRow>
                     )}
-                  </TableCell>
-                  <TableCell>
-                    {row.breakoutGroupId && row.breakoutGroupName ? (
-                      <Link
-                        href={`/event/${eventId}/breakouts/${row.breakoutGroupId}`}
-                        className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-                      >
-                        {row.breakoutGroupName}
-                      </Link>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">{row.confirmedCount}</TableCell>
-                  <TableCell className="text-right tabular-nums">{row.declinedCount}</TableCell>
-                  <TableCell className="text-right tabular-nums">{row.deferredCount}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {formatDateTime(row.createdAt)}
-                  </TableCell>
-                </TableRow>
-              ))
+                  </React.Fragment>
+                )
+              })
             )}
           </TableBody>
         </Table>
@@ -192,7 +266,6 @@ export function SubmissionsClient({
                 <TableRow>
                   <TableHead>Facilitator</TableHead>
                   <TableHead>Breakout Group</TableHead>
-                  <TableHead className="w-10" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -206,12 +279,6 @@ export function SubmissionsClient({
                       >
                         {n.breakoutGroupName}
                       </Link>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {/* The event-level entry URL, not a per-faci token: tokens are
-                          minted when the faci verifies their mobile, so someone who
-                          has not responded has no link of their own yet. */}
-                      <CopyCatchMechLink path={`/events/${eventId}/catch-mech`} />
                     </TableCell>
                   </TableRow>
                 ))}

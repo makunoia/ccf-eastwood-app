@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
 import { repointFamilyLinks } from "@/lib/family-links"
 import { buildStoredScheduleSlot } from "@/lib/matching/candidate-schedule"
+import { clearUpwardSatelliteOnConfirm } from "@/lib/small-groups/upward-satellite"
 import {
   recordConfirmationSubmission,
   submitterName,
@@ -66,6 +67,9 @@ export async function submitMemberConfirmations(
 
     await db.$transaction(async (tx) => {
       let memberConfirmed = false
+      // Existing members confirmed into this group. A promoted guest is a brand
+      // new Member who leads nothing, so only these can hold a satellite.
+      const confirmedMemberIds: string[] = []
 
       for (const { requestId, status: decisionStatus, notes: decisionNotes } of decisions) {
         const req = await tx.smallGroupMemberRequest.findUnique({
@@ -251,6 +255,7 @@ export async function submitMemberConfirmations(
               },
             })
             memberConfirmed = true
+            confirmedMemberIds.push(req.memberId)
 
             await tx.smallGroupLog.create({
               data: {
@@ -326,6 +331,10 @@ export async function submitMemberConfirmations(
       if (group.status === "Pending" && memberConfirmed) {
         await tx.smallGroup.update({ where: { id: group.id }, data: { status: "Active" } })
       }
+
+      // This is where a member-portal request finally lands, so it is where the
+      // requester's declared satellite stops being true.
+      await clearUpwardSatelliteOnConfirm(tx, confirmedMemberIds)
 
       // Always recorded, even when every decision was deferred or every request was
       // already resolved. Those submissions write nothing else, so without this row

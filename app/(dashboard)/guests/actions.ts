@@ -1,12 +1,16 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { z } from "zod"
 import type { Prisma } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import { canWrite } from "@/lib/permissions"
 import { guestSchema, type GuestFormValues } from "@/lib/validations/guest"
+import {
+  matchingProfileSchema,
+  type MatchingProfileInput,
+} from "@/lib/validations/matching-profile"
+import { applyGuestMatchingProfile } from "@/lib/people/matching-profile"
 import { checkDuplicateContactInfo } from "@/lib/duplicate-check"
 import { repointFamilyLinks } from "@/lib/family-links"
 import { runBatchDelete } from "@/lib/batch"
@@ -326,81 +330,24 @@ export async function promoteGuestToMember(
 
 // ─── Small Group Pipeline Actions ─────────────────────────────────────────────
 
-const guestMatchingProfileSchema = z.object({
-  lifeStageId: z.string().nullable().optional(),
-  gender: z.enum(["Male", "Female"]).nullable().optional(),
-  language: z.array(z.string()).optional(),
-  meetingPreference: z.enum(["Online", "Hybrid", "InPerson"]).nullable().optional(),
-  workCity: z.string().nullable().optional(),
-  workIndustry: z.string().nullable().optional(),
-  birthMonth: z.number().int().min(1).max(12).nullable().optional(),
-  birthYear: z.number().int().min(1900).nullable().optional(),
-  scheduleDayOfWeek: z.number().int().min(0).max(6).nullable().optional(),
-  scheduleTimeStart: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
-  scheduleTimeEnd: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
-  ageRangeBucketId: z.string().nullable().optional(),
-})
-
-export type GuestMatchingProfileInput = z.infer<typeof guestMatchingProfileSchema>
-
 /**
- * Every column this action may write. Order is irrelevant — the list exists so
- * a new profile column can only be added in one place.
- */
-const GUEST_PROFILE_KEYS = [
-  "lifeStageId",
-  "gender",
-  "language",
-  "meetingPreference",
-  "workCity",
-  "workIndustry",
-  "birthMonth",
-  "birthYear",
-  "ageRangeBucketId",
-  "scheduleDayOfWeek",
-  "scheduleTimeStart",
-  "scheduleTimeEnd",
-] as const satisfies readonly (keyof GuestMatchingProfileInput)[]
-
-/**
- * Saves the guest's matching profile.
- *
- * **Only columns the caller actually sent are written.** This used to overwrite
- * every column unconditionally, which meant any caller that didn't know about a
- * field silently erased it: the guest detail page's match section omits
- * `birthMonth`/`birthYear`/`ageRangeBucketId`, and the catch-mech match section
- * additionally omits `gender` and the whole schedule — so a single "Find
- * matches" click wiped data collected at registration.
- *
- * An explicitly-sent `null` still clears the column, so callers that mean to
- * clear a field are unaffected. Absent key = leave alone.
+ * Saves the guest's matching profile. The write itself lives in
+ * `applyGuestMatchingProfile` so the public check-in kiosk — which has no
+ * session and so cannot call this action — writes the same columns the same way.
  */
 export async function saveGuestMatchingProfile(
   guestId: string,
-  raw: GuestMatchingProfileInput
+  raw: MatchingProfileInput
 ): Promise<ActionResult> {
   const authError = await requireWrite()
   if (authError) return { success: false, error: authError.error }
 
-  const parsed = guestMatchingProfileSchema.safeParse(raw)
+  const parsed = matchingProfileSchema.safeParse(raw)
   if (!parsed.success) {
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
   }
   try {
-    const data: Prisma.GuestUpdateInput = {}
-    for (const key of GUEST_PROFILE_KEYS) {
-      // Zod strips absent optional keys, so `in` distinguishes "not sent" from
-      // "sent as null".
-      if (!(key in parsed.data)) continue
-      if (key === "language") {
-        data.language = parsed.data.language ?? []
-      } else {
-        // Every other profile column is nullable.
-        ;(data as Record<string, unknown>)[key] = parsed.data[key] ?? null
-      }
-    }
-
-    await db.guest.update({ where: { id: guestId }, data })
+    await applyGuestMatchingProfile(guestId, parsed.data)
     revalidatePath(`/guests/${guestId}`)
     return { success: true, data: undefined }
   } catch {
@@ -408,29 +355,9 @@ export async function saveGuestMatchingProfile(
   }
 }
 
-export async function saveGuestClaimedGroup(
-  guestId: string,
-  smallGroupId: string
-): Promise<ActionResult> {
-  const authError = await requireWrite()
-  if (authError) return { success: false, error: authError.error }
-
-  try {
-    const group = await db.smallGroup.findUnique({ where: { id: smallGroupId }, select: { id: true } })
-    if (!group) return { success: false, error: "DGroup not found" }
-    await db.guest.update({
-      where: { id: guestId },
-      // Naming one of our groups supersedes an earlier "my DGroup is at
-      // another satellite" answer — the two can't both be true.
-      data: { claimedSmallGroupId: smallGroupId, claimedSatellite: null },
-    })
-    revalidatePath(`/guests/${guestId}`)
-    return { success: true, data: undefined }
-  } catch {
-    return { success: false, error: "Failed to save DGroup" }
-  }
-}
-
+// Setting a guest's claimed group happens on the public check-in kiosk, which
+// has no session — see `saveCheckinClaimedGroup` in the events actions. Only the
+// clear side is an admin action.
 export async function clearGuestClaimedGroup(guestId: string): Promise<ActionResult> {
   const authError = await requireWrite()
   if (authError) return { success: false, error: authError.error }

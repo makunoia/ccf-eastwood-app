@@ -2,10 +2,14 @@
 
 import * as React from "react"
 import Link from "next/link"
+import { ChevronRight } from "lucide-react"
 import { FilterBar, FilterField } from "@/components/filter-bar"
 import { PageHeader } from "@/components/page-header"
 import { Badge } from "@/components/ui/badge"
-import { CopyCatchMechLink } from "../submissions/copy-catch-mech-link"
+import {
+  SubmissionDecisions,
+  type SubmissionDecision,
+} from "@/components/catch-mech/submission-decisions"
 import {
   Select,
   SelectContent,
@@ -22,6 +26,12 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
+/**
+ * One person a volunteer decided on. Same shape as the facilitator side — the
+ * two submission surfaces render their detail with the same component.
+ */
+export type VolunteerFollowUpDecision = SubmissionDecision
+
 export type VolunteerFollowUpSubmission = {
   id: string
   volunteerId: string
@@ -29,6 +39,7 @@ export type VolunteerFollowUpSubmission = {
   committeeName: string
   roleName: string
   placedCount: number
+  decisions: VolunteerFollowUpDecision[]
   createdAt: Date
 }
 
@@ -44,6 +55,8 @@ type Props = {
   submissions: VolunteerFollowUpSubmission[]
   nonResponders: VolunteerFollowUpNonResponder[]
   committees: string[]
+  canViewMember: boolean
+  canViewSmallGroup: boolean
 }
 
 function formatDateTime(value: Date): string {
@@ -62,10 +75,22 @@ export function VolunteerFollowUpClient({
   submissions,
   nonResponders,
   committees,
+  canViewMember,
+  canViewSmallGroup,
 }: Props) {
   const [committee, setCommittee] = React.useState("all")
   const [responseState, setResponseState] = React.useState("all")
+  const [expanded, setExpanded] = React.useState<Set<string>>(new Set())
   const activeCount = Number(committee !== "all") + Number(responseState !== "all")
+
+  function toggleRow(id: string) {
+    setExpanded((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   const matchesCommittee = (value: string) => committee === "all" || value === committee
   const visibleSubmissions =
@@ -124,19 +149,13 @@ export function VolunteerFollowUpClient({
         }
       />
 
-      <div className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 px-4 py-3">
-        <p className="text-sm text-muted-foreground">
-          Share this link with confirmed event volunteers to report participants who joined their group.
-        </p>
-        <CopyCatchMechLink path={`/events/${eventId}/catch-mech/volunteers`} />
-      </div>
-
       <section className="space-y-3">
         <h2 className="type-label text-muted-foreground">Responses</h2>
         <div className="overflow-hidden rounded-lg border">
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-8" />
                 <TableHead>Volunteer</TableHead>
                 <TableHead>Committee</TableHead>
                 <TableHead>Role</TableHead>
@@ -147,23 +166,68 @@ export function VolunteerFollowUpClient({
             <TableBody>
               {visibleSubmissions.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
+                  <TableCell colSpan={6} className="py-6 text-center text-muted-foreground">
                     No responses yet
                   </TableCell>
                 </TableRow>
-              ) : visibleSubmissions.map((submission) => (
-                <TableRow key={submission.id}>
-                  <TableCell className="font-medium">{submission.volunteerName}</TableCell>
-                  <TableCell>{submission.committeeName}</TableCell>
-                  <TableCell>{submission.roleName}</TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {submission.placedCount === 0 ? (
-                      <Badge variant="secondary">None</Badge>
-                    ) : submission.placedCount}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{formatDateTime(submission.createdAt)}</TableCell>
-                </TableRow>
-              ))}
+              ) : visibleSubmissions.map((submission) => {
+                const isOpen = expanded.has(submission.id)
+                // A submission from before this trail existed has counts but no
+                // stored names, so the expander is driven by what we can show.
+                const canExpand = submission.decisions.length > 0
+                return (
+                  <React.Fragment key={submission.id}>
+                    <TableRow
+                      data-state={isOpen ? "open" : undefined}
+                      className={canExpand ? "cursor-pointer" : undefined}
+                      onClick={canExpand ? () => toggleRow(submission.id) : undefined}
+                    >
+                      <TableCell className="pr-0">
+                        {canExpand && (
+                          <button
+                            type="button"
+                            aria-expanded={isOpen}
+                            aria-label={
+                              isOpen
+                                ? `Hide the people ${submission.volunteerName} reported`
+                                : `Show the people ${submission.volunteerName} reported`
+                            }
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              toggleRow(submission.id)
+                            }}
+                            className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                          >
+                            <ChevronRight
+                              className={`size-4 transition-transform ${isOpen ? "rotate-90" : ""}`}
+                            />
+                          </button>
+                        )}
+                      </TableCell>
+                      <TableCell className="font-medium">{submission.volunteerName}</TableCell>
+                      <TableCell>{submission.committeeName}</TableCell>
+                      <TableCell>{submission.roleName}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {submission.placedCount === 0 ? (
+                          <Badge variant="secondary">None</Badge>
+                        ) : submission.placedCount}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{formatDateTime(submission.createdAt)}</TableCell>
+                    </TableRow>
+                    {isOpen && canExpand && (
+                      <TableRow className="hover:bg-transparent">
+                        <TableCell colSpan={6} className="bg-muted/30 p-3">
+                          <SubmissionDecisions
+                            decisions={submission.decisions}
+                            canViewMember={canViewMember}
+                            canViewSmallGroup={canViewSmallGroup}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </React.Fragment>
+                )
+              })}
             </TableBody>
           </Table>
         </div>
@@ -178,13 +242,12 @@ export function VolunteerFollowUpClient({
                 <TableHead>Volunteer</TableHead>
                 <TableHead>Committee</TableHead>
                 <TableHead>Role</TableHead>
-                <TableHead className="w-10" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {visibleNonResponders.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="py-6 text-center text-muted-foreground">
+                  <TableCell colSpan={3} className="py-6 text-center text-muted-foreground">
                     Every matching volunteer has responded
                   </TableCell>
                 </TableRow>
@@ -193,9 +256,6 @@ export function VolunteerFollowUpClient({
                   <TableCell className="font-medium">{volunteer.volunteerName}</TableCell>
                   <TableCell>{volunteer.committeeName}</TableCell>
                   <TableCell>{volunteer.roleName}</TableCell>
-                  <TableCell className="text-right">
-                    <CopyCatchMechLink path={`/events/${eventId}/catch-mech/volunteers`} />
-                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

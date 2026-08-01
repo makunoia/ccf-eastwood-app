@@ -48,14 +48,24 @@ export function VolunteerPlacementForm({
   // Insertion-ordered so the list doesn't reshuffle as people are added.
   const [selected, setSelected] = React.useState<VolunteerParticipantResult[]>([])
   const [destinations, setDestinations] = React.useState<Record<string, string>>({})
+  const [newGroupName, setNewGroupName] = React.useState("")
   const [submitting, setSubmitting] = React.useState(false)
   const [error, setError] = React.useState("")
-  const [completedCount, setCompletedCount] = React.useState<number | null>(null)
+  const [completed, setCompleted] = React.useState<{
+    count: number
+    createdGroup: string | null
+  } | null>(null)
   const debounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // With a single DGroup there is nothing to choose — every placement goes there.
   const onlyGroupId = groups.length === 1 ? groups[0].id : null
   const needsGroupChoice = groups.length > 1
+  /**
+   * A volunteer who leads nothing yet becomes a Leader by absorbing someone —
+   * so instead of picking a destination they name the DGroup they are starting,
+   * and this one submission creates it.
+   */
+  const createsGroup = groups.length === 0 && selected.length > 0
 
   React.useEffect(() => {
     return () => {
@@ -117,11 +127,11 @@ export function VolunteerPlacementForm({
   }
 
   async function handleSubmit() {
-    if (groups.length === 0 && selected.length > 0) {
-      setError("You need to lead a DGroup before placing participants.")
+    if (createsGroup && !newGroupName.trim()) {
+      setError("Name the DGroup these participants are joining")
       return
     }
-    if (selected.some((participant) => !destinations[participant.registrantId])) {
+    if (!createsGroup && selected.some((p) => !destinations[p.registrantId])) {
       setError("Choose a DGroup for every person you added")
       return
     }
@@ -134,8 +144,10 @@ export function VolunteerPlacementForm({
           token,
           selected.map((participant) => ({
             registrantId: participant.registrantId,
-            smallGroupId: destinations[participant.registrantId],
-          }))
+            // Null hands the destination to the group this submission creates.
+            smallGroupId: createsGroup ? null : destinations[participant.registrantId],
+          })),
+          createsGroup ? newGroupName : undefined
         ),
       "submitCatchMechVolunteerPlacements"
     )
@@ -146,21 +158,29 @@ export function VolunteerPlacementForm({
       return
     }
     if (result.success) {
-      setCompletedCount(result.data.placedCount)
+      setCompleted({
+        count: result.data.placedCount,
+        createdGroup: result.data.createdGroupId ? newGroupName.trim() : null,
+      })
       return
     }
     setError(result.error)
   }
 
-  if (completedCount !== null) {
+  if (completed !== null) {
     return (
       <div className="space-y-2 py-3 text-center">
         <h1 className="text-xl font-semibold">Thank you, {volunteerName}</h1>
         <p className="text-sm text-muted-foreground">
-          {completedCount === 0
+          {completed.count === 0
             ? "Your response has been recorded."
-            : `${completedCount} participant${completedCount === 1 ? "" : "s"} joined your DGroup.`}
+            : `${completed.count} participant${completed.count === 1 ? "" : "s"} joined your DGroup.`}
         </p>
+        {completed.createdGroup && (
+          <p className="text-sm text-muted-foreground">
+            {completed.createdGroup} has been created and you are now its leader.
+          </p>
+        )}
       </div>
     )
   }
@@ -189,9 +209,10 @@ export function VolunteerPlacementForm({
         </p>
       </div>
 
-      {groups.length === 0 && (
+      {groups.length === 0 && selected.length === 0 && (
         <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">
-          You do not lead a DGroup yet. You can still tell us that you did not absorb anyone.
+          You do not lead a DGroup yet. Add anyone who joined you and we will start
+          one for you — or submit as-is if you absorbed no one.
         </p>
       )}
 
@@ -322,6 +343,26 @@ export function VolunteerPlacementForm({
             <p className="text-xs text-muted-foreground">
               Everyone above joins {groups[0].name}.
             </p>
+          )}
+
+          {createsGroup && (
+            <div className="space-y-2 rounded-lg border bg-muted/40 p-4">
+              <Label htmlFor="new-group-name">Name your DGroup</Label>
+              <Input
+                id="new-group-name"
+                value={newGroupName}
+                onChange={(event) => {
+                  setNewGroupName(event.target.value)
+                  setError("")
+                }}
+                placeholder="e.g. Juan's DGroup"
+                autoComplete="off"
+              />
+              <p className="text-xs text-muted-foreground">
+                You do not lead a DGroup yet, so submitting creates this one with you
+                as its leader. Everyone above joins it.
+              </p>
+            </div>
           )}
         </div>
       )}

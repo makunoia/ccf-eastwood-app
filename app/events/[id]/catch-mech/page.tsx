@@ -76,7 +76,7 @@ export default async function CatchMechEntryPage({
   const brand = resolveEventBrand(event)
   const theme = resolveFormTheme(formConfig, {
     title: event.name,
-    description: "Catch Mech — Facilitator Check-in",
+    description: "Catch Mech — Follow-up",
     logoUrl: brand.logoUrl,
     bannerUrl: event.registrationPageBannerUrl ?? null,
     primaryColor: brand.primaryColor,

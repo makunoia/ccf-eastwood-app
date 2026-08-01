@@ -13,15 +13,31 @@ type Props = {
   groups: Group[]
 }
 
+/**
+ * The single public entry point for Catch Mech.
+ *
+ * Facilitators and event volunteers answer different forms but were being sent
+ * two different links, which meant whoever shared them had to know which person
+ * got which. The role question up front makes one link correct for everyone:
+ * facilitators continue here, volunteers are routed to the follow-up form.
+ */
 export function CatchMechEntryForm({ eventId, groups }: Props) {
   const router = useRouter()
-  const [step, setStep] = React.useState<"group" | "mobile">("group")
+  const [step, setStep] = React.useState<"role" | "group" | "mobile">("role")
   const [selectedGroupId, setSelectedGroupId] = React.useState("")
   const [mobile, setMobile] = React.useState("")
   const [submitting, setSubmitting] = React.useState(false)
+  const [routing, setRouting] = React.useState(false)
   const [error, setError] = React.useState("")
 
+  const volunteerPath = `/events/${eventId}/catch-mech/volunteers`
   const selectedGroup = groups.find((g) => g.id === selectedGroupId)
+
+  // The volunteer form is one tap away for roughly half of everyone who lands
+  // here, so it is worth having in the router cache before that tap.
+  React.useEffect(() => {
+    router.prefetch(volunteerPath)
+  }, [router, volunteerPath])
 
   function handleGroupSelect(groupId: string) {
     setSelectedGroupId(groupId)
@@ -50,9 +66,61 @@ export function CatchMechEntryForm({ eventId, groups }: Props) {
     }
   }
 
+  if (step === "role") {
+    return (
+      <div className="space-y-4">
+        <div className="space-y-1 text-center">
+          <p className="text-sm font-medium">Are you a facilitator?</p>
+          <p className="text-xs text-muted-foreground">
+            Facilitators confirm the people at their table. Everyone else tells us who
+            joined their DGroup.
+          </p>
+        </div>
+        <div className="space-y-2">
+          <button
+            type="button"
+            onClick={() => {
+              setError("")
+              setStep("group")
+            }}
+            className="w-full rounded-lg border px-4 py-3 text-left transition-colors hover:bg-muted/50"
+          >
+            <span className="block text-sm font-medium">Yes, I facilitated a table</span>
+            <span className="block text-xs text-muted-foreground">
+              Confirm who from your breakout group is joining a DGroup
+            </span>
+          </button>
+          <button
+            type="button"
+            disabled={routing}
+            onClick={() => {
+              setRouting(true)
+              router.push(volunteerPath)
+            }}
+            className="w-full rounded-lg border px-4 py-3 text-left transition-colors hover:bg-muted/50 disabled:opacity-50"
+          >
+            <span className="block text-sm font-medium">
+              {routing ? "Opening…" : "No, I'm an event volunteer"}
+            </span>
+            <span className="block text-xs text-muted-foreground">
+              Report the participants who joined your DGroup
+            </span>
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   if (step === "group") {
     return (
       <div className="space-y-3">
+        <button
+          type="button"
+          onClick={() => { setStep("role"); setError("") }}
+          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          ← Back
+        </button>
         <p className="text-sm font-medium text-center">Select your table</p>
         {groups.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-4">

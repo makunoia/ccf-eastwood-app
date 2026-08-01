@@ -11,6 +11,7 @@ import { scoreGender, scoreLifeStage, scoreSchedule } from "@/lib/matching/score
 import { DEFAULT_WEIGHTS } from "@/lib/validations/matching-weights"
 import { MatchingContext } from "@/app/generated/prisma/client"
 import { buildStoredScheduleSlot } from "@/lib/matching/candidate-schedule"
+import { clearUpwardSatelliteOnConfirm } from "@/lib/small-groups/upward-satellite"
 import type { MatchResult, CandidateProfile, TimeSlot } from "@/lib/matching/types"
 
 /** Meeting times are optional — a day-only schedule still yields a slot. */
@@ -629,6 +630,10 @@ export async function confirmCatchMechCoupleRequests(
 
     const now = new Date()
     await db.$transaction(async (tx) => {
+      // Existing members confirmed here — the only ones who can lead a group and
+      // so hold a declared satellite. A freshly promoted guest leads nothing.
+      const confirmedMemberIds: string[] = []
+
       for (const req of requests) {
         let promotedMemberId: string | null = null
 
@@ -743,6 +748,7 @@ export async function confirmCatchMechCoupleRequests(
             where: { id: req.memberId },
             data: { smallGroupId: group.id, groupStatus: "Member" },
           })
+          confirmedMemberIds.push(req.memberId)
           await tx.smallGroupLog.create({
             data: {
               smallGroupId: group.id,
@@ -777,6 +783,8 @@ export async function confirmCatchMechCoupleRequests(
           },
         })
       }
+
+      await clearUpwardSatelliteOnConfirm(tx, confirmedMemberIds)
 
       if (group.status === "Pending") {
         await tx.smallGroup.update({ where: { id: group.id }, data: { status: "Active" } })

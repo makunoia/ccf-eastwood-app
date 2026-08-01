@@ -5,6 +5,7 @@ import { z } from "zod"
 import { db } from "@/lib/db"
 import { findSpouse, type SpouseInfo } from "@/lib/family-links"
 import { PERSON_NAME_FIELDS, personSearchWhere } from "@/lib/search/name-search"
+import { upwardSatelliteSchema } from "@/lib/validations/small-group"
 
 type ActionResult<T = void> =
   | { success: true; data: T }
@@ -108,6 +109,11 @@ export async function requestGroupChange(
           },
         })
       }
+      // The declared satellite is deliberately NOT cleared here. A request is an
+      // intention, not a move: until a leader confirms it, "my DGroup is at CCF
+      // Cebu" is still the only true answer, and clearing it on a request that
+      // then gets rejected would leave the member with no upward record at all.
+      // `clearUpwardSatelliteOnConfirm` drops it at confirmation instead.
       await tx.smallGroupMemberRequest.create({
         data: {
           smallGroupId: toGroupId,
@@ -175,6 +181,114 @@ export async function cancelGroupChange(
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to cancel request" }
+  }
+}
+
+// ─── My Group (leader reports to another satellite) ──────────────────────────
+
+/**
+ * A leader whose own DGroup leader sits outside CCF Eastwood has nobody here to
+ * request to join — they name the satellite instead. It is stored on every group
+ * they lead (`SmallGroup.parentSatellite`), mirroring the admin form, and is
+ * mutually exclusive with `parentGroupId`. Passing `null` clears it, putting them
+ * back on the request-to-join path.
+ */
+export async function setUpwardSatellite(
+  token: string,
+  satellite: string | null
+): Promise<ActionResult> {
+  try {
+    const member = await getMemberByToken(token)
+    if (!member) return { success: false, error: "Invalid or expired link" }
+
+    const parsed = upwardSatelliteSchema.safeParse(satellite)
+    if (!parsed.success) {
+      return {
+        success: false,
+        error: parsed.error.issues[0]?.message ?? "Unknown CCF satellite",
+      }
+    }
+    const value = parsed.data
+
+    // Only leaders have somewhere to record this — a plain member's upward
+    // DGroup is just their own membership.
+    const ledGroups = await db.smallGroup.findMany({
+      where: { leaderId: member.id },
+      select: { id: true },
+    })
+    if (ledGroups.length === 0) {
+      return {
+        success: false,
+        error: "Only DGroup leaders can set this — you don't lead a group yet",
+      }
+    }
+
+    const memberName = `${member.firstName} ${member.lastName}`
+
+    await db.$transaction(async (tx) => {
+      // Matched by leader rather than by the ids read above, so a group created
+      // between that read and this write is covered too. The pre-flight read
+      // stays because it produces the "you lead no group" error.
+      await tx.smallGroup.updateMany({
+        where: { leaderId: member.id },
+        // The parent is either a DGroup here or a satellite — never both.
+        data: value
+          ? { parentSatellite: value, parentGroupId: null }
+          : { parentSatellite: null },
+      })
+
+      if (!value) return
+
+      // Their DGroup now sits at another satellite, so the Eastwood membership
+      // that stood in for it no longer holds.
+      if (member.smallGroupId) {
+        await tx.member.update({
+          where: { id: member.id },
+          data: { smallGroupId: null, groupStatus: null },
+        })
+        await tx.smallGroupLog.create({
+          data: {
+            smallGroupId: member.smallGroupId,
+            action: "MemberRemoved",
+            memberId: member.id,
+            performedByMemberId: member.id,
+            description: `${memberName} left this group — their DGroup is at ${value} (another CCF satellite), set via the member portal`,
+          },
+        })
+      }
+
+      // Any pending request to join a DGroup here contradicts the declaration.
+      // Read inside the transaction, and as a list: one request is all the
+      // portal can produce, but a stray second must not survive the withdrawal.
+      const pending = await tx.smallGroupMemberRequest.findMany({
+        where: { memberId: member.id, status: "Pending" },
+        select: { id: true, smallGroupId: true },
+      })
+      if (pending.length > 0) {
+        await tx.smallGroupMemberRequest.updateMany({
+          where: { id: { in: pending.map((r) => r.id) } },
+          data: { status: "Rejected", resolvedAt: new Date() },
+        })
+        await tx.smallGroupLog.createMany({
+          data: pending
+            .filter((r): r is { id: string; smallGroupId: string } => r.smallGroupId !== null)
+            .map((r) => ({
+              smallGroupId: r.smallGroupId,
+              action: "TempAssignmentRejected" as const,
+              memberId: member.id,
+              performedByMemberId: member.id,
+              description: `${memberName} withdrew their request — their DGroup is at ${value} (another CCF satellite)`,
+            })),
+        })
+      }
+    })
+
+    revalidatePath("/small-groups")
+    for (const g of ledGroups) revalidatePath(`/small-groups/${g.id}`)
+    if (member.smallGroupId) revalidatePath(`/small-groups/${member.smallGroupId}`)
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to save your DGroup" }
   }
 }
 

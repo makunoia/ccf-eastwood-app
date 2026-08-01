@@ -74,7 +74,10 @@ describe("volunteer check-in", () => {
       expect(lookup.data.kind).toBe("volunteer")
       expect(lookup.data.subjectId).toBe(volunteer.id)
       expect(lookup.data.alreadyCheckedIn).toBe(false)
-      expect(lookup.data.guestSmallGroupPrompt).toBeNull()
+      // Serving at an event says nothing about being in a DGroup — this seeded
+      // member has no group, so the prompt is raised for them like anyone else.
+      expect(lookup.data.smallGroupPrompt?.person).toEqual({ memberId: volunteer.memberId })
+      expect(lookup.data.smallGroupPrompt?.canClaimGroup).toBe(false)
 
       const result = await checkInToOccurrence(occurrence.id, { kind: "volunteer", id: volunteer.id })
       expect(result.success).toBe(true)

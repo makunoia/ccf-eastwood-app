@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { PhonePHInput } from "@/components/ui/phone-ph-input"
 import { Button } from "@/components/ui/button"
@@ -40,6 +41,14 @@ export function VolunteerEntryForm({ eventId }: { eventId: string }) {
 
   return (
     <div className="space-y-4">
+      {/* Back to the shared entry point — the role question lives there, so a
+          facilitator who answered "No" by mistake needs a way to correct it. */}
+      <Link
+        href={`/events/${eventId}/catch-mech`}
+        className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+      >
+        ← Back
+      </Link>
       <div className="space-y-1 text-center">
         <h1 className="text-xl font-semibold">Volunteer follow-up</h1>
         <p className="text-sm text-muted-foreground">

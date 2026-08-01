@@ -1,5 +1,8 @@
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
+import { auth } from "@/lib/auth"
+import { canRead } from "@/lib/permissions"
+import { resolveSubmissionDecisions } from "@/lib/catch-mech/submission-detail"
 import { SubmissionsClient, type SubmissionRow, type NonResponder } from "./submissions-client"
 
 /**
@@ -48,9 +51,13 @@ async function getSubmissionsData(eventId: string) {
       deferredCount: true,
       createdGroupId: true,
       createdAt: true,
+      decisions: true,
       breakoutGroup: { select: { id: true, name: true } },
     },
   })
+
+  // Who each facilitator actually confirmed vs declined, not just how many.
+  const decisionsBySubmission = await resolveSubmissionDecisions(submissions)
 
   const rows: SubmissionRow[] = submissions.map((s) => ({
     id: s.id,
@@ -61,6 +68,7 @@ async function getSubmissionsData(eventId: string) {
     declinedCount: s.declinedCount,
     deferredCount: s.deferredCount,
     createdGroupId: s.createdGroupId,
+    decisions: decisionsBySubmission.get(s.id) ?? [],
     createdAt: s.createdAt,
   }))
 
@@ -101,6 +109,8 @@ export default async function CatchMechSubmissionsPage({
   const data = await getSubmissionsData(eventId)
   if (!data) notFound()
 
+  const session = await auth()
+
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">
       <SubmissionsClient
@@ -110,6 +120,8 @@ export default async function CatchMechSubmissionsPage({
         respondedCount={data.respondedCount}
         expectedCount={data.expectedCount}
         breakoutGroups={data.breakoutGroups}
+        canViewMember={canRead(session, "Members")}
+        canViewSmallGroup={canRead(session, "SmallGroups")}
       />
     </div>
   )

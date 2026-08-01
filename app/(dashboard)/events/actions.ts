@@ -18,6 +18,14 @@ import {
 } from "@/lib/validations/event"
 import { resolveModuleSelection } from "@/lib/events/modules"
 import {
+  matchingProfileSchema,
+  type MatchingProfileInput,
+} from "@/lib/validations/matching-profile"
+import {
+  applyGuestMatchingProfile,
+  applyMemberMatchingProfile,
+} from "@/lib/people/matching-profile"
+import {
   autoCheckinIfOpenRecurringSession,
   checkInWalkInRegistrant,
   completeEventRegistration,
@@ -1214,8 +1222,22 @@ export async function setOccurrenceCheckinOpen(
   }
 }
 
-type GuestSmallGroupPrompt = {
-  guestId: string
+/**
+ * Who the DGroup prompt is about. Guests and members both get asked; the two
+ * records just store the answers in different places, so every write the kiosk
+ * makes has to carry which one it is.
+ */
+export type CheckinPerson = { guestId: string } | { memberId: string }
+
+type SmallGroupPrompt = {
+  person: CheckinPerson
+  /**
+   * Whether to offer the "I'm already in one" branch. Guests have a
+   * self-reported `claimedSmallGroupId` to put that answer in; members don't —
+   * `Member.smallGroupId` is real membership, which only an admin may set. The
+   * public registration form draws the same line.
+   */
+  canClaimGroup: boolean
   existingProfile: {
     lifeStageId: string | null
     gender: "Male" | "Female" | null
@@ -1244,9 +1266,9 @@ type CheckinRegistrantResult = {
   // Masked phone/email so same-name candidates on the disambiguation screen can
   // be told apart without exposing full contact details on a public page.
   contactHint: string | null
-  // Set when this is a guest's 2nd+ occurrence check-in and their profile is incomplete.
-  // Always null for volunteers.
-  guestSmallGroupPrompt: GuestSmallGroupPrompt | null
+  // Set when the person checking in has no DGroup yet — for registrants and for
+  // volunteers alike, since a volunteer is a member who may also be unplaced.
+  smallGroupPrompt: SmallGroupPrompt | null
 }
 
 type CheckinAmbiguousResult = {
@@ -1258,6 +1280,32 @@ type CheckinAmbiguousResult = {
 // All public lookup modes (mobile/email, full name, last name + birthday) load
 // the same registrant/volunteer rows and resolve candidates identically — only
 // the filter differs.
+
+// Members are looked up as registrants and as volunteers, and both paths need the
+// same profile columns to decide whether to raise the DGroup prompt.
+const MEMBER_LOOKUP_SELECT = {
+  id: true,
+  firstName: true,
+  lastName: true,
+  nickname: true,
+  email: true,
+  phone: true,
+  birthMonth: true,
+  birthYear: true,
+  smallGroupId: true,
+  lifeStageId: true,
+  gender: true,
+  language: true,
+  meetingPreference: true,
+  workCity: true,
+  ageRangeBucketId: true,
+  schedulePreferences: {
+    select: { dayOfWeek: true, timeStart: true, timeEnd: true },
+    orderBy: { createdAt: "asc" as const },
+    take: 1,
+  },
+  groupRequests: { select: { status: true, resolvedAt: true } },
+} as const
 
 function findEventRegistrantsForLookup(eventId: string) {
   return db.eventRegistrant.findMany({
@@ -1273,15 +1321,7 @@ function findEventRegistrantsForLookup(eventId: string) {
       guestId: true,
       memberId: true,
       member: {
-        select: {
-          firstName: true,
-          lastName: true,
-          nickname: true,
-          email: true,
-          phone: true,
-          birthMonth: true,
-          birthYear: true,
-        },
+        select: MEMBER_LOOKUP_SELECT,
       },
       guest: {
         select: {
@@ -1303,7 +1343,7 @@ function findEventRegistrantsForLookup(eventId: string) {
           ageRangeBucketId: true,
           claimedSmallGroupId: true,
           claimedSatellite: true,
-          groupRequests: { select: { status: true } },
+          groupRequests: { select: { status: true, resolvedAt: true } },
         },
       },
     },
@@ -1314,6 +1354,75 @@ type RegistrantLookupRow = Awaited<ReturnType<typeof findEventRegistrantsForLook
 
 function normalizeNameInput(v: string): string {
   return v.trim().replace(/\s+/g, " ").toLowerCase()
+}
+
+/**
+ * An open request means an admin already has this person in the placement queue.
+ * Asking again at a kiosk would only produce a duplicate row on the same screen.
+ *
+ * *Open* means unresolved, which is narrower than "not Rejected". A Confirmed
+ * request keeps its row forever — every removal path (`removeMemberFromGroup`,
+ * the portal's `removeMemberFromLedGroup`, catch-mech's remove) only nulls
+ * `Member.smallGroupId`, leaving the old Confirmed row behind. Treating that as
+ * open silenced the prompt permanently for a member who joined a group and later
+ * left, which is precisely who this question is for.
+ */
+function hasOpenGroupRequest(requests: { status: string; resolvedAt: Date | null }[]): boolean {
+  return requests.some((r) => r.resolvedAt === null && r.status !== "Rejected")
+}
+
+type GuestPromptRow = NonNullable<RegistrantLookupRow["guest"]>
+
+function guestSmallGroupPrompt(guestId: string, g: GuestPromptRow): SmallGroupPrompt | null {
+  // A guest who named a satellite has already told us they're in a DGroup —
+  // there's just no local group to link. Don't ask them again at check-in.
+  const noClaimedGroup = !g.claimedSmallGroupId && !g.claimedSatellite
+  if (!noClaimedGroup || hasOpenGroupRequest(g.groupRequests)) return null
+  return {
+    person: { guestId },
+    canClaimGroup: true,
+    existingProfile: {
+      lifeStageId: g.lifeStageId,
+      gender: g.gender,
+      language: g.language,
+      meetingPreference: g.meetingPreference,
+      workCity: g.workCity,
+      scheduleDayOfWeek: g.scheduleDayOfWeek,
+      scheduleTimeStart: g.scheduleTimeStart,
+      scheduleTimeEnd: g.scheduleTimeEnd,
+      ageRangeBucketId: g.ageRangeBucketId,
+    },
+  }
+}
+
+type MemberPromptRow = NonNullable<RegistrantLookupRow["member"]>
+
+/**
+ * Members get the same prompt as guests. A member is usually in a group — that
+ * is how most members come to exist — but one added directly by an admin, or
+ * one who has left a group, has `smallGroupId = null` and is exactly who this
+ * question is for.
+ */
+function memberSmallGroupPrompt(memberId: string, m: MemberPromptRow): SmallGroupPrompt | null {
+  if (m.smallGroupId) return null
+  if (hasOpenGroupRequest(m.groupRequests)) return null
+  // Members keep availability in a relation; the kiosk form edits one slot.
+  const slot = m.schedulePreferences[0] ?? null
+  return {
+    person: { memberId },
+    canClaimGroup: false,
+    existingProfile: {
+      lifeStageId: m.lifeStageId,
+      gender: m.gender,
+      language: m.language,
+      meetingPreference: m.meetingPreference,
+      workCity: m.workCity,
+      scheduleDayOfWeek: slot?.dayOfWeek ?? null,
+      scheduleTimeStart: slot?.timeStart ?? null,
+      scheduleTimeEnd: slot?.timeEnd ?? null,
+      ageRangeBucketId: m.ageRangeBucketId,
+    },
+  }
 }
 
 async function resolveRegistrantCandidate(
@@ -1335,31 +1444,11 @@ async function resolveRegistrantCandidate(
     alreadyCheckedIn = matched.attendedAt !== null
   }
 
-  let guestSmallGroupPrompt: GuestSmallGroupPrompt | null = null
+  let smallGroupPrompt: SmallGroupPrompt | null = null
   if (matched.guestId && matched.guest) {
-    const g = matched.guest
-    // A guest who named a satellite has already told us they're in a DGroup —
-    // there's just no local group to link. Don't ask them again at check-in.
-    const noClaimedGroup = !g.claimedSmallGroupId && !g.claimedSatellite
-    const hasPendingRequest = g.groupRequests.some(
-      (r) => r.status === "Pending" || r.status === "Confirmed"
-    )
-    if (noClaimedGroup && !hasPendingRequest) {
-      guestSmallGroupPrompt = {
-        guestId: matched.guestId,
-        existingProfile: {
-          lifeStageId: g.lifeStageId,
-          gender: g.gender,
-          language: g.language,
-          meetingPreference: g.meetingPreference,
-          workCity: g.workCity,
-          scheduleDayOfWeek: g.scheduleDayOfWeek,
-          scheduleTimeStart: g.scheduleTimeStart,
-          scheduleTimeEnd: g.scheduleTimeEnd,
-          ageRangeBucketId: g.ageRangeBucketId,
-        },
-      }
-    }
+    smallGroupPrompt = guestSmallGroupPrompt(matched.guestId, matched.guest)
+  } else if (matched.memberId && matched.member) {
+    smallGroupPrompt = memberSmallGroupPrompt(matched.memberId, matched.member)
   }
 
   return {
@@ -1373,7 +1462,7 @@ async function resolveRegistrantCandidate(
       matched.member?.phone ?? matched.guest?.phone ?? matched.mobileNumber,
       matched.member?.email ?? matched.guest?.email ?? matched.email
     ),
-    guestSmallGroupPrompt,
+    smallGroupPrompt,
   }
 }
 
@@ -1493,42 +1582,19 @@ export async function lookupCheckinRegistrant(
 }
 
 // Loader/resolver for volunteer check-in subjects, shared by the lookup paths below.
-type VolunteerLookupRow = {
-  id: string
-  attendedAt: Date | null
-  memberId: string
-  member: {
-    firstName: string
-    lastName: string
-    nickname: string | null
-    email: string | null
-    phone: string | null
-    birthMonth: number | null
-    birthYear: number | null
-  }
-}
-
-function findEventVolunteersForLookup(eventId: string): Promise<VolunteerLookupRow[]> {
+function findEventVolunteersForLookup(eventId: string) {
   return db.volunteer.findMany({
     where: { eventId },
     select: {
       id: true,
       attendedAt: true,
       memberId: true,
-      member: {
-        select: {
-          firstName: true,
-          lastName: true,
-          nickname: true,
-          email: true,
-          phone: true,
-          birthMonth: true,
-          birthYear: true,
-        },
-      },
+      member: { select: MEMBER_LOOKUP_SELECT },
     },
   })
 }
+
+type VolunteerLookupRow = Awaited<ReturnType<typeof findEventVolunteersForLookup>>[number]
 
 async function resolveVolunteerCandidate(
   v: VolunteerLookupRow,
@@ -1552,7 +1618,9 @@ async function resolveVolunteerCandidate(
     nickname: v.member.nickname,
     alreadyCheckedIn,
     contactHint: contactHintFrom(v.member.phone, v.member.email),
-    guestSmallGroupPrompt: null,
+    // A volunteer is a member first — serving at an event says nothing about
+    // whether they're in a DGroup, so they get asked on the same terms.
+    smallGroupPrompt: memberSmallGroupPrompt(v.memberId, v.member),
   }
 }
 
@@ -2016,6 +2084,10 @@ export type HouseholdCheckin = {
  * Read-only: this never creates or edits family structure — that's
  * `addHouseholdMemberAtCheckin`, which is an explicit admin action at the door.
  *
+ * Gated on the Check-in context's Family section. Check-in is individual by
+ * default: an event that hasn't opted in never learns a registrant has a
+ * household, so nobody is asked who else came with them.
+ *
  * Returns the household even when the subject is its only registered member, so
  * the caller can still offer "+ Add family member". Returns null only when the
  * person belongs to no family at all; lazy creation then happens on the first
@@ -2027,6 +2099,9 @@ export async function lookupHouseholdForCheckin(
   occurrenceId: string | null
 ): Promise<ActionResult<HouseholdCheckin | null>> {
   try {
+    const checkinConfig = await getEffectiveFormConfig(eventId, "CheckIn")
+    if (!checkinConfig.sectionFamily) return { success: true, data: null }
+
     const registrant = await db.eventRegistrant.findFirst({
       where: { id: registrantId, eventId },
       select: { id: true, memberId: true, guestId: true },
@@ -2122,6 +2197,10 @@ export async function lookupHouseholdForCheckin(
 /**
  * Check in several registrants from one household in a single action. Records
  * attendance only — never touches family structure.
+ *
+ * Gated on the Check-in context's Family section, same as the lookup that feeds
+ * it: without Family check-in, one kiosk interaction only ever checks in the one
+ * person standing at it.
  */
 export async function checkInHousehold(
   eventId: string,
@@ -2132,6 +2211,11 @@ export async function checkInHousehold(
     return { success: false, error: "Select at least one person to check in." }
   }
   try {
+    const checkinConfig = await getEffectiveFormConfig(eventId, "CheckIn")
+    if (!checkinConfig.sectionFamily) {
+      return { success: false, error: "This event checks people in individually." }
+    }
+
     // Scope to this event so a hand-crafted id can't check someone into an
     // event they aren't registered for.
     const valid = await db.eventRegistrant.findMany({
@@ -2188,9 +2272,8 @@ export async function addHouseholdMemberAtCheckin(
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid details" }
   }
 
-  // This is the one check-in path that creates family structure, so it obeys the
-  // Check-in context's Family section. Surfacing and checking in an existing
-  // household stays available either way — only inventing new links is gated.
+  // Every household path at the door obeys the Check-in context's Family
+  // section; this one is the only one that also creates family structure.
   const checkinConfig = await getEffectiveFormConfig(eventId, "CheckIn")
   if (!checkinConfig.sectionFamily) {
     return { success: false, error: "This event isn't collecting household details." }
@@ -2357,21 +2440,110 @@ export async function addHouseholdMemberAtCheckin(
  */
 export async function recordSmallGroupInterestAtCheckin(
   eventId: string,
-  guestId: string
+  person: CheckinPerson
 ): Promise<ActionResult> {
   try {
-    // The guest must actually be registered for this event — otherwise the
-    // endpoint would raise requests for arbitrary guest ids.
-    const registrant = await db.eventRegistrant.findFirst({
-      where: { eventId, guestId },
-      select: { id: true },
-    })
-    if (!registrant) return { success: false, error: "Not registered for this event." }
-
-    await createSeekerRequestFromRegistration({ guestId }, eventId)
+    if (!(await isCheckinSubject(eventId, person))) {
+      return { success: false, error: "Not registered for this event." }
+    }
+    await createSeekerRequestFromRegistration(person, eventId)
     revalidatePath("/small-groups")
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to record DGroup interest" }
+  }
+}
+
+/**
+ * Whether this person is actually attending this event.
+ *
+ * Every check-in write is public, so the event is the only thing scoping it: a
+ * caller may write a profile or raise a request for someone in front of the
+ * kiosk, and for nobody else. Members qualify as registrants or as volunteers —
+ * a serving member checks in through the volunteer path and never has a
+ * registrant row.
+ */
+async function isCheckinSubject(eventId: string, person: CheckinPerson): Promise<boolean> {
+  const registrant = await db.eventRegistrant.findFirst({
+    where: { eventId, ...person },
+    select: { id: true },
+  })
+  if (registrant) return true
+  if (!("memberId" in person)) return false
+  const volunteer = await db.volunteer.findFirst({
+    where: { eventId, memberId: person.memberId },
+    select: { id: true },
+  })
+  return volunteer !== null
+}
+
+/**
+ * The check-in DGroup prompt's profile step ("Tell us about yourself").
+ *
+ * A kiosk copy of `saveGuestMatchingProfile`/the member equivalent, gated on
+ * event attendance instead of a session: the admin actions call `requireWrite()`,
+ * which no unauthenticated kiosk can satisfy, so calling them from here failed
+ * every save with "Not authenticated."
+ */
+export async function saveCheckinMatchingProfile(
+  eventId: string,
+  person: CheckinPerson,
+  raw: MatchingProfileInput
+): Promise<ActionResult> {
+  const parsed = matchingProfileSchema.safeParse(raw)
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
+  }
+  try {
+    if (!(await isCheckinSubject(eventId, person))) {
+      return { success: false, error: "Not registered for this event." }
+    }
+    if ("guestId" in person) {
+      await applyGuestMatchingProfile(person.guestId, parsed.data)
+      revalidatePath(`/guests/${person.guestId}`)
+    } else {
+      await applyMemberMatchingProfile(person.memberId, parsed.data)
+      revalidatePath(`/members/${person.memberId}`)
+    }
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to save profile" }
+  }
+}
+
+/**
+ * "I'm already in one" on the check-in DGroup prompt — records the group the
+ * guest names as self-reported, not as membership. Guest-only: a member has no
+ * claimed-group field, and `Member.smallGroupId` is real membership that only an
+ * admin may set.
+ *
+ * Public for the same reason as the other check-in writes, and scoped the same
+ * way — see `isCheckinSubject`.
+ */
+export async function saveCheckinClaimedGroup(
+  eventId: string,
+  guestId: string,
+  smallGroupId: string
+): Promise<ActionResult> {
+  try {
+    if (!(await isCheckinSubject(eventId, { guestId }))) {
+      return { success: false, error: "Not registered for this event." }
+    }
+    const group = await db.smallGroup.findUnique({
+      where: { id: smallGroupId },
+      select: { id: true },
+    })
+    if (!group) return { success: false, error: "DGroup not found" }
+
+    await db.guest.update({
+      where: { id: guestId },
+      // Naming one of our groups supersedes an earlier "my DGroup is at another
+      // satellite" answer — the two can't both be true.
+      data: { claimedSmallGroupId: smallGroupId, claimedSatellite: null },
+    })
+    revalidatePath(`/guests/${guestId}`)
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to save DGroup" }
   }
 }

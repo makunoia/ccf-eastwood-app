@@ -294,7 +294,7 @@ describe("DGroup seeker requests", () => {
       const guest = await seedGuest()
       await db.eventRegistrant.create({ data: { eventId: event.id, guestId: guest.id } })
 
-      const result = await recordSmallGroupInterestAtCheckin(event.id, guest.id)
+      const result = await recordSmallGroupInterestAtCheckin(event.id, { guestId: guest.id })
       expect(result.success).toBe(true)
       expect(await countSeekerRequests()).toBe(1)
     })
@@ -303,7 +303,7 @@ describe("DGroup seeker requests", () => {
       const event = await seedEvent()
       const guest = await seedGuest()
 
-      const result = await recordSmallGroupInterestAtCheckin(event.id, guest.id)
+      const result = await recordSmallGroupInterestAtCheckin(event.id, { guestId: guest.id })
       expect(result.success).toBe(false)
       expect(await countSeekerRequests()).toBe(0)
     })
