@@ -5,27 +5,23 @@ import { EventDashboardClient } from "./dashboard-client"
 import { ensureMultiDayOccurrences } from "@/app/(dashboard)/events/actions"
 import { loadRecurringSeriesSummaries } from "@/lib/events/series-summary"
 import { loadEventAttendanceBreakdown } from "@/lib/events/attendance-breakdown"
+import { buildTurnout } from "@/lib/events/turnout"
+import { buildAttendanceSeries } from "@/lib/events/attendance-series"
+import {
+  buildDashboardPeriod,
+  normalizePeriod,
+  type PeriodFilter,
+} from "@/lib/events/dashboard-period"
 import { getEventSetupChecklist } from "@/lib/events/setup-checklist"
 
 export const metadata: Metadata = {
   title: "Dashboard",
 }
 
-type PeriodFilter = "7d" | "30d" | "90d" | "all"
 type UngroupedParticipant = {
   id: string
   name: string
   type: "Member" | "Guest"
-}
-
-function getPeriodStart(period: PeriodFilter, eventStart: Date) {
-  const now = new Date()
-  if (period === "all") return eventStart
-
-  const daysBack = period === "7d" ? 7 : period === "30d" ? 30 : 90
-  const start = new Date(now)
-  start.setUTCDate(start.getUTCDate() - daysBack)
-  return start
 }
 
 function dayKey(date: Date) {
@@ -121,32 +117,56 @@ async function getEventDashboard(id: string, period: PeriodFilter) {
 
   if (!event) return null
 
-  const periodStart = getPeriodStart(period, event.startDate)
-  const periodEnd = new Date()
+  // Both bounds are snapped to UTC day boundaries. Occurrence dates are stored
+  // at UTC midnight, so an un-snapped window drops today's session (until 08:00
+  // PH) and the oldest day in the range. See lib/events/dashboard-period.ts.
+  const { start: periodStart, end: periodEnd, occurrenceRange } = buildDashboardPeriod(
+    period,
+    event.startDate
+  )
+  // "All time" has no lower bound at all. Anchoring it to Event.startDate hides
+  // anything dated earlier — a standalone session, a guest confirmed into a
+  // DGroup before the event opened — which is exactly what "all time" promises
+  // to show. Every period-bounded figure below uses this, not `periodStart`.
+  const windowStart = period === "all" ? null : periodStart
 
-  const occurrenceSeries =
+  const occurrences =
     event.type === "OneTime"
       ? []
       : await db.eventOccurrence.findMany({
-          where: {
-            eventId: event.id,
-            date: {
-              gte: periodStart,
-              lte: periodEnd,
-            },
-          },
+          where: { eventId: event.id, date: occurrenceRange },
           orderBy: { date: "asc" },
           select: {
-            date: true,
             id: true,
-            isOpen: true,
-            isStandalone: true,
-            seriesId: true,
+            date: true,
             // Participant attendance only — volunteer check-ins (registrantId null) are
-            // tracked separately and excluded from attendance totals.
+            // counted separately below so the chart can show both.
             _count: { select: { attendees: { where: { registrantId: { not: null } } } } },
           },
         })
+
+  // Volunteer check-ins per occurrence, aggregated in the database rather than
+  // by pulling attendee rows — a 90-day window on a busy event is a lot of rows.
+  const volunteerCheckIns =
+    occurrences.length === 0
+      ? []
+      : await db.occurrenceAttendee.groupBy({
+          by: ["occurrenceId"],
+          where: {
+            volunteerId: { not: null },
+            occurrenceId: { in: occurrences.map((occurrence) => occurrence.id) },
+          },
+          _count: { _all: true },
+        })
+
+  const attendanceSeries = buildAttendanceSeries(
+    occurrences.map((occurrence) => ({
+      occurrenceId: occurrence.id,
+      date: occurrence.date,
+      attendees: occurrence._count.attendees,
+    })),
+    new Map(volunteerCheckIns.map((row) => [row.occurrenceId, row._count._all]))
+  )
 
   // Series summaries are whole-series rollups — they must reflect the entire
   // series, not the dashboard's rolling period window. Loaded via a dedicated
@@ -161,10 +181,14 @@ async function getEventDashboard(id: string, period: PeriodFilter) {
     db,
     event.id,
     event.type,
-    periodStart,
+    windowStart,
     periodEnd
   )
   const uniqueAttendees = attendanceBreakdown.total.attendees
+
+  // Pre-registered vs actual check-ins (CCF-91). Shares the unique-attendee
+  // count so turnout can never disagree with the KPI beside it.
+  const turnout = buildTurnout(event._count.registrants, uniqueAttendees)
 
   const breakoutGroupIds = event.breakoutGroups.map((bg) => bg.id)
   const confirmedGuestRequests =
@@ -178,7 +202,7 @@ async function getEventDashboard(id: string, period: PeriodFilter) {
             breakoutGroupId: { in: breakoutGroupIds },
             resolvedAt: {
               not: null,
-              gte: periodStart,
+              ...(windowStart ? { gte: windowStart } : {}),
               lte: periodEnd,
             },
           },
@@ -189,14 +213,16 @@ async function getEventDashboard(id: string, period: PeriodFilter) {
         })
 
   const paidCount = event.registrants.filter((r) => r.isPaid).length
-  const attendedCount = event.registrants.filter((r) => r.attendedAt).length
-  const totalCheckIns = occurrenceSeries.reduce((sum, o) => sum + o._count.attendees, 0)
+  // OneTime attendance is period-bounded like every other attendance figure, so
+  // "Total Attended" and "Unique Attendees" can no longer disagree.
+  const attendedCount = event.registrants.filter(
+    (r) =>
+      r.attendedAt && (!windowStart || r.attendedAt >= windowStart) && r.attendedAt <= periodEnd
+  ).length
+  const totalCheckIns =
+    event.type === "OneTime" ? attendedCount : attendanceSeries.totalAttendees
   const averageAttendance =
-    event.type === "OneTime"
-      ? attendedCount
-      : occurrenceSeries.length > 0
-        ? totalCheckIns / occurrenceSeries.length
-        : 0
+    event.type === "OneTime" ? attendedCount : attendanceSeries.averageAttendance
 
   const participantMembers = new Map<
     string,
@@ -241,7 +267,7 @@ async function getEventDashboard(id: string, period: PeriodFilter) {
   let newTimothys = 0
   let newLeaders = 0
   for (const member of participantMembers.values()) {
-    if (member.updatedAt < periodStart) continue
+    if (windowStart && member.updatedAt < windowStart) continue
     if (member.groupStatus === "Timothy") newTimothys++
     else if (member.groupStatus === "Leader") newLeaders++
   }
@@ -369,13 +395,13 @@ async function getEventDashboard(id: string, period: PeriodFilter) {
     attendedCount,
     occurrenceCount: event._count.occurrences,
     totalCheckIns,
+    totalVolunteerCheckIns: attendanceSeries.totalVolunteers,
+    sessionsInPeriod: attendanceSeries.sessionCount,
     period,
     averageAttendance,
     uniqueAttendees,
-    attendanceSeries: occurrenceSeries.map((occurrence) => ({
-      date: occurrence.date.toISOString(),
-      attendees: occurrence._count.attendees,
-    })),
+    turnout,
+    attendanceSeries: attendanceSeries.points,
     registrationSeries,
     attendanceBreakdown,
     placement: {
@@ -417,11 +443,7 @@ export default async function EventDashboardPage({
 }) {
   const { id } = await params
   const sp = await searchParams
-  const period = ((sp.period as string) || "30d") as PeriodFilter
-
-  const normalizedPeriod: PeriodFilter = ["7d", "30d", "90d", "all"].includes(period)
-    ? period
-    : "30d"
+  const normalizedPeriod: PeriodFilter = normalizePeriod(sp.period as string | undefined)
 
   let event = await getEventDashboard(id, normalizedPeriod)
   if (!event) notFound()
