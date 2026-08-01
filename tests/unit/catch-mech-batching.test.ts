@@ -47,6 +47,8 @@ function fakeTx() {
       updateMany: record("member", "updateMany", { count: 0 }),
     },
     guest: { update: record("guest", "update", {}) },
+    // One batched call that drops any satellite declared by a confirmed leader.
+    smallGroup: { updateMany: record("smallGroup", "updateMany", { count: 0 }) },
     eventRegistrant: { updateMany: record("eventRegistrant", "updateMany", { count: 0 }) },
     schedulePreference: { createMany: record("schedulePreference", "createMany", { count: 0 }) },
     smallGroupLog: { createMany: record("smallGroupLog", "createMany", { count: 0 }) },

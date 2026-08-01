@@ -16,6 +16,7 @@
 import type { DeclineReason, Prisma } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import { repointFamilyLinksBatch } from "@/lib/family-links"
+import { clearUpwardSatelliteOnConfirm } from "@/lib/small-groups/upward-satellite"
 import type { ConfirmDecision, ResolvedDecision } from "@/lib/catch-mech/decisions"
 
 // ─── Pre-fetch registrant data in bulk (outside transaction) ─────────────────
@@ -378,6 +379,10 @@ export async function resolveConfirmations(
       data: { smallGroupId, groupStatus: "Member" },
     })
   }
+
+  // A confirmed leader now has a DGroup here, which supersedes any satellite
+  // they had declared as their upward accountability.
+  await clearUpwardSatelliteOnConfirm(tx, [...memberPlacements.values()].flat())
 
   // ── Flush the batched work ─────────────────────────────────────────────────
   await repointFamilyLinksBatch(tx, familyRepoints)

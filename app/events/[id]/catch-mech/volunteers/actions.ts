@@ -23,8 +23,27 @@ type ActionResult<T = void> =
 
 export type VolunteerPlacement = {
   registrantId: string
-  smallGroupId: string
+  /**
+   * Null when the volunteer leads no DGroup yet — the submission creates one and
+   * every placement in it lands there. A volunteer who already leads groups must
+   * always name a destination.
+   */
+  smallGroupId: string | null
 }
+
+/**
+ * Thrown inside the placement transaction when the volunteer turns out to
+ * already lead a group. Re-read under the transaction rather than trusting the
+ * pre-flight check, which happens several queries earlier.
+ *
+ * This narrows the double-submit window; it does not close it. Postgres runs
+ * these at READ COMMITTED, so two transactions can both observe zero led groups
+ * and both create one. Closing it properly needs a unique partial index on
+ * `SmallGroup.leaderId` — a migration, and a constraint the admin side would
+ * also have to honour, so it is deliberately out of scope here. The realistic
+ * case this does catch is one volunteer double-tapping submit.
+ */
+class AlreadyLeadsGroupError extends Error {}
 
 export async function verifyCatchMechVolunteer(
   eventId: string,
@@ -135,7 +154,10 @@ export async function searchCatchMechVolunteerParticipants(
           { guest: { is: { memberId: null, ...(nameMatch as Prisma.GuestWhereInput) } } },
         ],
       },
-      orderBy: { createdAt: "asc" },
+      // `id` breaks the tie: two registrant rows for the same person are often
+      // created in the same millisecond, and the dedup below keeps whichever
+      // comes first — without a total order that choice flips between runs.
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       take: PARTICIPANT_RESULT_LIMIT,
       select: {
         id: true,
@@ -178,10 +200,20 @@ export async function searchCatchMechVolunteerParticipants(
   }
 }
 
+/**
+ * Records the people a volunteer absorbed into their own DGroup.
+ *
+ * A volunteer who leads no group yet is the Elevate/Movement case: absorbing
+ * someone *is* the promotion, so passing `newGroupName` creates the group,
+ * promotes the volunteer to Leader, and places everyone into it in one
+ * transaction — the same shape as `createSmallGroupForTimothy` on the
+ * facilitator side, minus the breakout link (a volunteer has no breakout group).
+ */
 export async function submitCatchMechVolunteerPlacements(
   token: string,
-  placements: VolunteerPlacement[]
-): Promise<ActionResult<{ placedCount: number }>> {
+  placements: VolunteerPlacement[],
+  newGroupName?: string
+): Promise<ActionResult<{ placedCount: number; createdGroupId: string | null }>> {
   const registrantIds = placements.map((placement) => placement.registrantId)
   if (new Set(registrantIds).size !== registrantIds.length) {
     return { success: false, error: "Each participant can only be selected once" }
@@ -215,11 +247,24 @@ export async function submitCatchMechVolunteerPlacements(
     }
 
     const allowedGroupIds = new Set(session.volunteer.member.ledGroups.map((group) => group.id))
-    if (placements.some((placement) => !allowedGroupIds.has(placement.smallGroupId))) {
+    // A volunteer who leads nothing yet names one new group for the whole
+    // submission; one who already leads groups picks a destination per person.
+    const createsGroup = allowedGroupIds.size === 0 && placements.length > 0
+    const groupName = newGroupName?.trim() ?? ""
+
+    if (createsGroup) {
+      if (!groupName) {
+        return { success: false, error: "Name the DGroup these participants are joining" }
+      }
+      if (placements.some((placement) => placement.smallGroupId !== null)) {
+        return { success: false, error: "You can only place participants in a DGroup you lead" }
+      }
+    } else if (
+      placements.some(
+        (placement) => !placement.smallGroupId || !allowedGroupIds.has(placement.smallGroupId)
+      )
+    ) {
       return { success: false, error: "You can only place participants in a DGroup you lead" }
-    }
-    if (placements.length > 0 && allowedGroupIds.size === 0) {
-      return { success: false, error: "You do not lead a DGroup for these placements" }
     }
 
     const registrants = await db.eventRegistrant.findMany({
@@ -244,23 +289,71 @@ export async function submitCatchMechVolunteerPlacements(
       }
     }
 
-    const decisions: ConfirmDecision[] = placements.map((placement) => ({
-      registrantId: placement.registrantId,
-      status: "confirmed",
-      targetGroupId: placement.smallGroupId,
-    }))
-    const resolved: ResolvedDecision[] = decisions.map((decision) => ({
-      ...decision,
-      groupId: decision.targetGroupId ?? null,
-    }))
-    const { registrantMap, takenEmails } = await prefetchRegistrantData(decisions)
-    const touchedGroupIds = [...new Set(placements.map((placement) => placement.smallGroupId))]
+    const { registrantMap, takenEmails } = await prefetchRegistrantData(
+      placements.map((placement) => ({
+        registrantId: placement.registrantId,
+        status: "confirmed" as const,
+      }))
+    )
+    const existingGroupIds = [
+      ...new Set(
+        placements
+          .map((placement) => placement.smallGroupId)
+          .filter((id): id is string => id !== null)
+      ),
+    ]
+    const member = session.volunteer.member
+    let createdGroupId: string | null = null
 
     await db.$transaction(async (tx) => {
+      if (createsGroup) {
+        const fresh = await tx.member.findUnique({
+          where: { id: member.id },
+          select: { ledGroups: { select: { id: true }, take: 1 } },
+        })
+        if (fresh && fresh.ledGroups.length > 0) throw new AlreadyLeadsGroupError()
+
+        const created = await tx.smallGroup.create({
+          data: { name: groupName, leaderId: member.id },
+          select: { id: true },
+        })
+        createdGroupId = created.id
+
+        await tx.smallGroupLog.create({
+          data: {
+            smallGroupId: created.id,
+            action: "GroupCreated",
+            performedByMemberId: member.id,
+            description: `Group "${groupName}" was created via Catch Mech volunteer follow-up of ${session.event.name}`,
+          },
+        })
+        // Absorbing someone is the promotion: a Timothy who takes in their first
+        // person is a Leader from that moment.
+        await tx.member.update({
+          where: { id: member.id },
+          data: { groupStatus: "Leader" },
+        })
+      }
+
+      // Activate any targeted group that was pre-created via the volunteer info
+      // form. A group created just above is already Active.
       await tx.smallGroup.updateMany({
-        where: { id: { in: touchedGroupIds }, status: "Pending" },
+        where: { id: { in: existingGroupIds }, status: "Pending" },
         data: { status: "Active" },
       })
+
+      // Built inside the transaction because the new group's id does not exist
+      // until it is created above.
+      const decisions: ConfirmDecision[] = placements.map((placement) => ({
+        registrantId: placement.registrantId,
+        status: "confirmed",
+        targetGroupId: placement.smallGroupId ?? createdGroupId ?? undefined,
+      }))
+      const resolved: ResolvedDecision[] = decisions.map((decision) => ({
+        ...decision,
+        groupId: decision.targetGroupId ?? null,
+      }))
+
       await resolveConfirmations(
         null,
         session.volunteer.id,
@@ -269,7 +362,7 @@ export async function submitCatchMechVolunteerPlacements(
         takenEmails,
         tx,
         session.event.name,
-        session.volunteer.member.id,
+        member.id,
         "Catch Mech volunteer follow-up"
       )
       await recordConfirmationSubmission(tx, {
@@ -277,22 +370,30 @@ export async function submitCatchMechVolunteerPlacements(
         volunteerSessionId: session.id,
         eventId: session.eventId,
         facilitatorVolunteerId: session.volunteer.id,
-        submittedByMemberId: session.volunteer.member.id,
-        submittedByName: submitterName(session.volunteer.member),
+        submittedByMemberId: member.id,
+        submittedByName: submitterName(member),
+        createdGroupId,
         decisions,
         ...tallyDecisions(decisions),
       })
     }, { timeout: 30000 })
 
-    for (const groupId of touchedGroupIds) {
-      revalidatePath(`/small-groups/${groupId}`)
+    for (const groupId of [...existingGroupIds, createdGroupId]) {
+      if (groupId) revalidatePath(`/small-groups/${groupId}`)
     }
+    if (createdGroupId) revalidatePath("/small-groups")
     revalidatePath(`/event/${session.eventId}/catch-mech`, "layout")
     revalidatePath(`/event/${session.eventId}/catch-mech/volunteers`)
     revalidatePath(`/event/${session.eventId}/dashboard`)
 
-    return { success: true, data: { placedCount: placements.length } }
+    return { success: true, data: { placedCount: placements.length, createdGroupId } }
   } catch (err) {
+    if (err instanceof AlreadyLeadsGroupError) {
+      return {
+        success: false,
+        error: "You already lead a DGroup — reopen this page to place participants into it.",
+      }
+    }
     console.error("[submitCatchMechVolunteerPlacements]", err)
     return { success: false, error: "Could not save your placements. Please try again." }
   }

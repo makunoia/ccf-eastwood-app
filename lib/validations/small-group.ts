@@ -89,6 +89,17 @@ export const smallGroupSchema = z.object({
 
 export type SmallGroupInput = z.infer<typeof smallGroupSchema>
 
+/**
+ * The member portal's upward-accountability write. A leader whose own DGroup
+ * leader sits outside CCF Eastwood has nobody here to request to join, so they
+ * name the satellite instead; `null` (or "") clears it and puts them back on the
+ * request-to-join path. Same allow-list as the admin form's `parentSatellite`.
+ */
+export const upwardSatelliteSchema = z
+  .union([z.string(), z.null(), z.undefined()])
+  .transform((v) => (v == null || v.trim() === "" ? null : v.trim()))
+  .refine((v) => v == null || isExternalSatellite(v), "Unknown CCF satellite")
+
 // Raw form values (before transform) — used as the form state type
 export type SmallGroupParentScope = "none" | "group" | "satellite"
 

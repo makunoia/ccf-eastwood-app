@@ -31,18 +31,17 @@ import {
   checkInHousehold,
   addHouseholdMemberAtCheckin,
   recordSmallGroupInterestAtCheckin,
+  saveCheckinMatchingProfile,
+  saveCheckinClaimedGroup,
+  type CheckinPerson,
   type HouseholdCheckin,
 } from "@/app/(dashboard)/events/actions"
 import {
   autoAssignRegistrantToBreakout,
   getRegistrantBreakoutGroupName,
 } from "@/app/(dashboard)/events/breakout-actions"
-import {
-  saveGuestMatchingProfile,
-  saveGuestClaimedGroup,
-  searchMembersForLeaderLookup,
-  type GuestMatchingProfileInput,
-} from "@/app/(dashboard)/guests/actions"
+import { searchMembersForLeaderLookup } from "@/app/(dashboard)/guests/actions"
+import type { MatchingProfileInput } from "@/lib/validations/matching-profile"
 import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
 import { FAMILY_ROLES, FAMILY_ROLE_LABELS, type FamilyRoleValue } from "@/lib/validations/family"
 import { cn } from "@/lib/utils"
@@ -51,8 +50,10 @@ type LifeStage = { id: string; name: string }
 type AgeRangeBucket = { id: string; label: string }
 type LeaderResult = { id: string; firstName: string; lastName: string; ledGroups: { id: string; name: string }[] }
 
-type GuestSmallGroupPrompt = {
-  guestId: string
+type SmallGroupPrompt = {
+  person: CheckinPerson
+  /** Members have no self-reported group field — see the server-side type. */
+  canClaimGroup: boolean
   existingProfile: {
     lifeStageId: string | null
     gender: "Male" | "Female" | null
@@ -87,7 +88,7 @@ type DisambiguateCandidate = {
   nickname: string | null
   alreadyCheckedIn: boolean
   contactHint: string | null
-  guestSmallGroupPrompt: GuestSmallGroupPrompt | null
+  smallGroupPrompt: SmallGroupPrompt | null
 }
 
 type CheckinRegistrantResult = DisambiguateCandidate
@@ -97,7 +98,7 @@ type MatchedState = {
   subjectId: string
   name: string
   nickname: string | null
-  guestSmallGroupPrompt: GuestSmallGroupPrompt | null
+  smallGroupPrompt: SmallGroupPrompt | null
   // Breakout group the registrant belongs to, resolved after check-in.
   // Null for volunteers, walk-ins with no match, or unassigned registrants.
   breakoutGroupName: string | null
@@ -209,7 +210,7 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
       subjectId: c.subjectId,
       name: c.name,
       nickname: c.nickname,
-      guestSmallGroupPrompt: c.guestSmallGroupPrompt,
+      smallGroupPrompt: c.smallGroupPrompt,
       breakoutGroupName: null,
     })
     if (c.alreadyCheckedIn) {
@@ -282,16 +283,14 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
 
     setLoading(false)
 
-    // Household step. Shown when Family mode is on for this event's Check-in
-    // context (so a solo attendee can still add someone), or whenever an
-    // existing household has people left to check in.
-    if (matched.kind === "registrant") {
+    // Household step. Strictly opt-in: it appears only when Family mode is on
+    // for this event's Check-in context. Belonging to a family is not consent to
+    // be asked about it at the door — an event that hasn't turned the section on
+    // checks everyone in individually, even a whole household walking in
+    // together.
+    if (matched.kind === "registrant" && cfg.sectionFamily) {
       const hh = await lookupHouseholdForCheckin(eventId, matched.subjectId, occurrenceId)
-      const hasOthersPending =
-        hh.success && hh.data
-          ? hh.data.members.some((m) => !m.alreadyCheckedIn && !m.isSubject)
-          : false
-      if (hh.success && (cfg.sectionFamily || hasOthersPending)) {
+      if (hh.success) {
         setHousehold(
           hh.data ?? {
             familyId: "",
@@ -323,7 +322,7 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
     // If this guest should be asked about a small group, show prompt first.
     // The DGroup section must be enabled for this event's Check-in context —
     // otherwise check-in stays a pure attendance surface.
-    if (cfg.sectionSmallGroup && matched.guestSmallGroupPrompt !== null) {
+    if (cfg.sectionSmallGroup && matched.smallGroupPrompt !== null) {
       setStep("sg-prompt")
       // No auto-reset here — the timer only starts when we reach "success"
     } else {
@@ -339,7 +338,7 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
 
   /** Leaves the household step for whatever would have come next. */
   function afterHousehold() {
-    if (cfg.sectionSmallGroup && matched?.guestSmallGroupPrompt) {
+    if (cfg.sectionSmallGroup && matched?.smallGroupPrompt) {
       setStep("sg-prompt")
       return
     }
@@ -548,7 +547,7 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
                     subjectId: c.subjectId,
                     name: c.name,
                     nickname: c.nickname,
-                    guestSmallGroupPrompt: c.guestSmallGroupPrompt,
+                    smallGroupPrompt: c.smallGroupPrompt,
                     breakoutGroupName: null,
                   })
                   if (c.alreadyCheckedIn) {
@@ -625,8 +624,9 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
   }
 
   // ── Household Check-in ────────────────────────────────────────────────────
-  // Reads an existing Family only. Households are formed at registration; the
-  // door never creates or edits family structure (CCF-122).
+  // Only reachable when the Check-in form config enables Family check-in.
+  // Households are otherwise formed at registration; the door reads an existing
+  // Family and, on this step alone, may add to it (CCF-122).
   if (step === "household" && household) {
     const pending = household.members.filter((m) => !m.alreadyCheckedIn)
     return (
@@ -764,19 +764,14 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
               </div>
             </div>
           ) : (
-            // Adding a member creates family structure, which is what
-            // sectionFamily governs. The step itself can still appear for a
-            // household that's already pending check-in.
-            cfg.sectionFamily && (
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={() => setAddingMember(true)}
-                disabled={loading}
-              >
-                + Add family member
-              </Button>
-            )
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => setAddingMember(true)}
+              disabled={loading}
+            >
+              + Add family member
+            </Button>
           )}
 
           {error && <p className="text-sm text-destructive">{error}</p>}
@@ -809,7 +804,8 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
   }
 
   // ── Small Group Prompt ────────────────────────────────────────────────────
-  if (step === "sg-prompt" && matched) {
+  if (step === "sg-prompt" && matched?.smallGroupPrompt) {
+    const prompt = matched.smallGroupPrompt
     return (
       <div className="flex flex-col items-center justify-center px-6 py-8">
         <div className="w-full space-y-6">
@@ -827,24 +823,23 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
                 // Fire-and-forget: the request is admin bookkeeping, and making
                 // someone at a kiosk wait on it (or blocking them if it fails)
                 // would be worse than a missed row.
-                if (matched.guestSmallGroupPrompt) {
-                  void recordSmallGroupInterestAtCheckin(
-                    eventId,
-                    matched.guestSmallGroupPrompt.guestId
-                  )
-                }
+                void recordSmallGroupInterestAtCheckin(eventId, prompt.person)
                 setStep("sg-profile")
               }}
             >
               Yes, I&apos;m interested
             </Button>
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => setStep("sg-leader-search")}
-            >
-              I&apos;m already in one
-            </Button>
+            {/* Only guests can name the group they're already in — a member's
+                membership is admin-owned, so there'd be nowhere to put it. */}
+            {prompt.canClaimGroup && (
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => setStep("sg-leader-search")}
+              >
+                I&apos;m already in one
+              </Button>
+            )}
             <Button
               variant="ghost"
               className="w-full"
@@ -859,11 +854,12 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
   }
 
   // ── Small Group Profile Form ──────────────────────────────────────────────
-  if (step === "sg-profile" && matched?.guestSmallGroupPrompt) {
+  if (step === "sg-profile" && matched?.smallGroupPrompt) {
     return (
       <ProfileForm
-        guestId={matched.guestSmallGroupPrompt.guestId}
-        existingProfile={matched.guestSmallGroupPrompt.existingProfile}
+        eventId={eventId}
+        person={matched.smallGroupPrompt.person}
+        existingProfile={matched.smallGroupPrompt.existingProfile}
         lifeStages={lifeStages}
         ageRanges={ageRanges}
         defaultLifeStageId={defaultLifeStageId}
@@ -876,10 +872,12 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
   }
 
   // ── Small Group Leader Search ─────────────────────────────────────────────
-  if (step === "sg-leader-search" && matched?.guestSmallGroupPrompt) {
+  const claimingPerson = matched?.smallGroupPrompt?.person
+  if (step === "sg-leader-search" && claimingPerson && "guestId" in claimingPerson) {
     return (
       <LeaderSearch
-        guestId={matched.guestSmallGroupPrompt.guestId}
+        eventId={eventId}
+        guestId={claimingPerson.guestId}
         onSave={goToSuccess}
         onBack={() => setStep("sg-prompt")}
       />
@@ -978,19 +976,21 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
 //
 // The "Tell us about yourself" DGroup-matching screen. It appears only when ALL
 // of the following hold, so it is skipped for anyone already accounted for:
-//   1. The checked-in subject is a matched *guest* (not a member, not a volunteer),
-//   2. who is *not yet in a DGroup* — i.e. the lookup returned a `guestSmallGroupPrompt`, and
+//   1. The checked-in subject is a matched guest or member — including a member
+//      checking in as a volunteer,
+//   2. who is *not yet in a DGroup* — i.e. the lookup returned a `smallGroupPrompt`, and
 //   3. who taps "Yes, I'm interested" on the preceding "Are you interested in
 //      joining a DGroup?" prompt (`sg-prompt` step).
-// Members and guests already in a group never reach this step.
+// Anyone already in a group, or already awaiting placement, never reaches this step.
 //
 // Fields mirror the public registration form (`registration-form.tsx`): shared
 // MultiSelect for Language, Select for Meeting Preference / Life Stage / City —
 // intentionally the same components so the two forms stay visually in sync.
 
 type ProfileFormProps = {
-  guestId: string
-  existingProfile: GuestSmallGroupPrompt["existingProfile"]
+  eventId: string
+  person: CheckinPerson
+  existingProfile: SmallGroupPrompt["existingProfile"]
   lifeStages: LifeStage[]
   ageRanges: AgeRangeBucket[]
   defaultLifeStageId?: string
@@ -1000,7 +1000,7 @@ type ProfileFormProps = {
   onBack: () => void
 }
 
-function ProfileForm({ guestId, existingProfile, lifeStages, ageRanges, defaultLifeStageId = "", cfg, onSave, onSkip, onBack }: ProfileFormProps) {
+function ProfileForm({ eventId, person, existingProfile, lifeStages, ageRanges, defaultLifeStageId = "", cfg, onSave, onSkip, onBack }: ProfileFormProps) {
   const [saving, setSaving] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   // This screen collects new personal data, so it needs the same consent the
@@ -1025,13 +1025,13 @@ function ProfileForm({ guestId, existingProfile, lifeStages, ageRanges, defaultL
     }
     setSaving(true)
     setError(null)
-    // `saveGuestMatchingProfile` overwrites every column, so a disabled field must
-    // pass through whatever the guest already had — sending null would wipe it.
-    // Form state is seeded from `existingProfile`, so an unrendered field already
-    // holds the stored value. The exception is lifeStageId, which is seeded from
-    // the event's ministry default: when that field is off, fall back to the
-    // stored value so the default can't be written behind the person's back.
-    const data: GuestMatchingProfileInput = {
+    // Every key below is sent, so a disabled field must pass through whatever the
+    // person already had — sending null would wipe it. Form state is seeded from
+    // `existingProfile`, so an unrendered field already holds the stored value.
+    // The exception is lifeStageId, which is seeded from the event's ministry
+    // default: when that field is off, fall back to the stored value so the
+    // default can't be written behind the person's back.
+    const data: MatchingProfileInput = {
       lifeStageId: cfg.fieldLifeStage
         ? form.lifeStageId || null
         : existingProfile.lifeStageId,
@@ -1046,7 +1046,7 @@ function ProfileForm({ guestId, existingProfile, lifeStages, ageRanges, defaultL
       scheduleTimeStart: form.scheduleTimeStart || null,
       scheduleTimeEnd: form.scheduleTimeEnd || null,
     }
-    const result = await saveGuestMatchingProfile(guestId, data)
+    const result = await saveCheckinMatchingProfile(eventId, person, data)
     setSaving(false)
     if (result.success) {
       onSave()
@@ -1240,12 +1240,13 @@ function ProfileForm({ guestId, existingProfile, lifeStages, ageRanges, defaultL
 // ── Leader Search Sub-component ───────────────────────────────────────────────
 
 type LeaderSearchProps = {
+  eventId: string
   guestId: string
   onSave: () => void
   onBack: () => void
 }
 
-function LeaderSearch({ guestId, onSave, onBack }: LeaderSearchProps) {
+function LeaderSearch({ eventId, guestId, onSave, onBack }: LeaderSearchProps) {
   const [query, setQuery] = React.useState("")
   const [results, setResults] = React.useState<LeaderResult[]>([])
   const [searching, setSearching] = React.useState(false)
@@ -1273,7 +1274,7 @@ function LeaderSearch({ guestId, onSave, onBack }: LeaderSearchProps) {
   async function handleSelectGroup(smallGroupId: string) {
     setSaving(true)
     setError(null)
-    const res = await saveGuestClaimedGroup(guestId, smallGroupId)
+    const res = await saveCheckinClaimedGroup(eventId, guestId, smallGroupId)
     setSaving(false)
     if (res.success) {
       onSave()

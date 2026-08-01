@@ -335,7 +335,7 @@ const CHECKIN_LAYOUT: readonly FormLayoutSection[] = [
     description: FORM_SECTION_META.sectionSmallGroup.description,
     fields: [],
     options: [],
-    note: "Asks whether they're already in a DGroup. No extra fields.",
+    note: "Asked of anyone checking in who has no DGroup yet — guests, members and volunteers alike. Naming the group they're already in is guest-only. No extra fields.",
   },
   {
     key: "sectionFamily",

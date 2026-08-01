@@ -41,6 +41,7 @@ export default async function MemberPortalPage({
           id: true,
           name: true,
           groupType: true,
+          parentSatellite: true,
           memberLimit: true,
           meetingFormat: true,
           locationCity: true,
@@ -149,6 +150,11 @@ export default async function MemberPortalPage({
     })
   )
 
+  // Upward accountability belongs to the leader, not to each group they lead, so
+  // the portal shows a single satellite — the first one set across their groups.
+  const upwardSatellite =
+    ledGroups.find((g) => g.parentSatellite)?.parentSatellite ?? null
+
   return (
     <MePortalClient
       token={token}
@@ -158,6 +164,7 @@ export default async function MemberPortalPage({
         groupStatus: member.groupStatus,
       }}
       myGroup={member.smallGroup}
+      upwardSatellite={upwardSatellite}
       pendingRequest={
         pendingRequest?.smallGroup
           ? {

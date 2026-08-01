@@ -45,25 +45,21 @@ async function seedMember(overrides: {
   })
 }
 
-type SingleMatchData = {
-  kind: "registrant" | "volunteer"
-  subjectId: string
-  name: string
-  nickname: string | null
-  alreadyCheckedIn: boolean
-  contactHint: string | null
-  guestSmallGroupPrompt: null
-}
+// Derived from the action rather than restated, so a change to the lookup shape
+// surfaces in the assertions instead of in a stale local copy of the type.
+type LookupResult = Awaited<ReturnType<typeof lookupCheckinRegistrantByProfile>>
+type LookupData = NonNullable<Extract<LookupResult, { success: true }>["data"]>
+type SingleMatchData = Exclude<LookupData, { matchType: "ambiguous" }>
 
 function isSingleMatch(
-  result: Awaited<ReturnType<typeof lookupCheckinRegistrantByProfile>>
+  result: LookupResult
 ): result is { success: true; data: SingleMatchData } {
   return result.success && result.data !== null && !("matchType" in (result.data as object))
 }
 
 function isAmbiguousMatch(
-  result: Awaited<ReturnType<typeof lookupCheckinRegistrantByProfile>>
-): result is { success: true; data: { matchType: "ambiguous"; candidates: SingleMatchData[] } } {
+  result: LookupResult
+): result is { success: true; data: Extract<LookupData, { matchType: "ambiguous" }> } {
   return result.success && result.data !== null && "matchType" in (result.data as object)
 }
 

@@ -10,11 +10,9 @@ import { db } from "@/lib/db"
 import {
   createRegistrant,
   lookupCheckinRegistrant,
+  saveCheckinClaimedGroup,
 } from "@/app/(dashboard)/events/actions"
-import {
-  saveGuestClaimedGroup,
-  clearGuestClaimedGroup,
-} from "@/app/(dashboard)/guests/actions"
+import { clearGuestClaimedGroup } from "@/app/(dashboard)/guests/actions"
 
 vi.mock("@/lib/auth", () => ({
   auth: vi.fn(async () => ({ user: { id: "u1", role: "SuperAdmin" } })),
@@ -289,7 +287,7 @@ describe("check-in DGroup prompt", () => {
     const res = await lookupCheckinRegistrant(event.id, "+63 917 123 4567", null)
     expect(res.success).toBe(true)
     if (!res.success) return
-    expect((res.data as { guestSmallGroupPrompt: unknown }).guestSmallGroupPrompt).not.toBeNull()
+    expect((res.data as { smallGroupPrompt: unknown }).smallGroupPrompt).not.toBeNull()
   })
 
   it("stays quiet for a guest whose DGroup is at another satellite", async () => {
@@ -300,12 +298,13 @@ describe("check-in DGroup prompt", () => {
     const res = await lookupCheckinRegistrant(event.id, "+63 917 123 4567", null)
     expect(res.success).toBe(true)
     if (!res.success) return
-    expect((res.data as { guestSmallGroupPrompt: unknown }).guestSmallGroupPrompt).toBeNull()
+    expect((res.data as { smallGroupPrompt: unknown }).smallGroupPrompt).toBeNull()
   })
 })
 
-describe("admin claimed-group actions vs. claimed satellite", () => {
+describe("claimed-group actions vs. claimed satellite", () => {
   it("naming one of our groups supersedes the satellite answer", async () => {
+    const event = await seedEventWithSmallGroupSection("Claim Event")
     const leader = await db.member.create({
       data: { firstName: "Juan", lastName: "Cruz", dateJoined: new Date(), language: [] },
     })
@@ -315,8 +314,9 @@ describe("admin claimed-group actions vs. claimed satellite", () => {
     const guest = await db.guest.create({
       data: { firstName: "Maria", lastName: "Santos", language: [], claimedSatellite: "CCF Cebu" },
     })
+    await db.eventRegistrant.create({ data: { eventId: event.id, guestId: guest.id } })
 
-    const res = await saveGuestClaimedGroup(guest.id, group.id)
+    const res = await saveCheckinClaimedGroup(event.id, guest.id, group.id)
     expect(res.success).toBe(true)
 
     const updated = await db.guest.findUniqueOrThrow({ where: { id: guest.id } })
