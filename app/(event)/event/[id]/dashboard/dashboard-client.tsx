@@ -106,6 +106,8 @@ type EventDashboardData = {
     rows: AttendanceBreakdownRow[]
     total: AttendanceBreakdownRow
   }
+  /** No form collects Life Stage, and attendees landed in "Not specified" because of it. */
+  explainMissingLifeStage: boolean
   placement: {
     inGroup: number
     membersUnassigned: number
@@ -939,7 +941,18 @@ export function EventDashboardClient({
           )}
         </CardContent>
         {breakdownTotal.attendees > 0 && (
-          <CardFooter>
+          <CardFooter className="flex-col items-start gap-2">
+            {/* Without this, a single "Not specified" bar reads as a broken report
+                rather than as a field nobody was ever asked. */}
+            {event.explainMissingLifeStage && (
+              <p className="text-xs text-muted-foreground">
+                Attendees show as “Not specified” when we have no Life Stage on file and none
+                of this event’s forms ask for it.{" "}
+                <Link href={`/event/${event.id}/forms`} className={drillLinkClass}>
+                  Enable Life Stage on a form →
+                </Link>
+              </p>
+            )}
             <Link href={`/event/${event.id}/registrants`} className={drillLinkClass}>
               View registrants →
             </Link>

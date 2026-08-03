@@ -128,27 +128,6 @@ export async function assignBreakoutForRegistrant(
   }
 }
 
-export async function autoCheckinIfOpenRecurringSession(registrantId: string, eventId: string) {
-  const openOccurrence = await db.eventOccurrence.findFirst({
-    where: { eventId, isOpen: true, event: { type: "Recurring" } },
-    select: { id: true },
-  })
-  if (!openOccurrence) return
-  // Upsert (not create): a reused registration — walk-in, or a cluster submit
-  // that found the person already registered — may already hold an attendance
-  // row for the open session.
-  await db.occurrenceAttendee.upsert({
-    where: {
-      occurrenceId_registrantId: {
-        occurrenceId: openOccurrence.id,
-        registrantId,
-      },
-    },
-    create: { occurrenceId: openOccurrence.id, registrantId, checkedInAt: new Date() },
-    update: {},
-  })
-}
-
 // Walk-in mode: check the registrant in immediately after registration.
 // Sessions (MultiDay/Recurring) record an OccurrenceAttendee; OneTime events
 // set attendedAt — only when null, preserving the first check-in time.
@@ -457,10 +436,15 @@ export async function completeEventRegistration(opts: {
     await createSeekerRequestFromRegistration(person, eventId)
   }
 
+  // Only walk-ins mark attendance. Registering is a statement of intent, not
+  // presence: a pre-registration on a Recurring event used to silently record an
+  // OccurrenceAttendee whenever any session happened to be left open (`isOpen`
+  // is a manual toggle that nothing auto-closes, so stale-open sessions caught
+  // registrations days later). That inflated every check-in figure that reads
+  // occurrence attendance — per-event dashboards and the cluster day roll-up.
+  // Attendance now comes only from the check-in kiosk or an explicit walk-in.
   if (walkIn) {
     await checkInWalkInRegistrant(registrantId, walkIn.occurrenceId)
-  } else {
-    await autoCheckinIfOpenRecurringSession(registrantId, eventId)
   }
 
   return { id: registrantId, breakoutGroup }

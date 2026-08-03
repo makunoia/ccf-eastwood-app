@@ -351,8 +351,9 @@ export async function registerForCluster(
         }
 
         // Cluster check-in is OneTime-only: walk-ins check in via attendedAt.
-        // MultiDay/Recurring events are registered without a session check-in
-        // (their own sessions pages handle attendance).
+        // MultiDay/Recurring events are registered without a session check-in —
+        // their own sessions pages handle attendance, because the cluster form
+        // has no way to say WHICH occurrence the person is present for.
         const walkInForEvent =
           walkIn && event.type === "OneTime" ? { occurrenceId: null } : null
 

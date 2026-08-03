@@ -24,12 +24,15 @@ export default async function ClusterRegistrantsPage({
 
   const cluster = await db.eventCluster.findUnique({
     where: { id },
-    select: { id: true },
+    select: { id: true, date: true },
   })
   if (!cluster) notFound()
 
   const events = await getAccessibleClusterEvents(session, id)
-  const rows = await getClusterRegistrantRows(events.map((e) => e.id))
+  const rows = await getClusterRegistrantRows(
+    events.map((e) => e.id),
+    cluster.date
+  )
   const roster = buildClusterRoster(events, rows)
   const registeredAtById = new Map(rows.map((r) => [r.id, r.registeredAt]))
 

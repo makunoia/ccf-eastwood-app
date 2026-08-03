@@ -3,10 +3,29 @@
 import { useState, useRef, useMemo } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { CheckCircle2, XCircle, ArrowLeftRight, SearchIcon, XIcon } from "lucide-react"
+import {
+  CheckCircle2,
+  XCircle,
+  ArrowLeftRight,
+  SearchIcon,
+  UserCheck,
+  UserPlus,
+  Users,
+  XIcon,
+} from "lucide-react"
 import { Popover as PopoverPrimitive } from "radix-ui"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { StatCard } from "@/components/session-stat-card"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import {
   Select,
   SelectContent,
@@ -24,7 +43,10 @@ import {
 } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
+  buildSessionAttendeeStats,
+  isAttendeeStatusEditable,
   sortSessionAttendees,
   type AttendeeSortDirection,
 } from "@/lib/session-attendees"
@@ -34,6 +56,7 @@ import {
   assignSubFacilitator,
   removeSubFacilitator,
 } from "./sub-facilitator-actions"
+import { removeSessionAttendee, setAttendeeReturnerStatus } from "./attendee-actions"
 // Mirrors the Prisma enum — avoid importing Prisma client in client components (pulls node:module)
 const FacilitatorRole = { Facilitator: "Facilitator", CoFacilitator: "CoFacilitator" } as const
 type FacilitatorRole = (typeof FacilitatorRole)[keyof typeof FacilitatorRole]
@@ -45,11 +68,92 @@ export type AttendeeRow = {
   name: string | null
   checkedInAtFormatted: string
   isReturner: boolean
+  /** The status before any admin override — lets a toggle back clear the override. */
+  derivedIsReturner: boolean
+  /** Whether an admin has pinned this row's status. */
+  hasStatusOverride: boolean
   isMember: boolean
   isVolunteer: boolean
   breakoutGroupIds: string[]
   breakoutGroupNames: string[]
   gender: "Male" | "Female" | null
+}
+
+function StatusBadge({
+  attendee,
+  editable,
+  onToggle,
+}: {
+  attendee: AttendeeRow
+  editable: boolean
+  onToggle: () => Promise<void>
+}) {
+  // Plain state rather than useTransition: an async transition stays pending until
+  // everything it schedules settles, including the background router.refresh() — which
+  // would re-disable the badge for the whole round trip we are trying to hide.
+  const [pending, setPending] = useState(false)
+
+  // `attendee.isReturner` is already the optimistic value, so the badge has flipped
+  // by the time this renders — no spinner, and deliberately no dimming while the
+  // write lands. `pending` only guards against a second click racing the first.
+  const badge = attendee.isReturner ? (
+    <Badge variant="secondary">Returning</Badge>
+  ) : (
+    <Badge>New</Badge>
+  )
+
+  if (!editable) return badge
+
+  async function handleClick() {
+    setPending(true)
+    try {
+      await onToggle()
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={handleClick}
+          disabled={pending}
+          aria-busy={pending}
+          aria-label={`Change status to ${attendee.isReturner ? "New" : "Returning"}`}
+          className={cn(
+            "rounded-full transition-opacity hover:opacity-70 disabled:cursor-default",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+          )}
+        >
+          {badge}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>
+        Mark as {attendee.isReturner ? "New" : "Returning"}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
+function RemoveAttendeeButton({ onSelect }: { onSelect: () => void }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="text-muted-foreground hover:text-destructive"
+          onClick={onSelect}
+        >
+          <XIcon className="size-4" />
+          <span className="sr-only">Remove from session</span>
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>Remove from session</TooltipContent>
+    </Tooltip>
+  )
 }
 
 // Volunteers link to the volunteer detail page; registrants to the registrant detail page.
@@ -90,6 +194,7 @@ export function SessionAttendeesTable({
   breakoutGroups,
   breakoutStats,
   volunteerOptions,
+  canEdit,
 }: {
   eventId: string
   occurrenceId: string
@@ -97,22 +202,84 @@ export function SessionAttendeesTable({
   breakoutGroups: BreakoutGroupOption[]
   breakoutStats: BreakoutStatRow[]
   volunteerOptions: PersonComboboxOption[]
+  canEdit: boolean
 }) {
+  const router = useRouter()
   const [activeTab, setActiveTab] = useState<SessionTab>("attendees")
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all")
   const [breakoutFilter, setBreakoutFilter] = useState("all")
   const [statusSortDirection, setStatusSortDirection] = useState<AttendeeSortDirection>("asc")
+  const [attendeeToRemove, setAttendeeToRemove] = useState<AttendeeRow | null>(null)
+
+  // The server stays the source of truth, but edits paint locally first: re-rendering
+  // this page server-side means re-running the breakout/facilitator/volunteer queries,
+  // which is far too slow to sit behind a badge click or a row removal. A fresh payload
+  // replaces the local copy the moment it lands.
+  const [rows, setRows] = useState(attendees)
+  const [lastServerRows, setLastServerRows] = useState(attendees)
+  if (lastServerRows !== attendees) {
+    setLastServerRows(attendees)
+    setRows(attendees)
+  }
+
+  function patchRow(id: string, patch: Partial<AttendeeRow>) {
+    setRows((current) => current.map((r) => (r.id === id ? { ...r, ...patch } : r)))
+  }
+
+  async function handleToggleStatus(attendee: AttendeeRow) {
+    const next = !attendee.isReturner
+    // Toggling back to what the data already implies clears the override rather
+    // than pinning the row forever.
+    const override = next === attendee.derivedIsReturner ? null : next
+
+    patchRow(attendee.id, { isReturner: next, hasStatusOverride: override !== null })
+
+    const result = await setAttendeeReturnerStatus(attendee.id, override)
+    if (!result.success) {
+      // Revert just this row — a sibling row may have been edited meanwhile.
+      patchRow(attendee.id, {
+        isReturner: attendee.isReturner,
+        hasStatusOverride: attendee.hasStatusOverride,
+      })
+      toast.error(result.error)
+      return
+    }
+    // Catches up everything this component doesn't own — the Breakout Groups counts
+    // and the header subtitle — without holding up the badge.
+    router.refresh()
+  }
+
+  async function handleRemoveAttendee() {
+    const target = attendeeToRemove
+    if (!target) return
+
+    setAttendeeToRemove(null)
+    setRows((current) => current.filter((r) => r.id !== target.id))
+
+    const result = await removeSessionAttendee(target.id)
+    if (!result.success) {
+      setRows((current) =>
+        current.some((r) => r.id === target.id) ? current : [...current, target],
+      )
+      toast.error(result.error)
+      return
+    }
+    toast.success("Removed from this session")
+    router.refresh()
+  }
+
+  const stats = useMemo(() => buildSessionAttendeeStats(rows), [rows])
 
   const filtered = useMemo(
     () =>
-      attendees.filter((a) => {
+      rows.filter((a) => {
         if (typeFilter === "member" && (!a.isMember || a.isVolunteer)) return false
         if (typeFilter === "guest" && (a.isMember || a.isVolunteer)) return false
         if (typeFilter === "volunteer" && !a.isVolunteer) return false
         if (breakoutFilter !== "all" && !a.breakoutGroupIds.includes(breakoutFilter)) return false
         return true
       }),
-    [attendees, breakoutFilter, typeFilter],
+    [rows, breakoutFilter, typeFilter],
   )
 
   const sortedAttendees = useMemo(
@@ -121,290 +288,253 @@ export function SessionAttendeesTable({
   )
 
   return (
-    <Tabs
-      value={activeTab}
-      onValueChange={(value) => setActiveTab(value as SessionTab)}
-      className="space-y-3"
-    >
-      <TabsList variant="line">
-        <TabsTrigger value="attendees" className="after:-bottom-px">
-          Attendees
-        </TabsTrigger>
-        <TabsTrigger value="breakouts" className="after:-bottom-px">
-          Breakout Groups
-        </TabsTrigger>
-      </TabsList>
+    <div className="flex flex-col gap-6">
+      {/* Derived from the same rows the table renders, so the counters move with an
+          optimistic edit instead of trailing a server round-trip behind it. */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatCard
+          label="Total"
+          value={stats.totalCount}
+          icon={<Users className="size-4" />}
+          genderBar={{ men: stats.menCount, women: stats.womenCount }}
+        />
+        <StatCard label="New" value={stats.newCount} icon={<UserPlus className="size-4" />} />
+        <StatCard
+          label="Participants"
+          value={stats.participantCount}
+          icon={<Users className="size-4" />}
+        />
+        <StatCard
+          label="Volunteers"
+          value={stats.volunteersPresent}
+          icon={<UserCheck className="size-4" />}
+        />
+      </div>
 
-      {activeTab === "attendees" && (
-        <div className="space-y-2">
-          <div className="overflow-x-auto rounded-md border bg-muted/30 px-3 py-2">
-            <div className="flex min-w-max items-center gap-2">
-              <ToggleGroup
-                type="single"
-                value={typeFilter}
-                onValueChange={(v) => setTypeFilter((v || "all") as TypeFilter)}
-                className="gap-1"
-              >
-                <ToggleGroupItem value="all" className="h-7 px-3 text-xs">
-                  All
-                </ToggleGroupItem>
-                <ToggleGroupItem value="member" className="h-7 px-3 text-xs">
-                  Members
-                </ToggleGroupItem>
-                <ToggleGroupItem value="guest" className="h-7 px-3 text-xs">
-                  Guests
-                </ToggleGroupItem>
-                <ToggleGroupItem value="volunteer" className="h-7 px-3 text-xs">
-                  Volunteers
-                </ToggleGroupItem>
-              </ToggleGroup>
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => setActiveTab(value as SessionTab)}
+        className="space-y-3"
+      >
+        <TabsList variant="line">
+          <TabsTrigger value="attendees" className="after:-bottom-px">
+            Attendees
+          </TabsTrigger>
+          <TabsTrigger value="breakouts" className="after:-bottom-px">
+            Breakout Groups
+          </TabsTrigger>
+        </TabsList>
 
-              {breakoutGroups.length > 0 && (
-                <Select value={breakoutFilter} onValueChange={setBreakoutFilter}>
-                  <SelectTrigger className="h-7 w-40 text-xs">
-                    <SelectValue placeholder="Breakout group" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All groups</SelectItem>
-                    {breakoutGroups.map((bg) => (
-                      <SelectItem key={bg.id} value={bg.id}>
-                        {bg.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
+        {activeTab === "attendees" && (
+          <div className="space-y-2">
+            <div className="overflow-x-auto rounded-md border bg-muted/30 px-3 py-2">
+              <div className="flex min-w-max items-center gap-2">
+                <ToggleGroup
+                  type="single"
+                  value={typeFilter}
+                  onValueChange={(v) => setTypeFilter((v || "all") as TypeFilter)}
+                  className="gap-1"
+                >
+                  <ToggleGroupItem value="all" className="h-7 px-3 text-xs">
+                    All
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="member" className="h-7 px-3 text-xs">
+                    Members
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="guest" className="h-7 px-3 text-xs">
+                    Guests
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="volunteer" className="h-7 px-3 text-xs">
+                    Volunteers
+                  </ToggleGroupItem>
+                </ToggleGroup>
+
+                {breakoutGroups.length > 0 && (
+                  <Select value={breakoutFilter} onValueChange={setBreakoutFilter}>
+                    <SelectTrigger className="h-7 w-40 text-xs">
+                      <SelectValue placeholder="Breakout group" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All groups</SelectItem>
+                      {breakoutGroups.map((bg) => (
+                        <SelectItem key={bg.id} value={bg.id}>
+                          {bg.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      <TabsContent value="attendees" className="mt-0">
-        {attendees.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
-            <p className="text-sm">No one checked in for this session yet.</p>
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-2 py-10 text-muted-foreground">
-            <p className="text-sm">No attendees match the current filters.</p>
-          </div>
-        ) : (
-          <>
-            {/* Mobile card list */}
-            <div className="sm:hidden divide-y rounded-lg border">
-              {sortedAttendees.map((a) => (
-                <div key={a.id} className="flex items-center gap-3 px-4 py-3">
-                  <div className="min-w-0 flex-1">
-                    <Link
-                      href={attendeeHref(eventId, a)}
-                      className="truncate text-sm font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-                    >
-                      {a.name ?? <span className="text-muted-foreground italic">No name</span>}
-                    </Link>
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {a.isVolunteer ? (
-                        <Badge variant="outline" className="border-amber-400 text-amber-600">
-                          Volunteer
-                        </Badge>
-                      ) : a.isMember ? (
-                        <Badge variant="secondary">Member</Badge>
-                      ) : (
-                        <Badge variant="outline">Guest</Badge>
-                      )}
-                    </div>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Breakout:{" "}
-                      {a.breakoutGroupNames.length > 0 ? (
-                        a.breakoutGroupNames.join(", ")
-                      ) : (
-                        <span className="italic">Unassigned</span>
-                      )}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 flex-col items-end gap-1">
-                    {a.isReturner ? (
-                      <Badge variant="secondary">Returning</Badge>
-                    ) : (
-                      <Badge>New</Badge>
-                    )}
-                    <span className="text-xs text-muted-foreground">{a.checkedInAtFormatted}</span>
-                  </div>
-                </div>
-              ))}
+        <TabsContent value="attendees" className="mt-0">
+          {rows.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
+              <p className="text-sm">No one checked in for this session yet.</p>
             </div>
-            {/* Desktop table */}
-            <div className="hidden overflow-x-auto rounded-lg border sm:block">
-              <Table>
-                <TableHeader className="bg-muted/50">
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setStatusSortDirection((current) =>
-                            current === "asc" ? "desc" : "asc",
-                          )
-                        }
-                        aria-label={`Sort status ${statusSortDirection === "asc" ? "descending" : "ascending"}`}
-                        className={cn(
-                          "inline-flex items-center gap-1 rounded-sm font-medium text-muted-foreground transition-colors hover:text-foreground",
-                          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                        )}
+          ) : filtered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-10 text-muted-foreground">
+              <p className="text-sm">No attendees match the current filters.</p>
+            </div>
+          ) : (
+            <>
+              {/* Mobile card list */}
+              <div className="sm:hidden divide-y rounded-lg border">
+                {sortedAttendees.map((a) => (
+                  <div key={a.id} className="flex items-center gap-3 px-4 py-3">
+                    <div className="min-w-0 flex-1">
+                      <Link
+                        href={attendeeHref(eventId, a)}
+                        className="truncate text-sm font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
                       >
-                        <span>Status</span>
-                        <span className="text-xs">
-                          {statusSortDirection === "asc" ? "\u2191" : "\u2193"}
-                        </span>
-                      </button>
-                    </TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Breakout Group</TableHead>
-                    <TableHead>Checked in at</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sortedAttendees.map((a) => (
-                    <TableRow key={a.id}>
-                      <TableCell>
-                        <Link
-                          href={attendeeHref(eventId, a)}
-                          className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-                        >
-                          {a.name ?? <span className="text-muted-foreground italic">No name</span>}
-                        </Link>
-                      </TableCell>
-                      <TableCell>
-                        {a.isReturner ? (
-                          <Badge variant="secondary">Returning</Badge>
+                        {a.name ?? <span className="text-muted-foreground italic">No name</span>}
+                      </Link>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {a.isVolunteer ? (
+                          <Badge variant="outline" className="border-amber-400 text-amber-600">
+                            Volunteer
+                          </Badge>
+                        ) : a.isMember ? (
+                          <Badge variant="secondary">Member</Badge>
                         ) : (
-                          <Badge>New</Badge>
+                          <Badge variant="outline">Guest</Badge>
                         )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1">
-                          {a.isVolunteer ? (
-                            <Badge
-                              variant="outline"
-                              className="border-amber-400 text-amber-600"
-                            >
-                              Volunteer
-                            </Badge>
-                          ) : a.isMember ? (
-                            <Badge variant="secondary">Member</Badge>
-                          ) : (
-                            <Badge variant="outline">Guest</Badge>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Breakout:{" "}
                         {a.breakoutGroupNames.length > 0 ? (
                           a.breakoutGroupNames.join(", ")
                         ) : (
                           <span className="italic">Unassigned</span>
                         )}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {a.checkedInAtFormatted}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </>
-        )}
-      </TabsContent>
-
-      <TabsContent value="breakouts" className="mt-0">
-        {breakoutStats.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
-            <p className="text-sm">No breakout groups configured for this event.</p>
-          </div>
-        ) : (
-          <>
-            {/* Mobile card list */}
-            <div className="sm:hidden divide-y rounded-lg border">
-              {breakoutStats.map((bg) => (
-                <div key={bg.id} className="space-y-2.5 px-4 py-3">
-                  <Link
-                    href={`/event/${eventId}/breakouts/${bg.id}`}
-                    className="text-sm font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 transition-colors hover:decoration-foreground"
-                  >
-                    {bg.name}
-                  </Link>
-                  <div className="space-y-1.5">
-                    <div className="grid grid-cols-[4.5rem_1fr] items-start gap-2">
-                      <span className="pt-0.5 text-xs text-muted-foreground">Facilitator</span>
-                      <FacilitatorCell
-                        occurrenceId={occurrenceId}
-                        breakoutGroupId={bg.id}
-                        eventId={eventId}
-                        role={FacilitatorRole.Facilitator}
-                        name={bg.facilitatorName}
-                        present={bg.facilitatorPresent}
-                        subId={bg.subFacilitatorId}
-                        subName={bg.subFacilitatorName}
-                        volunteerOptions={volunteerOptions}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <StatusBadge
+                        attendee={a}
+                        editable={canEdit && isAttendeeStatusEditable(a)}
+                        onToggle={() => handleToggleStatus(a)}
                       />
+                      <span className="text-xs text-muted-foreground">{a.checkedInAtFormatted}</span>
                     </div>
-                    <div className="grid grid-cols-[4.5rem_1fr] items-start gap-2">
-                      <span className="pt-0.5 text-xs text-muted-foreground">Co-Fac</span>
-                      <FacilitatorCell
-                        occurrenceId={occurrenceId}
-                        breakoutGroupId={bg.id}
-                        eventId={eventId}
-                        role={FacilitatorRole.CoFacilitator}
-                        name={bg.coFacilitatorName}
-                        present={bg.coFacilitatorPresent}
-                        subId={bg.subCoFacilitatorId}
-                        subName={bg.subCoFacilitatorName}
-                        volunteerOptions={volunteerOptions}
-                      />
-                    </div>
+                    {canEdit && (
+                      <RemoveAttendeeButton onSelect={() => setAttendeeToRemove(a)} />
+                    )}
                   </div>
-                  <div className="flex gap-5">
-                    <div>
-                      <p className="text-xs text-muted-foreground">New</p>
-                      <p className="text-sm font-semibold tabular-nums">{bg.newCount}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Returning</p>
-                      <p className="text-sm font-semibold tabular-nums">{bg.returneeCount}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Total</p>
-                      <p className="text-sm font-semibold tabular-nums">{bg.totalCheckedIn}</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            {/* Desktop table */}
-            <div className="hidden overflow-x-auto rounded-lg border sm:block">
-              <Table>
-                <TableHeader className="bg-muted/50">
-                  <TableRow>
-                    <TableHead>Group</TableHead>
-                    <TableHead>Facilitator</TableHead>
-                    <TableHead>Co-Facilitator</TableHead>
-                    <TableHead className="text-right">New</TableHead>
-                    <TableHead className="text-right">Returnees</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {breakoutStats.map((bg) => (
-                    <TableRow key={bg.id}>
-                      <TableCell>
-                        <Link
-                          href={`/event/${eventId}/breakouts/${bg.id}`}
-                          className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 transition-colors hover:decoration-foreground"
+                ))}
+              </div>
+              {/* Desktop table */}
+              <div className="hidden overflow-x-auto rounded-lg border sm:block">
+                <Table>
+                  <TableHeader className="bg-muted/50">
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setStatusSortDirection((current) =>
+                              current === "asc" ? "desc" : "asc",
+                            )
+                          }
+                          aria-label={`Sort status ${statusSortDirection === "asc" ? "descending" : "ascending"}`}
+                          className={cn(
+                            "inline-flex items-center gap-1 rounded-sm font-medium text-muted-foreground transition-colors hover:text-foreground",
+                            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                          )}
                         >
-                          {bg.name}
-                        </Link>
-                      </TableCell>
-                      <TableCell>
+                          <span>Status</span>
+                          <span className="text-xs">
+                            {statusSortDirection === "asc" ? "\u2191" : "\u2193"}
+                          </span>
+                        </button>
+                      </TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Breakout Group</TableHead>
+                      <TableHead>Checked in at</TableHead>
+                      {canEdit && <TableHead className="w-10" />}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {sortedAttendees.map((a) => (
+                      <TableRow key={a.id}>
+                        <TableCell>
+                          <Link
+                            href={attendeeHref(eventId, a)}
+                            className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+                          >
+                            {a.name ?? <span className="text-muted-foreground italic">No name</span>}
+                          </Link>
+                        </TableCell>
+                        <TableCell>
+                          <StatusBadge
+                            attendee={a}
+                            editable={canEdit && isAttendeeStatusEditable(a)}
+                            onToggle={() => handleToggleStatus(a)}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1">
+                            {a.isVolunteer ? (
+                              <Badge
+                                variant="outline"
+                                className="border-amber-400 text-amber-600"
+                              >
+                                Volunteer
+                              </Badge>
+                            ) : a.isMember ? (
+                              <Badge variant="secondary">Member</Badge>
+                            ) : (
+                              <Badge variant="outline">Guest</Badge>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {a.breakoutGroupNames.length > 0 ? (
+                            a.breakoutGroupNames.join(", ")
+                          ) : (
+                            <span className="italic">Unassigned</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {a.checkedInAtFormatted}
+                        </TableCell>
+                        {canEdit && (
+                          <TableCell className="w-10 text-right">
+                            <RemoveAttendeeButton onSelect={() => setAttendeeToRemove(a)} />
+                          </TableCell>
+                        )}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
+          )}
+        </TabsContent>
+
+        <TabsContent value="breakouts" className="mt-0">
+          {breakoutStats.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
+              <p className="text-sm">No breakout groups configured for this event.</p>
+            </div>
+          ) : (
+            <>
+              {/* Mobile card list */}
+              <div className="sm:hidden divide-y rounded-lg border">
+                {breakoutStats.map((bg) => (
+                  <div key={bg.id} className="space-y-2.5 px-4 py-3">
+                    <Link
+                      href={`/event/${eventId}/breakouts/${bg.id}`}
+                      className="text-sm font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 transition-colors hover:decoration-foreground"
+                    >
+                      {bg.name}
+                    </Link>
+                    <div className="space-y-1.5">
+                      <div className="grid grid-cols-[4.5rem_1fr] items-start gap-2">
+                        <span className="pt-0.5 text-xs text-muted-foreground">Facilitator</span>
                         <FacilitatorCell
                           occurrenceId={occurrenceId}
                           breakoutGroupId={bg.id}
@@ -416,8 +546,9 @@ export function SessionAttendeesTable({
                           subName={bg.subFacilitatorName}
                           volunteerOptions={volunteerOptions}
                         />
-                      </TableCell>
-                      <TableCell>
+                      </div>
+                      <div className="grid grid-cols-[4.5rem_1fr] items-start gap-2">
+                        <span className="pt-0.5 text-xs text-muted-foreground">Co-Fac</span>
                         <FacilitatorCell
                           occurrenceId={occurrenceId}
                           breakoutGroupId={bg.id}
@@ -429,23 +560,125 @@ export function SessionAttendeesTable({
                           subName={bg.subCoFacilitatorName}
                           volunteerOptions={volunteerOptions}
                         />
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">{bg.newCount}</TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {bg.returneeCount}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {bg.totalCheckedIn}
-                      </TableCell>
+                      </div>
+                    </div>
+                    <div className="flex gap-5">
+                      <div>
+                        <p className="text-xs text-muted-foreground">New</p>
+                        <p className="text-sm font-semibold tabular-nums">{bg.newCount}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Returning</p>
+                        <p className="text-sm font-semibold tabular-nums">{bg.returneeCount}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Total</p>
+                        <p className="text-sm font-semibold tabular-nums">{bg.totalCheckedIn}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {/* Desktop table */}
+              <div className="hidden overflow-x-auto rounded-lg border sm:block">
+                <Table>
+                  <TableHeader className="bg-muted/50">
+                    <TableRow>
+                      <TableHead>Group</TableHead>
+                      <TableHead>Facilitator</TableHead>
+                      <TableHead>Co-Facilitator</TableHead>
+                      <TableHead className="text-right">New</TableHead>
+                      <TableHead className="text-right">Returnees</TableHead>
+                      <TableHead className="text-right">Total</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </>
-        )}
-      </TabsContent>
-    </Tabs>
+                  </TableHeader>
+                  <TableBody>
+                    {breakoutStats.map((bg) => (
+                      <TableRow key={bg.id}>
+                        <TableCell>
+                          <Link
+                            href={`/event/${eventId}/breakouts/${bg.id}`}
+                            className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 transition-colors hover:decoration-foreground"
+                          >
+                            {bg.name}
+                          </Link>
+                        </TableCell>
+                        <TableCell>
+                          <FacilitatorCell
+                            occurrenceId={occurrenceId}
+                            breakoutGroupId={bg.id}
+                            eventId={eventId}
+                            role={FacilitatorRole.Facilitator}
+                            name={bg.facilitatorName}
+                            present={bg.facilitatorPresent}
+                            subId={bg.subFacilitatorId}
+                            subName={bg.subFacilitatorName}
+                            volunteerOptions={volunteerOptions}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <FacilitatorCell
+                            occurrenceId={occurrenceId}
+                            breakoutGroupId={bg.id}
+                            eventId={eventId}
+                            role={FacilitatorRole.CoFacilitator}
+                            name={bg.coFacilitatorName}
+                            present={bg.coFacilitatorPresent}
+                            subId={bg.subCoFacilitatorId}
+                            subName={bg.subCoFacilitatorName}
+                            volunteerOptions={volunteerOptions}
+                          />
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">{bg.newCount}</TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {bg.returneeCount}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {bg.totalCheckedIn}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
+          )}
+        </TabsContent>
+      </Tabs>
+
+      <Dialog
+        open={attendeeToRemove !== null}
+        onOpenChange={(open) => {
+          if (!open) setAttendeeToRemove(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove from session</DialogTitle>
+            <DialogDescription>
+              {attendeeToRemove ? (
+                <>
+                  Remove{" "}
+                  <span className="font-medium">
+                    {attendeeToRemove.name ?? "this attendee"}
+                  </span>{" "}
+                  from this session&apos;s checked-in list? Their registration and
+                  attendance in other sessions stay untouched.
+                </>
+              ) : null}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAttendeeToRemove(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleRemoveAttendee}>
+              Remove
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   )
 }
 

@@ -109,6 +109,24 @@ export function buildAttendanceBreakdown(
   return { rows, total }
 }
 
+/**
+ * Whether the "Attendance by Life Stage" card should explain itself.
+ *
+ * Life Stage is an opt-in form field (`fieldLifeStage`, default off), but the
+ * report reads it off the *person* record — so an event full of known members
+ * shows real life stages even with every form bare. The card is only confusing
+ * in the overlap: nothing collects the field AND someone actually landed in the
+ * "Not specified" bucket. Outside that, either the grouping works or there's
+ * nothing to group, and a nag would be noise.
+ */
+export function shouldExplainMissingLifeStage(
+  breakdown: EventAttendanceBreakdown,
+  collectsLifeStage: boolean
+): boolean {
+  if (collectsLifeStage) return false
+  return breakdown.rows.some((row) => row.lifeStageId === null && row.attendees > 0)
+}
+
 type LifeStageSelection = { id: string; name: string; order: number } | null
 
 function resolveParticipant(registrant: {
@@ -171,11 +189,21 @@ export async function loadEventAttendanceBreakdown(
     return buildAttendanceBreakdown(registrants.map(resolveParticipant))
   }
 
+  // No upper bound on the occurrence date here, unlike the OneTime branch above.
+  // Reaching this query at all means a check-in row exists, so a session dated
+  // ahead of today — a check-in desk opened early, or simply a Manila date that
+  // is still tomorrow in UTC — is real attendance rather than a not-yet-held
+  // session. Bounding it made these attendees vanish from every KPI on the
+  // dashboard while the Sessions page still listed them.
+  // See occurrenceWindowWhere in lib/events/dashboard-period.ts, which applies
+  // the same rule to the chart's occurrence query.
+  const occurrenceDateRange = periodStart ? { gte: periodStart } : undefined
+
   const attendances = await db.occurrenceAttendee.findMany({
     where: {
       // Participant attendance only — volunteer check-ins carry a null registrantId.
       registrantId: { not: null },
-      occurrence: { eventId, date: dateRange },
+      occurrence: { eventId, ...(occurrenceDateRange ? { date: occurrenceDateRange } : {}) },
     },
     distinct: ["registrantId"],
     select: { registrant: { select: registrantSelect } },

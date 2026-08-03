@@ -3,6 +3,7 @@ import {
   buildDashboardPeriod,
   endOfUtcDay,
   normalizePeriod,
+  occurrenceWindowWhere,
   startOfUtcDay,
 } from "@/lib/events/dashboard-period"
 
@@ -119,5 +120,34 @@ describe("buildDashboardPeriod", () => {
       const { start } = buildDashboardPeriod("all", EVENT_START, PH_EARLY_MORNING)
       expect(start.toISOString()).toBe("2026-01-15T00:00:00.000Z")
     })
+  })
+})
+
+describe("occurrenceWindowWhere", () => {
+  // Regression: the raw range alone hid any session dated past today, including
+  // one whose check-in desk was opened early and already held check-ins. Those
+  // people showed on the Sessions page while "Attendance by Session" was empty.
+  // In PH this fires daily: a session dated with today's Manila date is a UTC
+  // day ahead until 08:00 PH.
+  it("readmits a future-dated session that already has check-ins", () => {
+    const { occurrenceRange } = buildDashboardPeriod("30d", EVENT_START, PH_EARLY_MORNING)
+    const where = occurrenceWindowWhere(occurrenceRange)
+
+    expect(where.OR).toHaveLength(2)
+    expect(where.OR[0]).toEqual({ date: occurrenceRange })
+    expect(where.OR[1]).toEqual({
+      date: { gt: occurrenceRange.lte },
+      attendees: { some: {} },
+    })
+  })
+
+  it("keeps the attendance condition on the future branch only", () => {
+    const { occurrenceRange } = buildDashboardPeriod("all", EVENT_START, PH_EARLY_MORNING)
+    const where = occurrenceWindowWhere(occurrenceRange)
+
+    // An empty session inside the window must still plot as a real zero.
+    expect(where.OR[0]).not.toHaveProperty("attendees")
+    // An empty session in the future must not plot at all.
+    expect(where.OR[1]).toHaveProperty("attendees")
   })
 })

@@ -26,7 +26,7 @@ export default async function ClusterCheckinPage({
 
   const cluster = await db.eventCluster.findUnique({
     where: { id },
-    select: { id: true },
+    select: { id: true, date: true },
   })
   if (!cluster) notFound()
 
@@ -35,7 +35,12 @@ export default async function ClusterCheckinPage({
   const events = (await getAccessibleClusterEvents(session, id)).filter(
     (e) => e.type === "OneTime"
   )
-  const rows = await getClusterRegistrantRows(events.map((e) => e.id))
+  // The date scope is a no-op while this list is OneTime-only (they check in via
+  // attendedAt, not occurrences) — passed so widening the filter stays correct.
+  const rows = await getClusterRegistrantRows(
+    events.map((e) => e.id),
+    cluster.date
+  )
   const roster = buildClusterRoster(events, rows)
 
   const people = roster.rows.map((person) => {

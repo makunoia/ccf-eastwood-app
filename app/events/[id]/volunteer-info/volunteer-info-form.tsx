@@ -19,6 +19,11 @@ import {
 import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
 import { lookupVolunteer, submitVolunteerInfo } from "./actions"
 import { type VolunteerIdentity, type VolunteerInfoInput, type GroupFields } from "./types"
+import {
+  LEADERSHIP_OPTIONS,
+  resolveInitialLeadership,
+  type LeadershipStatus,
+} from "@/lib/volunteers/leadership"
 
 type LifeStage = { id: string; name: string }
 
@@ -38,8 +43,6 @@ const GENDER_FOCUS_OPTIONS = [
   { value: "Male", label: "Male" },
   { value: "Female", label: "Female" },
 ] as const
-
-type LeadershipStatus = "leader" | "timothy" | "none"
 
 function emptyGroupFields(): GroupFields {
   return {
@@ -256,8 +259,8 @@ export function VolunteerInfoForm({ eventId, lifeStages }: Props) {
   const [noEmail, setNoEmail] = React.useState(false)
   const [phone, setPhone] = React.useState("")
 
-  // Leadership
-  const [leadershipStatus, setLeadershipStatus] = React.useState<LeadershipStatus>("none")
+  // Leadership — null until the volunteer picks one
+  const [leadershipStatus, setLeadershipStatus] = React.useState<LeadershipStatus | null>(null)
   const [selectedGroupId, setSelectedGroupId] = React.useState<string | null>(null)
   const [groupFields, setGroupFields] = React.useState<GroupFields>(emptyGroupFields())
 
@@ -288,15 +291,8 @@ export function VolunteerInfoForm({ eventId, lifeStages }: Props) {
     setEmail(v.email ?? "")
     setPhone(v.phone ?? lookupPhone)
 
-    // Prioritize led-group existence: a member who leads a group should always
-    // be treated as leader/timothy even if groupStatus is stale or null.
-    if (v.groupStatus === "Timothy") {
-      setLeadershipStatus("timothy")
-    } else if (v.groupStatus === "Leader" || v.ledGroups.length > 0) {
-      setLeadershipStatus("leader")
-    } else {
-      setLeadershipStatus("none")
-    }
+    // An Active led group outranks a stale groupStatus — see lib/volunteers/leadership.
+    setLeadershipStatus(resolveInitialLeadership(v))
 
     // Pre-fill group fields from their existing led group (leader or Timothy with pending group)
     const firstGroup = v.ledGroups[0]
@@ -322,6 +318,11 @@ export function VolunteerInfoForm({ eventId, lifeStages }: Props) {
     e.preventDefault()
     if (!identity) return
 
+    if (!leadershipStatus) {
+      setSubmitError("Please tell us whether you lead a group or want to lead one")
+      return
+    }
+
     setSubmitError("")
     setSubmitting(true)
 
@@ -333,8 +334,8 @@ export function VolunteerInfoForm({ eventId, lifeStages }: Props) {
       email: noEmail ? null : email.trim() || null,
       phone,
       leadershipStatus,
-      groupId: leadershipStatus !== "none" ? selectedGroupId : null,
-      groupFields: leadershipStatus !== "none" ? groupFields : null,
+      groupId: selectedGroupId,
+      groupFields,
     }
 
     const result = await submitVolunteerInfo(input)
@@ -474,41 +475,32 @@ export function VolunteerInfoForm({ eventId, lifeStages }: Props) {
         ) : (
           <>
             <p className="text-sm text-muted-foreground">
-              What is your current DGroup leadership status?
+              Which best describes your DGroup leadership?
             </p>
 
             <div className="flex gap-2">
-              {(["leader", "timothy", "none"] as const).map((v) => (
+              {LEADERSHIP_OPTIONS.map((o) => (
                 <button
-                  key={v}
+                  key={o.value}
                   type="button"
-                  onClick={() => setLeadershipStatus(v)}
+                  onClick={() => setLeadershipStatus(o.value)}
                   className={`flex-1 rounded-lg border py-2 text-sm font-medium transition-colors ${
-                    leadershipStatus === v
+                    leadershipStatus === o.value
                       ? "border-primary bg-primary text-primary-foreground"
                       : "hover:bg-muted/50"
                   }`}
                 >
-                  {v === "leader" ? "I lead a group" : v === "timothy" ? "I'm a Timothy" : "Neither"}
+                  {o.label}
                 </button>
               ))}
             </div>
 
-            {leadershipStatus === "leader" && (
+            {leadershipStatus && (
               <GroupFieldsEditor
                 value={groupFields}
                 onChange={setGroupFields}
                 lifeStages={lifeStages}
-                nameLabel="Group name"
-              />
-            )}
-
-            {leadershipStatus === "timothy" && (
-              <GroupFieldsEditor
-                value={groupFields}
-                onChange={setGroupFields}
-                lifeStages={lifeStages}
-                nameLabel="Intended group name"
+                nameLabel={leadershipStatus === "leader" ? "Group name" : "Intended group name"}
               />
             )}
           </>

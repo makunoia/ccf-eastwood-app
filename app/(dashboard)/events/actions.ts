@@ -26,7 +26,6 @@ import {
   applyMemberMatchingProfile,
 } from "@/lib/people/matching-profile"
 import {
-  autoCheckinIfOpenRecurringSession,
   checkInWalkInRegistrant,
   completeEventRegistration,
   findEventVolunteerConflict,
@@ -2025,10 +2024,9 @@ export async function createHouseholdRegistration(
       // uses breakouts should place a household together, which is an admin
       // decision rather than something to infer per person here.
 
+      // Same rule as the primary registrant: only a walk-in marks attendance.
       if (walkIn) {
         await checkInWalkInRegistrant(registrantId, walkIn.occurrenceId)
-      } else {
-        await autoCheckinIfOpenRecurringSession(registrantId, eventId)
       }
 
       if (!householdRegistrantIds.includes(registrantId)) {

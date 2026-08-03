@@ -51,6 +51,7 @@ export type VolunteerIdentity = {
   ledGroups: {
     id: string
     name: string
+    status: "Active" | "Pending" | "Inactive"
     lifeStageIds: string[]
     genderFocus: "Male" | "Female" | "Mixed" | null
     language: string[]

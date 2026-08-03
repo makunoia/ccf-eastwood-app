@@ -48,11 +48,38 @@ export async function getAccessibleClusterEvents(
     .filter((e) => canAccessEvent(session, e.id))
 }
 
-/** Flat registrant rows (with check-in state) for a set of cluster events. */
+/**
+ * UTC day bounds for a cluster date. Cluster dates are stored as a bare day
+ * (rendered with `timeZone: "UTC"` on the dashboard), so the window has to be
+ * computed in UTC to match — a local-time window would slide by 8 hours here.
+ */
+function utcDayRange(date: Date): { gte: Date; lt: Date } {
+  const start = new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
+  )
+  const end = new Date(start)
+  end.setUTCDate(end.getUTCDate() + 1)
+  return { gte: start, lt: end }
+}
+
+/**
+ * Flat registrant rows (with check-in state) for a set of cluster events.
+ *
+ * `clusterDate` scopes session attendance to the day the cluster represents. A
+ * cluster is one day's worth of events, but a MultiDay/Recurring event's
+ * occurrences span many days — without this, anyone who attended ANY past
+ * session of that event showed as checked in on today's roster.
+ * Null (a cluster with no date set) keeps the unscoped behavior: there is no
+ * day to scope to.
+ */
 export async function getClusterRegistrantRows(
-  eventIds: string[]
+  eventIds: string[],
+  clusterDate: Date | null = null
 ): Promise<ClusterRegistrantRow[]> {
   if (eventIds.length === 0) return []
+  const occurrenceFilter = clusterDate
+    ? { where: { occurrence: { date: utcDayRange(clusterDate) } } }
+    : {}
   const registrants = await db.eventRegistrant.findMany({
     where: { eventId: { in: eventIds } },
     select: {
@@ -68,7 +95,7 @@ export async function getClusterRegistrantRows(
       member: { select: { firstName: true, lastName: true, phone: true } },
       guest: { select: { firstName: true, lastName: true, phone: true } },
       event: { select: { type: true } },
-      occurrenceAttendances: { select: { id: true }, take: 1 },
+      occurrenceAttendances: { ...occurrenceFilter, select: { id: true }, take: 1 },
     },
   })
   return registrants.map((r) => ({
@@ -115,8 +142,17 @@ export async function getClusterOverview(
   session: Session | null,
   clusterId: string
 ): Promise<ClusterOverview> {
-  const events = await getAccessibleClusterEvents(session, clusterId)
-  const rows = await getClusterRegistrantRows(events.map((e) => e.id))
+  const [cluster, events] = await Promise.all([
+    db.eventCluster.findUnique({
+      where: { id: clusterId },
+      select: { date: true },
+    }),
+    getAccessibleClusterEvents(session, clusterId),
+  ])
+  const rows = await getClusterRegistrantRows(
+    events.map((e) => e.id),
+    cluster?.date ?? null
+  )
   const roster = buildClusterRoster(events, rows)
 
   const eventStats: ClusterEventStat[] = events.map((e) => {
