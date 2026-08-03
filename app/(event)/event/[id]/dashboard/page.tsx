@@ -4,12 +4,17 @@ import { db } from "@/lib/db"
 import { EventDashboardClient } from "./dashboard-client"
 import { ensureMultiDayOccurrences } from "@/app/(dashboard)/events/actions"
 import { loadRecurringSeriesSummaries } from "@/lib/events/series-summary"
-import { loadEventAttendanceBreakdown } from "@/lib/events/attendance-breakdown"
+import {
+  loadEventAttendanceBreakdown,
+  shouldExplainMissingLifeStage,
+} from "@/lib/events/attendance-breakdown"
+import { getEffectiveFormConfigs } from "@/lib/forms/context-config-server"
 import { buildTurnout } from "@/lib/events/turnout"
 import { buildAttendanceSeries } from "@/lib/events/attendance-series"
 import {
   buildDashboardPeriod,
   normalizePeriod,
+  occurrenceWindowWhere,
   type PeriodFilter,
 } from "@/lib/events/dashboard-period"
 import { getEventSetupChecklist } from "@/lib/events/setup-checklist"
@@ -134,7 +139,9 @@ async function getEventDashboard(id: string, period: PeriodFilter) {
     event.type === "OneTime"
       ? []
       : await db.eventOccurrence.findMany({
-          where: { eventId: event.id, date: occurrenceRange },
+          // Not a plain `date: occurrenceRange` — a session opened for check-in
+          // ahead of its own date already has attendance and must still plot.
+          where: { eventId: event.id, ...occurrenceWindowWhere(occurrenceRange) },
           orderBy: { date: "asc" },
           select: {
             id: true,
@@ -185,6 +192,16 @@ async function getEventDashboard(id: string, period: PeriodFilter) {
     periodEnd
   )
   const uniqueAttendees = attendanceBreakdown.total.attendees
+
+  // Life Stage is opt-in per form, and any of the three contexts can collect it —
+  // a Recurring event may only ever ask at check-in. "Nothing collects it" is
+  // therefore all three being off, not just Register.
+  const formConfigs = await getEffectiveFormConfigs(event.id)
+  const collectsLifeStage = Object.values(formConfigs).some((config) => config.fieldLifeStage)
+  const explainMissingLifeStage = shouldExplainMissingLifeStage(
+    attendanceBreakdown,
+    collectsLifeStage
+  )
 
   // Pre-registered vs actual check-ins (CCF-91). Shares the unique-attendee
   // count so turnout can never disagree with the KPI beside it.
@@ -404,6 +421,7 @@ async function getEventDashboard(id: string, period: PeriodFilter) {
     attendanceSeries: attendanceSeries.points,
     registrationSeries,
     attendanceBreakdown,
+    explainMissingLifeStage,
     placement: {
       inGroup,
       membersUnassigned,

@@ -4,6 +4,12 @@ import { db } from "@/lib/db"
 import { revalidatePath } from "next/cache"
 import { formatPhilippinePhone } from "@/lib/utils"
 import { volunteerInfoSchema, type VolunteerIdentity, type VolunteerInfoInput } from "./types"
+import {
+  memberGroupStatusFor,
+  newGroupStatusFor,
+  resolveEffectiveLeadership,
+  shouldActivateGroup,
+} from "@/lib/volunteers/leadership"
 
 type ActionResult<T = void> =
   | { success: true; data: T }
@@ -37,6 +43,7 @@ export async function lookupVolunteer(
         select: {
           id: true,
           name: true,
+          status: true,
           lifeStages: { select: { id: true } },
           genderFocus: true,
           language: true,
@@ -119,6 +126,10 @@ export async function submitVolunteerInfo(
     return { success: false, error: "Group not found" }
   }
 
+  // A group that is already Active proves real leadership, so a "timothy"
+  // submission against one is a promotion, not a demotion.
+  const leadership = resolveEffectiveLeadership(leadershipStatus, targetGroup?.status ?? null)
+
   try {
     const event = await db.event.findUnique({
       where: { id: eventId },
@@ -128,13 +139,10 @@ export async function submitVolunteerInfo(
     const changes: string[] = []
 
     await db.$transaction(async (tx) => {
-      const newGroupStatus =
-        leadershipStatus === "leader" ? "Leader"
-        : leadershipStatus === "timothy" ? "Timothy"
-        : null
+      const newGroupStatus = memberGroupStatusFor(leadership)
 
       // ── SmallGroup create/update (leader and Timothy both) ──────────────────
-      if ((leadershipStatus === "leader" || leadershipStatus === "timothy") && groupFields) {
+      if ((leadership === "leader" || leadership === "timothy") && groupFields) {
         const existing = targetGroup
 
         const groupData = {
@@ -153,14 +161,28 @@ export async function submitVolunteerInfo(
         const lifeStageConnect = groupFields.lifeStageIds.map((id) => ({ id }))
 
         if (existing) {
+          // Claiming leadership over a group that was pre-created as an intended
+          // group brings it live.
+          const activate = shouldActivateGroup(leadership, existing.status)
           await tx.smallGroup.update({
             where: { id: existing.id },
-            data: { ...groupData, lifeStages: { set: lifeStageConnect } },
+            data: {
+              ...groupData,
+              lifeStages: { set: lifeStageConnect },
+              ...(activate ? { status: "Active" as const } : {}),
+            },
           })
-          changes.push(`Updated group: "${groupFields.name}"`)
+          // No SmallGroupLog row here on purpose: the enum has no "activated"
+          // action and the group already owns a GroupCreated entry. The
+          // activation is recorded on the MemberLog via `changes` below.
+          changes.push(
+            activate
+              ? `Activated group: "${groupFields.name}"`
+              : `Updated group: "${groupFields.name}"`
+          )
         } else {
           // Leaders get Active immediately; Timothy gets Pending until first member
-          const status = leadershipStatus === "leader" ? "Active" : "Pending"
+          const status = newGroupStatusFor(leadership)
           const created = await tx.smallGroup.create({
             data: { ...groupData, leaderId: memberId, status, lifeStages: { connect: lifeStageConnect } },
             select: { id: true },
@@ -170,13 +192,13 @@ export async function submitVolunteerInfo(
               smallGroupId: created.id,
               action: "GroupCreated",
               description:
-                leadershipStatus === "timothy"
+                leadership === "timothy"
                   ? `Group "${groupFields.name}" prepared via volunteer info form (${event?.name ?? eventId}) — pending first member`
                   : `Group "${groupFields.name}" created via volunteer info form (${event?.name ?? eventId})`,
             },
           })
           changes.push(
-            leadershipStatus === "timothy"
+            leadership === "timothy"
               ? `Prepared group: "${groupFields.name}" (pending first member)`
               : `Created group: "${groupFields.name}"`
           )
@@ -204,7 +226,9 @@ export async function submitVolunteerInfo(
           lastName: lastName.trim(),
           email: email?.trim() || null,
           phone: formatPhilippinePhone(phone.trim()),
-          ...(leadershipStatus !== "none" ? { groupStatus: newGroupStatus } : {}),
+          // null only when leadership is "none" — never demote on a bare
+          // personal-info save.
+          ...(newGroupStatus ? { groupStatus: newGroupStatus } : {}),
         },
       })
 

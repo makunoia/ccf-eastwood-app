@@ -81,3 +81,27 @@ export function buildDashboardPeriod(
 
   return { start, end, occurrenceRange: { gte: start, lte: end } }
 }
+
+/**
+ * Occurrence `where` clause for the dashboard's period window.
+ *
+ * The upper bound exists so a session that has not happened yet doesn't plot as
+ * a crash to zero — sound, but only for sessions that drew nobody. A session
+ * whose check-in desk was opened ahead of time already holds real attendance,
+ * and dropping it made the dashboard contradict the Sessions page, which has no
+ * upper bound at all: the same people appeared in the session's checked-in list
+ * while "Attendance by Session" showed nothing.
+ *
+ * This is not an edge case in PH. Occurrence dates are UTC midnight, so a
+ * session an admin dates with *today's Manila date* sits a day ahead of the UTC
+ * day until 08:00 PH — every early-morning check-in window hit this.
+ *
+ * Future sessions are therefore included exactly when someone has checked in.
+ * `attendees: { some: {} }` counts volunteer rows too: any real check-in makes
+ * the session real, and the chart plots both series.
+ */
+export function occurrenceWindowWhere(range: DashboardPeriod["occurrenceRange"]) {
+  return {
+    OR: [{ date: range }, { date: { gt: range.lte }, attendees: { some: {} } }],
+  }
+}

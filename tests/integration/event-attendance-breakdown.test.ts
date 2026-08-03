@@ -127,6 +127,89 @@ describe("loadEventAttendanceBreakdown", () => {
     expect(total.attendees).toBe(0)
   })
 
+  describe("all-time window (null periodStart)", () => {
+    it("counts a standalone session dated before the event start", async () => {
+      // "All time" passes no lower bound precisely because an event can carry a
+      // session dated before Event.startDate — anchoring to the start would drop
+      // attendees the dashboard claims to be counting.
+      const event = await db.event.create({
+        data: {
+          name: "Series With A Prequel",
+          type: "Recurring",
+          startDate: new Date("2026-07-01T00:00:00Z"),
+          endDate: new Date("2026-07-29T00:00:00Z"),
+        },
+      })
+      const guest = await db.guest.create({
+        data: { firstName: "Early", lastName: "Bird", language: [] },
+      })
+      const registrant = await db.eventRegistrant.create({
+        data: { eventId: event.id, guestId: guest.id },
+      })
+      const standalone = await db.eventOccurrence.create({
+        data: { eventId: event.id, date: new Date("2026-06-10T00:00:00Z") },
+      })
+      await db.occurrenceAttendee.create({
+        data: { occurrenceId: standalone.id, registrantId: registrant.id },
+      })
+
+      const allTime = await loadEventAttendanceBreakdown(
+        db,
+        event.id,
+        "Recurring",
+        null,
+        new Date("2026-07-31T00:00:00Z")
+      )
+      expect(allTime.total.attendees).toBe(1)
+
+      // The same read bounded to the event's own start drops that attendee —
+      // which is the bug the null lower bound exists to avoid.
+      const bounded = await loadEventAttendanceBreakdown(
+        db,
+        event.id,
+        "Recurring",
+        event.startDate,
+        new Date("2026-07-31T00:00:00Z")
+      )
+      expect(bounded.total.attendees).toBe(0)
+    })
+
+    it("still excludes OneTime registrants who never checked in", async () => {
+      // Without a lower bound the attendedAt filter is carrying the whole
+      // "did they show up?" question on its own.
+      const event = await db.event.create({
+        data: {
+          name: "No Lower Bound",
+          type: "OneTime",
+          startDate: new Date("2026-07-05T00:00:00Z"),
+          endDate: new Date("2026-07-05T00:00:00Z"),
+        },
+      })
+      await db.eventRegistrant.createMany({
+        data: [
+          {
+            eventId: event.id,
+            firstName: "Came",
+            lastName: "Early",
+            attendedAt: new Date("2026-06-01T02:00:00Z"),
+          },
+          { eventId: event.id, firstName: "Never", lastName: "Showed" },
+        ],
+      })
+
+      const { total } = await loadEventAttendanceBreakdown(
+        db,
+        event.id,
+        "OneTime",
+        null,
+        new Date("2026-07-31T00:00:00Z")
+      )
+
+      expect(total.attendees).toBe(1)
+      expect(total.firstTimers).toBe(1)
+    })
+  })
+
   it("counts a Recurring attendee once across multiple occurrences", async () => {
     const { singles } = await seedLifeStages()
     const guest = await db.guest.create({

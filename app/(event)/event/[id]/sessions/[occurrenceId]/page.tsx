@@ -1,14 +1,12 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
-import { UserCheck, UserPlus, Users } from "lucide-react"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
-import { canExport, canImport } from "@/lib/permissions"
-import { isEstablishedAttendee } from "@/lib/session-stats"
+import { canExport, canImport, canWrite } from "@/lib/permissions"
+import { isEstablishedAttendee, resolveAttendeeStatus } from "@/lib/session-stats"
 import { ministryLabel } from "@/lib/events/ministry-label"
 import { BreadcrumbOverride } from "@/components/breadcrumb-context"
 import { DetailPageHeader } from "@/components/detail-page-header"
-import { StatCard } from "@/components/session-stat-card"
 import { SessionAttendeesTable } from "./session-attendees-table"
 import { SessionExportButton } from "./session-export-button"
 import { SessionImportButton } from "./session-import-button"
@@ -69,7 +67,13 @@ async function getOccurrenceDetail(occurrenceId: string) {
 
   if (!occurrence) return null
 
-  const [volunteers, breakoutGroups, subFacilitators, totalRegistrants] = await Promise.all([
+  const [
+    volunteers,
+    breakoutGroups,
+    subFacilitators,
+    totalRegistrants,
+    siblingOccurrences,
+  ] = await Promise.all([
     db.volunteer.findMany({
       where: { eventId: occurrence.event.id },
       select: {
@@ -132,6 +136,7 @@ async function getOccurrenceDetail(occurrenceId: string) {
                 occurrenceAttendances: {
                   select: {
                     occurrenceId: true,
+                    isReturnerOverride: true,
                     occurrence: { select: { date: true } },
                   },
                 },
@@ -151,9 +156,23 @@ async function getOccurrenceDetail(occurrenceId: string) {
       },
     }),
     db.eventRegistrant.count({ where: { eventId: occurrence.event.id } }),
+    // Chronological neighbours for the ← / → header nav. Sessions read in date
+    // order regardless of how the list screen groups them into series.
+    db.eventOccurrence.findMany({
+      where: { eventId: occurrence.event.id },
+      orderBy: { date: "asc" },
+      select: { id: true },
+    }),
   ])
 
-  return { occurrence, volunteers, breakoutGroups, subFacilitators, totalRegistrants }
+  return {
+    occurrence,
+    volunteers,
+    breakoutGroups,
+    subFacilitators,
+    totalRegistrants,
+    siblingOccurrences,
+  }
 }
 
 function getAttendeeName(registrant: {
@@ -200,7 +219,15 @@ export default async function OccurrenceDetailPage({
   const data = await getOccurrenceDetail(occurrenceId)
   if (!data || data.occurrence.event.id !== id) notFound()
 
-  const { occurrence, volunteers, breakoutGroups, subFacilitators } = data
+  const { occurrence, volunteers, breakoutGroups, subFacilitators, siblingOccurrences } = data
+  const canEdit = canWrite(session, "Events")
+
+  const currentIndex = siblingOccurrences.findIndex((o) => o.id === occurrenceId)
+  const prevOccurrenceId = currentIndex > 0 ? siblingOccurrences[currentIndex - 1].id : null
+  const nextOccurrenceId =
+    currentIndex !== -1 && currentIndex < siblingOccurrences.length - 1
+      ? siblingOccurrences[currentIndex + 1].id
+      : null
 
   // A registrant may also be a volunteer for this event (registered + checked in via the
   // normal flow, or imported as session attendance). Cross-reference by member so those
@@ -234,6 +261,8 @@ export default async function OccurrenceDetailPage({
         checkedInAtFormatted,
         // Volunteers are established — never tagged "New".
         isReturner: true,
+        derivedIsReturner: true,
+        hasStatusOverride: false,
         isMember: true,
         isVolunteer: true,
         breakoutGroupIds: [] as string[],
@@ -244,21 +273,31 @@ export default async function OccurrenceDetailPage({
 
     const r = a.registrant!
     const isVolunteer = r.memberId ? volunteerMemberIds.has(r.memberId) : false
+    // Members and volunteers are established — never "New". Only first-time guests are
+    // tagged New, and an admin can pin that on the row itself. The derived value travels
+    // to the client too, so clearing an override is a plain toggle back.
+    const derivedIsReturner =
+      isVolunteer ||
+      isEstablishedAttendee(!!r.memberId, r.occurrenceAttendances, occurrenceId, occurrence.date)
+    const isReturner =
+      isVolunteer ||
+      resolveAttendeeStatus(
+        a.isReturnerOverride,
+        !!r.memberId,
+        r.occurrenceAttendances,
+        occurrenceId,
+        occurrence.date,
+      )
+
     return {
       id: a.id,
       kind: "registrant" as const,
       subjectId: r.id,
       name: getAttendeeName(r),
       checkedInAtFormatted,
-      // Members and volunteers are established — never "New". Only first-time guests are tagged New.
-      isReturner:
-        isVolunteer ||
-        isEstablishedAttendee(
-          !!r.memberId,
-          r.occurrenceAttendances,
-          occurrenceId,
-          occurrence.date,
-        ),
+      isReturner,
+      derivedIsReturner,
+      hasStatusOverride: a.isReturnerOverride !== null,
       isMember: !!r.memberId,
       isVolunteer,
       breakoutGroupIds: r.breakoutGroupMemberships.map((m) => m.breakoutGroupId),
@@ -267,12 +306,9 @@ export default async function OccurrenceDetailPage({
     }
   })
 
+  // The stat cards are derived client-side from the same rows so they track optimistic
+  // edits; only the header subtitle and the export's disabled state need a count here.
   const totalCount = attendeesWithStats.length
-  const newCount = attendeesWithStats.filter((a) => !a.isReturner).length
-  const volunteersPresent = attendeesWithStats.filter((a) => a.isVolunteer).length
-  const participantCount = totalCount - volunteersPresent
-  const menCount = attendeesWithStats.filter((a) => a.gender === "Male").length
-  const womenCount = attendeesWithStats.filter((a) => a.gender === "Female").length
 
   const breakoutStats = breakoutGroups.map((bg) => {
     // A facilitator is present if they checked in as a volunteer (current path) or,
@@ -301,8 +337,11 @@ export default async function OccurrenceDetailPage({
     )
 
     // Members are established — never "New". Only first-time guests count as New.
+    // Mirrors the attendees table, admin override included, so the two tabs agree.
     const bgReturnerFlags = checkedInMembers.map((m) =>
-      isEstablishedAttendee(
+      resolveAttendeeStatus(
+        m.registrant.occurrenceAttendances.find((a) => a.occurrenceId === occurrenceId)
+          ?.isReturnerOverride,
         !!m.registrant.memberId,
         m.registrant.occurrenceAttendances,
         occurrenceId,
@@ -353,6 +392,12 @@ export default async function OccurrenceDetailPage({
       />
       <DetailPageHeader
         title={dateLabel}
+        prevHref={
+          prevOccurrenceId ? `/event/${id}/sessions/${prevOccurrenceId}` : null
+        }
+        nextHref={
+          nextOccurrenceId ? `/event/${id}/sessions/${nextOccurrenceId}` : null
+        }
         subtitle={
           <p className="text-sm text-muted-foreground">
             {ministryLabel(
@@ -384,26 +429,6 @@ export default async function OccurrenceDetailPage({
       />
 
       <div className="flex flex-1 flex-col gap-6 p-6">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <StatCard
-            label="Total"
-            value={totalCount}
-            icon={<Users className="size-4" />}
-            genderBar={{ men: menCount, women: womenCount }}
-          />
-          <StatCard label="New" value={newCount} icon={<UserPlus className="size-4" />} />
-          <StatCard
-            label="Participants"
-            value={participantCount}
-            icon={<Users className="size-4" />}
-          />
-          <StatCard
-            label="Volunteers"
-            value={volunteersPresent}
-            icon={<UserCheck className="size-4" />}
-          />
-        </div>
-
         <SessionAttendeesTable
           eventId={id}
           occurrenceId={occurrenceId}
@@ -411,6 +436,7 @@ export default async function OccurrenceDetailPage({
           breakoutGroups={breakoutGroupOptions}
           breakoutStats={breakoutStats}
           volunteerOptions={volunteerOptions}
+          canEdit={canEdit}
         />
       </div>
     </>

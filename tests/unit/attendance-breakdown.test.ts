@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import {
   buildAttendanceBreakdown,
+  shouldExplainMissingLifeStage,
   UNSPECIFIED_LIFE_STAGE_LABEL,
   type AttendanceParticipant,
 } from "@/lib/events/attendance-breakdown"
@@ -120,5 +121,33 @@ describe("buildAttendanceBreakdown", () => {
       expect(total.firstTimers).toBe(1)
       expect(total.membersInGroup).toBe(0)
     })
+  })
+})
+
+describe("shouldExplainMissingLifeStage", () => {
+  it("explains when nothing collects Life Stage and attendees are unspecified", () => {
+    const breakdown = buildAttendanceBreakdown([participant({}), participant({ lifeStage: SINGLES })])
+    expect(shouldExplainMissingLifeStage(breakdown, false)).toBe(true)
+  })
+
+  it("stays quiet when a form collects Life Stage", () => {
+    // The unspecified bucket has other causes — a walk-in who skipped the field,
+    // an older registrant. Only the "nobody was ever asked" case is explainable.
+    const breakdown = buildAttendanceBreakdown([participant({})])
+    expect(shouldExplainMissingLifeStage(breakdown, true)).toBe(false)
+  })
+
+  it("stays quiet when every attendee already has a life stage", () => {
+    // Life Stage comes off the person record, so known members report it even
+    // with every form bare — nothing to explain.
+    const breakdown = buildAttendanceBreakdown([
+      participant({ isMember: true, lifeStage: SINGLES }),
+      participant({ isMember: true, lifeStage: YOUNG_PRO }),
+    ])
+    expect(shouldExplainMissingLifeStage(breakdown, false)).toBe(false)
+  })
+
+  it("stays quiet when there is no attendance at all", () => {
+    expect(shouldExplainMissingLifeStage(buildAttendanceBreakdown([]), false)).toBe(false)
   })
 })

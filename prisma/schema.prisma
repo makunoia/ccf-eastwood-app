@@ -676,6 +676,11 @@ model OccurrenceAttendee {
   volunteerId  String?
   volunteer    Volunteer?       @relation(fields: [volunteerId], references: [id], onDelete: Cascade)
   checkedInAt  DateTime        @default(now())
+  // Admin override for the derived New/Returning badge. The status is normally
+  // derived from prior attendance (lib/session-stats.ts), but a guest who
+  // attended before the church started recording sessions looks "New" forever —
+  // so an admin can pin it. null = use the derived value.
+  isReturnerOverride Boolean?
 
   @@unique([occurrenceId, registrantId])
   @@unique([occurrenceId, volunteerId])

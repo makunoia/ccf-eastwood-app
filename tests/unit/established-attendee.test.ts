@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest"
-import { isEstablishedAttendee, isReturner } from "@/lib/session-stats"
+import {
+  isEstablishedAttendee,
+  isReturner,
+  resolveAttendeeStatus,
+} from "@/lib/session-stats"
 
 // Covers the "members are never New" rule on the occurrence detail page.
 // `isEstablishedAttendee` returns true when an attendee should NOT be tagged "New".
@@ -61,5 +65,33 @@ describe("isEstablishedAttendee — members are never tagged New", () => {
         )
       }
     })
+  })
+})
+
+// The admin can pin the badge on the attendance row itself — a guest who attended
+// before the church started recording sessions would otherwise read "New" forever.
+describe("resolveAttendeeStatus — admin override on the attendance row", () => {
+  it("falls back to the derived value when there is no override", () => {
+    expect(resolveAttendeeStatus(null, false, [], OCC, TODAY)).toBe(false)
+    expect(resolveAttendeeStatus(null, false, priorAttendance, OCC, TODAY)).toBe(true)
+    expect(resolveAttendeeStatus(null, true, [], OCC, TODAY)).toBe(true)
+  })
+
+  it("treats undefined (field not selected / no row) the same as null", () => {
+    expect(resolveAttendeeStatus(undefined, false, [], OCC, TODAY)).toBe(false)
+    expect(resolveAttendeeStatus(undefined, false, priorAttendance, OCC, TODAY)).toBe(true)
+  })
+
+  it("promotes a first-time guest to Returning when overridden to true", () => {
+    expect(resolveAttendeeStatus(true, false, [], OCC, TODAY)).toBe(true)
+  })
+
+  it("demotes a returning guest to New when overridden to false", () => {
+    expect(resolveAttendeeStatus(false, false, priorAttendance, OCC, TODAY)).toBe(false)
+  })
+
+  it("lets an override win over the member rule", () => {
+    // Members derive as established; an explicit false still pins them to New.
+    expect(resolveAttendeeStatus(false, true, [], OCC, TODAY)).toBe(false)
   })
 })
