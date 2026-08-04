@@ -56,6 +56,23 @@ export const FORM_TOGGLE_KEYS: readonly FormToggleKey[] = [
 
 export type EventFormConfigData = Record<FormToggleKey, boolean>
 
+/**
+ * The toggles whose being on proves an admin has actually configured a form.
+ *
+ * Row existence used to be that proof, because a new event had no rows at all.
+ * `20260804000000_add_form_field_nickname` broke that: it writes a Register and a
+ * Walk-in row for every event that had none, so those events keep the nickname
+ * input they were already showing. Nickname is therefore the one toggle the
+ * *system* can switch on by itself, and counting it would mark an untouched
+ * event's form as set up.
+ *
+ * Derived from `FORM_TOGGLE_KEYS` rather than restated, so a toggle added later
+ * counts as admin intent without anyone having to remember this list.
+ */
+export const ADMIN_INTENT_TOGGLE_KEYS: readonly FormToggleKey[] = FORM_TOGGLE_KEYS.filter(
+  (key) => key !== "fieldNickname"
+)
+
 /** Every toggle off — the "bare" form. */
 export const BARE_EVENT_FORM_CONFIG: EventFormConfigData = Object.freeze(
   Object.fromEntries(FORM_TOGGLE_KEYS.map((k) => [k, false])) as EventFormConfigData,

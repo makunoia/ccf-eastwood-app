@@ -140,6 +140,112 @@ describe("public registration — the nickname field toggle", () => {
     expect(after.nickname).toBe("Jun")
   })
 
+  it("fills a confirmed member's empty nickname instead of discarding it", async () => {
+    // Only the anonymous branch puts a nickname on `EventRegistrant`, so someone
+    // who confirms as an existing member used to have their answer dropped.
+    const event = await seedEvent(true)
+    const member = await db.member.create({
+      data: {
+        firstName: "Junior",
+        lastName: "Santos",
+        dateJoined: new Date(),
+        language: [],
+      },
+    })
+
+    const res = await createRegistrant(
+      event.id,
+      {
+        firstName: "Junior",
+        lastName: "Santos",
+        nickname: "Jun",
+        mobileNumber: "09171234567",
+      },
+      member.id
+    )
+    expect(res.success).toBe(true)
+
+    const after = await db.member.findUniqueOrThrow({ where: { id: member.id } })
+    expect(after.nickname).toBe("Jun")
+  })
+
+  it("never overwrites a nickname the member already has", async () => {
+    const event = await seedEvent(true)
+    const member = await db.member.create({
+      data: {
+        firstName: "Junior",
+        lastName: "Santos",
+        nickname: "Jun",
+        dateJoined: new Date(),
+        language: [],
+      },
+    })
+
+    await createRegistrant(
+      event.id,
+      {
+        firstName: "Junior",
+        lastName: "Santos",
+        nickname: "JR",
+        mobileNumber: "09171234567",
+      },
+      member.id
+    )
+
+    const after = await db.member.findUniqueOrThrow({ where: { id: member.id } })
+    expect(after.nickname).toBe("Jun")
+  })
+
+  it("fills a confirmed guest's empty nickname too", async () => {
+    const event = await seedEvent(true)
+    const guest = await db.guest.create({
+      data: { firstName: "Junior", lastName: "Santos", language: [] },
+    })
+
+    await createRegistrant(
+      event.id,
+      {
+        firstName: "Junior",
+        lastName: "Santos",
+        nickname: "Jun",
+        mobileNumber: "09171234567",
+      },
+      null,
+      guest.id
+    )
+
+    const after = await db.guest.findUniqueOrThrow({ where: { id: guest.id } })
+    expect(after.nickname).toBe("Jun")
+  })
+
+  it("does not fill a confirmed member's nickname when the field is off", async () => {
+    // The gate runs before the resolver, so a crafted value never reaches the
+    // profile write either.
+    const event = await seedEvent(false)
+    const member = await db.member.create({
+      data: {
+        firstName: "Junior",
+        lastName: "Santos",
+        dateJoined: new Date(),
+        language: [],
+      },
+    })
+
+    await createRegistrant(
+      event.id,
+      {
+        firstName: "Junior",
+        lastName: "Santos",
+        nickname: "Jun",
+        mobileNumber: "09171234567",
+      },
+      member.id
+    )
+
+    const after = await db.member.findUniqueOrThrow({ where: { id: member.id } })
+    expect(after.nickname).toBeNull()
+  })
+
   it("treats an event with no stored config as not asking for a nickname", async () => {
     // "Bare by default" — a missing row collects nothing optional. Events that
     // predate the toggle were given a row by the migration instead.

@@ -185,6 +185,7 @@ export async function resolveConfirmedMember(
   const existing = await db.member.findUniqueOrThrow({
     where: { id: memberId },
     select: {
+      nickname: true,
       email: true, phone: true, birthMonth: true, birthYear: true,
       lifeStageId: true, gender: true, language: true, meetingPreference: true, workCity: true,
       ageRangeBucketId: true,
@@ -195,6 +196,12 @@ export async function resolveConfirmedMember(
     },
   })
   const memberUpdates: Record<string, unknown> = {}
+  // Only the anonymous-guest branch carries a nickname onto `EventRegistrant`, so
+  // without this the answer was collected and dropped for anyone who confirmed as
+  // an existing member. Fill-if-empty like every other field here: a nickname
+  // already on file is the one they chose, and a one-off spelling typed at
+  // registration shouldn't overwrite it.
+  if (!existing.nickname && data.nickname) memberUpdates.nickname = data.nickname
   if (!existing.email && data.email) memberUpdates.email = data.email
   if (!existing.phone && data.mobileNumber) memberUpdates.phone = data.mobileNumber
   if (existing.birthMonth == null && data.birthMonth != null) memberUpdates.birthMonth = data.birthMonth
@@ -242,6 +249,7 @@ export async function resolveConfirmedGuest(
   const existing = await db.guest.findUniqueOrThrow({
     where: { id: guestId },
     select: {
+      nickname: true,
       email: true, phone: true, birthMonth: true, birthYear: true,
       lifeStageId: true, gender: true, language: true, meetingPreference: true, workCity: true,
       ageRangeBucketId: true,
@@ -250,6 +258,8 @@ export async function resolveConfirmedGuest(
     },
   })
   const guestUpdates: Record<string, unknown> = {}
+  // Same fill-if-empty rule as the member path — see `resolveConfirmedMember`.
+  if (!existing.nickname && data.nickname) guestUpdates.nickname = data.nickname
   if (!existing.email && data.email) guestUpdates.email = data.email
   if (!existing.phone && data.mobileNumber) guestUpdates.phone = data.mobileNumber
   if (existing.birthMonth == null && data.birthMonth != null) guestUpdates.birthMonth = data.birthMonth
