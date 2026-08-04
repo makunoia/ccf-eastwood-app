@@ -140,6 +140,103 @@ describe("public registration — the nickname field toggle", () => {
     expect(after.nickname).toBe("Jun")
   })
 
+  it("stores a brand-new guest's nickname on the Guest, not just the registration", async () => {
+    // The per-event value is an override; the profile is what makes them findable
+    // by nickname in the Guests module and at their next event's check-in.
+    const event = await seedEvent(true)
+
+    await createRegistrant(
+      event.id,
+      {
+        firstName: "Junior",
+        lastName: "Santos",
+        nickname: "Jun",
+        mobileNumber: "09171234567",
+      },
+      null
+    )
+
+    const guest = await db.guest.findFirstOrThrow({ where: { lastName: "Santos" } })
+    expect(guest.nickname).toBe("Jun")
+
+    const registrant = await db.eventRegistrant.findFirstOrThrow({
+      where: { eventId: event.id },
+    })
+    expect(registrant.nickname).toBe("Jun")
+  })
+
+  it("fills the nickname on a guest matched by the dedup ladder", async () => {
+    const event = await seedEvent(true)
+    const guest = await db.guest.create({
+      data: {
+        firstName: "Junior",
+        lastName: "Santos",
+        phone: "+63 917 123 4567",
+        language: [],
+      },
+    })
+
+    await createRegistrant(
+      event.id,
+      {
+        firstName: "Junior",
+        lastName: "Santos",
+        nickname: "Jun",
+        mobileNumber: "09171234567",
+      },
+      null
+    )
+
+    const after = await db.guest.findUniqueOrThrow({ where: { id: guest.id } })
+    expect(after.nickname).toBe("Jun")
+  })
+
+  it("does not overwrite a matched guest's existing nickname", async () => {
+    // An admin may have curated it — a spelling typed at the desk must not win.
+    const event = await seedEvent(true)
+    const guest = await db.guest.create({
+      data: {
+        firstName: "Junior",
+        lastName: "Santos",
+        nickname: "Jun",
+        phone: "+63 917 123 4567",
+        language: [],
+      },
+    })
+
+    await createRegistrant(
+      event.id,
+      {
+        firstName: "Junior",
+        lastName: "Santos",
+        nickname: "JR",
+        mobileNumber: "09171234567",
+      },
+      null
+    )
+
+    const after = await db.guest.findUniqueOrThrow({ where: { id: guest.id } })
+    expect(after.nickname).toBe("Jun")
+  })
+
+  it("stores no guest nickname when the field is off", async () => {
+    const event = await seedEvent(false)
+
+    await createRegistrant(
+      event.id,
+      {
+        firstName: "Junior",
+        lastName: "Santos",
+        nickname: "Jun",
+        mobileNumber: "09171234567",
+      },
+      null
+    )
+
+    const guest = await db.guest.findFirstOrThrow({ where: { lastName: "Santos" } })
+    expect(guest.nickname).toBeNull()
+  })
+
   it("fills a confirmed member's empty nickname instead of discarding it", async () => {
     // Only the anonymous branch puts a nickname on `EventRegistrant`, so someone
     // who confirms as an existing member used to have their answer dropped.

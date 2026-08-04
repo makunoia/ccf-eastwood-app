@@ -290,6 +290,11 @@ export async function resolveConfirmedGuest(
  * last name + birthday), updating the matched guest's matching profile, or
  * create a fresh Guest. Skips the dedup ladder entirely when the person
  * explicitly said "That's not me" to a guest match.
+ *
+ * The nickname is written to the `Guest` as well as to `EventRegistrant`. It used
+ * to live only on the registrant row, so a guest who gave a nickname still showed
+ * a blank one in the Guests module and couldn't be found by it at their next
+ * event — the per-event value is an override, not the only place it belongs.
  */
 export async function resolveAnonymousGuest(
   data: RegistrantData,
@@ -309,18 +314,19 @@ export async function resolveAnonymousGuest(
     claimedSatellite: data.claimedSatellite ?? null,
   }
 
-  let existingGuest: { id: string } | null = null
+  // Nickname rides along so the update below can fill it only when empty.
+  let existingGuest: { id: string; nickname: string | null } | null = null
   if (!skipDeduplication) {
     if (data.mobileNumber) {
       existingGuest = await db.guest.findFirst({
         where: { phone: data.mobileNumber },
-        select: { id: true },
+        select: { id: true, nickname: true },
       })
     }
     if (!existingGuest && data.email) {
       existingGuest = await db.guest.findFirst({
         where: { email: data.email },
-        select: { id: true },
+        select: { id: true, nickname: true },
       })
     }
     if (
@@ -335,7 +341,7 @@ export async function resolveAnonymousGuest(
           birthMonth: data.birthMonth,
           birthYear: data.birthYear,
         },
-        select: { id: true },
+        select: { id: true, nickname: true },
       })
     }
   }
@@ -345,6 +351,12 @@ export async function resolveAnonymousGuest(
     await db.guest.update({
       where: { id: existingGuest.id },
       data: {
+        // Fill-if-empty rather than overwrite-if-provided like its neighbours
+        // here: a nickname already on file is what this person is known as (an
+        // admin may well have curated it), so a spelling typed at a registration
+        // desk must not replace it. Same rule as the confirmed-member/guest
+        // resolvers, which keeps one nickname rule across every write path.
+        ...(!existingGuest.nickname && data.nickname && { nickname: data.nickname }),
         ...(data.birthMonth != null && { birthMonth: data.birthMonth }),
         ...(data.birthYear != null && { birthYear: data.birthYear }),
         ...(matchingProfile.lifeStageId !== null && { lifeStageId: matchingProfile.lifeStageId }),
@@ -375,6 +387,11 @@ export async function resolveAnonymousGuest(
     data: {
       firstName: data.firstName,
       lastName: data.lastName,
+      // The answer also lands on `EventRegistrant.nickname` as the per-event
+      // value, which the read paths prefer. Storing it here too is what makes the
+      // person findable by nickname outside this one event — in the Guests module,
+      // and at check-in for every later event they attend.
+      nickname: data.nickname ?? null,
       email: data.email ?? null,
       phone: data.mobileNumber,
       birthMonth: data.birthMonth ?? null,
