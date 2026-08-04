@@ -10,13 +10,14 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest"
 import { db } from "@/lib/db"
 import { createRegistrant } from "@/app/(dashboard)/events/actions"
+import { registerForCluster } from "@/app/(dashboard)/events/cluster-actions"
 
 vi.mock("@/lib/auth", () => ({
   auth: vi.fn(async () => ({ user: { id: "u1", role: "SuperAdmin" } })),
 }))
 
 beforeEach(async () => {
-  await db.$executeRaw`TRUNCATE "Member", "Guest", "Event", "EventRegistrant", "EventFormConfig" RESTART IDENTITY CASCADE`
+  await db.$executeRaw`TRUNCATE "Member", "Guest", "Event", "EventRegistrant", "EventFormConfig", "EventClusterEvent", "EventCluster" RESTART IDENTITY CASCADE`
 })
 
 afterAll(async () => {
@@ -37,6 +38,93 @@ async function seedEvent(nicknameOn: boolean, context: "Register" | "WalkIn" = "
   })
   return event
 }
+
+/**
+ * The cluster shared form is a separate action with its own config read and its
+ * own sanitize call, so it gets its own coverage rather than riding on the
+ * per-event tests.
+ */
+async function seedCluster(nicknameOn: boolean) {
+  const event = await db.event.create({
+    data: {
+      name: "Super Sunday Session",
+      type: "OneTime",
+      startDate: new Date("2026-09-01"),
+      endDate: new Date("2026-09-01"),
+    },
+  })
+  const cluster = await db.eventCluster.create({
+    data: {
+      name: "Super Sunday",
+      isOpen: true,
+      events: { create: [{ eventId: event.id, order: 0 }] },
+    },
+    select: { id: true, publicToken: true },
+  })
+  await db.eventFormConfig.create({
+    data: { clusterId: cluster.id, context: "Register", fieldNickname: nicknameOn },
+  })
+  return { event, cluster }
+}
+
+describe("cluster shared form — the nickname field toggle", () => {
+  it("stores the nickname on the guest and the registration when on", async () => {
+    const { event, cluster } = await seedCluster(true)
+
+    const res = await registerForCluster(
+      cluster.publicToken,
+      {
+        firstName: "Junior",
+        lastName: "Santos",
+        nickname: "Jun",
+        mobileNumber: "09171234567",
+      },
+      null,
+      null,
+      undefined,
+      [event.id]
+    )
+    expect(res.success).toBe(true)
+
+    const guest = await db.guest.findFirstOrThrow({ where: { lastName: "Santos" } })
+    expect(guest.nickname).toBe("Jun")
+    const registrant = await db.eventRegistrant.findFirstOrThrow({
+      where: { eventId: event.id },
+    })
+    expect(registrant.nickname).toBe("Jun")
+  })
+
+  it("drops a crafted nickname against the CLUSTER's config, not the event's", async () => {
+    // The cluster owns the shared form; a permissive per-event config must not
+    // let a value through that the cluster's own form doesn't ask for.
+    const { event, cluster } = await seedCluster(false)
+    await db.eventFormConfig.create({
+      data: { eventId: event.id, context: "Register", fieldNickname: true },
+    })
+
+    const res = await registerForCluster(
+      cluster.publicToken,
+      {
+        firstName: "Junior",
+        lastName: "Santos",
+        nickname: "Jun",
+        mobileNumber: "09171234567",
+      },
+      null,
+      null,
+      undefined,
+      [event.id]
+    )
+    expect(res.success).toBe(true)
+
+    const guest = await db.guest.findFirstOrThrow({ where: { lastName: "Santos" } })
+    expect(guest.nickname).toBeNull()
+    const registrant = await db.eventRegistrant.findFirstOrThrow({
+      where: { eventId: event.id },
+    })
+    expect(registrant.nickname).toBeNull()
+  })
+})
 
 describe("public registration — the nickname field toggle", () => {
   it("stores the nickname when the field is on", async () => {
