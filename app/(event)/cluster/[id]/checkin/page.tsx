@@ -8,6 +8,8 @@ import {
   getClusterRegistrantRows,
 } from "@/lib/clusters/aggregate"
 import { buildClusterRoster } from "@/lib/clusters/roster"
+import { canWrite } from "@/lib/permissions"
+import { clusterWalkInPath } from "@/lib/public-routes"
 import { DetailPageHeader } from "@/components/detail-page-header"
 import { StatCard } from "@/components/session-stat-card"
 import { ClusterCheckinClient } from "./checkin-client"
@@ -26,15 +28,16 @@ export default async function ClusterCheckinPage({
 
   const cluster = await db.eventCluster.findUnique({
     where: { id },
-    select: { id: true, date: true },
+    select: { id: true, date: true, publicToken: true },
   })
   if (!cluster) notFound()
 
+  const accessibleEvents = await getAccessibleClusterEvents(session, id)
   // The status board covers OneTime events and Recurring events whose link
   // names a session — for those, "checked in" means checked into THAT session.
   // Recurring events without a linked session (legacy links) stay on their own
   // sessions pages, as do MultiDay events.
-  const events = (await getAccessibleClusterEvents(session, id)).filter(
+  const events = accessibleEvents.filter(
     (e) => e.type === "OneTime" || (e.type === "Recurring" && e.linkedOccurrenceId)
   )
   const rows = await getClusterRegistrantRows(events, {
@@ -91,7 +94,18 @@ export default async function ClusterCheckinPage({
           />
         </div>
 
-        <ClusterCheckinClient people={people} hasCheckinEvents={events.length > 0} />
+        <ClusterCheckinClient
+          people={people}
+          hasCheckinEvents={events.length > 0}
+          // The door link registers and checks someone in across the day in one
+          // pass — worth a shortcut from the board a staffer is already holding.
+          // Hidden from read-only staff: it writes registrations and attendance.
+          walkInHref={
+            canWrite(session, "Events") && accessibleEvents.length > 0
+              ? clusterWalkInPath(cluster.publicToken)
+              : null
+          }
+        />
       </div>
     </>
   )

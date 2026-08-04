@@ -1,9 +1,11 @@
 "use client"
 
 import * as React from "react"
-import { IconCheck } from "@tabler/icons-react"
+import Link from "next/link"
+import { IconCheck, IconUserPlus } from "@tabler/icons-react"
 
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 
 type Person = {
@@ -24,9 +26,12 @@ type Person = {
 export function ClusterCheckinClient({
   people,
   hasCheckinEvents,
+  walkInHref,
 }: {
   people: Person[]
   hasCheckinEvents: boolean
+  /** Door link for someone who isn't registered yet — null without write access. */
+  walkInHref?: string | null
 }) {
   const [search, setSearch] = React.useState("")
 
@@ -39,23 +44,40 @@ export function ClusterCheckinClient({
       })
     : people
 
+  // Same-tab navigation, not a new window: this is a PWA, and the walk-in form
+  // already carries a Back link to this board.
+  const walkInButton = walkInHref ? (
+    <Button asChild variant="outline" className="w-full sm:w-auto">
+      <Link href={walkInHref}>
+        <IconUserPlus className="size-4" />
+        Walk-in registration
+      </Link>
+    </Button>
+  ) : null
+
   if (!hasCheckinEvents) {
     return (
-      <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
-        Nothing to monitor yet. One-time events appear here automatically;
-        a recurring event appears once its cluster link names a session.
+      <div className="space-y-4">
+        <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
+          Nothing to monitor yet. One-time events appear here automatically;
+          a recurring event appears once its cluster link names a session.
+        </div>
+        {walkInButton}
       </div>
     )
   }
 
   return (
     <div className="space-y-4">
-      <Input
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Search name or mobile…"
-        className="sm:max-w-xs"
-      />
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search name or mobile…"
+          className="sm:max-w-xs"
+        />
+        {walkInButton}
+      </div>
 
       {filtered.length === 0 ? (
         <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">

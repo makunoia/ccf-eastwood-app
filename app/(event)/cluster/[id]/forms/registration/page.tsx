@@ -7,6 +7,7 @@ import {
   getClusterFormConfigs,
   getClusterFormSuccessMessages,
 } from "@/lib/forms/context-config-server"
+import { clusterRegisterPath } from "@/lib/public-routes"
 import { PageHeader } from "@/components/page-header"
 import { EventFormBuilder } from "@/components/forms/event-form-builder"
 import { clusterFormPrerequisites } from "@/lib/forms/form-prerequisites-server"
@@ -65,7 +66,7 @@ export default async function ClusterRegistrationFormPage({
       <ClusterFormSettings
         clusterId={id}
         clusterName={cluster.name}
-        publicPath={`/register/c/${cluster.publicToken}`}
+        publicPath={clusterRegisterPath(cluster.publicToken)}
         initialIsOpen={cluster.isOpen}
         initialRegistrationStart={cluster.registrationStart?.toISOString() ?? null}
         initialRegistrationEnd={cluster.registrationEnd?.toISOString() ?? null}
