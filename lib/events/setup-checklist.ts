@@ -1,5 +1,6 @@
 import { db } from "@/lib/db"
-import type { EventModuleType } from "@/app/generated/prisma/client"
+import { ADMIN_INTENT_TOGGLE_KEYS } from "@/lib/forms/context-config"
+import type { EventModuleType, Prisma } from "@/app/generated/prisma/client"
 
 /**
  * Event setup walkthrough — derives the recommended setup checklist shown on the
@@ -58,7 +59,7 @@ export async function getEventSetupChecklist(
     volunteerCount,
     breakoutCount,
     sessionCount,
-    formConfigCount,
+    configuredFormCount,
     registrantCount,
     checkinCount,
   ] = await Promise.all([
@@ -72,9 +73,22 @@ export async function getEventSetupChecklist(
     isOneTime
       ? Promise.resolve(0)
       : db.eventOccurrence.count({ where: { eventId } }),
-    // New events start with no config rows at all ("bare"), so the presence of
-    // any row is the signal that the admin has been through the form builder.
-    db.eventFormConfig.count({ where: { eventId } }),
+    // "Has the admin been through the form builder?" — answered by a toggle they
+    // could only have set themselves, not by row existence. A row is no longer
+    // proof of anything: the nickname migration writes one for every event that
+    // had none, so counting rows would tick this step for an untouched event.
+    // A worded success message counts too — it's the other thing the builder edits.
+    db.eventFormConfig.count({
+      where: {
+        eventId,
+        OR: [
+          ...ADMIN_INTENT_TOGGLE_KEYS.map(
+            (key) => ({ [key]: true }) as Prisma.EventFormConfigWhereInput
+          ),
+          { successMessage: { not: null } },
+        ],
+      },
+    }),
     db.eventRegistrant.count({ where: { eventId } }),
     // OneTime attendance lives on EventRegistrant.attendedAt; MultiDay/Recurring
     // use OccurrenceAttendee (participant rows only — volunteer check-ins have a
@@ -133,7 +147,7 @@ export async function getEventSetupChecklist(
       label: "Set up the registration form",
       description:
         "Choose what Register, Walk-in, and Check-in each ask for. New events start with just name and contact details.",
-      done: formConfigCount > 0,
+      done: configuredFormCount > 0,
       href: `${base}/forms/EventRegistration`,
     },
     {

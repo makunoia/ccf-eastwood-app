@@ -20,6 +20,7 @@ export const FORM_SECTION_KEYS = [
 ] as const
 
 export const FORM_FIELD_KEYS = [
+  "fieldNickname",
   "fieldLifeStage",
   "fieldGender",
   "fieldBirthDate",
@@ -54,6 +55,23 @@ export const FORM_TOGGLE_KEYS: readonly FormToggleKey[] = [
 ]
 
 export type EventFormConfigData = Record<FormToggleKey, boolean>
+
+/**
+ * The toggles whose being on proves an admin has actually configured a form.
+ *
+ * Row existence used to be that proof, because a new event had no rows at all.
+ * `20260804000000_add_form_field_nickname` broke that: it writes a Register and a
+ * Walk-in row for every event that had none, so those events keep the nickname
+ * input they were already showing. Nickname is therefore the one toggle the
+ * *system* can switch on by itself, and counting it would mark an untouched
+ * event's form as set up.
+ *
+ * Derived from `FORM_TOGGLE_KEYS` rather than restated, so a toggle added later
+ * counts as admin intent without anyone having to remember this list.
+ */
+export const ADMIN_INTENT_TOGGLE_KEYS: readonly FormToggleKey[] = FORM_TOGGLE_KEYS.filter(
+  (key) => key !== "fieldNickname"
+)
 
 /** Every toggle off — the "bare" form. */
 export const BARE_EVENT_FORM_CONFIG: EventFormConfigData = Object.freeze(
@@ -152,6 +170,12 @@ export const FORM_SECTION_META: Record<FormSectionKey, FormToggleMeta> = {
 }
 
 export const FORM_FIELD_META: Record<FormFieldKey, FormToggleMeta> = {
+  fieldNickname: {
+    key: "fieldNickname",
+    label: "Nickname",
+    description:
+      "What the person actually goes by. Used on their name badge and to find them at check-in, where a search matches nicknames as well as legal names.",
+  },
   fieldLifeStage: {
     key: "fieldLifeStage",
     label: "Life Stage",
@@ -262,7 +286,13 @@ const REGISTER_LAYOUT: readonly FormLayoutSection[] = [
     key: "personal",
     title: "Personal Information",
     description: "Name, mobile number and email are always collected.",
-    fields: ["fieldLifeStage", "fieldBirthDate", "fieldAgeRange", "fieldGender"],
+    fields: [
+      "fieldNickname",
+      "fieldLifeStage",
+      "fieldBirthDate",
+      "fieldAgeRange",
+      "fieldGender",
+    ],
     options: [],
   },
   {
@@ -384,8 +414,10 @@ export type LegacyFormToggles = {
  * Notes on the mapping:
  *  - Register and Walk-in rendered the same component with the same props
  *    (walk-ins go through `/events/[id]/register?checkin=…`), so they match.
- *  - Birth date and Gender were rendered unconditionally in Personal
- *    Information, independent of any toggle.
+ *  - Birth date, Gender and Nickname were rendered unconditionally in Personal
+ *    Information, independent of any toggle. Nickname only became a toggle later
+ *    (`20260804000000_add_form_field_nickname`), and that migration's backfill
+ *    matches the value returned here.
  *  - The matching fields only appeared inside the DGroup section.
  *  - Breakout selection had no toggle — it appeared whenever the event was not
  *    in auto-assign mode (and candidates existed, which stays a runtime check).
@@ -404,6 +436,7 @@ export function deriveLegacyEventFormConfig(
     sectionDietary: isCheckIn ? false : legacy.formIncludeDietary,
     sectionPayment: isCheckIn ? false : legacy.formIncludePayment,
     sectionFamily: false,
+    fieldNickname: !isCheckIn,
     fieldLifeStage: sg,
     fieldGender: isCheckIn ? sg : true,
     fieldBirthDate: isCheckIn ? false : true,

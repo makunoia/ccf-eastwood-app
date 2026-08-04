@@ -60,6 +60,7 @@ async function getRegistrant(registrantId: string, eventId: string) {
           id: true,
           firstName: true,
           lastName: true,
+          nickname: true,
           phone: true,
           email: true,
           address: true,
@@ -85,6 +86,7 @@ async function getRegistrant(registrantId: string, eventId: string) {
           id: true,
           firstName: true,
           lastName: true,
+          nickname: true,
           phone: true,
           email: true,
           notes: true,
@@ -232,6 +234,9 @@ export default async function RegistrantDetailPage({
   const memberSchedule = registrant.member?.schedulePreferences?.[0] ?? null
 
   const responseFieldRows = buildRegistrationFieldRows(formConfig, {
+    // The per-event nickname wins over the one on the profile — same precedence
+    // the registrant list and check-in search use.
+    fieldNickname: registrant.nickname ?? person?.nickname ?? null,
     fieldLifeStage: person?.lifeStage?.name ?? null,
     fieldGender: person?.gender ?? null,
     fieldBirthDate: formatBirthDate(person?.birthMonth ?? null, person?.birthYear ?? null),

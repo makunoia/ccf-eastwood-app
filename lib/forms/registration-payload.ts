@@ -30,6 +30,7 @@ import {
  * only ever accept a crafted value for a field the admin already enabled.
  */
 export const REGISTRANT_FIELD_GATES = {
+  nickname: "fieldNickname",
   birthMonth: "fieldBirthDate",
   birthYear: "fieldBirthDate",
   ageRangeBucketId: "fieldAgeRange",
@@ -85,6 +86,7 @@ export function sanitizeRegistrantPayload<T extends object>(
 
 /** Per-person household fields carry the same demographic gates. */
 const HOUSEHOLD_MEMBER_GATES = [
+  "nickname",
   "birthMonth",
   "birthYear",
   "gender",

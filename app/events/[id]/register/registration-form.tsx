@@ -668,7 +668,7 @@ export function RegistrationForm({
     const registrantPayload = {
         firstName: form.firstName,
         lastName: form.lastName,
-        nickname: form.nickname,
+        nickname: cfg.fieldNickname ? form.nickname : null,
         email: form.email,
         mobileNumber: form.mobileNumber,
         // A disabled field must never submit a value, even one seeded into state
@@ -1266,15 +1266,17 @@ export function RegistrationForm({
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="nickname">Nickname</Label>
-                <Input
-                  id="nickname"
-                  value={form.nickname}
-                  onChange={(e) => set("nickname", e.target.value)}
-                  placeholder="Jun"
-                />
-              </div>
+              {cfg.fieldNickname && (
+                <div className="space-y-2">
+                  <Label htmlFor="nickname">Nickname</Label>
+                  <Input
+                    id="nickname"
+                    value={form.nickname}
+                    onChange={(e) => set("nickname", e.target.value)}
+                    placeholder="Jun"
+                  />
+                </div>
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="mobileNumber">Mobile Number</Label>
