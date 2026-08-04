@@ -42,6 +42,9 @@ export default async function ClusterDashboardPage({
   if (!cluster) notFound()
 
   const overview = await getClusterOverview(session, id)
+  // Only session events have a roster wider than the day, so the caveat about
+  // day-scoping is only worth showing when one is in the cluster.
+  const hasSessionEvent = overview.events.some((e) => e.type !== "OneTime")
 
   const dateLabel = cluster.date
     ? cluster.date.toLocaleDateString("en-PH", {
@@ -74,7 +77,7 @@ export default async function ClusterDashboardPage({
             icon={<IconCalendarEvent className="size-4" />}
           />
           <StatCard
-            label="Unique attendees"
+            label="People registered"
             value={overview.totals.uniquePeople}
             icon={<IconUsers className="size-4" />}
           />
@@ -84,11 +87,34 @@ export default async function ClusterDashboardPage({
             icon={<IconUserCheck className="size-4" />}
           />
           <StatCard
-            label="Via shared form"
-            value={overview.totals.viaClusterForm}
+            label="Via day link"
+            value={
+              <>
+                {overview.totals.viaSharedLinkPeople}
+                <span className="text-base font-normal text-muted-foreground">
+                  {" / "}
+                  {overview.totals.uniquePeople}
+                </span>
+              </>
+            }
             icon={<IconForms className="size-4" />}
           />
         </div>
+
+        <p className="-mt-3 text-xs text-muted-foreground">
+          People counted once each, however many of the day&apos;s events they
+          registered for. <span className="font-medium">Via day link</span> is how
+          many of them signed up through this day&apos;s shared registration link
+          rather than an individual event&apos;s own link.
+          {hasSessionEvent && (
+            <>
+              {" "}
+              Recurring and multi-day events count the people who checked in on
+              this date or signed up through the day link — not their whole
+              standing roster.
+            </>
+          )}
+        </p>
 
         {/* ── Per-event tiles ── */}
         {overview.eventStats.length === 0 ? (
@@ -115,13 +141,41 @@ export default async function ClusterDashboardPage({
                 <div className="flex gap-6 text-sm">
                   <div>
                     <p className="text-2xl font-semibold tabular-nums">{stat.registered}</p>
-                    <p className="text-xs text-muted-foreground">Registered</p>
+                    <p className="text-xs text-muted-foreground">
+                      {stat.type === "OneTime" ? "Registered" : "On this date"}
+                    </p>
                   </div>
                   <div>
                     <p className="text-2xl font-semibold tabular-nums">{stat.checkedIn}</p>
                     <p className="text-xs text-muted-foreground">Checked in</p>
                   </div>
                 </div>
+                {stat.type !== "OneTime" && (
+                  <div className="space-y-0.5 text-xs text-muted-foreground">
+                    <p>{stat.seriesRegistered} registered for the series overall</p>
+                    <p>
+                      {stat.linkedOccurrenceDate ? (
+                        <>
+                          Scoped to the{" "}
+                          {stat.linkedOccurrenceDate.toLocaleDateString("en-PH", {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                            timeZone: "UTC",
+                          })}{" "}
+                          session
+                        </>
+                      ) : (
+                        <Link
+                          href={`/cluster/${id}/settings`}
+                          className="underline underline-offset-2"
+                        >
+                          No session picked — counting by date
+                        </Link>
+                      )}
+                    </p>
+                  </div>
+                )}
               </div>
             ))}
           </div>

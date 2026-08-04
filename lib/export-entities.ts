@@ -1,6 +1,10 @@
 "use client"
 
 import { downloadCSV, formatDayOfWeek, type CSVCell } from "./csv-export"
+import {
+  buildClusterRegistrationsTable,
+  type ClusterRegistrationExportRow,
+} from "./exports/cluster-registrations"
 
 // Row shapes — kept minimal and aligned to import field labels so a round-trip
 // (export → re-import) auto-maps without manual column matching.
@@ -272,5 +276,19 @@ export function exportSessionAttendanceCSV(
   includeSeries: boolean,
 ): void {
   const { headers, cells } = buildSessionAttendanceTable(rows, includeSeries)
+  downloadCSV(filename, headers, cells)
+}
+
+// ── Event Cluster registrations ───────────────────────────────────────────────
+// The row shape, column registry and table builder live in
+// `lib/exports/cluster-registrations.ts` — the server needs them too, so they
+// can't sit in this client-only module. Only the download lives here.
+
+export function exportClusterRegistrationsCSV(
+  filename: string,
+  rows: ClusterRegistrationExportRow[],
+  selectedColumns: string[],
+): void {
+  const { headers, cells } = buildClusterRegistrationsTable(rows, selectedColumns)
   downloadCSV(filename, headers, cells)
 }

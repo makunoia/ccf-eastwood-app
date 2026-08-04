@@ -624,10 +624,17 @@ model EventClusterEvent {
   order     Int          @default(0)
   cluster   EventCluster @relation(fields: [clusterId], references: [id], onDelete: Cascade)
   event     Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  // Which session of a Recurring event this cluster day stands for. Null on
+  // OneTime links and on links made before session selection existed — null
+  // keeps the date-window behavior, so legacy clusters are untouched. SetNull:
+  // deleting a session degrades the link back to date-window, never breaks it.
+  occurrenceId String?
+  occurrence   EventOccurrence? @relation(fields: [occurrenceId], references: [id], onDelete: SetNull)
   createdAt DateTime     @default(now())
 
   @@id([clusterId, eventId])
   @@unique([eventId]) // one cluster per event
+  @@index([occurrenceId])
 }
 
 model EventOccurrenceSeries {
@@ -660,6 +667,7 @@ model EventOccurrence {
 
   attendees        OccurrenceAttendee[]
   subFacilitators  OccurrenceSubFacilitator[]
+  clusterLinks     EventClusterEvent[]
 
   @@unique([eventId, date])
   @@index([seriesId])

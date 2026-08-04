@@ -43,3 +43,17 @@ export function isPublicPath(pathname: string): boolean {
     PUBLIC_PATTERNS.some((re) => re.test(pathname))
   )
 }
+
+/** The cluster's shared registration link — what registrants are given. */
+export function clusterRegisterPath(publicToken: string): string {
+  return `/register/c/${publicToken}`
+}
+
+/**
+ * The same form in door mode: ignores the open/close toggle and registration
+ * window, reuses an existing registration instead of erroring, and checks the
+ * person in on submit. `?checkin=1` is the flag the page reads.
+ */
+export function clusterWalkInPath(publicToken: string): string {
+  return `${clusterRegisterPath(publicToken)}?checkin=1`
+}

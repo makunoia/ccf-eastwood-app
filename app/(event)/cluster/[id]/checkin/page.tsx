@@ -8,6 +8,8 @@ import {
   getClusterRegistrantRows,
 } from "@/lib/clusters/aggregate"
 import { buildClusterRoster } from "@/lib/clusters/roster"
+import { canWrite } from "@/lib/permissions"
+import { clusterWalkInPath } from "@/lib/public-routes"
 import { DetailPageHeader } from "@/components/detail-page-header"
 import { StatCard } from "@/components/session-stat-card"
 import { ClusterCheckinClient } from "./checkin-client"
@@ -26,21 +28,22 @@ export default async function ClusterCheckinPage({
 
   const cluster = await db.eventCluster.findUnique({
     where: { id },
-    select: { id: true, date: true },
+    select: { id: true, date: true, publicToken: true },
   })
   if (!cluster) notFound()
 
-  // The cluster board checks people in for OneTime events only — MultiDay and
-  // Recurring attendance stays on each event's own sessions pages (deferred).
-  const events = (await getAccessibleClusterEvents(session, id)).filter(
-    (e) => e.type === "OneTime"
+  const accessibleEvents = await getAccessibleClusterEvents(session, id)
+  // The status board covers OneTime events and Recurring events whose link
+  // names a session — for those, "checked in" means checked into THAT session.
+  // Recurring events without a linked session (legacy links) stay on their own
+  // sessions pages, as do MultiDay events.
+  const events = accessibleEvents.filter(
+    (e) => e.type === "OneTime" || (e.type === "Recurring" && e.linkedOccurrenceId)
   )
-  // The date scope is a no-op while this list is OneTime-only (they check in via
-  // attendedAt, not occurrences) — passed so widening the filter stays correct.
-  const rows = await getClusterRegistrantRows(
-    events.map((e) => e.id),
-    cluster.date
-  )
+  const rows = await getClusterRegistrantRows(events, {
+    clusterId: cluster.id,
+    date: cluster.date,
+  })
   const roster = buildClusterRoster(events, rows)
 
   const people = roster.rows.map((person) => {
@@ -71,7 +74,7 @@ export default async function ClusterCheckinPage({
         title="Check-in"
         subtitle={
           <p className="text-sm text-muted-foreground">
-            Live status across the day&apos;s one-time events — check-in happens on each
+            Live status across the day&apos;s events — check-in happens on each
             event&apos;s own form · {checkedInCount} of {people.length} checked in
           </p>
         }
@@ -91,7 +94,18 @@ export default async function ClusterCheckinPage({
           />
         </div>
 
-        <ClusterCheckinClient people={people} hasCheckinEvents={events.length > 0} />
+        <ClusterCheckinClient
+          people={people}
+          hasCheckinEvents={events.length > 0}
+          // The door link registers and checks someone in across the day in one
+          // pass — worth a shortcut from the board a staffer is already holding.
+          // Hidden from read-only staff: it writes registrations and attendance.
+          walkInHref={
+            canWrite(session, "Events") && accessibleEvents.length > 0
+              ? clusterWalkInPath(cluster.publicToken)
+              : null
+          }
+        />
       </div>
     </>
   )

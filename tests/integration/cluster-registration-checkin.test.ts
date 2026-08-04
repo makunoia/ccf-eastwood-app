@@ -279,7 +279,7 @@ describe("cluster roll-up scopes attendance to the cluster's day", () => {
       data: { occurrenceId: anyDay.id, registrantId },
     })
 
-    const rows = await getClusterRegistrantRows([event.id], null)
+    const rows = await getClusterRegistrantRows([{ id: event.id }], null)
     expect(rows[0].checkedIn).toBe(true)
   })
 

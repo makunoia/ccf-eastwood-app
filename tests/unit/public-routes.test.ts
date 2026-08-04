@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest"
-import { isPublicPath } from "@/lib/public-routes"
+import {
+  clusterRegisterPath,
+  clusterWalkInPath,
+  isPublicPath,
+} from "@/lib/public-routes"
 
 /**
  * Guards the proxy's public-path allowlist. A public form dropping off this
@@ -19,6 +23,16 @@ describe("isPublicPath", () => {
       // check-in board appends must not be part of the match.
       expect(isPublicPath("/register/c/abc123")).toBe(true)
       expect(isPublicPath("/register/c/tok-with-dashes_and_underscores")).toBe(true)
+    })
+
+    it("builds links that stay inside the allowlist", () => {
+      // The shortcut on the check-in board is built from these, so a change to
+      // either shape has to keep landing on a path the proxy lets through.
+      expect(clusterRegisterPath("abc123")).toBe("/register/c/abc123")
+      expect(clusterWalkInPath("abc123")).toBe("/register/c/abc123?checkin=1")
+      expect(isPublicPath(new URL(clusterWalkInPath("abc123"), "http://x").pathname)).toBe(
+        true
+      )
     })
 
     it("does not allow the authenticated cluster workspace", () => {

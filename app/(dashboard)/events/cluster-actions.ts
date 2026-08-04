@@ -23,6 +23,8 @@ import { registrantSchema } from "@/lib/validations/event-registrant"
 import {
   eventClusterSchema,
   eventClusterSettingsSchema,
+  isSameUtcDay,
+  validateClusterEventLink,
   validateClusterEventSelection,
   type EventClusterInput,
   type EventClusterSettingsInput,
@@ -96,6 +98,30 @@ export async function updateEventCluster(
     })
     if (!cluster) return { success: false, error: "Event cluster not found." }
 
+    // Moving the day must not leave a picked session behind on the old date.
+    // Only links that name a session are checked: links made before session
+    // selection existed carry no such claim, so they never block an edit.
+    if (parsed.data.date) {
+      const newDate = parsed.data.date
+      const linked = await db.eventClusterEvent.findMany({
+        where: { clusterId, occurrenceId: { not: null } },
+        select: {
+          event: { select: { name: true } },
+          occurrence: { select: { date: true } },
+        },
+      })
+      const stranded = linked.filter(
+        (l) => l.occurrence && !isSameUtcDay(l.occurrence.date, newDate)
+      )
+      if (stranded.length > 0) {
+        const names = stranded.map((l) => l.event.name).join(", ")
+        return {
+          success: false,
+          error: `${names} ${stranded.length === 1 ? "is" : "are"} pinned to a session on another date. Change the session first, then move the day.`,
+        }
+      }
+    }
+
     // Drop undefined so an omitted field doesn't overwrite a stored value.
     const data = Object.fromEntries(
       Object.entries(parsed.data).filter(([, v]) => v !== undefined)
@@ -124,26 +150,42 @@ export async function deleteEventCluster(clusterId: string): Promise<ActionResul
 
 export async function addEventToCluster(
   clusterId: string,
-  eventId: string
+  eventId: string,
+  /** Which session this day stands for — required for Recurring events. */
+  occurrenceId?: string | null
 ): Promise<ActionResult> {
   const authError = await requireWrite()
   if (authError) return { success: false, error: authError.error }
 
   try {
-    const [cluster, event] = await Promise.all([
-      db.eventCluster.findUnique({ where: { id: clusterId }, select: { id: true } }),
+    const [cluster, event, occurrence] = await Promise.all([
+      db.eventCluster.findUnique({
+        where: { id: clusterId },
+        select: { id: true, date: true },
+      }),
       db.event.findUnique({
         where: { id: eventId },
         select: {
           id: true,
           name: true,
+          type: true,
+          startDate: true,
           modules: { select: { type: true } },
           clusterMembership: { select: { clusterId: true } },
         },
       }),
+      occurrenceId
+        ? db.eventOccurrence.findUnique({
+            where: { id: occurrenceId },
+            select: { id: true, eventId: true, date: true },
+          })
+        : null,
     ])
     if (!cluster) return { success: false, error: "Event cluster not found." }
     if (!event) return { success: false, error: "Event not found." }
+    if (occurrenceId && !occurrence) {
+      return { success: false, error: "Session not found." }
+    }
 
     // Paid events are out of scope for clusters (no payment step on the shared
     // form) — they keep using their own per-event registration form.
@@ -163,18 +205,88 @@ export async function addEventToCluster(
       }
     }
 
+    const linkCheck = validateClusterEventLink({
+      eventId: event.id,
+      eventName: event.name,
+      eventType: event.type,
+      eventStartDate: event.startDate,
+      clusterDate: cluster.date,
+      session: occurrence,
+    })
+    if (!linkCheck.ok) return { success: false, error: linkCheck.error }
+
     const last = await db.eventClusterEvent.findFirst({
       where: { clusterId },
       orderBy: { order: "desc" },
       select: { order: true },
     })
     await db.eventClusterEvent.create({
-      data: { clusterId, eventId, order: (last?.order ?? -1) + 1 },
+      data: {
+        clusterId,
+        eventId,
+        order: (last?.order ?? -1) + 1,
+        occurrenceId: occurrence?.id ?? null,
+      },
     })
     revalidateClusterPaths(clusterId)
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to add the event to the cluster." }
+  }
+}
+
+/**
+ * Re-point a linked Recurring event at a different session. The dashboard,
+ * roster, check-in board, and export all scope to the link's session, so
+ * changing it here changes what every one of those screens shows.
+ */
+export async function setClusterEventSession(
+  clusterId: string,
+  eventId: string,
+  occurrenceId: string
+): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
+  try {
+    const [cluster, link, occurrence] = await Promise.all([
+      db.eventCluster.findUnique({
+        where: { id: clusterId },
+        select: { id: true, date: true },
+      }),
+      db.eventClusterEvent.findUnique({
+        where: { clusterId_eventId: { clusterId, eventId } },
+        select: {
+          event: { select: { id: true, name: true, type: true, startDate: true } },
+        },
+      }),
+      db.eventOccurrence.findUnique({
+        where: { id: occurrenceId },
+        select: { id: true, eventId: true, date: true },
+      }),
+    ])
+    if (!cluster) return { success: false, error: "Event cluster not found." }
+    if (!link) return { success: false, error: "That event isn't in this cluster." }
+    if (!occurrence) return { success: false, error: "Session not found." }
+
+    const linkCheck = validateClusterEventLink({
+      eventId: link.event.id,
+      eventName: link.event.name,
+      eventType: link.event.type,
+      eventStartDate: link.event.startDate,
+      clusterDate: cluster.date,
+      session: occurrence,
+    })
+    if (!linkCheck.ok) return { success: false, error: linkCheck.error }
+
+    await db.eventClusterEvent.update({
+      where: { clusterId_eventId: { clusterId, eventId } },
+      data: { occurrenceId },
+    })
+    revalidateClusterPaths(clusterId)
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to change the session." }
   }
 }
 
@@ -211,7 +323,7 @@ export type ClusterEventRegistrationResult = {
     | "failed" // unexpected per-event failure
   registrantId?: string
   breakoutGroup?: AssignedBreakout
-  /** Walk-in mode only: the person was checked in on this event (OneTime). */
+  /** Walk-in mode only: the person was checked in on this event. */
   checkedIn?: boolean
 }
 
@@ -224,10 +336,12 @@ export type ClusterEventRegistrationResult = {
  * are collected individually: one event being closed or already-registered must
  * not sink the others (partial success).
  *
- * Walk-in mode (cluster check-in board): exempt from the cluster window, reuses
- * existing registrations, and immediately checks the person in — but only on
- * OneTime events (attendedAt). MultiDay/Recurring events are registered without
- * a session check-in (deferred per the ticket decision).
+ * Walk-in mode (the door link): exempt from the cluster window, reuses existing
+ * registrations, and checks the person in immediately — on a OneTime event via
+ * `attendedAt`, and on a Recurring event via the session its cluster link names.
+ * A Recurring event whose link has no session is registered without check-in:
+ * there is no way to know which occurrence the person is standing in front of,
+ * which is exactly the ambiguity session selection removes.
  */
 export async function registerForCluster(
   publicToken: string,
@@ -254,6 +368,7 @@ export async function registerForCluster(
         events: {
           orderBy: { order: "asc" },
           select: {
+            occurrenceId: true,
             event: {
               select: {
                 id: true,
@@ -281,6 +396,10 @@ export async function registerForCluster(
     }
 
     const clusterEvents = cluster.events.map((ce) => ce.event)
+    /** The session each event's cluster link names — the walk-in check-in target. */
+    const linkedSessionByEvent = new Map(
+      cluster.events.map((ce) => [ce.event.id, ce.occurrenceId])
+    )
     const selection = validateClusterEventSelection(
       selectedEventIds,
       clusterEvents.map((e) => e.id)
@@ -350,12 +469,19 @@ export async function registerForCluster(
           continue
         }
 
-        // Cluster check-in is OneTime-only: walk-ins check in via attendedAt.
-        // MultiDay/Recurring events are registered without a session check-in —
-        // their own sessions pages handle attendance, because the cluster form
-        // has no way to say WHICH occurrence the person is present for.
-        const walkInForEvent =
-          walkIn && event.type === "OneTime" ? { occurrenceId: null } : null
+        // Where a walk-in's attendance lands. OneTime events have no sessions, so
+        // it's `attendedAt` (occurrenceId null). A Recurring event checks in on
+        // the session its cluster link names — the whole point of naming one. An
+        // unlinked Recurring event (or a legacy MultiDay link) still can't say
+        // WHICH occurrence the person is at, so it registers without check-in.
+        const linkedSession = linkedSessionByEvent.get(event.id) ?? null
+        const walkInForEvent = !walkIn
+          ? null
+          : event.type === "OneTime"
+            ? { occurrenceId: null }
+            : event.type === "Recurring" && linkedSession
+              ? { occurrenceId: linkedSession }
+              : null
 
         const completed = await completeEventRegistration({
           eventId,
