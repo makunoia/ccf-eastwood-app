@@ -4,6 +4,7 @@ import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import {
   addEventToCluster,
+  registerForCluster,
   removeEventFromCluster,
   setClusterEventSession,
   updateEventCluster,
@@ -284,6 +285,171 @@ describe("changing the session moves the day's figures", () => {
     expect(await db.eventClusterEvent.count()).toBe(0)
     expect(await db.eventRegistrant.count()).toBe(3)
     expect(await db.occurrenceAttendee.count()).toBe(2)
+  })
+})
+
+describe("walk-in through the shared door link", () => {
+  async function seedDay() {
+    const cluster = await seedCluster()
+    const feast = await db.event.create({
+      data: { name: "Feast", type: "OneTime", startDate: DAY, endDate: DAY },
+    })
+    const service = await seedRecurring()
+    const thisWeek = await seedSession(service.id, DAY)
+    const lastWeek = await seedSession(service.id, LAST_WEEK)
+    await addEventToCluster(cluster.id, feast.id)
+    await addEventToCluster(cluster.id, service.id, thisWeek.id)
+    return { cluster, feast, service, thisWeek, lastWeek }
+  }
+
+  function walkInPayload(tag: string) {
+    return { firstName: tag, lastName: "Door", mobileNumber: "0917 123 4567" }
+  }
+
+  it("checks the person into the linked session, not just the one-time event", async () => {
+    const { cluster, feast, service, thisWeek } = await seedDay()
+
+    const result = await registerForCluster(
+      cluster.publicToken,
+      walkInPayload("Juan"),
+      null,
+      null,
+      undefined,
+      [feast.id, service.id],
+      true // walk-in
+    )
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(result.data.results.every((r) => r.checkedIn)).toBe(true)
+
+    // OneTime → attendedAt; Recurring → an attendee row on the LINKED session.
+    const feastRegistrant = await db.eventRegistrant.findFirstOrThrow({
+      where: { eventId: feast.id },
+      select: { attendedAt: true },
+    })
+    expect(feastRegistrant.attendedAt).not.toBeNull()
+
+    const attendance = await db.occurrenceAttendee.findMany({
+      select: { occurrenceId: true },
+    })
+    expect(attendance).toEqual([{ occurrenceId: thisWeek.id }])
+
+    const serviceRegistrant = await db.eventRegistrant.findFirstOrThrow({
+      where: { eventId: service.id },
+      select: { registrationClusterId: true },
+    })
+    expect(serviceRegistrant.registrationClusterId).toBe(cluster.id)
+  })
+
+  it("puts the attendance on the linked session even when the link is re-pointed", async () => {
+    const { cluster, service, lastWeek } = await seedDay()
+    await db.eventCluster.update({
+      where: { id: cluster.id },
+      data: { date: LAST_WEEK },
+    })
+    await setClusterEventSession(cluster.id, service.id, lastWeek.id)
+
+    await registerForCluster(
+      cluster.publicToken,
+      walkInPayload("Juan"),
+      null,
+      null,
+      undefined,
+      [service.id],
+      true
+    )
+
+    const attendance = await db.occurrenceAttendee.findMany({
+      select: { occurrenceId: true },
+    })
+    expect(attendance).toEqual([{ occurrenceId: lastWeek.id }])
+  })
+
+  it("registers without check-in when the recurring link names no session", async () => {
+    const cluster = await seedCluster()
+    const service = await seedRecurring()
+    await seedSession(service.id, DAY)
+    // A legacy link — no session named.
+    await db.eventClusterEvent.create({
+      data: { clusterId: cluster.id, eventId: service.id, order: 0 },
+    })
+
+    const result = await registerForCluster(
+      cluster.publicToken,
+      walkInPayload("Juan"),
+      null,
+      null,
+      undefined,
+      [service.id],
+      true
+    )
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(result.data.results[0].checkedIn).toBe(false)
+    expect(await db.eventRegistrant.count()).toBe(1)
+    expect(await db.occurrenceAttendee.count()).toBe(0)
+  })
+
+  it("regression — plain registration records no attendance, linked session or not", async () => {
+    const { cluster, feast, service } = await seedDay()
+
+    const result = await registerForCluster(
+      cluster.publicToken,
+      walkInPayload("Juan"),
+      null,
+      null,
+      undefined,
+      [feast.id, service.id]
+      // no walk-in flag: registering is intent, not presence
+    )
+    expect(result.success).toBe(true)
+    expect(await db.eventRegistrant.count()).toBe(2)
+    expect(await db.occurrenceAttendee.count()).toBe(0)
+    expect(
+      await db.eventRegistrant.count({ where: { attendedAt: { not: null } } })
+    ).toBe(0)
+  })
+
+  it("a returning person walked in twice keeps one registration and one attendance", async () => {
+    const { cluster, service, thisWeek } = await seedDay()
+
+    for (let i = 0; i < 2; i++) {
+      await registerForCluster(
+        cluster.publicToken,
+        walkInPayload("Juan"),
+        null,
+        null,
+        undefined,
+        [service.id],
+        true
+      )
+    }
+
+    expect(await db.eventRegistrant.count({ where: { eventId: service.id } })).toBe(1)
+    const attendance = await db.occurrenceAttendee.findMany({
+      select: { occurrenceId: true },
+    })
+    expect(attendance).toEqual([{ occurrenceId: thisWeek.id }])
+  })
+
+  it("the day's figures show the walk-in immediately", async () => {
+    const { cluster, feast, service } = await seedDay()
+
+    await registerForCluster(
+      cluster.publicToken,
+      walkInPayload("Juan"),
+      null,
+      null,
+      undefined,
+      [feast.id, service.id],
+      true
+    )
+
+    const overview = await getClusterOverview(adminSession, cluster.id)
+    expect(overview.totals.uniquePeople).toBe(1)
+    expect(overview.totals.checkedInPeople).toBe(1)
+    expect(overview.totals.viaSharedLinkPeople).toBe(1)
+    expect(overview.eventStats.map((s) => s.checkedIn)).toEqual([1, 1])
   })
 })
 

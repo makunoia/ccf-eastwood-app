@@ -53,7 +53,7 @@ export default async function ClusterWalkInFormPage({
       <SettingCard
         className="max-w-2xl"
         title="Walk-in link"
-        description="The same shared form with door semantics: it ignores the open/close toggle and registration window, reuses existing registrations instead of erroring, and checks the person in immediately on one-time events."
+        description="The same shared form with door semantics: it ignores the open/close toggle and registration window, reuses existing registrations instead of erroring, and checks the person in immediately — on one-time events, and on recurring events through the session this day is linked to."
       >
         <a
           href={`/register/c/${cluster.publicToken}?checkin=1`}

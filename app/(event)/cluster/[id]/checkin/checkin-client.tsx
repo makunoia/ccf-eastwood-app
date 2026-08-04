@@ -16,9 +16,10 @@ type Person = {
 }
 
 /**
- * Monitoring board — live check-in status for the day's one-time events.
- * Check-in itself happens on each event's own surfaces (Forms → Check-in Forms
- * has every link); this page just shows who's arrived.
+ * Monitoring board — live check-in status for the day's events: one-time events,
+ * and recurring events through the session this day is linked to. Check-in
+ * itself happens on the check-in and walk-in links (Forms has every one); this
+ * page just shows who's arrived.
  */
 export function ClusterCheckinClient({
   people,
@@ -41,8 +42,8 @@ export function ClusterCheckinClient({
   if (!hasCheckinEvents) {
     return (
       <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
-        This cluster has no one-time events to monitor check-in for. Multi-day and
-        recurring events take attendance on their own sessions pages.
+        Nothing to monitor yet. One-time events appear here automatically;
+        a recurring event appears once its cluster link names a session.
       </div>
     )
   }

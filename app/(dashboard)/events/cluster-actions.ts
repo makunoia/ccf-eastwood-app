@@ -323,7 +323,7 @@ export type ClusterEventRegistrationResult = {
     | "failed" // unexpected per-event failure
   registrantId?: string
   breakoutGroup?: AssignedBreakout
-  /** Walk-in mode only: the person was checked in on this event (OneTime). */
+  /** Walk-in mode only: the person was checked in on this event. */
   checkedIn?: boolean
 }
 
@@ -336,10 +336,12 @@ export type ClusterEventRegistrationResult = {
  * are collected individually: one event being closed or already-registered must
  * not sink the others (partial success).
  *
- * Walk-in mode (cluster check-in board): exempt from the cluster window, reuses
- * existing registrations, and immediately checks the person in — but only on
- * OneTime events (attendedAt). MultiDay/Recurring events are registered without
- * a session check-in (deferred per the ticket decision).
+ * Walk-in mode (the door link): exempt from the cluster window, reuses existing
+ * registrations, and checks the person in immediately — on a OneTime event via
+ * `attendedAt`, and on a Recurring event via the session its cluster link names.
+ * A Recurring event whose link has no session is registered without check-in:
+ * there is no way to know which occurrence the person is standing in front of,
+ * which is exactly the ambiguity session selection removes.
  */
 export async function registerForCluster(
   publicToken: string,
@@ -366,6 +368,7 @@ export async function registerForCluster(
         events: {
           orderBy: { order: "asc" },
           select: {
+            occurrenceId: true,
             event: {
               select: {
                 id: true,
@@ -393,6 +396,10 @@ export async function registerForCluster(
     }
 
     const clusterEvents = cluster.events.map((ce) => ce.event)
+    /** The session each event's cluster link names — the walk-in check-in target. */
+    const linkedSessionByEvent = new Map(
+      cluster.events.map((ce) => [ce.event.id, ce.occurrenceId])
+    )
     const selection = validateClusterEventSelection(
       selectedEventIds,
       clusterEvents.map((e) => e.id)
@@ -462,12 +469,19 @@ export async function registerForCluster(
           continue
         }
 
-        // Cluster check-in is OneTime-only: walk-ins check in via attendedAt.
-        // MultiDay/Recurring events are registered without a session check-in —
-        // their own sessions pages handle attendance, because the cluster form
-        // has no way to say WHICH occurrence the person is present for.
-        const walkInForEvent =
-          walkIn && event.type === "OneTime" ? { occurrenceId: null } : null
+        // Where a walk-in's attendance lands. OneTime events have no sessions, so
+        // it's `attendedAt` (occurrenceId null). A Recurring event checks in on
+        // the session its cluster link names — the whole point of naming one. An
+        // unlinked Recurring event (or a legacy MultiDay link) still can't say
+        // WHICH occurrence the person is at, so it registers without check-in.
+        const linkedSession = linkedSessionByEvent.get(event.id) ?? null
+        const walkInForEvent = !walkIn
+          ? null
+          : event.type === "OneTime"
+            ? { occurrenceId: null }
+            : event.type === "Recurring" && linkedSession
+              ? { occurrenceId: linkedSession }
+              : null
 
         const completed = await completeEventRegistration({
           eventId,
