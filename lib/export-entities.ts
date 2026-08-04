@@ -1,6 +1,10 @@
 "use client"
 
 import { downloadCSV, formatDayOfWeek, type CSVCell } from "./csv-export"
+import {
+  buildClusterRegistrationsTable,
+  type ClusterRegistrationExportRow,
+} from "./exports/cluster-registrations"
 
 // Row shapes — kept minimal and aligned to import field labels so a round-trip
 // (export → re-import) auto-maps without manual column matching.
@@ -276,92 +280,15 @@ export function exportSessionAttendanceCSV(
 }
 
 // ── Event Cluster registrations ───────────────────────────────────────────────
-
-/** One registration record — a person on one of the cluster's events. */
-export type ClusterRegistrationExportRow = {
-  eventName: string
-  firstName: string
-  lastName: string
-  nickname: string | null
-  email: string | null
-  mobile: string
-  type: "Member" | "Guest"
-  registeredAt: string // ISO datetime
-  /** Came in through the cluster's shared registration form. */
-  viaSharedForm: boolean
-  checkedIn: boolean
-  /** ISO datetime, or null when they never checked in on the cluster's day. */
-  checkedInAt: string | null
-  isPaid: boolean
-  paymentReference: string | null
-}
-
-const CLUSTER_REGISTRATION_HEADERS = [
-  "Event",
-  "First Name",
-  "Last Name",
-  "Nickname",
-  "Email",
-  "Mobile",
-  "Type",
-  "Registered At",
-  "Via Shared Form",
-  "Checked In",
-  "Checked In At",
-]
-
-const CLUSTER_PAYMENT_HEADERS = ["Paid", "Payment Reference"]
-
-function formatManilaDateTime(iso: string | null): string {
-  if (!iso) return ""
-  const d = new Date(iso)
-  // en-CA gives yyyy-mm-dd, which sorts correctly in a spreadsheet.
-  const date = d.toLocaleDateString("en-CA", { timeZone: "Asia/Manila" })
-  const time = d.toLocaleTimeString("en-PH", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Asia/Manila",
-  })
-  return `${date} ${time}`
-}
-
-/**
- * Cluster registration table. Payment columns are dropped when no event in the
- * cluster charges — Recurring events never take payment, so a free day of
- * events would otherwise export two dead columns.
- */
-export function buildClusterRegistrationsTable(
-  rows: ClusterRegistrationExportRow[],
-  includePayment: boolean,
-): { headers: string[]; cells: CSVCell[][] } {
-  const headers = [
-    ...CLUSTER_REGISTRATION_HEADERS,
-    ...(includePayment ? CLUSTER_PAYMENT_HEADERS : []),
-  ]
-  const cells = rows.map((r) => [
-    r.eventName,
-    r.firstName,
-    r.lastName,
-    r.nickname,
-    r.email,
-    r.mobile,
-    r.type,
-    formatManilaDateTime(r.registeredAt),
-    r.viaSharedForm ? "Yes" : "No",
-    r.checkedIn ? "Yes" : "No",
-    formatManilaDateTime(r.checkedInAt),
-    ...(includePayment
-      ? [r.isPaid ? "Yes" : "No", r.paymentReference]
-      : []),
-  ])
-  return { headers, cells }
-}
+// The row shape, column registry and table builder live in
+// `lib/exports/cluster-registrations.ts` — the server needs them too, so they
+// can't sit in this client-only module. Only the download lives here.
 
 export function exportClusterRegistrationsCSV(
   filename: string,
   rows: ClusterRegistrationExportRow[],
-  includePayment: boolean,
+  selectedColumns: string[],
 ): void {
-  const { headers, cells } = buildClusterRegistrationsTable(rows, includePayment)
+  const { headers, cells } = buildClusterRegistrationsTable(rows, selectedColumns)
   downloadCSV(filename, headers, cells)
 }

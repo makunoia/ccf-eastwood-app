@@ -65,10 +65,6 @@ export default async function ClusterRegistrantsPage({
     }
   })
 
-  // Recurring events never take payment, so their price is ignored here.
-  const includePayment = events.some(
-    (e) => e.price !== null && e.type !== "Recurring"
-  )
   const exportDate = (cluster.date ?? new Date()).toISOString().split("T")[0]
   const exportSlug =
     cluster.name
@@ -85,7 +81,6 @@ export default async function ClusterRegistrantsPage({
             <ClusterExportButton
               clusterId={cluster.id}
               filename={`${exportSlug}-registrations-${exportDate}`}
-              includePayment={includePayment}
               disabled={rows.length === 0}
             />
           ) : null

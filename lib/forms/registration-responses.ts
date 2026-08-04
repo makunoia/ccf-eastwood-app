@@ -47,11 +47,20 @@ export type RegistrationSectionValues = Partial<Record<FormSectionKey, string | 
 export function mergeFormConfigs(
   configs: Partial<Record<FormContext, EventFormConfigData>>
 ): EventFormConfigData {
+  return unionFormConfigs(FORM_CONTEXTS.map((context) => configs[context]))
+}
+
+/**
+ * OR-union of any set of configs. Rule 1 applies across forms as well as across
+ * contexts: a cluster's registrations can arrive through any member event's form
+ * or the cluster's shared form, so "was this asked?" is a question about all of
+ * them at once.
+ */
+export function unionFormConfigs(
+  configs: (EventFormConfigData | undefined)[]
+): EventFormConfigData {
   return Object.fromEntries(
-    FORM_TOGGLE_KEYS.map((key) => [
-      key,
-      FORM_CONTEXTS.some((context) => configs[context]?.[key] === true),
-    ])
+    FORM_TOGGLE_KEYS.map((key) => [key, configs.some((c) => c?.[key] === true)])
   ) as EventFormConfigData
 }
 

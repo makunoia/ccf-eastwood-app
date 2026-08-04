@@ -4,7 +4,25 @@ import { db } from "@/lib/db"
 import { canAccessEvent } from "@/lib/permissions"
 import type { Session } from "next-auth"
 import type { EventType } from "@/app/generated/prisma/client"
-import type { ClusterRegistrationExportRow } from "@/lib/export-entities"
+import { getHouseholdLabels } from "@/lib/family-links"
+import { FORM_CONTEXTS, type EventFormConfigData } from "@/lib/forms/context-config"
+import {
+  getClusterFormConfigs,
+  getEffectiveFormConfigs,
+} from "@/lib/forms/context-config-server"
+import {
+  formatBirthDate,
+  formatDietary,
+  formatLanguages,
+  formatMeetingPreference,
+  formatSchedule,
+  unionFormConfigs,
+} from "@/lib/forms/registration-responses"
+import {
+  buildClusterExportColumns,
+  type ClusterExportColumnState,
+  type ClusterRegistrationExportRow,
+} from "@/lib/exports/cluster-registrations"
 import {
   buildClusterRoster,
   type ClusterRegistrantRow,
@@ -21,7 +39,6 @@ export type AccessibleClusterEvent = ClusterRosterEvent & {
   startDate: Date
   registrationStart: Date | null
   registrationEnd: Date | null
-  price: number | null
 }
 
 /** The cluster's member events this user may see, in cluster order. */
@@ -41,7 +58,6 @@ export async function getAccessibleClusterEvents(
           startDate: true,
           registrationStart: true,
           registrationEnd: true,
-          price: true,
         },
       },
     },
@@ -120,11 +136,31 @@ export async function getClusterRegistrantRows(
   }))
 }
 
+/** Personal/matching fields, selected identically for Member and Guest. */
+const PERSON_PROFILE_SELECT = {
+  nickname: true,
+  email: true,
+  phone: true,
+  gender: true,
+  birthMonth: true,
+  birthYear: true,
+  workCity: true,
+  language: true,
+  meetingPreference: true,
+  lifeStage: { select: { name: true } },
+  ageRangeBucket: { select: { label: true } },
+} as const
+
 /**
  * Flat registration records for the cluster's CSV export — one row per
  * `EventRegistrant`, not per person, so a person on three of the day's events
  * exports three rows. Scoped to the events this user may see; check-in state is
  * scoped to the cluster's day exactly like the roster.
+ *
+ * Every answer the registration form can gather is resolved here, in the same
+ * precedence the registrant detail page uses (per-event value → Member → Guest →
+ * the registrant's own columns). Which of them an admin actually gets is decided
+ * later, by the column picker.
  */
 export async function getClusterRegistrationExportRows(
   session: Session | null,
@@ -149,11 +185,14 @@ export async function getClusterRegistrationExportRows(
     select: {
       eventId: true,
       memberId: true,
+      guestId: true,
       firstName: true,
       lastName: true,
       nickname: true,
       email: true,
       mobileNumber: true,
+      dietaryPreference: true,
+      dietaryOther: true,
       isPaid: true,
       paymentReference: true,
       attendedAt: true,
@@ -163,18 +202,24 @@ export async function getClusterRegistrationExportRows(
         select: {
           firstName: true,
           lastName: true,
-          nickname: true,
-          email: true,
-          phone: true,
+          ...PERSON_PROFILE_SELECT,
+          schedulePreferences: {
+            select: { dayOfWeek: true, timeStart: true, timeEnd: true },
+            orderBy: { dayOfWeek: "asc" },
+            take: 1,
+          },
         },
       },
       guest: {
         select: {
           firstName: true,
           lastName: true,
-          nickname: true,
-          email: true,
-          phone: true,
+          ...PERSON_PROFILE_SELECT,
+          scheduleDayOfWeek: true,
+          scheduleTimeStart: true,
+          scheduleTimeEnd: true,
+          claimedSmallGroup: { select: { name: true } },
+          claimedSatellite: true,
         },
       },
       event: { select: { name: true, type: true } },
@@ -184,8 +229,16 @@ export async function getClusterRegistrationExportRows(
         select: { checkedInAt: true },
         take: 1,
       },
+      breakoutGroupMemberships: {
+        select: { breakoutGroup: { select: { name: true } } },
+        orderBy: { assignedAt: "asc" },
+      },
     },
   })
+
+  const households = await getHouseholdLabels(
+    registrants.map((r) => ({ memberId: r.memberId, guestId: r.guestId }))
+  )
 
   const rows = registrants.map((r) => {
     // OneTime events check in via attendedAt; session events via occurrences.
@@ -193,19 +246,57 @@ export async function getClusterRegistrationExportRows(
       r.event.type === "OneTime"
         ? r.attendedAt
         : (r.occurrenceAttendances[0]?.checkedInAt ?? null)
+    const person = r.member ?? r.guest ?? null
+    const memberSchedule = r.member?.schedulePreferences?.[0] ?? null
+    const householdKey = r.memberId
+      ? `member:${r.memberId}`
+      : r.guestId
+        ? `guest:${r.guestId}`
+        : null
+
     return {
       eventId: r.eventId,
       eventName: r.event.name,
       firstName: r.member?.firstName ?? r.guest?.firstName ?? r.firstName ?? "",
       lastName: r.member?.lastName ?? r.guest?.lastName ?? r.lastName ?? "",
-      nickname: r.member?.nickname ?? r.guest?.nickname ?? r.nickname ?? null,
-      email: r.member?.email ?? r.guest?.email ?? r.email ?? null,
-      mobile: r.member?.phone ?? r.guest?.phone ?? r.mobileNumber ?? "",
+      // The per-event nickname wins over the one on the profile — same
+      // precedence the registrant list and check-in search use.
+      nickname: r.nickname ?? person?.nickname ?? null,
+      email: person?.email ?? r.email ?? null,
+      mobile: person?.phone ?? r.mobileNumber ?? "",
       type: (r.memberId ? "Member" : "Guest") as "Member" | "Guest",
       registeredAt: r.createdAt.toISOString(),
       viaSharedForm: r.registrationClusterId !== null,
       checkedIn: checkedInAt !== null,
       checkedInAt: checkedInAt?.toISOString() ?? null,
+
+      lifeStage: person?.lifeStage?.name ?? null,
+      birthDate: formatBirthDate(person?.birthMonth ?? null, person?.birthYear ?? null),
+      ageRange: person?.ageRangeBucket?.label ?? null,
+      gender: person?.gender ?? null,
+      language: formatLanguages(person?.language),
+      meetingPreference: formatMeetingPreference(person?.meetingPreference ?? null),
+      schedule: r.guest
+        ? formatSchedule(
+            r.guest.scheduleDayOfWeek,
+            r.guest.scheduleTimeStart,
+            r.guest.scheduleTimeEnd
+          )
+        : formatSchedule(
+            memberSchedule?.dayOfWeek ?? null,
+            memberSchedule?.timeStart ?? null,
+            memberSchedule?.timeEnd ?? null
+          ),
+      workCity: person?.workCity ?? null,
+      claimedSmallGroup:
+        r.guest?.claimedSmallGroup?.name ??
+        (r.guest?.claimedSatellite
+          ? `${r.guest.claimedSatellite} (another satellite)`
+          : null),
+      breakoutGroup:
+        r.breakoutGroupMemberships.map((m) => m.breakoutGroup.name).join("; ") || null,
+      household: (householdKey && households.get(householdKey)) || null,
+      dietary: formatDietary(r.dietaryPreference, r.dietaryOther),
       isPaid: r.isPaid,
       paymentReference: r.paymentReference,
     }
@@ -227,6 +318,42 @@ export async function getClusterRegistrationExportRows(
   })
 
   return rows.map(({ eventId: _eventId, ...row }) => row)
+}
+
+/**
+ * What the cluster's forms gather: the OR-union of every member event's
+ * effective config (all three contexts) and the cluster's own shared form. A
+ * registration can arrive through any of them, so a field counts as asked if
+ * any one of them asks it.
+ */
+export async function getClusterFormCoverage(
+  session: Session | null,
+  clusterId: string
+): Promise<EventFormConfigData> {
+  const events = await getAccessibleClusterEvents(session, clusterId)
+  const [clusterConfigs, eventConfigs] = await Promise.all([
+    getClusterFormConfigs(clusterId),
+    Promise.all(events.map((e) => getEffectiveFormConfigs(e.id))),
+  ])
+  return unionFormConfigs([
+    ...FORM_CONTEXTS.map((ctx) => clusterConfigs[ctx]),
+    ...eventConfigs.flatMap((configs) => FORM_CONTEXTS.map((ctx) => configs[ctx])),
+  ])
+}
+
+/** Export payload for the cluster registrants screen: rows + column offer. */
+export async function getClusterRegistrationExport(
+  session: Session | null,
+  clusterId: string
+): Promise<{
+  rows: ClusterRegistrationExportRow[]
+  columns: ClusterExportColumnState[]
+}> {
+  const [rows, coverage] = await Promise.all([
+    getClusterRegistrationExportRows(session, clusterId),
+    getClusterFormCoverage(session, clusterId),
+  ])
+  return { rows, columns: buildClusterExportColumns(coverage, rows) }
 }
 
 export type ClusterEventStat = {

@@ -226,6 +226,52 @@ export async function getHouseholdLabel(
 }
 
 /**
+ * `getHouseholdLabel` for many people at once, keyed `member:<id>` / `guest:<id>`.
+ *
+ * Same rules as the single-person read — earliest link wins, people with no
+ * household are simply absent from the map — but in two queries instead of one
+ * per person, which is what makes it usable from an export over a whole day of
+ * registrations.
+ */
+export async function getHouseholdLabels(
+  refs: { memberId: string | null; guestId: string | null }[]
+): Promise<Map<string, string>> {
+  const memberIds = [...new Set(refs.map((r) => r.memberId).filter((id): id is string => !!id))]
+  const guestIds = [...new Set(refs.map((r) => r.guestId).filter((id): id is string => !!id))]
+  if (memberIds.length === 0 && guestIds.length === 0) return new Map()
+
+  const links = await db.familyMember.findMany({
+    where: {
+      OR: [
+        ...(memberIds.length ? [{ memberId: { in: memberIds } }] : []),
+        ...(guestIds.length ? [{ guestId: { in: guestIds } }] : []),
+      ],
+    },
+    select: {
+      memberId: true,
+      guestId: true,
+      family: { select: { name: true, _count: { select: { members: true } } } },
+    },
+    orderBy: { createdAt: "asc" },
+  })
+
+  const labels = new Map<string, string>()
+  for (const link of links) {
+    const key = link.memberId ? `member:${link.memberId}` : `guest:${link.guestId}`
+    // Earliest link wins — createdAt ordering means the first one seen.
+    if (labels.has(key)) continue
+    const others = link.family._count.members - 1
+    labels.set(
+      key,
+      others > 0
+        ? `${link.family.name} (+${others} ${others === 1 ? "member" : "members"})`
+        : link.family.name
+    )
+  }
+  return labels
+}
+
+/**
  * Re-points every FamilyMember row from one person onto another, preserving
  * family membership across identity changes:
  *
