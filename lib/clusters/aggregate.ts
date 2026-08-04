@@ -25,6 +25,9 @@ import {
 } from "@/lib/exports/cluster-registrations"
 import {
   buildClusterRoster,
+  isOnClusterDay,
+  personKeyFor,
+  type ClusterDayScope,
   type ClusterRegistrantRow,
   type ClusterRosterEvent,
 } from "./roster"
@@ -82,22 +85,29 @@ function utcDayRange(date: Date): { gte: Date; lt: Date } {
 }
 
 /**
- * Flat registrant rows (with check-in state) for a set of cluster events.
+ * Flat registrant rows (with check-in state) for a set of cluster events,
+ * scoped to the day the cluster represents.
  *
- * `clusterDate` scopes session attendance to the day the cluster represents. A
- * cluster is one day's worth of events, but a MultiDay/Recurring event's
- * occurrences span many days — without this, anyone who attended ANY past
- * session of that event showed as checked in on today's roster.
- * Null (a cluster with no date set) keeps the unscoped behavior: there is no
- * day to scope to.
+ * `scope` does two jobs, both about the same fact: a cluster is one day, while a
+ * MultiDay/Recurring event spans many.
+ *
+ *  - **Attendance** is read only from occurrences on the cluster's date —
+ *    without it, anyone who attended ANY past session showed as checked in on
+ *    today's roster.
+ *  - **Registration** is filtered by `isOnClusterDay` — without it, every person
+ *    who ever registered for the weekly service appeared on every cluster day
+ *    containing it, whether or not they came.
+ *
+ * A null scope (or a cluster with no date) keeps the unscoped behavior: there is
+ * no day to scope to.
  */
 export async function getClusterRegistrantRows(
   eventIds: string[],
-  clusterDate: Date | null = null
+  scope: ClusterDayScope | null = null
 ): Promise<ClusterRegistrantRow[]> {
   if (eventIds.length === 0) return []
-  const occurrenceFilter = clusterDate
-    ? { where: { occurrence: { date: utcDayRange(clusterDate) } } }
+  const occurrenceFilter = scope?.date
+    ? { where: { occurrence: { date: utcDayRange(scope.date) } } }
     : {}
   const registrants = await db.eventRegistrant.findMany({
     where: { eventId: { in: eventIds } },
@@ -117,23 +127,43 @@ export async function getClusterRegistrantRows(
       occurrenceAttendances: { ...occurrenceFilter, select: { id: true }, take: 1 },
     },
   })
-  return registrants.map((r) => ({
-    id: r.id,
-    eventId: r.eventId,
-    memberId: r.memberId,
-    guestId: r.guestId,
-    firstName: r.member?.firstName ?? r.guest?.firstName ?? r.firstName ?? "",
-    lastName: r.member?.lastName ?? r.guest?.lastName ?? r.lastName ?? "",
-    phone: r.member?.phone ?? r.guest?.phone ?? null,
-    isMember: r.memberId !== null,
-    // OneTime events check in via attendedAt; session events via occurrences.
-    checkedIn:
-      r.event.type === "OneTime"
-        ? r.attendedAt !== null
-        : r.occurrenceAttendances.length > 0,
-    viaCluster: r.registrationClusterId !== null,
-    registeredAt: r.createdAt,
-  }))
+  return registrants
+    .map((r) => ({
+      id: r.id,
+      eventId: r.eventId,
+      eventType: r.event.type,
+      memberId: r.memberId,
+      guestId: r.guestId,
+      firstName: r.member?.firstName ?? r.guest?.firstName ?? r.firstName ?? "",
+      lastName: r.member?.lastName ?? r.guest?.lastName ?? r.lastName ?? "",
+      phone: r.member?.phone ?? r.guest?.phone ?? null,
+      isMember: r.memberId !== null,
+      // OneTime events check in via attendedAt; session events via occurrences.
+      checkedIn:
+        r.event.type === "OneTime"
+          ? r.attendedAt !== null
+          : r.occurrenceAttendances.length > 0,
+      registrationClusterId: r.registrationClusterId,
+      registeredAt: r.createdAt,
+    }))
+    .filter((row) => isOnClusterDay(row, scope))
+}
+
+/**
+ * Total registrations per event, unscoped by day — the whole series for a
+ * Recurring/MultiDay event. Shown alongside the day figure so the standing
+ * roster stays visible without being mistaken for the day's attendance.
+ */
+export async function getClusterSeriesTotals(
+  eventIds: string[]
+): Promise<Map<string, number>> {
+  if (eventIds.length === 0) return new Map()
+  const grouped = await db.eventRegistrant.groupBy({
+    by: ["eventId"],
+    where: { eventId: { in: eventIds } },
+    _count: { _all: true },
+  })
+  return new Map(grouped.map((g) => [g.eventId, g._count._all]))
 }
 
 /** Personal/matching fields, selected identically for Member and Guest. */
@@ -256,6 +286,7 @@ export async function getClusterRegistrationExportRows(
 
     return {
       eventId: r.eventId,
+      eventType: r.event.type,
       eventName: r.event.name,
       firstName: r.member?.firstName ?? r.guest?.firstName ?? r.firstName ?? "",
       lastName: r.member?.lastName ?? r.guest?.lastName ?? r.lastName ?? "",
@@ -266,7 +297,8 @@ export async function getClusterRegistrationExportRows(
       mobile: person?.phone ?? r.mobileNumber ?? "",
       type: (r.memberId ? "Member" : "Guest") as "Member" | "Guest",
       registeredAt: r.createdAt.toISOString(),
-      viaSharedForm: r.registrationClusterId !== null,
+      registrationClusterId: r.registrationClusterId,
+      viaSharedForm: r.registrationClusterId === clusterId,
       checkedIn: checkedInAt !== null,
       checkedInAt: checkedInAt?.toISOString() ?? null,
 
@@ -302,9 +334,16 @@ export async function getClusterRegistrationExportRows(
     }
   })
 
+  // Same day scope as the roster and the dashboard — an export launched from
+  // the registrants screen must describe the day that screen is showing, not a
+  // Recurring event's whole standing roster.
+  const dayRows = rows.filter((row) =>
+    isOnClusterDay(row, { clusterId, date: cluster.date })
+  )
+
   // Cluster order first (the order the day runs in), then the roster's
   // last-name/first-name ordering so both screens read the same way.
-  rows.sort((a, b) => {
+  dayRows.sort((a, b) => {
     const orderCmp =
       (eventOrder.get(a.eventId) ?? 0) - (eventOrder.get(b.eventId) ?? 0)
     if (orderCmp !== 0) return orderCmp
@@ -317,7 +356,14 @@ export async function getClusterRegistrationExportRows(
     })
   })
 
-  return rows.map(({ eventId: _eventId, ...row }) => row)
+  return dayRows.map(
+    ({
+      eventId: _eventId,
+      eventType: _eventType,
+      registrationClusterId: _clusterId,
+      ...row
+    }) => row
+  )
 }
 
 /**
@@ -360,7 +406,10 @@ export type ClusterEventStat = {
   eventId: string
   name: string
   type: EventType
+  /** Registrations belonging to the cluster's day. */
   registered: number
+  /** Every registration for the event, across all its dates. */
+  seriesRegistered: number
   checkedIn: number
 }
 
@@ -372,7 +421,12 @@ export type ClusterOverview = {
     registrations: number
     uniquePeople: number
     checkedInPeople: number
-    viaClusterForm: number
+    /**
+     * PEOPLE who signed up through this day's shared link — not registrations.
+     * One person ticking three events on that link is one person here, so the
+     * figure is comparable to `uniquePeople` sitting next to it.
+     */
+    viaSharedLinkPeople: number
   }
 }
 
@@ -388,10 +442,14 @@ export async function getClusterOverview(
     }),
     getAccessibleClusterEvents(session, clusterId),
   ])
-  const rows = await getClusterRegistrantRows(
-    events.map((e) => e.id),
-    cluster?.date ?? null
-  )
+  const eventIds = events.map((e) => e.id)
+  const [rows, seriesTotals] = await Promise.all([
+    getClusterRegistrantRows(
+      eventIds,
+      cluster ? { clusterId, date: cluster.date } : null
+    ),
+    getClusterSeriesTotals(eventIds),
+  ])
   const roster = buildClusterRoster(events, rows)
 
   const eventStats: ClusterEventStat[] = events.map((e) => {
@@ -401,9 +459,16 @@ export async function getClusterOverview(
       name: e.name,
       type: e.type,
       registered: eventRows.length,
+      seriesRegistered: seriesTotals.get(e.id) ?? 0,
       checkedIn: eventRows.filter((r) => r.checkedIn).length,
     }
   })
+
+  const viaSharedLink = new Set(
+    rows
+      .filter((r) => r.registrationClusterId === clusterId)
+      .map((r) => personKeyFor(r))
+  )
 
   return {
     events,
@@ -415,7 +480,7 @@ export async function getClusterOverview(
       checkedInPeople: roster.rows.filter((p) =>
         Object.values(p.perEvent).some((cell) => cell?.checkedIn)
       ).length,
-      viaClusterForm: rows.filter((r) => r.viaCluster).length,
+      viaSharedLinkPeople: viaSharedLink.size,
     },
   }
 }

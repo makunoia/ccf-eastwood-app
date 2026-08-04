@@ -14,6 +14,7 @@ export type ClusterRosterEvent = {
 export type ClusterRegistrantRow = {
   id: string
   eventId: string
+  eventType: EventType
   memberId: string | null
   guestId: string | null
   firstName: string
@@ -21,9 +22,42 @@ export type ClusterRegistrantRow = {
   phone: string | null
   isMember: boolean
   checkedIn: boolean
-  /** Registration arrived through the cluster's shared form. */
-  viaCluster: boolean
+  /** The cluster whose shared link this registration came through, if any. */
+  registrationClusterId: string | null
   registeredAt: Date
+}
+
+/** The day a cluster stands for. `date: null` means the cluster has no date. */
+export type ClusterDayScope = {
+  clusterId: string
+  date: Date | null
+}
+
+/**
+ * Does this registration belong to the cluster's day?
+ *
+ * A cluster is one day. A OneTime event's registrations are inherently that
+ * day's, so they all count. A Recurring or MultiDay event is different: its
+ * `EventRegistrant` is one row per person per *series*, so counting them all
+ * would put every person who ever registered for the weekly service on every
+ * day the service appears — a figure that also grows retroactively as new
+ * people register months later.
+ *
+ * For those events the day's population is the people we have evidence for:
+ * they checked in on the day, or they signed up for this specific day through
+ * its shared link (`registrationClusterId`), which is a statement of intent for
+ * that day whenever it was made.
+ *
+ * A cluster with no date has no day to scope to, so everything counts — the
+ * same rule the check-in scope already uses.
+ */
+export function isOnClusterDay(
+  row: Pick<ClusterRegistrantRow, "eventType" | "checkedIn" | "registrationClusterId">,
+  scope: ClusterDayScope | null
+): boolean {
+  if (!scope?.date) return true
+  if (row.eventType === "OneTime") return true
+  return row.checkedIn || row.registrationClusterId === scope.clusterId
 }
 
 export type ClusterRosterCell = {

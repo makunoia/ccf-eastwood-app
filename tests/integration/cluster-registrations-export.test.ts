@@ -345,8 +345,15 @@ describe("getClusterRegistrationExportRows", () => {
       type: "Recurring",
       endDate: new Date("2026-12-31T00:00:00Z"),
     })
+    // Signed up through the day's link, so they're part of the day before they
+    // arrive — otherwise day scoping would (correctly) leave them out entirely.
     const registrant = await db.eventRegistrant.create({
-      data: { eventId: event.id, firstName: "Ana", lastName: "Lopez" },
+      data: {
+        eventId: event.id,
+        firstName: "Ana",
+        lastName: "Lopez",
+        registrationClusterId: cluster.id,
+      },
     })
 
     const lastWeek = await db.eventOccurrence.create({

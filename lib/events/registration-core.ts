@@ -437,6 +437,17 @@ export async function completeEventRegistration(opts: {
   let registrantId: string
   if (existingRegistrantId) {
     registrantId = existingRegistrantId
+    // Provenance on the reuse path. Someone already registered who comes back
+    // through the cluster's shared link still arrived through that link, and the
+    // day roll-up counts people by this column — without the stamp, every
+    // returning walk-in was invisible to it. Conditional update rather than
+    // read-then-write, and it only fills a null so an earlier stamp stands.
+    if (clusterId) {
+      await db.eventRegistrant.updateMany({
+        where: { id: registrantId, registrationClusterId: null },
+        data: { registrationClusterId: clusterId },
+      })
+    }
   } else {
     const registrant = await db.eventRegistrant.create({
       data: {

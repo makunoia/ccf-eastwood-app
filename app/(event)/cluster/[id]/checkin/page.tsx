@@ -35,11 +35,12 @@ export default async function ClusterCheckinPage({
   const events = (await getAccessibleClusterEvents(session, id)).filter(
     (e) => e.type === "OneTime"
   )
-  // The date scope is a no-op while this list is OneTime-only (they check in via
-  // attendedAt, not occurrences) — passed so widening the filter stays correct.
+  // The day scope is a no-op while this list is OneTime-only (they check in via
+  // attendedAt, and their registrations are inherently the day's) — passed so
+  // widening the filter to session events stays correct.
   const rows = await getClusterRegistrantRows(
     events.map((e) => e.id),
-    cluster.date
+    { clusterId: cluster.id, date: cluster.date }
   )
   const roster = buildClusterRoster(events, rows)
 
