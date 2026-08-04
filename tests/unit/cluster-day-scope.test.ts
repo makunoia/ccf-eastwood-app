@@ -14,12 +14,17 @@ const scope: ClusterDayScope = {
 
 function row(
   eventType: EventType,
-  overrides: { checkedIn?: boolean; registrationClusterId?: string | null } = {}
+  overrides: {
+    checkedIn?: boolean
+    registrationClusterId?: string | null
+    hasLinkedSession?: boolean
+  } = {}
 ) {
   return {
     eventType,
     checkedIn: overrides.checkedIn ?? false,
     registrationClusterId: overrides.registrationClusterId ?? null,
+    hasLinkedSession: overrides.hasLinkedSession ?? false,
   }
 }
 
@@ -55,5 +60,20 @@ describe("isOnClusterDay", () => {
     const dateless: ClusterDayScope = { clusterId: "cluster-1", date: null }
     expect(isOnClusterDay(row("Recurring"), dateless)).toBe(true)
     expect(isOnClusterDay(row("Recurring"), null)).toBe(true)
+  })
+
+  it("scopes by the linked session even when the cluster has no date", () => {
+    // Picking a session is itself a scope: the admin said which session this day
+    // is, so a standing registrant with no attendance is not part of it.
+    const dateless: ClusterDayScope = { clusterId: "cluster-1", date: null }
+    expect(isOnClusterDay(row("Recurring", { hasLinkedSession: true }), dateless)).toBe(
+      false
+    )
+    expect(
+      isOnClusterDay(
+        row("Recurring", { hasLinkedSession: true, checkedIn: true }),
+        dateless
+      )
+    ).toBe(true)
   })
 })

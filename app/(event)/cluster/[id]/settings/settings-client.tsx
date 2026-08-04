@@ -31,6 +31,7 @@ import {
   addEventToCluster,
   deleteEventCluster,
   removeEventFromCluster,
+  setClusterEventSession,
   updateEventCluster,
 } from "@/app/(dashboard)/events/cluster-actions"
 
@@ -41,7 +42,21 @@ type ClusterData = {
   date: string | null
 }
 
-type EventRow = { id: string; name: string; type: string; startDate: string }
+type EventRow = {
+  id: string
+  name: string
+  type: string
+  startDate: string
+  /** The session this cluster day stands for — Recurring links only. */
+  occurrenceId: string | null
+}
+
+type SessionRow = {
+  id: string
+  eventId: string
+  date: string
+  seriesTitle: string | null
+}
 
 const EVENT_TYPE_LABEL: Record<string, string> = {
   OneTime: "One-time",
@@ -53,16 +68,36 @@ function toDateInput(iso: string | null): string {
   return iso ? iso.slice(0, 10) : ""
 }
 
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-PH", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  })
+}
+
+function sessionLabel(s: SessionRow): string {
+  return s.seriesTitle ? `${formatDate(s.date)} · ${s.seriesTitle}` : formatDate(s.date)
+}
+
 export function ClusterSettingsClient({
   cluster,
   events,
   candidates,
+  sessions,
 }: {
   cluster: ClusterData
   events: EventRow[]
   candidates: EventRow[]
+  sessions: SessionRow[]
 }) {
   const router = useRouter()
+  const sessionsFor = React.useCallback(
+    (eventId: string) => sessions.filter((s) => s.eventId === eventId),
+    [sessions]
+  )
 
   // ── Details ──
   const [name, setName] = React.useState(cluster.name)
@@ -72,8 +107,14 @@ export function ClusterSettingsClient({
 
   // ── Events ──
   const [addEventId, setAddEventId] = React.useState("")
+  const [addSessionId, setAddSessionId] = React.useState("")
   const [addingEvent, setAddingEvent] = React.useState(false)
   const [removingEventId, setRemovingEventId] = React.useState<string | null>(null)
+  const [changingSessionFor, setChangingSessionFor] = React.useState<string | null>(null)
+
+  const addCandidate = candidates.find((c) => c.id === addEventId) ?? null
+  const addNeedsSession = addCandidate?.type === "Recurring"
+  const addSessionOptions = addCandidate ? sessionsFor(addCandidate.id) : []
 
   // ── Danger zone ──
   const [confirmDelete, setConfirmDelete] = React.useState(false)
@@ -101,12 +142,33 @@ export function ClusterSettingsClient({
 
   async function handleAddEvent() {
     if (!addEventId) return
+    if (addNeedsSession && !addSessionId) {
+      toast.error("Pick which session this day is for.")
+      return
+    }
     setAddingEvent(true)
-    const result = await addEventToCluster(cluster.id, addEventId)
+    const result = await addEventToCluster(
+      cluster.id,
+      addEventId,
+      addNeedsSession ? addSessionId : null
+    )
     setAddingEvent(false)
     if (result.success) {
       toast.success("Event added to cluster")
       setAddEventId("")
+      setAddSessionId("")
+      router.refresh()
+    } else {
+      toast.error(result.error)
+    }
+  }
+
+  async function handleChangeSession(eventId: string, occurrenceId: string) {
+    setChangingSessionFor(eventId)
+    const result = await setClusterEventSession(cluster.id, eventId, occurrenceId)
+    setChangingSessionFor(null)
+    if (result.success) {
+      toast.success("Session updated — the day's figures now follow it")
       router.refresh()
     } else {
       toast.error(result.error)
@@ -182,9 +244,11 @@ export function ClusterSettingsClient({
         <CardHeader>
           <CardTitle>Events</CardTitle>
           <CardDescription>
-            The events this day is made of. Only free events can join, and an event
-            can belong to one cluster at a time. Removing an event never touches its
-            registrants.
+            The events this day is made of. A cluster is one day, so everything in it
+            must fall on the cluster&apos;s date — a recurring event joins through one
+            of its sessions, and multi-day events can&apos;t join at all. Only free
+            events can join, an event belongs to one cluster at a time, and removing
+            an event never touches its registrants.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -192,46 +256,90 @@ export function ClusterSettingsClient({
             <p className="text-sm text-muted-foreground">No events yet — add the first one below.</p>
           ) : (
             <div className="space-y-2">
-              {events.map((e) => (
-                <div
-                  key={e.id}
-                  className="flex items-center justify-between gap-3 rounded-lg border px-4 py-3"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{e.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {EVENT_TYPE_LABEL[e.type] ?? e.type} ·{" "}
-                      {new Date(e.startDate).toLocaleDateString("en-PH", {
-                        month: "short",
-                        day: "numeric",
-                        year: "numeric",
-                        timeZone: "UTC",
-                      })}
-                    </p>
+              {events.map((e) => {
+                const options = sessionsFor(e.id)
+                return (
+                  <div key={e.id} className="rounded-lg border px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{e.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {EVENT_TYPE_LABEL[e.type] ?? e.type} ·{" "}
+                          {formatDate(e.startDate)}
+                        </p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Remove ${e.name}`}
+                        disabled={removingEventId === e.id}
+                        onClick={() => handleRemoveEvent(e.id)}
+                      >
+                        <IconX className="size-4" />
+                      </Button>
+                    </div>
+
+                    {e.type === "Recurring" && (
+                      <div className="mt-3 space-y-1.5 border-t pt-3">
+                        <Label className="text-xs text-muted-foreground">
+                          Session this day is for
+                        </Label>
+                        <Select
+                          value={e.occurrenceId ?? ""}
+                          disabled={changingSessionFor === e.id || options.length === 0}
+                          onValueChange={(v) => handleChangeSession(e.id, v)}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue
+                              placeholder={
+                                options.length === 0
+                                  ? "No sessions on this date"
+                                  : "Not set — counting by date"
+                              }
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {options.map((s) => (
+                              <SelectItem key={s.id} value={s.id}>
+                                {sessionLabel(s)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {!e.occurrenceId && (
+                          <p className="text-xs text-muted-foreground">
+                            No session picked yet, so this event&apos;s figures still
+                            come from whatever happened on the cluster&apos;s date.
+                            Pick a session to scope them to it.
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={`Remove ${e.name}`}
-                    disabled={removingEventId === e.id}
-                    onClick={() => handleRemoveEvent(e.id)}
-                  >
-                    <IconX className="size-4" />
-                  </Button>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
 
-          <div className="flex gap-2">
-            <Select value={addEventId} onValueChange={setAddEventId}>
-              <SelectTrigger className="flex-1">
+          <div className="space-y-2 rounded-lg border border-dashed p-3">
+            <Select
+              value={addEventId}
+              onValueChange={(v) => {
+                setAddEventId(v)
+                // A session belongs to one event — never carry a pick across.
+                const next = candidates.find((c) => c.id === v)
+                const options = next ? sessionsFor(next.id) : []
+                setAddSessionId(options.length === 1 ? options[0].id : "")
+              }}
+            >
+              <SelectTrigger className="w-full">
                 <SelectValue placeholder="Add an event…" />
               </SelectTrigger>
               <SelectContent>
                 {candidates.length === 0 ? (
                   <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                    No available events — free events not already in a cluster appear here.
+                    No available events — free one-time events on this date, and
+                    recurring events with a session on it, appear here.
                   </div>
                 ) : (
                   candidates.map((e) => (
@@ -242,7 +350,35 @@ export function ClusterSettingsClient({
                 )}
               </SelectContent>
             </Select>
-            <Button onClick={handleAddEvent} disabled={!addEventId || addingEvent}>
+
+            {addNeedsSession && (
+              <Select value={addSessionId} onValueChange={setAddSessionId}>
+                <SelectTrigger className="w-full">
+                  <SelectValue
+                    placeholder={
+                      addSessionOptions.length === 0
+                        ? "This event has no session on the cluster's date"
+                        : "Pick the session…"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {addSessionOptions.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {sessionLabel(s)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+
+            <Button
+              className="w-full sm:w-auto"
+              onClick={handleAddEvent}
+              disabled={
+                !addEventId || addingEvent || (addNeedsSession && !addSessionId)
+              }
+            >
               <IconPlus className="size-4" />
               {addingEvent ? "Adding…" : "Add"}
             </Button>

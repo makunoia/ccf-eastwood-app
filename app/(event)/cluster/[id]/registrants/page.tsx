@@ -31,10 +31,10 @@ export default async function ClusterRegistrantsPage({
   if (!cluster) notFound()
 
   const events = await getAccessibleClusterEvents(session, id)
-  const rows = await getClusterRegistrantRows(
-    events.map((e) => e.id),
-    { clusterId: cluster.id, date: cluster.date }
-  )
+  const rows = await getClusterRegistrantRows(events, {
+    clusterId: cluster.id,
+    date: cluster.date,
+  })
   const roster = buildClusterRoster(events, rows)
   const registeredAtById = new Map(rows.map((r) => [r.id, r.registeredAt]))
 

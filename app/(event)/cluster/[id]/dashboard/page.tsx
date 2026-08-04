@@ -151,9 +151,30 @@ export default async function ClusterDashboardPage({
                   </div>
                 </div>
                 {stat.type !== "OneTime" && (
-                  <p className="text-xs text-muted-foreground">
-                    {stat.seriesRegistered} registered for the series overall
-                  </p>
+                  <div className="space-y-0.5 text-xs text-muted-foreground">
+                    <p>{stat.seriesRegistered} registered for the series overall</p>
+                    <p>
+                      {stat.linkedOccurrenceDate ? (
+                        <>
+                          Scoped to the{" "}
+                          {stat.linkedOccurrenceDate.toLocaleDateString("en-PH", {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                            timeZone: "UTC",
+                          })}{" "}
+                          session
+                        </>
+                      ) : (
+                        <Link
+                          href={`/cluster/${id}/settings`}
+                          className="underline underline-offset-2"
+                        >
+                          No session picked — counting by date
+                        </Link>
+                      )}
+                    </p>
+                  </div>
                 )}
               </div>
             ))}

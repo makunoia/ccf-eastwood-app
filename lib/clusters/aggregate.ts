@@ -42,6 +42,9 @@ export type AccessibleClusterEvent = ClusterRosterEvent & {
   startDate: Date
   registrationStart: Date | null
   registrationEnd: Date | null
+  /** The session this cluster day stands for (Recurring links only; null = legacy date-window link). */
+  linkedOccurrenceId: string | null
+  linkedOccurrenceDate: Date | null
 }
 
 /** The cluster's member events this user may see, in cluster order. */
@@ -53,6 +56,8 @@ export async function getAccessibleClusterEvents(
     where: { clusterId },
     orderBy: { order: "asc" },
     select: {
+      occurrenceId: true,
+      occurrence: { select: { date: true } },
       event: {
         select: {
           id: true,
@@ -66,7 +71,11 @@ export async function getAccessibleClusterEvents(
     },
   })
   return rows
-    .map((r) => r.event)
+    .map((r) => ({
+      ...r.event,
+      linkedOccurrenceId: r.occurrenceId,
+      linkedOccurrenceDate: r.occurrence?.date ?? null,
+    }))
     .filter((e) => canAccessEvent(session, e.id))
 }
 
@@ -75,13 +84,64 @@ export async function getAccessibleClusterEvents(
  * (rendered with `timeZone: "UTC"` on the dashboard), so the window has to be
  * computed in UTC to match — a local-time window would slide by 8 hours here.
  */
-function utcDayRange(date: Date): { gte: Date; lt: Date } {
+export function utcDayRange(date: Date): { gte: Date; lt: Date } {
   const start = new Date(
     Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
   )
   const end = new Date(start)
   end.setUTCDate(end.getUTCDate() + 1)
   return { gte: start, lt: end }
+}
+
+/** The per-event input the day roll-up needs: identity plus the linked session, if any. */
+export type ClusterScopedEvent = {
+  id: string
+  linkedOccurrenceId?: string | null
+}
+
+/**
+ * The occurrence-attendance relation filter for a set of cluster events. Session
+ * scoping is per event — a link with an explicit session reads THAT occurrence;
+ * a legacy link (null) reads the cluster date's occurrence; a dateless cluster
+ * reads any occurrence. One query can't vary the filter per row, so this casts
+ * the union as an OR and `pickAttendance` narrows per registrant afterwards.
+ *
+ * A registrant belongs to exactly one event, so the branches can't crowd each
+ * other out: a linked event's registrant matches at most two rows (the linked
+ * session + the date's occurrence, usually the same one), and an unlinked
+ * event's registrant only needs existence — which is why a small `take` is safe.
+ */
+function occurrenceScopeFilter(
+  events: ClusterScopedEvent[],
+  scope: ClusterDayScope | null
+) {
+  const linkedIds = events
+    .map((e) => e.linkedOccurrenceId)
+    .filter((id): id is string => !!id)
+  const or: object[] = []
+  if (linkedIds.length > 0) or.push({ occurrenceId: { in: linkedIds } })
+  if (scope?.date) {
+    or.push({ occurrence: { date: utcDayRange(scope.date) } })
+  } else {
+    // No date to window by — unlinked events keep the unscoped "any attendance"
+    // reading, expressed by matching their own occurrences unconditionally.
+    const unlinkedEventIds = events
+      .filter((e) => !e.linkedOccurrenceId)
+      .map((e) => e.id)
+    if (unlinkedEventIds.length > 0) {
+      or.push({ occurrence: { eventId: { in: unlinkedEventIds } } })
+    }
+  }
+  return or.length > 0 ? { where: { OR: or } } : {}
+}
+
+/** The attendance rows that count for this registrant, given its event's linked session. */
+function pickAttendance<T extends { occurrenceId: string }>(
+  attendances: T[],
+  linkedOccurrenceId: string | null
+): T[] {
+  if (!linkedOccurrenceId) return attendances
+  return attendances.filter((a) => a.occurrenceId === linkedOccurrenceId)
 }
 
 /**
@@ -91,26 +151,26 @@ function utcDayRange(date: Date): { gte: Date; lt: Date } {
  * `scope` does two jobs, both about the same fact: a cluster is one day, while a
  * MultiDay/Recurring event spans many.
  *
- *  - **Attendance** is read only from occurrences on the cluster's date —
- *    without it, anyone who attended ANY past session showed as checked in on
- *    today's roster.
+ *  - **Attendance** is read from the linked session when the cluster names one,
+ *    else from occurrences on the cluster's date — without either, anyone who
+ *    attended ANY past session showed as checked in on today's roster.
  *  - **Registration** is filtered by `isOnClusterDay` — without it, every person
  *    who ever registered for the weekly service appeared on every cluster day
  *    containing it, whether or not they came.
  *
- * A null scope (or a cluster with no date) keeps the unscoped behavior: there is
- * no day to scope to.
+ * A null scope (or a cluster with no date and no linked sessions) keeps the
+ * unscoped behavior: there is no day to scope to.
  */
 export async function getClusterRegistrantRows(
-  eventIds: string[],
+  events: ClusterScopedEvent[],
   scope: ClusterDayScope | null = null
 ): Promise<ClusterRegistrantRow[]> {
-  if (eventIds.length === 0) return []
-  const occurrenceFilter = scope?.date
-    ? { where: { occurrence: { date: utcDayRange(scope.date) } } }
-    : {}
+  if (events.length === 0) return []
+  const linkedByEvent = new Map(
+    events.map((e) => [e.id, e.linkedOccurrenceId ?? null])
+  )
   const registrants = await db.eventRegistrant.findMany({
-    where: { eventId: { in: eventIds } },
+    where: { eventId: { in: events.map((e) => e.id) } },
     select: {
       id: true,
       eventId: true,
@@ -124,28 +184,36 @@ export async function getClusterRegistrantRows(
       member: { select: { firstName: true, lastName: true, phone: true } },
       guest: { select: { firstName: true, lastName: true, phone: true } },
       event: { select: { type: true } },
-      occurrenceAttendances: { ...occurrenceFilter, select: { id: true }, take: 1 },
+      occurrenceAttendances: {
+        ...occurrenceScopeFilter(events, scope),
+        select: { occurrenceId: true },
+        take: 3,
+      },
     },
   })
   return registrants
-    .map((r) => ({
-      id: r.id,
-      eventId: r.eventId,
-      eventType: r.event.type,
-      memberId: r.memberId,
-      guestId: r.guestId,
-      firstName: r.member?.firstName ?? r.guest?.firstName ?? r.firstName ?? "",
-      lastName: r.member?.lastName ?? r.guest?.lastName ?? r.lastName ?? "",
-      phone: r.member?.phone ?? r.guest?.phone ?? null,
-      isMember: r.memberId !== null,
-      // OneTime events check in via attendedAt; session events via occurrences.
-      checkedIn:
-        r.event.type === "OneTime"
-          ? r.attendedAt !== null
-          : r.occurrenceAttendances.length > 0,
-      registrationClusterId: r.registrationClusterId,
-      registeredAt: r.createdAt,
-    }))
+    .map((r) => {
+      const linked = linkedByEvent.get(r.eventId) ?? null
+      return {
+        id: r.id,
+        eventId: r.eventId,
+        eventType: r.event.type,
+        memberId: r.memberId,
+        guestId: r.guestId,
+        firstName: r.member?.firstName ?? r.guest?.firstName ?? r.firstName ?? "",
+        lastName: r.member?.lastName ?? r.guest?.lastName ?? r.lastName ?? "",
+        phone: r.member?.phone ?? r.guest?.phone ?? null,
+        isMember: r.memberId !== null,
+        // OneTime events check in via attendedAt; session events via occurrences.
+        checkedIn:
+          r.event.type === "OneTime"
+            ? r.attendedAt !== null
+            : pickAttendance(r.occurrenceAttendances, linked).length > 0,
+        hasLinkedSession: linked !== null,
+        registrationClusterId: r.registrationClusterId,
+        registeredAt: r.createdAt,
+      }
+    })
     .filter((row) => isOnClusterDay(row, scope))
 }
 
@@ -206,9 +274,8 @@ export async function getClusterRegistrationExportRows(
   if (!cluster || events.length === 0) return []
 
   const eventOrder = new Map(events.map((e, i) => [e.id, i]))
-  const occurrenceFilter = cluster.date
-    ? { where: { occurrence: { date: utcDayRange(cluster.date) } } }
-    : {}
+  const linkedByEvent = new Map(events.map((e) => [e.id, e.linkedOccurrenceId]))
+  const scope: ClusterDayScope = { clusterId, date: cluster.date }
 
   const registrants = await db.eventRegistrant.findMany({
     where: { eventId: { in: events.map((e) => e.id) } },
@@ -254,10 +321,10 @@ export async function getClusterRegistrationExportRows(
       },
       event: { select: { name: true, type: true } },
       occurrenceAttendances: {
-        ...occurrenceFilter,
+        ...occurrenceScopeFilter(events, scope),
         orderBy: { checkedInAt: "asc" },
-        select: { checkedInAt: true },
-        take: 1,
+        select: { occurrenceId: true, checkedInAt: true },
+        take: 5,
       },
       breakoutGroupMemberships: {
         select: { breakoutGroup: { select: { name: true } } },
@@ -271,11 +338,12 @@ export async function getClusterRegistrationExportRows(
   )
 
   const rows = registrants.map((r) => {
+    const linked = linkedByEvent.get(r.eventId) ?? null
     // OneTime events check in via attendedAt; session events via occurrences.
     const checkedInAt =
       r.event.type === "OneTime"
         ? r.attendedAt
-        : (r.occurrenceAttendances[0]?.checkedInAt ?? null)
+        : (pickAttendance(r.occurrenceAttendances, linked)[0]?.checkedInAt ?? null)
     const person = r.member ?? r.guest ?? null
     const memberSchedule = r.member?.schedulePreferences?.[0] ?? null
     const householdKey = r.memberId
@@ -287,6 +355,7 @@ export async function getClusterRegistrationExportRows(
     return {
       eventId: r.eventId,
       eventType: r.event.type,
+      hasLinkedSession: linked !== null,
       eventName: r.event.name,
       firstName: r.member?.firstName ?? r.guest?.firstName ?? r.firstName ?? "",
       lastName: r.member?.lastName ?? r.guest?.lastName ?? r.lastName ?? "",
@@ -337,9 +406,7 @@ export async function getClusterRegistrationExportRows(
   // Same day scope as the roster and the dashboard — an export launched from
   // the registrants screen must describe the day that screen is showing, not a
   // Recurring event's whole standing roster.
-  const dayRows = rows.filter((row) =>
-    isOnClusterDay(row, { clusterId, date: cluster.date })
-  )
+  const dayRows = rows.filter((row) => isOnClusterDay(row, scope))
 
   // Cluster order first (the order the day runs in), then the roster's
   // last-name/first-name ordering so both screens read the same way.
@@ -360,6 +427,7 @@ export async function getClusterRegistrationExportRows(
     ({
       eventId: _eventId,
       eventType: _eventType,
+      hasLinkedSession: _linked,
       registrationClusterId: _clusterId,
       ...row
     }) => row
@@ -411,6 +479,8 @@ export type ClusterEventStat = {
   /** Every registration for the event, across all its dates. */
   seriesRegistered: number
   checkedIn: number
+  /** The session this day is scoped to, when the link names one. */
+  linkedOccurrenceDate: Date | null
 }
 
 export type ClusterOverview = {
@@ -445,7 +515,7 @@ export async function getClusterOverview(
   const eventIds = events.map((e) => e.id)
   const [rows, seriesTotals] = await Promise.all([
     getClusterRegistrantRows(
-      eventIds,
+      events,
       cluster ? { clusterId, date: cluster.date } : null
     ),
     getClusterSeriesTotals(eventIds),
@@ -461,6 +531,7 @@ export async function getClusterOverview(
       registered: eventRows.length,
       seriesRegistered: seriesTotals.get(e.id) ?? 0,
       checkedIn: eventRows.filter((r) => r.checkedIn).length,
+      linkedOccurrenceDate: e.linkedOccurrenceDate,
     }
   })
 

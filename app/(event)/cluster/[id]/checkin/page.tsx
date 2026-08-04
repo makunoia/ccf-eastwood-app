@@ -30,18 +30,17 @@ export default async function ClusterCheckinPage({
   })
   if (!cluster) notFound()
 
-  // The cluster board checks people in for OneTime events only — MultiDay and
-  // Recurring attendance stays on each event's own sessions pages (deferred).
+  // The status board covers OneTime events and Recurring events whose link
+  // names a session — for those, "checked in" means checked into THAT session.
+  // Recurring events without a linked session (legacy links) stay on their own
+  // sessions pages, as do MultiDay events.
   const events = (await getAccessibleClusterEvents(session, id)).filter(
-    (e) => e.type === "OneTime"
+    (e) => e.type === "OneTime" || (e.type === "Recurring" && e.linkedOccurrenceId)
   )
-  // The day scope is a no-op while this list is OneTime-only (they check in via
-  // attendedAt, and their registrations are inherently the day's) — passed so
-  // widening the filter to session events stays correct.
-  const rows = await getClusterRegistrantRows(
-    events.map((e) => e.id),
-    { clusterId: cluster.id, date: cluster.date }
-  )
+  const rows = await getClusterRegistrantRows(events, {
+    clusterId: cluster.id,
+    date: cluster.date,
+  })
   const roster = buildClusterRoster(events, rows)
 
   const people = roster.rows.map((person) => {
@@ -72,7 +71,7 @@ export default async function ClusterCheckinPage({
         title="Check-in"
         subtitle={
           <p className="text-sm text-muted-foreground">
-            Live status across the day&apos;s one-time events — check-in happens on each
+            Live status across the day&apos;s events — check-in happens on each
             event&apos;s own form · {checkedInCount} of {people.length} checked in
           </p>
         }

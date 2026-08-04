@@ -22,6 +22,8 @@ export type ClusterRegistrantRow = {
   phone: string | null
   isMember: boolean
   checkedIn: boolean
+  /** The cluster link names an explicit session for this row's event. */
+  hasLinkedSession: boolean
   /** The cluster whose shared link this registration came through, if any. */
   registrationClusterId: string | null
   registeredAt: Date
@@ -44,19 +46,25 @@ export type ClusterDayScope = {
  * people register months later.
  *
  * For those events the day's population is the people we have evidence for:
- * they checked in on the day, or they signed up for this specific day through
- * its shared link (`registrationClusterId`), which is a statement of intent for
- * that day whenever it was made.
+ * they checked in (a session-scoped fact — the linked session when the cluster
+ * names one, the day's occurrence otherwise), or they signed up for this
+ * specific day through its shared link (`registrationClusterId`), which is a
+ * statement of intent for that day whenever it was made.
  *
- * A cluster with no date has no day to scope to, so everything counts — the
- * same rule the check-in scope already uses.
+ * A cluster with no date has no day to scope to, so everything counts — unless
+ * the link names a session explicitly, which is a scope of its own regardless
+ * of the cluster having a date.
  */
 export function isOnClusterDay(
-  row: Pick<ClusterRegistrantRow, "eventType" | "checkedIn" | "registrationClusterId">,
+  row: Pick<
+    ClusterRegistrantRow,
+    "eventType" | "checkedIn" | "registrationClusterId" | "hasLinkedSession"
+  >,
   scope: ClusterDayScope | null
 ): boolean {
-  if (!scope?.date) return true
   if (row.eventType === "OneTime") return true
+  if (!scope) return true
+  if (!scope.date && !row.hasLinkedSession) return true
   return row.checkedIn || row.registrationClusterId === scope.clusterId
 }
 
