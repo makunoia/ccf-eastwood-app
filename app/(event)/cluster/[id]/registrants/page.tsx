@@ -7,7 +7,9 @@ import {
   getClusterRegistrantRows,
 } from "@/lib/clusters/aggregate"
 import { buildClusterRoster } from "@/lib/clusters/roster"
+import { canExport } from "@/lib/permissions"
 import { DetailPageHeader } from "@/components/detail-page-header"
+import { ClusterExportButton } from "./cluster-export-button"
 import { ClusterRegistrantsClient } from "./registrants-client"
 
 export const metadata: Metadata = {
@@ -24,7 +26,7 @@ export default async function ClusterRegistrantsPage({
 
   const cluster = await db.eventCluster.findUnique({
     where: { id },
-    select: { id: true, date: true },
+    select: { id: true, name: true, date: true },
   })
   if (!cluster) notFound()
 
@@ -63,10 +65,31 @@ export default async function ClusterRegistrantsPage({
     }
   })
 
+  // Recurring events never take payment, so their price is ignored here.
+  const includePayment = events.some(
+    (e) => e.price !== null && e.type !== "Recurring"
+  )
+  const exportDate = (cluster.date ?? new Date()).toISOString().split("T")[0]
+  const exportSlug =
+    cluster.name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "cluster"
+
   return (
     <>
       <DetailPageHeader
         title="Registrants"
+        action={
+          canExport(session, "Events") ? (
+            <ClusterExportButton
+              clusterId={cluster.id}
+              filename={`${exportSlug}-registrations-${exportDate}`}
+              includePayment={includePayment}
+              disabled={rows.length === 0}
+            />
+          ) : null
+        }
         subtitle={
           <p className="text-sm text-muted-foreground">
             {people.length} {people.length === 1 ? "person" : "people"} ·{" "}
