@@ -1183,6 +1183,7 @@ model EventFormConfig {
 
   // Field toggles — inputs inside Personal Information.
   // Name + mobile/email are always collected and have no toggle.
+  fieldNickname          Boolean @default(false)
   fieldLifeStage         Boolean @default(false)
   fieldGender            Boolean @default(false)
   fieldBirthDate         Boolean @default(false)

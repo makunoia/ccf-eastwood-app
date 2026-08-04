@@ -14,6 +14,7 @@ import {
   IconMessage2,
   IconNumbers,
   IconSalad,
+  IconSignature,
   IconSitemap,
   IconStairs,
   IconUser,
@@ -93,6 +94,7 @@ const TOGGLE_ICONS: Record<FormToggleKey | "personal", Icon> = {
   sectionDietary: IconSalad,
   sectionPayment: IconCash,
   sectionFamily: IconFriends,
+  fieldNickname: IconSignature,
   fieldLifeStage: IconStairs,
   fieldGender: IconGenderBigender,
   fieldBirthDate: IconCake,
@@ -107,11 +109,12 @@ const TOGGLE_ICONS: Record<FormToggleKey | "personal", Icon> = {
 /**
  * Toggles that make no sense in a context. Check-in is an attendance surface — it
  * never takes payment and never lets someone re-pick their breakout group (it
- * shows the group they were already assigned), and its profile step has no birth
- * date input at all.
+ * shows the group they were already assigned), and its profile step has neither a
+ * birth date nor a nickname input — it identifies someone who already exists
+ * rather than collecting their details from scratch.
  */
 const NOT_APPLICABLE: Partial<Record<FormContext, FormToggleKey[]>> = {
-  CheckIn: ["sectionPayment", "sectionBreakout", "fieldBirthDate"],
+  CheckIn: ["sectionPayment", "sectionBreakout", "fieldBirthDate", "fieldNickname"],
 }
 
 /** Default tab order when a caller doesn't narrow it. */
