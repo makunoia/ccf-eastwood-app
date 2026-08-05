@@ -20,6 +20,7 @@ import {
   CLUSTER_EXPORT_GROUPS,
   defaultSelectedColumns,
   type ClusterExportColumnState,
+  type ClusterExportEvent,
   type ClusterRegistrationExportRow,
 } from "@/lib/exports/cluster-registrations"
 import { getClusterRegistrationsExport } from "./export-actions"
@@ -33,6 +34,7 @@ type Props = {
 
 type Loaded = {
   rows: ClusterRegistrationExportRow[]
+  events: ClusterExportEvent[]
   columns: ClusterExportColumnState[]
 }
 
@@ -55,7 +57,7 @@ export function ClusterExportButton({ clusterId, filename, disabled }: Props) {
     }
     if (result.data.rows.length === 0) {
       setOpen(false)
-      toast.info("No registrations to export yet.")
+      toast.info("No registrants to export yet.")
       return
     }
     setData(result.data)
@@ -70,10 +72,10 @@ export function ClusterExportButton({ clusterId, filename, disabled }: Props) {
 
   function handleDownload() {
     if (!data) return
-    exportClusterRegistrationsCSV(filename, data.rows, selected)
+    exportClusterRegistrationsCSV(filename, data.events, data.rows, selected)
     setOpen(false)
     toast.success(
-      `Exported ${data.rows.length} registration${data.rows.length === 1 ? "" : "s"}.`,
+      `Exported ${data.rows.length} registrant${data.rows.length === 1 ? "" : "s"}.`,
     )
   }
 
@@ -94,10 +96,11 @@ export function ClusterExportButton({ clusterId, filename, disabled }: Props) {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Export registrations</DialogTitle>
+            <DialogTitle>Export registrants</DialogTitle>
             <DialogDescription>
               Everything the day&apos;s registration forms collected. One row per
-              registration — someone on three events exports three rows.
+              person — each of the day&apos;s events is a Yes/No column, so
+              someone on three events is still a single row.
             </DialogDescription>
           </DialogHeader>
 
@@ -111,7 +114,7 @@ export function ClusterExportButton({ clusterId, filename, disabled }: Props) {
               <div className="flex items-center justify-between gap-2 text-sm">
                 <p className="text-muted-foreground">
                   {selected.length} of {data.columns.length} columns ·{" "}
-                  {data.rows.length} registration{data.rows.length === 1 ? "" : "s"}
+                  {data.rows.length} registrant{data.rows.length === 1 ? "" : "s"}
                 </p>
                 <div className="flex gap-1">
                   <Button

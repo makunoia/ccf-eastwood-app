@@ -20,7 +20,9 @@ import {
 } from "@/lib/forms/registration-responses"
 import {
   buildClusterExportColumns,
+  collapseRegistrationsToPeople,
   type ClusterExportColumnState,
+  type ClusterExportEvent,
   type ClusterRegistrationExportRow,
 } from "@/lib/exports/cluster-registrations"
 import {
@@ -250,15 +252,17 @@ const PERSON_PROFILE_SELECT = {
 } as const
 
 /**
- * Flat registration records for the cluster's CSV export — one row per
- * `EventRegistrant`, not per person, so a person on three of the day's events
- * exports three rows. Scoped to the events this user may see; check-in state is
- * scoped to the cluster's day exactly like the roster.
+ * Registration records for the cluster's CSV export — **one row per person**,
+ * with the day's events carried as per-event participation on that row, so a
+ * person on three of the day's events is one row with three Yes columns rather
+ * than three duplicate rows. Scoped to the events this user may see; check-in
+ * state is scoped to the cluster's day exactly like the roster.
  *
  * Every answer the registration form can gather is resolved here, in the same
  * precedence the registrant detail page uses (per-event value → Member → Guest →
- * the registrant's own columns). Which of them an admin actually gets is decided
- * later, by the column picker.
+ * the registrant's own columns), then folded per person by
+ * `collapseRegistrationsToPeople`. Which of them an admin actually gets is
+ * decided later, by the column picker.
  */
 export async function getClusterRegistrationExportRows(
   session: Session | null,
@@ -280,6 +284,7 @@ export async function getClusterRegistrationExportRows(
   const registrants = await db.eventRegistrant.findMany({
     where: { eventId: { in: events.map((e) => e.id) } },
     select: {
+      id: true,
       eventId: true,
       memberId: true,
       guestId: true,
@@ -319,7 +324,7 @@ export async function getClusterRegistrationExportRows(
           claimedSatellite: true,
         },
       },
-      event: { select: { name: true, type: true } },
+      event: { select: { type: true } },
       occurrenceAttendances: {
         ...occurrenceScopeFilter(events, scope),
         orderBy: { checkedInAt: "asc" },
@@ -356,7 +361,7 @@ export async function getClusterRegistrationExportRows(
       eventId: r.eventId,
       eventType: r.event.type,
       hasLinkedSession: linked !== null,
-      eventName: r.event.name,
+      personKey: personKeyFor(r),
       firstName: r.member?.firstName ?? r.guest?.firstName ?? r.firstName ?? "",
       lastName: r.member?.lastName ?? r.guest?.lastName ?? r.lastName ?? "",
       // The per-event nickname wins over the one on the profile — same
@@ -408,29 +413,21 @@ export async function getClusterRegistrationExportRows(
   // Recurring event's whole standing roster.
   const dayRows = rows.filter((row) => isOnClusterDay(row, scope))
 
-  // Cluster order first (the order the day runs in), then the roster's
-  // last-name/first-name ordering so both screens read the same way.
-  dayRows.sort((a, b) => {
-    const orderCmp =
-      (eventOrder.get(a.eventId) ?? 0) - (eventOrder.get(b.eventId) ?? 0)
-    if (orderCmp !== 0) return orderCmp
-    const lastCmp = a.lastName.localeCompare(b.lastName, undefined, {
-      sensitivity: "base",
-    })
-    if (lastCmp !== 0) return lastCmp
-    return a.firstName.localeCompare(b.firstName, undefined, {
-      sensitivity: "base",
-    })
-  })
+  // Cluster order (the order the day runs in) so that when two registrations of
+  // the same person disagree, the earliest event of the day wins the merge.
+  dayRows.sort(
+    (a, b) => (eventOrder.get(a.eventId) ?? 0) - (eventOrder.get(b.eventId) ?? 0)
+  )
 
-  return dayRows.map(
-    ({
-      eventId: _eventId,
-      eventType: _eventType,
-      hasLinkedSession: _linked,
-      registrationClusterId: _clusterId,
-      ...row
-    }) => row
+  return collapseRegistrationsToPeople(
+    dayRows.map(
+      ({
+        eventType: _eventType,
+        hasLinkedSession: _linked,
+        registrationClusterId: _clusterId,
+        ...record
+      }) => record
+    )
   )
 }
 
@@ -455,19 +452,29 @@ export async function getClusterFormCoverage(
   ])
 }
 
-/** Export payload for the cluster registrants screen: rows + column offer. */
+/**
+ * Export payload for the cluster registrants screen: one row per person, the
+ * day's events (which become the Yes/No columns), and the column offer.
+ */
 export async function getClusterRegistrationExport(
   session: Session | null,
   clusterId: string
 ): Promise<{
   rows: ClusterRegistrationExportRow[]
+  events: ClusterExportEvent[]
   columns: ClusterExportColumnState[]
 }> {
-  const [rows, coverage] = await Promise.all([
+  const [rows, coverage, clusterEvents] = await Promise.all([
     getClusterRegistrationExportRows(session, clusterId),
     getClusterFormCoverage(session, clusterId),
+    getAccessibleClusterEvents(session, clusterId),
   ])
-  return { rows, columns: buildClusterExportColumns(coverage, rows) }
+  // Cluster order — the order the day runs in, matching the dashboard roster.
+  const events: ClusterExportEvent[] = clusterEvents.map((e) => ({
+    id: e.id,
+    name: e.name,
+  }))
+  return { rows, events, columns: buildClusterExportColumns(coverage, events, rows) }
 }
 
 export type ClusterEventStat = {

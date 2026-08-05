@@ -3,6 +3,7 @@
 import { downloadCSV, formatDayOfWeek, type CSVCell } from "./csv-export"
 import {
   buildClusterRegistrationsTable,
+  type ClusterExportEvent,
   type ClusterRegistrationExportRow,
 } from "./exports/cluster-registrations"
 
@@ -286,9 +287,10 @@ export function exportSessionAttendanceCSV(
 
 export function exportClusterRegistrationsCSV(
   filename: string,
+  events: ClusterExportEvent[],
   rows: ClusterRegistrationExportRow[],
   selectedColumns: string[],
 ): void {
-  const { headers, cells } = buildClusterRegistrationsTable(rows, selectedColumns)
+  const { headers, cells } = buildClusterRegistrationsTable(events, rows, selectedColumns)
   downloadCSV(filename, headers, cells)
 }
