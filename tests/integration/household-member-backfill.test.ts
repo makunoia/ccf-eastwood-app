@@ -5,11 +5,16 @@
  * `resolveConfirmedGuest`, `resolveConfirmedMember`) write every answer onto
  * the profile fill-if-empty; `tests/integration/form-field-nickname` pins those.
  * The household paths only did it on the CREATE branch, so a household member
- * first added without a nickname or gender could never gain one — every later
- * registration matched the existing guest and dropped the answer.
+ * first added without an answer could never gain one — every later registration
+ * matched the existing guest and dropped it.
  *
- *  - regression: a matched household member's empty nickname and gender are
- *                filled, on both the registration form and the check-in desk
+ * The two household paths must stay in step: whatever a household member's
+ * profile gains through the registration form, it must also gain at the
+ * check-in desk. The parity test at the bottom is what keeps them honest.
+ *
+ *  - regression: a matched household member's empty nickname, gender, birth
+ *                date and age range are filled, on both the registration form
+ *                and the check-in desk
  *  - edge case:  a value already on file is never overwritten; the field
  *                toggles still gate a crafted payload
  *  - unit:       the sanitizer's household gates are pinned in
@@ -30,7 +35,7 @@ vi.mock("@/lib/auth", () => ({
 beforeEach(async () => {
   await db.$executeRaw`TRUNCATE
     "FamilyMember", "Family", "EventRegistrant", "EventFormConfig",
-    "Event", "Guest", "Member"
+    "Event", "Guest", "Member", "AgeRangeBucket"
     RESTART IDENTITY CASCADE`
 })
 
@@ -45,11 +50,16 @@ const PRIMARY = {
   mobileNumber: "+63 917 111 2222",
 }
 
-type Toggles = { nickname?: boolean; gender?: boolean }
+type Toggles = {
+  nickname?: boolean
+  gender?: boolean
+  birthDate?: boolean
+  ageRange?: boolean
+}
 
 async function seedEvent(
   context: "Register" | "CheckIn" = "Register",
-  { nickname = true, gender = true }: Toggles = {}
+  { nickname = true, gender = true, birthDate = true, ageRange = true }: Toggles = {}
 ) {
   const event = await db.event.create({
     data: {
@@ -65,14 +75,28 @@ async function seedEvent(
       context,
       fieldNickname: nickname,
       fieldGender: gender,
+      fieldBirthDate: birthDate,
+      fieldAgeRange: ageRange,
       sectionFamily: true,
     },
   })
   return event
 }
 
+async function seedBucket(label: string, order: number) {
+  return db.ageRangeBucket.create({
+    data: { label, minAge: order * 10, maxAge: order * 10 + 9, order },
+  })
+}
+
 /** The household member under test — Ana, carrying only the answers given. */
-type AnaAnswers = { nickname?: string | null; gender?: "Male" | "Female" | null }
+type AnaAnswers = {
+  nickname?: string | null
+  gender?: "Male" | "Female" | null
+  birthMonth?: number | null
+  birthYear?: number | null
+  ageRangeBucketId?: string | null
+}
 
 function household(answers: AnaAnswers = {}) {
   return {
@@ -212,49 +236,180 @@ describe("addHouseholdMemberAtCheckin — household member backfill", () => {
 
   it("regression — fills the empty answers of someone already on the family roster", async () => {
     const { event, registrant } = await seedCheckedInFamily()
+    const bucket = await seedBucket("10–19", 1)
 
     const result = await addHouseholdMemberAtCheckin(
       event.id,
       registrant.id,
-      checkinMember({ nickname: "Anne", gender: "Female" }),
+      checkinMember({
+        nickname: "Anne",
+        gender: "Female",
+        birthMonth: 3,
+        birthYear: 2014,
+        ageRangeBucketId: bucket.id,
+      }),
       null
     )
 
     expect(result.success).toBe(true)
-    expect(await ana()).toMatchObject({ nickname: "Anne", gender: "Female" })
+    expect(await ana()).toMatchObject({
+      nickname: "Anne",
+      gender: "Female",
+      birthMonth: 3,
+      birthYear: 2014,
+      ageRangeBucketId: bucket.id,
+    })
     expect(await db.guest.count()).toBe(2)
   })
 
   it("edge case — never overwrites answers already on file", async () => {
     const { event, registrant, child } = await seedCheckedInFamily()
+    const known = await seedBucket("10–19", 1)
+    const other = await seedBucket("20–29", 2)
     await db.guest.update({
       where: { id: child.id },
-      data: { nickname: "Anne", gender: "Female" },
+      data: {
+        nickname: "Anne",
+        gender: "Female",
+        birthMonth: 3,
+        birthYear: 2014,
+        ageRangeBucketId: known.id,
+      },
     })
 
     await addHouseholdMemberAtCheckin(
       event.id,
       registrant.id,
-      checkinMember({ nickname: "Annie", gender: "Male" }),
+      checkinMember({
+        nickname: "Annie",
+        gender: "Male",
+        birthMonth: 7,
+        birthYear: 2010,
+        ageRangeBucketId: other.id,
+      }),
       null
     )
 
-    expect(await ana()).toMatchObject({ nickname: "Anne", gender: "Female" })
+    expect(await ana()).toMatchObject({
+      nickname: "Anne",
+      gender: "Female",
+      birthMonth: 3,
+      birthYear: 2014,
+      ageRangeBucketId: known.id,
+    })
+  })
+
+  it("edge case — the two birth-date columns move together", async () => {
+    // birthMonth and birthYear are one answer on the form, so a guest holding a
+    // year already must not have their month replaced from a later payload.
+    const { event, registrant, child } = await seedCheckedInFamily()
+    await db.guest.update({
+      where: { id: child.id },
+      data: { birthMonth: 3, birthYear: 2014 },
+    })
+
+    await addHouseholdMemberAtCheckin(
+      event.id,
+      registrant.id,
+      checkinMember({ birthMonth: 11, birthYear: 2010 }),
+      null
+    )
+
+    expect(await ana()).toMatchObject({ birthMonth: 3, birthYear: 2014 })
   })
 
   it("edge case — drops crafted answers when the check-in form doesn't ask", async () => {
     const { event, registrant } = await seedCheckedInFamily({
       nickname: false,
       gender: false,
+      birthDate: false,
+      ageRange: false,
     })
+    const bucket = await seedBucket("10–19", 1)
 
     await addHouseholdMemberAtCheckin(
       event.id,
       registrant.id,
-      checkinMember({ nickname: "Anne", gender: "Female" }),
+      checkinMember({
+        nickname: "Anne",
+        gender: "Female",
+        birthMonth: 3,
+        birthYear: 2014,
+        ageRangeBucketId: bucket.id,
+      }),
       null
     )
 
-    expect(await ana()).toMatchObject({ nickname: null, gender: null })
+    expect(await ana()).toMatchObject({
+      nickname: null,
+      gender: null,
+      birthMonth: null,
+      birthYear: null,
+      ageRangeBucketId: null,
+    })
+  })
+})
+
+describe("the two household paths stay in step", () => {
+  /**
+   * The bug this file exists for was an asymmetry, not a single omission: the
+   * registration form backfilled a matched household member's profile and the
+   * check-in desk did not, so the same answer was kept or dropped depending on
+   * which door the family walked through. This pins the two against each other
+   * on the whole gated set, so a field added to one and forgotten on the other
+   * fails here rather than quietly losing data at one of the doors.
+   */
+  it("backfills the same fields whichever door the family came through", async () => {
+    const bucket = await seedBucket("10–19", 1)
+    const answers = {
+      nickname: "Anne",
+      gender: "Female" as const,
+      birthMonth: 3,
+      birthYear: 2014,
+      ageRangeBucketId: bucket.id,
+    }
+    const expected = {
+      nickname: "Anne",
+      gender: "Female",
+      birthMonth: 3,
+      birthYear: 2014,
+      ageRangeBucketId: bucket.id,
+    }
+
+    // Door 1 — the registration form, on a second event for a known family.
+    const first = await seedEvent()
+    const second = await seedEvent()
+    await createHouseholdRegistration(first.id, PRIMARY, household(), null)
+    await createHouseholdRegistration(second.id, PRIMARY, household(answers), null)
+    const viaRegistration = await ana()
+
+    // Same starting point, this time reached from the check-in desk.
+    await db.guest.update({
+      where: { id: viaRegistration.id },
+      data: {
+        nickname: null,
+        gender: null,
+        birthMonth: null,
+        birthYear: null,
+        ageRangeBucketId: null,
+      },
+    })
+    const checkinEvent = await seedEvent("CheckIn")
+    const registrant = await db.eventRegistrant.create({
+      data: {
+        eventId: checkinEvent.id,
+        guestId: (await db.guest.findFirstOrThrow({ where: { firstName: "Juan" } })).id,
+      },
+    })
+    await addHouseholdMemberAtCheckin(
+      checkinEvent.id,
+      registrant.id,
+      checkinMember(answers),
+      null
+    )
+    const viaCheckin = await ana()
+
+    expect(viaRegistration).toMatchObject(expected)
+    expect(viaCheckin).toMatchObject(expected)
   })
 })

@@ -50,6 +50,7 @@ import {
   sanitizeRegistrantPayload,
 } from "@/lib/forms/registration-payload"
 import { findFamilyBySpouse, type FamilyPersonRef } from "@/lib/family-links"
+import { householdBackfill } from "@/lib/households/backfill"
 import {
   deriveFamilyName,
   householdMemberSchema,
@@ -1892,6 +1893,7 @@ export async function createHouseholdRegistration(
               lastName: true,
               nickname: true,
               gender: true,
+              birthMonth: true,
               birthYear: true,
               ageRangeBucketId: true,
             },
@@ -1924,33 +1926,17 @@ export async function createHouseholdRegistration(
         personRef = existingInFamily.memberId
           ? { memberId: existingInFamily.memberId }
           : { guestId: existingInFamily.guestId as string }
-        // Backfill only what's missing; never overwrite known data.
+        // Backfill only what's missing; never overwrite known data. Shared with
+        // the check-in desk so both doors fill the same set — see
+        // `lib/households/backfill.ts`.
         if (existingInFamily.guestId) {
-          const g = existingInFamily.guest
-          await db.guest.update({
-            where: { id: existingInFamily.guestId },
-            data: {
-              // Same fill-if-empty rule the primary registrant's paths use
-              // (`resolveAnonymousGuest` / `resolveConfirmedGuest`). Without
-              // these a household member first added without a nickname or
-              // gender could never gain one: the create branch stores them, but
-              // a returning family matches here instead, and the answers were
-              // dropped every time after the first.
-              ...(!g?.nickname && person.nickname ? { nickname: person.nickname } : {}),
-              // Gender is a hard eligibility gate in the matching engine, so a
-              // household member stuck at null is excluded from every
-              // gender-scoped group rather than merely scored lower.
-              ...(g?.gender == null && person.gender != null
-                ? { gender: person.gender }
-                : {}),
-              ...(g?.birthYear == null && person.birthYear != null
-                ? { birthYear: person.birthYear, birthMonth: person.birthMonth ?? null }
-                : {}),
-              ...(g?.ageRangeBucketId == null && person.ageRangeBucketId != null
-                ? { ageRangeBucketId: person.ageRangeBucketId }
-                : {}),
-            },
-          })
+          const fills = householdBackfill(existingInFamily.guest, person)
+          if (Object.keys(fills).length > 0) {
+            await db.guest.update({
+              where: { id: existingInFamily.guestId },
+              data: fills,
+            })
+          }
         }
       } else {
         const newGuest = await db.guest.create({
@@ -2362,7 +2348,9 @@ export async function addHouseholdMemberAtCheckin(
             lastName: true,
             nickname: true,
             gender: true,
+            birthMonth: true,
             birthYear: true,
+            ageRangeBucketId: true,
           },
         },
       },
@@ -2382,17 +2370,13 @@ export async function addHouseholdMemberAtCheckin(
       personRef = match.memberId
         ? { memberId: match.memberId }
         : { guestId: match.guestId as string }
-      // Fill-if-empty, same rule as every other write path — answers given at
-      // the check-in desk for someone already on the family roster would
-      // otherwise be collected and dropped.
+      // Fill-if-empty, same rule and same field set as the registration form's
+      // household path — answers given at the check-in desk for someone already
+      // on the family roster would otherwise be collected and dropped. The two
+      // doors must agree: a profile shouldn't gain a birth year through the
+      // registration form but lose it at the desk.
       if (match.guestId) {
-        const g = match.guest
-        const fills = {
-          ...(!g?.nickname && person.nickname ? { nickname: person.nickname } : {}),
-          ...(g?.gender == null && person.gender != null
-            ? { gender: person.gender }
-            : {}),
-        }
+        const fills = householdBackfill(match.guest, person)
         if (Object.keys(fills).length > 0) {
           await db.guest.update({ where: { id: match.guestId }, data: fills })
         }
