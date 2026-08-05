@@ -1890,6 +1890,7 @@ export async function createHouseholdRegistration(
               id: true,
               firstName: true,
               lastName: true,
+              nickname: true,
               birthYear: true,
               ageRangeBucketId: true,
             },
@@ -1928,6 +1929,13 @@ export async function createHouseholdRegistration(
           await db.guest.update({
             where: { id: existingInFamily.guestId },
             data: {
+              // Same fill-if-empty rule the primary registrant's paths use
+              // (`resolveAnonymousGuest` / `resolveConfirmedGuest`). Without it a
+              // household member who was first added without a nickname could
+              // never gain one: the create branch stores it, but a returning
+              // family matches here instead, and the answer was dropped every
+              // time after the first.
+              ...(!g?.nickname && person.nickname ? { nickname: person.nickname } : {}),
               ...(g?.birthYear == null && person.birthYear != null
                 ? { birthYear: person.birthYear, birthMonth: person.birthMonth ?? null }
                 : {}),
@@ -2341,7 +2349,9 @@ export async function addHouseholdMemberAtCheckin(
         memberId: true,
         guestId: true,
         member: { select: { firstName: true, lastName: true, birthYear: true } },
-        guest: { select: { firstName: true, lastName: true, birthYear: true } },
+        guest: {
+          select: { firstName: true, lastName: true, nickname: true, birthYear: true },
+        },
       },
     })
     const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase()
@@ -2359,6 +2369,15 @@ export async function addHouseholdMemberAtCheckin(
       personRef = match.memberId
         ? { memberId: match.memberId }
         : { guestId: match.guestId as string }
+      // Fill-if-empty, same rule as every other write path — a nickname given at
+      // the check-in desk for someone already on the family roster would
+      // otherwise be collected and dropped.
+      if (match.guestId && !match.guest?.nickname && person.nickname) {
+        await db.guest.update({
+          where: { id: match.guestId },
+          data: { nickname: person.nickname },
+        })
+      }
     } else {
       const guest = await db.guest.create({
         data: {
