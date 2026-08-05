@@ -1891,6 +1891,7 @@ export async function createHouseholdRegistration(
               firstName: true,
               lastName: true,
               nickname: true,
+              gender: true,
               birthYear: true,
               ageRangeBucketId: true,
             },
@@ -1930,12 +1931,18 @@ export async function createHouseholdRegistration(
             where: { id: existingInFamily.guestId },
             data: {
               // Same fill-if-empty rule the primary registrant's paths use
-              // (`resolveAnonymousGuest` / `resolveConfirmedGuest`). Without it a
-              // household member who was first added without a nickname could
-              // never gain one: the create branch stores it, but a returning
-              // family matches here instead, and the answer was dropped every
-              // time after the first.
+              // (`resolveAnonymousGuest` / `resolveConfirmedGuest`). Without
+              // these a household member first added without a nickname or
+              // gender could never gain one: the create branch stores them, but
+              // a returning family matches here instead, and the answers were
+              // dropped every time after the first.
               ...(!g?.nickname && person.nickname ? { nickname: person.nickname } : {}),
+              // Gender is a hard eligibility gate in the matching engine, so a
+              // household member stuck at null is excluded from every
+              // gender-scoped group rather than merely scored lower.
+              ...(g?.gender == null && person.gender != null
+                ? { gender: person.gender }
+                : {}),
               ...(g?.birthYear == null && person.birthYear != null
                 ? { birthYear: person.birthYear, birthMonth: person.birthMonth ?? null }
                 : {}),
@@ -2350,7 +2357,13 @@ export async function addHouseholdMemberAtCheckin(
         guestId: true,
         member: { select: { firstName: true, lastName: true, birthYear: true } },
         guest: {
-          select: { firstName: true, lastName: true, nickname: true, birthYear: true },
+          select: {
+            firstName: true,
+            lastName: true,
+            nickname: true,
+            gender: true,
+            birthYear: true,
+          },
         },
       },
     })
@@ -2369,14 +2382,20 @@ export async function addHouseholdMemberAtCheckin(
       personRef = match.memberId
         ? { memberId: match.memberId }
         : { guestId: match.guestId as string }
-      // Fill-if-empty, same rule as every other write path — a nickname given at
+      // Fill-if-empty, same rule as every other write path — answers given at
       // the check-in desk for someone already on the family roster would
       // otherwise be collected and dropped.
-      if (match.guestId && !match.guest?.nickname && person.nickname) {
-        await db.guest.update({
-          where: { id: match.guestId },
-          data: { nickname: person.nickname },
-        })
+      if (match.guestId) {
+        const g = match.guest
+        const fills = {
+          ...(!g?.nickname && person.nickname ? { nickname: person.nickname } : {}),
+          ...(g?.gender == null && person.gender != null
+            ? { gender: person.gender }
+            : {}),
+        }
+        if (Object.keys(fills).length > 0) {
+          await db.guest.update({ where: { id: match.guestId }, data: fills })
+        }
       }
     } else {
       const guest = await db.guest.create({
