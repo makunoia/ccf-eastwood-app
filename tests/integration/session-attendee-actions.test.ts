@@ -8,6 +8,8 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
+import { isEstablishedAttendee, resolveAttendeeStatus } from "@/lib/session-stats"
+import { resolveStatusSelection } from "@/lib/session-attendees"
 import {
   removeSessionAttendee,
   setAttendeeReturnerStatus,
@@ -135,6 +137,52 @@ describe("setAttendeeReturnerStatus", () => {
     expect(result.success).toBe(true)
     const updated = await db.occurrenceAttendee.findUnique({ where: { id: attendee.id } })
     expect(updated?.isReturnerOverride).toBe(false)
+  })
+
+  // Regression for the misclick the status menu exists to undo: an admin marks a first-timer
+  // Returning by accident and picks New again. Driving it through `resolveStatusSelection` —
+  // the same mapping the menu uses — proves the correction leaves *no* override behind, so
+  // the row goes back to tracking the person's real attendance history.
+  it("returns a mis-set guest to New with no override left behind", async () => {
+    const event = await seedEvent()
+    const occurrence = await seedOccurrence(event.id, "2026-06-04")
+    const { registrant, attendee } = await seedGuestAttendee(event.id, occurrence.id)
+
+    const derivedIsReturner = isEstablishedAttendee(false, [], occurrence.id, occurrence.date)
+    expect(derivedIsReturner).toBe(false)
+
+    const misclick = resolveStatusSelection("returning", derivedIsReturner)
+    await setAttendeeReturnerStatus(attendee.id, misclick.override)
+    expect(
+      (await db.occurrenceAttendee.findUnique({ where: { id: attendee.id } }))
+        ?.isReturnerOverride,
+    ).toBe(true)
+
+    const correction = resolveStatusSelection("new", derivedIsReturner)
+    expect(correction.override).toBeNull()
+    const result = await setAttendeeReturnerStatus(attendee.id, correction.override)
+
+    expect(result.success).toBe(true)
+    const row = await db.occurrenceAttendee.findUnique({
+      where: { id: attendee.id },
+      select: { isReturnerOverride: true },
+    })
+    expect(row?.isReturnerOverride).toBeNull()
+
+    // …and the badge the page would render is New again.
+    const attendances = await db.occurrenceAttendee.findMany({
+      where: { registrantId: registrant.id },
+      select: { occurrenceId: true, occurrence: { select: { date: true } } },
+    })
+    expect(
+      resolveAttendeeStatus(
+        row?.isReturnerOverride,
+        false,
+        attendances,
+        occurrence.id,
+        occurrence.date,
+      ),
+    ).toBe(false)
   })
 
   it("rejects a volunteer attendance row — volunteers have no New/Returning status", async () => {

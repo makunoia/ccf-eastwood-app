@@ -78,6 +78,8 @@
   "devDependencies": {
     "@playwright/test": "^1.59.1",
     "@tailwindcss/postcss": "^4.2.4",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
     "@types/bcryptjs": "^3.0.0",
     "@types/node": "^20.19.39",
     "@types/pg": "^8.20.0",
@@ -89,6 +91,7 @@
     "dotenv-cli": "^11.0.0",
     "eslint": "^9.39.4",
     "eslint-config-next": "16.1.6",
+    "jsdom": "^30.0.1",
     "prisma": "^7.8.0",
     "shadcn": "^3.8.5",
     "tailwindcss": "^4.2.4",

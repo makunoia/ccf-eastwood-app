@@ -18,9 +18,15 @@
 
 export type PeriodFilter = "7d" | "30d" | "90d" | "all"
 
-export const PERIOD_FILTERS: PeriodFilter[] = ["7d", "30d", "90d", "all"]
+export const PERIOD_FILTERS: PeriodFilter[] = ["all", "7d", "30d", "90d"]
 
-export const DEFAULT_PERIOD: PeriodFilter = "30d"
+/**
+ * All time, not a rolling window: most events here are short and long finished,
+ * so a 30-day default opened the dashboard on an empty page for anything that
+ * ran last quarter. Narrowing is a deliberate act; the whole roster is the
+ * honest starting view.
+ */
+export const DEFAULT_PERIOD: PeriodFilter = "all"
 
 export function normalizePeriod(value: string | undefined): PeriodFilter {
   return PERIOD_FILTERS.includes(value as PeriodFilter) ? (value as PeriodFilter) : DEFAULT_PERIOD

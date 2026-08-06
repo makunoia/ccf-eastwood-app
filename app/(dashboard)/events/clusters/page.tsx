@@ -3,6 +3,7 @@ import Link from "next/link"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { canAccessEvent, isSuperAdmin } from "@/lib/permissions"
+import { getClusterSharedFormPeopleCounts } from "@/lib/clusters/aggregate"
 import { PageHeader } from "@/components/page-header"
 import { LinkTabs } from "@/components/link-tabs"
 import { Badge } from "@/components/ui/badge"
@@ -45,13 +46,8 @@ export default async function EventClustersPage() {
       c.events.some((e) => canAccessEvent(session, e.eventId))
   )
 
-  const counts = await db.eventRegistrant.groupBy({
-    by: ["registrationClusterId"],
-    where: { registrationClusterId: { in: visible.map((c) => c.id) } },
-    _count: { _all: true },
-  })
-  const registrationCounts = new Map(
-    counts.map((c) => [c.registrationClusterId, c._count._all])
+  const peopleCounts = await getClusterSharedFormPeopleCounts(
+    visible.map((c) => c.id)
   )
 
   return (
@@ -81,7 +77,7 @@ export default async function EventClustersPage() {
                 <TableHead>Name</TableHead>
                 <TableHead>Date</TableHead>
                 <TableHead>Events</TableHead>
-                <TableHead className="text-right">Shared-form registrations</TableHead>
+                <TableHead className="text-right">People registered</TableHead>
                 <TableHead>Form</TableHead>
               </TableRow>
             </TableHeader>
@@ -112,7 +108,7 @@ export default async function EventClustersPage() {
                       : cluster.events.map((e) => e.event.name).join(" · ")}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {registrationCounts.get(cluster.id) ?? 0}
+                    {peopleCounts.get(cluster.id) ?? 0}
                   </TableCell>
                   <TableCell>
                     <Badge variant={cluster.isOpen ? "default" : "outline"}>

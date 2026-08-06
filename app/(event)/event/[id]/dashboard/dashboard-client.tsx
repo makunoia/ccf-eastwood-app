@@ -1,355 +1,108 @@
 "use client"
 
+import * as React from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
-import { EventSetupChecklist } from "@/components/event-setup-checklist"
-import type { EventSetupChecklist as EventSetupChecklistData } from "@/lib/events/setup-checklist"
-import {
-  IconCopy,
-  IconTargetArrow,
-  IconUserCheck,
-  IconUserQuestion,
-  IconUsers,
-  IconUsersGroup,
-} from "@tabler/icons-react"
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Label,
-  LabelList,
-  Pie,
-  PieChart,
-  XAxis,
-  YAxis,
-} from "recharts"
+import { usePathname, useRouter } from "next/navigation"
+import { IconCopy, IconLayoutDashboard } from "@tabler/icons-react"
 import { toast } from "sonner"
 
+import { EventSetupChecklist } from "@/components/event-setup-checklist"
+import type { EventSetupChecklist as EventSetupChecklistData } from "@/lib/events/setup-checklist"
+import { EditableGrid } from "@/components/events/dashboard-edit/editable-grid"
+import { EditModeBar } from "@/components/events/dashboard-edit/edit-mode-bar"
+import { HiddenTray } from "@/components/events/dashboard-edit/hidden-tray"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import {
-  ChartContainer,
-  ChartLegend,
-  ChartLegendContent,
-  ChartTooltip,
-  ChartTooltipContent,
-  type ChartConfig,
-} from "@/components/ui/chart"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableFooter,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-
-import type { AttendanceSeriesPoint } from "@/lib/events/attendance-series"
-import { formatTurnoutRate, type EventTurnout } from "@/lib/events/turnout"
 import { cn } from "@/lib/utils"
+import {
+  resetEventDashboardLayout,
+  saveEventDashboardLayout,
+} from "@/app/(dashboard)/events/dashboard-layout-actions"
+import type { DashboardLayout, DashboardWidgetKey } from "@/lib/events/dashboard-widgets"
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type AttendanceBreakdownRow = {
-  lifeStageId: string | null
-  lifeStageName: string
-  attendees: number
-  firstTimers: number
-  members: number
-  membersInGroup: number
-  membersNotInGroup: number
-}
-
-type EventDashboardData = {
-  id: string
-  name: string
-  description: string | null
-  type: "OneTime" | "MultiDay" | "Recurring"
-  startDate: string
-  endDate: string
-  price: number | null
-  registrationStart: string | null
-  registrationEnd: string | null
-  recurrenceDayOfWeek: number | null
-  recurrenceFrequency: "Weekly" | "Biweekly" | "Monthly" | null
-  recurrenceEndDate: string | null
-  ministries: string[]
-  allMinistries: boolean
-  modules: string[]
-  registrantCount: number
-  paidCount: number
-  attendedCount: number
-  occurrenceCount: number
-  totalCheckIns: number
-  totalVolunteerCheckIns: number
-  sessionsInPeriod: number
-  period: "7d" | "30d" | "90d" | "all"
-  averageAttendance: number
-  uniqueAttendees: number
-  turnout: EventTurnout
-  attendanceSeries: AttendanceSeriesPoint[]
-  registrationSeries: Array<{
-    date: string
-    total: number
-  }>
-  attendanceBreakdown: {
-    rows: AttendanceBreakdownRow[]
-    total: AttendanceBreakdownRow
-  }
-  /** No form collects Life Stage, and attendees landed in "Not specified" because of it. */
-  explainMissingLifeStage: boolean
-  placement: {
-    inGroup: number
-    membersUnassigned: number
-    guestsUnassigned: number
-  }
-  unassignedCount: number
-  pipeline: {
-    registered: number
-    attended: number
-    inSmallGroup: number
-    newTimothys: number
-    newLeaders: number
-  }
-  confirmedGuestsCount: number
-  seriesSummaries: Array<{
-    id: string
-    title: string
-    startDate: string
-    endDate: string
-    sessionCount: number
-    totalAttendance: number
-    averageAttendance: number
-  }>
-  confirmedVolunteerCount: number
-  pendingVolunteerCount: number
-  rejectedVolunteerCount: number
-  brandBackground: string | null
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const PERIODS: Array<{ value: EventDashboardData["period"]; label: string }> = [
-  { value: "7d", label: "Last 7 days" },
-  { value: "30d", label: "Last 30 days" },
-  { value: "90d", label: "Last 90 days" },
-  { value: "all", label: "All time" },
-]
+import { PERIODS, isSeriesEvent, type EventDashboardData } from "./shared"
 
 /**
- * Every attendance figure on this page is bounded by the selected window, so any
- * copy that quotes one has to name the window too — otherwise a 7-day view of an
- * event that ran last month reads as a total collapse rather than as a filter.
+ * The dashboard shell: period toolbar, the widget grid, and customize mode.
+ *
+ * Which widgets render, in what order and at what width all come from the
+ * resolved layout — this file no longer knows what any individual widget is.
+ * See `lib/events/dashboard-widgets.ts`.
  */
-function periodPhrase(period: EventDashboardData["period"]) {
-  return period === "all" ? "all time" : `the last ${period.replace("d", "")} days`
-}
-
-const attendanceChartConfig = {
-  attendees: {
-    label: "Participants",
-    color: "var(--primary)",
-  },
-  volunteers: {
-    label: "Volunteers",
-    color: "var(--chart-4)",
-  },
-} satisfies ChartConfig
-
-const registrationChartConfig = {
-  total: {
-    label: "Registrations",
-    color: "var(--chart-2)",
-  },
-} satisfies ChartConfig
-
-const placementChartConfig = {
-  inGroup: {
-    label: "In a group",
-    color: "var(--chart-2)",
-  },
-  membersUnassigned: {
-    label: "Members unassigned",
-    color: "var(--chart-4)",
-  },
-  guestsUnassigned: {
-    label: "Guests unassigned",
-    color: "var(--chart-1)",
-  },
-} satisfies ChartConfig
-
-const volunteerChartConfig = {
-  confirmed: {
-    label: "Confirmed",
-    color: "var(--chart-2)",
-  },
-  pending: {
-    label: "Pending",
-    color: "var(--chart-4)",
-  },
-  rejected: {
-    label: "Rejected",
-    color: "var(--chart-5)",
-  },
-} satisfies ChartConfig
-
-const pipelineChartConfig = {
-  value: {
-    label: "People",
-    color: "var(--primary)",
-  },
-} satisfies ChartConfig
-
-const lifeStageChartConfig = {
-  firstTimers: {
-    label: "First-timers",
-    color: "var(--chart-1)",
-  },
-  membersNotInGroup: {
-    label: "Members, no DGroup",
-    color: "var(--chart-4)",
-  },
-  membersInGroup: {
-    label: "Members in a DGroup",
-    color: "var(--chart-2)",
-  },
-} satisfies ChartConfig
-
-const seriesChartConfig = {
-  averageAttendance: {
-    label: "Avg attendance",
-    color: "var(--primary)",
-  },
-} satisfies ChartConfig
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-PH", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    timeZone: "UTC",
-  })
-}
-
-function formatShortDate(value: string) {
-  return new Date(value).toLocaleDateString("en-PH", {
-    month: "short",
-    day: "numeric",
-  })
-}
-
-function formatAverage(value: number) {
-  if (Number.isInteger(value)) return value.toLocaleString()
-  return value.toLocaleString(undefined, { maximumFractionDigits: 1 })
-}
-
-function formatRange(startIso: string, endIso: string) {
-  return `${formatDate(startIso)} – ${formatDate(endIso)}`
-}
-
-function DonutCenterLabel({
-  viewBox,
-  value,
-  caption,
-}: {
-  viewBox?: unknown
-  value: string
-  caption: string
-}) {
-  if (!viewBox || typeof viewBox !== "object" || !("cx" in viewBox) || !("cy" in viewBox)) {
-    return null
-  }
-  const { cx, cy } = viewBox as { cx: number; cy: number }
-  return (
-    <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle">
-      <tspan x={cx} y={cy} className="fill-foreground text-2xl font-semibold tabular-nums">
-        {value}
-      </tspan>
-      <tspan x={cx} y={cy + 20} className="fill-muted-foreground text-xs">
-        {caption}
-      </tspan>
-    </text>
-  )
-}
-
-function ChartEmptyState({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex h-45 items-center justify-center">
-      <p className="text-sm text-muted-foreground">{children}</p>
-    </div>
-  )
-}
-
-const drillLinkClass =
-  "text-xs font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-
-// ─── Component ────────────────────────────────────────────────────────────────
-
 export function EventDashboardClient({
   event,
   setup,
+  layout,
 }: {
   event: EventDashboardData
   setup: EventSetupChecklistData | null
+  layout: DashboardLayout
 }) {
   const pathname = usePathname()
+  const router = useRouter()
 
-  const isRecurring = event.type === "Recurring"
-  const isMultiDay = event.type === "MultiDay"
-  const isSeriesEvent = isRecurring || isMultiDay
+  const [editing, setEditing] = React.useState(false)
+  const [draft, setDraft] = React.useState(layout)
+  const [saving, setSaving] = React.useState(false)
 
-  // Volunteer figures are only meaningful — and only reachable — with the module on.
-  const hasVolunteers = event.modules.includes("Volunteers")
+  const active = editing ? draft : layout
+  const hidden = [...active.kpis, ...active.cards].filter((w) => !w.visible)
+  const dirty = editing && JSON.stringify(draft) !== JSON.stringify(layout)
 
-  const totalVolunteers =
-    event.confirmedVolunteerCount + event.pendingVolunteerCount + event.rejectedVolunteerCount
+  function startEditing() {
+    // Seeded here rather than in an effect on `layout`: the prop is a fresh
+    // object on every render, and an effect keyed on it would wipe the draft
+    // mid-edit.
+    setDraft(layout)
+    setEditing(true)
+  }
 
-  const placementTotal =
-    event.placement.inGroup +
-    event.placement.membersUnassigned +
-    event.placement.guestsUnassigned
-  const placementData = [
-    { segment: "inGroup", count: event.placement.inGroup, fill: "var(--color-inGroup)" },
-    {
-      segment: "membersUnassigned",
-      count: event.placement.membersUnassigned,
-      fill: "var(--color-membersUnassigned)",
-    },
-    {
-      segment: "guestsUnassigned",
-      count: event.placement.guestsUnassigned,
-      fill: "var(--color-guestsUnassigned)",
-    },
-  ].filter((slice) => slice.count > 0)
-  const inGroupPercent =
-    placementTotal > 0 ? Math.round((event.placement.inGroup / placementTotal) * 100) : 0
+  function handleRestore(key: DashboardWidgetKey) {
+    const lane = draft.kpis.some((w) => w.key === key) ? "kpis" : "cards"
+    const restored = draft[lane].find((w) => w.key === key)
+    if (!restored) return
+    // Appended rather than returned to its old slot: it comes back where you can
+    // see it, and it's already selected for dragging somewhere else.
+    setDraft({
+      ...draft,
+      [lane]: [
+        ...draft[lane].filter((w) => w.key !== key),
+        { ...restored, visible: true },
+      ],
+    })
+  }
 
-  const volunteerData = [
-    { status: "confirmed", count: event.confirmedVolunteerCount, fill: "var(--color-confirmed)" },
-    { status: "pending", count: event.pendingVolunteerCount, fill: "var(--color-pending)" },
-    { status: "rejected", count: event.rejectedVolunteerCount, fill: "var(--color-rejected)" },
-  ].filter((slice) => slice.count > 0)
+  async function handleSave() {
+    setSaving(true)
+    const entries = [...draft.kpis, ...draft.cards].map((w) => ({
+      key: w.key,
+      visible: w.visible,
+      width: w.width,
+    }))
+    const result = await saveEventDashboardLayout(event.id, entries)
+    setSaving(false)
 
-  const breakdownRows = event.attendanceBreakdown.rows
-  const breakdownTotal = event.attendanceBreakdown.total
+    if (!result.success) {
+      toast.error(result.error)
+      return
+    }
+    toast.success("Dashboard updated")
+    setEditing(false)
+    router.refresh()
+  }
 
-  const pipelineData = [
-    { stage: "Registered", value: event.pipeline.registered },
-    { stage: "Attended", value: event.pipeline.attended },
-    { stage: "In DGroup", value: event.pipeline.inSmallGroup },
-    { stage: "New Timothy", value: event.pipeline.newTimothys },
-    { stage: "New Leader", value: event.pipeline.newLeaders },
-  ]
+  async function handleReset() {
+    setSaving(true)
+    const result = await resetEventDashboardLayout(event.id)
+    setSaving(false)
+
+    if (!result.success) {
+      toast.error(result.error)
+      return
+    }
+    toast.success("Dashboard reset to defaults")
+    setEditing(false)
+    router.refresh()
+  }
 
   function copyLink(path: string) {
     const url = `${window.location.origin}${path}`
@@ -359,7 +112,7 @@ export function EventDashboardClient({
 
   return (
     <div className="flex flex-1 flex-col p-6">
-      {setup && (
+      {setup && !editing && (
         <div className="mb-6">
           <EventSetupChecklist eventId={event.id} checklist={setup} />
         </div>
@@ -372,11 +125,16 @@ export function EventDashboardClient({
             <Link
               key={period.value}
               href={`${pathname}?period=${period.value}`}
+              aria-disabled={editing}
+              tabIndex={editing ? -1 : undefined}
               className={cn(
                 "rounded-md px-2.5 py-1.5 text-sm transition-colors",
                 event.period === period.value
                   ? "bg-muted font-medium text-foreground"
-                  : "text-muted-foreground hover:text-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+                // Changing the period reloads the page, which would throw away
+                // an unsaved layout.
+                editing && "pointer-events-none opacity-40"
               )}
             >
               {period.label}
@@ -384,657 +142,46 @@ export function EventDashboardClient({
           ))}
         </div>
 
-        {/* Check-in link — OneTime only (MultiDay/Recurring check-in is per occurrence via Sessions/Days) */}
-        {!isSeriesEvent && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="ml-auto"
-            onClick={() => copyLink(`/events/${event.id}/checkin`)}
-          >
-            <IconCopy className="mr-1.5 size-3.5" />
-            Check-in link
-          </Button>
-        )}
-      </div>
-
-      {/* KPI cards — generous gap above signals a new data section. The column
-          count tracks the card count so the row always fills exactly. */}
-      <div
-        className={cn(
-          "mt-8 grid grid-cols-1 gap-3 md:grid-cols-2",
-          hasVolunteers ? "xl:grid-cols-5" : "xl:grid-cols-4"
-        )}
-      >
-        <div className="rounded-lg border px-5 py-5 flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <p className="text-[11px] font-semibold tracking-[0.15em] uppercase text-muted-foreground">
-              {isSeriesEvent ? "Average Attendance" : "Total Attended"}
-            </p>
-            <span className="text-muted-foreground/40">
-              <IconUsers className="size-4" />
-            </span>
-          </div>
-          <p className="text-3xl font-semibold tabular-nums tracking-tight text-foreground">
-            {formatAverage(event.averageAttendance)}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            {isSeriesEvent
-              ? "Average participant check-ins per session"
-              : `Attendees checked in over ${periodPhrase(event.period)}`}
-          </p>
-        </div>
-
-        <div className="rounded-lg border px-5 py-5 flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <p className="text-[11px] font-semibold tracking-[0.15em] uppercase text-muted-foreground">
-              Unique Attendees
-            </p>
-            <span className="text-muted-foreground/40">
-              <IconUserCheck className="size-4" />
-            </span>
-          </div>
-          <p className="text-3xl font-semibold tabular-nums tracking-tight text-foreground">
-            {event.uniqueAttendees.toLocaleString()}
-          </p>
-          <p className="text-xs text-muted-foreground">Distinct participants in selected period</p>
-        </div>
-
-        <div className="rounded-lg border px-5 py-5 flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <p className="text-[11px] font-semibold tracking-[0.15em] uppercase text-muted-foreground">
-              Turnout
-            </p>
-            <span className="text-muted-foreground/40">
-              <IconTargetArrow className="size-4" />
-            </span>
-          </div>
-          <p className="text-3xl font-semibold tabular-nums tracking-tight text-foreground">
-            {formatTurnoutRate(event.turnout.rate)}
-          </p>
-          {/* The numerator is window-bounded, the denominator is the whole
-              roster — so the copy has to say which window, or "12 of 500" reads
-              as a disaster instead of as a filter. */}
-          <p className="text-xs text-muted-foreground">
-            {event.turnout.preRegistered === 0
-              ? "No registrations yet"
-              : `${event.turnout.checkedIn.toLocaleString()} of ${event.turnout.preRegistered.toLocaleString()} registered checked in ${periodPhrase(event.period)} · ${event.turnout.noShows.toLocaleString()} ${event.period === "all" ? `no-show${event.turnout.noShows === 1 ? "" : "s"}` : "not in window"}`}
-          </p>
-        </div>
-
-        <div className="rounded-lg border px-5 py-5 flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <p className="text-[11px] font-semibold tracking-[0.15em] uppercase text-muted-foreground">
-              Not In DGroup Yet
-            </p>
-            <span className="text-muted-foreground/40">
-              <IconUserQuestion className="size-4" />
-            </span>
-          </div>
-          <Link
-            href={`/event/${event.id}/registrants`}
-            className="text-3xl font-semibold tabular-nums tracking-tight text-foreground underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors w-fit"
-          >
-            {event.unassignedCount.toLocaleString()}
-          </Link>
-          <p className="text-xs text-muted-foreground">Members and guests still unassigned</p>
-        </div>
-
-        {hasVolunteers && (
-        <div className="rounded-lg border px-5 py-5 flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <p className="text-[11px] font-semibold tracking-[0.15em] uppercase text-muted-foreground">
-              Confirmed Volunteers
-            </p>
-            <span className="text-muted-foreground/40">
-              <IconUsersGroup className="size-4" />
-            </span>
-          </div>
-          <p className="text-3xl font-semibold tabular-nums tracking-tight text-foreground">
-            {event.confirmedVolunteerCount.toLocaleString()}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            {totalVolunteers === 0
-              ? "No volunteers yet"
-              : totalVolunteers === event.confirmedVolunteerCount
-                ? `All ${totalVolunteers} confirmed`
-                : `of ${totalVolunteers} total${event.pendingVolunteerCount > 0 ? ` · ${event.pendingVolunteerCount} pending` : ""}${event.rejectedVolunteerCount > 0 ? ` · ${event.rejectedVolunteerCount} rejected` : ""}`}
-          </p>
-        </div>
-        )}
-      </div>
-
-      {/* Trend row — attendance per session (series events) + cumulative registrations */}
-      <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-12">
-        {isSeriesEvent && (
-          <Card className="xl:col-span-8">
-            <CardHeader>
-              <CardTitle>Attendance by Session</CardTitle>
-              <CardDescription>
-                {event.attendanceSeries.length > 0
-                  ? `Check-ins per session over ${periodPhrase(event.period)}`
-                  : "No sessions in the selected period"}
-              </CardDescription>
-              {event.attendanceSeries.length > 0 && (
-                <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 pt-2">
-                  {/* Labelled "participant", never "total" — the Sessions page
-                      badge counts participants *and* volunteers, and a stat
-                      called "total check-ins" that omits volunteers is exactly
-                      the disagreement between the two screens we're closing. */}
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="text-2xl font-semibold tabular-nums tracking-tight text-foreground">
-                      {event.totalCheckIns.toLocaleString()}
-                    </span>
-                    <span className="text-xs text-muted-foreground">participant check-ins</span>
-                  </div>
-                  {event.totalVolunteerCheckIns > 0 && (
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-sm font-medium tabular-nums text-foreground">
-                        {event.totalVolunteerCheckIns.toLocaleString()}
-                      </span>
-                      <span className="text-xs text-muted-foreground">volunteer check-ins</span>
-                    </div>
-                  )}
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="text-sm font-medium tabular-nums text-foreground">
-                      {event.sessionsInPeriod.toLocaleString()}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {event.sessionsInPeriod === 1 ? "session" : "sessions"}
-                    </span>
-                  </div>
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="text-sm font-medium tabular-nums text-foreground">
-                      {formatAverage(event.averageAttendance)}
-                    </span>
-                    <span className="text-xs text-muted-foreground">avg per session</span>
-                  </div>
-                </div>
-              )}
-            </CardHeader>
-            <CardContent className="px-2 pt-4 sm:px-6 sm:pt-6">
-              {event.attendanceSeries.length === 0 ? (
-                <ChartEmptyState>
-                  No sessions have taken place in the selected period.
-                </ChartEmptyState>
-              ) : (
-                <ChartContainer config={attendanceChartConfig} className="aspect-auto h-65 w-full">
-                  <AreaChart data={event.attendanceSeries}>
-                    <CartesianGrid vertical={false} />
-                    <XAxis
-                      dataKey="date"
-                      tickLine={false}
-                      axisLine={false}
-                      tickMargin={8}
-                      minTickGap={28}
-                      tickFormatter={formatShortDate}
-                    />
-                    <YAxis
-                      tickLine={false}
-                      axisLine={false}
-                      tickMargin={8}
-                      width={32}
-                      allowDecimals={false}
-                    />
-                    <ChartTooltip
-                      cursor={false}
-                      content={
-                        <ChartTooltipContent
-                          indicator="dot"
-                          labelFormatter={(value) =>
-                            new Date(value).toLocaleDateString("en-PH", {
-                              month: "short",
-                              day: "numeric",
-                              year: "numeric",
-                            })
-                          }
-                        />
-                      }
-                    />
-                    <Area
-                      dataKey="attendees"
-                      type="natural"
-                      fill="var(--color-attendees)"
-                      fillOpacity={0.1}
-                      stroke="var(--color-attendees)"
-                    />
-                    {/* Only drawn when volunteers actually checked in — the
-                        Sessions page badge counts these alongside participants. */}
-                    {event.totalVolunteerCheckIns > 0 && (
-                      <Area
-                        dataKey="volunteers"
-                        type="natural"
-                        fill="var(--color-volunteers)"
-                        fillOpacity={0.08}
-                        stroke="var(--color-volunteers)"
-                        strokeDasharray="4 3"
-                      />
-                    )}
-                  </AreaChart>
-                </ChartContainer>
-              )}
-            </CardContent>
-          </Card>
-        )}
-
-        <Card className={isSeriesEvent ? "xl:col-span-4" : "xl:col-span-12"}>
-          <CardHeader>
-            <CardTitle>Registration Growth</CardTitle>
-            <CardDescription>Cumulative registrations in selected period</CardDescription>
-          </CardHeader>
-          <CardContent className="px-2 pt-4 sm:px-6 sm:pt-6">
-            {event.registrationSeries.length === 0 ? (
-              <ChartEmptyState>No registrations yet in selected period.</ChartEmptyState>
-            ) : (
-              <ChartContainer config={registrationChartConfig} className="aspect-auto h-65 w-full">
-                <AreaChart data={event.registrationSeries}>
-                  <CartesianGrid vertical={false} />
-                  <XAxis
-                    dataKey="date"
-                    tickLine={false}
-                    axisLine={false}
-                    tickMargin={8}
-                    minTickGap={28}
-                    tickFormatter={formatShortDate}
-                  />
-                  <YAxis
-                    tickLine={false}
-                    axisLine={false}
-                    tickMargin={8}
-                    width={32}
-                    allowDecimals={false}
-                  />
-                  <ChartTooltip
-                    cursor={false}
-                    content={
-                      <ChartTooltipContent
-                        indicator="dot"
-                        labelFormatter={(value) =>
-                          new Date(value).toLocaleDateString("en-PH", {
-                            month: "short",
-                            day: "numeric",
-                            year: "numeric",
-                          })
-                        }
-                      />
-                    }
-                  />
-                  <Area
-                    dataKey="total"
-                    type="monotone"
-                    fill="var(--color-total)"
-                    fillOpacity={0.1}
-                    stroke="var(--color-total)"
-                  />
-                </AreaChart>
-              </ChartContainer>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Breakdown row — placement, volunteers, pipeline */}
-      <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <Card className="flex flex-col">
-          <CardHeader>
-            <CardTitle>DGroup Placement</CardTitle>
-            <CardDescription>Participants assigned vs still unassigned</CardDescription>
-          </CardHeader>
-          <CardContent className="flex-1">
-            {placementTotal === 0 ? (
-              <ChartEmptyState>No participants yet.</ChartEmptyState>
-            ) : (
-              <ChartContainer
-                config={placementChartConfig}
-                className="mx-auto aspect-square max-h-55"
+        {!editing && (
+          <div className="ml-auto flex items-center gap-2">
+            {/* Check-in link — OneTime only (MultiDay/Recurring check-in is per
+                occurrence via Sessions/Days) */}
+            {!isSeriesEvent(event.type) && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => copyLink(`/events/${event.id}/checkin`)}
               >
-                <PieChart>
-                  <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
-                  <Pie
-                    data={placementData}
-                    dataKey="count"
-                    nameKey="segment"
-                    innerRadius="55%"
-                    outerRadius="85%"
-                    strokeWidth={5}
-                  >
-                    <Label
-                      content={({ viewBox }) => (
-                        <DonutCenterLabel
-                          viewBox={viewBox}
-                          value={`${inGroupPercent}%`}
-                          caption="in a group"
-                        />
-                      )}
-                    />
-                  </Pie>
-                  <ChartLegend
-                    content={<ChartLegendContent nameKey="segment" />}
-                    className="flex-wrap gap-2"
-                  />
-                </PieChart>
-              </ChartContainer>
+                <IconCopy className="mr-1.5 size-3.5" />
+                Check-in link
+              </Button>
             )}
-          </CardContent>
-          {event.unassignedCount > 0 && (
-            <CardFooter>
-              <Link href={`/event/${event.id}/registrants`} className={drillLinkClass}>
-                View {event.unassignedCount.toLocaleString()} unassigned →
-              </Link>
-            </CardFooter>
-          )}
-        </Card>
-
-        {hasVolunteers && (
-        <Card className="flex flex-col">
-          <CardHeader>
-            <CardTitle>Volunteer Status</CardTitle>
-            <CardDescription>Confirmation status across all volunteers</CardDescription>
-          </CardHeader>
-          <CardContent className="flex-1">
-            {totalVolunteers === 0 ? (
-              <ChartEmptyState>No volunteers yet.</ChartEmptyState>
-            ) : (
-              <ChartContainer
-                config={volunteerChartConfig}
-                className="mx-auto aspect-square max-h-55"
-              >
-                <PieChart>
-                  <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
-                  <Pie
-                    data={volunteerData}
-                    dataKey="count"
-                    nameKey="status"
-                    innerRadius="55%"
-                    outerRadius="85%"
-                    strokeWidth={5}
-                  >
-                    <Label
-                      content={({ viewBox }) => (
-                        <DonutCenterLabel
-                          viewBox={viewBox}
-                          value={totalVolunteers.toLocaleString()}
-                          caption={totalVolunteers === 1 ? "volunteer" : "volunteers"}
-                        />
-                      )}
-                    />
-                  </Pie>
-                  <ChartLegend
-                    content={<ChartLegendContent nameKey="status" />}
-                    className="flex-wrap gap-2"
-                  />
-                </PieChart>
-              </ChartContainer>
-            )}
-          </CardContent>
-          <CardFooter>
-            <Link href={`/event/${event.id}/volunteers`} className={drillLinkClass}>
-              Manage volunteers →
-            </Link>
-          </CardFooter>
-        </Card>
+            <Button variant="outline" size="sm" onClick={startEditing}>
+              <IconLayoutDashboard className="mr-1.5 size-3.5" />
+              Customize
+            </Button>
+          </div>
         )}
-
-        <Card className="flex flex-col md:col-span-2 xl:col-span-1">
-          <CardHeader>
-            <CardTitle>Discipleship Pipeline</CardTitle>
-            <CardDescription>
-              From registration to leadership — attendance and new roles use the selected period
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex-1">
-            {event.pipeline.registered === 0 ? (
-              <ChartEmptyState>No registrants yet.</ChartEmptyState>
-            ) : (
-              <ChartContainer config={pipelineChartConfig} className="aspect-auto h-55 w-full">
-                <BarChart
-                  data={pipelineData}
-                  layout="vertical"
-                  margin={{ left: 0, right: 32 }}
-                >
-                  <XAxis type="number" hide />
-                  <YAxis
-                    dataKey="stage"
-                    type="category"
-                    tickLine={false}
-                    axisLine={false}
-                    width={104}
-                  />
-                  <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
-                  <Bar dataKey="value" fill="var(--color-value)" radius={4}>
-                    <LabelList
-                      dataKey="value"
-                      position="right"
-                      className="fill-foreground"
-                      fontSize={12}
-                    />
-                  </Bar>
-                </BarChart>
-              </ChartContainer>
-            )}
-          </CardContent>
-          {event.confirmedGuestsCount > 0 && (
-            <CardFooter>
-              <p className="text-xs text-muted-foreground">
-                {event.confirmedGuestsCount.toLocaleString()}{" "}
-                {event.confirmedGuestsCount === 1 ? "guest" : "guests"} confirmed to a DGroup
-                this period
-              </p>
-            </CardFooter>
-          )}
-        </Card>
       </div>
 
-      {/* Attendance composition per Life Stage — first-timers vs members, and how
-          many of those members already belong to a DGroup */}
-      <Card className="mt-4">
-        <CardHeader>
-          <CardTitle>Attendance by Life Stage</CardTitle>
-          <CardDescription>
-            First-timers vs members — and how many of those members are already in a DGroup.
-            Counts each attendee once for the selected period.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {breakdownTotal.attendees === 0 ? (
-            <ChartEmptyState>No attendance recorded in the selected period yet.</ChartEmptyState>
-          ) : (
-            <div className="grid gap-6 xl:grid-cols-12">
-              <div className="xl:col-span-5">
-                <ChartContainer
-                  config={lifeStageChartConfig}
-                  className="aspect-auto w-full"
-                  style={{ height: Math.max(breakdownRows.length * 52, 120) + 48 }}
-                >
-                  <BarChart data={breakdownRows} layout="vertical" margin={{ left: 0, right: 16 }}>
-                    <XAxis type="number" hide />
-                    <YAxis
-                      dataKey="lifeStageName"
-                      type="category"
-                      tickLine={false}
-                      axisLine={false}
-                      width={116}
-                      tickFormatter={(value: string) =>
-                        value.length > 15 ? `${value.slice(0, 14)}…` : value
-                      }
-                    />
-                    <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
-                    <ChartLegend content={<ChartLegendContent />} />
-                    <Bar
-                      dataKey="firstTimers"
-                      stackId="lifeStage"
-                      fill="var(--color-firstTimers)"
-                      radius={[4, 0, 0, 4]}
-                    />
-                    <Bar
-                      dataKey="membersNotInGroup"
-                      stackId="lifeStage"
-                      fill="var(--color-membersNotInGroup)"
-                    />
-                    <Bar
-                      dataKey="membersInGroup"
-                      stackId="lifeStage"
-                      fill="var(--color-membersInGroup)"
-                      radius={[0, 4, 4, 0]}
-                    />
-                  </BarChart>
-                </ChartContainer>
-              </div>
+      <EditableGrid
+        event={event}
+        layout={active}
+        editing={editing}
+        onChange={setDraft}
+      />
 
-              <div className="xl:col-span-7 overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Life Stage</TableHead>
-                      <TableHead className="text-right">Attendees</TableHead>
-                      <TableHead className="text-right">First-timers</TableHead>
-                      <TableHead className="text-right">Members</TableHead>
-                      <TableHead className="text-right">In a DGroup</TableHead>
-                      <TableHead className="text-right">No DGroup</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {breakdownRows.map((row) => (
-                      <TableRow key={row.lifeStageId ?? "unspecified"}>
-                        <TableCell className="font-medium">{row.lifeStageName}</TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {row.attendees.toLocaleString()}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {row.firstTimers.toLocaleString()}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {row.members.toLocaleString()}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {row.membersInGroup.toLocaleString()}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {row.membersNotInGroup.toLocaleString()}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                  <TableFooter>
-                    <TableRow>
-                      <TableCell className="font-medium">All attendees</TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {breakdownTotal.attendees.toLocaleString()}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {breakdownTotal.firstTimers.toLocaleString()}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {breakdownTotal.members.toLocaleString()}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {breakdownTotal.membersInGroup.toLocaleString()}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {breakdownTotal.membersNotInGroup.toLocaleString()}
-                      </TableCell>
-                    </TableRow>
-                  </TableFooter>
-                </Table>
-              </div>
-            </div>
-          )}
-        </CardContent>
-        {breakdownTotal.attendees > 0 && (
-          <CardFooter className="flex-col items-start gap-2">
-            {/* Without this, a single "Not specified" bar reads as a broken report
-                rather than as a field nobody was ever asked. */}
-            {event.explainMissingLifeStage && (
-              <p className="text-xs text-muted-foreground">
-                Attendees show as “Not specified” when we have no Life Stage on file and none
-                of this event’s forms ask for it.{" "}
-                <Link href={`/event/${event.id}/forms`} className={drillLinkClass}>
-                  Enable Life Stage on a form →
-                </Link>
-              </p>
-            )}
-            <Link href={`/event/${event.id}/registrants`} className={drillLinkClass}>
-              View registrants →
-            </Link>
-          </CardFooter>
-        )}
-      </Card>
-
-      {/* Series comparison — Recurring only */}
-      {isRecurring && (
-        <Card className="mt-4">
-          <CardHeader>
-            <CardTitle>Series Comparison</CardTitle>
-            <CardDescription>
-              {event.seriesSummaries.length > 0
-                ? "Average attendance per recurring session group"
-                : "No recurring series created yet"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {event.seriesSummaries.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Create a series from the Sessions page to start grouping recurring attendance.
-              </p>
-            ) : (
-              <ChartContainer
-                config={seriesChartConfig}
-                className="aspect-auto w-full"
-                style={{ height: Math.max(event.seriesSummaries.length * 48, 96) + 16 }}
-              >
-                <BarChart
-                  data={event.seriesSummaries}
-                  layout="vertical"
-                  margin={{ left: 0, right: 40 }}
-                >
-                  <XAxis type="number" hide />
-                  <YAxis
-                    dataKey="title"
-                    type="category"
-                    tickLine={false}
-                    axisLine={false}
-                    width={140}
-                    tickFormatter={(value: string) =>
-                      value.length > 18 ? `${value.slice(0, 17)}…` : value
-                    }
-                  />
-                  <ChartTooltip
-                    cursor={false}
-                    content={
-                      <ChartTooltipContent
-                        labelFormatter={(label, payload) => {
-                          const item = payload?.[0]?.payload as
-                            | EventDashboardData["seriesSummaries"][number]
-                            | undefined
-                          if (!item) return label
-                          return (
-                            <div className="flex flex-col gap-0.5">
-                              <span>{label}</span>
-                              <span className="font-normal text-muted-foreground">
-                                {formatRange(item.startDate, item.endDate)} · {item.sessionCount}{" "}
-                                {item.sessionCount === 1 ? "session" : "sessions"} ·{" "}
-                                {item.totalAttendance.toLocaleString()} total
-                              </span>
-                            </div>
-                          )
-                        }}
-                      />
-                    }
-                  />
-                  <Bar dataKey="averageAttendance" fill="var(--color-averageAttendance)" radius={4}>
-                    <LabelList
-                      dataKey="averageAttendance"
-                      position="right"
-                      className="fill-foreground"
-                      fontSize={12}
-                      formatter={formatAverage}
-                    />
-                  </Bar>
-                </BarChart>
-              </ChartContainer>
-            )}
-          </CardContent>
-        </Card>
+      {editing && (
+        <>
+          <HiddenTray hidden={hidden} onRestore={handleRestore} />
+          <EditModeBar
+            dirty={dirty}
+            saving={saving}
+            onSave={handleSave}
+            onCancel={() => setEditing(false)}
+            onReset={handleReset}
+          />
+        </>
       )}
     </div>
   )

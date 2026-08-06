@@ -4,6 +4,7 @@ import {
   buildSessionAttendeeStats,
   getBreakoutAssignmentLabel,
   isAttendeeStatusEditable,
+  resolveStatusSelection,
   sortSessionAttendees,
 } from "@/lib/session-attendees"
 
@@ -88,6 +89,37 @@ describe("isAttendeeStatusEditable — who can have their New/Returning badge to
     expect(
       isAttendeeStatusEditable({ ...guest, isVolunteer: true, hasStatusOverride: true }),
     ).toBe(false)
+  })
+})
+
+describe("resolveStatusSelection — what a status menu pick writes", () => {
+  it("pins Returning on a guest the data reads as New", () => {
+    expect(resolveStatusSelection("returning", false)).toEqual({
+      isReturner: true,
+      override: true,
+    })
+  })
+
+  it("pins New on a guest the data reads as Returning", () => {
+    expect(resolveStatusSelection("new", true)).toEqual({ isReturner: false, override: false })
+  })
+
+  // The misclick this whole menu exists for: someone marks a first-timer Returning by
+  // accident, then picks New again. That must clear the override, not pin the opposite —
+  // otherwise the row stops tracking their real attendance history from then on.
+  it("clears the override when the pick matches the derived value", () => {
+    expect(resolveStatusSelection("new", false)).toEqual({ isReturner: false, override: null })
+    expect(resolveStatusSelection("returning", true)).toEqual({
+      isReturner: true,
+      override: null,
+    })
+  })
+
+  // A pin can go stale: an admin marks a guest Returning, and later an earlier session is
+  // imported so the derivation agrees on its own. Re-picking Returning then drops the now
+  // redundant override rather than leaving it to shadow future history.
+  it("drops an override that the derived value has caught up with", () => {
+    expect(resolveStatusSelection("returning", true).override).toBeNull()
   })
 })
 

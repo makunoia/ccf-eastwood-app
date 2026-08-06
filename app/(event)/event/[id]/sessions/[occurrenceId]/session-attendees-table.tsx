@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
   CheckCircle2,
+  ChevronDown,
   XCircle,
   ArrowLeftRight,
   SearchIcon,
@@ -27,6 +28,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -47,8 +56,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import {
   buildSessionAttendeeStats,
   isAttendeeStatusEditable,
+  resolveStatusSelection,
   sortSessionAttendees,
   type AttendeeSortDirection,
+  type AttendeeStatusChoice,
 } from "@/lib/session-attendees"
 import { cn } from "@/lib/utils"
 import type { PersonComboboxOption } from "@/components/ui/person-combobox"
@@ -82,11 +93,11 @@ export type AttendeeRow = {
 function StatusBadge({
   attendee,
   editable,
-  onToggle,
+  onSelect,
 }: {
   attendee: AttendeeRow
   editable: boolean
-  onToggle: () => Promise<void>
+  onSelect: (choice: AttendeeStatusChoice) => Promise<void>
 }) {
   // Plain state rather than useTransition: an async transition stays pending until
   // everything it schedules settles, including the background router.refresh() — which
@@ -104,36 +115,45 @@ function StatusBadge({
 
   if (!editable) return badge
 
-  async function handleClick() {
+  const current: AttendeeStatusChoice = attendee.isReturner ? "returning" : "new"
+
+  async function handleValueChange(value: string) {
     setPending(true)
     try {
-      await onToggle()
+      await onSelect(value as AttendeeStatusChoice)
     } finally {
       setPending(false)
     }
   }
 
+  // A menu rather than a one-click toggle: it names both destinations up front, so
+  // correcting a misclick never depends on a hover-only tooltip — which never fires on
+  // the tablets these sessions are actually run from.
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
         <button
           type="button"
-          onClick={handleClick}
           disabled={pending}
           aria-busy={pending}
-          aria-label={`Change status to ${attendee.isReturner ? "New" : "Returning"}`}
+          aria-label={`Status: ${attendee.isReturner ? "Returning" : "New"}. Change status.`}
           className={cn(
-            "rounded-full transition-opacity hover:opacity-70 disabled:cursor-default",
+            "inline-flex items-center gap-1 rounded-full transition-opacity hover:opacity-70 disabled:cursor-default",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
           )}
         >
           {badge}
+          <ChevronDown className="size-3 text-muted-foreground" />
         </button>
-      </TooltipTrigger>
-      <TooltipContent>
-        Mark as {attendee.isReturner ? "New" : "Returning"}
-      </TooltipContent>
-    </Tooltip>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        <DropdownMenuLabel>Status</DropdownMenuLabel>
+        <DropdownMenuRadioGroup value={current} onValueChange={handleValueChange}>
+          <DropdownMenuRadioItem value="returning">Returning</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="new">New</DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
@@ -226,15 +246,24 @@ export function SessionAttendeesTable({
     setRows((current) => current.map((r) => (r.id === id ? { ...r, ...patch } : r)))
   }
 
-  async function handleToggleStatus(attendee: AttendeeRow) {
-    const next = !attendee.isReturner
-    // Toggling back to what the data already implies clears the override rather
-    // than pinning the row forever.
-    const override = next === attendee.derivedIsReturner ? null : next
+  async function handleSetStatus(attendee: AttendeeRow, choice: AttendeeStatusChoice) {
+    const next = resolveStatusSelection(choice, attendee.derivedIsReturner)
 
-    patchRow(attendee.id, { isReturner: next, hasStatusOverride: override !== null })
+    // Re-picking the status the row already has writes nothing. A menu makes that a normal
+    // thing to do — someone opens it to check, then closes it by choosing what is checked.
+    if (
+      next.isReturner === attendee.isReturner &&
+      (next.override !== null) === attendee.hasStatusOverride
+    ) {
+      return
+    }
 
-    const result = await setAttendeeReturnerStatus(attendee.id, override)
+    patchRow(attendee.id, {
+      isReturner: next.isReturner,
+      hasStatusOverride: next.override !== null,
+    })
+
+    const result = await setAttendeeReturnerStatus(attendee.id, next.override)
     if (!result.success) {
       // Revert just this row — a sibling row may have been edited meanwhile.
       patchRow(attendee.id, {
@@ -415,7 +444,7 @@ export function SessionAttendeesTable({
                       <StatusBadge
                         attendee={a}
                         editable={canEdit && isAttendeeStatusEditable(a)}
-                        onToggle={() => handleToggleStatus(a)}
+                        onSelect={(choice) => handleSetStatus(a, choice)}
                       />
                       <span className="text-xs text-muted-foreground">{a.checkedInAtFormatted}</span>
                     </div>
@@ -472,7 +501,7 @@ export function SessionAttendeesTable({
                           <StatusBadge
                             attendee={a}
                             editable={canEdit && isAttendeeStatusEditable(a)}
-                            onToggle={() => handleToggleStatus(a)}
+                            onSelect={(choice) => handleSetStatus(a, choice)}
                           />
                         </TableCell>
                         <TableCell>

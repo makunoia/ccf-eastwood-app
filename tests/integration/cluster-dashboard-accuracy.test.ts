@@ -3,7 +3,11 @@ import type { Session } from "next-auth"
 import { db } from "@/lib/db"
 import { createRegistrant } from "@/app/(dashboard)/events/actions"
 import { registerForCluster } from "@/app/(dashboard)/events/cluster-actions"
-import { getClusterOverview, getClusterRegistrationExportRows } from "@/lib/clusters/aggregate"
+import {
+  getClusterOverview,
+  getClusterRegistrationExportRows,
+  getClusterSharedFormPeopleCounts,
+} from "@/lib/clusters/aggregate"
 
 /**
  * Event Cluster dashboard accuracy.
@@ -290,5 +294,71 @@ describe("via day link", () => {
       select: { registrationClusterId: true },
     })
     expect(rows).toEqual([{ registrationClusterId: cluster.id }])
+  })
+})
+
+describe("clusters list count", () => {
+  it("counts people, not registration rows, per cluster", async () => {
+    const cluster = await seedCluster()
+    const events = [await seedOneTime("Feast"), await seedOneTime("Talk")]
+    await attach(cluster.id, events[0].id, 0)
+    await attach(cluster.id, events[1].id, 1)
+
+    // One person ticks both events on the shared form — two registration rows.
+    const both = await registerForCluster(
+      cluster.publicToken,
+      { firstName: "Juan", lastName: "Cruz", mobileNumber: "0917 123 4567" },
+      null,
+      null,
+      undefined,
+      events.map((e) => e.id)
+    )
+    expect(both.success).toBe(true)
+    // A second person takes one event only.
+    const one = await registerForCluster(
+      cluster.publicToken,
+      { firstName: "Ana", lastName: "Lopez", mobileNumber: "0917 555 6666" },
+      null,
+      null,
+      undefined,
+      [events[0].id]
+    )
+    expect(one.success).toBe(true)
+
+    const counts = await getClusterSharedFormPeopleCounts([cluster.id])
+    // Regression: the list column showed 3 here — the registration rows — while
+    // only two people had signed up.
+    expect(counts.get(cluster.id)).toBe(2)
+  })
+
+  it("keeps clusters separate and omits registrations made outside the shared form", async () => {
+    const [a, b] = [await seedCluster(), await seedCluster()]
+    const feast = await seedOneTime("Feast")
+    const talk = await seedOneTime("Talk")
+    await attach(a.id, feast.id)
+    await attach(b.id, talk.id)
+
+    await registerForCluster(
+      a.publicToken,
+      { firstName: "Juan", lastName: "Cruz", mobileNumber: "0917 123 4567" },
+      null,
+      null,
+      undefined,
+      [feast.id]
+    )
+    // Registered through the event's own form — no cluster provenance.
+    await createRegistrant(
+      talk.id,
+      { firstName: "Ana", lastName: "Lopez", mobileNumber: "0917 555 6666" },
+      null
+    )
+
+    const counts = await getClusterSharedFormPeopleCounts([a.id, b.id])
+    expect(counts.get(a.id)).toBe(1)
+    expect(counts.get(b.id) ?? 0).toBe(0)
+  })
+
+  it("edge case — no clusters queries nothing", async () => {
+    expect(await getClusterSharedFormPeopleCounts([])).toEqual(new Map())
   })
 })
