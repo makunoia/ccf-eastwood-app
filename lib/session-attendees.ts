@@ -29,6 +29,24 @@ export function isAttendeeStatusEditable(attendee: AttendeeStatusSubject): boole
   return !attendee.isMember || attendee.hasStatusOverride
 }
 
+export type AttendeeStatusChoice = "new" | "returning"
+
+/**
+ * What a status menu selection means for one attendance row.
+ *
+ * Choosing the status the data already implies clears the override rather than pinning the
+ * row forever, so a mis-set badge leaves no residue once it is corrected. That also makes the
+ * two menu items sufficient on their own: an override only ever exists while it disagrees with
+ * the derived value, so the unchecked item *is* the reset.
+ */
+export function resolveStatusSelection(
+  choice: AttendeeStatusChoice,
+  derivedIsReturner: boolean,
+): { isReturner: boolean; override: boolean | null } {
+  const isReturner = choice === "returning"
+  return { isReturner, override: isReturner === derivedIsReturner ? null : isReturner }
+}
+
 export type SessionAttendeeStatsSubject = {
   isReturner: boolean
   isVolunteer: boolean

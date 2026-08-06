@@ -575,6 +575,7 @@ model Event {
   memberLogs        MemberLog[]
   formConfigs       FormConfig[]
   eventFormConfigs  EventFormConfig[]
+  dashboardWidgets  EventDashboardWidget[]
   clusterMembership EventClusterEvent?
   // DGroup requests raised by someone ticking "I want to join a DGroup" on this
   // event's registration form (CCF-101).
@@ -1214,4 +1215,31 @@ model EventFormConfig {
   @@unique([clusterId, context])
   @@index([eventId])
   @@index([clusterId])
+}
+
+/// Per-event dashboard layout: which widgets show, in what order, at what width.
+///
+/// No rows for an event means "never customized" — the dashboard falls back to
+/// the code-defined defaults in `lib/events/dashboard-widgets.ts`, which is also
+/// the state the Reset button restores by deleting every row.
+///
+/// `key` is a plain String rather than an enum so adding a widget never needs a
+/// migration; it is validated against `DASHBOARD_WIDGET_KEYS` on write and
+/// ignored by the resolver on read, so a key retired later just stops resolving.
+/// `width` is a 12-column grid span (4, 6, 8 or 12) and is unused by KPI tiles.
+model EventDashboardWidget {
+  id      String  @id @default(cuid())
+  eventId String
+  event   Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  key     String
+  visible Boolean @default(true)
+  order   Int
+  width   Int     @default(12)
+
+  // No updatedAt: a save rewrites every row for the event wholesale, so a
+  // per-row modification time would never say anything the event's own doesn't.
+  createdAt DateTime @default(now())
+
+  @@unique([eventId, key])
+  @@index([eventId])
 }

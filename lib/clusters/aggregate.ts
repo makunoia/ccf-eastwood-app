@@ -234,6 +234,34 @@ export async function getClusterSeriesTotals(
   return new Map(grouped.map((g) => [g.eventId, g._count._all]))
 }
 
+/**
+ * PEOPLE who signed up through each cluster's shared form — not registrations.
+ * One person ticking three events on the shared link is one person here, which
+ * is what the clusters list means by its count. Keyed the same way as the
+ * dashboard's `viaSharedLinkPeople` so both figures agree.
+ */
+export async function getClusterSharedFormPeopleCounts(
+  clusterIds: string[]
+): Promise<Map<string, number>> {
+  if (clusterIds.length === 0) return new Map()
+  const rows = await db.eventRegistrant.findMany({
+    where: { registrationClusterId: { in: clusterIds } },
+    select: { id: true, memberId: true, guestId: true, registrationClusterId: true },
+  })
+  const byCluster = new Map<string, Set<string>>()
+  for (const row of rows) {
+    const clusterId = row.registrationClusterId
+    if (!clusterId) continue
+    let people = byCluster.get(clusterId)
+    if (!people) {
+      people = new Set()
+      byCluster.set(clusterId, people)
+    }
+    people.add(personKeyFor(row))
+  }
+  return new Map([...byCluster].map(([id, people]) => [id, people.size]))
+}
+
 /** Personal/matching fields, selected identically for Member and Guest. */
 const PERSON_PROFILE_SELECT = {
   nickname: true,

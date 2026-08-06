@@ -18,6 +18,8 @@ import {
   type PeriodFilter,
 } from "@/lib/events/dashboard-period"
 import { getEventSetupChecklist } from "@/lib/events/setup-checklist"
+import { getEventDashboardLayout } from "@/lib/events/dashboard-widgets-server"
+import { visibleWidgetKeys, type DashboardWidgetKey } from "@/lib/events/dashboard-widgets"
 
 export const metadata: Metadata = {
   title: "Dashboard",
@@ -33,7 +35,19 @@ function dayKey(date: Date) {
   return date.toISOString().slice(0, 10)
 }
 
-async function getEventDashboard(id: string, period: PeriodFilter) {
+/**
+ * Widgets the admin has switched on, used to skip work nothing will render.
+ *
+ * Only queries feeding exactly one widget are gated. `loadEventAttendanceBreakdown`
+ * deliberately is not: its total is `uniqueAttendees`, which the Turnout tile and
+ * the pipeline both read, so it stays the single source of truth regardless of
+ * whether the Life Stage table is showing.
+ */
+async function getEventDashboard(
+  id: string,
+  period: PeriodFilter,
+  shown: Set<DashboardWidgetKey>
+) {
   const event = await db.event.findUnique({
     where: { id },
     select: {
@@ -179,7 +193,9 @@ async function getEventDashboard(id: string, period: PeriodFilter) {
   // series, not the dashboard's rolling period window. Loaded via a dedicated
   // unfiltered query. See loadRecurringSeriesSummaries.
   const recurringSeriesSummaries =
-    event.type === "Recurring" ? await loadRecurringSeriesSummaries(db, event.id) : []
+    event.type === "Recurring" && shown.has("chartSeriesComparison")
+      ? await loadRecurringSeriesSummaries(db, event.id)
+      : []
 
   // First-timer / member / DGroup split per Life Stage (CCF-92). Its totals row
   // is the distinct-participant count for the period, so it also feeds the
@@ -207,9 +223,11 @@ async function getEventDashboard(id: string, period: PeriodFilter) {
   // count so turnout can never disagree with the KPI beside it.
   const turnout = buildTurnout(event._count.registrants, uniqueAttendees)
 
+  // Feeds nothing but the pipeline card's footer, so it's skipped outright when
+  // that card is hidden.
   const breakoutGroupIds = event.breakoutGroups.map((bg) => bg.id)
   const confirmedGuestRequests =
-    breakoutGroupIds.length === 0
+    breakoutGroupIds.length === 0 || !shown.has("chartPipeline")
       ? []
       : await db.smallGroupMemberRequest.findMany({
           where: {
@@ -463,26 +481,37 @@ export default async function EventDashboardPage({
   const sp = await searchParams
   const normalizedPeriod: PeriodFilter = normalizePeriod(sp.period as string | undefined)
 
-  let event = await getEventDashboard(id, normalizedPeriod)
-  if (!event) notFound()
+  // Cheap lookup of the few facts needed before the main query can run: the type
+  // and modules that resolve the layout, and the date range MultiDay occurrences
+  // are generated from.
+  const meta = await db.event.findUnique({
+    where: { id },
+    select: { type: true, startDate: true, endDate: true, modules: { select: { type: true } } },
+  })
+  if (!meta) notFound()
 
-  // Ensure MultiDay occurrences are up to date
-  if (event.type === "MultiDay") {
-    await ensureMultiDayOccurrences(
-      event.id,
-      new Date(event.startDate),
-      new Date(event.endDate)
-    )
-    event = await getEventDashboard(id, normalizedPeriod)
-    if (!event) notFound()
+  // Generated *before* the dashboard query rather than after it. Doing this
+  // afterwards meant a MultiDay event had to run the whole query a second time to
+  // pick up the occurrences it had just created — the single most expensive
+  // statement on the page, run twice on every load.
+  if (meta.type === "MultiDay") {
+    await ensureMultiDayOccurrences(id, meta.startDate, meta.endDate)
   }
+
+  const layout = await getEventDashboardLayout(
+    id,
+    meta.type,
+    meta.modules.map((m) => m.type)
+  )
+  const shown = visibleWidgetKeys(layout)
+
+  const event = await getEventDashboard(id, normalizedPeriod, shown)
+  if (!event) notFound()
 
   // Setup walkthrough — only built while the admin hasn't dismissed it.
   const setup = event.setupDismissedAt
     ? null
     : await getEventSetupChecklist(event.id, event.type, event.modules)
 
-  return (
-    <EventDashboardClient event={event} setup={setup} />
-  )
+  return <EventDashboardClient event={event} setup={setup} layout={layout} />
 }

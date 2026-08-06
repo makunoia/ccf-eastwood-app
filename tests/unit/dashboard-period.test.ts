@@ -37,10 +37,12 @@ describe("normalizePeriod", () => {
     }
   })
 
-  it("falls back to 30d for missing or bogus input", () => {
-    expect(normalizePeriod(undefined)).toBe("30d")
-    expect(normalizePeriod("")).toBe("30d")
-    expect(normalizePeriod("last-week")).toBe("30d")
+  // The default is the widest window on purpose — a finished event opened on a
+  // rolling 30-day view shows an empty dashboard.
+  it("falls back to all time for missing or bogus input", () => {
+    expect(normalizePeriod(undefined)).toBe("all")
+    expect(normalizePeriod("")).toBe("all")
+    expect(normalizePeriod("last-week")).toBe("all")
   })
 })
 

@@ -7,6 +7,13 @@ const { parsed: testEnv = {} } = dotenv.config({ path: ".env.test" })
 
 export default defineConfig({
   plugins: [react(), tsconfigPaths()],
+  resolve: {
+    alias: {
+      // Not a real dependency — Next.js resolves it during its own build. See
+      // tests/stubs/server-only.ts.
+      "server-only": new URL("./tests/stubs/server-only.ts", import.meta.url).pathname,
+    },
+  },
   test: {
     environment: "node",
     globals: true,
