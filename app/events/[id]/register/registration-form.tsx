@@ -70,6 +70,7 @@ import {
   type BreakoutCandidate,
   type BreakoutNoticeKind,
 } from "@/lib/breakout-suggestion"
+import { breakoutOccupancy } from "@/lib/breakouts/occupancy"
 
 const DAY_NAMES = ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"]
 const MEETING_FORMAT_LABEL: Record<"Online" | "Hybrid" | "InPerson", string> = {
@@ -396,6 +397,19 @@ export function RegistrationForm({
   const browsableCandidates = React.useMemo(
     () => breakoutPickerOptions(breakoutCandidates),
     [breakoutCandidates]
+  )
+
+  // Occupancy travels only to staffed surfaces, so its presence — not the
+  // `walkIn` prop — is what decides whether headcounts render and whether a full
+  // group can be chosen anyway. The page that fetched the data made that call.
+  const suggestedOccupancy = React.useMemo(
+    () => (suggestedBreakout?.occupancy ? breakoutOccupancy(suggestedBreakout.occupancy) : null),
+    [suggestedBreakout]
+  )
+
+  const selectedOccupancy = React.useMemo(
+    () => browsableCandidates.find((g) => g.id === selectedBreakoutId)?.occupancyView ?? null,
+    [browsableCandidates, selectedBreakoutId]
   )
 
   React.useEffect(() => {
@@ -1858,6 +1872,13 @@ export function RegistrationForm({
                         Suggested for you
                       </p>
                       <p className="mt-1 text-sm font-medium truncate">{suggestedBreakout.name}</p>
+                      {suggestedOccupancy && (
+                        <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">
+                          {suggestedOccupancy.label} members
+                          {suggestedOccupancy.remaining !== null &&
+                            ` · ${suggestedOccupancy.remaining} left`}
+                        </p>
+                      )}
                     </div>
                     <div
                       aria-hidden="true"
@@ -1886,13 +1907,48 @@ export function RegistrationForm({
                   <SelectContent>
                     <SelectItem value="_none">No selection</SelectItem>
                     {browsableCandidates.map((g) => (
-                      <SelectItem key={g.id} value={g.id} disabled={g.isFull}>
-                        {g.name}
-                        {g.isFull ? " (full)" : ""}
+                      // A full group is unselectable on the public form but
+                      // selectable at the door: a staff member placing someone
+                      // may have a reason to go over, a self-serve registrant
+                      // does not.
+                      <SelectItem key={g.id} value={g.id} disabled={!g.occupancyView && g.isFull}>
+                        <span className="flex w-full items-center justify-between gap-3">
+                          <span className="truncate">{g.name}</span>
+                          {g.occupancyView ? (
+                            <span
+                              className={cn(
+                                "shrink-0 text-xs tabular-nums",
+                                g.occupancyView.isFull
+                                  ? "text-destructive"
+                                  : "text-muted-foreground"
+                              )}
+                            >
+                              {g.occupancyView.label}
+                              {g.occupancyView.isFull && " · full"}
+                            </span>
+                          ) : (
+                            g.isFull && (
+                              <span className="shrink-0 text-xs text-muted-foreground">(full)</span>
+                            )
+                          )}
+                        </span>
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+
+                {/* The warning half of "selectable with a warning". A SelectItem
+                    can't host this, so it sits under the trigger and speaks to
+                    whatever is currently chosen. */}
+                {selectedOccupancy?.isFull && (
+                  <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
+                    <p className="text-sm font-medium">This group is already at capacity</p>
+                    <p className="mt-1 text-xs text-muted-foreground tabular-nums">
+                      {selectedOccupancy.label} members. You can still place them here — the group
+                      will go over its limit.
+                    </p>
+                  </div>
+                )}
               </div>
             </>
           )}

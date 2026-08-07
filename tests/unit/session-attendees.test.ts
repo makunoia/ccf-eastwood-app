@@ -6,7 +6,9 @@ import {
   isAttendeeStatusEditable,
   resolveStatusSelection,
   sortSessionAttendees,
+  sortBreakoutStats,
 } from "@/lib/session-attendees"
+import { breakoutOccupancy } from "@/lib/breakouts/occupancy"
 
 describe("session attendees helpers", () => {
   it("labels attendees without a breakout assignment as Unassigned", () => {
@@ -173,5 +175,53 @@ describe("buildSessionAttendeeStats", () => {
       menCount: 0,
       womenCount: 0,
     })
+  })
+})
+
+// ─── sortBreakoutStats (CCF-141) ──────────────────────────────────────────────
+
+describe("sortBreakoutStats", () => {
+  const row = (name: string, memberCount: number, memberLimit: number | null) => ({
+    name,
+    occupancy: breakoutOccupancy({ memberCount, memberLimit }),
+  })
+
+  it("keeps alphabetical order by default, so the tab reads as it always has", () => {
+    const rows = [row("Charlie", 0, 12), row("Alpha", 8, 12), row("Bravo", 2, 12)]
+    expect(sortBreakoutStats(rows, "name").map((r) => r.name)).toEqual([
+      "Alpha",
+      "Bravo",
+      "Charlie",
+    ])
+  })
+
+  it("puts the group with the most room first when asked", () => {
+    const rows = [row("Alpha", 8, 12), row("Bravo", 2, 12), row("Charlie", 11, 12)]
+    expect(sortBreakoutStats(rows, "room").map((r) => r.name)).toEqual([
+      "Bravo",
+      "Alpha",
+      "Charlie",
+    ])
+  })
+
+  it("ranks an uncapped group above every capped one", () => {
+    const rows = [row("Alpha", 0, 12), row("Open", 30, null)]
+    expect(sortBreakoutStats(rows, "room")[0].name).toBe("Open")
+  })
+
+  it("sinks a full group to the bottom", () => {
+    const rows = [row("Full", 8, 8), row("Roomy", 1, 8)]
+    expect(sortBreakoutStats(rows, "room").map((r) => r.name)).toEqual(["Roomy", "Full"])
+  })
+
+  it("breaks ties by name so the list never reshuffles between renders", () => {
+    const rows = [row("Bravo", 4, 12), row("Alpha", 4, 12)]
+    expect(sortBreakoutStats(rows, "room").map((r) => r.name)).toEqual(["Alpha", "Bravo"])
+  })
+
+  it("does not mutate the array it was given", () => {
+    const rows = [row("Bravo", 8, 12), row("Alpha", 1, 12)]
+    sortBreakoutStats(rows, "room")
+    expect(rows.map((r) => r.name)).toEqual(["Bravo", "Alpha"])
   })
 })

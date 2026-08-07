@@ -50,6 +50,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -58,9 +59,12 @@ import {
   isAttendeeStatusEditable,
   resolveStatusSelection,
   sortSessionAttendees,
+  sortBreakoutStats,
   type AttendeeSortDirection,
   type AttendeeStatusChoice,
+  type BreakoutStatSortMode,
 } from "@/lib/session-attendees"
+import type { BreakoutOccupancy } from "@/lib/breakouts/occupancy"
 import { cn } from "@/lib/utils"
 import type { PersonComboboxOption } from "@/components/ui/person-combobox"
 import {
@@ -202,6 +206,54 @@ export type BreakoutStatRow = {
   newCount: number
   returneeCount: number
   totalCheckedIn: number
+  /** Roster size vs member limit — distinct from the check-in counts above. */
+  occupancy: BreakoutOccupancy
+}
+
+/**
+ * Capacity as a bar plus the numbers, so "which group has the most room" reads
+ * off the column instead of out of arithmetic.
+ *
+ * An uncapped group gets a dashed empty track rather than a 0%- or 100%-filled
+ * one: any fill would be a claim about a limit that doesn't exist.
+ */
+function CapacityCell({ occupancy }: { occupancy: BreakoutOccupancy }) {
+  const { fillRatio, isFull, isOver, label, memberCount, memberLimit, remaining } = occupancy
+
+  if (memberLimit == null) {
+    return (
+      <div className="min-w-32 space-y-1">
+        <div className="h-1.5 w-full rounded-full border border-dashed border-muted-foreground/30" />
+        <p className="text-xs text-muted-foreground tabular-nums">
+          {memberCount} assigned · No cap
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-w-32 space-y-1">
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+        <div
+          className={cn(
+            "h-full rounded-full transition-all",
+            isFull ? "bg-destructive" : "bg-primary",
+          )}
+          style={{ width: `${(fillRatio ?? 0) * 100}%` }}
+        />
+      </div>
+      <p className="text-xs text-muted-foreground tabular-nums">
+        {label}
+        {isOver ? (
+          <span className="ml-1 text-destructive">Over by {memberCount - memberLimit}</span>
+        ) : isFull ? (
+          <span className="ml-1 text-destructive">Full</span>
+        ) : (
+          ` · ${remaining} left`
+        )}
+      </p>
+    </div>
+  )
 }
 
 type TypeFilter = "all" | "member" | "guest" | "volunteer"
@@ -229,6 +281,11 @@ export function SessionAttendeesTable({
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all")
   const [breakoutFilter, setBreakoutFilter] = useState("all")
   const [statusSortDirection, setStatusSortDirection] = useState<AttendeeSortDirection>("asc")
+  const [breakoutSort, setBreakoutSort] = useState<BreakoutStatSortMode>("name")
+  const sortedBreakoutStats = useMemo(
+    () => sortBreakoutStats(breakoutStats, breakoutSort),
+    [breakoutStats, breakoutSort]
+  )
   const [attendeeToRemove, setAttendeeToRemove] = useState<AttendeeRow | null>(null)
 
   // The server stays the source of truth, but edits paint locally first: re-rendering
@@ -551,9 +608,27 @@ export function SessionAttendeesTable({
             </div>
           ) : (
             <>
+              <div className="mb-3 flex items-center justify-end gap-2">
+                <Label htmlFor="breakout-sort" className="text-xs text-muted-foreground">
+                  Sort by
+                </Label>
+                <Select
+                  value={breakoutSort}
+                  onValueChange={(v) => setBreakoutSort(v as BreakoutStatSortMode)}
+                >
+                  <SelectTrigger id="breakout-sort" size="sm" className="w-36">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="name">Name</SelectItem>
+                    <SelectItem value="room">Most room</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
               {/* Mobile card list */}
               <div className="sm:hidden divide-y rounded-lg border">
-                {breakoutStats.map((bg) => (
+                {sortedBreakoutStats.map((bg) => (
                   <div key={bg.id} className="space-y-2.5 px-4 py-3">
                     <Link
                       href={`/event/${eventId}/breakouts/${bg.id}`}
@@ -601,9 +676,13 @@ export function SessionAttendeesTable({
                         <p className="text-sm font-semibold tabular-nums">{bg.returneeCount}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-muted-foreground">Total</p>
+                        <p className="text-xs text-muted-foreground">Here today</p>
                         <p className="text-sm font-semibold tabular-nums">{bg.totalCheckedIn}</p>
                       </div>
+                    </div>
+                    <div>
+                      <p className="mb-1 text-xs text-muted-foreground">Capacity</p>
+                      <CapacityCell occupancy={bg.occupancy} />
                     </div>
                   </div>
                 ))}
@@ -616,13 +695,18 @@ export function SessionAttendeesTable({
                       <TableHead>Group</TableHead>
                       <TableHead>Facilitator</TableHead>
                       <TableHead>Co-Facilitator</TableHead>
+                      {/* These three are today's turnout; Capacity is the roster.
+                          Labelling them apart is the whole point — an admin
+                          reading "6" next to "8 / 12" must not take them for the
+                          same number. */}
                       <TableHead className="text-right">New</TableHead>
                       <TableHead className="text-right">Returnees</TableHead>
-                      <TableHead className="text-right">Total</TableHead>
+                      <TableHead className="text-right">Here today</TableHead>
+                      <TableHead>Capacity</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {breakoutStats.map((bg) => (
+                    {sortedBreakoutStats.map((bg) => (
                       <TableRow key={bg.id}>
                         <TableCell>
                           <Link
@@ -664,6 +748,9 @@ export function SessionAttendeesTable({
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
                           {bg.totalCheckedIn}
+                        </TableCell>
+                        <TableCell>
+                          <CapacityCell occupancy={bg.occupancy} />
                         </TableCell>
                       </TableRow>
                     ))}

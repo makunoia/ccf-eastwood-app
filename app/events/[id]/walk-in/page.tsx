@@ -5,7 +5,8 @@ import { ministryLabel } from "@/lib/events/ministry-label"
 import { getEventName } from "@/lib/metadata"
 import { RegistrationForm } from "../register/registration-form"
 import { fetchBreakoutAvailability } from "@/lib/breakout-suggestion-server"
-import { resolveBreakoutNotice } from "@/lib/breakout-suggestion"
+import { resolveBreakoutNotice, withoutOccupancy } from "@/lib/breakout-suggestion"
+import { isEventStaffViewer } from "@/lib/events/staff-viewer"
 import { PublicFormShell } from "@/components/public-form-shell"
 import { FormClosed } from "@/components/form-closed"
 import { getFormConfig, resolveFormTheme } from "@/lib/forms/config"
@@ -148,10 +149,21 @@ export default async function WalkInPage({
   // At the door, only groups whose facilitator has already checked in are offered
   // — a walk-in shouldn't be sent to a group whose leader isn't here. That is the
   // `true` argument; the public form passes `false` and offers every group.
-  const { candidates: breakoutCandidates, totalGroups: breakoutTotalGroups } =
+  const { candidates: allBreakoutCandidates, totalGroups: breakoutTotalGroups } =
     !offerBreakoutPicker
       ? { candidates: [], totalGroups: 0 }
       : await fetchBreakoutAvailability(event.id, occurrenceId, true)
+
+  // Headcounts are an admin-facing operational number, and this route is public
+  // (`PUBLIC_PATTERNS`) — the door needs a link that opens on any device. Being
+  // *meant* for staff is not the same as being reachable only by staff, so the
+  // counts are gated on an actual session rather than on the surface. A signed-in
+  // staff member sees "8 / 12"; anyone else with the URL sees only "(full)",
+  // which is a fact about the choice in front of them, not an occupancy figure.
+  const isStaff = await isEventStaffViewer()
+  const breakoutCandidates = isStaff
+    ? allBreakoutCandidates
+    : withoutOccupancy(allBreakoutCandidates)
 
   const breakoutNotice = resolveBreakoutNotice({
     offerPicker: offerBreakoutPicker,

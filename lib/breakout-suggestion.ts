@@ -5,15 +5,26 @@
  */
 
 import type { Gender, GenderFocus } from "@/app/generated/prisma/client"
+import { breakoutOccupancy, type BreakoutOccupancy, type CapacityInput } from "@/lib/breakouts/occupancy"
 
+/**
+ * Capacity arrives here already reduced to `isFull` + `roomRatio` so the raw
+ * headcount never has to be shipped to a browser that isn't allowed to see it.
+ * `occupancy` carries the numbers, and is null on the public registration form
+ * — see `withoutOccupancy`.
+ */
 export type BreakoutCandidate = {
   id: string
   name: string
   genderFocus: GenderFocus | null
   ageRangeMin: number | null
   ageRangeMax: number | null
-  memberLimit: number | null
-  memberCount: number
+  /** Derived server-side via `breakoutOccupancy`. */
+  isFull: boolean
+  /** Share of the cap still open, 0..1. `null` when uncapped. Feeds `score` only. */
+  roomRatio: number | null
+  /** Raw counts — staffed surfaces only. `null` on the public form. */
+  occupancy: CapacityInput | null
 }
 
 export type RegistrantProfile = {
@@ -27,7 +38,9 @@ function ageFromBirthYear(birthYear: number | null): number | null {
 }
 
 function isEligible(group: BreakoutCandidate, p: RegistrantProfile): boolean {
-  if (group.memberLimit != null && group.memberCount >= group.memberLimit) return false
+  // A *suggestion* never points at a full group, even though the browse list
+  // now lets a staffed operator pick one deliberately.
+  if (group.isFull) return false
 
   if (group.genderFocus && group.genderFocus !== "Mixed") {
     if (!p.gender || group.genderFocus !== p.gender) return false
@@ -51,16 +64,29 @@ function score(group: BreakoutCandidate): number {
   let s = 0
   if (group.genderFocus && group.genderFocus !== "Mixed") s += 2
   if (group.ageRangeMin != null || group.ageRangeMax != null) s += 1
-  if (group.memberLimit != null) {
-    const remaining = group.memberLimit - group.memberCount
-    s += remaining / group.memberLimit
-  } else {
-    s += 0.5
-  }
+  s += group.roomRatio ?? 0.5
   return s
 }
 
-export type BreakoutPickerOption = BreakoutCandidate & { isFull: boolean }
+export type BreakoutPickerOption = BreakoutCandidate & {
+  /** Rendered occupancy. `null` when the counts weren't shipped to this surface. */
+  occupancyView: BreakoutOccupancy | null
+}
+
+/**
+ * Drops the raw headcounts, keeping the derived `isFull` / `roomRatio` the
+ * picker and the suggester actually need.
+ *
+ * The public registration form calls this. Occupancy is an admin-facing
+ * operational number: a registrant choosing a group has no business knowing how
+ * many people are in it, and until this existed the counts were sitting in the
+ * public form's RSC payload — unrendered, but there for anyone who looked.
+ * Whether a group is *full* is still surfaced, because that's a boolean about
+ * the choice in front of them rather than an occupancy figure.
+ */
+export function withoutOccupancy(groups: BreakoutCandidate[]): BreakoutCandidate[] {
+  return groups.map((g) => ({ ...g, occupancy: null }))
+}
 
 /**
  * Every group the caller was handed, in the order it arrived — nothing is ever
@@ -79,7 +105,7 @@ export type BreakoutPickerOption = BreakoutCandidate & { isFull: boolean }
 export function breakoutPickerOptions(groups: BreakoutCandidate[]): BreakoutPickerOption[] {
   return groups.map((g) => ({
     ...g,
-    isFull: g.memberLimit != null && g.memberCount >= g.memberLimit,
+    occupancyView: g.occupancy ? breakoutOccupancy(g.occupancy) : null,
   }))
 }
 

@@ -1,3 +1,5 @@
+import { compareByRoom, type BreakoutOccupancy } from "@/lib/breakouts/occupancy"
+
 export type SessionAttendeeView = {
   name: string | null
   isReturner: boolean
@@ -114,5 +116,32 @@ export function sortSessionAttendees<T extends SessionAttendeeView>(
     if (breakoutComparison !== 0) return breakoutComparison
 
     return compareText(left.name ?? "", right.name ?? "")
+  })
+}
+
+export type BreakoutStatSortMode = "name" | "room"
+
+export type BreakoutStatSubject = {
+  name: string
+  occupancy: BreakoutOccupancy
+}
+
+/**
+ * Ordering for the session page's Breakout Groups tab.
+ *
+ * "name" is the default so the tab keeps the order it has always had. "room"
+ * answers the question the admin actually has mid-event — where does the next
+ * person go — without making them read four fill bars and do the subtraction.
+ * Ties fall back to name so the list never reshuffles between renders.
+ */
+export function sortBreakoutStats<T extends BreakoutStatSubject>(
+  rows: T[],
+  mode: BreakoutStatSortMode,
+): T[] {
+  if (mode === "name") return [...rows].sort((a, b) => compareText(a.name, b.name))
+
+  return [...rows].sort((a, b) => {
+    const byRoom = compareByRoom(a.occupancy, b.occupancy)
+    return byRoom !== 0 ? byRoom : compareText(a.name, b.name)
   })
 }

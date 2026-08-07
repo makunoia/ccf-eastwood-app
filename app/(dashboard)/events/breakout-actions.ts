@@ -360,6 +360,9 @@ export async function removeRegistrantFromBreakout(
     })
     await tryCancelSmallGroupRequestFromBreakout(groupId, registrantId)
     revalidatePath(`/event/${eventId}/breakouts`)
+    // Session detail renders each group's capacity, so a removal moves a number
+    // there too. The occurrence id isn't known here — revalidate the segment.
+    revalidatePath(`/event/${eventId}/sessions`, "layout")
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to remove registrant from breakout group" }

@@ -272,6 +272,14 @@ describe("register page – pre-registration only", () => {
     expect(page).toContain("fetchBreakoutAvailability(event.id, null, false)")
   })
 
+  it("strips breakout headcounts before they reach a registrant's browser", () => {
+    // CCF-141: occupancy is an admin-facing operational number. It rides along
+    // on the walk-in page; here the counts must be gone from the payload, not
+    // merely unrendered.
+    expect(page).toContain("withoutOccupancy(breakoutCandidates)")
+    expect(page).toContain("breakoutCandidates={publicBreakoutCandidates}")
+  })
+
   it("explains an empty breakout list instead of dropping the step", () => {
     // Regression: an enabled Breakout toggle produced no step and no explanation
     // when every group was held back by the facilitator gate.
@@ -308,5 +316,15 @@ describe("walk-in page – the door surface", () => {
 
   it("only offers breakout groups whose facilitator has checked in", () => {
     expect(page).toContain("fetchBreakoutAvailability(event.id, occurrenceId, true)")
+  })
+
+  it("shows headcounts to staff and withholds them from everyone else", () => {
+    // This route is public — being *meant* for the door is not the same as being
+    // reachable only from it, so the counts hang off a session. The behavioural
+    // half of this lives in tests/integration/breakout-occupancy-visibility.ts;
+    // asserted here too because the strip is a single call that is easy to drop
+    // while refactoring the page, and nothing else on this page would notice.
+    expect(page).toContain("isEventStaffViewer()")
+    expect(page).toContain("withoutOccupancy(allBreakoutCandidates)")
   })
 })

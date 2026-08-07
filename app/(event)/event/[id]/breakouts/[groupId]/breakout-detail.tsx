@@ -58,6 +58,7 @@ import {
 } from "@/app/(dashboard)/events/breakout-actions"
 import { AddRegistrantSheet } from "./add-registrant-sheet"
 import { formatSchedule } from "@/lib/format/schedule"
+import { breakoutOccupancy } from "@/lib/breakouts/occupancy"
 
 const UNASSIGNED = "__unassigned__"
 
@@ -461,7 +462,8 @@ function MembersTable({
     if (!result.success) toast.error(result.error)
   }
 
-  const isFull = memberLimit != null && members.length >= memberLimit
+  const occupancy = breakoutOccupancy({ memberCount: members.length, memberLimit })
+  const isFull = occupancy.isFull
 
   const filteredMembers = members.filter((m) => {
     const r = m.registrant
@@ -493,7 +495,7 @@ function MembersTable({
       <h3 className="font-semibold">
         Members{" "}
         <span className="font-normal text-muted-foreground text-sm">
-          ({memberLimit != null ? `${members.length} / ${memberLimit}` : members.length})
+          ({occupancy.label})
         </span>
       </h3>
 

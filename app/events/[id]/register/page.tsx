@@ -5,7 +5,7 @@ import { ministryLabel } from "@/lib/events/ministry-label"
 import { getEventName } from "@/lib/metadata"
 import { RegistrationForm } from "./registration-form"
 import { fetchBreakoutAvailability } from "@/lib/breakout-suggestion-server"
-import { resolveBreakoutNotice } from "@/lib/breakout-suggestion"
+import { resolveBreakoutNotice, withoutOccupancy } from "@/lib/breakout-suggestion"
 import { PublicFormShell } from "@/components/public-form-shell"
 import { FormClosed } from "@/components/form-closed"
 import { getFormConfig, resolveFormTheme } from "@/lib/forms/config"
@@ -136,6 +136,12 @@ export default async function RegisterPage({
       ? { candidates: [], totalGroups: 0 }
       : await fetchBreakoutAvailability(event.id, null, false)
 
+  // Headcounts are an admin-facing operational number. They ride along on the
+  // walk-in page, where a staff member is doing the placing; here they are
+  // stripped so they never reach a registrant's browser at all. Whether a group
+  // is full still shows — that's a fact about the choice in front of them.
+  const publicBreakoutCandidates = withoutOccupancy(breakoutCandidates)
+
   // The gate is strict by design, but it must not be silent: when groups exist
   // and every one of them is held back, say so instead of dropping the step and
   // leaving the person at the kiosk wondering where it went.
@@ -194,7 +200,7 @@ export default async function RegisterPage({
         lifeStages={lifeStages}
         ageRanges={ageRanges}
         defaultLifeStageId={defaultLifeStageId}
-        breakoutCandidates={breakoutCandidates}
+        breakoutCandidates={publicBreakoutCandidates}
         breakoutNotice={breakoutNotice}
       />
     </PublicFormShell>

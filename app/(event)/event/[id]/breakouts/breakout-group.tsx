@@ -62,6 +62,7 @@ import {
   deleteBreakoutGroup,
   // autoAssignBreakouts, // CCF-124: re-enable with the Auto-Assign button
 } from "@/app/(dashboard)/events/breakout-actions"
+import { breakoutOccupancy } from "@/lib/breakouts/occupancy"
 import { checkBreakoutDuplicates, importBreakoutGroups } from "./import-actions"
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -561,11 +562,11 @@ function buildColumns(
       header: "Members",
       accessorFn: (row) => row.memberCount,
       cell: ({ row }) => {
-        const { memberCount, memberLimit } = row.original
+        const occupancy = breakoutOccupancy(row.original)
         return (
           <div className="flex items-center gap-1.5">
-            <span>{memberLimit != null ? `${memberCount} / ${memberLimit}` : memberCount}</span>
-            {memberLimit != null && memberCount >= memberLimit && (
+            <span className="tabular-nums">{occupancy.label}</span>
+            {occupancy.isFull && (
               <Badge variant="outline" className="text-xs text-muted-foreground">Full</Badge>
             )}
           </div>
@@ -786,7 +787,12 @@ export function BreakoutGroupsTable({
                 <span className="text-muted-foreground">DGroup</span>
                 <span>{group.linkedSmallGroup?.name ?? <span className="text-muted-foreground">—</span>}</span>
                 <span className="text-muted-foreground">Members</span>
-                <span>{group.memberLimit != null ? `${group.memberCount} / ${group.memberLimit}` : group.memberCount}</span>
+                <span className="flex items-center gap-1.5">
+                  <span className="tabular-nums">{breakoutOccupancy(group).label}</span>
+                  {breakoutOccupancy(group).isFull && (
+                    <Badge variant="outline" className="text-xs text-muted-foreground">Full</Badge>
+                  )}
+                </span>
                 {group.lifeStages.length > 0 && (
                   <>
                     <span className="text-muted-foreground">Life Stage</span>

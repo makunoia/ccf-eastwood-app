@@ -7,6 +7,7 @@ import { BreakoutDetail } from "./breakout-detail"
 import { GroupActions } from "./group-actions"
 import { BreakoutNavHeader } from "./breakout-nav-header"
 import { BreadcrumbOverride } from "@/components/breadcrumb-context"
+import { breakoutOccupancy } from "@/lib/breakouts/occupancy"
 
 const ledGroupsSelect = {
   select: {
@@ -187,7 +188,7 @@ export default async function BreakoutGroupDetailPage({
         subtitle={
           <p className="text-sm text-muted-foreground">
             {group.memberLimit != null
-              ? `${group.members.length} / ${group.memberLimit} members`
+              ? `${breakoutOccupancy({ memberCount: group.members.length, memberLimit: group.memberLimit }).label} members`
               : "No member cap"}
           </p>
         }

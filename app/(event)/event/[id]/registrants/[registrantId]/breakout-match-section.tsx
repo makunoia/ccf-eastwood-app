@@ -14,6 +14,7 @@ import {
   assignRegistrantToBreakout,
 } from "@/app/(dashboard)/events/matching-actions"
 import type { MatchResult } from "@/lib/matching/types"
+import { breakoutOccupancy } from "@/lib/breakouts/occupancy"
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -136,7 +137,11 @@ export function BreakoutSection({ registrantId, eventId, facilitatedGroup, allEv
         <p className="text-sm text-muted-foreground">No breakout groups have been created for this event.</p>
       ) : (
         allEventGroups.map((g) => {
-          const isFull = g.memberLimit !== null && g.currentCount >= g.memberLimit
+          const occupancy = breakoutOccupancy({
+            memberCount: g.currentCount,
+            memberLimit: g.memberLimit,
+          })
+          const isFull = occupancy.isFull
           return (
             <div key={g.id} className="flex items-center justify-between rounded-lg border px-3 py-2.5 gap-3">
               <div>
@@ -148,8 +153,8 @@ export function BreakoutSection({ registrantId, eventId, facilitatedGroup, allEv
                   {g.name}
                 </button>
                 {g.memberLimit !== null && (
-                  <p className="text-xs text-muted-foreground">
-                    {g.currentCount} / {g.memberLimit} members
+                  <p className="text-xs text-muted-foreground tabular-nums">
+                    {occupancy.label} members
                   </p>
                 )}
               </div>
