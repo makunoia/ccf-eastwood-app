@@ -1,6 +1,5 @@
 import { db } from "@/lib/db"
-import { ADMIN_INTENT_TOGGLE_KEYS } from "@/lib/forms/context-config"
-import type { EventModuleType, Prisma } from "@/app/generated/prisma/client"
+import type { EventModuleType } from "@/app/generated/prisma/client"
 
 /**
  * Event setup walkthrough — derives the recommended setup checklist shown on the
@@ -73,22 +72,15 @@ export async function getEventSetupChecklist(
     isOneTime
       ? Promise.resolve(0)
       : db.eventOccurrence.count({ where: { eventId } }),
-    // "Has the admin been through the form builder?" — answered by a toggle they
-    // could only have set themselves, not by row existence. A row is no longer
-    // proof of anything: the nickname migration writes one for every event that
-    // had none, so counting rows would tick this step for an untouched event.
-    // A worded success message counts too — it's the other thing the builder edits.
-    db.eventFormConfig.count({
-      where: {
-        eventId,
-        OR: [
-          ...ADMIN_INTENT_TOGGLE_KEYS.map(
-            (key) => ({ [key]: true }) as Prisma.EventFormConfigWhereInput
-          ),
-          { successMessage: { not: null } },
-        ],
-      },
-    }),
+    // "Has the admin been through the form builder?" — answered by a stamp only
+    // the save paths write, never a migration.
+    //
+    // Row existence used to answer it, until the nickname migration wrote a row
+    // for every event that had none. Reading the toggles answered it next, and
+    // was wrong in the other direction: switching the last toggle off un-ticked
+    // the step, when an admin who has been through the builder and chosen to ask
+    // for nothing extra has still configured the form. Once done, done.
+    db.eventFormConfig.count({ where: { eventId, configuredAt: { not: null } } }),
     db.eventRegistrant.count({ where: { eventId } }),
     // OneTime attendance lives on EventRegistrant.attendedAt; MultiDay/Recurring
     // use OccurrenceAttendee (participant rows only — volunteer check-ins have a

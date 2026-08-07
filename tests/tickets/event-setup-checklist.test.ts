@@ -1,8 +1,13 @@
-import { describe, it, expect, beforeEach, afterAll } from "vitest"
+import { describe, it, expect, beforeEach, afterAll, vi } from "vitest"
 import { db } from "@/lib/db"
 import { getEventSetupChecklist, type SetupStepKey } from "@/lib/events/setup-checklist"
 import { dismissEventSetup } from "@/app/(dashboard)/events/actions"
+import { saveEventFormConfig } from "@/app/(dashboard)/events/form-config-actions"
 import type { EventModuleType } from "@/app/generated/prisma/client"
+
+vi.mock("@/lib/auth", () => ({
+  auth: vi.fn(async () => ({ user: { id: "u1", role: "SuperAdmin" } })),
+}))
 
 /**
  * Event setup walkthrough — the dashboard "Set up your event" checklist.
@@ -205,11 +210,9 @@ describe("event setup checklist", () => {
     await db.eventRegistrant.create({
       data: { eventId: event.id, guestId: guest.id, attendedAt: new Date() }, // register + checkin
     })
-    await db.eventFormConfig.create({
-      // A toggle an admin could only have set themselves — a bare row no longer
-      // satisfies the step (see the form-step cases above).
-      data: { eventId: event.id, context: "Register", sectionDietary: true }, // form
-    })
+    // Through the action so `configuredAt` is stamped — a raw insert reads as a
+    // migration-written row and no longer satisfies the step.
+    await saveEventFormConfig(event.id, "Register", { sectionDietary: true }) // form
 
     const checklist = await checklistFor(event.id, "OneTime")
     expect(checklist.allComplete).toBe(true)
@@ -227,10 +230,11 @@ describe("event setup checklist", () => {
     })
 
     it("flips once any context has been configured", async () => {
+      // Through the action, not a direct insert: the step now reads
+      // `configuredAt`, which only the save paths write. A raw insert is what a
+      // migration looks like. See tests/integration/event-setup-checklist.test.ts.
       const event = await seedEvent("OneTime")
-      await db.eventFormConfig.create({
-        data: { eventId: event.id, context: "CheckIn", fieldGender: true },
-      })
+      await saveEventFormConfig(event.id, "CheckIn", { fieldGender: true })
 
       expect(stepDone(await checklistFor(event.id, "OneTime"), "form")).toBe(true)
     })
@@ -286,24 +290,16 @@ describe("event setup checklist", () => {
     })
 
     it("stays done once configured — there is no path that un-configures a form", async () => {
-      // The step is deliberately monotonic: `saveEventFormConfig` upserts and
-      // never deletes, so turning every toggle back off leaves the row and the
-      // step stays satisfied. Documented here so a future "clears correctly"
-      // reading of CCF-121 doesn't mistake this for a bug.
+      // Monotonic on purpose, and now enforced by a stamp rather than inferred:
+      // `configuredAt` records that an admin was here, so turning every toggle
+      // back off leaves the step satisfied. Briefly regressed when the step read
+      // the toggles instead; settled as one-and-done.
       const event = await seedEvent("OneTime")
-      await db.eventFormConfig.create({
-        data: { eventId: event.id, context: "Register", sectionDietary: true },
-      })
+      await saveEventFormConfig(event.id, "Register", { sectionDietary: true })
       expect(stepDone(await checklistFor(event.id, "OneTime"), "form")).toBe(true)
 
-      await db.eventFormConfig.update({
-        where: { eventId_context: { eventId: event.id, context: "Register" } },
-        data: { sectionDietary: false },
-      })
-      // No longer monotonic — switching the last real toggle off re-opens the
-      // step. Fell out of the row-existence → admin-intent change rather than
-      // being chosen; flagged for a product call.
-      expect(stepDone(await checklistFor(event.id, "OneTime"), "form")).toBe(false)
+      await saveEventFormConfig(event.id, "Register", { sectionDietary: false })
+      expect(stepDone(await checklistFor(event.id, "OneTime"), "form")).toBe(true)
     })
   })
 

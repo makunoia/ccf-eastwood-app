@@ -1257,6 +1257,21 @@ model EventFormConfig {
   // per event and per context.
   successMessage String?
 
+  // When an admin last saved this config from the builder. Null means no admin
+  // has ever been here — the row exists only because a migration wrote it.
+  //
+  // This is the setup checklist's "has the form been configured?" signal, and it
+  // exists because the two cheaper signals are both wrong. Row existence became
+  // meaningless when `20260804000000_add_form_field_nickname` backfilled a row
+  // for every event that had none. Reading the toggles instead made the step
+  // un-tick when an admin switched the last one back off, which is not what
+  // "configured" means — they have been through the builder and made a choice,
+  // and the choice being "ask for nothing extra" is still a choice.
+  //
+  // Only ever set by the write paths in form-config-actions.ts, never by a
+  // migration backfill, which is exactly what makes it trustworthy.
+  configuredAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
