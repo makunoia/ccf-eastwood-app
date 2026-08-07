@@ -6,6 +6,7 @@ import { CheckinBoard } from "./checkin-board"
 import { FormClosed } from "@/components/form-closed"
 import { getFormConfig } from "@/lib/forms/config"
 import { getEffectiveFormConfig } from "@/lib/forms/context-config-server"
+import { resolveWalkInAccess } from "@/lib/events/walk-in-access"
 
 async function getEvent(id: string) {
   return db.event.findUnique({
@@ -20,6 +21,7 @@ async function getEvent(id: string) {
       themeColorPrimary: true,
       registrationPageBannerUrl: true,
       autoAssignBreakout: true,
+      walkInOccurrence: { select: { id: true, isOpen: true } },
       ministries: {
         select: {
           ministry: {
@@ -171,6 +173,15 @@ export default async function CheckinPage({
       ? event.ministries[0].ministry.lifeStageId
       : undefined
 
+  // Whether to offer the walk-in link at all (CCF-133). Resolved here rather than
+  // in the board so the two surfaces read the same rules.
+  const walkInConfig = await getFormConfig("EventWalkIn", id)
+  const walkInAccess = resolveWalkInAccess({
+    eventType: event.type,
+    formIsOpen: walkInConfig.isOpen,
+    session: event.walkInOccurrence,
+  })
+
   return (
     <div className="relative min-h-svh bg-muted">
       {bannerUrl && (
@@ -191,6 +202,7 @@ export default async function CheckinPage({
             defaultLifeStageId={defaultLifeStageId}
             autoAssignBreakout={event.autoAssignBreakout}
             config={formFields}
+            walkInOpen={walkInAccess.open}
           />
         </div>
       </div>

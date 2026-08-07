@@ -14,6 +14,7 @@ import {
   getEventFormSuccessMessage,
 } from "@/lib/forms/context-config-server"
 import { resolveEventBrand } from "@/lib/forms/event-brand"
+import { resolveWalkInAccess } from "@/lib/events/walk-in-access"
 
 /**
  * The door surface (CCF-133). Same form component as `/register`, a different
@@ -92,17 +93,24 @@ export default async function WalkInPage({
   if (!event) notFound()
 
   const formConfig = await getFormConfig("EventWalkIn", id)
-  if (!formConfig.isOpen) return <FormClosed title="Walk-in is currently unavailable" />
-
-  // Session-based events need a live session to register into; OneTime events
-  // never have one, and that is not a closed state.
-  const needsSession = event.type !== "OneTime"
-  const session = event.walkInOccurrence
-  if (needsSession && !(session && session.isOpen)) {
-    return <FormClosed title="No session is open for walk-in right now" />
+  const access = resolveWalkInAccess({
+    eventType: event.type,
+    formIsOpen: formConfig.isOpen,
+    session: event.walkInOccurrence,
+  })
+  if (!access.open) {
+    return (
+      <FormClosed
+        title={
+          access.reason === "formClosed"
+            ? "Walk-in is currently unavailable"
+            : "No session is open for walk-in right now"
+        }
+      />
+    )
   }
 
-  const occurrenceId = needsSession ? (session?.id ?? null) : null
+  const occurrenceId = access.occurrenceId
   const walkIn = {
     occurrenceId,
     prefill: mobile ? { mobileNumber: mobile } : {},

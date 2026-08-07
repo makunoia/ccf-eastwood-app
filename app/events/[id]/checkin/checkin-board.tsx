@@ -48,6 +48,7 @@ import {
 import { searchMembersForLeaderLookup } from "@/app/(dashboard)/guests/actions"
 import type { MatchingProfileInput } from "@/lib/validations/matching-profile"
 import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
+import { WALK_IN_CLOSED_MESSAGE } from "@/lib/events/walk-in-access"
 import { FAMILY_ROLES, FAMILY_ROLE_LABELS, type FamilyRoleValue } from "@/lib/validations/family"
 import { cn } from "@/lib/utils"
 
@@ -121,11 +122,17 @@ type Props = {
    * Omitted → bare, so nothing optional is asked.
    */
   config?: Partial<EventFormConfigData>
+  /**
+   * Whether the walk-in form is reachable (CCF-133). Resolved on the server by
+   * `resolveWalkInAccess` so this board and the walk-in page agree. Defaults to
+   * false: a link that dead-ends is worse than no link.
+   */
+  walkInOpen?: boolean
 }
 
 const AUTO_RESET_MS = 4000
 
-export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges = [], defaultLifeStageId = "", autoAssignBreakout = false, config }: Props) {
+export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges = [], defaultLifeStageId = "", autoAssignBreakout = false, config, walkInOpen = false }: Props) {
   const cfg = React.useMemo<EventFormConfigData>(
     () => ({ ...BARE_EVENT_FORM_CONFIG, ...config }),
     [config]
@@ -402,9 +409,14 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
   // links back here when done. No occurrence in the link: the walk-in page reads
   // the session an admin configured, so the door can't be pointed somewhere else
   // by a stale URL (CCF-133).
-  const walkInHref = `/events/${eventId}/walk-in${
-    query.trim() ? `?mobile=${encodeURIComponent(query.trim())}` : ""
-  }`
+  //
+  // Null when walk-in is closed. Offering the link anyway would send someone who
+  // already can't find themselves to a page that just tells them no.
+  const walkInHref = walkInOpen
+    ? `/events/${eventId}/walk-in${
+        query.trim() ? `?mobile=${encodeURIComponent(query.trim())}` : ""
+      }`
+    : null
 
   // ── Lookup ───────────────────────────────────────────────────────────────
   if (step === "lookup") {
@@ -462,14 +474,21 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
 
             {!nameSearchLoading && nameQuery.trim().length >= 2 && nameResults.length === 0 && (
               <p className="text-sm text-muted-foreground text-center">
-                No results for &ldquo;{nameQuery.trim()}&rdquo;. Try your mobile number below, or{" "}
-                <Link
-                  href={walkInHref}
-                  className="underline decoration-dashed underline-offset-2 hover:text-foreground transition-colors"
-                >
-                  register as a walk-in
-                </Link>
-                .
+                No results for &ldquo;{nameQuery.trim()}&rdquo;. Try your mobile number below
+                {walkInHref ? (
+                  <>
+                    , or{" "}
+                    <Link
+                      href={walkInHref}
+                      className="underline decoration-dashed underline-offset-2 hover:text-foreground transition-colors"
+                    >
+                      register as a walk-in
+                    </Link>
+                    .
+                  </>
+                ) : (
+                  "."
+                )}
               </p>
             )}
           </div>
@@ -514,13 +533,19 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
             </Button>
 
             <p className="text-center text-sm text-muted-foreground">
-              Can&apos;t find yourself?{" "}
-              <Link
-                href={walkInHref}
-                className="underline decoration-dashed underline-offset-2 hover:text-foreground transition-colors"
-              >
-                Register as a walk-in
-              </Link>
+              {walkInHref ? (
+                <>
+                  Can&apos;t find yourself?{" "}
+                  <Link
+                    href={walkInHref}
+                    className="underline decoration-dashed underline-offset-2 hover:text-foreground transition-colors"
+                  >
+                    Register as a walk-in
+                  </Link>
+                </>
+              ) : (
+                WALK_IN_CLOSED_MESSAGE
+              )}
             </p>
           </form>
         </div>
@@ -955,16 +980,20 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
             <h2 className="text-2xl font-semibold tracking-tight">Not found</h2>
             <p className="text-sm text-muted-foreground">
               We couldn&apos;t find a registration for{" "}
-              <span className="font-medium">{lookupLabel}</span>.
-              You can register now or try a different lookup.
+              <span className="font-medium">{lookupLabel}</span>.{" "}
+              {walkInHref
+                ? "You can register now or try a different lookup."
+                : WALK_IN_CLOSED_MESSAGE}
             </p>
           </div>
           <div className="flex flex-col gap-3">
-            <Button className="w-full" asChild>
-              <Link href={walkInHref}>Register now</Link>
-            </Button>
+            {walkInHref && (
+              <Button className="w-full" asChild>
+                <Link href={walkInHref}>Register now</Link>
+              </Button>
+            )}
             <Button
-              variant="ghost"
+              variant={walkInHref ? "ghost" : "default"}
               className="w-full"
               onClick={reset}
             >

@@ -134,6 +134,7 @@ export async function updateEventCluster(
     await db.eventCluster.update({ where: { id: clusterId }, data })
     revalidateClusterPaths(clusterId)
     revalidatePath(`/register/c/${cluster.publicToken}`)
+    revalidatePath(`/register/c/${cluster.publicToken}/walk-in`)
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to update the event cluster." }

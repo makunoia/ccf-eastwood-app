@@ -614,6 +614,11 @@ model EventCluster {
   publicToken String    @unique @default(cuid())
   // Manual open/close for the shared public form (mirrors FormConfig.isOpen)
   isOpen      Boolean   @default(false)
+  // The same, for the day's door form (CCF-133). Separate from `isOpen` so the
+  // shared form can close the night before while the door still runs, and vice
+  // versa. Clusters can't use FormConfig for this — that table is keyed by
+  // eventId only.
+  walkInIsOpen Boolean  @default(false)
   registrationStart DateTime?
   registrationEnd   DateTime?
   // Registration page customization — mirrors Event's public form fields

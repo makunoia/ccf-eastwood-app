@@ -8,8 +8,8 @@ import {
   getClusterFormSuccessMessages,
 } from "@/lib/forms/context-config-server"
 import { PageHeader } from "@/components/page-header"
-import { SettingCard } from "@/components/ui/setting-card"
 import { EventFormBuilder } from "@/components/forms/event-form-builder"
+import { ClusterWalkInAccess } from "./walk-in-access"
 import { clusterFormPrerequisites } from "@/lib/forms/form-prerequisites-server"
 import { clusterWalkInPath } from "@/lib/public-routes"
 
@@ -25,7 +25,7 @@ export default async function ClusterWalkInFormPage({
   const { id } = await params
   const cluster = await db.eventCluster.findUnique({
     where: { id },
-    select: { id: true, name: true, publicToken: true },
+    select: { id: true, name: true, publicToken: true, walkInIsOpen: true },
   })
   if (!cluster) notFound()
 
@@ -51,20 +51,11 @@ export default async function ClusterWalkInFormPage({
         />
       </div>
 
-      <SettingCard
-        className="max-w-2xl"
-        title="Walk-in link"
-        description="The same shared form with door semantics: it ignores the open/close toggle and registration window, reuses existing registrations instead of erroring, and checks the person in immediately — on one-time events, and on recurring events through the session this day is linked to."
-      >
-        <a
-          href={clusterWalkInPath(cluster.publicToken)}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-sm font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-        >
-          View walk-in form
-        </a>
-      </SettingCard>
+      <ClusterWalkInAccess
+        clusterId={id}
+        publicPath={clusterWalkInPath(cluster.publicToken)}
+        initialIsOpen={cluster.walkInIsOpen}
+      />
 
       <EventFormBuilder
         clusterId={id}

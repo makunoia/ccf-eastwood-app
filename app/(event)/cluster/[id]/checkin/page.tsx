@@ -28,7 +28,7 @@ export default async function ClusterCheckinPage({
 
   const cluster = await db.eventCluster.findUnique({
     where: { id },
-    select: { id: true, date: true, publicToken: true },
+    select: { id: true, date: true, publicToken: true, walkInIsOpen: true },
   })
   if (!cluster) notFound()
 
@@ -100,9 +100,20 @@ export default async function ClusterCheckinPage({
           // The door link registers and checks someone in across the day in one
           // pass — worth a shortcut from the board a staffer is already holding.
           // Hidden from read-only staff: it writes registrations and attendance.
+          // Also null while the door is closed (CCF-133) — the switch link below
+          // takes over, so the button never dead-ends.
           walkInHref={
-            canWrite(session, "Events") && accessibleEvents.length > 0
+            canWrite(session, "Events") &&
+            accessibleEvents.length > 0 &&
+            cluster.walkInIsOpen
               ? clusterWalkInPath(cluster.publicToken)
+              : null
+          }
+          walkInSettingsHref={
+            canWrite(session, "Events") &&
+            accessibleEvents.length > 0 &&
+            !cluster.walkInIsOpen
+              ? `/cluster/${cluster.id}/forms/walk-in`
               : null
           }
         />

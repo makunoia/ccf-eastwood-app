@@ -27,11 +27,18 @@ export function ClusterCheckinClient({
   people,
   hasCheckinEvents,
   walkInHref,
+  walkInSettingsHref,
 }: {
   people: Person[]
   hasCheckinEvents: boolean
   /** Door link for someone who isn't registered yet — null without write access. */
   walkInHref?: string | null
+  /**
+   * Where to open the walk-in switch, when the door is closed (CCF-133). Only
+   * set for staff who can write — this board is authenticated, unlike the public
+   * check-in kiosk, so pointing at the admin form here is fine.
+   */
+  walkInSettingsHref?: string | null
 }) {
   const [search, setSearch] = React.useState("")
 
@@ -46,6 +53,10 @@ export function ClusterCheckinClient({
 
   // Same-tab navigation, not a new window: this is a PWA, and the walk-in form
   // already carries a Back link to this board.
+  //
+  // A closed door says so and offers the switch rather than vanishing. Staff
+  // reach for this button on event day; silently removing it reads as a bug and
+  // sends someone hunting through Forms for a setting they didn't know existed.
   const walkInButton = walkInHref ? (
     <Button asChild variant="outline" className="w-full sm:w-auto">
       <Link href={walkInHref}>
@@ -53,6 +64,17 @@ export function ClusterCheckinClient({
         Walk-in registration
       </Link>
     </Button>
+  ) : walkInSettingsHref ? (
+    <p className="text-sm text-muted-foreground">
+      Walk-in registration is closed.{" "}
+      <Link
+        href={walkInSettingsHref}
+        className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 transition-colors hover:decoration-foreground"
+      >
+        Open it on the Walk-in form
+      </Link>
+      .
+    </p>
   ) : null
 
   if (!hasCheckinEvents) {

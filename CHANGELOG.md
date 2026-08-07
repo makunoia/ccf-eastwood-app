@@ -4,6 +4,40 @@ All notable changes to this project are documented here.
 
 ---
 
+## [2026-08-07]
+
+### ⚠️ Action required on deploy
+
+- **Every event's walk-in form is now closed until someone opens it.** Walk-in is
+  its own form with its own Public access switch (**Event → Forms → Walk-in
+  Form**), and it starts off. Nothing on the door works until a staff member
+  turns it on — including the "Register as a walk-in" links on the check-in
+  board, which now explain the situation instead of leading to a closed page.
+  Open it as part of setting up for the day, the same way sessions are opened.
+- **Walk-in also needs a session named.** On multi-day and recurring events, pick
+  which session the door registers people into on the same page. No session
+  selected — or a session that's closed — keeps walk-in unavailable even with the
+  switch on. One-time events don't need this.
+- **Event Clusters get the same switch**, on **Cluster → Forms → Walk-in
+  Registration**, also starting closed.
+
+### Changed
+- **CCF-133** — Walk-in registration is a first-class form. It has its own public
+  link (`/events/[id]/walk-in`), its own page title, banner and success copy, and
+  its own section/field configuration, all separate from the registration form
+  people fill in ahead of the day. Closing pre-registration the night before no
+  longer closes the door, and vice versa. Old `?checkin=` links redirect, so
+  existing kiosk bookmarks and printed QR codes keep working.
+- The walk-in session is now configuration rather than something carried in the
+  URL, so a stale or shared link can no longer register someone into the wrong
+  session.
+- Pre-registration on a recurring event no longer marks attendance. Attendance is
+  recorded only at check-in or through walk-in. This shows up as a lower
+  pre-registered-vs-actual turnout ratio than before — the earlier figure was
+  counting registrations as attendance.
+
+---
+
 ## [2026-05-15]
 
 ### Added

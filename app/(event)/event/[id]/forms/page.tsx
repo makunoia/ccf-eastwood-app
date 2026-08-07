@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { PageHeader } from "@/components/page-header"
-import { eventFormsForModules, scopeKeyFor } from "@/lib/forms/registry"
+import { defaultIsOpen, eventFormsForModules, scopeKeyFor } from "@/lib/forms/registry"
 import { FormsList, type FormListRow } from "@/app/(dashboard)/forms/forms-list"
 
 export const metadata: Metadata = {
@@ -33,7 +33,7 @@ export default async function EventFormsPage({
     label: form.label,
     description: form.description,
     href: `/event/${id}/forms/${form.key}`,
-    isOpen: openByScope.get(scopeKeyFor(form.key, id)) ?? true,
+    isOpen: openByScope.get(scopeKeyFor(form.key, id)) ?? defaultIsOpen(form.key),
   }))
 
   return (

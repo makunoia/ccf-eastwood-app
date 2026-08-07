@@ -4,6 +4,7 @@ import { setFormOpen } from "@/app/(dashboard)/forms/actions"
 import { setWalkInOccurrence } from "@/app/(dashboard)/events/form-config-actions"
 import { getFormConfig } from "@/lib/forms/config"
 import { checkInWalkInRegistrant } from "@/lib/events/registration-core"
+import { updateEventCluster } from "@/app/(dashboard)/events/cluster-actions"
 
 /**
  * Walk-in's own open/close rules (CCF-133).
@@ -39,7 +40,7 @@ async function seedOccurrence(eventId: string, date: string, isOpen: boolean) {
 }
 
 beforeEach(async () => {
-  await db.$executeRaw`TRUNCATE "OccurrenceAttendee", "EventRegistrant", "FormConfig", "EventFormConfig", "EventOccurrence", "Event" RESTART IDENTITY CASCADE`
+  await db.$executeRaw`TRUNCATE "OccurrenceAttendee", "EventRegistrant", "FormConfig", "EventFormConfig", "EventOccurrence", "EventCluster", "Event" RESTART IDENTITY CASCADE`
 })
 
 afterAll(async () => {
@@ -47,16 +48,26 @@ afterAll(async () => {
 })
 
 describe("walk-in Public access", () => {
-  it("is open when no FormConfig row exists", async () => {
-    // No pre-seeding: every event that existed before the split keeps its door.
-    // PR 2 flips this default to closed.
+  it("is closed when no FormConfig row exists", async () => {
+    // The deliberate behavior change in PR 2. A public URL that registers *and*
+    // records attendance is a live attendance surface, so a new event starts with
+    // the door shut and staff open it for the day.
     const event = await seedEvent("Sunday Service")
     const cfg = await getFormConfig("EventWalkIn", event.id)
-    expect(cfg.isOpen).toBe(true)
+    expect(cfg.isOpen).toBe(false)
+  })
+
+  it("leaves every other form open by default", async () => {
+    // The default is per-form, not a blanket flip — registration and check-in
+    // must keep working on an event nobody has configured.
+    const event = await seedEvent("Sunday Service")
+    expect((await getFormConfig("EventRegistration", event.id)).isOpen).toBe(true)
+    expect((await getFormConfig("EventCheckIn", event.id)).isOpen).toBe(true)
   })
 
   it("is independent of the registration form's switch", async () => {
     const event = await seedEvent("Sunday Service")
+    await setFormOpen("EventWalkIn", event.id, true)
 
     // Close pre-registration the night before — the door must stay open.
     await setFormOpen("EventRegistration", event.id, false)
@@ -174,6 +185,50 @@ describe("walk-in session", () => {
     })
     expect(updated?.walkInOccurrence?.id).toBe(occurrence.id)
     expect(updated?.walkInOccurrence?.isOpen).toBe(false)
+  })
+})
+
+describe("cluster walk-in switch", () => {
+  async function seedCluster(name: string) {
+    return db.eventCluster.create({ data: { name, date: new Date("2026-08-09") } })
+  }
+
+  it("starts closed", async () => {
+    const cluster = await seedCluster("Sunday Day")
+    expect(cluster.walkInIsOpen).toBe(false)
+  })
+
+  it("opens and closes independently of the shared form", async () => {
+    const cluster = await seedCluster("Sunday Day")
+
+    await updateEventCluster(cluster.id, { walkInIsOpen: true, isOpen: false })
+    let row = await db.eventCluster.findUnique({
+      where: { id: cluster.id },
+      select: { isOpen: true, walkInIsOpen: true },
+    })
+    // Shared form closed the night before, door still running.
+    expect(row).toEqual({ isOpen: false, walkInIsOpen: true })
+
+    await updateEventCluster(cluster.id, { walkInIsOpen: false, isOpen: true })
+    row = await db.eventCluster.findUnique({
+      where: { id: cluster.id },
+      select: { isOpen: true, walkInIsOpen: true },
+    })
+    expect(row).toEqual({ isOpen: true, walkInIsOpen: false })
+  })
+
+  it("leaves the door alone when only the shared form is toggled", async () => {
+    // The two switches share one action; an omitted field must not overwrite.
+    const cluster = await seedCluster("Sunday Day")
+    await updateEventCluster(cluster.id, { walkInIsOpen: true })
+
+    await updateEventCluster(cluster.id, { isOpen: true })
+
+    const row = await db.eventCluster.findUnique({
+      where: { id: cluster.id },
+      select: { walkInIsOpen: true },
+    })
+    expect(row?.walkInIsOpen).toBe(true)
   })
 })
 

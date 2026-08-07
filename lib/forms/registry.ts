@@ -35,6 +35,20 @@ export type FormMeta = {
   usesDedicatedConfig?: boolean
   /** Event form only listed when this module is enabled on the event. */
   requiresEventModule?: EventModuleType
+  /**
+   * What "no FormConfig row" means for this form. Omitted → open, which is right
+   * for every form someone is expected to find on their own.
+   *
+   * Walk-in is the exception (CCF-133): it registers *and* records attendance in
+   * one submit, so an unattended public URL is a live attendance surface. Staff
+   * open it for the day the same way they open a session.
+   */
+  defaultsOpen?: boolean
+}
+
+/** Whether a form with no stored config is reachable. See {@link FormMeta.defaultsOpen}. */
+export function defaultIsOpen(key: FormKey): boolean {
+  return FORM_REGISTRY[key]?.defaultsOpen ?? true
 }
 
 export const FORM_REGISTRY: Record<FormKey, FormMeta> = {
@@ -91,6 +105,9 @@ export const FORM_REGISTRY: Record<FormKey, FormMeta> = {
     // walk-in has no dedicated columns, so it takes the generic override path.
     themeFields: ["logoUrl", "bannerUrl", "primaryColor", "title", "description"],
     usesDedicatedConfig: true,
+    // A standalone URL that registers *and* checks someone in is a live
+    // attendance surface — it waits to be opened for the day.
+    defaultsOpen: false,
   },
   EventCheckIn: {
     key: "EventCheckIn",
