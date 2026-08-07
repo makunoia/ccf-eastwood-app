@@ -79,8 +79,10 @@ export async function saveEventFormConfig(
     await db.eventFormConfig.upsert({
       where: { eventId_context: { eventId, context: parsedContext.data } },
       create: { eventId, context: parsedContext.data, ...data },
+  revalidatePath(`/event/${eventId}/forms/EventWalkIn`)
       update: data,
     })
+  revalidatePath(`/events/${eventId}/walk-in`)
     revalidateFormSurfaces(eventId)
     return { success: true, data: undefined }
   } catch {
@@ -189,6 +191,59 @@ export async function saveEventFormSuccessMessage(
       create: { eventId, context: parsedContext.data, successMessage: parsed.data },
       update: { successMessage: parsed.data },
     })
+// ─── Walk-in session (CCF-133) ───────────────────────────────────────────────
+
+/**
+ * Point the walk-in form at one of the event's sessions, or clear it with null.
+ *
+ * The occurrence used to ride in the URL (`?checkin=<id>`), which meant a stale
+ * link could register someone into the wrong session and only a `notFound()`
+ * guard stood in the way. Making it stored config means the door always targets
+ * the session an admin actually named — and a null (or closed) session closes the
+ * walk-in form rather than silently defaulting somewhere.
+ *
+ * OneTime events never set this: they have no occurrences, and a walk-in there
+ * stamps `attendedAt` on the registrant instead.
+ */
+export async function setWalkInOccurrence(
+  eventId: string,
+  occurrenceId: string | null
+): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
+  try {
+    const event = await db.event.findUnique({
+      where: { id: eventId },
+      select: { id: true, type: true },
+    })
+    if (!event) return { success: false, error: "Event not found." }
+    if (event.type === "OneTime" && occurrenceId !== null) {
+      return { success: false, error: "One-time events have no sessions to pick." }
+    }
+
+    // Verify ownership rather than trusting the id: the FK alone would happily
+    // accept another event's session and quietly cross-post its attendance.
+    if (occurrenceId !== null) {
+      const occurrence = await db.eventOccurrence.findFirst({
+        where: { id: occurrenceId, eventId },
+        select: { id: true },
+      })
+      if (!occurrence) return { success: false, error: "That session isn't part of this event." }
+    }
+
+    await db.event.update({
+      where: { id: eventId },
+      data: { walkInOccurrenceId: occurrenceId },
+    })
+    revalidateFormSurfaces(eventId)
+    revalidatePath(`/events/${eventId}/checkin`, "layout")
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to set the walk-in session" }
+  }
+}
+
     revalidateFormSurfaces(eventId)
     return { success: true, data: undefined }
   } catch {

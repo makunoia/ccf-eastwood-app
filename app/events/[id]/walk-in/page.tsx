@@ -1,9 +1,9 @@
 import type { Metadata } from "next"
-import { notFound, redirect } from "next/navigation"
+import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { ministryLabel } from "@/lib/events/ministry-label"
 import { getEventName } from "@/lib/metadata"
-import { RegistrationForm } from "./registration-form"
+import { RegistrationForm } from "../register/registration-form"
 import { fetchBreakoutAvailability } from "@/lib/breakout-suggestion-server"
 import { resolveBreakoutNotice } from "@/lib/breakout-suggestion"
 import { PublicFormShell } from "@/components/public-form-shell"
@@ -14,10 +14,27 @@ import {
   getEventFormSuccessMessage,
 } from "@/lib/forms/context-config-server"
 import { resolveEventBrand } from "@/lib/forms/event-brand"
-import { isWithinRegistrationWindow } from "@/lib/events/registration-window"
+
+/**
+ * The door surface (CCF-133). Same form component as `/register`, a different
+ * configured context, and its own open/close rules:
+ *
+ *  - It ignores the registration form's toggle and the event's Opens/Closes
+ *    window entirely. Those belong to the form people fill in ahead of the day;
+ *    closing pre-registration the night before must not close the door.
+ *  - The session comes from `Event.walkInOccurrenceId`, chosen by an admin on the
+ *    Walk-in form config. It used to ride in the URL as `?checkin=<id>`, where a
+ *    stale value reached the form and only failed on submit.
+ *  - No session selected, or a selected session that is closed, means the walk-in
+ *    form is unavailable — said plainly, rather than rendering a form that cannot
+ *    succeed.
+ *
+ * OneTime events have no occurrences: submit stamps `attendedAt` on the
+ * registrant instead, so there is nothing to resolve and nothing to gate on.
+ */
 
 async function getEvent(id: string) {
-  const event = await db.event.findUnique({
+  return db.event.findUnique({
     where: { id },
     select: {
       id: true,
@@ -27,16 +44,14 @@ async function getEvent(id: string) {
       endDate: true,
       price: true,
       allMinistries: true,
-      registrationStart: true,
-      registrationEnd: true,
       useMinistryBrand: true,
       brandMinistryId: true,
       logoUrl: true,
       themeColorPrimary: true,
       autoAssignBreakout: true,
-      registrationPageTitle: true,
-      registrationPageDescription: true,
       registrationPageBannerUrl: true,
+      walkInOccurrenceId: true,
+      walkInOccurrence: { select: { id: true, isOpen: true } },
       ministries: {
         select: {
           ministry: {
@@ -52,7 +67,6 @@ async function getEvent(id: string) {
       },
     },
   })
-  return event ?? null
 }
 
 export async function generateMetadata({
@@ -62,46 +76,44 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { id } = await params
   const name = await getEventName(id)
-  return { title: { absolute: name ? `Register · ${name}` : "Register" } }
+  return { title: { absolute: name ? `Walk-in · ${name}` : "Walk-in" } }
 }
 
-export default async function RegisterPage({
+export default async function WalkInPage({
   params,
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ checkin?: string; mobile?: string }>
+  searchParams: Promise<{ mobile?: string }>
 }) {
   const { id } = await params
-  const { checkin, mobile } = await searchParams
-
-  // Walk-in used to live here behind `?checkin=<occurrenceId|1>` (CCF-133). It is
-  // its own form and its own route now, but the old URL is on kiosk bookmarks and
-  // possibly printed material, so it redirects rather than 404s. The occurrence is
-  // dropped on purpose — the walk-in page resolves it from the event's configured
-  // session, which is the whole point of the split.
-  if (checkin) {
-    const query = mobile ? `?mobile=${encodeURIComponent(mobile)}` : ""
-    redirect(`/events/${id}/walk-in${query}`)
-  }
-
+  const { mobile } = await searchParams
   const event = await getEvent(id)
   if (!event) notFound()
 
-  const formConfig = await getFormConfig("EventRegistration", id)
-  // Open only when the manual toggle is on AND we're inside the event's
-  // Opens/Closes window. Neither gate touches walk-in any more — that form owns
-  // its own switch, so pre-registration can close the night before while the door
-  // stays live.
-  const withinWindow = isWithinRegistrationWindow(
-    event.registrationStart,
-    event.registrationEnd
-  )
-  if (!formConfig.isOpen || !withinWindow) return <FormClosed />
+  const formConfig = await getFormConfig("EventWalkIn", id)
+  if (!formConfig.isOpen) return <FormClosed title="Walk-in is currently unavailable" />
+
+  // Session-based events need a live session to register into; OneTime events
+  // never have one, and that is not a closed state.
+  const needsSession = event.type !== "OneTime"
+  const session = event.walkInOccurrence
+  if (needsSession && !(session && session.isOpen)) {
+    return <FormClosed title="No session is open for walk-in right now" />
+  }
+
+  const occurrenceId = needsSession ? (session?.id ?? null) : null
+  const walkIn = {
+    occurrenceId,
+    prefill: mobile ? { mobileNumber: mobile } : {},
+    backHref: occurrenceId
+      ? `/events/${id}/checkin/${occurrenceId}`
+      : `/events/${id}/checkin`,
+  }
 
   const [formFields, successMessage] = await Promise.all([
-    getEffectiveFormConfig(id, "Register"),
-    getEventFormSuccessMessage(id, "Register"),
+    getEffectiveFormConfig(id, "WalkIn"),
+    getEventFormSuccessMessage(id, "WalkIn"),
   ])
 
   const lifeStages = formFields.fieldLifeStage
@@ -123,22 +135,16 @@ export default async function RegisterPage({
       ? event.ministries[0].ministry.lifeStageId
       : undefined
 
-  // Breakout picker renders when this context enables the section, the event isn't
-  // auto-assigning, AND groups exist. Auto-assign wins: there is nothing to pick
-  // when placement happens on submit.
   const offerBreakoutPicker = formFields.sectionBreakout && !event.autoAssignBreakout
 
-  // Every group is offered here. People register days ahead, when by definition
-  // nobody has checked in to anything — the door applies the stricter
-  // facilitator-present rule instead, on the walk-in page.
+  // At the door, only groups whose facilitator has already checked in are offered
+  // — a walk-in shouldn't be sent to a group whose leader isn't here. That is the
+  // `true` argument; the public form passes `false` and offers every group.
   const { candidates: breakoutCandidates, totalGroups: breakoutTotalGroups } =
     !offerBreakoutPicker
       ? { candidates: [], totalGroups: 0 }
-      : await fetchBreakoutAvailability(event.id, null, false)
+      : await fetchBreakoutAvailability(event.id, occurrenceId, true)
 
-  // The gate is strict by design, but it must not be silent: when groups exist
-  // and every one of them is held back, say so instead of dropping the step and
-  // leaving the person at the kiosk wondering where it went.
   const breakoutNotice = resolveBreakoutNotice({
     offerPicker: offerBreakoutPicker,
     candidateCount: breakoutCandidates.length,
@@ -157,13 +163,14 @@ export default async function RegisterPage({
     timeZone: "UTC",
   })
 
-  // EventRegistration uses its dedicated columns for the page theme; FormConfig
-  // overrides (which are unused for this key) fall through to these defaults.
+  // Unlike registration, walk-in has no dedicated Event columns for its page
+  // copy — its FormConfig overrides are the only ones, falling back to the event
+  // brand. That is what having its own form key buys.
   const theme = resolveFormTheme(formConfig, {
-    title: event.registrationPageTitle || `${event.name} Registration`,
-    description:
-      event.registrationPageDescription ||
-      [ministryNames, event.type !== "Recurring" ? dateLabel : ""].filter(Boolean).join(" · "),
+    title: `${event.name} Walk-in`,
+    description: [ministryNames, event.type !== "Recurring" ? dateLabel : ""]
+      .filter(Boolean)
+      .join(" · "),
     logoUrl: brand.logoUrl,
     bannerUrl: event.registrationPageBannerUrl ?? null,
     primaryColor: brand.primaryColor,
@@ -196,6 +203,7 @@ export default async function RegisterPage({
         defaultLifeStageId={defaultLifeStageId}
         breakoutCandidates={breakoutCandidates}
         breakoutNotice={breakoutNotice}
+        walkIn={walkIn}
       />
     </PublicFormShell>
   )

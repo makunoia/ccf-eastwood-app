@@ -392,11 +392,13 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
     afterHousehold()
   }
 
-  // Walk-ins go to the real registration page in check-in mode rather than an
-  // embedded copy of the form — one form, one set of rules, no drift. It
-  // registers + checks in on submit and links back here when done.
-  const walkInHref = `/events/${eventId}/register?checkin=${occurrenceId ?? "1"}${
-    query.trim() ? `&mobile=${encodeURIComponent(query.trim())}` : ""
+  // Walk-ins go to the walk-in form rather than an embedded copy of this one —
+  // one form, one set of rules, no drift. It registers + checks in on submit and
+  // links back here when done. No occurrence in the link: the walk-in page reads
+  // the session an admin configured, so the door can't be pointed somewhere else
+  // by a stale URL (CCF-133).
+  const walkInHref = `/events/${eventId}/walk-in${
+    query.trim() ? `?mobile=${encodeURIComponent(query.trim())}` : ""
   }`
 
   // ── Lookup ───────────────────────────────────────────────────────────────

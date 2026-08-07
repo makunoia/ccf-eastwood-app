@@ -47,6 +47,7 @@ import {
   registerForCluster,
   type ClusterEventRegistrationResult,
 } from "@/app/(dashboard)/events/cluster-actions"
+import { clampFormStep } from "@/lib/forms/step-navigation"
 import { searchMembersForLeaderLookup } from "@/app/(dashboard)/guests/actions"
 import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
 import { FAMILY_ROLES, FAMILY_ROLE_LABELS, type FamilyRoleValue } from "@/lib/validations/family"
@@ -310,6 +311,8 @@ export function RegistrationForm({
   const [claimedGroupQuery, setClaimedGroupQuery] = React.useState("")
   const [claimedGroupResults, setClaimedGroupResults] = React.useState<Array<{ id: string; name: string; leaderName: string }>>([])
   const [claimedGroupSearching, setClaimedGroupSearching] = React.useState(false)
+  /** Monotonic id so only the newest leader lookup is allowed to set state. */
+  const claimedGroupRequestRef = React.useRef(0)
   const claimedGroupDebounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const satelliteOptions = React.useMemo(
     () =>
@@ -373,12 +376,21 @@ export function RegistrationForm({
   )
 
   React.useEffect(() => {
-    return () => { if (claimedGroupDebounceRef.current) clearTimeout(claimedGroupDebounceRef.current) }
+    return () => {
+      if (claimedGroupDebounceRef.current) clearTimeout(claimedGroupDebounceRef.current)
+      // Any reply still in flight belongs to a form that no longer exists.
+      claimedGroupRequestRef.current += 1
+    }
   }, [])
 
   function handleClaimedGroupQueryChange(value: string) {
     setClaimedGroupQuery(value)
     setClaimedSmallGroupId("")
+    // Debouncing alone doesn't order the replies: a slow lookup for an earlier
+    // query can land after a fast one for the current query and overwrite it —
+    // or clear the spinner the newer request is still using, which is what left
+    // the step sitting on "Searching…" with results that didn't match the box.
+    const requestId = (claimedGroupRequestRef.current += 1)
     if (claimedGroupDebounceRef.current) clearTimeout(claimedGroupDebounceRef.current)
     claimedGroupDebounceRef.current = setTimeout(async () => {
       if (value.trim().length < 2) {
@@ -386,6 +398,7 @@ export function RegistrationForm({
         return
       }
       setClaimedGroupSearching(true)
+      if (claimedGroupRequestRef.current !== requestId) return
       const res = await searchMembersForLeaderLookup(value.trim())
       setClaimedGroupSearching(false)
       if (res.success) {
@@ -412,11 +425,30 @@ export function RegistrationForm({
     ...(includePayment ? [{ key: "payment", title: "Payment" }] : []),
   ]
   const isMultiStep = sections.length > 1
-  const currentSectionKey = sections[formStep - 1].key
+  // `sections` is derived from config *and* from answers given along the way, so it
+  // can shrink under the step we're standing on — confirming as a member who already
+  // has a DGroup drops that step. Every read goes through the clamp, and the
+  // navigation handlers below step relative to it, so a stale `formStep` heals on
+  // the next move instead of throwing mid-render.
+  const safeStep = clampFormStep(formStep, sections.length)
+  const currentSectionKey = sections[safeStep - 1].key
 
   function scrollToTop() {
     cardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
   }
+  // Scrolling in the same tick as `setFormStep` measured the *outgoing* step's
+  // geometry and then smooth-scrolled against a document whose height changed
+  // underneath the animation. Do it after the commit instead — and never on first
+  // paint, so the page doesn't scroll itself on load.
+  const didMountRef = React.useRef(false)
+  React.useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true
+      return
+    }
+    cardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+  }, [formStep])
+
 
   function handleReset() {
     setStep("form")
@@ -513,8 +545,7 @@ export function RegistrationForm({
         }
       }
     }
-    setFormStep((s) => s + 1)
-    scrollToTop()
+    setFormStep(clampFormStep(safeStep + 1, sections.length))
   }
 
   function handleEarlyReject() {
@@ -522,7 +553,6 @@ export function RegistrationForm({
     setCandidates(null)
     setStep("form")
     setFormStep(2)
-    scrollToTop()
   }
 
   function handleEarlyConfirm(match: MatchedMember) {
@@ -588,12 +618,10 @@ export function RegistrationForm({
     }
 
     setFormStep(2)
-    scrollToTop()
   }
 
   function handleBack() {
-    setFormStep((s) => s - 1)
-    scrollToTop()
+    setFormStep(clampFormStep(safeStep - 1, sections.length))
   }
 
   async function handleSubmit(e?: React.FormEvent | React.MouseEvent) {
@@ -1196,8 +1224,8 @@ export function RegistrationForm({
           <div className="flex items-center gap-1.5 mb-4">
             {sections.map((s, i) => {
               const n = i + 1
-              const done = n < formStep
-              const current = n === formStep
+              const done = n < safeStep
+              const current = n === safeStep
               return (
                 <React.Fragment key={s.key}>
                   <div
@@ -1223,9 +1251,9 @@ export function RegistrationForm({
             })}
           </div>
           <p className="text-xs text-muted-foreground">
-            Step {formStep} of {sections.length}
+            Step {safeStep} of {sections.length}
           </p>
-          <p className="text-lg font-semibold mt-0.5">{sections[formStep - 1].title}</p>
+          <p className="text-lg font-semibold mt-0.5">{sections[safeStep - 1].title}</p>
         </div>
       ) : (
         <CardHeader>
@@ -2119,7 +2147,7 @@ export function RegistrationForm({
           )}
 
           {/* ── Privacy Policy ── */}
-          {(!isMultiStep || formStep === sections.length) && (
+          {(!isMultiStep || safeStep === sections.length) && (
             <PrivacyPolicyCheckbox
               checked={privacyAccepted}
               onCheckedChange={setPrivacyAccepted}
@@ -2129,7 +2157,7 @@ export function RegistrationForm({
           {/* ── Navigation ── */}
           {isMultiStep ? (
             <div className="flex gap-2 pt-2">
-              {formStep > 1 ? (
+              {safeStep > 1 ? (
                 <Button type="button" variant="outline" onClick={handleBack}>
                   Back
                 </Button>
@@ -2138,7 +2166,7 @@ export function RegistrationForm({
                   <Link href={walkIn.backHref}>Back</Link>
                 </Button>
               ) : null}
-              {formStep < sections.length ? (
+              {safeStep < sections.length ? (
                 <Button type="button" className="flex-1" disabled={submitting} onClick={handleNext}>
                   {submitting ? "Please wait…" : "Next"}
                 </Button>

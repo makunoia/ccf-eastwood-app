@@ -7,6 +7,7 @@ import {
   IconUserCircle,
   IconUserEdit,
   IconUsersGroup,
+  IconWalk,
   type Icon,
 } from "@tabler/icons-react"
 import type { EventModuleType, FormKey } from "@/app/generated/prisma/client"
@@ -71,11 +72,24 @@ export const FORM_REGISTRY: Record<FormKey, FormMeta> = {
     key: "EventRegistration",
     label: "Registration Form",
     description:
-      "Public registration form and page — what Register and Walk-in ask for, plus the page banner & copy.",
+      "Public registration form and page — what someone signing up ahead of the day is asked for, plus the page banner & copy.",
     scope: "event",
     icon: IconClipboardList,
     publicPath: (eventId) => `/events/${eventId}/register`,
     themeFields: [],
+    usesDedicatedConfig: true,
+  },
+  EventWalkIn: {
+    key: "EventWalkIn",
+    label: "Walk-in Form",
+    description:
+      "The door surface — registers someone at the event and checks them in on submit.",
+    scope: "event",
+    icon: IconWalk,
+    publicPath: (eventId) => `/events/${eventId}/walk-in`,
+    // Unlike registration (which themes itself from the Event's own page columns),
+    // walk-in has no dedicated columns, so it takes the generic override path.
+    themeFields: ["logoUrl", "bannerUrl", "primaryColor", "title", "description"],
     usesDedicatedConfig: true,
   },
   EventCheckIn: {

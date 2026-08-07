@@ -169,6 +169,7 @@ enum FormKey {
   SmallGroupConfirmation
   EventRegistration
   EventCheckIn
+  EventWalkIn
   VolunteerSignUp
   VolunteerInfo
   VolunteerApproval
@@ -555,6 +556,14 @@ model Event {
   registrationPageBannerUrl   String?
   // Setup walkthrough — once the admin dismisses the dashboard setup checklist it stays hidden
   setupDismissedAt            DateTime?
+  // Which session the walk-in form registers people into (CCF-133). Chosen by the
+  // admin on the Walk-in form config rather than derived from the URL or resolved
+  // at request time, so the door can never silently target a different session
+  // than the one staff think they're running. Null — or a session that is closed —
+  // turns the walk-in form off. OneTime events never set it: they have no
+  // occurrences, and a walk-in there stamps `attendedAt` instead.
+  walkInOccurrenceId          String?
+  walkInOccurrence            EventOccurrence? @relation("EventWalkInSession", fields: [walkInOccurrenceId], references: [id], onDelete: SetNull)
   createdAt             DateTime            @default(now())
   updatedAt             DateTime            @updatedAt
 
@@ -580,6 +589,8 @@ model Event {
   // DGroup requests raised by someone ticking "I want to join a DGroup" on this
   // event's registration form (CCF-101).
   smallGroupRequests SmallGroupMemberRequest[] @relation("SmallGroupRequestSource")
+
+  @@index([walkInOccurrenceId])
 }
 
 model EventMinistry {
@@ -669,6 +680,10 @@ model EventOccurrence {
   attendees        OccurrenceAttendee[]
   subFacilitators  OccurrenceSubFacilitator[]
   clusterLinks     EventClusterEvent[]
+  // Back-reference for Event.walkInOccurrenceId. A list only because Prisma
+  // requires one; at most one event points here, since it is that event's own
+  // session.
+  walkInForEvents  Event[]                    @relation("EventWalkInSession")
 
   @@unique([eventId, date])
   @@index([seriesId])
