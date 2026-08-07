@@ -13,6 +13,13 @@ type OptionalPhonePHInputProps = Omit<PhonePHInputProps, "disabled"> & {
   noNumber: boolean
   onNoNumberChange: (noNumber: boolean) => void
   checkboxLabel?: string
+  /**
+   * Drop the "I don't have one" escape hatch — for a form that has made the
+   * number required (CCF-142). Rendered as a plain `PhonePHInput` rather than a
+   * disabled checkbox, so a mandatory field doesn't advertise an opt-out that
+   * won't work.
+   */
+  hideOptOut?: boolean
 }
 
 export function OptionalPhonePHInput({
@@ -22,6 +29,7 @@ export function OptionalPhonePHInput({
   onNoNumberChange,
   disabled,
   checkboxLabel = "I don't have a mobile number",
+  hideOptOut = false,
   id,
   ...props
 }: OptionalPhonePHInputProps) {
@@ -33,6 +41,10 @@ export function OptionalPhonePHInput({
       onChange("")
     }
     onNoNumberChange(isChecked)
+  }
+
+  if (hideOptOut) {
+    return <PhonePHInput id={id} value={value} onChange={onChange} disabled={disabled} {...props} />
   }
 
   return (

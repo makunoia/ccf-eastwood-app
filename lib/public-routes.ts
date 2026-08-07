@@ -23,10 +23,13 @@ export const PUBLIC_PREFIXES = [
  */
 export const PUBLIC_PATTERNS: RegExp[] = [
   /^\/events\/[^/]+\/register/,
+  // Walk-in is its own route, not a variant of /register — the pattern above does
+  // not cover it (CCF-133).
+  /^\/events\/[^/]+\/walk-in/,
   /^\/events\/[^/]+\/checkin/,
   /^\/events\/[^/]+\/catch-mech/,
-  // Cluster shared registration form (also serves the walk-in variant via
-  // ?checkin=1). The cluster workspace at /cluster/[id] stays authenticated.
+  // Cluster shared registration form, including its /walk-in child. The cluster
+  // workspace at /cluster/[id] stays authenticated.
   /^\/register\/c\/[^/]+/,
   /^\/join-small-group(\/|$)/,
   /^\/volunteer-approval\//,
@@ -52,8 +55,9 @@ export function clusterRegisterPath(publicToken: string): string {
 /**
  * The same form in door mode: ignores the open/close toggle and registration
  * window, reuses an existing registration instead of erroring, and checks the
- * person in on submit. `?checkin=1` is the flag the page reads.
+ * person in on submit. Its own route since CCF-133 — it used to be the shared
+ * form plus `?checkin=1`, which left it with no identity of its own.
  */
 export function clusterWalkInPath(publicToken: string): string {
-  return `${clusterRegisterPath(publicToken)}?checkin=1`
+  return `${clusterRegisterPath(publicToken)}/walk-in`
 }

@@ -21,6 +21,8 @@ export const FORM_SECTION_KEYS = [
 
 export const FORM_FIELD_KEYS = [
   "fieldNickname",
+  "fieldMobile",
+  "fieldEmail",
   "fieldLifeStage",
   "fieldGender",
   "fieldBirthDate",
@@ -30,6 +32,18 @@ export const FORM_FIELD_KEYS = [
   "fieldSchedule",
   "fieldMeetingPreference",
 ] as const
+
+/**
+ * The two fields that identify a person, of which at least one must always be
+ * collected (CCF-142).
+ *
+ * Mobile is the app's person key — member resolution at registration and the
+ * check-in/walk-in lookup are exact mobile matches — and email is the only
+ * fallback the dedup path in `lib/events/registration-core.ts` knows about. A
+ * form collecting neither would create a fresh Guest for someone who already
+ * exists, every single time, so the config layer refuses it.
+ */
+export const IDENTITY_FIELD_KEYS = ["fieldMobile", "fieldEmail"] as const
 
 /**
  * Modifiers on a section rather than sections in their own right. Persisted and
@@ -54,7 +68,60 @@ export const FORM_TOGGLE_KEYS: readonly FormToggleKey[] = [
   ...FORM_OPTION_KEYS,
 ]
 
-export type EventFormConfigData = Record<FormToggleKey, boolean>
+// ─── Required flags (CCF-142) ────────────────────────────────────────────────
+
+/**
+ * The Required companion of a field toggle, named `<fieldKey>Required` so the
+ * pairing is mechanical rather than a lookup table anyone could forget to
+ * extend. Only *fields* can be required — a section is a step, not an answer,
+ * and an option modifies a section rather than asking anything.
+ */
+export type FormRequiredKey = `${FormFieldKey}Required`
+
+export function requiredKeyFor(field: FormFieldKey): FormRequiredKey {
+  return `${field}Required`
+}
+
+export const FORM_REQUIRED_KEYS: readonly FormRequiredKey[] =
+  FORM_FIELD_KEYS.map(requiredKeyFor)
+
+/** Every boolean column persisted on an `EventFormConfig` row. */
+export const FORM_PERSISTED_KEYS: readonly (FormToggleKey | FormRequiredKey)[] = [
+  ...FORM_TOGGLE_KEYS,
+  ...FORM_REQUIRED_KEYS,
+]
+
+export type FormPersistedKey = FormToggleKey | FormRequiredKey
+
+export type EventFormConfigData = Record<FormToggleKey, boolean> &
+  Record<FormRequiredKey, boolean>
+
+/**
+ * What each toggle is worth when the column — or the whole row — is absent.
+ *
+ * Everything is off, *except* the two identity fields: they were hardcoded
+ * always-on before CCF-142 made them configurable, so an event that has never
+ * been configured has to keep asking for them. This is the one place that
+ * knowledge lives; `pickToggles` and `BARE_EVENT_FORM_CONFIG` both read it
+ * rather than restating `false`.
+ */
+export const FORM_TOGGLE_DEFAULTS: Record<FormPersistedKey, boolean> = Object.freeze(
+  Object.fromEntries(
+    FORM_PERSISTED_KEYS.map((k) => [
+      k,
+      (IDENTITY_FIELD_KEYS as readonly string[]).includes(k),
+    ])
+  ) as Record<FormPersistedKey, boolean>
+)
+
+/**
+ * Whether a config would still collect something that identifies a person.
+ * The guard `saveEventFormConfig` runs before writing, and what the builder
+ * checks before letting the last identity checkbox be unticked.
+ */
+export function hasIdentityField(config: Record<string, boolean>): boolean {
+  return IDENTITY_FIELD_KEYS.some((k) => config[k])
+}
 
 /**
  * The toggles whose being on proves an admin has actually configured a form.
@@ -66,17 +133,24 @@ export type EventFormConfigData = Record<FormToggleKey, boolean>
  * *system* can switch on by itself, and counting it would mark an untouched
  * event's form as set up.
  *
+ * The same reasoning rules out anything on by default (mobile and email): a
+ * toggle the system switches on for you can't be evidence that anyone chose it.
+ *
  * Derived from `FORM_TOGGLE_KEYS` rather than restated, so a toggle added later
  * counts as admin intent without anyone having to remember this list.
  */
 export const ADMIN_INTENT_TOGGLE_KEYS: readonly FormToggleKey[] = FORM_TOGGLE_KEYS.filter(
-  (key) => key !== "fieldNickname"
+  (key) => key !== "fieldNickname" && !FORM_TOGGLE_DEFAULTS[key]
 )
 
-/** Every toggle off — the "bare" form. */
-export const BARE_EVENT_FORM_CONFIG: EventFormConfigData = Object.freeze(
-  Object.fromEntries(FORM_TOGGLE_KEYS.map((k) => [k, false])) as EventFormConfigData,
-)
+/**
+ * The "bare" form: nothing optional, but still enough to tell people apart.
+ * That means name (never a toggle) plus mobile and email, per
+ * `FORM_TOGGLE_DEFAULTS` — everything else off, nothing required.
+ */
+export const BARE_EVENT_FORM_CONFIG: EventFormConfigData = Object.freeze({
+  ...FORM_TOGGLE_DEFAULTS,
+} as EventFormConfigData)
 
 // ─── Success screen copy (CCF-130) ───────────────────────────────────────────
 
@@ -175,6 +249,18 @@ export const FORM_FIELD_META: Record<FormFieldKey, FormToggleMeta> = {
     label: "Nickname",
     description:
       "What the person actually goes by. Used on their name badge and to find them at check-in, where a search matches nicknames as well as legal names.",
+  },
+  fieldMobile: {
+    key: "fieldMobile",
+    label: "Mobile Number",
+    description:
+      "How a returning person is matched to the record they already have, here and at check-in. Turning it off means this form can only recognise someone by email.",
+  },
+  fieldEmail: {
+    key: "fieldEmail",
+    label: "Email",
+    description:
+      "A second way to reach someone, and the fallback for recognising a returning person when their mobile number isn't collected.",
   },
   fieldLifeStage: {
     key: "fieldLifeStage",
@@ -285,9 +371,11 @@ const REGISTER_LAYOUT: readonly FormLayoutSection[] = [
   {
     key: "personal",
     title: "Personal Information",
-    description: "Name, mobile number and email are always collected.",
+    description: "Name is always collected. Everything else here is up to you.",
     fields: [
       "fieldNickname",
+      "fieldMobile",
+      "fieldEmail",
       "fieldLifeStage",
       "fieldBirthDate",
       "fieldAgeRange",
@@ -382,6 +470,18 @@ export function formLayoutFor(context: FormContext): readonly FormLayoutSection[
 }
 
 /**
+ * Every field this context's form can actually ask for.
+ *
+ * Check-in's shape is a strict subset — no name, nickname, birth date, mobile or
+ * email, because it identifies someone who already exists rather than collecting
+ * them from scratch. Required-field enforcement narrows to this list so a flag
+ * set on a field the context never renders can't make its form unsubmittable.
+ */
+export function fieldsForContext(context: FormContext): readonly FormFieldKey[] {
+  return formLayoutFor(context).flatMap((section) => section.fields)
+}
+
+/**
  * The section a field is nested under in this context, or null when it sits in the
  * always-on identity step. Derived from the layout so there is only one list.
  */
@@ -423,6 +523,9 @@ export type LegacyFormToggles = {
  *    in auto-assign mode (and candidates existed, which stays a runtime check).
  *  - Check-in only surfaced the DGroup prompt + matching profile; it never
  *    collected dietary, payment, or birth date.
+ *  - Mobile and email were rendered unconditionally, so they carry over on; no
+ *    field was ever mandatory, so every Required flag carries over off. Both come
+ *    from the spread of `BARE_EVENT_FORM_CONFIG` rather than being restated.
  */
 export function deriveLegacyEventFormConfig(
   legacy: LegacyFormToggles,
@@ -431,6 +534,7 @@ export function deriveLegacyEventFormConfig(
   const sg = legacy.formIncludeSmallGroup
   const isCheckIn = context === "CheckIn"
   return {
+    ...BARE_EVENT_FORM_CONFIG,
     sectionSmallGroup: sg,
     sectionBreakout: isCheckIn ? false : !legacy.autoAssignBreakout,
     sectionDietary: isCheckIn ? false : legacy.formIncludeDietary,

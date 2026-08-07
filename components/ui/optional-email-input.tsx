@@ -13,6 +13,11 @@ type OptionalEmailInputProps = Omit<InputProps, "type" | "disabled"> & {
   noEmail: boolean
   onNoEmailChange: (noEmail: boolean) => void
   checkboxLabel?: string
+  /**
+   * Drop the "I don't have one" escape hatch — for a form that has made the
+   * address required (CCF-142). See `OptionalPhonePHInput` for the reasoning.
+   */
+  hideOptOut?: boolean
 }
 
 export function OptionalEmailInput({
@@ -22,6 +27,7 @@ export function OptionalEmailInput({
   onNoEmailChange,
   disabled,
   checkboxLabel = "I don't have an email address",
+  hideOptOut = false,
   id,
   ...props
 }: OptionalEmailInputProps) {
@@ -33,6 +39,12 @@ export function OptionalEmailInput({
       onChange({ target: { value: "" } } as React.ChangeEvent<HTMLInputElement>)
     }
     onNoEmailChange(isChecked)
+  }
+
+  if (hideOptOut) {
+    return (
+      <Input id={id} type="email" value={value} onChange={onChange} disabled={disabled} {...props} />
+    )
   }
 
   return (

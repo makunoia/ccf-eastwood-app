@@ -20,6 +20,8 @@ import { BreakoutAssignmentSetting } from "@/components/forms/breakout-assignmen
 import { RegistrationPageTab } from "@/components/forms/registration-page-tab"
 import { RegistrationWindowSetting } from "@/components/forms/registration-window-setting"
 import { VolunteerInfoUrlCopier } from "@/components/forms/volunteer-info-url-copier"
+import { WalkInSessionSetting } from "@/components/forms/walk-in-session-setting"
+import { formatOccurrenceDate } from "@/lib/format/occurrence"
 
 function toDateInput(d: Date | null): string {
   return d ? d.toISOString().split("T")[0] : ""
@@ -57,6 +59,7 @@ export default async function EventFormEditorPage({
       registrationPageTitle: true,
       registrationPageDescription: true,
       registrationPageBannerUrl: true,
+      walkInOccurrenceId: true,
     },
   })
   if (!event) notFound()
@@ -69,14 +72,29 @@ export default async function EventFormEditorPage({
   }
 
   const cfg = await getFormConfig(meta.key, id)
-  const needsFormConfigs = meta.key === "EventRegistration" || meta.key === "EventCheckIn"
+  // Every key carrying dedicated config renders the per-context builder, so this
+  // reads the flag rather than naming keys — one less place to edit per new form.
+  const needsFormConfigs = !!meta.usesDedicatedConfig
   const formConfigs = needsFormConfigs ? await getEffectiveFormConfigs(id) : null
   const prerequisites = needsFormConfigs
     ? await eventFormPrerequisites(id, event.autoAssignBreakout)
     : undefined
   // Only the registration surfaces have a success screen to word (CCF-130).
   const successMessages =
-    meta.key === "EventRegistration" ? await getEventFormSuccessMessages(id) : null
+    meta.key === "EventRegistration" || meta.key === "EventWalkIn"
+      ? await getEventFormSuccessMessages(id)
+      : null
+
+  // Walk-in registers into one named session (CCF-133). OneTime events have no
+  // occurrences to pick from — a walk-in there stamps `attendedAt` instead.
+  const walkInOccurrences =
+    meta.key === "EventWalkIn" && event.type !== "OneTime"
+      ? await db.eventOccurrence.findMany({
+          where: { eventId: id },
+          orderBy: { date: "asc" },
+          select: { id: true, date: true, isOpen: true },
+        })
+      : []
 
   /**
    * MultiDay and Recurring check-in has no event-wide open state to own: each
@@ -161,11 +179,13 @@ export default async function EventFormEditorPage({
               initial={formConfigs}
               // Check-in is configured on its own Forms entry. Register and Walk-in
               // stay together here because they render the same component.
-              contexts={["Register", "WalkIn"]}
+              // Walk-in has its own Forms entry — this page configures only the
+              // form people fill in ahead of the day.
+              contexts={["Register"]}
               modules={modules}
               prerequisites={prerequisites}
               heading="Registration form"
-              blurb="Register and Walk-in are configured separately. Name, mobile number, and email are always collected — everything else is opt-in."
+              blurb="Name, mobile number, and email are always collected — everything else is opt-in. The walk-in form is configured on its own entry."
               successMessages={successMessages ?? undefined}
               eventName={event.name}
             />
@@ -184,6 +204,37 @@ export default async function EventFormEditorPage({
               }}
             />
           </section>
+        </div>
+      )}
+
+      {meta.key === "EventWalkIn" && (
+        <div className="flex flex-col gap-8">
+          {event.type !== "OneTime" && (
+            <WalkInSessionSetting
+              eventId={id}
+              sessionsHref={`/event/${id}/sessions`}
+              occurrences={walkInOccurrences.map((o) => ({
+                id: o.id,
+                label: formatOccurrenceDate(o.date),
+                isOpen: o.isOpen,
+              }))}
+              initial={event.walkInOccurrenceId}
+              sessionNoun={event.type === "Recurring" ? "session" : "day"}
+            />
+          )}
+          {formConfigs && (
+            <EventFormBuilder
+              eventId={id}
+              initial={formConfigs}
+              contexts={["WalkIn"]}
+              modules={modules}
+              prerequisites={prerequisites}
+              heading="Walk-in form"
+              blurb="What someone registering at the door is asked for — configured separately from the public form, so the door version can ask less."
+              successMessages={successMessages ?? undefined}
+              eventName={event.name}
+            />
+          )}
         </div>
       )}
 

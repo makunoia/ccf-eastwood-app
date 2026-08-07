@@ -1,9 +1,11 @@
 import {
+  BARE_EVENT_FORM_CONFIG,
   FORM_CONTEXTS,
   FORM_FIELD_KEYS,
   FORM_FIELD_META,
+  FORM_PERSISTED_KEYS,
   FORM_SECTION_META,
-  FORM_TOGGLE_KEYS,
+  IDENTITY_FIELD_KEYS,
   type EventFormConfigData,
   type FormFieldKey,
   type FormSectionKey,
@@ -59,8 +61,15 @@ export function mergeFormConfigs(
 export function unionFormConfigs(
   configs: (EventFormConfigData | undefined)[]
 ): EventFormConfigData {
+  // The union starts at the bare config rather than at all-false, because "no
+  // form at all" is not the same as "a form that asks nothing": an event with no
+  // config row still collects mobile and email (CCF-142), and an absent context
+  // resolves to exactly this floor on the read path.
   return Object.fromEntries(
-    FORM_TOGGLE_KEYS.map((key) => [key, configs.some((c) => c?.[key] === true)])
+    FORM_PERSISTED_KEYS.map((key) => [
+      key,
+      BARE_EVENT_FORM_CONFIG[key] === true || configs.some((c) => c?.[key] === true),
+    ])
   ) as EventFormConfigData
 }
 
@@ -79,12 +88,23 @@ function buildRows<K extends string>(
   })
 }
 
+/**
+ * Mobile and email are configurable fields (CCF-142) but not *responses*: they
+ * are the person's contact record, rendered in their own right at the top of the
+ * registrant detail page. Listing them here too would show every registrant the
+ * same value twice, and — since they default on — put an empty "Mobile Number —"
+ * row on every event that has never been configured.
+ */
+const RESPONSE_FIELD_KEYS = FORM_FIELD_KEYS.filter(
+  (key) => !(IDENTITY_FIELD_KEYS as readonly string[]).includes(key)
+)
+
 /** Personal-information answers, in the order the form asks them. */
 export function buildRegistrationFieldRows(
   config: EventFormConfigData,
   values: Partial<RegistrationFieldValues>
 ): ResponseRow[] {
-  return buildRows(FORM_FIELD_KEYS, config, values, (key) => FORM_FIELD_META[key].label)
+  return buildRows(RESPONSE_FIELD_KEYS, config, values, (key) => FORM_FIELD_META[key].label)
 }
 
 /** Section-level answers (dietary, payment, DGroup intent, household). */

@@ -13,8 +13,13 @@ import { MultiSelect } from "@/components/ui/multi-select"
 import { PrivacyPolicyCheckbox } from "@/components/ui/privacy-policy-checkbox"
 import {
   BARE_EVENT_FORM_CONFIG,
+  fieldsForContext,
   type EventFormConfigData,
 } from "@/lib/forms/context-config"
+import {
+  missingRequiredFields,
+  requiredFieldsMessage,
+} from "@/lib/forms/registration-payload"
 import {
   Select,
   SelectContent,
@@ -392,11 +397,13 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
     afterHousehold()
   }
 
-  // Walk-ins go to the real registration page in check-in mode rather than an
-  // embedded copy of the form — one form, one set of rules, no drift. It
-  // registers + checks in on submit and links back here when done.
-  const walkInHref = `/events/${eventId}/register?checkin=${occurrenceId ?? "1"}${
-    query.trim() ? `&mobile=${encodeURIComponent(query.trim())}` : ""
+  // Walk-ins go to the walk-in form rather than an embedded copy of this one —
+  // one form, one set of rules, no drift. It registers + checks in on submit and
+  // links back here when done. No occurrence in the link: the walk-in page reads
+  // the session an admin configured, so the door can't be pointed somewhere else
+  // by a stale URL (CCF-133).
+  const walkInHref = `/events/${eventId}/walk-in${
+    query.trim() ? `?mobile=${encodeURIComponent(query.trim())}` : ""
   }`
 
   // ── Lookup ───────────────────────────────────────────────────────────────
@@ -987,6 +994,12 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
 // MultiSelect for Language, Select for Meeting Preference / Life Stage / City —
 // intentionally the same components so the two forms stay visually in sync.
 
+/** The `*` on a required field's label — mirrors the registration form (CCF-142). */
+function RequiredMark({ on }: { on: boolean }) {
+  if (!on) return null
+  return <span className="text-destructive">*</span>
+}
+
 type ProfileFormProps = {
   eventId: string
   person: CheckinPerson
@@ -1046,6 +1059,14 @@ function ProfileForm({ eventId, person, existingProfile, lifeStages, ageRanges, 
       scheduleTimeStart: form.scheduleTimeStart || null,
       scheduleTimeEnd: form.scheduleTimeEnd || null,
     }
+    // The same check the server runs, so a required field fails while its input
+    // is still on screen rather than as an error banner after the save.
+    const missing = missingRequiredFields(cfg, data, fieldsForContext("CheckIn"))
+    if (missing.length > 0) {
+      setSaving(false)
+      setError(requiredFieldsMessage(missing))
+      return
+    }
     const result = await saveCheckinMatchingProfile(eventId, person, data)
     setSaving(false)
     if (result.success) {
@@ -1063,7 +1084,9 @@ function ProfileForm({ eventId, person, existingProfile, lifeStages, ageRanges, 
         <div className="space-y-1 text-center">
           <h2 className="text-2xl font-semibold tracking-tight">Tell us about yourself</h2>
           <p className="text-sm text-muted-foreground">
-            These optional details help us find the right DGroup for you.
+            {/* Can't promise "optional" any more — an admin can mark any of these
+                required (CCF-142), and the required ones carry their own `*`. */}
+            These details help us find the right DGroup for you.
           </p>
         </div>
 
@@ -1072,16 +1095,21 @@ function ProfileForm({ eventId, person, existingProfile, lifeStages, ageRanges, 
           {/* Life Stage */}
           {cfg.fieldLifeStage && lifeStages.length > 0 && (
             <div className="space-y-2">
-              <Label>Life Stage</Label>
+              <Label>
+                Life Stage <RequiredMark on={cfg.fieldLifeStageRequired} />
+              </Label>
               <Select
                 value={form.lifeStageId}
-                onValueChange={(v) => setForm((p) => ({ ...p, lifeStageId: v === "none" ? "" : v }))}
+                onValueChange={(v) => setForm((p) => ({ ...p, lifeStageId: v }))}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select life stage" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">No preference</SelectItem>
+                  {/* No opt-out item (CCF-143). It read "No preference" here
+                      rather than "Prefer not to say", but it was the same escape
+                      hatch — and a life stage is a fact about someone, not a
+                      preference. Unanswered is the placeholder state. */}
                   {lifeStages.map((ls) => (
                     <SelectItem key={ls.id} value={ls.id}>{ls.name}</SelectItem>
                   ))}
@@ -1093,7 +1121,9 @@ function ProfileForm({ eventId, person, existingProfile, lifeStages, ageRanges, 
           {/* Gender */}
           {cfg.fieldGender && (
           <div className="space-y-2">
-            <Label>Gender</Label>
+            <Label>
+              Gender <RequiredMark on={cfg.fieldGenderRequired} />
+            </Label>
             <div className="flex gap-3">
               {["Male", "Female"].map((g) => (
                 <button
@@ -1116,16 +1146,18 @@ function ProfileForm({ eventId, person, existingProfile, lifeStages, ageRanges, 
           {/* Age Range — configurable buckets (CCF-123) */}
           {cfg.fieldAgeRange && ageRanges.length > 0 && (
           <div className="space-y-2">
-            <Label htmlFor="ageRange">Age Range</Label>
+            <Label htmlFor="ageRange">
+              Age Range <RequiredMark on={cfg.fieldAgeRangeRequired} />
+            </Label>
             <Select
-              value={form.ageRangeBucketId || "_none"}
-              onValueChange={(v) => setForm((p) => ({ ...p, ageRangeBucketId: v === "_none" ? "" : v }))}
+              value={form.ageRangeBucketId}
+              onValueChange={(v) => setForm((p) => ({ ...p, ageRangeBucketId: v }))}
             >
               <SelectTrigger id="ageRange">
                 <SelectValue placeholder="Select age range" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="_none">Prefer not to say</SelectItem>
+                {/* No opt-out item — see the Life Stage select above. */}
                 {ageRanges.map((r) => (
                   <SelectItem key={r.id} value={r.id}>{r.label}</SelectItem>
                 ))}
@@ -1137,7 +1169,9 @@ function ProfileForm({ eventId, person, existingProfile, lifeStages, ageRanges, 
           {/* Language — shared MultiSelect, matching the registration & small-group forms */}
           {cfg.fieldLanguage && (
           <div className="space-y-2">
-            <Label>Primary Language</Label>
+            <Label>
+              Primary Language <RequiredMark on={cfg.fieldLanguageRequired} />
+            </Label>
             <MultiSelect
               options={LANGUAGE_OPTIONS}
               value={form.language}
@@ -1150,7 +1184,9 @@ function ProfileForm({ eventId, person, existingProfile, lifeStages, ageRanges, 
           {/* Meeting Preference */}
           {cfg.fieldMeetingPreference && (
           <div className="space-y-2">
-            <Label>Meeting Preference</Label>
+            <Label>
+              Meeting Preference <RequiredMark on={cfg.fieldMeetingPreferenceRequired} />
+            </Label>
             <Select
               value={form.meetingPreference}
               onValueChange={(v) => setForm((p) => ({ ...p, meetingPreference: v === "none" ? "" : v }))}
@@ -1171,7 +1207,9 @@ function ProfileForm({ eventId, person, existingProfile, lifeStages, ageRanges, 
           {/* Schedule */}
           {cfg.fieldSchedule && (
           <div className="space-y-2">
-            <Label>Best time to meet</Label>
+            <Label>
+              Best time to meet <RequiredMark on={cfg.fieldScheduleRequired} />
+            </Label>
             <ScheduleInput
               allowAny
               dayOfWeek={form.scheduleDayOfWeek}
@@ -1187,7 +1225,9 @@ function ProfileForm({ eventId, person, existingProfile, lifeStages, ageRanges, 
           {/* City */}
           {cfg.fieldWorkCity && (
           <div className="space-y-2">
-            <Label>Work / Home City</Label>
+            <Label>
+              Work / Home City <RequiredMark on={cfg.fieldWorkCityRequired} />
+            </Label>
             <Select
               value={form.workCity}
               onValueChange={(v) => setForm((p) => ({ ...p, workCity: v === "_none" ? "" : v }))}

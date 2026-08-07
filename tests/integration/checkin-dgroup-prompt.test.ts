@@ -23,7 +23,7 @@ import {
 const PHONE = "+63 917 123 4567"
 
 beforeEach(async () => {
-  await db.$executeRaw`TRUNCATE "Member", "Guest", "SmallGroup", "SmallGroupMemberRequest", "SchedulePreference", "Event", "EventRegistrant", "Volunteer", "VolunteerCommittee", "CommitteeRole" RESTART IDENTITY CASCADE`
+  await db.$executeRaw`TRUNCATE "Member", "Guest", "SmallGroup", "SmallGroupMemberRequest", "SchedulePreference", "Event", "EventRegistrant", "Volunteer", "VolunteerCommittee", "CommitteeRole", "EventFormConfig" RESTART IDENTITY CASCADE`
   vi.mocked(auth).mockResolvedValue({
     user: { id: "u1", role: "SuperAdmin" },
   } as unknown as Awaited<ReturnType<typeof auth>>)
@@ -33,8 +33,14 @@ afterAll(async () => {
   await db.$disconnect()
 })
 
-function seedEvent() {
-  return db.event.create({
+/**
+ * The Check-in profile step only writes fields its form config enables (CCF-142),
+ * and the DGroup prompt only appears when `sectionSmallGroup` is on — so an event
+ * running this flow always has a config row. Seeding one here matches what the
+ * kiosk actually renders; without it the profile writes are correctly no-ops.
+ */
+async function seedEvent() {
+  const event = await db.event.create({
     data: {
       name: "Sunday Service",
       type: "OneTime",
@@ -42,6 +48,21 @@ function seedEvent() {
       endDate: new Date("2026-08-01"),
     },
   })
+  await db.eventFormConfig.create({
+    data: {
+      eventId: event.id,
+      context: "CheckIn",
+      sectionSmallGroup: true,
+      fieldLifeStage: true,
+      fieldGender: true,
+      fieldAgeRange: true,
+      fieldLanguage: true,
+      fieldMeetingPreference: true,
+      fieldSchedule: true,
+      fieldWorkCity: true,
+    },
+  })
+  return event
 }
 
 function seedMember(overrides: Record<string, unknown> = {}) {

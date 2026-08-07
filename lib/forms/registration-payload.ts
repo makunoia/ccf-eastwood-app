@@ -1,6 +1,12 @@
+import type { FormContext } from "@/app/generated/prisma/client"
 import {
   FORM_FIELD_KEYS,
+  FORM_FIELD_META,
+  fieldsForContext,
+  parentSectionFor,
+  requiredKeyFor,
   type EventFormConfigData,
+  type FormFieldKey,
   type FormToggleKey,
 } from "./context-config"
 
@@ -31,6 +37,11 @@ import {
  */
 export const REGISTRANT_FIELD_GATES = {
   nickname: "fieldNickname",
+  // Mobile and email became configurable in CCF-142. A form that drops mobile
+  // falls back to email-only dedup in `registration-core.ts`, which is why the
+  // config layer refuses to let both be turned off.
+  mobileNumber: "fieldMobile",
+  email: "fieldEmail",
   birthMonth: "fieldBirthDate",
   birthYear: "fieldBirthDate",
   ageRangeBucketId: "fieldAgeRange",
@@ -84,6 +95,31 @@ export function sanitizeRegistrantPayload<T extends object>(
   return out as T
 }
 
+/**
+ * Like {@link sanitizeRegistrantPayload}, but **removes** a disabled field's key
+ * instead of emptying it.
+ *
+ * For the profile writers in `lib/people/matching-profile.ts`, which follow
+ * "absent key = leave alone, explicit null = clear". Handing them a null for a
+ * disabled field would erase whatever the person had already answered elsewhere
+ * — the `saveGuestMatchingProfile` data-loss bug, re-created. Dropping the key
+ * gives the same protection against a crafted POST without touching stored data.
+ */
+export function omitDisabledFields<T extends object>(
+  config: EventFormConfigData,
+  payload: T
+): Partial<T> {
+  const out = { ...payload } as Record<string, unknown>
+  for (const [field, toggle] of Object.entries(REGISTRANT_FIELD_GATES) as [
+    GatedRegistrantField,
+    FormToggleKey,
+  ][]) {
+    if (config[toggle]) continue
+    delete out[field]
+  }
+  return out as Partial<T>
+}
+
 /** Per-person household fields carry the same demographic gates. */
 const HOUSEHOLD_MEMBER_GATES = [
   "nickname",
@@ -92,6 +128,16 @@ const HOUSEHOLD_MEMBER_GATES = [
   "gender",
   "ageRangeBucketId",
 ] as const satisfies readonly GatedRegistrantField[]
+
+/**
+ * The field toggles a household member's answers can be required against —
+ * derived from the gates above so the two can't drift. Mobile and email are
+ * absent by construction: the sub-form only asks the primary registrant for
+ * contact details.
+ */
+export const HOUSEHOLD_MEMBER_FIELD_KEYS: readonly FormFieldKey[] = Array.from(
+  new Set(HOUSEHOLD_MEMBER_GATES.map((f) => REGISTRANT_FIELD_GATES[f]))
+) as FormFieldKey[]
 
 export function sanitizeHouseholdMember<T extends object>(
   config: EventFormConfigData,
@@ -104,6 +150,102 @@ export function sanitizeHouseholdMember<T extends object>(
     out[field] = null
   }
   return out as T
+}
+
+// ─── Required fields (CCF-142) ───────────────────────────────────────────────
+
+/**
+ * The payload keys that carry each field's answer. A field counts as answered
+ * only when **every** key listed is filled in.
+ *
+ * Two deliberate asymmetries with `REGISTRANT_FIELD_GATES`, which maps the other
+ * direction and lists every key a field owns:
+ *  - Birth date wants both halves — a year without a month is not an answer.
+ *  - Schedule wants only the day. The time window is genuinely optional ("any
+ *    time" is a real answer, and `ScheduleInput` renders it as one), so demanding
+ *    it would make a required schedule unanswerable for anyone with open
+ *    availability.
+ */
+const REQUIRED_FIELD_PAYLOAD = {
+  fieldNickname: ["nickname"],
+  fieldMobile: ["mobileNumber"],
+  fieldEmail: ["email"],
+  fieldLifeStage: ["lifeStageId"],
+  fieldGender: ["gender"],
+  fieldBirthDate: ["birthMonth", "birthYear"],
+  fieldAgeRange: ["ageRangeBucketId"],
+  fieldWorkCity: ["workCity"],
+  fieldLanguage: ["language"],
+  fieldSchedule: ["scheduleDayOfWeek"],
+  fieldMeetingPreference: ["meetingPreference"],
+} as const satisfies Record<FormFieldKey, readonly string[]>
+
+/**
+ * Whether a payload value counts as given.
+ *
+ * Explicitly not a falsy check: `scheduleDayOfWeek` is 0 for Sunday, and a
+ * truthiness test would read that as unanswered and reject every Sunday.
+ */
+function isAnswered(value: unknown): boolean {
+  if (value === null || value === undefined || value === "") return false
+  if (Array.isArray(value)) return value.length > 0
+  return true
+}
+
+/**
+ * The enabled-and-required fields this payload leaves blank.
+ *
+ * Required is meaningful only on an enabled field: a flag left set on a field the
+ * admin has since switched off is ignored here rather than cleared on write, so
+ * switching the field back on restores the configuration that was there before.
+ *
+ * `only` narrows the check to a subset — the household sub-form asks for a
+ * handful of demographics, not the whole registrant payload.
+ */
+export function missingRequiredFields(
+  config: EventFormConfigData,
+  payload: Record<string, unknown>,
+  only?: readonly FormFieldKey[]
+): FormFieldKey[] {
+  const candidates = only ?? FORM_FIELD_KEYS
+  return candidates.filter((field) => {
+    if (!config[field]) return false
+    if (!config[requiredKeyFor(field)]) return false
+    return !REQUIRED_FIELD_PAYLOAD[field].every((key) => isAnswered(payload[key]))
+  })
+}
+
+/**
+ * The fields this submission was actually asked for.
+ *
+ * Enabling a field isn't the same as putting it in front of someone: the four
+ * matching fields live inside the DGroup step, which only opens for a person who
+ * says they're looking for a group. Requiring one of those would otherwise make
+ * the form unsubmittable for everyone who answers "I'm already in one" — they'd
+ * be blocked on a question the form never showed them.
+ *
+ * Derived from `parentSectionFor` rather than a second list of which fields hang
+ * off the DGroup step, so the layout stays the only place that knows.
+ */
+export function askedFieldsFor(
+  context: FormContext,
+  payload: Record<string, unknown>
+): FormFieldKey[] {
+  return fieldsForContext(context).filter((field) => {
+    if (parentSectionFor(field, context) !== "sectionSmallGroup") return true
+    return payload.wantsSmallGroup === true
+  })
+}
+
+/** Field keys as the labels the builder shows, for use in an error message. */
+export function requiredFieldLabels(fields: readonly FormFieldKey[]): string {
+  return fields.map((f) => FORM_FIELD_META[f].label).join(", ")
+}
+
+/** The user-facing error for {@link missingRequiredFields}, in the builder's own labels. */
+export function requiredFieldsMessage(fields: readonly FormFieldKey[]): string {
+  if (fields.length === 1) return `${requiredFieldLabels(fields)} is required.`
+  return `These are required: ${requiredFieldLabels(fields)}.`
 }
 
 /**

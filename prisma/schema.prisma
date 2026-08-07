@@ -169,6 +169,7 @@ enum FormKey {
   SmallGroupConfirmation
   EventRegistration
   EventCheckIn
+  EventWalkIn
   VolunteerSignUp
   VolunteerInfo
   VolunteerApproval
@@ -555,6 +556,14 @@ model Event {
   registrationPageBannerUrl   String?
   // Setup walkthrough — once the admin dismisses the dashboard setup checklist it stays hidden
   setupDismissedAt            DateTime?
+  // Which session the walk-in form registers people into (CCF-133). Chosen by the
+  // admin on the Walk-in form config rather than derived from the URL or resolved
+  // at request time, so the door can never silently target a different session
+  // than the one staff think they're running. Null — or a session that is closed —
+  // turns the walk-in form off. OneTime events never set it: they have no
+  // occurrences, and a walk-in there stamps `attendedAt` instead.
+  walkInOccurrenceId          String?
+  walkInOccurrence            EventOccurrence? @relation("EventWalkInSession", fields: [walkInOccurrenceId], references: [id], onDelete: SetNull)
   createdAt             DateTime            @default(now())
   updatedAt             DateTime            @updatedAt
 
@@ -580,6 +589,8 @@ model Event {
   // DGroup requests raised by someone ticking "I want to join a DGroup" on this
   // event's registration form (CCF-101).
   smallGroupRequests SmallGroupMemberRequest[] @relation("SmallGroupRequestSource")
+
+  @@index([walkInOccurrenceId])
 }
 
 model EventMinistry {
@@ -669,6 +680,10 @@ model EventOccurrence {
   attendees        OccurrenceAttendee[]
   subFacilitators  OccurrenceSubFacilitator[]
   clusterLinks     EventClusterEvent[]
+  // Back-reference for Event.walkInOccurrenceId. A list only because Prisma
+  // requires one; at most one event points here, since it is that event's own
+  // session.
+  walkInForEvents  Event[]                    @relation("EventWalkInSession")
 
   @@unique([eventId, date])
   @@index([seriesId])
@@ -1190,9 +1205,19 @@ model EventFormConfig {
   // sectionFamily + familySpouseOnly / sectionFamily alone = full household).
   familySpouseOnly  Boolean @default(false)
 
-  // Field toggles — inputs inside Personal Information.
-  // Name + mobile/email are always collected and have no toggle.
+  // Field toggles — inputs inside Personal Information. Name is the only thing
+  // always collected; everything else, mobile and email included, is a toggle.
+  //
+  // Mobile and email default to ON (CCF-142) because they were hardcoded
+  // always-on before they became configurable, so an existing row — and a
+  // missing row, via FORM_TOGGLE_DEFAULTS — keeps collecting both. At least one
+  // of the two must stay on: mobile is the app's person key (member resolution
+  // and walk-in/check-in lookup are exact mobile matches) and email is the only
+  // fallback. Enforced in `saveEventFormConfig`, not by a DB constraint, since
+  // the pair spans two columns on a row the builder writes one toggle at a time.
   fieldNickname          Boolean @default(false)
+  fieldMobile            Boolean @default(true)
+  fieldEmail             Boolean @default(true)
   fieldLifeStage         Boolean @default(false)
   fieldGender            Boolean @default(false)
   fieldBirthDate         Boolean @default(false)
@@ -1201,6 +1226,25 @@ model EventFormConfig {
   fieldLanguage          Boolean @default(false)
   fieldSchedule          Boolean @default(false)
   fieldMeetingPreference Boolean @default(false)
+
+  // Per-field Required flags (CCF-142). One `<fieldKey>Required` column per field
+  // toggle above, so the config stays a flat Record<key, boolean> — the shape
+  // every read, copy and validation helper already iterates.
+  //
+  // Required is only meaningful for an enabled field: a flag left set on a field
+  // that is later switched off is ignored on read rather than cleared on write,
+  // so switching the field back on restores what the admin had configured.
+  fieldNicknameRequired          Boolean @default(false)
+  fieldMobileRequired            Boolean @default(false)
+  fieldEmailRequired             Boolean @default(false)
+  fieldLifeStageRequired         Boolean @default(false)
+  fieldGenderRequired            Boolean @default(false)
+  fieldBirthDateRequired         Boolean @default(false)
+  fieldAgeRangeRequired          Boolean @default(false)
+  fieldWorkCityRequired          Boolean @default(false)
+  fieldLanguageRequired          Boolean @default(false)
+  fieldScheduleRequired          Boolean @default(false)
+  fieldMeetingPreferenceRequired Boolean @default(false)
 
   // Copy shown under "Welcome, <name>!" on the success screen (CCF-130). Null
   // falls back to the built-in default — the stock copy invites people to bring a

@@ -20,6 +20,7 @@ import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { formatOccurrenceDate } from "@/lib/format/occurrence"
 import { PageActions, PageHeader, type PageAction } from "@/components/page-header"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import {
@@ -108,16 +109,6 @@ type SeriesFormState = {
   title: string
   startDate: string
   endDate: string
-}
-
-function formatOccurrenceDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-PH", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC",
-  })
 }
 
 function formatDateRange(startIso: string, endIso: string): string {

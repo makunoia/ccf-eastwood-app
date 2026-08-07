@@ -29,13 +29,14 @@ export function PublicFormShell({
     <div className="relative min-h-svh bg-muted">
       {bannerUrl && (
         <>
+          {/* Decorative and viewport-sized — never a hit target. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={bannerUrl}
             alt=""
-            className="fixed inset-0 h-full w-full object-cover"
+            className="pointer-events-none fixed inset-0 h-full w-full object-cover"
           />
-          <div className="fixed inset-0 bg-black/50" />
+          <div className="pointer-events-none fixed inset-0 bg-black/50" />
         </>
       )}
 

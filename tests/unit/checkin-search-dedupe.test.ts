@@ -224,9 +224,9 @@ describe("searchCheckinByName – nicknames", () => {
   })
 })
 
-// ── Walk-in now redirects to the registration page ────────────────────────────
+// ── Walk-in is its own form and its own route (CCF-133) ──────────────────────
 
-describe("checkin-board – walk-in redirect", () => {
+describe("checkin-board – walk-in link", () => {
   const board = readFileSync(
     join(process.cwd(), "app/events/[id]/checkin/checkin-board.tsx"),
     "utf8"
@@ -236,40 +236,40 @@ describe("checkin-board – walk-in redirect", () => {
     expect(board).not.toContain("RegistrationForm")
   })
 
-  it("links walk-ins to the registration page in check-in mode", () => {
-    expect(board).toContain("/register?checkin=")
+  it("links walk-ins to the walk-in route", () => {
+    expect(board).toContain("`/events/${eventId}/walk-in")
   })
 
-  it("passes the occurrence id so the walk-in is checked into the right session", () => {
-    expect(board).toContain('`/events/${eventId}/register?checkin=${occurrenceId ?? "1"}')
+  it("no longer carries the occurrence in the link", () => {
+    // Regression pin for the split: the session is configured on the walk-in
+    // form now, so a stale or hand-edited URL cannot re-aim the door.
+    expect(board).not.toContain("?checkin=")
   })
 })
 
-describe("register page – walk-in mode", () => {
+describe("register page – pre-registration only", () => {
   const page = readFileSync(join(process.cwd(), "app/events/[id]/register/page.tsx"), "utf8")
 
-  it("reads the checkin search param", () => {
-    expect(page).toContain("searchParams")
-    expect(page).toContain("checkin")
+  it("redirects the old walk-in URL instead of rendering it", () => {
+    // `?checkin=` is on kiosk bookmarks and possibly printed material.
+    expect(page).toContain("redirect(`/events/${id}/walk-in")
   })
 
-  it("hands the walk-in config to the shared registration form", () => {
-    expect(page).toContain("walkIn={walkIn}")
+  it("no longer renders a walk-in", () => {
+    expect(page).not.toContain("walkIn={walkIn}")
+    expect(page).not.toContain('"WalkIn"')
   })
 
-  it("does not show the closed-form screen to a walk-in at the door", () => {
-    // The gate may combine the manual toggle with the Opens/Closes window, but the
-    // `&& !walkIn` carve-out must remain so a kiosk walk-in is never blocked.
-    expect(page).toContain(") && !walkIn) return <FormClosed />")
+  it("applies the closed-form gate unconditionally", () => {
+    // The `&& !walkIn` carve-out is gone: this page is only ever the form people
+    // fill in ahead of the day, and walk-in owns its own switch.
+    expect(page).toContain("if (!formConfig.isOpen || !withinWindow) return <FormClosed />")
   })
 
-  it("only offers breakout groups whose facilitator has checked in", () => {
-    // The last argument is the facilitator gate: on for a walk-in, off for the
-    // public form. `tests/integration/breakout-availability.test.ts` pins what
-    // the gate actually does; this just pins that the kiosk still opts into it.
-    expect(page).toContain(
-      "fetchBreakoutAvailability(event.id, walkIn?.occurrenceId ?? null, !!walkIn)"
-    )
+  it("offers every breakout group, not just ones whose facilitator arrived", () => {
+    // The last argument is the facilitator gate — off here, on at the door.
+    // `tests/integration/breakout-availability.test.ts` pins what it does.
+    expect(page).toContain("fetchBreakoutAvailability(event.id, null, false)")
   })
 
   it("explains an empty breakout list instead of dropping the step", () => {
@@ -277,5 +277,36 @@ describe("register page – walk-in mode", () => {
     // when every group was held back by the facilitator gate.
     expect(page).toContain("resolveBreakoutNotice(")
     expect(page).toContain("breakoutNotice={breakoutNotice}")
+  })
+})
+
+describe("walk-in page – the door surface", () => {
+  const page = readFileSync(join(process.cwd(), "app/events/[id]/walk-in/page.tsx"), "utf8")
+
+  it("reuses the shared registration form rather than a second copy", () => {
+    expect(page).toContain("RegistrationForm")
+    expect(page).toContain('from "../register/registration-form"')
+  })
+
+  it("reads its own form config, not the registration form's", () => {
+    expect(page).toContain('getFormConfig("EventWalkIn", id)')
+  })
+
+  it("never consults the registration window", () => {
+    // Closing pre-registration the night before must not close the door.
+    expect(page).not.toContain("isWithinRegistrationWindow")
+    expect(page).not.toContain("registrationStart")
+  })
+
+  it("takes the session from configuration, never from the URL", () => {
+    expect(page).toContain("event.walkInOccurrence")
+    // `mobile` is the only search param it reads — no `checkin` to hand-edit.
+    // (The string "checkin" still appears in the back-link to the board.)
+    expect(page).toContain("searchParams: Promise<{ mobile?: string }>")
+    expect(page).not.toMatch(/checkin\?:/)
+  })
+
+  it("only offers breakout groups whose facilitator has checked in", () => {
+    expect(page).toContain("fetchBreakoutAvailability(event.id, occurrenceId, true)")
   })
 })

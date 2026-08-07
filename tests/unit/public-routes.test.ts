@@ -18,10 +18,10 @@ describe("isPublicPath", () => {
       expect(isPublicPath("/register/c/abc123")).toBe(true)
     })
 
-    it("allows the cluster walk-in variant with query-string params", () => {
-      // The proxy matches on pathname only; the ?checkin=1&mobile= params the
-      // check-in board appends must not be part of the match.
-      expect(isPublicPath("/register/c/abc123")).toBe(true)
+    it("allows the cluster walk-in route and tolerates query-string params", () => {
+      // The proxy matches on pathname only; the ?mobile= param the check-in
+      // board appends must not be part of the match.
+      expect(isPublicPath("/register/c/abc123/walk-in")).toBe(true)
       expect(isPublicPath("/register/c/tok-with-dashes_and_underscores")).toBe(true)
     })
 
@@ -29,7 +29,7 @@ describe("isPublicPath", () => {
       // The shortcut on the check-in board is built from these, so a change to
       // either shape has to keep landing on a path the proxy lets through.
       expect(clusterRegisterPath("abc123")).toBe("/register/c/abc123")
-      expect(clusterWalkInPath("abc123")).toBe("/register/c/abc123?checkin=1")
+      expect(clusterWalkInPath("abc123")).toBe("/register/c/abc123/walk-in")
       expect(isPublicPath(new URL(clusterWalkInPath("abc123"), "http://x").pathname)).toBe(
         true
       )
@@ -52,6 +52,10 @@ describe("isPublicPath", () => {
   describe("per-event public forms", () => {
     it.each([
       "/events/evt_1/register",
+      // Regression (CCF-133): walk-in is its own route now. The /register
+      // pattern does not cover it, so a missing entry would bounce every
+      // walk-in at the door to /login — invisible to signed-in QA.
+      "/events/evt_1/walk-in",
       "/events/evt_1/checkin",
       "/events/evt_1/checkin/occ_1",
       "/events/evt_1/catch-mech",

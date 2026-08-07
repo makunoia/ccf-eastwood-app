@@ -5,11 +5,26 @@ import { CheckIcon, ChevronRightIcon, CircleIcon } from "lucide-react"
 import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
+import { scheduleBodyPointerEventsRelease } from "@/lib/dom/release-body-pointer-events"
 
+// Modal menus lock the body the same way Select does, so they can strand the lock
+// when unmounted mid-close — see lib/dom/release-body-pointer-events.ts (CCF-145).
 function DropdownMenu({
+  onOpenChange,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Root>) {
-  return <DropdownMenuPrimitive.Root data-slot="dropdown-menu" {...props} />
+  React.useEffect(() => scheduleBodyPointerEventsRelease, [])
+
+  return (
+    <DropdownMenuPrimitive.Root
+      data-slot="dropdown-menu"
+      onOpenChange={(open) => {
+        onOpenChange?.(open)
+        if (!open) scheduleBodyPointerEventsRelease()
+      }}
+      {...props}
+    />
+  )
 }
 
 function DropdownMenuPortal({

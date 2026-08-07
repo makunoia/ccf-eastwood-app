@@ -44,7 +44,10 @@ export function MultiSelect({
         : `${value.length} selected`
 
   return (
-    <DropdownMenu>
+    // Non-modal: an inline form field has no business locking body scroll or
+    // pointer events, and nesting a modal menu inside an already-modal Sheet or
+    // Drawer is the layer stacking that strands the lock (CCF-145).
+    <DropdownMenu modal={false}>
       <DropdownMenuTrigger
         disabled={disabled}
         className={cn(
