@@ -5,11 +5,28 @@ import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react"
 import { Select as SelectPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
+import { scheduleBodyPointerEventsRelease } from "@/lib/dom/release-body-pointer-events"
 
+// Radix Select always locks the body while its content is open and gives no way to
+// opt out, so it's the primitive most likely to leave the lock behind when a step
+// change unmounts it mid-close. Release on every close and on unmount — see
+// lib/dom/release-body-pointer-events.ts (CCF-145).
 function Select({
+  onOpenChange,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Root>) {
-  return <SelectPrimitive.Root data-slot="select" {...props} />
+  React.useEffect(() => scheduleBodyPointerEventsRelease, [])
+
+  return (
+    <SelectPrimitive.Root
+      data-slot="select"
+      onOpenChange={(open) => {
+        onOpenChange?.(open)
+        if (!open) scheduleBodyPointerEventsRelease()
+      }}
+      {...props}
+    />
+  )
 }
 
 function SelectGroup({
