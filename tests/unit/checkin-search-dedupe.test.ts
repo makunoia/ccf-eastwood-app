@@ -321,7 +321,7 @@ describe("walk-in page – the door surface", () => {
   it("shows headcounts to staff and withholds them from everyone else", () => {
     // This route is public — being *meant* for the door is not the same as being
     // reachable only from it, so the counts hang off a session. The behavioural
-    // half of this lives in tests/integration/breakout-occupancy-visibility.ts;
+    // half of this lives in tests/integration/breakout-occupancy-visibility.test.ts;
     // asserted here too because the strip is a single call that is easy to drop
     // while refactoring the page, and nothing else on this page would notice.
     expect(page).toContain("isEventStaffViewer()")
