@@ -128,9 +128,23 @@ describe("buildClusterExportColumns", () => {
   it("covers every form toggle that gathers data", () => {
     // Everything a registration form can ask for should be exportable — this
     // fails loudly when a new toggle ships without a matching column.
+    //
+    // Mobile and email are the exception: they became toggles in CCF-142, but
+    // they were already *core* columns (`toggle: null`, always exported) because
+    // they're the contact record rather than a form answer. Gating them on the
+    // toggle would drop the column for an event that stopped collecting one,
+    // hiding numbers already on the person's record.
     const covered = new Set(CLUSTER_EXPORT_COLUMNS.map((c) => c.toggle).filter(Boolean))
+    const coreExported = new Set<string>(["fieldMobile", "fieldEmail"])
     const gathering: FormToggleKey[] = [...FORM_FIELD_KEYS, ...FORM_SECTION_KEYS]
-    expect(gathering.filter((key) => !covered.has(key))).toEqual([])
+    expect(
+      gathering.filter((key) => !covered.has(key) && !coreExported.has(key))
+    ).toEqual([])
+
+    // …and those two really are exported, unconditionally.
+    for (const key of ["mobile", "email"]) {
+      expect(CLUSTER_EXPORT_COLUMNS.find((c) => c.key === key)?.toggle).toBeNull()
+    }
   })
 
   it("defaults to every offered column", () => {

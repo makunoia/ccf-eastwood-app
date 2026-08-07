@@ -43,8 +43,15 @@ import {
   seriesContainsDate,
 } from "@/lib/events/occurrence-series"
 import { isWithinRegistrationWindow } from "@/lib/events/registration-window"
+import { fieldsForContext } from "@/lib/forms/context-config"
 import { getEffectiveFormConfig } from "@/lib/forms/context-config-server"
 import {
+  HOUSEHOLD_MEMBER_FIELD_KEYS,
+  askedFieldsFor,
+  missingRequiredFields,
+  omitDisabledFields,
+  requiredFieldLabels,
+  requiredFieldsMessage,
   resolveBreakoutSelection,
   sanitizeHouseholdMember,
   sanitizeRegistrantPayload,
@@ -601,6 +608,16 @@ export async function createRegistrant(
     // unsanitised value by accident.
     const formConfig = await getEffectiveFormConfig(eventId, walkIn ? "WalkIn" : "Register")
     Object.assign(parsed.data, sanitizeRegistrantPayload(formConfig, parsed.data))
+    // Required fields are checked *after* sanitizing, so a value submitted for a
+    // disabled field can't satisfy a stale required flag on that same field.
+    const missing = missingRequiredFields(
+      formConfig,
+      parsed.data,
+      askedFieldsFor(walkIn ? "WalkIn" : "Register", parsed.data)
+    )
+    if (missing.length > 0) {
+      return { success: false, error: requiredFieldsMessage(missing) }
+    }
     // A submitted breakout pick counts only where the picker is offered. Auto-assign
     // runs off a null selection, so it is unaffected.
     const breakoutPick = resolveBreakoutSelection(formConfig, selectedBreakoutGroupId)
@@ -1784,6 +1801,22 @@ export async function createHouseholdRegistration(
     ),
   }
 
+  // …and the same Required flags. Reported against the household as a whole
+  // rather than per person: the sub-form is one screen, and naming which of
+  // three children is missing a birth year is more precision than the message
+  // can carry usefully.
+  const missingHousehold = household.members.flatMap((m) =>
+    missingRequiredFields(householdConfig, m, HOUSEHOLD_MEMBER_FIELD_KEYS)
+  )
+  if (missingHousehold.length > 0) {
+    return {
+      success: false,
+      error: `Every household member needs: ${requiredFieldLabels(
+        Array.from(new Set(missingHousehold))
+      )}.`,
+    }
+  }
+
   // The primary goes through the normal path so the registration window, the
   // volunteer guard, dedup, breakout assignment and walk-in check-in all apply
   // exactly as they do for a solo registration.
@@ -2278,6 +2311,14 @@ export async function addHouseholdMemberAtCheckin(
     return { success: false, error: "This event isn't collecting household details." }
   }
   const person = sanitizeHouseholdMember(checkinConfig, parsed.data)
+  const missingPerson = missingRequiredFields(
+    checkinConfig,
+    person,
+    HOUSEHOLD_MEMBER_FIELD_KEYS
+  )
+  if (missingPerson.length > 0) {
+    return { success: false, error: requiredFieldsMessage(missingPerson) }
+  }
 
   try {
     const subject = await db.eventRegistrant.findFirst({
@@ -2504,6 +2545,10 @@ async function isCheckinSubject(eventId: string, person: CheckinPerson): Promise
  * event attendance instead of a session: the admin actions call `requireWrite()`,
  * which no unauthenticated kiosk can satisfy, so calling them from here failed
  * every save with "Not authenticated."
+ *
+ * Like the registration paths, it enforces the Check-in form config server-side.
+ * It previously read no config at all, so a crafted POST could write a profile
+ * field this event's check-in form never asks for.
  */
 export async function saveCheckinMatchingProfile(
   eventId: string,
@@ -2518,11 +2563,27 @@ export async function saveCheckinMatchingProfile(
     if (!(await isCheckinSubject(eventId, person))) {
       return { success: false, error: "Not registered for this event." }
     }
+
+    // `omitDisabledFields`, not `sanitizeRegistrantPayload`: the profile writers
+    // treat an explicit null as "clear this column", so nulling a disabled field
+    // here would erase an answer the person gave somewhere else. Dropping the key
+    // blocks the crafted POST and leaves stored data alone.
+    const checkinConfig = await getEffectiveFormConfig(eventId, "CheckIn")
+    const profile = omitDisabledFields(checkinConfig, parsed.data)
+    const missing = missingRequiredFields(
+      checkinConfig,
+      profile,
+      fieldsForContext("CheckIn")
+    )
+    if (missing.length > 0) {
+      return { success: false, error: requiredFieldsMessage(missing) }
+    }
+
     if ("guestId" in person) {
-      await applyGuestMatchingProfile(person.guestId, parsed.data)
+      await applyGuestMatchingProfile(person.guestId, profile)
       revalidatePath(`/guests/${person.guestId}`)
     } else {
-      await applyMemberMatchingProfile(person.memberId, parsed.data)
+      await applyMemberMatchingProfile(person.memberId, profile)
       revalidatePath(`/members/${person.memberId}`)
     }
     return { success: true, data: undefined }

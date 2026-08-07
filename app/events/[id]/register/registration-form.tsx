@@ -8,9 +8,17 @@ import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import {
   BARE_EVENT_FORM_CONFIG,
+  formLayoutFor,
   resolveSuccessMessage,
   type EventFormConfigData,
+  type FormFieldKey,
 } from "@/lib/forms/context-config"
+import {
+  askedFieldsFor,
+  missingRequiredFields,
+  requiredFieldsMessage,
+} from "@/lib/forms/registration-payload"
+import type { FormContext } from "@/app/generated/prisma/client"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -47,8 +55,8 @@ import {
   registerForCluster,
   type ClusterEventRegistrationResult,
 } from "@/app/(dashboard)/events/cluster-actions"
-import { clampFormStep } from "@/lib/forms/step-navigation"
 import { searchMembersForLeaderLookup } from "@/app/(dashboard)/guests/actions"
+import { clampFormStep } from "@/lib/forms/step-navigation"
 import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
 import { FAMILY_ROLES, FAMILY_ROLE_LABELS, type FamilyRoleValue } from "@/lib/validations/family"
 import {
@@ -265,6 +273,16 @@ function FormShell({
   return <Card className={className} {...props} />
 }
 
+/**
+ * The `*` next to a required field's label (CCF-142), matching how First and
+ * Last Name have always marked themselves. Renders nothing when the field is
+ * optional, so an all-optional form looks exactly as it did before.
+ */
+function RequiredMark({ on }: { on: boolean }) {
+  if (!on) return null
+  return <span className="text-destructive">*</span>
+}
+
 export function RegistrationForm({
   eventId,
   eventName = "",
@@ -284,6 +302,7 @@ export function RegistrationForm({
     () => ({ ...BARE_EVENT_FORM_CONFIG, ...config }),
     [config]
   )
+  const formContext: FormContext = walkIn ? "WalkIn" : "Register"
   const includeSmallGroup = cfg.sectionSmallGroup
   const includeDietary = cfg.sectionDietary
   const includePayment = cfg.sectionPayment
@@ -300,8 +319,12 @@ export function RegistrationForm({
     birthMonth: walkIn?.prefill.birthMonth ?? "",
     birthYear: walkIn?.prefill.birthYear ?? "",
   })
-  const [noMobile, setNoMobile] = React.useState(false)
-  const [noEmail, setNoEmail] = React.useState(false)
+  // A field this form doesn't collect starts out as "they don't have one", so the
+  // member-lookup branches below (which read `!noMobile && form.mobileNumber`)
+  // degrade to the identifier that *is* being asked for, rather than looking up
+  // against a value nobody was given the chance to enter.
+  const [noMobile, setNoMobile] = React.useState(!cfg.fieldMobile)
+  const [noEmail, setNoEmail] = React.useState(!cfg.fieldEmail)
   const [smallGroupIntent, setSmallGroupIntent] = React.useState<null | "wants" | "already_in">(null)
   const [claimedSmallGroupId, setClaimedSmallGroupId] = React.useState("")
   // "…and my DGroup is at another CCF satellite" — swaps the leader search for a
@@ -311,9 +334,9 @@ export function RegistrationForm({
   const [claimedGroupQuery, setClaimedGroupQuery] = React.useState("")
   const [claimedGroupResults, setClaimedGroupResults] = React.useState<Array<{ id: string; name: string; leaderName: string }>>([])
   const [claimedGroupSearching, setClaimedGroupSearching] = React.useState(false)
+  const claimedGroupDebounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   /** Monotonic id so only the newest leader lookup is allowed to set state. */
   const claimedGroupRequestRef = React.useRef(0)
-  const claimedGroupDebounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const satelliteOptions = React.useMemo(
     () =>
       EXTERNAL_SATELLITES_BY_REGION.flatMap(({ region, satellites }) =>
@@ -386,20 +409,20 @@ export function RegistrationForm({
   function handleClaimedGroupQueryChange(value: string) {
     setClaimedGroupQuery(value)
     setClaimedSmallGroupId("")
+    if (claimedGroupDebounceRef.current) clearTimeout(claimedGroupDebounceRef.current)
     // Debouncing alone doesn't order the replies: a slow lookup for an earlier
     // query can land after a fast one for the current query and overwrite it —
     // or clear the spinner the newer request is still using, which is what left
     // the step sitting on "Searching…" with results that didn't match the box.
     const requestId = (claimedGroupRequestRef.current += 1)
-    if (claimedGroupDebounceRef.current) clearTimeout(claimedGroupDebounceRef.current)
     claimedGroupDebounceRef.current = setTimeout(async () => {
       if (value.trim().length < 2) {
         setClaimedGroupResults([])
         return
       }
       setClaimedGroupSearching(true)
-      if (claimedGroupRequestRef.current !== requestId) return
       const res = await searchMembersForLeaderLookup(value.trim())
+      if (claimedGroupRequestRef.current !== requestId) return
       setClaimedGroupSearching(false)
       if (res.success) {
         setClaimedGroupResults(
@@ -433,9 +456,46 @@ export function RegistrationForm({
   const safeStep = clampFormStep(formStep, sections.length)
   const currentSectionKey = sections[safeStep - 1].key
 
-  function scrollToTop() {
-    cardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+  /**
+   * The current answers keyed the way the payload is, so the client can run the
+   * same `missingRequiredFields` the server does instead of a parallel list of
+   * checks that would drift from it.
+   *
+   * `noMobile`/`noEmail` collapse to empty here: someone who has ticked "I don't
+   * have one" has not answered, whatever is still sitting in state.
+   */
+  const answers = React.useMemo(
+    () => ({
+      nickname: form.nickname,
+      mobileNumber: noMobile ? "" : form.mobileNumber,
+      email: noEmail ? "" : form.email,
+      lifeStageId: form.lifeStageId,
+      birthMonth: form.birthMonth,
+      birthYear: form.birthYear,
+      ageRangeBucketId: form.ageRangeBucketId,
+      gender: form.gender,
+      language: form.language,
+      meetingPreference: form.meetingPreference,
+      workCity: form.workCity,
+      scheduleDayOfWeek: form.scheduleDayOfWeek,
+      wantsSmallGroup: smallGroupIntent === "wants",
+    }),
+    [form, noMobile, noEmail, smallGroupIntent]
+  )
+
+  /** Required fields left blank in one step, in the order they're rendered. */
+  function missingInSection(stepKey: string): FormFieldKey[] {
+    const layoutKey = stepKey === "personal" ? "personal" : "sectionSmallGroup"
+    if (stepKey !== "personal" && stepKey !== "smallgroup") return []
+    const section = formLayoutFor(formContext).find((s) => s.key === layoutKey)
+    if (!section) return []
+    return missingRequiredFields(
+      cfg,
+      answers,
+      section.fields.filter((f) => askedFieldsFor(formContext, answers).includes(f))
+    )
   }
+
   // Scrolling in the same tick as `setFormStep` measured the *outgoing* step's
   // geometry and then smooth-scrolled against a document whose height changed
   // underneath the animation. Do it after the commit instead — and never on first
@@ -449,12 +509,14 @@ export function RegistrationForm({
     cardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
   }, [formStep])
 
-
   function handleReset() {
     setStep("form")
     setForm({ ...defaultForm, lifeStageId: defaultLifeStageId })
-    setNoMobile(false)
-    setNoEmail(false)
+    // Back to the same starting point as a fresh mount, not to false — a form
+    // that doesn't collect mobile must not come back from a reset acting as
+    // though the next person simply hasn't typed their number in yet.
+    setNoMobile(!cfg.fieldMobile)
+    setNoEmail(!cfg.fieldEmail)
     setSmallGroupIntent(null)
     setClaimedSmallGroupId("")
     setClaimedGroupQuery("")
@@ -502,13 +564,31 @@ export function RegistrationForm({
       return
     }
 
-    if (formStep === 1) {
+    // The DGroup step's matching fields. Only reachable — and only checked —
+    // when the person said they're looking for a group; `askedFieldsFor` drops
+    // them otherwise.
+    if (currentSectionKey === "smallgroup") {
+      const missingGroup = missingInSection("smallgroup")
+      if (missingGroup.length > 0) {
+        toast.error(requiredFieldsMessage(missingGroup))
+        return
+      }
+    }
+
+    if (safeStep === 1) {
       if (!form.firstName.trim()) {
         toast.error("First name is required.")
         return
       }
       if (!form.lastName.trim()) {
         toast.error("Last name is required.")
+        return
+      }
+      // Same check the server runs, so a required field fails here — while the
+      // input is still on screen — rather than after the last step.
+      const missingPersonal = missingInSection("personal")
+      if (missingPersonal.length > 0) {
+        toast.error(requiredFieldsMessage(missingPersonal))
         return
       }
 
@@ -1296,7 +1376,9 @@ export function RegistrationForm({
 
               {cfg.fieldNickname && (
                 <div className="space-y-2">
-                  <Label htmlFor="nickname">Nickname</Label>
+                  <Label htmlFor="nickname">
+                    Nickname <RequiredMark on={cfg.fieldNicknameRequired} />
+                  </Label>
                   <Input
                     id="nickname"
                     value={form.nickname}
@@ -1306,44 +1388,57 @@ export function RegistrationForm({
                 </div>
               )}
 
-              <div className="space-y-2">
-                <Label htmlFor="mobileNumber">Mobile Number</Label>
-                <OptionalPhonePHInput
-                  id="mobileNumber"
-                  value={form.mobileNumber}
-                  onChange={(v) => set("mobileNumber", v)}
-                  noNumber={noMobile}
-                  onNoNumberChange={setNoMobile}
-                />
-              </div>
+              {cfg.fieldMobile && (
+                <div className="space-y-2">
+                  <Label htmlFor="mobileNumber">
+                    Mobile Number <RequiredMark on={cfg.fieldMobileRequired} />
+                  </Label>
+                  <OptionalPhonePHInput
+                    id="mobileNumber"
+                    value={form.mobileNumber}
+                    onChange={(v) => set("mobileNumber", v)}
+                    noNumber={noMobile}
+                    onNoNumberChange={setNoMobile}
+                    hideOptOut={cfg.fieldMobileRequired}
+                  />
+                </div>
+              )}
 
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <OptionalEmailInput
-                  id="email"
-                  value={form.email}
-                  onChange={(e) => set("email", e.target.value)}
-                  placeholder="juan@email.com"
-                  noEmail={noEmail}
-                  onNoEmailChange={setNoEmail}
-                />
-              </div>
+              {cfg.fieldEmail && (
+                <div className="space-y-2">
+                  <Label htmlFor="email">
+                    Email <RequiredMark on={cfg.fieldEmailRequired} />
+                  </Label>
+                  <OptionalEmailInput
+                    id="email"
+                    value={form.email}
+                    onChange={(e) => set("email", e.target.value)}
+                    placeholder="juan@email.com"
+                    noEmail={noEmail}
+                    onNoEmailChange={setNoEmail}
+                    hideOptOut={cfg.fieldEmailRequired}
+                  />
+                </div>
+              )}
 
               {/* Life Stage sits with the other demographics rather than in the
                   DGroup step: it describes the person, and ministries are scoped by
                   it, so it's worth asking whether or not they want a group. */}
               {cfg.fieldLifeStage && lifeStages.length > 0 && (
                 <div className="space-y-2">
-                  <Label htmlFor="lifeStage">Life Stage</Label>
+                  <Label htmlFor="lifeStage">
+                    Life Stage <RequiredMark on={cfg.fieldLifeStageRequired} />
+                  </Label>
                   <Select
-                    value={form.lifeStageId || "_none"}
-                    onValueChange={(v) => set("lifeStageId", v === "_none" ? "" : v)}
+                    value={form.lifeStageId}
+                    onValueChange={(v) => set("lifeStageId", v)}
                   >
                     <SelectTrigger id="lifeStage">
                       <SelectValue placeholder="Select life stage" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="_none">Prefer not to say</SelectItem>
+                      {/* No opt-out item (CCF-143). Unanswered is the placeholder
+                          state, which stores null exactly as the old sentinel did. */}
                       {lifeStages.map((ls) => (
                         <SelectItem key={ls.id} value={ls.id}>
                           {ls.name}
@@ -1356,6 +1451,7 @@ export function RegistrationForm({
 
               {cfg.fieldBirthDate && (
                 <BirthMonthYearInput
+                  required={cfg.fieldBirthDateRequired}
                   month={form.birthMonth}
                   year={form.birthYear}
                   onMonthChange={(v) => set("birthMonth", v)}
@@ -1365,16 +1461,18 @@ export function RegistrationForm({
 
               {cfg.fieldAgeRange && ageRanges.length > 0 && (
                 <div className="space-y-2">
-                  <Label htmlFor="ageRange">Age Range</Label>
+                  <Label htmlFor="ageRange">
+                    Age Range <RequiredMark on={cfg.fieldAgeRangeRequired} />
+                  </Label>
                   <Select
-                    value={form.ageRangeBucketId || "_none"}
-                    onValueChange={(v) => set("ageRangeBucketId", v === "_none" ? "" : v)}
+                    value={form.ageRangeBucketId}
+                    onValueChange={(v) => set("ageRangeBucketId", v)}
                   >
                     <SelectTrigger id="ageRange">
                       <SelectValue placeholder="Select age range" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="_none">Prefer not to say</SelectItem>
+                      {/* No opt-out item — see the Life Stage select above. */}
                       {ageRanges.map((r) => (
                         <SelectItem key={r.id} value={r.id}>
                           {r.label}
@@ -1387,7 +1485,9 @@ export function RegistrationForm({
 
               {cfg.fieldGender && (
                 <div className="space-y-2">
-                  <Label>Gender</Label>
+                  <Label>
+                    Gender <RequiredMark on={cfg.fieldGenderRequired} />
+                  </Label>
                   <div className="flex gap-3">
                     {["Male", "Female"].map((g) => (
                       <button
@@ -1627,7 +1727,9 @@ export function RegistrationForm({
 
                   {cfg.fieldLanguage && (
                     <div className="space-y-2">
-                      <Label>Primary Language</Label>
+                      <Label>
+                        Primary Language <RequiredMark on={cfg.fieldLanguageRequired} />
+                      </Label>
                       <MultiSelect
                         options={LANGUAGE_OPTIONS}
                         value={form.language}
@@ -1639,7 +1741,9 @@ export function RegistrationForm({
 
                   {cfg.fieldMeetingPreference && (
                     <div className="space-y-2">
-                      <Label>Meeting Preference</Label>
+                      <Label>
+                        Meeting Preference <RequiredMark on={cfg.fieldMeetingPreferenceRequired} />
+                      </Label>
                       <Select
                         value={form.meetingPreference}
                         onValueChange={(v) => set("meetingPreference", v === "none" ? "" : v)}
@@ -1659,7 +1763,9 @@ export function RegistrationForm({
 
                   {cfg.fieldSchedule && (
                     <div className="space-y-2">
-                      <Label>Best time to meet</Label>
+                      <Label>
+                        Best time to meet <RequiredMark on={cfg.fieldScheduleRequired} />
+                      </Label>
                       <ScheduleInput
                         allowAny
                         dayOfWeek={form.scheduleDayOfWeek}
@@ -1674,7 +1780,9 @@ export function RegistrationForm({
 
                   {cfg.fieldWorkCity && (
                     <div className="space-y-2">
-                      <Label>Work / Home City</Label>
+                      <Label>
+                        Work / Home City <RequiredMark on={cfg.fieldWorkCityRequired} />
+                      </Label>
                       <Select
                         value={form.workCity || "_none"}
                         onValueChange={(v) => set("workCity", v === "_none" ? "" : v)}
@@ -1985,15 +2093,15 @@ export function RegistrationForm({
 
                   {cfg.fieldAgeRange && ageRanges.length > 0 && (
                     <div className="space-y-2">
-                      <Label htmlFor={`hm-age-${index}`}>Age Range</Label>
+                      <Label htmlFor={`hm-age-${index}`}>
+                        Age Range <RequiredMark on={cfg.fieldAgeRangeRequired} />
+                      </Label>
                       <Select
-                        value={member.ageRangeBucketId || "_none"}
+                        value={member.ageRangeBucketId}
                         onValueChange={(v) =>
                           setHouseholdMembers((prev) =>
                             prev.map((m, i) =>
-                              i === index
-                                ? { ...m, ageRangeBucketId: v === "_none" ? "" : v }
-                                : m
+                              i === index ? { ...m, ageRangeBucketId: v } : m
                             )
                           )
                         }
@@ -2002,7 +2110,7 @@ export function RegistrationForm({
                           <SelectValue placeholder="Select age range" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="_none">Prefer not to say</SelectItem>
+                          {/* No opt-out item — see the Life Stage select above. */}
                           {ageRanges.map((r) => (
                             <SelectItem key={r.id} value={r.id}>
                               {r.label}

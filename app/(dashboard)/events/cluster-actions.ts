@@ -7,7 +7,12 @@ import { auth } from "@/lib/auth"
 import { canWrite } from "@/lib/permissions"
 import { isWithinRegistrationWindow } from "@/lib/events/registration-window"
 import { getClusterFormConfig } from "@/lib/forms/context-config-server"
-import { sanitizeRegistrantPayload } from "@/lib/forms/registration-payload"
+import {
+  askedFieldsFor,
+  missingRequiredFields,
+  requiredFieldsMessage,
+  sanitizeRegistrantPayload,
+} from "@/lib/forms/registration-payload"
 import {
   completeEventRegistration,
   findEventVolunteerConflict,
@@ -411,6 +416,16 @@ export async function registerForCluster(
     // writes happen once here, before any per-event call.
     const formConfig = await getClusterFormConfig(cluster.id, walkIn ? "WalkIn" : "Register")
     Object.assign(parsed.data, sanitizeRegistrantPayload(formConfig, parsed.data))
+    // Checked after sanitizing, so a value sent for a disabled field can't
+    // satisfy a stale required flag on that same field.
+    const missing = missingRequiredFields(
+      formConfig,
+      parsed.data,
+      askedFieldsFor(walkIn ? "WalkIn" : "Register", parsed.data)
+    )
+    if (missing.length > 0) {
+      return { success: false, error: requiredFieldsMessage(missing) }
+    }
 
     // ── Resolve the person ONCE ─────────────────────────────────────────────
     let person: PersonRef

@@ -188,7 +188,9 @@ describe("nickname — the surfaces read the toggle", () => {
 
   it("renders the input only when the field is on", () => {
     expect(form).toContain("{cfg.fieldNickname && (")
-    expect(form).toContain('<Label htmlFor="nickname">Nickname</Label>')
+    // The label carries a `*` marker since CCF-142, so match the field rather
+    // than the whole element.
+    expect(form).toMatch(/<Label htmlFor="nickname">\s*Nickname/)
   })
 
   it("withholds the value on submit when the field is off", () => {
@@ -202,8 +204,10 @@ describe("nickname — the surfaces read the toggle", () => {
       join(process.cwd(), "components/forms/event-form-builder.tsx"),
       "utf8"
     )
-    expect(builder).toContain(
-      `CheckIn: ["sectionPayment", "sectionBreakout", "fieldBirthDate", "fieldNickname"]`
-    )
+    // The list grew in CCF-142 (mobile and email are check-in-inapplicable too),
+    // so assert membership rather than the exact literal.
+    const checkInNotApplicable = /NOT_APPLICABLE[\s\S]*?CheckIn:\s*\[([\s\S]*?)\]/.exec(builder)
+    expect(checkInNotApplicable).not.toBeNull()
+    expect(checkInNotApplicable![1]).toContain(`"fieldNickname"`)
   })
 })

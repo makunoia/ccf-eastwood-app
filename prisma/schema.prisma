@@ -1205,9 +1205,19 @@ model EventFormConfig {
   // sectionFamily + familySpouseOnly / sectionFamily alone = full household).
   familySpouseOnly  Boolean @default(false)
 
-  // Field toggles — inputs inside Personal Information.
-  // Name + mobile/email are always collected and have no toggle.
+  // Field toggles — inputs inside Personal Information. Name is the only thing
+  // always collected; everything else, mobile and email included, is a toggle.
+  //
+  // Mobile and email default to ON (CCF-142) because they were hardcoded
+  // always-on before they became configurable, so an existing row — and a
+  // missing row, via FORM_TOGGLE_DEFAULTS — keeps collecting both. At least one
+  // of the two must stay on: mobile is the app's person key (member resolution
+  // and walk-in/check-in lookup are exact mobile matches) and email is the only
+  // fallback. Enforced in `saveEventFormConfig`, not by a DB constraint, since
+  // the pair spans two columns on a row the builder writes one toggle at a time.
   fieldNickname          Boolean @default(false)
+  fieldMobile            Boolean @default(true)
+  fieldEmail             Boolean @default(true)
   fieldLifeStage         Boolean @default(false)
   fieldGender            Boolean @default(false)
   fieldBirthDate         Boolean @default(false)
@@ -1216,6 +1226,25 @@ model EventFormConfig {
   fieldLanguage          Boolean @default(false)
   fieldSchedule          Boolean @default(false)
   fieldMeetingPreference Boolean @default(false)
+
+  // Per-field Required flags (CCF-142). One `<fieldKey>Required` column per field
+  // toggle above, so the config stays a flat Record<key, boolean> — the shape
+  // every read, copy and validation helper already iterates.
+  //
+  // Required is only meaningful for an enabled field: a flag left set on a field
+  // that is later switched off is ignored on read rather than cleared on write,
+  // so switching the field back on restores what the admin had configured.
+  fieldNicknameRequired          Boolean @default(false)
+  fieldMobileRequired            Boolean @default(false)
+  fieldEmailRequired             Boolean @default(false)
+  fieldLifeStageRequired         Boolean @default(false)
+  fieldGenderRequired            Boolean @default(false)
+  fieldBirthDateRequired         Boolean @default(false)
+  fieldAgeRangeRequired          Boolean @default(false)
+  fieldWorkCityRequired          Boolean @default(false)
+  fieldLanguageRequired          Boolean @default(false)
+  fieldScheduleRequired          Boolean @default(false)
+  fieldMeetingPreferenceRequired Boolean @default(false)
 
   // Copy shown under "Welcome, <name>!" on the success screen (CCF-130). Null
   // falls back to the built-in default — the stock copy invites people to bring a

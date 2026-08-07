@@ -6,10 +6,14 @@ import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import { canWrite } from "@/lib/permissions"
 import {
+  BARE_EVENT_FORM_CONFIG,
   FORM_CONTEXTS,
-  FORM_TOGGLE_KEYS,
+  FORM_PERSISTED_KEYS,
+  FORM_TOGGLE_DEFAULTS,
   SUCCESS_MESSAGE_MAX_LENGTH,
+  hasIdentityField,
   type EventFormConfigData,
+  type FormPersistedKey,
 } from "@/lib/forms/context-config"
 import type { FormContext } from "@/app/generated/prisma/client"
 
@@ -29,7 +33,7 @@ const contextSchema = z.enum(FORM_CONTEXTS)
 /** Every toggle is optional on input; anything omitted is left untouched. */
 const togglesSchema = z
   .object(
-    Object.fromEntries(FORM_TOGGLE_KEYS.map((k) => [k, z.boolean().optional()])) as Record<
+    Object.fromEntries(FORM_PERSISTED_KEYS.map((k) => [k, z.boolean().optional()])) as Record<
       keyof EventFormConfigData,
       z.ZodOptional<z.ZodBoolean>
     >
@@ -38,10 +42,47 @@ const togglesSchema = z
 
 export type EventFormConfigInput = z.infer<typeof togglesSchema>
 
+const SELECT_ALL_TOGGLES = Object.fromEntries(
+  FORM_PERSISTED_KEYS.map((k) => [k, true])
+) as Record<FormPersistedKey, true>
+
+/**
+ * Reject a write that would leave a form unable to recognise anyone.
+ *
+ * Checked against the *merged* result rather than the incoming partial, because
+ * the builder saves one toggle at a time: untick mobile and the payload says
+ * nothing at all about email, so only the stored row can answer whether anything
+ * identifying survives. A missing row defaults through `FORM_TOGGLE_DEFAULTS`,
+ * where both are on.
+ */
+async function identityGuardError(
+  where: { eventId_context: { eventId: string; context: FormContext } } | {
+    clusterId_context: { clusterId: string; context: FormContext }
+  },
+  incoming: Partial<EventFormConfigData>
+): Promise<string | null> {
+  const touchesIdentity = "fieldMobile" in incoming || "fieldEmail" in incoming
+  if (!touchesIdentity) return null
+
+  const stored = await db.eventFormConfig.findUnique({
+    where: where as never,
+    select: { fieldMobile: true, fieldEmail: true },
+  })
+  const merged = {
+    fieldMobile: incoming.fieldMobile ?? stored?.fieldMobile ?? FORM_TOGGLE_DEFAULTS.fieldMobile,
+    fieldEmail: incoming.fieldEmail ?? stored?.fieldEmail ?? FORM_TOGGLE_DEFAULTS.fieldEmail,
+  }
+  return hasIdentityField(merged)
+    ? null
+    : "Collect at least one of mobile number or email — otherwise returning people can't be recognised."
+}
+
 function revalidateFormSurfaces(eventId: string) {
   revalidatePath(`/event/${eventId}/forms/EventRegistration`)
+  revalidatePath(`/event/${eventId}/forms/EventWalkIn`)
   revalidatePath(`/event/${eventId}/settings`)
   revalidatePath(`/events/${eventId}/register`)
+  revalidatePath(`/events/${eventId}/walk-in`)
   revalidatePath(`/events/${eventId}/checkin`)
 }
 
@@ -76,13 +117,17 @@ export async function saveEventFormConfig(
     const event = await db.event.findUnique({ where: { id: eventId }, select: { id: true } })
     if (!event) return { success: false, error: "Event not found." }
 
+    const guardError = await identityGuardError(
+      { eventId_context: { eventId, context: parsedContext.data } },
+      data
+    )
+    if (guardError) return { success: false, error: guardError }
+
     await db.eventFormConfig.upsert({
       where: { eventId_context: { eventId, context: parsedContext.data } },
       create: { eventId, context: parsedContext.data, ...data },
-  revalidatePath(`/event/${eventId}/forms/EventWalkIn`)
       update: data,
     })
-  revalidatePath(`/events/${eventId}/walk-in`)
     revalidateFormSurfaces(eventId)
     return { success: true, data: undefined }
   } catch {
@@ -90,14 +135,14 @@ export async function saveEventFormConfig(
   }
 }
 
-/** Flip a single toggle — what the builder's switches call. */
+/** Flip a single toggle — what the builder's switches and Required controls call. */
 export async function setEventFormToggle(
   eventId: string,
   context: FormContext,
-  key: keyof EventFormConfigData,
+  key: FormPersistedKey,
   enabled: boolean
 ): Promise<ActionResult> {
-  if (!FORM_TOGGLE_KEYS.includes(key)) {
+  if (!FORM_PERSISTED_KEYS.includes(key)) {
     return { success: false, error: "Unknown form toggle." }
   }
   return saveEventFormConfig(eventId, context, { [key]: enabled })
@@ -125,16 +170,14 @@ export async function copyEventFormConfig(
   try {
     const source = await db.eventFormConfig.findUnique({
       where: { eventId_context: { eventId, context: parsedFrom.data } },
-      select: Object.fromEntries(FORM_TOGGLE_KEYS.map((k) => [k, true])) as Record<
-        keyof EventFormConfigData,
-        true
-      >,
+      select: SELECT_ALL_TOGGLES,
     })
-    // No source row means the source is bare — copying that clears the target.
-    const data: EventFormConfigData = (source ??
-      (Object.fromEntries(
-        FORM_TOGGLE_KEYS.map((k) => [k, false])
-      ) as EventFormConfigData)) as EventFormConfigData
+    // No source row means the source is bare — copying that resets the target to
+    // the defaults, which still collect mobile and email. Copying an all-false
+    // object here would let an unconfigured Register strip the target's identity
+    // fields, which the guard above exists to prevent.
+    const data: EventFormConfigData =
+      (source as EventFormConfigData | null) ?? { ...BARE_EVENT_FORM_CONFIG }
 
     await db.eventFormConfig.upsert({
       where: { eventId_context: { eventId, context: parsedTo.data } },
@@ -148,49 +191,6 @@ export async function copyEventFormConfig(
   }
 }
 
-// ─── Success screen copy (CCF-130) ───────────────────────────────────────────
-
-/**
- * Blank means "use the default", so an empty submission stores NULL rather than
- * an empty string — that keeps "unset" a single value instead of two that the
- * read path would have to treat alike.
- */
-const successMessageSchema = z
-  .string()
-  .max(
-    SUCCESS_MESSAGE_MAX_LENGTH,
-    `Keep the message under ${SUCCESS_MESSAGE_MAX_LENGTH} characters.`
-  )
-  .transform((v) => v.trim() || null)
-  .nullable()
-
-/** Set (or clear, with a blank string) one context's success screen sub copy. */
-export async function saveEventFormSuccessMessage(
-  eventId: string,
-  context: FormContext,
-  raw: string | null
-): Promise<ActionResult> {
-  const authError = await requireWrite()
-  if (authError) return { success: false, error: authError.error }
-
-  const parsedContext = contextSchema.safeParse(context)
-  if (!parsedContext.success) {
-    return { success: false, error: "Unknown form context." }
-  }
-  const parsed = successMessageSchema.safeParse(raw ?? "")
-  if (!parsed.success) {
-    return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
-  }
-
-  try {
-    const event = await db.event.findUnique({ where: { id: eventId }, select: { id: true } })
-    if (!event) return { success: false, error: "Event not found." }
-
-    await db.eventFormConfig.upsert({
-      where: { eventId_context: { eventId, context: parsedContext.data } },
-      create: { eventId, context: parsedContext.data, successMessage: parsed.data },
-      update: { successMessage: parsed.data },
-    })
 // ─── Walk-in session (CCF-133) ───────────────────────────────────────────────
 
 /**
@@ -244,6 +244,49 @@ export async function setWalkInOccurrence(
   }
 }
 
+// ─── Success screen copy (CCF-130) ───────────────────────────────────────────
+
+/**
+ * Blank means "use the default", so an empty submission stores NULL rather than
+ * an empty string — that keeps "unset" a single value instead of two that the
+ * read path would have to treat alike.
+ */
+const successMessageSchema = z
+  .string()
+  .max(
+    SUCCESS_MESSAGE_MAX_LENGTH,
+    `Keep the message under ${SUCCESS_MESSAGE_MAX_LENGTH} characters.`
+  )
+  .transform((v) => v.trim() || null)
+  .nullable()
+
+/** Set (or clear, with a blank string) one context's success screen sub copy. */
+export async function saveEventFormSuccessMessage(
+  eventId: string,
+  context: FormContext,
+  raw: string | null
+): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
+  const parsedContext = contextSchema.safeParse(context)
+  if (!parsedContext.success) {
+    return { success: false, error: "Unknown form context." }
+  }
+  const parsed = successMessageSchema.safeParse(raw ?? "")
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
+  }
+
+  try {
+    const event = await db.event.findUnique({ where: { id: eventId }, select: { id: true } })
+    if (!event) return { success: false, error: "Event not found." }
+
+    await db.eventFormConfig.upsert({
+      where: { eventId_context: { eventId, context: parsedContext.data } },
+      create: { eventId, context: parsedContext.data, successMessage: parsed.data },
+      update: { successMessage: parsed.data },
+    })
     revalidateFormSurfaces(eventId)
     return { success: true, data: undefined }
   } catch {
@@ -331,6 +374,12 @@ export async function saveClusterFormConfig(
     })
     if (!cluster) return { success: false, error: "Event cluster not found." }
 
+    const guardError = await identityGuardError(
+      { clusterId_context: { clusterId, context } },
+      data
+    )
+    if (guardError) return { success: false, error: guardError }
+
     await db.eventFormConfig.upsert({
       where: { clusterId_context: { clusterId, context } },
       create: { clusterId, context, ...data },
@@ -343,14 +392,14 @@ export async function saveClusterFormConfig(
   }
 }
 
-/** Flip a single toggle on a cluster's shared form — what the builder's switches call. */
+/** Flip a single toggle on a cluster's shared form — what the builder's controls call. */
 export async function setClusterFormToggle(
   clusterId: string,
   context: FormContext,
-  key: keyof EventFormConfigData,
+  key: FormPersistedKey,
   enabled: boolean
 ): Promise<ActionResult> {
-  if (!FORM_TOGGLE_KEYS.includes(key)) {
+  if (!FORM_PERSISTED_KEYS.includes(key)) {
     return { success: false, error: "Unknown form toggle." }
   }
   return saveClusterFormConfig(clusterId, context, { [key]: enabled })
@@ -374,16 +423,12 @@ export async function copyClusterFormConfig(
   try {
     const source = await db.eventFormConfig.findUnique({
       where: { clusterId_context: { clusterId, context: from } },
-      select: Object.fromEntries(FORM_TOGGLE_KEYS.map((k) => [k, true])) as Record<
-        keyof EventFormConfigData,
-        true
-      >,
+      select: SELECT_ALL_TOGGLES,
     })
-    // No source row means the source is bare — copying that clears the target.
-    const data: EventFormConfigData = (source ??
-      (Object.fromEntries(
-        FORM_TOGGLE_KEYS.map((k) => [k, false])
-      ) as EventFormConfigData)) as EventFormConfigData
+    // No source row means the source is bare — see the event-side copy for why
+    // that resets to the defaults rather than to all-false.
+    const data: EventFormConfigData =
+      (source as EventFormConfigData | null) ?? { ...BARE_EVENT_FORM_CONFIG }
 
     await db.eventFormConfig.upsert({
       where: { clusterId_context: { clusterId, context: to } },

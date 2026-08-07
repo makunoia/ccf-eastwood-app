@@ -7,9 +7,11 @@ import {
   IconCalendarTime,
   IconCash,
   IconDeviceLaptop,
+  IconDeviceMobile,
   IconFriends,
   IconHeart,
   IconLanguage,
+  IconMail,
   IconMapPin,
   IconMessage2,
   IconNumbers,
@@ -42,6 +44,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
@@ -51,12 +54,17 @@ import {
   FORM_CONTEXT_META,
   FORM_FIELD_META,
   FORM_OPTION_META,
-  FORM_TOGGLE_KEYS,
+  FORM_PERSISTED_KEYS,
+  IDENTITY_FIELD_KEYS,
   SUCCESS_MESSAGE_MAX_LENGTH,
   defaultSuccessMessage,
   formLayoutFor,
+  hasIdentityField,
+  requiredKeyFor,
   type EventFormConfigData,
+  type FormFieldKey,
   type FormLayoutSection,
+  type FormPersistedKey,
   type FormToggleKey,
 } from "@/lib/forms/context-config"
 import {
@@ -95,6 +103,8 @@ const TOGGLE_ICONS: Record<FormToggleKey | "personal", Icon> = {
   sectionPayment: IconCash,
   sectionFamily: IconFriends,
   fieldNickname: IconSignature,
+  fieldMobile: IconDeviceMobile,
+  fieldEmail: IconMail,
   fieldLifeStage: IconStairs,
   fieldGender: IconGenderBigender,
   fieldBirthDate: IconCake,
@@ -109,12 +119,19 @@ const TOGGLE_ICONS: Record<FormToggleKey | "personal", Icon> = {
 /**
  * Toggles that make no sense in a context. Check-in is an attendance surface — it
  * never takes payment and never lets someone re-pick their breakout group (it
- * shows the group they were already assigned), and its profile step has neither a
- * birth date nor a nickname input — it identifies someone who already exists
- * rather than collecting their details from scratch.
+ * shows the group they were already assigned), and its profile step has no birth
+ * date, nickname, mobile or email input — it identifies someone who already
+ * exists rather than collecting their details from scratch.
  */
 const NOT_APPLICABLE: Partial<Record<FormContext, FormToggleKey[]>> = {
-  CheckIn: ["sectionPayment", "sectionBreakout", "fieldBirthDate", "fieldNickname"],
+  CheckIn: [
+    "sectionPayment",
+    "sectionBreakout",
+    "fieldBirthDate",
+    "fieldNickname",
+    "fieldMobile",
+    "fieldEmail",
+  ],
 }
 
 /** Default tab order when a caller doesn't narrow it. */
@@ -134,7 +151,9 @@ const COPY_SOURCE: Partial<Record<FormContext, FormContext>> = {
 }
 
 function sameConfig(a: EventFormConfigData, b: EventFormConfigData): boolean {
-  return FORM_TOGGLE_KEYS.every((key) => a[key] === b[key])
+  // Required flags count: two contexts asking the same questions but insisting on
+  // different answers are not in sync.
+  return FORM_PERSISTED_KEYS.every((key) => a[key] === b[key])
 }
 
 export type EventFormConfigs = Record<FormContext, EventFormConfigData>
@@ -151,7 +170,7 @@ export function EventFormBuilder({
   contexts = CONTEXT_ORDER,
   modules,
   heading = "Registration form",
-  blurb = "Each surface is configured on its own, and listed in the order people see it. Name, mobile number, and email are always collected — everything else is opt-in.",
+  blurb = "Each surface is configured on its own, and listed in the order people see it. Name is always collected; everything else is opt-in, and anything you switch on can be made required.",
   notApplicable = [],
   prerequisites,
   successMessages,
@@ -218,7 +237,7 @@ export function EventFormBuilder({
     }
   }
 
-  async function handleToggle(context: FormContext, key: FormToggleKey) {
+  async function handleToggle(context: FormContext, key: FormPersistedKey) {
     const next = !configs[context][key]
     setPending(`${context}:${key}`)
     // Optimistic — reverted below if the write fails.
@@ -498,7 +517,7 @@ function SectionItem({
   context: FormContext
   config: EventFormConfigData
   pending: string | null
-  onToggle: (context: FormContext, key: FormToggleKey) => void
+  onToggle: (context: FormContext, key: FormPersistedKey) => void
   notApplicable?: readonly FormToggleKey[]
   prerequisites?: TogglePrerequisites
 }) {
@@ -600,6 +619,8 @@ function SectionItem({
                 context={context}
                 pending={pending}
                 onToggle={onToggle}
+                required={{ key: requiredKeyFor(key), value: config[requiredKeyFor(key)] }}
+                lockedReason={identityLockReason(key, config)}
                 warning={
                   enabled && config[key] ? prerequisiteFor(prerequisites, key, context) : null
                 }
@@ -610,6 +631,25 @@ function SectionItem({
       </AccordionContent>
     </AccordionItem>
   )
+}
+
+/**
+ * Why the last remaining identity field can't be unticked, or null when the row
+ * is free to toggle.
+ *
+ * The server refuses this write anyway, but an admin shouldn't have to try it to
+ * find out: the checkbox goes inert with the reason underneath instead of
+ * accepting a click that comes back as an error toast.
+ */
+function identityLockReason(
+  key: FormFieldKey,
+  config: EventFormConfigData
+): string | null {
+  if (!(IDENTITY_FIELD_KEYS as readonly string[]).includes(key)) return null
+  if (!config[key]) return null
+  // Would turning this one off leave anything identifying behind?
+  if (hasIdentityField({ ...config, [key]: false })) return null
+  return "Kept on because it's the only way this form can recognise someone who has registered before. Switch on the other one to free this up."
 }
 
 /**
@@ -634,34 +674,98 @@ function FieldRow({
   pending,
   onToggle,
   warning = null,
+  required,
+  lockedReason = null,
 }: {
   meta: { key: FormToggleKey; label: string; description: string }
   checked: boolean
   dimmed: boolean
   context: FormContext
   pending: string | null
-  onToggle: (context: FormContext, key: FormToggleKey) => void
+  onToggle: (context: FormContext, key: FormPersistedKey) => void
   warning?: string | null
+  /**
+   * Present only for fields — sections and options have no Required state. Null
+   * renders the row exactly as it did before Required existed.
+   */
+  required?: { key: FormPersistedKey; value: boolean }
+  /** Why this field can't be switched off, shown in place of nothing happening. */
+  lockedReason?: string | null
 }) {
   const id = `${context}-${meta.key}`
   return (
-    <div className={cn("flex items-start gap-3", dimmed && "opacity-60")}>
-      <Checkbox
-        id={id}
-        checked={checked}
-        onCheckedChange={() => onToggle(context, meta.key)}
-        disabled={pending === `${context}:${meta.key}`}
-        className="mt-0.5"
-      />
-      <label htmlFor={id} className="min-w-0 cursor-pointer">
-        <span className="block text-sm font-medium">{meta.label}</span>
-        <span className="block text-xs text-muted-foreground">{meta.description}</span>
-        {warning && (
-          <span className="mt-1 block">
-            <PrerequisiteNote message={warning} />
-          </span>
+    <div className={cn("space-y-1", dimmed && "opacity-60")}>
+      <div className="flex items-start gap-3">
+        <Checkbox
+          id={id}
+          checked={checked}
+          onCheckedChange={() => onToggle(context, meta.key)}
+          disabled={pending === `${context}:${meta.key}` || lockedReason !== null}
+          className="mt-0.5"
+        />
+        <label htmlFor={id} className="min-w-0 flex-1 cursor-pointer">
+          <span className="block text-sm font-medium">{meta.label}</span>
+          <span className="block text-xs text-muted-foreground">{meta.description}</span>
+          {lockedReason && (
+            <span className="mt-1 block text-xs text-muted-foreground">{lockedReason}</span>
+          )}
+          {warning && (
+            <span className="mt-1 block">
+              <PrerequisiteNote message={warning} />
+            </span>
+          )}
+        </label>
+
+        {/* Required is a second control rather than a third state on the first:
+            "off / optional / required" as one widget reads as a scale, and the
+            middle value is the one people misselect. Hidden while the field is
+            off — there is nothing to require yet. */}
+        {required && checked && (
+          <RequiredToggle
+            id={`${id}-required`}
+            value={required.value}
+            pending={pending === `${context}:${required.key}`}
+            label={`${meta.label} is required on ${FORM_CONTEXT_META[context].label}`}
+            onChange={() => onToggle(context, required.key)}
+          />
         )}
-      </label>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The per-field Required control (CCF-142).
+ *
+ * A switch rather than a second checkbox, so the two controls on a row can't be
+ * mistaken for a pair of equal options — the checkbox decides whether the
+ * question is asked at all, and this only has meaning once it is.
+ */
+function RequiredToggle({
+  id,
+  value,
+  pending,
+  label,
+  onChange,
+}: {
+  id: string
+  value: boolean
+  pending: boolean
+  label: string
+  onChange: () => void
+}) {
+  return (
+    <div className="flex shrink-0 items-center gap-2">
+      <Label
+        htmlFor={id}
+        className={cn(
+          "cursor-pointer text-xs font-normal",
+          value ? "text-foreground" : "text-muted-foreground"
+        )}
+      >
+        Required
+      </Label>
+      <Switch id={id} checked={value} onCheckedChange={onChange} disabled={pending} aria-label={label} />
     </div>
   )
 }

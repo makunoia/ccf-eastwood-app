@@ -3,9 +3,10 @@ import type { EventModuleType, FormContext } from "@/app/generated/prisma/client
 import {
   BARE_EVENT_FORM_CONFIG,
   FORM_CONTEXTS,
-  FORM_TOGGLE_KEYS,
+  FORM_PERSISTED_KEYS,
+  FORM_TOGGLE_DEFAULTS,
   type EventFormConfigData,
-  type FormToggleKey,
+  type FormPersistedKey,
 } from "./context-config"
 
 /**
@@ -14,15 +15,21 @@ import {
  * without pulling Prisma into the browser bundle.
  */
 
-const TOGGLE_SELECT = Object.fromEntries(FORM_TOGGLE_KEYS.map((k) => [k, true])) as Record<
-  FormToggleKey,
+const TOGGLE_SELECT = Object.fromEntries(FORM_PERSISTED_KEYS.map((k) => [k, true])) as Record<
+  FormPersistedKey,
   true
 >
 
+/**
+ * A stored row (or the absence of one) as a complete config.
+ *
+ * Missing values fall back to `FORM_TOGGLE_DEFAULTS`, not to `false` — that is
+ * what keeps mobile and email collected on an event nobody has configured.
+ */
 function pickToggles(row: Partial<EventFormConfigData> | null): EventFormConfigData {
   if (!row) return { ...BARE_EVENT_FORM_CONFIG }
   return Object.fromEntries(
-    FORM_TOGGLE_KEYS.map((k) => [k, row[k] ?? false])
+    FORM_PERSISTED_KEYS.map((k) => [k, row[k] ?? FORM_TOGGLE_DEFAULTS[k]])
   ) as EventFormConfigData
 }
 
