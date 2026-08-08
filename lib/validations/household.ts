@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { FAMILY_ROLES } from "./family"
+import { optionalBirthMonth, optionalBirthYear } from "./birth-date"
 
 /**
  * Household registration (CCF-122). One person fills the form and adds the rest
@@ -25,8 +26,8 @@ export const householdMemberSchema = z.object({
   lastName: z.string().min(1, "Last name is required").trim(),
   nickname: optionalTrimmed,
   role: z.enum(FAMILY_ROLES),
-  birthMonth: z.number().int().min(1).max(12).optional().nullable(),
-  birthYear: z.number().int().min(1900).max(2100).optional().nullable(),
+  birthMonth: optionalBirthMonth,
+  birthYear: optionalBirthYear,
   gender: z.enum(["Male", "Female"]).optional().nullable(),
   ageRangeBucketId: optionalTrimmed,
 })

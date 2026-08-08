@@ -1785,9 +1785,18 @@ export async function createHouseholdRegistration(
 > {
   const parsedHousehold = householdSchema.safeParse(householdRaw)
   if (!parsedHousehold.success) {
+    const issue = parsedHousehold.error.issues[0]
+    // The form repeats every field once per household member, so an unqualified
+    // "Please enter a 4-digit birth year…" leaves the person hunting for which
+    // row it came from. Name the member when the issue points at one.
+    const [scope, index] = issue?.path ?? []
+    const member =
+      scope === "members" && typeof index === "number" ? householdRaw.members?.[index] : undefined
+    const who = [member?.firstName, member?.lastName].filter(Boolean).join(" ").trim()
+    const message = issue?.message ?? "Invalid household details"
     return {
       success: false,
-      error: parsedHousehold.error.issues[0]?.message ?? "Invalid household details",
+      error: who ? `${who}: ${message}` : message,
     }
   }
   const parsedContext = walkIn ? "WalkIn" : "Register"
