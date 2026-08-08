@@ -144,6 +144,10 @@ function StatusBadge({
           className={cn(
             "inline-flex items-center gap-1 rounded-full transition-opacity hover:opacity-70 disabled:cursor-default",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+            // A badge-sized hit area is a miss on the tablets these sessions run
+            // from. Pad the target out and pull the same amount back off the
+            // margin, so the tap area grows without moving the badge.
+            "-m-2 p-2 xl:m-0 xl:p-0",
           )}
         >
           {badge}
@@ -178,6 +182,19 @@ function RemoveAttendeeButton({ onSelect }: { onSelect: () => void }) {
       <TooltipContent>Remove from session</TooltipContent>
     </Tooltip>
   )
+}
+
+/** Member / Guest / Volunteer — one badge, same three cases in the card and the table. */
+function TypeBadge({ attendee }: { attendee: AttendeeRow }) {
+  if (attendee.isVolunteer) {
+    return (
+      <Badge variant="outline" className="border-amber-400 text-amber-600">
+        Volunteer
+      </Badge>
+    )
+  }
+  if (attendee.isMember) return <Badge variant="secondary">Member</Badge>
+  return <Badge variant="outline">Guest</Badge>
 }
 
 // Volunteers link to the volunteer detail page; registrants to the registrant detail page.
@@ -377,7 +394,10 @@ export function SessionAttendeesTable({
     <div className="flex flex-col gap-6">
       {/* Derived from the same rows the table renders, so the counters move with an
           optimistic edit instead of trailing a server round-trip behind it. */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {/* Two-up until `lg`: the event workspace sidebar is still expanded at tablet
+          widths, and four tiles in the ~512px that leaves squeezes the uppercase
+          labels into two lines each. */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard
           label="Total"
           value={stats.totalCount}
@@ -411,47 +431,46 @@ export function SessionAttendeesTable({
           </TabsTrigger>
         </TabsList>
 
+        {/* Wraps rather than scrolls sideways: a filter you have to swipe to
+            discover is a filter nobody uses. Controls are also finger-sized below
+            `lg` and only shrink to the compact desktop height above it. */}
         {activeTab === "attendees" && (
-          <div className="space-y-2">
-            <div className="overflow-x-auto rounded-md border bg-muted/30 px-3 py-2">
-              <div className="flex min-w-max items-center gap-2">
-                <ToggleGroup
-                  type="single"
-                  value={typeFilter}
-                  onValueChange={(v) => setTypeFilter((v || "all") as TypeFilter)}
-                  className="gap-1"
-                >
-                  <ToggleGroupItem value="all" className="h-7 px-3 text-xs">
-                    All
-                  </ToggleGroupItem>
-                  <ToggleGroupItem value="member" className="h-7 px-3 text-xs">
-                    Members
-                  </ToggleGroupItem>
-                  <ToggleGroupItem value="guest" className="h-7 px-3 text-xs">
-                    Guests
-                  </ToggleGroupItem>
-                  <ToggleGroupItem value="volunteer" className="h-7 px-3 text-xs">
-                    Volunteers
-                  </ToggleGroupItem>
-                </ToggleGroup>
+          <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 px-3 py-2">
+            <ToggleGroup
+              type="single"
+              value={typeFilter}
+              onValueChange={(v) => setTypeFilter((v || "all") as TypeFilter)}
+              className="flex-wrap gap-1"
+            >
+              <ToggleGroupItem value="all" className="h-9 px-3 text-xs xl:h-7">
+                All
+              </ToggleGroupItem>
+              <ToggleGroupItem value="member" className="h-9 px-3 text-xs xl:h-7">
+                Members
+              </ToggleGroupItem>
+              <ToggleGroupItem value="guest" className="h-9 px-3 text-xs xl:h-7">
+                Guests
+              </ToggleGroupItem>
+              <ToggleGroupItem value="volunteer" className="h-9 px-3 text-xs xl:h-7">
+                Volunteers
+              </ToggleGroupItem>
+            </ToggleGroup>
 
-                {breakoutGroups.length > 0 && (
-                  <Select value={breakoutFilter} onValueChange={setBreakoutFilter}>
-                    <SelectTrigger className="h-7 w-40 text-xs">
-                      <SelectValue placeholder="Breakout group" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All groups</SelectItem>
-                      {breakoutGroups.map((bg) => (
-                        <SelectItem key={bg.id} value={bg.id}>
-                          {bg.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              </div>
-            </div>
+            {breakoutGroups.length > 0 && (
+              <Select value={breakoutFilter} onValueChange={setBreakoutFilter}>
+                <SelectTrigger className="h-9 w-full text-xs sm:w-44 xl:h-7 xl:w-40">
+                  <SelectValue placeholder="Breakout group" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All groups</SelectItem>
+                  {breakoutGroups.map((bg) => (
+                    <SelectItem key={bg.id} value={bg.id}>
+                      {bg.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
         )}
 
@@ -466,53 +485,63 @@ export function SessionAttendeesTable({
             </div>
           ) : (
             <>
-              {/* Mobile card list */}
-              <div className="sm:hidden divide-y rounded-lg border">
+              {/* Phone + tablet card list. `auto-fill` rather than a viewport
+                  breakpoint: the workspace sidebar is expanded at tablet widths, so
+                  a `sm:grid-cols-2` would split a ~460px column into two 200px cards
+                  and truncate every name. Columns appear only once the container can
+                  actually seat another 20rem card — which also means it adapts when
+                  the sidebar collapses. */}
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(20rem,1fr))] gap-2 xl:hidden">
                 {sortedAttendees.map((a) => (
-                  <div key={a.id} className="flex items-center gap-3 px-4 py-3">
-                    <div className="min-w-0 flex-1">
+                  <div key={a.id} className="rounded-lg border px-3 py-2.5">
+                    <div className="flex items-start gap-2">
                       <Link
                         href={attendeeHref(eventId, a)}
-                        className="truncate text-sm font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+                        // `block` is load-bearing: `truncate` sets overflow, which
+                        // an inline anchor ignores — a long name would push the
+                        // status control off the card instead of clipping.
+                        className="block min-w-0 flex-1 truncate text-sm font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
                       >
                         {a.name ?? <span className="text-muted-foreground italic">No name</span>}
                       </Link>
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {a.isVolunteer ? (
-                          <Badge variant="outline" className="border-amber-400 text-amber-600">
-                            Volunteer
-                          </Badge>
-                        ) : a.isMember ? (
-                          <Badge variant="secondary">Member</Badge>
-                        ) : (
-                          <Badge variant="outline">Guest</Badge>
+                      {/* Status and remove sit on the name's baseline row rather than
+                          in their own stacked column, so they stay aligned with each
+                          other however tall the meta line below wraps. */}
+                      <div className="flex shrink-0 items-center gap-1">
+                        <StatusBadge
+                          attendee={a}
+                          editable={canEdit && isAttendeeStatusEditable(a)}
+                          onSelect={(choice) => handleSetStatus(a, choice)}
+                        />
+                        {canEdit && (
+                          <RemoveAttendeeButton onSelect={() => setAttendeeToRemove(a)} />
                         )}
                       </div>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Breakout:{" "}
+                    </div>
+                    {/* One meta line instead of a badge row plus a breakout row plus
+                        a loose timestamp — same facts, a third of the height, so a
+                        full session fits in far fewer scrolls. Nothing wraps, so
+                        every card is exactly two lines and the check-in times line
+                        up down the right edge like a column. */}
+                    <div className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
+                      <TypeBadge attendee={a} />
+                      <span className="min-w-0 flex-1 truncate">
                         {a.breakoutGroupNames.length > 0 ? (
                           a.breakoutGroupNames.join(", ")
                         ) : (
                           <span className="italic">Unassigned</span>
                         )}
-                      </p>
+                      </span>
+                      <span className="shrink-0 tabular-nums">
+                        <span className="sr-only">Checked in at </span>
+                        {a.checkedInAtFormatted}
+                      </span>
                     </div>
-                    <div className="flex shrink-0 flex-col items-end gap-1">
-                      <StatusBadge
-                        attendee={a}
-                        editable={canEdit && isAttendeeStatusEditable(a)}
-                        onSelect={(choice) => handleSetStatus(a, choice)}
-                      />
-                      <span className="text-xs text-muted-foreground">{a.checkedInAtFormatted}</span>
-                    </div>
-                    {canEdit && (
-                      <RemoveAttendeeButton onSelect={() => setAttendeeToRemove(a)} />
-                    )}
                   </div>
                 ))}
               </div>
-              {/* Desktop table */}
-              <div className="hidden overflow-x-auto rounded-lg border sm:block">
+              {/* Desktop table — six columns need the width a sidebar-less viewport gives. */}
+              <div className="hidden overflow-x-auto rounded-lg border xl:block">
                 <Table>
                   <TableHeader className="bg-muted/50">
                     <TableRow>
@@ -562,20 +591,7 @@ export function SessionAttendeesTable({
                           />
                         </TableCell>
                         <TableCell>
-                          <div className="flex flex-wrap gap-1">
-                            {a.isVolunteer ? (
-                              <Badge
-                                variant="outline"
-                                className="border-amber-400 text-amber-600"
-                              >
-                                Volunteer
-                              </Badge>
-                            ) : a.isMember ? (
-                              <Badge variant="secondary">Member</Badge>
-                            ) : (
-                              <Badge variant="outline">Guest</Badge>
-                            )}
-                          </div>
+                          <TypeBadge attendee={a} />
                         </TableCell>
                         <TableCell className="text-muted-foreground">
                           {a.breakoutGroupNames.length > 0 ? (
@@ -626,18 +642,20 @@ export function SessionAttendeesTable({
                 </Select>
               </div>
 
-              {/* Mobile card list */}
-              <div className="sm:hidden divide-y rounded-lg border">
+              {/* Phone + tablet card list — the seven-column table below carries two
+                  interactive facilitator popovers and a capacity bar, none of which
+                  survive being squeezed into a tablet's content column. */}
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(22rem,1fr))] gap-2 xl:hidden">
                 {sortedBreakoutStats.map((bg) => (
-                  <div key={bg.id} className="space-y-2.5 px-4 py-3">
+                  <div key={bg.id} className="space-y-2.5 rounded-lg border px-3 py-2.5">
                     <Link
                       href={`/event/${eventId}/breakouts/${bg.id}`}
-                      className="text-sm font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 transition-colors hover:decoration-foreground"
+                      className="block truncate text-sm font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 transition-colors hover:decoration-foreground"
                     >
                       {bg.name}
                     </Link>
                     <div className="space-y-1.5">
-                      <div className="grid grid-cols-[4.5rem_1fr] items-start gap-2">
+                      <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-start gap-2">
                         <span className="pt-0.5 text-xs text-muted-foreground">Facilitator</span>
                         <FacilitatorCell
                           occurrenceId={occurrenceId}
@@ -651,7 +669,7 @@ export function SessionAttendeesTable({
                           volunteerOptions={volunteerOptions}
                         />
                       </div>
-                      <div className="grid grid-cols-[4.5rem_1fr] items-start gap-2">
+                      <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-start gap-2">
                         <span className="pt-0.5 text-xs text-muted-foreground">Co-Fac</span>
                         <FacilitatorCell
                           occurrenceId={occurrenceId}
@@ -666,29 +684,43 @@ export function SessionAttendeesTable({
                         />
                       </div>
                     </div>
-                    <div className="flex gap-5">
-                      <div>
-                        <p className="text-xs text-muted-foreground">New</p>
-                        <p className="text-sm font-semibold tabular-nums">{bg.newCount}</p>
+                    {/* Turnout and capacity share a boxed footer but stay visibly
+                        apart — same reason the table labels them as separate
+                        columns. "Here today" is who showed up; capacity is the
+                        roster. Equal thirds keep the numbers on a shared grid at
+                        any card width. */}
+                    <div className="rounded-md border bg-muted/30 px-3 py-2">
+                      {/* `nowrap` on the labels: a wrapped "Here today" pushes its
+                          figure down a line and the three numbers stop reading as a
+                          row, which is the only reason they are next to each other. */}
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <p className="whitespace-nowrap text-[11px] text-muted-foreground">New</p>
+                          <p className="text-sm font-semibold tabular-nums">{bg.newCount}</p>
+                        </div>
+                        <div>
+                          <p className="whitespace-nowrap text-[11px] text-muted-foreground">
+                            Returning
+                          </p>
+                          <p className="text-sm font-semibold tabular-nums">{bg.returneeCount}</p>
+                        </div>
+                        <div>
+                          <p className="whitespace-nowrap text-[11px] text-muted-foreground">
+                            Here today
+                          </p>
+                          <p className="text-sm font-semibold tabular-nums">{bg.totalCheckedIn}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Returning</p>
-                        <p className="text-sm font-semibold tabular-nums">{bg.returneeCount}</p>
+                      <div className="mt-2 border-t pt-2">
+                        <p className="mb-1 text-[11px] text-muted-foreground">Capacity</p>
+                        <CapacityCell occupancy={bg.occupancy} />
                       </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Here today</p>
-                        <p className="text-sm font-semibold tabular-nums">{bg.totalCheckedIn}</p>
-                      </div>
-                    </div>
-                    <div>
-                      <p className="mb-1 text-xs text-muted-foreground">Capacity</p>
-                      <CapacityCell occupancy={bg.occupancy} />
                     </div>
                   </div>
                 ))}
               </div>
               {/* Desktop table */}
-              <div className="hidden overflow-x-auto rounded-lg border sm:block">
+              <div className="hidden overflow-x-auto rounded-lg border xl:block">
                 <Table>
                   <TableHeader className="bg-muted/50">
                     <TableRow>
@@ -699,10 +731,13 @@ export function SessionAttendeesTable({
                           Labelling them apart is the whole point — an admin
                           reading "6" next to "8 / 12" must not take them for the
                           same number. */}
-                      <TableHead className="text-right">New</TableHead>
-                      <TableHead className="text-right">Returnees</TableHead>
-                      <TableHead className="text-right">Here today</TableHead>
-                      <TableHead>Capacity</TableHead>
+                      {/* Pinned narrow — two-digit counts don't need the room, and
+                          leaving it to the facilitator columns keeps names off a
+                          second line at the 1280px this table starts at. */}
+                      <TableHead className="w-14 text-right">New</TableHead>
+                      <TableHead className="w-20 text-right">Returnees</TableHead>
+                      <TableHead className="w-24 text-right">Here today</TableHead>
+                      <TableHead className="w-40">Capacity</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -801,13 +836,13 @@ export function SessionAttendeesTable({
 function PresenceCell({ name, present }: { name: string | null; present: boolean }) {
   if (!name) return <span className="text-xs text-muted-foreground">—</span>
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex min-w-0 items-center gap-1.5">
       {present ? (
         <CheckCircle2 className="size-3.5 shrink-0 text-green-500" />
       ) : (
         <XCircle className="size-3.5 shrink-0 text-muted-foreground/40" />
       )}
-      <span>{name}</span>
+      <span className="truncate text-sm">{name}</span>
     </div>
   )
 }
@@ -881,29 +916,45 @@ function FacilitatorCell({
     if (!next) setQuery("")
   }
 
+  // Below `xl` these triggers live inside a card and are tapped, not clicked: the
+  // row gets real vertical padding so it clears a fingertip, and the name is free
+  // to truncate rather than shove the "Sub" badge out of the card.
+  const triggerBase =
+    // `w-full` only below `xl`: in the card it fills the row so the whole line is
+    // tappable, but inside a table cell it would let the column squeeze the name
+    // into an ellipsis when the column had room to simply be wider.
+    "flex w-full items-center gap-1.5 rounded px-1 -mx-1 py-1.5 hover:bg-accent transition-colors text-left xl:w-auto xl:py-0"
+
   const trigger = subId ? (
     // Sub assigned — amber styled cell trigger
     <button
       type="button"
-      className="flex items-center gap-1.5 rounded px-1 -mx-1 hover:bg-accent transition-colors text-left"
+      className={triggerBase}
       aria-label="Reassign or remove sub-facilitator"
     >
       <ArrowLeftRight className="size-3.5 shrink-0 text-amber-500" />
-      <span className="text-sm">{subName}</span>
-      <Badge variant="outline" className="h-4 px-1 text-[10px] border-amber-400 text-amber-600">
+      <span className="truncate text-sm">{subName}</span>
+      <Badge
+        variant="outline"
+        className="h-4 shrink-0 px-1 text-[10px] border-amber-400 text-amber-600"
+      >
         Sub
       </Badge>
     </button>
   ) : (
-    // Absent, no sub — show original name with ❌ + subtle assign cue
+    // Absent, no sub — show original name with ❌ + assign cue. The cue is always
+    // visible below `xl`: a hover-only affordance never appears on a touch screen,
+    // which is exactly where sub-facilitators get assigned mid-session.
     <button
       type="button"
-      className="flex items-center gap-1.5 rounded px-1 -mx-1 hover:bg-accent transition-colors text-left group"
+      className={cn(triggerBase, "group")}
       aria-label="Assign sub-facilitator"
     >
       <XCircle className="size-3.5 shrink-0 text-muted-foreground/40" />
-      <span className="text-sm">{name ?? <span className="text-muted-foreground">No facilitator</span>}</span>
-      <span className="text-[10px] text-muted-foreground/60 group-hover:text-muted-foreground transition-colors ml-0.5">
+      <span className="truncate text-sm">
+        {name ?? <span className="text-muted-foreground">No facilitator</span>}
+      </span>
+      <span className="ml-0.5 shrink-0 text-[10px] text-muted-foreground transition-colors xl:text-muted-foreground/60 xl:group-hover:text-muted-foreground">
         + sub
       </span>
     </button>

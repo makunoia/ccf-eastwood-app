@@ -44,7 +44,6 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
@@ -136,6 +135,17 @@ const NOT_APPLICABLE: Partial<Record<FormContext, FormToggleKey[]>> = {
 
 /** Default tab order when a caller doesn't narrow it. */
 const CONTEXT_ORDER: FormContext[] = ["Register", "WalkIn", "CheckIn"]
+
+/**
+ * Width of the Required rail on a field row.
+ *
+ * Reserved on *every* row, not just the ones showing a switch: without it a row
+ * whose field is unticked wrapped its description across the full width while its
+ * neighbours wrapped short, and the ragged right edge read as text colliding with
+ * the controls. One fixed column means every description wraps at the same
+ * measure and the switches line up under their heading.
+ */
+const REQUIRED_COL = "w-20"
 
 
 /**
@@ -587,7 +597,7 @@ function SectionItem({
         {warning && <PrerequisiteNote message={warning} />}
 
         {total > 0 && (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {/* Fields stay visible and checkable while the section is off — seeing
                 what a section asks for is the point — but a note makes it clear
                 nothing here is collected until the section itself is on. */}
@@ -596,36 +606,62 @@ function SectionItem({
                 Turn on {section.title} to ask any of these.
               </p>
             )}
-            {options.map((key) => (
-              <FieldRow
-                key={key}
-                meta={FORM_OPTION_META[key]}
-                checked={config[key]}
-                dimmed={!enabled}
-                context={context}
-                pending={pending}
-                onToggle={onToggle}
-                warning={
-                  enabled && config[key] ? prerequisiteFor(prerequisites, key, context) : null
-                }
-              />
-            ))}
-            {fields.map((key) => (
-              <FieldRow
-                key={key}
-                meta={FORM_FIELD_META[key]}
-                checked={config[key]}
-                dimmed={!enabled}
-                context={context}
-                pending={pending}
-                onToggle={onToggle}
-                required={{ key: requiredKeyFor(key), value: config[requiredKeyFor(key)] }}
-                lockedReason={identityLockReason(key, config)}
-                warning={
-                  enabled && config[key] ? prerequisiteFor(prerequisites, key, context) : null
-                }
-              />
-            ))}
+
+            {options.length > 0 && (
+              <div className="space-y-0.5">
+                {options.map((key) => (
+                  <FieldRow
+                    key={key}
+                    meta={FORM_OPTION_META[key]}
+                    checked={config[key]}
+                    dimmed={!enabled}
+                    context={context}
+                    pending={pending}
+                    onToggle={onToggle}
+                    warning={
+                      enabled && config[key] ? prerequisiteFor(prerequisites, key, context) : null
+                    }
+                  />
+                ))}
+              </div>
+            )}
+
+            {fields.length > 0 && (
+              <div>
+                {/* "Required" belongs over the column once, not beside every row:
+                    repeated on each row it was the loudest word in the section and
+                    read as five separate settings rather than one column. */}
+                <div className="flex items-center gap-3 border-b pb-1.5">
+                  <span className="type-label flex-1 text-muted-foreground">Ask for</span>
+                  <span
+                    className={cn(
+                      REQUIRED_COL,
+                      "type-label shrink-0 text-right text-muted-foreground"
+                    )}
+                  >
+                    Required
+                  </span>
+                </div>
+                <div className="mt-1 space-y-0.5">
+                  {fields.map((key) => (
+                    <FieldRow
+                      key={key}
+                      meta={FORM_FIELD_META[key]}
+                      checked={config[key]}
+                      dimmed={!enabled}
+                      context={context}
+                      pending={pending}
+                      onToggle={onToggle}
+                      required={{ key: requiredKeyFor(key), value: config[requiredKeyFor(key)] }}
+                      lockedReason={identityLockReason(key, config)}
+                      warning={
+                        enabled && config[key] ? prerequisiteFor(prerequisites, key, context) : null
+                      }
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </AccordionContent>
@@ -694,78 +730,56 @@ function FieldRow({
 }) {
   const id = `${context}-${meta.key}`
   return (
-    <div className={cn("space-y-1", dimmed && "opacity-60")}>
-      <div className="flex items-start gap-3">
-        <Checkbox
-          id={id}
-          checked={checked}
-          onCheckedChange={() => onToggle(context, meta.key)}
-          disabled={pending === `${context}:${meta.key}` || lockedReason !== null}
-          className="mt-0.5"
-        />
-        <label htmlFor={id} className="min-w-0 flex-1 cursor-pointer">
-          <span className="block text-sm font-medium">{meta.label}</span>
-          <span className="block text-xs text-muted-foreground">{meta.description}</span>
-          {lockedReason && (
-            <span className="mt-1 block text-xs text-muted-foreground">{lockedReason}</span>
-          )}
-          {warning && (
-            <span className="mt-1 block">
-              <PrerequisiteNote message={warning} />
-            </span>
-          )}
-        </label>
+    <div
+      className={cn(
+        "-mx-2 flex items-start gap-3 rounded-md px-2 py-1.5 transition-colors",
+        checked ? "hover:bg-muted/60" : "hover:bg-muted/40",
+        dimmed && "opacity-60"
+      )}
+    >
+      <Checkbox
+        id={id}
+        checked={checked}
+        onCheckedChange={() => onToggle(context, meta.key)}
+        disabled={pending === `${context}:${meta.key}` || lockedReason !== null}
+        className="mt-0.5"
+      />
+      <label htmlFor={id} className="min-w-0 flex-1 cursor-pointer">
+        <span className={cn("block text-sm", checked ? "font-medium" : "text-muted-foreground")}>
+          {meta.label}
+        </span>
+        <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">
+          {meta.description}
+        </span>
+        {lockedReason && (
+          <span className="mt-1 block text-xs leading-snug text-muted-foreground">
+            {lockedReason}
+          </span>
+        )}
+        {warning && (
+          <span className="mt-1 block">
+            <PrerequisiteNote message={warning} />
+          </span>
+        )}
+      </label>
 
+      {/* The rail is always rendered, even for rows that have no Required control
+          at all, so every description above wraps at the same width. */}
+      <div className={cn(REQUIRED_COL, "flex shrink-0 justify-end pt-0.5")}>
         {/* Required is a second control rather than a third state on the first:
             "off / optional / required" as one widget reads as a scale, and the
             middle value is the one people misselect. Hidden while the field is
             off — there is nothing to require yet. */}
         {required && checked && (
-          <RequiredToggle
+          <Switch
             id={`${id}-required`}
-            value={required.value}
-            pending={pending === `${context}:${required.key}`}
-            label={`${meta.label} is required on ${FORM_CONTEXT_META[context].label}`}
-            onChange={() => onToggle(context, required.key)}
+            checked={required.value}
+            onCheckedChange={() => onToggle(context, required.key)}
+            disabled={pending === `${context}:${required.key}`}
+            aria-label={`${meta.label} is required on ${FORM_CONTEXT_META[context].label}`}
           />
         )}
       </div>
-    </div>
-  )
-}
-
-/**
- * The per-field Required control (CCF-142).
- *
- * A switch rather than a second checkbox, so the two controls on a row can't be
- * mistaken for a pair of equal options — the checkbox decides whether the
- * question is asked at all, and this only has meaning once it is.
- */
-function RequiredToggle({
-  id,
-  value,
-  pending,
-  label,
-  onChange,
-}: {
-  id: string
-  value: boolean
-  pending: boolean
-  label: string
-  onChange: () => void
-}) {
-  return (
-    <div className="flex shrink-0 items-center gap-2">
-      <Label
-        htmlFor={id}
-        className={cn(
-          "cursor-pointer text-xs font-normal",
-          value ? "text-foreground" : "text-muted-foreground"
-        )}
-      >
-        Required
-      </Label>
-      <Switch id={id} checked={value} onCheckedChange={onChange} disabled={pending} aria-label={label} />
     </div>
   )
 }
