@@ -3,12 +3,13 @@
 import * as React from "react"
 import { toast } from "sonner"
 import { IconLock } from "@tabler/icons-react"
-import { MatchingContext } from "@/app/generated/prisma/client"
+import type { MatchingContext } from "@/app/generated/prisma/client"
 import {
   DEFAULT_WEIGHTS,
-  ACTIVE_WEIGHT_FIELDS,
   ACTIVE_WEIGHT_KEYS,
-  GATE_FIELDS,
+  activeWeightKeysFor,
+  activeWeightFieldsFor,
+  gateFieldsFor,
   type ActiveWeightKey,
   type MatchingWeightsFormValues,
 } from "@/lib/validations/matching-weights"
@@ -43,34 +44,55 @@ const PRESETS: Record<string, { label: string; description: string; values: Impo
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function weightsToImportance(weights: MatchingWeightsFormValues): ImportanceValues {
-  const activeMax = Math.max(...ACTIVE_WEIGHT_KEYS.map((k) => weights[k]))
+type ActiveKeys = readonly ActiveWeightKey[]
+
+function weightsToImportance(
+  weights: MatchingWeightsFormValues,
+  keys: ActiveKeys
+): ImportanceValues {
+  const activeMax = Math.max(...keys.map((k) => weights[k]))
+  // Always seed every key, not just this context's — the state object is typed
+  // over all six, and a half-filled record makes `importanceToWeights` write
+  // NaN into columns the context doesn't show.
+  const base = Object.fromEntries(ACTIVE_WEIGHT_KEYS.map((k) => [k, 0])) as ImportanceValues
   if (activeMax === 0) {
-    return Object.fromEntries(ACTIVE_WEIGHT_KEYS.map((k) => [k, 50])) as ImportanceValues
+    return { ...base, ...Object.fromEntries(keys.map((k) => [k, 50])) }
   }
-  return Object.fromEntries(
-    ACTIVE_WEIGHT_KEYS.map((k) => [k, Math.round((weights[k] / activeMax) * 100)])
-  ) as ImportanceValues
+  return {
+    ...base,
+    ...Object.fromEntries(keys.map((k) => [k, Math.round((weights[k] / activeMax) * 100)])),
+  }
 }
 
-function importanceToWeights(importance: ImportanceValues): MatchingWeightsFormValues {
-  const total = ACTIVE_WEIGHT_KEYS.reduce((s, k) => s + importance[k], 0)
+function importanceToWeights(
+  importance: ImportanceValues,
+  keys: ActiveKeys
+): MatchingWeightsFormValues {
+  const total = keys.reduce((s, k) => s + importance[k], 0)
   const active =
     total === 0
-      ? Object.fromEntries(ACTIVE_WEIGHT_KEYS.map((k) => [k, DEFAULT_WEIGHTS[k]]))
-      : Object.fromEntries(ACTIVE_WEIGHT_KEYS.map((k) => [k, importance[k] / total]))
-  // Gate factors always persist as 0 — they carry no weight.
-  return { lifeStage: 0, gender: 0, schedule: 0, ...active } as MatchingWeightsFormValues
+      ? Object.fromEntries(keys.map((k) => [k, DEFAULT_WEIGHTS[k]]))
+      : Object.fromEntries(keys.map((k) => [k, importance[k] / total]))
+  // Every column is non-nullable, so all nine are written. Gates carry no
+  // weight, and neither do factors this context doesn't score — they persist as
+  // 0 rather than keeping a stale value that reads as meaningful.
+  return {
+    lifeStage: 0,
+    gender: 0,
+    schedule: 0,
+    ...Object.fromEntries(ACTIVE_WEIGHT_KEYS.map((k) => [k, 0])),
+    ...active,
+  } as MatchingWeightsFormValues
 }
 
-function getPct(importance: ImportanceValues, key: ActiveWeightKey): number {
-  const total = ACTIVE_WEIGHT_KEYS.reduce((s, k) => s + importance[k], 0)
+function getPct(importance: ImportanceValues, key: ActiveWeightKey, keys: ActiveKeys): number {
+  const total = keys.reduce((s, k) => s + importance[k], 0)
   return total === 0 ? 0 : (importance[key] / total) * 100
 }
 
-function detectPreset(importance: ImportanceValues): string | null {
+function detectPreset(importance: ImportanceValues, keys: ActiveKeys): string | null {
   for (const [id, preset] of Object.entries(PRESETS)) {
-    if (ACTIVE_WEIGHT_KEYS.every((k) => importance[k] === preset.values[k])) return id
+    if (keys.every((k) => importance[k] === preset.values[k])) return id
   }
   return null
 }
@@ -80,13 +102,29 @@ function detectPreset(importance: ImportanceValues): string | null {
 type Props = { context: MatchingContext; initial: MatchingWeightsFormValues | null }
 
 export function MatchingWeightsForm({ context, initial }: Props) {
+  // Breakout groups score a narrower set than DGroups — see
+  // `BREAKOUT_ACTIVE_WEIGHT_KEYS`. Everything below is driven off these three.
+  //
+  // Compared against the string, not `MatchingContext.Breakout`: reading the
+  // enum as a *value* here makes this client component import the generated
+  // Prisma client at runtime, which pulls `node:module` into the browser bundle
+  // and fails the Turbopack build. The import below is type-only for that
+  // reason, and MatchingContext is a string enum so this is equivalent.
+  const scope = context === "Breakout" ? "Breakout" : "SmallGroup"
+  const activeKeys = activeWeightKeysFor(scope)
+  const activeFields = activeWeightFieldsFor(scope)
+  const gateFields = gateFieldsFor(scope)
+
   const [values, setValues] = React.useState<ImportanceValues>(
-    weightsToImportance(initial ?? DEFAULT_WEIGHTS)
+    weightsToImportance(initial ?? DEFAULT_WEIGHTS, activeKeys)
   )
   const [saving, setSaving] = React.useState(false)
   const isFirst = React.useRef(true)
 
-  const activePreset = detectPreset(values)
+  // The presets are written for the full six-factor set; with two factors there
+  // is nothing meaningful for "Location & availability" to say.
+  const showPresets = activeKeys.length === ACTIVE_WEIGHT_KEYS.length
+  const activePreset = showPresets ? detectPreset(values, activeKeys) : null
 
   function setField(key: ActiveWeightKey, value: number) {
     setValues((prev) => ({ ...prev, [key]: value }))
@@ -96,7 +134,7 @@ export function MatchingWeightsForm({ context, initial }: Props) {
     if (isFirst.current) { isFirst.current = false; return }
     const t = setTimeout(async () => {
       setSaving(true)
-      const result = await upsertMatchingWeights(context, importanceToWeights(values))
+      const result = await upsertMatchingWeights(context, importanceToWeights(values, activeKeys))
       setSaving(false)
       if (result.success) toast.success("Priorities saved")
       else toast.error(result.error)
@@ -114,7 +152,7 @@ export function MatchingWeightsForm({ context, initial }: Props) {
           Always required
         </p>
         <div className="divide-y rounded-lg border bg-muted/30">
-          {GATE_FIELDS.map(({ key, label, description }) => {
+          {gateFields.map(({ key, label, description }) => {
             const { icon: Icon, color } = FIELD_META[key]
             return (
               <div key={key} className="flex items-center gap-4 px-4 py-3">
@@ -140,6 +178,7 @@ export function MatchingWeightsForm({ context, initial }: Props) {
       </div>
 
       {/* Presets */}
+      {showPresets && (
       <div className="space-y-2">
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Starting points
@@ -168,6 +207,7 @@ export function MatchingWeightsForm({ context, initial }: Props) {
           )}
         </div>
       </div>
+      )}
 
       {/* Distribution bar */}
       <div className="space-y-2">
@@ -175,8 +215,8 @@ export function MatchingWeightsForm({ context, initial }: Props) {
           Priority breakdown
         </p>
         <div className="flex h-3 w-full overflow-hidden rounded-full bg-muted">
-          {ACTIVE_WEIGHT_FIELDS.map(({ key }) => {
-            const pct = getPct(values, key)
+          {activeFields.map(({ key }) => {
+            const pct = getPct(values, key, activeKeys)
             if (pct < 0.5) return null
             return (
               <div
@@ -188,7 +228,7 @@ export function MatchingWeightsForm({ context, initial }: Props) {
           })}
         </div>
         <div className="flex flex-wrap gap-x-4 gap-y-1">
-          {ACTIVE_WEIGHT_FIELDS.filter(({ key }) => getPct(values, key) >= 0.5).map(({ key, label }) => (
+          {activeFields.filter(({ key }) => getPct(values, key, activeKeys) >= 0.5).map(({ key, label }) => (
             <span key={key} className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <span
                 className="size-2 shrink-0 rounded-full"
@@ -202,9 +242,9 @@ export function MatchingWeightsForm({ context, initial }: Props) {
 
       {/* Factor rows */}
       <div className="divide-y rounded-lg border">
-        {ACTIVE_WEIGHT_FIELDS.map(({ key, label, description }) => {
+        {activeFields.map(({ key, label, description }) => {
           const { icon: Icon, color } = FIELD_META[key]
-          const pct = getPct(values, key)
+          const pct = getPct(values, key, activeKeys)
           const isOff = values[key] === 0
 
           return (

@@ -33,23 +33,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { ScheduleInput } from "@/components/ui/schedule-input"
 import { LANGUAGE_OPTIONS } from "@/lib/constants/group-options"
 import { updateBreakoutGroup, deleteBreakoutGroup } from "@/app/(dashboard)/events/breakout-actions"
+import { GENDER_FOCUS_LABELS, missingTimothyFields } from "@/lib/breakouts/profile"
+import { FacilitatorLeadership } from "@/components/breakouts/facilitator-leadership"
 
+/** Shown, not inherited — a breakout group's criteria are its own. */
 type LedGroup = {
   id: string
   name: string
-  lifeStages: { id: string }[]
-  genderFocus: string | null
-  language: string[]
-  ageRangeMin: number | null
-  ageRangeMax: number | null
-  meetingFormat: string | null
-  locationCity: string | null
-  scheduleDayOfWeek: number | null
-  scheduleTimeStart: string | null
-  scheduleTimeEnd: string | null
 }
 
 type Volunteer = {
@@ -68,27 +60,7 @@ export type EditableGroupData = {
   language: string[]
   ageRangeMin: number | null
   ageRangeMax: number | null
-  meetingFormat: string | null
-  locationCity: string | null
-  schedule: { dayOfWeek: number; timeStart: string | null; timeEnd: string | null } | null
 }
-
-const GENDER_FOCUS_LABELS: Record<string, string> = { Male: "Male", Female: "Female", Mixed: "Mixed" }
-
-function deriveProfileFromGroup(g: LedGroup) {
-  return {
-    lifeStageIds: g.lifeStages.map((ls) => ls.id),
-    genderFocus: g.genderFocus ?? "",
-    language: g.language,
-    ageRangeMin: g.ageRangeMin != null ? String(g.ageRangeMin) : "",
-    ageRangeMax: g.ageRangeMax != null ? String(g.ageRangeMax) : "",
-    meetingFormat: g.meetingFormat ?? "",
-    scheduleDayOfWeek: g.scheduleDayOfWeek != null ? String(g.scheduleDayOfWeek) : "",
-    scheduleTimeStart: g.scheduleTimeStart ?? "",
-    scheduleTimeEnd: g.scheduleTimeEnd ?? "",
-  }
-}
-
 function EditDialog({
   open,
   onOpenChange,
@@ -113,10 +85,6 @@ function EditDialog({
     language: [] as string[],
     ageRangeMin: "",
     ageRangeMax: "",
-    meetingFormat: "",
-    scheduleDayOfWeek: "",
-    scheduleTimeStart: "",
-    scheduleTimeEnd: "",
   })
   const [sourceGroupId, setSourceGroupId] = React.useState("")
   const [saving, setSaving] = React.useState(false)
@@ -134,32 +102,18 @@ function EditDialog({
         language: group.language ?? [],
         ageRangeMin: group.ageRangeMin?.toString() ?? "",
         ageRangeMax: group.ageRangeMax?.toString() ?? "",
-        meetingFormat: group.meetingFormat ?? "",
-        scheduleDayOfWeek: group.schedule ? String(group.schedule.dayOfWeek) : "",
-        scheduleTimeStart: group.schedule?.timeStart ?? "",
-        scheduleTimeEnd: group.schedule?.timeEnd ?? "",
       })
     }
   }, [open, group])
 
+  // Only the Catch Mech routing target moves with the facilitator — the matching
+  // criteria are this group's own and are never overwritten by a facilitator
+  // change, here or in `setFacilitator`.
   function handleVolunteerChange(volunteerId: string) {
-    setSourceGroupId("")
     const vol = volunteers.find((v) => v.id === volunteerId)
-    if (!vol) { setForm((f) => ({ ...f, facilitatorId: volunteerId })); return }
-    const ledGroups = vol.member.ledGroups
-    if (ledGroups.length === 1) {
-      setSourceGroupId(ledGroups[0].id)
-      setForm((f) => ({ ...f, facilitatorId: volunteerId, ...deriveProfileFromGroup(ledGroups[0]) }))
-    } else {
-      setForm((f) => ({ ...f, facilitatorId: volunteerId }))
-    }
-  }
-
-  function handleSourceGroupChange(groupId: string) {
-    setSourceGroupId(groupId)
-    const vol = volunteers.find((v) => v.id === form.facilitatorId)
-    const g = vol?.member.ledGroups.find((lg) => lg.id === groupId)
-    if (g) setForm((f) => ({ ...f, ...deriveProfileFromGroup(g) }))
+    const led = vol?.member.ledGroups ?? []
+    setSourceGroupId(led.length === 1 ? led[0].id : "")
+    setForm((f) => ({ ...f, facilitatorId: volunteerId }))
   }
 
   const selectedVol = volunteers.find((v) => v.id === form.facilitatorId) ?? null
@@ -177,34 +131,13 @@ function EditDialog({
   async function handleSave() {
     if (!form.name.trim()) { toast.error("Group name is required"); return }
     if (isFacilitatorTimothy) {
-      const missing: string[] = []
-      if (!form.genderFocus) missing.push("Gender Focus")
-      if (form.language.length === 0) missing.push("Language")
-      if (!form.meetingFormat) missing.push("Meeting Format")
-      if (!form.scheduleDayOfWeek) missing.push("Meeting Schedule")
+      const missing = missingTimothyFields(form)
       if (missing.length > 0) {
         toast.error(`Timothy profile requires: ${missing.join(", ")}`)
         return
       }
     }
-    if (
-      form.scheduleTimeStart !== "" &&
-      form.scheduleTimeEnd !== "" &&
-      form.scheduleTimeStart >= form.scheduleTimeEnd
-    ) {
-      toast.error("End time must be after start time")
-      return
-    }
     setSaving(true)
-    // Times are optional — the meeting day alone is enough to record a schedule.
-    const schedule =
-      form.scheduleDayOfWeek !== ""
-        ? {
-            dayOfWeek: Number(form.scheduleDayOfWeek),
-            timeStart: form.scheduleTimeStart || null,
-            timeEnd: form.scheduleTimeEnd || null,
-          }
-        : null
     const result = await updateBreakoutGroup(group.id, eventId, {
       name: form.name.trim(),
       facilitatorId: form.facilitatorId || null,
@@ -215,9 +148,6 @@ function EditDialog({
       language: form.language,
       ageRangeMin: form.ageRangeMin ? Number(form.ageRangeMin) : null,
       ageRangeMax: form.ageRangeMax ? Number(form.ageRangeMax) : null,
-      meetingFormat: (form.meetingFormat as "Online" | "Hybrid" | "InPerson") || null,
-      locationCity: null,
-      schedule,
     })
     setSaving(false)
     if (result.success) {
@@ -265,10 +195,21 @@ function EditDialog({
               />
             </div>
 
+            {/* Context, not a control — the criteria below are this group's own
+                whichever DGroup the facilitator leads. */}
+            {form.facilitatorId && !isFacilitatorTimothy && (
+              <FacilitatorLeadership ledGroups={ledGroups} linkGroups={false} />
+            )}
+
             {form.facilitatorId && ledGroups.length > 1 && (
               <div className="space-y-1.5">
-                <Label>Source DGroup</Label>
-                <Select value={sourceGroupId} onValueChange={handleSourceGroupChange}>
+                <Label>
+                  Catch Mech DGroup{" "}
+                  <span className="text-muted-foreground font-normal">
+                    (receives this group&apos;s member requests)
+                  </span>
+                </Label>
+                <Select value={sourceGroupId} onValueChange={setSourceGroupId}>
                   <SelectTrigger><SelectValue placeholder="Select a group…" /></SelectTrigger>
                   <SelectContent>
                     {ledGroups.map((g) => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
@@ -284,7 +225,10 @@ function EditDialog({
             )}
           </div>
 
-          {/* ── Matching profile ── */}
+          {/* ── Matching profile ──
+              Always editable. It used to be swapped for a read-only grid the
+              moment the facilitator led a DGroup, because the criteria were a
+              copy of that DGroup; they are the group's own now. */}
           <div className="space-y-4">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
               {isFacilitatorTimothy
@@ -294,7 +238,7 @@ function EditDialog({
             </p>
 
             <div className="space-y-1.5">
-              <Label>Life Stages</Label>
+              <Label>Life Stages {isFacilitatorTimothy && <span className="text-destructive">*</span>}</Label>
               <MultiSelect
                 className="w-full"
                 placeholder="Any"
@@ -323,39 +267,13 @@ function EditDialog({
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Min Age</Label>
+                <Label>Min Age {isFacilitatorTimothy && <span className="text-destructive">*</span>}</Label>
                 <Input type="number" min={0} placeholder="—" {...field("ageRangeMin")} />
               </div>
               <div className="space-y-1.5">
-                <Label>Max Age</Label>
+                <Label>Max Age {isFacilitatorTimothy && <span className="text-destructive">*</span>}</Label>
                 <Input type="number" min={0} placeholder="—" {...field("ageRangeMax")} />
               </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Meeting Format {isFacilitatorTimothy && <span className="text-destructive">*</span>}</Label>
-              <Select value={form.meetingFormat} onValueChange={(v) => setForm((f) => ({ ...f, meetingFormat: v === "_none" ? "" : v }))}>
-                <SelectTrigger><SelectValue placeholder="Any" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="_none">Any</SelectItem>
-                  <SelectItem value="Online">Online</SelectItem>
-                  <SelectItem value="Hybrid">Hybrid</SelectItem>
-                  <SelectItem value="InPerson">In Person</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Meeting Schedule {isFacilitatorTimothy && <span className="text-destructive">*</span>}</Label>
-              <ScheduleInput
-                allowAny
-                dayOfWeek={form.scheduleDayOfWeek}
-                timeStart={form.scheduleTimeStart}
-                timeEnd={form.scheduleTimeEnd}
-                onDayChange={(v) => setForm((f) => ({ ...f, scheduleDayOfWeek: v }))}
-                onTimeStartChange={(v) => setForm((f) => ({ ...f, scheduleTimeStart: v }))}
-                onTimeEndChange={(v) => setForm((f) => ({ ...f, scheduleTimeEnd: v }))}
-              />
             </div>
           </div>
         </div>

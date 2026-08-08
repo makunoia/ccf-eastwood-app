@@ -15,7 +15,9 @@ import type { BatchFailure } from "@/components/batch/types"
 import {
   tryCreateSmallGroupRequestFromBreakout,
   tryCancelSmallGroupRequestFromBreakout,
+  tryTransferSmallGroupRequestFromBreakout,
 } from "@/lib/create-small-group-request"
+import { missingTimothyFields } from "@/lib/breakouts/profile"
 
 type ActionResult<T = void> =
   | { success: true; data: T }
@@ -42,15 +44,13 @@ async function requireEventWrite(eventId: string): Promise<{ error: string } | n
  * When a facilitator volunteer is a Timothy (has no led small groups),
  * the breakout group's matching profile must be filled in so that the system
  * has enough data to set up their future small group.
+ *
+ * `missingTimothyFields` is shared with both edit drawers so the client can't
+ * accept a profile this rejects.
  */
 async function validateTimothyProfile(
   facilitatorId: string | null | undefined,
-  profile: {
-    genderFocus?: string | null
-    language?: string[]
-    meetingFormat?: string | null
-    schedule?: { dayOfWeek: number; timeStart: string | null; timeEnd: string | null } | null
-  }
+  profile: Parameters<typeof missingTimothyFields>[0]
 ): Promise<string | null> {
   if (!facilitatorId) return null
 
@@ -63,12 +63,7 @@ async function validateTimothyProfile(
   const isTimothy = volunteer.member._count.ledGroups === 0
   if (!isTimothy) return null
 
-  const missing: string[] = []
-  if (!profile.genderFocus) missing.push("Gender Focus")
-  if (!profile.language || profile.language.length === 0) missing.push("Language")
-  if (!profile.meetingFormat) missing.push("Meeting Format")
-  if (!profile.schedule) missing.push("Meeting Schedule")
-
+  const missing = missingTimothyFields(profile)
   if (missing.length > 0) {
     return `Timothy profile requires: ${missing.join(", ")}`
   }
@@ -88,9 +83,9 @@ export async function createBreakoutGroup(
   if (!parsed.success) {
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
   }
-  const { name, facilitatorId, coFacilitatorId, memberLimit, linkedSmallGroupId, schedule, ...profile } = parsed.data
+  const { name, facilitatorId, coFacilitatorId, memberLimit, linkedSmallGroupId, ...profile } = parsed.data
 
-  const timothyError = await validateTimothyProfile(facilitatorId, { ...profile, schedule })
+  const timothyError = await validateTimothyProfile(facilitatorId, profile)
   if (timothyError) return { success: false, error: timothyError }
 
   try {
@@ -107,19 +102,6 @@ export async function createBreakoutGroup(
         language: profile.language,
         ageRangeMin: profile.ageRangeMin ?? null,
         ageRangeMax: profile.ageRangeMax ?? null,
-        meetingFormat: profile.meetingFormat ?? null,
-        locationCity: profile.locationCity ?? null,
-        ...(schedule
-          ? {
-              schedules: {
-                create: {
-                  dayOfWeek: schedule.dayOfWeek,
-                  timeStart: schedule.timeStart,
-                  timeEnd: schedule.timeEnd,
-                },
-              },
-            }
-          : {}),
       },
       select: { id: true },
     })
@@ -142,18 +124,43 @@ export async function updateBreakoutGroup(
   if (!parsed.success) {
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
   }
-  const { name, facilitatorId, coFacilitatorId, memberLimit, linkedSmallGroupId, schedule, ...profile } = parsed.data
+  const { name, facilitatorId, coFacilitatorId, memberLimit, linkedSmallGroupId, ...profile } = parsed.data
 
-  const timothyError = await validateTimothyProfile(facilitatorId, { ...profile, schedule })
+  const timothyError = await validateTimothyProfile(facilitatorId, profile)
   if (timothyError) return { success: false, error: timothyError }
+
+  // Scoped by event: `requireEventWrite` checks the *argument* event, so without
+  // this an admin scoped to event A could pass event B's group id.
+  const existing = await db.breakoutGroup.findFirst({
+    where: { id: groupId, eventId },
+    select: { facilitatorId: true, coFacilitatorId: true },
+  })
+  if (!existing) return { success: false, error: "Breakout group not found" }
+
+  // An absent key means "not on the form", not "clear it". Neither edit drawer
+  // has a co-facilitator control — that slot is assigned from the detail page —
+  // so writing `coFacilitatorId ?? null` silently detached the co-facilitator on
+  // every save from either drawer.
+  const nextFacilitatorId = facilitatorId === undefined ? existing.facilitatorId : facilitatorId
+  const nextCoFacilitatorId =
+    coFacilitatorId === undefined ? existing.coFacilitatorId : coFacilitatorId
+
+  // The schema compares the two *submitted* ids; it can't see a stored one that
+  // wasn't submitted, so the same volunteer could land in both slots.
+  if (nextFacilitatorId !== null && nextFacilitatorId === nextCoFacilitatorId) {
+    return {
+      success: false,
+      error: "Facilitator and co-facilitator must be different volunteers",
+    }
+  }
 
   try {
     await db.breakoutGroup.update({
       where: { id: groupId },
       data: {
         name,
-        facilitatorId: facilitatorId ?? null,
-        coFacilitatorId: coFacilitatorId ?? null,
+        facilitatorId: nextFacilitatorId,
+        coFacilitatorId: nextCoFacilitatorId,
         memberLimit: memberLimit ?? null,
         linkedSmallGroupId: linkedSmallGroupId ?? null,
         lifeStages: { set: profile.lifeStageIds.map((id) => ({ id })) },
@@ -161,23 +168,11 @@ export async function updateBreakoutGroup(
         language: profile.language,
         ageRangeMin: profile.ageRangeMin ?? null,
         ageRangeMax: profile.ageRangeMax ?? null,
-        meetingFormat: profile.meetingFormat ?? null,
-        locationCity: profile.locationCity ?? null,
-        schedules: {
-          deleteMany: {},
-          ...(schedule
-            ? {
-                create: {
-                  dayOfWeek: schedule.dayOfWeek,
-                  timeStart: schedule.timeStart,
-                  timeEnd: schedule.timeEnd,
-                },
-              }
-            : {}),
-        },
       },
     })
     revalidatePath(`/event/${eventId}/breakouts`)
+    // The edit drawer is mounted on the detail page too.
+    revalidatePath(`/event/${eventId}/breakouts/${groupId}`)
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to update breakout group" }
@@ -209,6 +204,32 @@ const breakoutBatchSchema = z.object({
     .array(z.string().min(1))
     .max(MAX_BREAKOUT_BATCH, `Cannot add more than ${MAX_BREAKOUT_BATCH} registrants at once`),
 })
+
+/**
+ * Every member who facilitates or co-facilitates *any* breakout group in this
+ * event (CCF-87 — a facilitator can't also be a participant).
+ *
+ * One query for the whole event rather than a per-row lookup. Shared by the add
+ * and transfer paths so the rule can't drift between them; `autoAssignRegistrantToBreakout`
+ * keeps its own narrower existence check because it runs unauthenticated on the
+ * public check-in path.
+ */
+async function eventFacilitatorMemberIds(eventId: string): Promise<Set<string>> {
+  const groups = await db.breakoutGroup.findMany({
+    where: { eventId },
+    select: {
+      facilitator: { select: { memberId: true } },
+      coFacilitator: { select: { memberId: true } },
+    },
+  })
+  return new Set(
+    groups.flatMap((g) =>
+      [g.facilitator?.memberId, g.coFacilitator?.memberId].filter(
+        (id): id is string => id != null
+      )
+    )
+  )
+}
 
 /**
  * Add several registrants to a breakout group in one pass.
@@ -249,21 +270,7 @@ export async function addRegistrantsToBreakout(
     })
     const byId = new Map(registrants.map((r) => [r.id, r]))
 
-    // One query for the whole batch instead of a per-row facilitator lookup.
-    const facilitatorGroups = await db.breakoutGroup.findMany({
-      where: { eventId },
-      select: {
-        facilitator: { select: { memberId: true } },
-        coFacilitator: { select: { memberId: true } },
-      },
-    })
-    const facilitatorMemberIds = new Set(
-      facilitatorGroups.flatMap((g) =>
-        [g.facilitator?.memberId, g.coFacilitator?.memberId].filter(
-          (id): id is string => id != null
-        )
-      )
-    )
+    const facilitatorMemberIds = await eventFacilitatorMemberIds(eventId)
 
     const failed: BatchFailure[] = []
     const eligible: string[] = []
@@ -366,6 +373,141 @@ export async function removeRegistrantFromBreakout(
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to remove registrant from breakout group" }
+  }
+}
+
+const breakoutTransferSchema = z
+  .object({
+    fromGroupId: z.string().min(1, "Source breakout group is required"),
+    toGroupId: z.string().min(1, "Destination breakout group is required"),
+    registrantId: z.string().min(1, "Registrant is required"),
+    eventId: z.string().min(1, "Event is required"),
+  })
+  .refine((d) => d.fromGroupId !== d.toGroupId, {
+    message: "Pick a different breakout group",
+    path: ["toGroupId"],
+  })
+
+/**
+ * Move one registrant between breakout groups in a single atomic step (CCF-139).
+ *
+ * Composing remove + add would leave the registrant in *no* group between the
+ * two calls — and permanently so if the add then failed on capacity. Both writes
+ * happen in one transaction here, so a failure leaves them exactly where they
+ * were.
+ *
+ * Order inside the transaction matters: `BreakoutGroupMember`'s primary key is
+ * `[breakoutGroupId, registrantId]` and there is no unique on `registrantId`
+ * alone, so "one group per registrant" is an application invariant the database
+ * will not enforce. Creating before deleting would silently double-place them.
+ */
+export async function transferRegistrantToBreakout(
+  fromGroupId: string,
+  toGroupId: string,
+  registrantId: string,
+  eventId: string
+): Promise<ActionResult> {
+  const denied = await requireEventWrite(eventId)
+  if (denied) return { success: false, error: denied.error }
+
+  const parsed = breakoutTransferSchema.safeParse({
+    fromGroupId,
+    toGroupId,
+    registrantId,
+    eventId,
+  })
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
+  }
+
+  try {
+    // Scoped to the event, so an id from another event simply isn't found.
+    const registrant = await db.eventRegistrant.findFirst({
+      where: { id: registrantId, eventId },
+      select: { id: true, memberId: true },
+    })
+    if (!registrant) {
+      return { success: false, error: "Not a registrant of this event" }
+    }
+
+    // Re-checked rather than assumed: they passed this when first placed, but a
+    // facilitator can have been appointed in the meantime.
+    if (registrant.memberId) {
+      const facilitatorMemberIds = await eventFacilitatorMemberIds(eventId)
+      if (facilitatorMemberIds.has(registrant.memberId)) {
+        return { success: false, error: "A facilitator cannot be a breakout group member" }
+      }
+    }
+
+    // The compound-key delete below doesn't scope by event on its own.
+    const source = await db.breakoutGroup.findFirst({
+      where: { id: fromGroupId, eventId },
+      select: { id: true },
+    })
+    if (!source) return { success: false, error: "Breakout group not found" }
+
+    const outcome = await db.$transaction(async (tx) => {
+      // Claim a seat under a row lock on the destination. A transaction alone is
+      // NOT enough: under READ COMMITTED two concurrent transfers both read the
+      // same count, both decide there is room, and the group ends up over its
+      // limit. Updating the row first takes a FOR UPDATE lock, so the second
+      // blocks until the first commits and then re-reads the true count.
+      const locked = await tx.breakoutGroup.updateMany({
+        where: { id: toGroupId, eventId },
+        data: { updatedAt: new Date() },
+      })
+      if (locked.count === 0) return "missing-destination" as const
+
+      const destination = await tx.breakoutGroup.findFirst({
+        where: { id: toGroupId, eventId },
+        select: { memberLimit: true, _count: { select: { members: true } } },
+      })
+      if (!destination) return "missing-destination" as const
+
+      if (
+        destination.memberLimit !== null &&
+        destination._count.members >= destination.memberLimit
+      ) {
+        return "full" as const
+      }
+
+      const removed = await tx.breakoutGroupMember.deleteMany({
+        where: { breakoutGroupId: fromGroupId, registrantId },
+      })
+      if (removed.count === 0) return "not-in-source" as const
+
+      await tx.breakoutGroupMember.create({
+        data: { breakoutGroupId: toGroupId, registrantId },
+      })
+      return "moved" as const
+    })
+
+    if (outcome === "missing-destination") {
+      return { success: false, error: "Destination breakout group not found" }
+    }
+    if (outcome === "full") {
+      return { success: false, error: "That breakout group is already at its member limit" }
+    }
+    if (outcome === "not-in-source") {
+      return { success: false, error: "No longer a member of this breakout group" }
+    }
+
+    // Best-effort side effect, deliberately outside the transaction: a failure to
+    // re-point the small-group request must not roll back the move.
+    await tryTransferSmallGroupRequestFromBreakout(fromGroupId, toGroupId, registrantId)
+
+    revalidatePath(`/event/${eventId}/breakouts`)
+    revalidatePath(`/event/${eventId}/breakouts/${fromGroupId}`)
+    revalidatePath(`/event/${eventId}/breakouts/${toGroupId}`)
+    revalidatePath(`/event/${eventId}/registrants`)
+    revalidatePath(`/event/${eventId}/catch-mech`)
+    // Session detail renders each group's capacity, so a move shifts numbers
+    // there too. The occurrence id isn't known here — revalidate the segment.
+    revalidatePath(`/event/${eventId}/sessions`, "layout")
+
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to transfer registrant" }
   }
 }
 
@@ -498,6 +640,21 @@ export async function autoAssignBreakouts(
 
 // ─── Facilitator assignment ───────────────────────────────────────────────────
 
+/**
+ * Assign or clear one of a breakout group's two facilitator slots.
+ *
+ * This deliberately does **not** touch the matching profile. It used to copy the
+ * facilitator's linked DGroup criteria over the group's own, which meant a
+ * facilitator change silently rewrote what the group matched for and made the
+ * profile read-only in both edit drawers. A breakout table is not its
+ * facilitator's DGroup — the criteria are the group's, hand-entered and always
+ * editable.
+ *
+ * `linkedSmallGroupId` still travels with a facilitator change, but only as
+ * Catch Mech routing: it decides which DGroup receives this group's member
+ * requests (`resolveLinkedSmallGroup`). Absent means "not submitted", not
+ * "clear it".
+ */
 export async function setFacilitator(
   groupId: string,
   volunteerId: string | null,
@@ -530,6 +687,7 @@ export async function setFacilitator(
         }
       }
     }
+
     await db.breakoutGroup.update({
       where: { id: groupId },
       data: role === "facilitator"

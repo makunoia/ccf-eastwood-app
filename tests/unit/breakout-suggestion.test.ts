@@ -253,25 +253,67 @@ describe("suggestBreakoutGroup", () => {
 // ─── breakoutPickerOptions ────────────────────────────────────────────────────
 
 describe("breakoutPickerOptions", () => {
-  // The regression this pins: the browse list used to filter by gender and age,
-  // so a registrant with neither recorded — because the form never asked, or
-  // because they answered an age bucket instead of a birth year — saw every
-  // gendered and age-ranged group disappear from the dropdown.
-  it("keeps gendered groups regardless of the registrant's gender", () => {
-    const groups = [
-      makeGroup({ id: "male-g", genderFocus: "Male" }),
-      makeGroup({ id: "female-g", genderFocus: "Female" }),
-      makeGroup({ id: "mixed-g", genderFocus: "Mixed" }),
-      makeGroup({ id: "open-g", genderFocus: null }),
-    ]
-    expect(breakoutPickerOptions(groups).map((g) => g.id)).toEqual([
-      "male-g",
-      "female-g",
-      "mixed-g",
-      "open-g",
-    ])
+  describe("gender filtering", () => {
+    // A men's breakout group is not something a woman can join, so listing it is
+    // a dead end she can walk into.
+    it("hides groups focused on the other gender", () => {
+      const groups = [
+        makeGroup({ id: "male-g", genderFocus: "Male" }),
+        makeGroup({ id: "female-g", genderFocus: "Female" }),
+      ]
+      expect(breakoutPickerOptions(groups, { gender: "Female" }).map((g) => g.id)).toEqual([
+        "female-g",
+      ])
+    })
+
+    it("keeps Mixed and unset-focus groups for either gender", () => {
+      const groups = [
+        makeGroup({ id: "mixed-g", genderFocus: "Mixed" }),
+        makeGroup({ id: "open-g", genderFocus: null }),
+      ]
+      expect(breakoutPickerOptions(groups, { gender: "Male" }).map((g) => g.id)).toEqual([
+        "mixed-g",
+        "open-g",
+      ])
+      expect(breakoutPickerOptions(groups, { gender: "Female" }).map((g) => g.id)).toEqual([
+        "mixed-g",
+        "open-g",
+      ])
+    })
+
+    // The regression this pins: filtering on a *missing* gender made every
+    // gendered group disappear for a registrant the form never asked, which
+    // could empty the dropdown entirely.
+    it("filters nothing when gender is unknown", () => {
+      const groups = [
+        makeGroup({ id: "male-g", genderFocus: "Male" }),
+        makeGroup({ id: "female-g", genderFocus: "Female" }),
+        makeGroup({ id: "mixed-g", genderFocus: "Mixed" }),
+      ]
+      expect(breakoutPickerOptions(groups, { gender: null }).map((g) => g.id)).toEqual([
+        "male-g",
+        "female-g",
+        "mixed-g",
+      ])
+    })
+
+    it("filters nothing when no profile is passed at all", () => {
+      const groups = [
+        makeGroup({ id: "male-g", genderFocus: "Male" }),
+        makeGroup({ id: "female-g", genderFocus: "Female" }),
+      ]
+      expect(breakoutPickerOptions(groups).map((g) => g.id)).toEqual(["male-g", "female-g"])
+    })
+
+    it("can filter down to nothing when every group is for the other gender", () => {
+      const groups = [makeGroup({ id: "male-g", genderFocus: "Male" })]
+      expect(breakoutPickerOptions(groups, { gender: "Female" })).toEqual([])
+    })
   })
 
+  // Age and capacity stay surfaced rather than applied — they are soft, and a
+  // registrant who answered an age bucket instead of a birth year would lose
+  // every age-ranged group for no good reason.
   it("keeps age-restricted groups when the registrant has no birth year", () => {
     const groups = [
       makeGroup({ id: "ranged", ageRangeMin: 20, ageRangeMax: 30 }),

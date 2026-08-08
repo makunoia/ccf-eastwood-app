@@ -818,3 +818,98 @@ describe("matchBreakoutGroups — assignment", () => {
     expect(ids(results)).toContain(breakout.id)
   })
 })
+
+// ─── matchBreakoutGroups — the narrowed factor set ────────────────────────────
+
+/**
+ * Breakout matching scores life stage, gender focus, age and language only.
+ * Work location, meeting format, work industry and capacity are DGroup concerns
+ * that mean nothing for a table meeting once, during the event at the venue.
+ */
+describe("matchBreakoutGroups — scored factors", () => {
+  it("ranks two groups identically when they differ only in city and format", async () => {
+    const { event, breakout } = await seedEventWithBreakout()
+    const other = await db.breakoutGroup.create({
+      data: {
+        name: "Other",
+        eventId: event.id,
+        locationCity: "Cebu",
+        meetingFormat: "Online",
+      },
+    })
+    const guest = await seedGuest({ workCity: "Makati", workIndustry: "Tech" })
+    const registrant = await db.eventRegistrant.create({
+      data: { eventId: event.id, guestId: guest.id },
+    })
+
+    const results = await matchBreakoutGroups(registrant.id, event.id)
+    const scores = new Map(results.map((r) => [r.groupId, r.totalScore]))
+
+    expect(scores.get(breakout.id)).toBe(scores.get(other.id))
+  })
+
+  it("still ranks on language", async () => {
+    const { event, breakout } = await seedEventWithBreakout()
+    await db.breakoutGroup.update({
+      where: { id: breakout.id },
+      data: { language: ["English"] },
+    })
+    const mismatch = await db.breakoutGroup.create({
+      data: { name: "Tagalog table", eventId: event.id, language: ["Tagalog"] },
+    })
+    const guest = await seedGuest({ language: ["English"] })
+    const registrant = await db.eventRegistrant.create({
+      data: { eventId: event.id, guestId: guest.id },
+    })
+
+    const results = await matchBreakoutGroups(registrant.id, event.id)
+
+    expect(results[0].groupId).toBe(breakout.id)
+    expect(results.find((r) => r.groupId === mismatch.id)!.totalScore).toBeLessThan(
+      results[0].totalScore
+    )
+  })
+
+  // Capacity no longer carries weight, so without an explicit tie-break every
+  // identical-profile registrant would be ranked into the same group and
+  // auto-assign would stack a whole event onto one table.
+  it("breaks a tie toward the group with more open seats", async () => {
+    const { event, breakout } = await seedEventWithBreakout()
+    await db.breakoutGroup.update({
+      where: { id: breakout.id },
+      data: { memberLimit: 10 },
+    })
+    const roomier = await db.breakoutGroup.create({
+      data: { name: "Roomier", eventId: event.id, memberLimit: 20 },
+    })
+    const guest = await seedGuest()
+    const registrant = await db.eventRegistrant.create({
+      data: { eventId: event.id, guestId: guest.id },
+    })
+
+    const results = await matchBreakoutGroups(registrant.id, event.id)
+
+    expect(results[0].totalScore).toBe(results[1].totalScore)
+    expect(results[0].groupId).toBe(roomier.id)
+  })
+
+  it("sorts an uncapped group last among equals", async () => {
+    const { event, breakout } = await seedEventWithBreakout()
+    await db.breakoutGroup.update({
+      where: { id: breakout.id },
+      data: { memberLimit: 10 },
+    })
+    const uncapped = await db.breakoutGroup.create({
+      data: { name: "Uncapped", eventId: event.id },
+    })
+    const guest = await seedGuest()
+    const registrant = await db.eventRegistrant.create({
+      data: { eventId: event.id, guestId: guest.id },
+    })
+
+    const results = await matchBreakoutGroups(registrant.id, event.id)
+
+    expect(results[0].groupId).toBe(breakout.id)
+    expect(results[1].groupId).toBe(uncapped.id)
+  })
+})

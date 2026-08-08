@@ -119,6 +119,7 @@ export function BreakoutSection({ registrantId, eventId, facilitatedGroup, allEv
               <SmallGroupMatchCard
                 key={r.groupId}
                 showBreakdown
+                context="Breakout"
                 result={r}
                 onAssign={() => { void handleAssign(r.groupId) }}
                 assigning={assigningId === r.groupId}

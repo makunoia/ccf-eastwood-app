@@ -6,6 +6,7 @@
 
 import type { Gender, GenderFocus } from "@/app/generated/prisma/client"
 import { breakoutOccupancy, type BreakoutOccupancy, type CapacityInput } from "@/lib/breakouts/occupancy"
+import { genderFocusAccepts } from "@/lib/breakouts/gender-focus"
 
 /**
  * Capacity arrives here already reduced to `isFull` + `roomRatio` so the raw
@@ -89,24 +90,33 @@ export function withoutOccupancy(groups: BreakoutCandidate[]): BreakoutCandidate
 }
 
 /**
- * Every group the caller was handed, in the order it arrived — nothing is ever
- * removed.
+ * The groups a registrant may browse, in the order they arrived.
  *
- * Deliberately takes no profile. An earlier version filtered the browse list by
- * gender and age, which meant a registrant who hadn't given (or wasn't asked
- * for) either one saw every gendered and age-ranged group disappear: missing
- * data read as a mismatch. The picker's job is to show which groups are in the
- * room; matching the person to one of them is what `suggestBreakoutGroup` is
- * for, and that stays a recommendation the registrant can override.
+ * Gender is the one criterion applied here, and only when it is *known*: a men's
+ * breakout group is not something a woman can join, so offering it is a dead end
+ * she can walk into. Everything else — age, capacity — is surfaced rather than
+ * applied, because those are soft preferences and a full group still renders
+ * marked so it doesn't look like it vanished.
  *
- * Capacity is the one real constraint, and it's surfaced rather than applied —
- * a full group still renders, marked, so it doesn't look like it vanished.
+ * When gender is absent (blank, or the form never asked) nothing is filtered.
+ * An earlier version filtered on age and on missing gender too, which meant a
+ * registrant who wasn't asked saw every gendered and age-ranged group disappear:
+ * missing data read as a mismatch and the list could empty out entirely.
+ *
+ * Pass the *effective* focus — `fetchBreakoutCandidates` already resolves it
+ * through `deriveEffectiveGenderFocus`, so a group whose focus is only implied
+ * by its facilitator filters the same way an explicit one does.
  */
-export function breakoutPickerOptions(groups: BreakoutCandidate[]): BreakoutPickerOption[] {
-  return groups.map((g) => ({
-    ...g,
-    occupancyView: g.occupancy ? breakoutOccupancy(g.occupancy) : null,
-  }))
+export function breakoutPickerOptions(
+  groups: BreakoutCandidate[],
+  profile?: { gender: Gender | null }
+): BreakoutPickerOption[] {
+  return groups
+    .filter((g) => genderFocusAccepts(g.genderFocus, profile?.gender ?? null))
+    .map((g) => ({
+      ...g,
+      occupancyView: g.occupancy ? breakoutOccupancy(g.occupancy) : null,
+    }))
 }
 
 export function suggestBreakoutGroup(

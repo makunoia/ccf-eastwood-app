@@ -6,7 +6,6 @@
  */
 import { describe, it, expect } from "vitest"
 import { smallGroupSchema } from "@/lib/validations/small-group"
-import { breakoutGroupSchema } from "@/lib/validations/breakout-group"
 
 const baseSmallGroup = {
   name: "Tuesday Nights",
@@ -83,48 +82,9 @@ describe("smallGroupSchema — meeting times", () => {
   })
 })
 
-const baseBreakout = {
-  name: "Table 1",
-  lifeStageIds: [],
-  language: [],
-}
-
-describe("breakoutGroupSchema — meeting times", () => {
-  it("accepts a schedule with both times", () => {
-    const parsed = breakoutGroupSchema.safeParse({
-      ...baseBreakout,
-      schedule: { dayOfWeek: 2, timeStart: "19:00", timeEnd: "21:00" },
-    })
-    expect(parsed.success).toBe(true)
-  })
-
-  it("accepts a day-only schedule and nulls the times", () => {
-    const parsed = breakoutGroupSchema.safeParse({
-      ...baseBreakout,
-      schedule: { dayOfWeek: 2, timeStart: "", timeEnd: null },
-    })
-    expect(parsed.success).toBe(true)
-    expect(parsed.success && parsed.data.schedule).toEqual({
-      dayOfWeek: 2,
-      timeStart: null,
-      timeEnd: null,
-    })
-  })
-
-  it("still accepts no schedule at all", () => {
-    expect(
-      breakoutGroupSchema.safeParse({ ...baseBreakout, schedule: null }).success
-    ).toBe(true)
-  })
-
-  it("still rejects an end time at or before the start", () => {
-    const parsed = breakoutGroupSchema.safeParse({
-      ...baseBreakout,
-      schedule: { dayOfWeek: 2, timeStart: "19:00", timeEnd: "19:00" },
-    })
-    expect(parsed.success).toBe(false)
-    expect(!parsed.success && parsed.error.issues[0]?.message).toBe(
-      "End time must be after start time"
-    )
-  })
-})
+/**
+ * Breakout groups no longer carry a meeting schedule at all. A breakout table
+ * meets once, during the event — the field was carried over from DGroups and
+ * `breakoutGroupSchema` has dropped it, so there is nothing here to assert.
+ * Small groups keep theirs, above.
+ */

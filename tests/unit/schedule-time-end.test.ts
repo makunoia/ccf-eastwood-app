@@ -33,7 +33,6 @@ import { saveGuestMatchingProfile, promoteGuestToMember } from "@/app/(dashboard
 import { saveMemberMatchingPreferences } from "@/app/(dashboard)/members/actions"
 import { createSmallGroup, updateSmallGroup } from "@/app/(dashboard)/small-groups/actions"
 import { importSmallGroups } from "@/app/(dashboard)/small-groups/import-actions"
-import { createBreakoutGroup, updateBreakoutGroup } from "@/app/(dashboard)/events/breakout-actions"
 import { matchSmallGroups } from "@/lib/matching"
 
 beforeEach(async () => {
@@ -85,25 +84,6 @@ async function seedSmallGroup(leaderId: string, opts: { scheduleTimeStart?: stri
       scheduleTimeEnd: opts.scheduleTimeEnd !== undefined ? opts.scheduleTimeEnd : null,
     },
   })
-}
-
-async function seedEventWithCommitteeAndRole() {
-  const event = await db.event.create({
-    data: { name: "Test Event", type: "OneTime", startDate: new Date(), endDate: new Date() },
-  })
-  const committee = await db.volunteerCommittee.create({ data: { name: "Committee", eventId: event.id } })
-  const role = await db.committeeRole.create({ data: { name: "Facilitator", committeeId: committee.id } })
-  return { event, committee, role }
-}
-
-async function seedConfirmedVolunteer(eventId: string, committeeId: string, roleId: string) {
-  const member = await db.member.create({
-    data: { firstName: "Vol", lastName: "Member", dateJoined: new Date(), language: [] },
-  })
-  const vol = await db.volunteer.create({
-    data: { memberId: member.id, eventId, committeeId, preferredRoleId: roleId, status: "Confirmed" },
-  })
-  return { member, vol }
 }
 
 // ─── Part 1: Persist tests ─────────────────────────────────────────────────────
@@ -325,52 +305,9 @@ describe("importSmallGroups — schedule time parsing", () => {
   })
 })
 
-describe("createBreakoutGroup / updateBreakoutGroup — BreakoutGroupSchedule.timeEnd", () => {
-  it("persists timeEnd when creating a breakout group", async () => {
-    const { event, committee, role } = await seedEventWithCommitteeAndRole()
-    const { vol } = await seedConfirmedVolunteer(event.id, committee.id, role.id)
-
-    const result = await createBreakoutGroup(event.id, {
-      name: "Table 1", facilitatorId: vol.id, lifeStageIds: [],
-      language: ["Filipino"], genderFocus: "Mixed", meetingFormat: "InPerson",
-      schedule: { dayOfWeek: 1, timeStart: "09:00", timeEnd: "10:30" },
-    })
-
-    expect(result.success).toBe(true)
-    if (!result.success) return
-
-    const schedule = await db.breakoutGroupSchedule.findFirst({
-      where: { breakoutGroupId: result.data.id },
-    })
-    expect(schedule?.timeStart).toBe("09:00")
-    expect(schedule?.timeEnd).toBe("10:30")
-  })
-
-  it("persists timeEnd when updating a breakout group", async () => {
-    const { event, committee, role } = await seedEventWithCommitteeAndRole()
-    const { vol } = await seedConfirmedVolunteer(event.id, committee.id, role.id)
-
-    const created = await createBreakoutGroup(event.id, {
-      name: "Table 1", facilitatorId: vol.id, lifeStageIds: [],
-      language: ["Filipino"], genderFocus: "Mixed", meetingFormat: "InPerson",
-      schedule: { dayOfWeek: 1, timeStart: "09:00", timeEnd: "10:00" },
-    })
-    expect(created.success).toBe(true)
-    if (!created.success) return
-
-    const updated = await updateBreakoutGroup(created.data.id, event.id, {
-      name: "Table 1", facilitatorId: vol.id, lifeStageIds: [],
-      language: ["Filipino"], genderFocus: "Mixed", meetingFormat: "InPerson",
-      schedule: { dayOfWeek: 1, timeStart: "09:00", timeEnd: "10:45" },
-    })
-
-    expect(updated.success).toBe(true)
-    const schedule = await db.breakoutGroupSchedule.findFirst({
-      where: { breakoutGroupId: created.data.id },
-    })
-    expect(schedule?.timeEnd).toBe("10:45")
-  })
-})
+// BreakoutGroupSchedule is no longer written: a breakout table meets once,
+// during the event, so the schedule was carried over from DGroups and dropped.
+// Small-group schedule times are covered above.
 
 describe("promoteGuestToMember — scheduleTimeEnd carried to SchedulePreference", () => {
   it("creates SchedulePreference with timeEnd from the guest record", async () => {

@@ -3,11 +3,13 @@
 import * as React from "react"
 import Link from "next/link"
 import {
+  IconArrowsExchange,
   IconCheck,
+  IconDots,
   IconPencil,
+  IconTrash,
   IconUser,
   IconUserPlus,
-  IconX,
 } from "@tabler/icons-react"
 import { toast } from "sonner"
 
@@ -40,12 +42,12 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from "@/components/ui/sheet"
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import {
   Tooltip,
   TooltipContent,
@@ -55,28 +57,21 @@ import {
 import {
   removeRegistrantFromBreakout,
   setFacilitator,
+  transferRegistrantToBreakout,
 } from "@/app/(dashboard)/events/breakout-actions"
 import { AddRegistrantSheet } from "./add-registrant-sheet"
-import { formatSchedule } from "@/lib/format/schedule"
+import { MatchingProfile } from "@/components/breakouts/matching-profile"
+import { FacilitatorLeadership } from "@/components/breakouts/facilitator-leadership"
 import { breakoutOccupancy } from "@/lib/breakouts/occupancy"
 
 const UNASSIGNED = "__unassigned__"
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
+/** Shown, not inherited — a breakout group's criteria are its own. */
 type LedGroup = {
   id: string
   name: string
-  lifeStages: { id: string; name: string }[]
-  genderFocus: string | null
-  language: string[]
-  ageRangeMin: number | null
-  ageRangeMax: number | null
-  meetingFormat: string | null
-  locationCity: string | null
-  scheduleDayOfWeek: number | null
-  scheduleTimeStart: string | null
-  scheduleTimeEnd: string | null
 }
 
 type FacilitatorVolunteer = {
@@ -115,6 +110,14 @@ type BreakoutMemberRow = {
   }
 }
 
+/** Another breakout group in the same event — a transfer target. */
+export type SiblingGroup = {
+  id: string
+  name: string
+  memberLimit: number | null
+  memberCount: number
+}
+
 type AvailableVolunteer = {
   id: string
   member: { id: string; firstName: string; lastName: string; ledGroups: { id: string; name: string }[] }
@@ -135,11 +138,8 @@ export type BreakoutDetailData = {
   language: string[]
   ageRangeMin: number | null
   ageRangeMax: number | null
-  meetingFormat: string | null
-  locationCity: string | null
   memberLimit: number | null
   members: BreakoutMemberRow[]
-  schedules: { dayOfWeek: number; timeStart: string | null; timeEnd: string | null }[]
   eventType: string
   totalOccurrences: number
 }
@@ -156,78 +156,6 @@ function registrantDisplayName(r: {
   if (r.member) return `${r.member.firstName} ${r.member.lastName}`
   if (r.guest) return `${r.guest.firstName} ${r.guest.lastName}`
   return [r.firstName, r.lastName].filter(Boolean).join(" ") || "Unknown"
-}
-
-const MEETING_FORMAT_LABELS: Record<string, string> = {
-  Online: "Online",
-  Hybrid: "Hybrid",
-  InPerson: "In-Person",
-}
-
-const GENDER_FOCUS_LABELS: Record<string, string> = {
-  Male: "Male",
-  Female: "Female",
-  Mixed: "Mixed",
-}
-
-
-// ─── Facilitator small group card ───────────────────────────────────────────────
-
-function SmallGroupCard({ group }: { group: LedGroup }) {
-  const [open, setOpen] = React.useState(false)
-
-  const details: { label: string; value: string }[] = []
-  if (group.lifeStages.length > 0) details.push({ label: "Life Stage", value: group.lifeStages.map((ls) => ls.name).join(", ") })
-  if (group.genderFocus) details.push({ label: "Gender Focus", value: GENDER_FOCUS_LABELS[group.genderFocus] ?? group.genderFocus })
-  if (group.language.length > 0) details.push({ label: "Language", value: group.language.join(", ") })
-  if (group.ageRangeMin != null || group.ageRangeMax != null) {
-    details.push({ label: "Age Range", value: `${group.ageRangeMin ?? "?"}–${group.ageRangeMax ?? "+"}` })
-  }
-  if (group.meetingFormat) details.push({ label: "Format", value: MEETING_FORMAT_LABELS[group.meetingFormat] ?? group.meetingFormat })
-  if (group.locationCity) details.push({ label: "Location", value: group.locationCity })
-  // The meeting times are optional — a day-only schedule still shows.
-  if (group.scheduleDayOfWeek != null) {
-    details.push({
-      label: "Schedule",
-      value: formatSchedule(group.scheduleDayOfWeek, group.scheduleTimeStart, group.scheduleTimeEnd),
-    })
-  }
-
-  return (
-    <>
-      <button
-        onClick={() => setOpen(true)}
-        className="text-sm font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors text-left"
-      >
-        {group.name}
-      </button>
-
-      <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent side="right" className="overflow-y-auto">
-          <SheetHeader>
-            <SheetTitle>{group.name}</SheetTitle>
-            <SheetDescription>DGroup profile</SheetDescription>
-          </SheetHeader>
-
-          {details.length > 0 ? (
-            <div className="px-4 pb-6 space-y-4">
-              <Separator />
-              <dl className="space-y-3">
-                {details.map((d) => (
-                  <div key={d.label} className="flex gap-3">
-                    <dt className="w-28 shrink-0 text-xs text-muted-foreground pt-0.5">{d.label}</dt>
-                    <dd className="text-sm">{d.value}</dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
-          ) : (
-            <p className="px-4 text-sm text-muted-foreground">No profile details set for this group.</p>
-          )}
-        </SheetContent>
-      </Sheet>
-    </>
-  )
 }
 
 // ─── Facilitator section ────────────────────────────────────────────────────────
@@ -317,17 +245,13 @@ function FacilitatorSection({
               {volunteer.member.firstName} {volunteer.member.lastName}
             </span>
           </div>
-          {volunteer.member.ledGroups.length > 0 && (
-            <div className="ml-10 space-y-1.5">
-              <p className="text-xs text-muted-foreground">Leads {volunteer.member.ledGroups.length === 1 ? "this DGroup" : "these DGroups"}:</p>
-              {volunteer.member.ledGroups.map((g) => (
-                <SmallGroupCard key={g.id} group={g} />
-              ))}
-            </div>
-          )}
-          {volunteer.member.ledGroups.length === 0 && (
-            <p className="ml-10 text-xs text-muted-foreground">Does not lead a DGroup</p>
-          )}
+          {/* Which DGroup — information only. It no longer decides what this
+              breakout group matches for; the Matching Profile block below is
+              hand-entered and always editable. */}
+          <FacilitatorLeadership
+            ledGroups={volunteer.member.ledGroups}
+            className="ml-10 text-xs text-muted-foreground"
+          />
         </div>
       ) : (
         <button
@@ -363,7 +287,12 @@ function FacilitatorSection({
           </div>
           {role === "facilitator" && selectedId !== UNASSIGNED && ledGroups.length > 1 && (
             <div className="space-y-1.5">
-              <Label>Linked DGroup <span className="text-muted-foreground font-normal">(for DGroup assignment)</span></Label>
+              <Label>
+                Catch Mech DGroup{" "}
+                <span className="text-muted-foreground font-normal">
+                  (receives this group&apos;s member requests)
+                </span>
+              </Label>
               <Select value={linkedGroupId} onValueChange={setLinkedGroupId}>
                 <SelectTrigger><SelectValue placeholder="Select a group…" /></SelectTrigger>
                 <SelectContent>
@@ -441,6 +370,7 @@ function MembersTable({
   eventType,
   totalOccurrences,
   memberLimit,
+  siblingGroups,
 }: {
   members: BreakoutMemberRow[]
   groupId: string
@@ -448,18 +378,43 @@ function MembersTable({
   eventType: string
   totalOccurrences: number
   memberLimit: number | null
+  siblingGroups: SiblingGroup[]
 }) {
   const [search, setSearch] = React.useState("")
   const [typeFilter, setTypeFilter] = React.useState<"all" | "member" | "guest">("all")
   const [attendanceFilter, setAttendanceFilter] = React.useState<"all" | "attended" | "not-attended">("all")
-  const [removingId, setRemovingId] = React.useState<string | null>(null)
+  const [pendingId, setPendingId] = React.useState<string | null>(null)
   const [addOpen, setAddOpen] = React.useState(false)
+  const [confirmRemove, setConfirmRemove] = React.useState<BreakoutMemberRow | null>(null)
+  const [transferRow, setTransferRow] = React.useState<BreakoutMemberRow | null>(null)
 
-  async function handleRemove(registrantId: string) {
-    setRemovingId(registrantId)
-    const result = await removeRegistrantFromBreakout(groupId, registrantId, eventId)
-    setRemovingId(null)
-    if (!result.success) toast.error(result.error)
+  async function handleRemove(row: BreakoutMemberRow) {
+    setPendingId(row.registrantId)
+    const result = await removeRegistrantFromBreakout(groupId, row.registrantId, eventId)
+    setPendingId(null)
+    if (result.success) {
+      setConfirmRemove(null)
+      toast.success(`${registrantDisplayName(row.registrant)} removed from this group`)
+    } else {
+      toast.error(result.error)
+    }
+  }
+
+  async function handleTransfer(row: BreakoutMemberRow, target: SiblingGroup) {
+    setPendingId(row.registrantId)
+    const result = await transferRegistrantToBreakout(
+      groupId,
+      target.id,
+      row.registrantId,
+      eventId
+    )
+    setPendingId(null)
+    if (result.success) {
+      setTransferRow(null)
+      toast.success(`${registrantDisplayName(row.registrant)} moved to ${target.name}`)
+    } else {
+      toast.error(result.error)
+    }
   }
 
   const occupancy = breakoutOccupancy({ memberCount: members.length, memberLimit })
@@ -565,7 +520,9 @@ function MembersTable({
               <TableHead>{attendanceHeader}</TableHead>
               <TableHead>DGroup</TableHead>
               <TableHead>SG Status</TableHead>
-              <TableHead className="w-10" />
+              <TableHead className="w-10">
+                <span className="sr-only">Actions</span>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -631,16 +588,36 @@ function MembersTable({
                       )}
                     </TableCell>
                     <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-7 text-muted-foreground hover:text-destructive"
-                        disabled={removingId === m.registrantId}
-                        onClick={() => handleRemove(m.registrantId)}
-                        title="Remove from group"
-                      >
-                        <IconX className="size-4" />
-                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-8"
+                            disabled={pendingId === m.registrantId}
+                          >
+                            <span className="sr-only">Open menu</span>
+                            <IconDots className="size-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            onSelect={() => setTransferRow(m)}
+                            disabled={siblingGroups.length === 0}
+                          >
+                            <IconArrowsExchange className="mr-2 size-4" />
+                            Transfer to another breakout group…
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onSelect={() => setConfirmRemove(m)}
+                            className="text-destructive focus:text-destructive"
+                          >
+                            <IconTrash className="mr-2 size-4" />
+                            Remove from group
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </TableCell>
                   </TableRow>
                 )
@@ -656,7 +633,130 @@ function MembersTable({
         groupId={groupId}
         eventId={eventId}
       />
+
+      <Dialog
+        open={confirmRemove !== null}
+        onOpenChange={(v) => !v && setConfirmRemove(null)}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Remove from group?</DialogTitle>
+            <DialogDescription>
+              {confirmRemove && (
+                <>
+                  <span className="font-medium">
+                    {registrantDisplayName(confirmRemove.registrant)}
+                  </span>{" "}
+                  will be removed from this breakout group. Any pending DGroup request
+                  raised by this placement is cancelled. They stay registered for the event.
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setConfirmRemove(null)}
+              disabled={pendingId !== null}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={pendingId !== null}
+              onClick={() => confirmRemove && handleRemove(confirmRemove)}
+            >
+              {pendingId !== null ? "Removing…" : "Remove"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <TransferDialog
+        row={transferRow}
+        siblingGroups={siblingGroups}
+        pending={pendingId !== null}
+        onClose={() => setTransferRow(null)}
+        onTransfer={handleTransfer}
+      />
     </div>
+  )
+}
+
+// ─── Transfer dialog ────────────────────────────────────────────────────────────
+
+function TransferDialog({
+  row,
+  siblingGroups,
+  pending,
+  onClose,
+  onTransfer,
+}: {
+  row: BreakoutMemberRow | null
+  siblingGroups: SiblingGroup[]
+  pending: boolean
+  onClose: () => void
+  onTransfer: (row: BreakoutMemberRow, target: SiblingGroup) => void
+}) {
+  return (
+    <Dialog open={row !== null} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Transfer to another breakout group</DialogTitle>
+          <DialogDescription>
+            {row && (
+              <>
+                Move{" "}
+                <span className="font-medium">
+                  {registrantDisplayName(row.registrant)}
+                </span>{" "}
+                in one step — they are never left without a group.
+              </>
+            )}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="max-h-80 overflow-y-auto -mx-1 px-1 space-y-1.5">
+          {siblingGroups.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">
+              This event has no other breakout groups.
+            </p>
+          ) : (
+            siblingGroups.map((g) => {
+              const full = g.memberLimit != null && g.memberCount >= g.memberLimit
+              return (
+                <button
+                  key={g.id}
+                  disabled={full || pending}
+                  onClick={() => row && onTransfer(row, g)}
+                  className="flex w-full items-center justify-between gap-3 rounded-md border px-3 py-2 text-left transition-colors hover:bg-muted/50 disabled:opacity-50 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                >
+                  <span className="text-sm font-medium">{g.name}</span>
+                  <span className="flex items-center gap-2 shrink-0">
+                    <span className="text-xs text-muted-foreground">
+                      {g.memberLimit != null
+                        ? `${g.memberCount} / ${g.memberLimit}`
+                        : `${g.memberCount} · no cap`}
+                    </span>
+                    {full && (
+                      <Badge variant="secondary" className="text-xs">
+                        Full
+                      </Badge>
+                    )}
+                  </span>
+                </button>
+              )
+            })
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={pending}>
+            Cancel
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -665,9 +765,11 @@ function MembersTable({
 export function BreakoutDetail({
   group,
   availableVolunteers,
+  siblingGroups,
 }: {
   group: BreakoutDetailData
   availableVolunteers: AvailableVolunteer[]
+  siblingGroups: SiblingGroup[]
 }) {
   return (
     <div className="space-y-6">
@@ -693,18 +795,23 @@ export function BreakoutDetail({
         />
       </div>
 
-      {group.schedules.length > 0 && (
-        <div className="space-y-1">
-          <p className="type-label text-muted-foreground">Schedule</p>
-          <div className="flex flex-wrap gap-2">
-            {group.schedules.map((s, i) => (
-              <Badge key={`${s.dayOfWeek}-${s.timeStart}-${i}`} variant="secondary">
-                {formatSchedule(s.dayOfWeek, s.timeStart, s.timeEnd)}
-              </Badge>
-            ))}
-          </div>
-        </div>
-      )}
+      <MatchingProfile
+        profile={{
+          lifeStages: group.lifeStages,
+          genderFocus: group.genderFocus,
+          language: group.language,
+          ageRangeMin: group.ageRangeMin,
+          ageRangeMax: group.ageRangeMax,
+        }}
+        footnote={
+          group.facilitator && group.facilitator.member.ledGroups.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              This facilitator leads no DGroup yet (Timothy) — these criteria seed the
+              DGroup created for them when their first member is confirmed.
+            </p>
+          ) : null
+        }
+      />
 
       <Separator />
 
@@ -715,6 +822,7 @@ export function BreakoutDetail({
         eventType={group.eventType}
         totalOccurrences={group.totalOccurrences}
         memberLimit={group.memberLimit}
+        siblingGroups={siblingGroups}
       />
     </div>
   )

@@ -1,7 +1,12 @@
 import { unstable_cache } from "next/cache"
 import { db } from "@/lib/db"
 import { MatchingContext } from "@/app/generated/prisma/client"
-import { DEFAULT_WEIGHTS, DEFAULT_GUEST_COOLDOWN_DAYS } from "@/lib/validations/matching-weights"
+import {
+  DEFAULT_WEIGHTS,
+  DEFAULT_GUEST_COOLDOWN_DAYS,
+  BREAKOUT_ACTIVE_WEIGHT_KEYS,
+} from "@/lib/validations/matching-weights"
+import { deriveEffectiveGenderFocus } from "@/lib/breakouts/gender-focus"
 import { scoreGroup, combineCoupleScores } from "./engine"
 import { buildStoredScheduleSlot } from "./candidate-schedule"
 import { scoreGender, scoreLifeStage, scoreSchedule } from "./scorers"
@@ -14,6 +19,29 @@ import type { CandidateProfile, GroupProfile, MatchResult, WeightConfig, Escalat
 // on measured data should sit above a 70% built on placeholder 0.5s.
 function byScoreThenConfidence(a: MatchResult, b: MatchResult): number {
   return b.totalScore - a.totalScore || b.confidence - a.confidence
+}
+
+/**
+ * Breakout ranking: score, confidence, then the emptiest group.
+ *
+ * Capacity used to be a weighted factor, which is what spread auto-assign
+ * across groups. It isn't scored for breakouts any more, so without this third
+ * key `autoAssignBreakouts` would stack an entire event into whichever group
+ * scores highest and leave the rest empty — every candidate with the same
+ * profile gets the same ranking. Uncapped groups sort last among equals: a cap
+ * is a signal someone sized the table, and an uncapped group can absorb the
+ * overflow later.
+ */
+function byBreakoutRank(a: MatchResult, b: MatchResult): number {
+  const openSeats = (r: MatchResult): number =>
+    r.groupSummary.memberLimit === null
+      ? -1
+      : r.groupSummary.memberLimit - r.groupSummary.currentCount
+  return (
+    b.totalScore - a.totalScore ||
+    b.confidence - a.confidence ||
+    openSeats(b) - openSeats(a)
+  )
 }
 
 function buildCandidateFromMember(m: {
@@ -634,36 +662,20 @@ export async function matchSmallGroupsWithEscalation(
 // ─── Breakout Group Matching ──────────────────────────────────────────────────
 
 /**
- * Derives an effective genderFocus for a breakout group.
- * If an explicit genderFocus is set on the group, that takes precedence.
- * Otherwise, infer from the facilitator(s)' gender:
- *   - Single gender across all present facilitators → that gender
- *   - Mixed genders → "Mixed"
- *   - No facilitators or no gender data → null
+ * Lives in `lib/breakouts/gender-focus.ts` now — it is pure, and the public
+ * registration path needs it without dragging the database in. Re-exported here
+ * so existing importers keep resolving.
  */
-export function deriveEffectiveGenderFocus(
-  explicitFocus: "Male" | "Female" | "Mixed" | null,
-  facilitatorGender: "Male" | "Female" | null | undefined,
-  coFacilitatorGender: "Male" | "Female" | null | undefined,
-  linkedSmallGroupGenderFocus?: "Male" | "Female" | "Mixed" | null
-): "Male" | "Female" | "Mixed" | null {
-  if (explicitFocus !== null) return explicitFocus
+export { deriveEffectiveGenderFocus } from "@/lib/breakouts/gender-focus"
 
-  const genders = [facilitatorGender, coFacilitatorGender].filter(
-    (g): g is "Male" | "Female" => g === "Male" || g === "Female"
-  )
-  if (genders.length > 0) {
-    const unique = [...new Set(genders)]
-    return unique.length > 1 ? "Mixed" : unique[0]
-  }
-
-  // Fall back to the linked small group's gender focus when facilitator gender is unknown
-  if (linkedSmallGroupGenderFocus != null) return linkedSmallGroupGenderFocus
-
-  return null
-}
-
-/** Everything `buildBreakoutGroupProfile` needs off a BreakoutGroup row. */
+/**
+ * Everything `buildBreakoutGroupProfile` needs off a BreakoutGroup row.
+ *
+ * Deliberately narrower than the small-group equivalent: breakout matching
+ * scores life stage, gender focus, age and language only, so meeting format,
+ * city, schedule and the members→workIndustry join are not selected. That last
+ * one mattered — it was a two-level join fired for every group on the event.
+ */
 const BREAKOUT_GROUP_SCORE_SELECT = {
   id: true,
   name: true,
@@ -672,23 +684,10 @@ const BREAKOUT_GROUP_SCORE_SELECT = {
   language: true,
   ageRangeMin: true,
   ageRangeMax: true,
-  meetingFormat: true,
-  locationCity: true,
+  // Capacity is no longer scored, but it is still a hard filter (full groups are
+  // excluded) and the ranking tie-break — see `byBreakoutRank`.
   memberLimit: true,
   _count: { select: { members: true } },
-  members: {
-    select: {
-      registrant: {
-        select: {
-          member: { select: { workIndustry: true } },
-          guest: { select: { workIndustry: true } },
-        },
-      },
-    },
-  },
-  schedules: {
-    select: { dayOfWeek: true, timeStart: true, timeEnd: true },
-  },
   facilitator: {
     select: { member: { select: { gender: true } } },
   },
@@ -708,27 +707,14 @@ type BreakoutGroupScoreRow = {
   language: string[]
   ageRangeMin: number | null
   ageRangeMax: number | null
-  meetingFormat: "Online" | "Hybrid" | "InPerson" | null
-  locationCity: string | null
   memberLimit: number | null
   _count: { members: number }
-  members: {
-    registrant: {
-      member: { workIndustry: string | null } | null
-      guest: { workIndustry: string | null } | null
-    }
-  }[]
-  schedules: { dayOfWeek: number; timeStart: string | null; timeEnd: string | null }[]
   facilitator: { member: { gender: "Male" | "Female" | null } } | null
   coFacilitator: { member: { gender: "Male" | "Female" | null } } | null
   linkedSmallGroup: { genderFocus: "Male" | "Female" | "Mixed" | null } | null
 }
 
 export function buildBreakoutGroupProfile(g: BreakoutGroupScoreRow): GroupProfile {
-  const memberIndustries = g.members
-    .map((m) => m.registrant.member?.workIndustry ?? m.registrant.guest?.workIndustry)
-    .filter((i): i is string => i != null)
-
   return {
     id: g.id,
     name: g.name,
@@ -743,14 +729,14 @@ export function buildBreakoutGroupProfile(g: BreakoutGroupScoreRow): GroupProfil
     language: g.language,
     ageRangeMin: g.ageRangeMin,
     ageRangeMax: g.ageRangeMax,
-    meetingFormat: g.meetingFormat,
-    locationCity: g.locationCity,
     memberLimit: g.memberLimit,
     currentCount: g._count.members,
-    memberIndustries,
-    scheduleSlots: g.schedules
-      .map((s) => buildStoredScheduleSlot(s.dayOfWeek, s.timeStart, s.timeEnd))
-      .filter((s) => s !== null),
+    // Not matched on for breakouts — held at their empty values so the shared
+    // `GroupProfile` shape still typechecks and every scorer reads "unknown".
+    meetingFormat: null,
+    locationCity: null,
+    memberIndustries: [],
+    scheduleSlots: [],
   }
 }
 
@@ -866,8 +852,8 @@ export async function matchBreakoutGroups(
       if (profile.memberLimit !== null && profile.currentCount >= profile.memberLimit) return false
       return passesBreakoutGates(candidate, profile)
     })
-    .map(({ profile }) => scoreGroup(candidate, profile, weights))
-    .sort(byScoreThenConfidence)
+    .map(({ profile }) => scoreGroup(candidate, profile, weights, BREAKOUT_ACTIVE_WEIGHT_KEYS))
+    .sort(byBreakoutRank)
     .slice(0, options?.limit ?? 5)
 }
 
@@ -926,7 +912,7 @@ export async function scoreCandidatesForBreakout(
 
   return [...profiles.entries()].map(([registrantId, candidate]) => ({
     registrantId,
-    result: scoreGroup(candidate, groupProfile, weights),
+    result: scoreGroup(candidate, groupProfile, weights, BREAKOUT_ACTIVE_WEIGHT_KEYS),
     passesGates: passesBreakoutGates(candidate, groupProfile),
   }))
 }

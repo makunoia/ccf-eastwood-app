@@ -9,21 +9,13 @@ import { BreakoutNavHeader } from "./breakout-nav-header"
 import { BreadcrumbOverride } from "@/components/breadcrumb-context"
 import { breakoutOccupancy } from "@/lib/breakouts/occupancy"
 
+/**
+ * Name only. A facilitator's DGroups are shown ("Leads X") and one of them may
+ * be picked as the Catch Mech target — neither needs its matching criteria,
+ * which the breakout group no longer inherits.
+ */
 const ledGroupsSelect = {
-  select: {
-    id: true,
-    name: true,
-    lifeStages: { select: { id: true } },
-    genderFocus: true,
-    language: true,
-    ageRangeMin: true,
-    ageRangeMax: true,
-    meetingFormat: true,
-    locationCity: true,
-    scheduleDayOfWeek: true,
-    scheduleTimeStart: true,
-    scheduleTimeEnd: true,
-  },
+  select: { id: true, name: true },
 } as const
 
 async function getBreakoutGroup(groupId: string, eventId: string) {
@@ -37,22 +29,7 @@ async function getBreakoutGroup(groupId: string, eventId: string) {
               id: true,
               firstName: true,
               lastName: true,
-              ledGroups: {
-                select: {
-                  id: true,
-                  name: true,
-                  lifeStages: { select: { id: true, name: true } },
-                  genderFocus: true,
-                  language: true,
-                  ageRangeMin: true,
-                  ageRangeMax: true,
-                  meetingFormat: true,
-                  locationCity: true,
-                  scheduleDayOfWeek: true,
-                  scheduleTimeStart: true,
-                  scheduleTimeEnd: true,
-                },
-              },
+              ledGroups: { select: { id: true, name: true } },
             },
           },
         },
@@ -64,28 +41,12 @@ async function getBreakoutGroup(groupId: string, eventId: string) {
               id: true,
               firstName: true,
               lastName: true,
-              ledGroups: {
-                select: {
-                  id: true,
-                  name: true,
-                  lifeStages: { select: { id: true, name: true } },
-                  genderFocus: true,
-                  language: true,
-                  ageRangeMin: true,
-                  ageRangeMax: true,
-                  meetingFormat: true,
-                  locationCity: true,
-                  scheduleDayOfWeek: true,
-                  scheduleTimeStart: true,
-                  scheduleTimeEnd: true,
-                },
-              },
+              ledGroups: { select: { id: true, name: true } },
             },
           },
         },
       },
       linkedSmallGroup: { select: { id: true, name: true } },
-      schedules: { select: { dayOfWeek: true, timeStart: true, timeEnd: true } },
       lifeStages: { select: { id: true, name: true }, orderBy: { order: "asc" as const } },
       members: {
         orderBy: { assignedAt: "asc" },
@@ -164,11 +125,18 @@ export default async function BreakoutGroupDetailPage({
 }) {
   const { id: eventId, groupId } = await params
   await requireEventModule(eventId, "Breakout")
-  const [group, eventData, lifeStages, totalOccurrences] = await Promise.all([
+  const [group, eventData, lifeStages, totalOccurrences, siblingGroups] = await Promise.all([
     getBreakoutGroup(groupId, eventId),
     getEventContext(eventId),
     db.lifeStage.findMany({ orderBy: { order: "asc" }, select: { id: true, name: true } }),
     db.eventOccurrence.count({ where: { eventId } }),
+    // Transfer targets for the members table (CCF-139). Fetched here rather than
+    // via a client round-trip since the page already fans out.
+    db.breakoutGroup.findMany({
+      where: { eventId, id: { not: groupId } },
+      select: { id: true, name: true, memberLimit: true, _count: { select: { members: true } } },
+      orderBy: { name: "asc" },
+    }),
   ])
 
   if (!group || !eventData) notFound()
@@ -205,9 +173,6 @@ export default async function BreakoutGroupDetailPage({
               language: group.language,
               ageRangeMin: group.ageRangeMin,
               ageRangeMax: group.ageRangeMax,
-              meetingFormat: group.meetingFormat,
-              locationCity: group.locationCity,
-              schedule: group.schedules[0] ?? null,
             }}
             eventId={eventId}
             lifeStages={lifeStages}
@@ -233,15 +198,18 @@ export default async function BreakoutGroupDetailPage({
           language: group.language,
           ageRangeMin: group.ageRangeMin,
           ageRangeMax: group.ageRangeMax,
-          meetingFormat: group.meetingFormat,
-          locationCity: group.locationCity,
           memberLimit: group.memberLimit,
           members: group.members,
-          schedules: group.schedules,
           eventType: eventData.type,
           totalOccurrences,
         }}
         availableVolunteers={confirmedVolunteers}
+        siblingGroups={siblingGroups.map((g) => ({
+          id: g.id,
+          name: g.name,
+          memberLimit: g.memberLimit,
+          memberCount: g._count.members,
+        }))}
       />
       </div>
     </>

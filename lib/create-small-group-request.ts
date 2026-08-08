@@ -126,6 +126,64 @@ export async function tryCreateSmallGroupRequestFromBreakout(
   }
 }
 
+/**
+ * Keep a Catch Mech request attached to the right breakout group when a
+ * registrant is moved between groups (CCF-139).
+ *
+ * `SmallGroupMemberRequest.breakoutGroupId` is what the Catch Mech admin pages,
+ * the per-group aggregate counts and the dashboard pipeline chart attribute a
+ * person by, so leaving it pointing at the old group mis-files them.
+ *
+ * When both breakout groups feed the *same* DGroup the pending request is still
+ * entirely correct — only its attribution is stale. Re-pointing it beats
+ * cancel-then-recreate there: the latter would emit a bogus
+ * `TempAssignmentRejected` log entry the leader can see, and reset the request's
+ * `createdAt` so it looks newly raised. When the DGroups differ (or one side has
+ * none) the old request genuinely is wrong and cancel + create is right.
+ */
+export async function tryTransferSmallGroupRequestFromBreakout(
+  fromGroupId: string,
+  toGroupId: string,
+  registrantId: string
+): Promise<void> {
+  try {
+    const [from, to] = await Promise.all([
+      resolveLinkedSmallGroup(fromGroupId),
+      resolveLinkedSmallGroup(toGroupId),
+    ])
+
+    if (!from || !to || from.smallGroupId !== to.smallGroupId) {
+      await tryCancelSmallGroupRequestFromBreakout(fromGroupId, registrantId)
+      await tryCreateSmallGroupRequestFromBreakout(toGroupId, registrantId)
+      return
+    }
+
+    const registrant = await db.eventRegistrant.findUnique({
+      where: { id: registrantId },
+      select: { memberId: true, guestId: true },
+    })
+    if (!registrant) return
+    if (!registrant.memberId && !registrant.guestId) return // anonymous — nothing tracked
+
+    // updateMany, not update: `breakoutGroupId` is a bare scalar with no unique
+    // constraint, so this where-clause doesn't identify a single row.
+    await db.smallGroupMemberRequest.updateMany({
+      where: {
+        breakoutGroupId: fromGroupId,
+        status: "Pending",
+        ...(registrant.memberId
+          ? { memberId: registrant.memberId }
+          : { guestId: registrant.guestId! }),
+      },
+      data: { breakoutGroupId: toGroupId },
+    })
+
+    revalidatePath(`/small-groups/${from.smallGroupId}`)
+  } catch {
+    // Never propagate — the placement has already committed
+  }
+}
+
 export async function tryCancelSmallGroupRequestFromBreakout(
   breakoutGroupId: string,
   registrantId: string

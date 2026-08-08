@@ -8,10 +8,6 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest"
 import { db } from "@/lib/db"
 import { matchSmallGroups } from "@/lib/matching"
 import { createSmallGroup } from "@/app/(dashboard)/small-groups/actions"
-import {
-  createBreakoutGroup,
-  updateBreakoutGroup,
-} from "@/app/(dashboard)/events/breakout-actions"
 
 beforeEach(async () => {
   await db.$executeRaw`TRUNCATE "BreakoutGroupMember", "BreakoutGroupSchedule", "BreakoutGroup", "Event", "Member", "Guest", "SmallGroup", "SmallGroupLog", "SmallGroupMemberRequest", "LifeStage", "MatchingWeightConfig" RESTART IDENTITY CASCADE`
@@ -159,67 +155,6 @@ describe("matching — a day-only group is still scored", () => {
   })
 })
 
-describe("breakout group — optional meeting times", () => {
-  async function seedEvent() {
-    return db.event.create({
-      data: { name: "Event", type: "OneTime", startDate: new Date(), endDate: new Date() },
-    })
-  }
-
-  const baseBreakoutForm = {
-    name: "Table 1",
-    facilitatorId: null,
-    coFacilitatorId: null,
-    memberLimit: null,
-    lifeStageIds: [],
-    genderFocus: null,
-    language: [],
-    ageRangeMin: null,
-    ageRangeMax: null,
-    meetingFormat: null,
-    locationCity: null,
-    linkedSmallGroupId: null,
-  }
-
-  it("stores a day-only schedule row", async () => {
-    const event = await seedEvent()
-
-    const res = await createBreakoutGroup(event.id, {
-      ...baseBreakoutForm,
-      schedule: { dayOfWeek: 6, timeStart: null, timeEnd: null },
-    })
-
-    expect(res.success).toBe(true)
-    if (!res.success) return
-    const schedules = await db.breakoutGroupSchedule.findMany({
-      where: { breakoutGroupId: res.data.id },
-    })
-    expect(schedules).toHaveLength(1)
-    expect(schedules[0].dayOfWeek).toBe(6)
-    expect(schedules[0].timeStart).toBeNull()
-    expect(schedules[0].timeEnd).toBeNull()
-  })
-
-  it("clears the times on update without dropping the day", async () => {
-    const event = await seedEvent()
-    const created = await createBreakoutGroup(event.id, {
-      ...baseBreakoutForm,
-      schedule: { dayOfWeek: 6, timeStart: "09:00", timeEnd: "11:00" },
-    })
-    expect(created.success).toBe(true)
-    if (!created.success) return
-
-    const res = await updateBreakoutGroup(created.data.id, event.id, {
-      ...baseBreakoutForm,
-      schedule: { dayOfWeek: 6, timeStart: null, timeEnd: null },
-    })
-
-    expect(res.success).toBe(true)
-    const schedules = await db.breakoutGroupSchedule.findMany({
-      where: { breakoutGroupId: created.data.id },
-    })
-    expect(schedules).toHaveLength(1)
-    expect(schedules[0].dayOfWeek).toBe(6)
-    expect(schedules[0].timeStart).toBeNull()
-  })
-})
+// Breakout groups no longer store a meeting schedule: a breakout table meets
+// once, during the event. `BreakoutGroupSchedule` survives as an unused table
+// and nothing writes it. Small-group day-only schedules are covered above.
