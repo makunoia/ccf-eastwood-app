@@ -1,11 +1,9 @@
 "use client"
 
 import * as React from "react"
-import Link from "next/link"
-import { IconCheck, IconUserPlus } from "@tabler/icons-react"
+import { IconCheck } from "@tabler/icons-react"
 
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 
 type Person = {
@@ -20,25 +18,15 @@ type Person = {
 /**
  * Monitoring board — live check-in status for the day's events: one-time events,
  * and recurring events through the session this day is linked to. Check-in
- * itself happens on the check-in and walk-in links (Forms has every one); this
- * page just shows who's arrived.
+ * itself happens on the links in the Shortcuts section above (and on the Forms
+ * page); this list just shows who's arrived.
  */
 export function ClusterCheckinClient({
   people,
   hasCheckinEvents,
-  walkInHref,
-  walkInSettingsHref,
 }: {
   people: Person[]
   hasCheckinEvents: boolean
-  /** Door link for someone who isn't registered yet — null without write access. */
-  walkInHref?: string | null
-  /**
-   * Where to open the walk-in switch, when the door is closed (CCF-133). Only
-   * set for staff who can write — this board is authenticated, unlike the public
-   * check-in kiosk, so pointing at the admin form here is fine.
-   */
-  walkInSettingsHref?: string | null
 }) {
   const [search, setSearch] = React.useState("")
 
@@ -51,55 +39,27 @@ export function ClusterCheckinClient({
       })
     : people
 
-  // Same-tab navigation, not a new window: this is a PWA, and the walk-in form
-  // already carries a Back link to this board.
-  //
-  // A closed door says so and offers the switch rather than vanishing. Staff
-  // reach for this button on event day; silently removing it reads as a bug and
-  // sends someone hunting through Forms for a setting they didn't know existed.
-  const walkInButton = walkInHref ? (
-    <Button asChild variant="outline" className="w-full sm:w-auto">
-      <Link href={walkInHref}>
-        <IconUserPlus className="size-4" />
-        Walk-in registration
-      </Link>
-    </Button>
-  ) : walkInSettingsHref ? (
-    <p className="text-sm text-muted-foreground">
-      Walk-in registration is closed.{" "}
-      <Link
-        href={walkInSettingsHref}
-        className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 transition-colors hover:decoration-foreground"
-      >
-        Open it on the Walk-in form
-      </Link>
-      .
-    </p>
-  ) : null
-
   if (!hasCheckinEvents) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-2">
+        <h3 className="type-label text-muted-foreground">Arrivals</h3>
         <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
           Nothing to monitor yet. One-time events appear here automatically;
           a recurring event appears once its cluster link names a session.
         </div>
-        {walkInButton}
       </div>
     )
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <Input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search name or mobile…"
-          className="sm:max-w-xs"
-        />
-        {walkInButton}
-      </div>
+      <h3 className="type-label text-muted-foreground">Arrivals</h3>
+      <Input
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Search name or mobile…"
+        className="sm:max-w-xs"
+      />
 
       {filtered.length === 0 ? (
         <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">

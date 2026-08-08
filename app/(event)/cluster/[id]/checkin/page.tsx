@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import {
   getAccessibleClusterEvents,
+  getClusterCheckinShortcuts,
   getClusterRegistrantRows,
 } from "@/lib/clusters/aggregate"
 import { buildClusterRoster } from "@/lib/clusters/roster"
@@ -13,6 +14,7 @@ import { clusterWalkInPath } from "@/lib/public-routes"
 import { DetailPageHeader } from "@/components/detail-page-header"
 import { StatCard } from "@/components/session-stat-card"
 import { ClusterCheckinClient } from "./checkin-client"
+import { ClusterCheckinShortcuts } from "./checkin-shortcuts"
 
 export const metadata: Metadata = {
   title: "Check-in",
@@ -45,6 +47,12 @@ export default async function ClusterCheckinPage({
     date: cluster.date,
   })
   const roster = buildClusterRoster(events, rows)
+
+  // Shortcuts cover every accessible event, not just the ones the board can
+  // monitor: a MultiDay event still has a check-in link a staffer needs, even
+  // though its arrivals are tracked on its own sessions page.
+  const shortcuts = await getClusterCheckinShortcuts(accessibleEvents, cluster.date)
+  const writable = canWrite(session, "Events")
 
   const people = roster.rows.map((person) => {
     const cells = events
@@ -94,29 +102,26 @@ export default async function ClusterCheckinPage({
           />
         </div>
 
-        <ClusterCheckinClient
-          people={people}
-          hasCheckinEvents={events.length > 0}
+        <ClusterCheckinShortcuts
+          shortcuts={shortcuts}
+          canConfigure={writable}
           // The door link registers and checks someone in across the day in one
-          // pass — worth a shortcut from the board a staffer is already holding.
-          // Hidden from read-only staff: it writes registrations and attendance.
-          // Also null while the door is closed (CCF-133) — the switch link below
-          // takes over, so the button never dead-ends.
+          // pass. Hidden from read-only staff: it writes registrations and
+          // attendance. Also null while the door is closed (CCF-133) — the
+          // switch link takes over, so the button never dead-ends.
           walkInHref={
-            canWrite(session, "Events") &&
-            accessibleEvents.length > 0 &&
-            cluster.walkInIsOpen
+            writable && accessibleEvents.length > 0 && cluster.walkInIsOpen
               ? clusterWalkInPath(cluster.publicToken)
               : null
           }
           walkInSettingsHref={
-            canWrite(session, "Events") &&
-            accessibleEvents.length > 0 &&
-            !cluster.walkInIsOpen
+            writable && accessibleEvents.length > 0 && !cluster.walkInIsOpen
               ? `/cluster/${cluster.id}/forms/walk-in`
               : null
           }
         />
+
+        <ClusterCheckinClient people={people} hasCheckinEvents={events.length > 0} />
       </div>
     </>
   )
