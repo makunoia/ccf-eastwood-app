@@ -91,6 +91,31 @@ function revalidateFormSurfaces(eventId: string) {
  * write is what makes "bare by default" work: an event with no row collects
  * nothing optional, and only the toggles an admin actually flips get persisted.
  */
+/**
+ * The one way an admin write reaches an event's form config.
+ *
+ * Exists so `configuredAt` cannot be forgotten at one of the four call sites —
+ * the setup checklist reads it as "a person has been through the builder", and a
+ * path that skipped the stamp would leave that admin's event looking untouched.
+ * The same "spelled out in N places until they disagreed" shape that
+ * lib/breakouts/occupancy.ts exists to prevent.
+ *
+ * Stamped on update as well as create: re-saving is still an admin being here,
+ * and the checklist only cares that it is non-null.
+ */
+function upsertEventFormConfig(
+  eventId: string,
+  context: FormContext,
+  data: Partial<EventFormConfigData> & { successMessage?: string | null }
+) {
+  const configuredAt = new Date()
+  return db.eventFormConfig.upsert({
+    where: { eventId_context: { eventId, context } },
+    create: { eventId, context, configuredAt, ...data },
+    update: { ...data, configuredAt },
+  })
+}
+
 export async function saveEventFormConfig(
   eventId: string,
   context: FormContext,
@@ -123,11 +148,7 @@ export async function saveEventFormConfig(
     )
     if (guardError) return { success: false, error: guardError }
 
-    await db.eventFormConfig.upsert({
-      where: { eventId_context: { eventId, context: parsedContext.data } },
-      create: { eventId, context: parsedContext.data, ...data },
-      update: data,
-    })
+    await upsertEventFormConfig(eventId, parsedContext.data, data)
     revalidateFormSurfaces(eventId)
     return { success: true, data: undefined }
   } catch {
@@ -179,11 +200,7 @@ export async function copyEventFormConfig(
     const data: EventFormConfigData =
       (source as EventFormConfigData | null) ?? { ...BARE_EVENT_FORM_CONFIG }
 
-    await db.eventFormConfig.upsert({
-      where: { eventId_context: { eventId, context: parsedTo.data } },
-      create: { eventId, context: parsedTo.data, ...data },
-      update: data,
-    })
+    await upsertEventFormConfig(eventId, parsedTo.data, data)
     revalidateFormSurfaces(eventId)
     return { success: true, data: undefined }
   } catch {
@@ -282,11 +299,7 @@ export async function saveEventFormSuccessMessage(
     const event = await db.event.findUnique({ where: { id: eventId }, select: { id: true } })
     if (!event) return { success: false, error: "Event not found." }
 
-    await db.eventFormConfig.upsert({
-      where: { eventId_context: { eventId, context: parsedContext.data } },
-      create: { eventId, context: parsedContext.data, successMessage: parsed.data },
-      update: { successMessage: parsed.data },
-    })
+    await upsertEventFormConfig(eventId, parsedContext.data, { successMessage: parsed.data })
     revalidateFormSurfaces(eventId)
     return { success: true, data: undefined }
   } catch {

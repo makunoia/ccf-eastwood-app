@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { db } from "@/lib/db"
 import { PageHeader } from "@/components/page-header"
-import { GLOBAL_FORMS, scopeKeyFor } from "@/lib/forms/registry"
+import { GLOBAL_FORMS, defaultIsOpen, scopeKeyFor } from "@/lib/forms/registry"
 import { FormsList, type FormListRow } from "./forms-list"
 
 export const metadata: Metadata = {
@@ -20,7 +20,7 @@ export default async function FormsPage() {
     label: form.label,
     description: form.description,
     href: `/forms/${form.key}`,
-    isOpen: openByScope.get(scopeKeyFor(form.key)) ?? true,
+    isOpen: openByScope.get(scopeKeyFor(form.key)) ?? defaultIsOpen(form.key),
   }))
 
   return (

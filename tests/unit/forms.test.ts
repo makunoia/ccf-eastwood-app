@@ -173,14 +173,23 @@ describe("forms — the OneTime check-in surface honors FormConfig.isOpen", () =
 })
 
 describe("forms — the per-occurrence check-in surface has no event-wide gate", () => {
-  it("never reads FormConfig, since Forms offers those events no switch to set it", () => {
+  const source = readFileSync(
+    join(process.cwd(), "app/events/[id]/checkin/[occurrenceId]/page.tsx"),
+    "utf8"
+  )
+
+  it("never reads the check-in form's config, which has no switch behind it", () => {
     // Reading a flag with no UI behind it would strand an event that was closed
     // as OneTime and later converted to Recurring: closed, with nothing to reopen it.
-    const source = readFileSync(
-      join(process.cwd(), "app/events/[id]/checkin/[occurrenceId]/page.tsx"),
-      "utf8"
-    )
-    expect(source).not.toContain("getFormConfig")
+    // Session events open per occurrence, so `EventOccurrence.isOpen` is the only
+    // gate this page may consult.
+    expect(source).not.toContain('getFormConfig("EventCheckIn"')
+  })
+
+  it("never closes itself on a form config", () => {
+    // The `EventWalkIn` config *is* read here (CCF-133), but only to decide
+    // whether to offer the walk-in link. It must never gate check-in itself.
+    expect(source).not.toContain("FormClosed")
   })
 })
 

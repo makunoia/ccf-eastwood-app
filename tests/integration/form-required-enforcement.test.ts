@@ -56,12 +56,12 @@ describe("required fields on the public registration path", () => {
       },
     })
 
-    const result = await createRegistrant(event.id, { ...PERSON, lifeStageId: null })
+    const result = await createRegistrant(event.id, { ...PERSON, lifeStageId: null }, null)
     expect(result.success).toBe(false)
     expect(result.success === false && result.error).toContain("Life Stage")
     expect(await db.eventRegistrant.count()).toBe(0)
 
-    const ok = await createRegistrant(event.id, { ...PERSON, lifeStageId: lifeStage.id })
+    const ok = await createRegistrant(event.id, { ...PERSON, lifeStageId: lifeStage.id }, null)
     expect(ok.success).toBe(true)
   })
 
@@ -76,7 +76,7 @@ describe("required fields on the public registration path", () => {
       },
     })
 
-    const result = await createRegistrant(event.id, { ...PERSON, lifeStageId: null })
+    const result = await createRegistrant(event.id, { ...PERSON, lifeStageId: null }, null)
     expect(result.success).toBe(true)
   })
 
@@ -97,7 +97,7 @@ describe("required fields on the public registration path", () => {
       ...PERSON,
       wantsSmallGroup: false,
       language: [],
-    })
+    }, null)
     expect(skipped.success).toBe(true)
 
     // Someone who did opt in is held to it.
@@ -107,7 +107,7 @@ describe("required fields on the public registration path", () => {
       mobileNumber: "09181234567",
       wantsSmallGroup: true,
       language: [],
-    })
+    }, null)
     expect(blocked.success).toBe(false)
     expect(blocked.success === false && blocked.error).toContain("Language")
   })
@@ -123,7 +123,7 @@ describe("required fields on the public registration path", () => {
       lastName: "dela Cruz",
       mobileNumber: "",
       email: "juan@example.com",
-    })
+    }, null)
     expect(result.success).toBe(false)
     expect(result.success === false && result.error).toContain("Mobile Number")
   })
@@ -137,7 +137,7 @@ describe("required fields on the public registration path", () => {
     const result = await createRegistrant(event.id, {
       ...PERSON,
       email: "juan@example.com",
-    })
+    }, null)
     expect(result.success).toBe(true)
 
     const guest = await db.guest.findFirst()
@@ -153,7 +153,7 @@ describe("required fields on the public registration path", () => {
     const result = await createRegistrant(event.id, {
       ...PERSON,
       email: "juan@example.com",
-    })
+    }, null)
     expect(result.success).toBe(true)
 
     const guest = await db.guest.findFirst()
@@ -178,7 +178,7 @@ describe("required fields on the public registration path", () => {
       ...PERSON,
       lifeStageId: null,
       ageRangeBucketId: null,
-    })
+    }, null)
     expect(result.success).toBe(true)
 
     const guest = await db.guest.findFirst()

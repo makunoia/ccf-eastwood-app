@@ -1,6 +1,6 @@
 import { db } from "@/lib/db"
 import type { FormKey } from "@/app/generated/prisma/client"
-import { scopeKeyFor } from "./registry"
+import { defaultIsOpen, scopeKeyFor } from "./registry"
 
 /** The subset of FormConfig that drives public rendering + access. */
 export type FormConfigData = {
@@ -26,7 +26,10 @@ function synthesizedDefault(key: FormKey, eventId?: string | null): FormConfigDa
   return {
     key,
     eventId: eventId ?? null,
-    isOpen: true,
+    // Per-form, not a blanket true — walk-in starts closed. The DB column keeps
+    // its own `@default(true)` for rows that do exist; this is what "no row"
+    // means, and it is the only place that decides.
+    isOpen: defaultIsOpen(key),
     title: null,
     description: null,
     logoUrl: null,

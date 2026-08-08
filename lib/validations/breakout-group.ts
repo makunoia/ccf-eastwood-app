@@ -6,32 +6,17 @@ export const breakoutGroupSchema = z
     facilitatorId: z.string().nullable().optional(),
     coFacilitatorId: z.string().nullable().optional(),
     memberLimit: z.coerce.number().int().positive("Must be a positive number").nullable().optional(),
-    // Matching profile (optional — used for future auto-assign)
+    // Matching profile — the four factors a breakout group matches on. Meeting
+    // format, location city and meeting schedule are deliberately gone: a
+    // breakout table meets once, during the event, at the venue. Their columns
+    // survive on BreakoutGroup but nothing reads or writes them any more.
     lifeStageIds: z.array(z.string()).default([]),
     genderFocus: z.enum(["Male", "Female", "Mixed"]).nullable().optional(),
     language: z.array(z.string()).default([]),
     ageRangeMin: z.coerce.number().int().min(0).nullable().optional(),
     ageRangeMax: z.coerce.number().int().min(0).nullable().optional(),
-    meetingFormat: z.enum(["Online", "Hybrid", "InPerson"]).nullable().optional(),
-    locationCity: z.string().nullable().optional(),
+    /** Not matching — which DGroup receives this group's Catch Mech requests. */
     linkedSmallGroupId: z.string().nullable().optional(),
-    // Times are optional — a group may only know which day it meets.
-    schedule: z
-      .object({
-        dayOfWeek: z.coerce.number().int().min(0).max(6),
-        timeStart: z.string().nullable().optional().transform((v) => v || null),
-        timeEnd: z.string().nullable().optional().transform((v) => v || null),
-      })
-      .nullable()
-      .optional()
-      .refine(
-        (s) =>
-          s == null ||
-          s.timeStart == null ||
-          s.timeEnd == null ||
-          s.timeStart < s.timeEnd,
-        { message: "End time must be after start time" }
-      ),
   })
   .refine(
     (data) => {

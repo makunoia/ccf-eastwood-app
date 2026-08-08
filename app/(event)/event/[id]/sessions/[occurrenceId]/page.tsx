@@ -5,6 +5,7 @@ import { db } from "@/lib/db"
 import { canExport, canImport, canWrite } from "@/lib/permissions"
 import { isEstablishedAttendee, resolveAttendeeStatus } from "@/lib/session-stats"
 import { ministryLabel } from "@/lib/events/ministry-label"
+import { breakoutOccupancy } from "@/lib/breakouts/occupancy"
 import { BreadcrumbOverride } from "@/components/breadcrumb-context"
 import { DetailPageHeader } from "@/components/detail-page-header"
 import { SessionAttendeesTable } from "./session-attendees-table"
@@ -374,6 +375,13 @@ export default async function OccurrenceDetailPage({
       newCount: bgNewCount,
       returneeCount: bgReturneeCount,
       totalCheckedIn: checkedInMembers.length,
+      // Roster size, not today's turnout — capacity is about who is assigned to
+      // the group, which is what a placement fills. The counts above are who
+      // showed up. Keeping both on the row is why the columns are labelled.
+      occupancy: breakoutOccupancy({
+        memberCount: bg.members.length,
+        memberLimit: bg.memberLimit,
+      }),
     }
   })
 

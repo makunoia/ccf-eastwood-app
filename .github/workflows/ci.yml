@@ -1,0 +1,182 @@
+name: CI
+
+# Until this existed nothing ran a test but a laptop. Two build-breaking type
+# errors reached `staging` that way — both in test files, both invisible because
+# Vitest does not typecheck and `tsc` skipped what `.gitignore` hid.
+on:
+  push:
+    branches: [main, staging]
+  pull_request:
+  workflow_dispatch:
+
+# A second push to the same branch makes the first run's answer irrelevant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Matches the local setup in CLAUDE.md: Postgres 16, database `ccf_test`.
+  DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ccf_test
+  # NextAuth requires this to exist. CI never serves a real session, so a fixed
+  # throwaway is correct here — it must never be a real secret.
+  AUTH_SECRET: ci-not-a-real-secret-do-not-use-anywhere
+
+jobs:
+  check:
+    name: Lint, types, tests, build
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ccf_test
+        ports:
+          - 5432:5432
+        # Without this the job races the container and the first query fails.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # `.env*` is gitignored, and `vitest.config.ts` loads `.env.test` into
+      # `test.env`, which takes precedence over the process environment. Setting
+      # DATABASE_URL on the job alone would therefore be silently overridden by a
+      # missing file — the tests have to be handed the file itself.
+      - name: Write .env.test
+        run: |
+          printf 'DATABASE_URL=%s\nAUTH_SECRET=%s\n' "$DATABASE_URL" "$AUTH_SECRET" > .env.test
+
+      # `app/generated/prisma` is gitignored, so nothing typechecks or runs until
+      # the client exists.
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      # Applying the whole chain to an empty database is a real check, not setup:
+      # it is the only place a migration is ever proven to work from zero.
+      # Preview and production only ever apply the newest one onto years of state.
+      - name: Apply migrations to a fresh database
+        run: PRISMA_ENV_FILE=.env.test npx prisma migrate deploy
+
+      - name: Lint
+        run: pnpm lint
+
+      # Run before the tests, because it is the check that would have caught the
+      # two errors that prompted this workflow, and it is the fastest to fail.
+      # `next build` typechecks too, but only after several minutes of compiling.
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      # Unit, integration and ticket suites. Deliberately not `pnpm qa:gate`:
+      # that also runs `verify:all`, which re-runs `tests/tickets` a second time
+      # for no extra signal.
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+  e2e:
+    name: End-to-end
+    runs-on: ubuntu-latest
+    # Split from `check` so a flaky browser run never obscures whether the code
+    # itself is sound — the failing job name says which kind of problem it is.
+    needs: check
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ccf_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Write .env.test
+        run: |
+          printf 'DATABASE_URL=%s\nAUTH_SECRET=%s\n' "$DATABASE_URL" "$AUTH_SECRET" > .env.test
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Apply migrations
+        run: PRISMA_ENV_FILE=.env.test npx prisma migrate deploy
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Build
+        run: pnpm build
+
+      # `playwright.config.ts` sets `webServer: undefined` when CI is set, so the
+      # server is this job's responsibility. Port 3100 rather than 3000 is the
+      # config's own choice — it keeps a run pointed at the test database from
+      # ever reusing a server pointed at a real one.
+      - name: Start the app
+        run: |
+          nohup pnpm start --port 3100 > /tmp/next-server.log 2>&1 &
+          # Polled with curl rather than `npx wait-on`: wait-on is not a
+          # dependency of this project, and a CI step that silently downloads a
+          # package is a step that can fail for reasons unrelated to the code.
+          #
+          # /login rather than / because it is public and returns 200 — / would
+          # redirect, and a redirect is not proof the app can render anything.
+          for i in $(seq 1 60); do
+            if curl -sSf -o /dev/null http://localhost:3100/login; then
+              echo "app is up after ${i}s"
+              break
+            fi
+            if [ "$i" -eq 60 ]; then
+              echo "app did not start within 60s — server log follows"
+              cat /tmp/next-server.log
+              exit 1
+            fi
+            sleep 1
+          done
+
+      - name: Run Playwright
+        run: pnpm test:e2e
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

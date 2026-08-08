@@ -67,6 +67,53 @@ export const GATE_FIELDS: FieldMeta<GateWeightKey>[] = [
  */
 export const WEIGHT_FIELDS: FieldMeta[] = [...GATE_FIELDS, ...ACTIVE_WEIGHT_FIELDS]
 
+// ─── Breakout groups: a narrower set ─────────────────────────────────────────
+
+/**
+ * A breakout group is a table that meets once, during an event — it has no
+ * meeting format, no city and no standing schedule, and its members aren't
+ * there to build a career network. So work location, meeting format and work
+ * industry are dropped entirely, leaving life stage, gender focus, age and
+ * language.
+ *
+ * Life stage and gender are already hard gates (`passesBreakoutGates`), so the
+ * *weighted* set is just language and age.
+ */
+export const BREAKOUT_ACTIVE_WEIGHT_KEYS = ["language", "age"] as const
+
+export type BreakoutActiveWeightKey = (typeof BREAKOUT_ACTIVE_WEIGHT_KEYS)[number]
+
+export const BREAKOUT_ACTIVE_WEIGHT_FIELDS: FieldMeta<ActiveWeightKey>[] =
+  ACTIVE_WEIGHT_FIELDS.filter((f) =>
+    (BREAKOUT_ACTIVE_WEIGHT_KEYS as readonly string[]).includes(f.key)
+  )
+
+/**
+ * Schedule is deliberately absent: unlike small groups it is not a breakout
+ * gate (`passesBreakoutGates` checks gender and life stage only), so listing it
+ * as a requirement told admins about a filter that doesn't exist.
+ */
+export const BREAKOUT_GATE_FIELDS: FieldMeta<GateWeightKey>[] = GATE_FIELDS.filter(
+  (f) => f.key !== "schedule"
+)
+
+/** Which weighted factors a context scores over. */
+export function activeWeightKeysFor(
+  context: "SmallGroup" | "Breakout"
+): readonly ActiveWeightKey[] {
+  return context === "Breakout" ? BREAKOUT_ACTIVE_WEIGHT_KEYS : ACTIVE_WEIGHT_KEYS
+}
+
+export function activeWeightFieldsFor(
+  context: "SmallGroup" | "Breakout"
+): FieldMeta<ActiveWeightKey>[] {
+  return context === "Breakout" ? BREAKOUT_ACTIVE_WEIGHT_FIELDS : ACTIVE_WEIGHT_FIELDS
+}
+
+export function gateFieldsFor(context: "SmallGroup" | "Breakout"): FieldMeta<GateWeightKey>[] {
+  return context === "Breakout" ? BREAKOUT_GATE_FIELDS : GATE_FIELDS
+}
+
 // Days a small group is excluded from guest match suggestions after receiving
 // a guest assignment. 0 disables the cooldown.
 export const DEFAULT_GUEST_COOLDOWN_DAYS = 7

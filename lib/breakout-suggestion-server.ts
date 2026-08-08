@@ -3,6 +3,8 @@ import "server-only"
 import type { Prisma } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import type { BreakoutCandidate } from "@/lib/breakout-suggestion"
+import { breakoutOccupancy } from "@/lib/breakouts/occupancy"
+import { deriveEffectiveGenderFocus } from "@/lib/breakouts/gender-focus"
 
 /**
  * The facilitator gate: a breakout group is only offered at a staffed surface
@@ -62,18 +64,40 @@ export async function fetchBreakoutCandidates(
       ageRangeMax: true,
       memberLimit: true,
       _count: { select: { members: true } },
+      // Not for display — a group's gender focus is often left blank and implied
+      // by who runs it, and both the picker and the suggester have to see the
+      // same focus the admin surfaces do. See `deriveEffectiveGenderFocus`.
+      facilitator: { select: { member: { select: { gender: true } } } },
+      coFacilitator: { select: { member: { select: { gender: true } } } },
+      linkedSmallGroup: { select: { genderFocus: true } },
     },
   })
 
-  return groups.map((g) => ({
-    id: g.id,
-    name: g.name,
-    genderFocus: g.genderFocus,
-    ageRangeMin: g.ageRangeMin,
-    ageRangeMax: g.ageRangeMax,
-    memberLimit: g.memberLimit,
-    memberCount: g._count.members,
-  }))
+  return groups.map((g) => {
+    const occupancy = breakoutOccupancy({
+      memberCount: g._count.members,
+      memberLimit: g.memberLimit,
+    })
+    return {
+      id: g.id,
+      name: g.name,
+      genderFocus: deriveEffectiveGenderFocus(
+        g.genderFocus,
+        g.facilitator?.member.gender,
+        g.coFacilitator?.member.gender,
+        g.linkedSmallGroup?.genderFocus
+      ),
+      ageRangeMin: g.ageRangeMin,
+      ageRangeMax: g.ageRangeMax,
+      isFull: occupancy.isFull,
+      // remaining/limit — the same figure the old inline `score` used.
+      roomRatio:
+        occupancy.remaining == null || g.memberLimit == null || g.memberLimit === 0
+          ? null
+          : occupancy.remaining / g.memberLimit,
+      occupancy: { memberCount: occupancy.memberCount, memberLimit: occupancy.memberLimit },
+    }
+  })
 }
 
 export type BreakoutAvailability = {

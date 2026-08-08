@@ -25,7 +25,7 @@ import { setFacilitator } from "@/app/(dashboard)/events/breakout-actions"
 
 beforeEach(async () => {
   vi.clearAllMocks()
-  await db.$executeRaw`TRUNCATE "SmallGroupMemberRequest", "SmallGroupLog", "BreakoutGroupMember", "BreakoutGroup", "Volunteer", "CommitteeRole", "VolunteerCommittee", "EventMinistry", "EventRegistrant", "EventOccurrence", "Event", "SmallGroup", "Member", "Guest" RESTART IDENTITY CASCADE`
+  await db.$executeRaw`TRUNCATE "SmallGroupMemberRequest", "SmallGroupLog", "BreakoutGroupMember", "BreakoutGroupSchedule", "BreakoutGroup", "Volunteer", "CommitteeRole", "VolunteerCommittee", "EventMinistry", "EventRegistrant", "EventOccurrence", "Event", "SmallGroup", "Member", "Guest", "LifeStage" RESTART IDENTITY CASCADE`
 })
 
 afterAll(async () => {
@@ -207,5 +207,124 @@ describe("regression", () => {
 
     const updated = await db.breakoutGroup.findUnique({ where: { id: breakoutGroup.id } })
     expect(updated?.linkedSmallGroupId).toBe(smallGroup.id)
+  })
+})
+
+// ─── The profile does NOT follow the facilitator ─────────────────────────────
+
+/**
+ * A breakout group's criteria are its own — hand-entered, always editable.
+ * `setFacilitator` briefly copied them from the facilitator's linked DGroup
+ * (CCF-138), which meant assigning someone silently rewrote what the group
+ * matched for and made the profile read-only in both edit drawers. These tests
+ * pin the reversal, and that the Catch Mech link still travels with the change.
+ */
+describe("setFacilitator leaves the matching profile alone", () => {
+  async function seedLedGroup(leaderId: string, name: string) {
+    const lifeStage = await db.lifeStage.create({
+      data: { name: `${name} Stage`, order: 0 },
+    })
+    return db.smallGroup.create({
+      data: {
+        name,
+        leaderId,
+        genderFocus: "Male",
+        language: ["English"],
+        ageRangeMin: 25,
+        ageRangeMax: 35,
+        lifeStages: { connect: { id: lifeStage.id } },
+      },
+      include: { lifeStages: true },
+    })
+  }
+
+  /** The group's own criteria, deliberately unlike any DGroup seeded below. */
+  async function seedOwnProfile(groupId: string) {
+    const lifeStage = await db.lifeStage.create({ data: { name: "Own Stage", order: 1 } })
+    await db.breakoutGroup.update({
+      where: { id: groupId },
+      data: {
+        genderFocus: "Female",
+        language: ["Cebuano"],
+        ageRangeMin: 40,
+        ageRangeMax: 50,
+        lifeStages: { set: [{ id: lifeStage.id }] },
+      },
+    })
+    return lifeStage
+  }
+
+  it("keeps the group's own criteria when a DGroup leader is assigned", async () => {
+    const { event, member1, vol1, breakoutGroup } = await seedEventWithVolunteers()
+    const ownStage = await seedOwnProfile(breakoutGroup.id)
+    const sg = await seedLedGroup(member1.id, "Alpha")
+
+    const result = await setFacilitator(breakoutGroup.id, vol1.id, "facilitator", event.id, sg.id)
+    expect(result.success).toBe(true)
+
+    const updated = await db.breakoutGroup.findUnique({
+      where: { id: breakoutGroup.id },
+      include: { lifeStages: true },
+    })
+    expect(updated?.facilitatorId).toBe(vol1.id)
+    expect(updated?.genderFocus).toBe("Female")
+    expect(updated?.language).toEqual(["Cebuano"])
+    expect(updated?.ageRangeMin).toBe(40)
+    expect(updated?.ageRangeMax).toBe(50)
+    expect(updated?.lifeStages.map((ls) => ls.id)).toEqual([ownStage.id])
+  })
+
+  it("keeps them across a reassignment to a different DGroup leader", async () => {
+    const { event, member1, member2, vol1, vol2, breakoutGroup } =
+      await seedEventWithVolunteers()
+    await seedOwnProfile(breakoutGroup.id)
+    const alpha = await seedLedGroup(member1.id, "Alpha")
+    const beta = await seedLedGroup(member2.id, "Beta")
+
+    await setFacilitator(breakoutGroup.id, vol1.id, "facilitator", event.id, alpha.id)
+    await setFacilitator(breakoutGroup.id, vol2.id, "facilitator", event.id, beta.id)
+
+    const updated = await db.breakoutGroup.findUnique({ where: { id: breakoutGroup.id } })
+    expect(updated?.genderFocus).toBe("Female")
+    expect(updated?.language).toEqual(["Cebuano"])
+  })
+
+  it("keeps a Timothy's hand-entered profile", async () => {
+    // member2 leads no DGroup — those criteria seed their future group.
+    const { event, vol2, breakoutGroup } = await seedEventWithVolunteers()
+    await seedOwnProfile(breakoutGroup.id)
+
+    await setFacilitator(breakoutGroup.id, vol2.id, "facilitator", event.id, null)
+
+    const updated = await db.breakoutGroup.findUnique({ where: { id: breakoutGroup.id } })
+    expect(updated?.facilitatorId).toBe(vol2.id)
+    expect(updated?.genderFocus).toBe("Female")
+    expect(updated?.language).toEqual(["Cebuano"])
+  })
+
+  it("keeps them when the facilitator is unassigned", async () => {
+    const { event, member1, vol1, breakoutGroup } = await seedEventWithVolunteers()
+    await seedOwnProfile(breakoutGroup.id)
+    const sg = await seedLedGroup(member1.id, "Alpha")
+    await setFacilitator(breakoutGroup.id, vol1.id, "facilitator", event.id, sg.id)
+
+    await setFacilitator(breakoutGroup.id, null, "facilitator", event.id, null)
+
+    const updated = await db.breakoutGroup.findUnique({ where: { id: breakoutGroup.id } })
+    expect(updated?.facilitatorId).toBeNull()
+    expect(updated?.linkedSmallGroupId).toBeNull()
+    expect(updated?.genderFocus).toBe("Female")
+  })
+
+  // The link is not matching — it decides which DGroup receives this group's
+  // Catch Mech member requests (`resolveLinkedSmallGroup`).
+  it("still records the Catch Mech DGroup a facilitator change picks", async () => {
+    const { event, member1, vol1, breakoutGroup } = await seedEventWithVolunteers()
+    const sg = await seedLedGroup(member1.id, "Alpha")
+
+    await setFacilitator(breakoutGroup.id, vol1.id, "facilitator", event.id, sg.id)
+
+    const updated = await db.breakoutGroup.findUnique({ where: { id: breakoutGroup.id } })
+    expect(updated?.linkedSmallGroupId).toBe(sg.id)
   })
 })

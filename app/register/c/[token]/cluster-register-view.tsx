@@ -28,6 +28,7 @@ export async function getCluster(token: string) {
       name: true,
       date: true,
       isOpen: true,
+      walkInIsOpen: true,
       registrationStart: true,
       registrationEnd: true,
       logoUrl: true,
@@ -89,7 +90,14 @@ export async function ClusterRegisterView({
       }
     : undefined
 
-  if (!door) {
+  // Two switches, deliberately independent (CCF-133). The shared form answers to
+  // `isOpen` plus the registration window; the door answers only to its own
+  // switch, so closing pre-registration the night before leaves it running.
+  if (door) {
+    if (!cluster.walkInIsOpen) {
+      return <FormClosed title="Walk-in is currently unavailable" />
+    }
+  } else {
     const open =
       cluster.isOpen &&
       isWithinRegistrationWindow(cluster.registrationStart, cluster.registrationEnd)

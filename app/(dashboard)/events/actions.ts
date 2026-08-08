@@ -35,6 +35,7 @@ import {
   resolveConfirmedMember,
   type AssignedBreakout,
 } from "@/lib/events/registration-core"
+import { isEventStaffViewer } from "@/lib/events/staff-viewer"
 import { registrantSchema } from "@/lib/validations/event-registrant"
 import {
   findMatchingSeries,
@@ -622,6 +623,13 @@ export async function createRegistrant(
     // runs off a null selection, so it is unaffected.
     const breakoutPick = resolveBreakoutSelection(formConfig, selectedBreakoutGroupId)
 
+    // Going over a group's member limit is a staff decision taken at the door
+    // (CCF-141). `walkIn` alone can't authorise it: the walk-in route is public,
+    // so that flag is self-asserted by the request. Both halves are required —
+    // signed-in staff pre-registering someone don't get the override either,
+    // because the form they used never offered a full group.
+    const allowOverCapacity = !!walkIn && (await isEventStaffViewer())
+
     // The steps below (person resolution → per-event completion) live in
     // lib/events/registration-core.ts so the cluster shared form (CCF-132) can
     // resolve the person once and fan out across events. The order here is the
@@ -653,6 +661,7 @@ export async function createRegistrant(
           birthYear: parsed.data.birthYear ?? stored.birthYear,
         },
         walkIn,
+        allowOverCapacity,
         existingRegistrantId: existingRegistrationId,
       })
       return { success: true, data: result }
@@ -676,6 +685,7 @@ export async function createRegistrant(
           birthYear: parsed.data.birthYear ?? stored.birthYear,
         },
         walkIn,
+        allowOverCapacity,
         existingRegistrantId: existingRegistrationId,
       })
       return { success: true, data: result }
@@ -700,6 +710,7 @@ export async function createRegistrant(
           birthYear: parsed.data.birthYear ?? null,
         },
         walkIn,
+        allowOverCapacity,
         existingRegistrantId: existingRegistrationId,
       })
       return { success: true, data: result }
@@ -1774,9 +1785,18 @@ export async function createHouseholdRegistration(
 > {
   const parsedHousehold = householdSchema.safeParse(householdRaw)
   if (!parsedHousehold.success) {
+    const issue = parsedHousehold.error.issues[0]
+    // The form repeats every field once per household member, so an unqualified
+    // "Please enter a 4-digit birth year…" leaves the person hunting for which
+    // row it came from. Name the member when the issue points at one.
+    const [scope, index] = issue?.path ?? []
+    const member =
+      scope === "members" && typeof index === "number" ? householdRaw.members?.[index] : undefined
+    const who = [member?.firstName, member?.lastName].filter(Boolean).join(" ").trim()
+    const message = issue?.message ?? "Invalid household details"
     return {
       success: false,
-      error: parsedHousehold.error.issues[0]?.message ?? "Invalid household details",
+      error: who ? `${who}: ${message}` : message,
     }
   }
   const parsedContext = walkIn ? "WalkIn" : "Register"

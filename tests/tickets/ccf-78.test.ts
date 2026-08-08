@@ -28,9 +28,22 @@ import { createBreakoutGroup, updateBreakoutGroup } from "@/app/(dashboard)/even
  *
  * A Timothy is a volunteer whose member has no led small groups (ledGroups.length === 0).
  * When such a volunteer is assigned as facilitator, the matching profile fields
- * (Life Stage, Gender Focus, Language, Meeting Format, Meeting Schedule) become
- * required so the system has enough data to set up their future small group.
+ * become required so the system has enough data to set up their future small
+ * group.
+ *
+ * The required set is now the four factors a breakout group actually matches
+ * on — Life Stage, Gender Focus, Language, Age Range. Meeting Format and
+ * Meeting Schedule were dropped from breakout groups entirely (a table meets
+ * once, during the event), so requiring them had become unsatisfiable.
  */
+
+/** Everything a Timothy facilitator must supply. */
+const TIMOTHY_PROFILE = {
+  genderFocus: "Mixed" as const,
+  language: ["Filipino"],
+  ageRangeMin: 25,
+  ageRangeMax: 35,
+}
 
 // ─── Seed helpers ──────────────────────────────────────────────────────────────
 
@@ -74,7 +87,7 @@ async function seedLeaderVolunteer(eventId: string, committeeId: string, roleId:
 // ─── Setup / Teardown ──────────────────────────────────────────────────────────
 
 beforeEach(async () => {
-  await db.$executeRaw`TRUNCATE "SmallGroupMemberRequest", "SmallGroupLog", "BreakoutGroupMember", "BreakoutGroupSchedule", "BreakoutGroup", "Volunteer", "CommitteeRole", "VolunteerCommittee", "EventMinistry", "EventRegistrant", "EventOccurrence", "Event", "SmallGroup", "Member", "Guest" RESTART IDENTITY CASCADE`
+  await db.$executeRaw`TRUNCATE "SmallGroupMemberRequest", "SmallGroupLog", "BreakoutGroupMember", "BreakoutGroupSchedule", "BreakoutGroup", "Volunteer", "CommitteeRole", "VolunteerCommittee", "EventMinistry", "EventRegistrant", "EventOccurrence", "Event", "SmallGroup", "Member", "Guest", "LifeStage" RESTART IDENTITY CASCADE`
 })
 
 afterAll(async () => {
@@ -88,14 +101,13 @@ describe("CCF-78 — createBreakoutGroup with Timothy facilitator", () => {
     const { event, committee, role } = await seedBase()
     const { volunteer } = await seedTimothyVolunteer(event.id, committee.id, role.id)
 
+    const lifeStage = await db.lifeStage.create({ data: { name: "Young Pro", order: 0 } })
+
     const result = await createBreakoutGroup(event.id, {
       name: "Table 1",
-      lifeStageIds: [],
+      lifeStageIds: [lifeStage.id],
       facilitatorId: volunteer.id,
-      language: ["Filipino"],
-      genderFocus: "Mixed",
-      meetingFormat: "InPerson",
-      schedule: { dayOfWeek: 0, timeStart: "09:00", timeEnd: "10:00" },
+      ...TIMOTHY_PROFILE,
     })
 
     expect(result.success).toBe(true)
@@ -121,14 +133,14 @@ describe("CCF-78 — createBreakoutGroup with Timothy facilitator", () => {
     const { event, committee, role } = await seedBase()
     const { volunteer } = await seedTimothyVolunteer(event.id, committee.id, role.id)
 
+    const lifeStage = await db.lifeStage.create({ data: { name: "Young Pro", order: 0 } })
+
     const result = await createBreakoutGroup(event.id, {
       name: "Table 1",
-      lifeStageIds: [],
+      lifeStageIds: [lifeStage.id],
       facilitatorId: volunteer.id,
-      genderFocus: "Mixed",
+      ...TIMOTHY_PROFILE,
       language: [],
-      meetingFormat: "InPerson",
-      schedule: { dayOfWeek: 0, timeStart: "09:00", timeEnd: "10:00" },
     })
 
     expect(result.success).toBe(false)
@@ -136,7 +148,7 @@ describe("CCF-78 — createBreakoutGroup with Timothy facilitator", () => {
     expect(result.error).toContain("Language")
   })
 
-  it("rejects when schedule is missing for Timothy facilitator", async () => {
+  it("rejects when the life stage is missing for Timothy facilitator", async () => {
     const { event, committee, role } = await seedBase()
     const { volunteer } = await seedTimothyVolunteer(event.id, committee.id, role.id)
 
@@ -144,15 +156,30 @@ describe("CCF-78 — createBreakoutGroup with Timothy facilitator", () => {
       name: "Table 1",
       lifeStageIds: [],
       facilitatorId: volunteer.id,
-      genderFocus: "Mixed",
-      language: ["Filipino"],
-      meetingFormat: "InPerson",
-      schedule: null,
+      ...TIMOTHY_PROFILE,
     })
 
     expect(result.success).toBe(false)
     if (result.success) return
-    expect(result.error).toContain("Meeting Schedule")
+    expect(result.error).toContain("Life Stage")
+  })
+
+  it("rejects when only one age bound is given for Timothy facilitator", async () => {
+    const { event, committee, role } = await seedBase()
+    const { volunteer } = await seedTimothyVolunteer(event.id, committee.id, role.id)
+    const lifeStage = await db.lifeStage.create({ data: { name: "Young Pro", order: 0 } })
+
+    const result = await createBreakoutGroup(event.id, {
+      name: "Table 1",
+      lifeStageIds: [lifeStage.id],
+      facilitatorId: volunteer.id,
+      ...TIMOTHY_PROFILE,
+      ageRangeMax: null,
+    })
+
+    expect(result.success).toBe(false)
+    if (result.success) return
+    expect(result.error).toContain("Age Range")
   })
 
   it("allows no profile when facilitator is a non-Timothy (has led groups)", async () => {
@@ -211,14 +238,13 @@ describe("CCF-78 — updateBreakoutGroup with Timothy facilitator", () => {
       data: { name: "Table 1", eventId: event.id },
     })
 
+    const lifeStage = await db.lifeStage.create({ data: { name: "Young Pro", order: 0 } })
+
     const result = await updateBreakoutGroup(group.id, event.id, {
       name: "Table 1",
-      lifeStageIds: [],
+      lifeStageIds: [lifeStage.id],
       facilitatorId: volunteer.id,
-      genderFocus: "Mixed",
-      language: ["Filipino"],
-      meetingFormat: "InPerson",
-      schedule: { dayOfWeek: 1, timeStart: "10:00", timeEnd: "11:00" },
+      ...TIMOTHY_PROFILE,
     })
 
     expect(result.success).toBe(true)
@@ -257,9 +283,12 @@ describe("CCF-78 — regression", () => {
     expect(result.success).toBe(false)
     if (result.success) return
     // All 4 required fields mentioned
+    expect(result.error).toContain("Life Stage")
     expect(result.error).toContain("Gender Focus")
     expect(result.error).toContain("Language")
-    expect(result.error).toContain("Meeting Format")
-    expect(result.error).toContain("Meeting Schedule")
+    expect(result.error).toContain("Age Range")
+    // Dropped from breakout groups — requiring them was unsatisfiable.
+    expect(result.error).not.toContain("Meeting Format")
+    expect(result.error).not.toContain("Meeting Schedule")
   })
 })

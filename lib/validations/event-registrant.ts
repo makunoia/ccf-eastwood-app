@@ -1,6 +1,7 @@
 import { z } from "zod"
 import { formatPhilippinePhone } from "@/lib/utils"
 import { isExternalSatellite } from "@/lib/constants/ccf-satellites"
+import { optionalBirthMonth, optionalBirthYear } from "@/lib/validations/birth-date"
 
 // Public registration payload — shared by the single-event form (createRegistrant)
 // and the cluster shared form (registerForCluster). Lives outside the "use server"
@@ -12,8 +13,8 @@ export const registrantSchema = z.object({
   email: z.string().nullish().transform((v) => (v === "" || v == null ? null : v.trim())),
   mobileNumber: z.string().nullish().transform((v) => (v === "" || v == null ? null : formatPhilippinePhone(v.trim()))),
   // Birthday — used as fallback matching field when no mobile or email
-  birthMonth: z.number().int().min(1).max(12).optional().nullable(),
-  birthYear: z.number().int().min(1900).max(2100).optional().nullable(),
+  birthMonth: optionalBirthMonth,
+  birthYear: optionalBirthYear,
   // Coarse age bracket (CCF-123) — an alternative to birth year, not a replacement.
   ageRangeBucketId: z.string().optional().nullable().transform((v) => v || null),
   // Optional matching fields — collected when the event's Small Group registration module is enabled

@@ -38,6 +38,7 @@ import { BirthMonthYearInput } from "@/components/ui/birth-month-year-input"
 import { PrivacyPolicyCheckbox } from "@/components/ui/privacy-policy-checkbox"
 import { PersonCombobox } from "@/components/ui/person-combobox"
 import { EXTERNAL_SATELLITES_BY_REGION } from "@/lib/constants/ccf-satellites"
+import { birthYearMessage, isValidBirthYear } from "@/lib/validations/birth-date"
 import {
   Select,
   SelectContent,
@@ -70,6 +71,7 @@ import {
   type BreakoutCandidate,
   type BreakoutNoticeKind,
 } from "@/lib/breakout-suggestion"
+import { breakoutOccupancy } from "@/lib/breakouts/occupancy"
 
 const DAY_NAMES = ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"]
 const MEETING_FORMAT_LABEL: Record<"Online" | "Hybrid" | "InPerson", string> = {
@@ -352,7 +354,9 @@ export function RegistrationForm({
     matchedBy: "mobile" | "email"
     items: AmbiguousCandidate[]
   } | null>(null)
-  const [selectedBreakoutId, setSelectedBreakoutId] = React.useState<string>("")
+  // Read `selectedBreakoutId` (derived below), not this — a group can stop being
+  // offered after the fact, when the registrant goes back and changes gender.
+  const [rawSelectedBreakoutId, setSelectedBreakoutId] = React.useState<string>("")
   const [assignedBreakout, setAssignedBreakout] = React.useState<AssignedBreakout | null>(null)
   // Cluster mode: which of the day's events the person is attending, and the
   // per-event outcomes shown on the success screen (partial success).
@@ -391,11 +395,36 @@ export function RegistrationForm({
     })
   }, [breakoutCandidates, form.gender, form.birthYear, hasBreakoutChoices])
 
-  // Every group in the room, unfiltered — the profile only drives the suggestion
-  // above, never what the registrant is allowed to browse.
+  // Filtered by gender once it's known — a men's group is not something a woman
+  // can join, so listing it is a dead end. With gender blank (or not asked at
+  // all) every group is browsable; see `breakoutPickerOptions`.
   const browsableCandidates = React.useMemo(
-    () => breakoutPickerOptions(breakoutCandidates),
-    [breakoutCandidates]
+    () =>
+      breakoutPickerOptions(breakoutCandidates, {
+        gender: (form.gender || null) as "Male" | "Female" | null,
+      }),
+    [breakoutCandidates, form.gender]
+  )
+
+  // Going back and changing gender must not leave a now-hidden group selected —
+  // it would still be submitted, and the registrant would have no way to see or
+  // undo it. Derived rather than reset in an effect so there is never a render
+  // where the stale id is live.
+  const selectedBreakoutId = browsableCandidates.some((g) => g.id === rawSelectedBreakoutId)
+    ? rawSelectedBreakoutId
+    : ""
+
+  // Occupancy travels only to staffed surfaces, so its presence — not the
+  // `walkIn` prop — is what decides whether headcounts render and whether a full
+  // group can be chosen anyway. The page that fetched the data made that call.
+  const suggestedOccupancy = React.useMemo(
+    () => (suggestedBreakout?.occupancy ? breakoutOccupancy(suggestedBreakout.occupancy) : null),
+    [suggestedBreakout]
+  )
+
+  const selectedOccupancy = React.useMemo(
+    () => browsableCandidates.find((g) => g.id === selectedBreakoutId)?.occupancyView ?? null,
+    [browsableCandidates, selectedBreakoutId]
   )
 
   React.useEffect(() => {
@@ -556,6 +585,14 @@ export function RegistrationForm({
         toast.error("Give every household member both a first and last name, or remove them.")
         return
       }
+      const badYear = householdMembers.find(
+        (m) => m.birthYear && !isValidBirthYear(parseInt(m.birthYear, 10))
+      )
+      if (badYear) {
+        const who = [badYear.firstName, badYear.lastName].filter(Boolean).join(" ").trim()
+        toast.error(who ? `${who}: ${birthYearMessage()}` : birthYearMessage())
+        return
+      }
     }
 
     // Cluster mode: the day makes no sense with nothing ticked.
@@ -589,6 +626,12 @@ export function RegistrationForm({
       const missingPersonal = missingInSection("personal")
       if (missingPersonal.length > 0) {
         toast.error(requiredFieldsMessage(missingPersonal))
+        return
+      }
+      // A half-typed ("19") or implausible year is caught here, while the input
+      // is still on screen — and before the member lookup below reads it.
+      if (form.birthYear && !isValidBirthYear(parseInt(form.birthYear, 10))) {
+        toast.error(birthYearMessage())
         return
       }
 
@@ -1858,6 +1901,13 @@ export function RegistrationForm({
                         Suggested for you
                       </p>
                       <p className="mt-1 text-sm font-medium truncate">{suggestedBreakout.name}</p>
+                      {suggestedOccupancy && (
+                        <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">
+                          {suggestedOccupancy.label} members
+                          {suggestedOccupancy.remaining !== null &&
+                            ` · ${suggestedOccupancy.remaining} left`}
+                        </p>
+                      )}
                     </div>
                     <div
                       aria-hidden="true"
@@ -1874,8 +1924,20 @@ export function RegistrationForm({
                 )
               })()}
 
-              <div className={cn("space-y-2", !hasBreakoutChoices && "hidden")}>
-                <Label>Or browse all groups</Label>
+              {/* Gender can rule every group out. Saying so beats an empty
+                  dropdown, which reads as a broken step. */}
+              {hasBreakoutChoices && browsableCandidates.length === 0 && (
+                <div className="rounded-lg border border-dashed bg-muted/40 p-4">
+                  <p className="text-sm font-medium">No groups match your details</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Every breakout group for this event is for a different gender. You can
+                    continue — the team will place you on the day.
+                  </p>
+                </div>
+              )}
+
+              <div className={cn("space-y-2", browsableCandidates.length === 0 && "hidden")}>
+                <Label>Or browse groups</Label>
                 <Select
                   value={selectedBreakoutId || "_none"}
                   onValueChange={(v) => setSelectedBreakoutId(v === "_none" ? "" : v)}
@@ -1886,13 +1948,48 @@ export function RegistrationForm({
                   <SelectContent>
                     <SelectItem value="_none">No selection</SelectItem>
                     {browsableCandidates.map((g) => (
-                      <SelectItem key={g.id} value={g.id} disabled={g.isFull}>
-                        {g.name}
-                        {g.isFull ? " (full)" : ""}
+                      // A full group is unselectable on the public form but
+                      // selectable at the door: a staff member placing someone
+                      // may have a reason to go over, a self-serve registrant
+                      // does not.
+                      <SelectItem key={g.id} value={g.id} disabled={!g.occupancyView && g.isFull}>
+                        <span className="flex w-full items-center justify-between gap-3">
+                          <span className="truncate">{g.name}</span>
+                          {g.occupancyView ? (
+                            <span
+                              className={cn(
+                                "shrink-0 text-xs tabular-nums",
+                                g.occupancyView.isFull
+                                  ? "text-destructive"
+                                  : "text-muted-foreground"
+                              )}
+                            >
+                              {g.occupancyView.label}
+                              {g.occupancyView.isFull && " · full"}
+                            </span>
+                          ) : (
+                            g.isFull && (
+                              <span className="shrink-0 text-xs text-muted-foreground">(full)</span>
+                            )
+                          )}
+                        </span>
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+
+                {/* The warning half of "selectable with a warning". A SelectItem
+                    can't host this, so it sits under the trigger and speaks to
+                    whatever is currently chosen. */}
+                {selectedOccupancy?.isFull && (
+                  <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
+                    <p className="text-sm font-medium">This group is already at capacity</p>
+                    <p className="mt-1 text-xs text-muted-foreground tabular-nums">
+                      {selectedOccupancy.label} members. You can still place them here — the group
+                      will go over its limit.
+                    </p>
+                  </div>
+                )}
               </div>
             </>
           )}

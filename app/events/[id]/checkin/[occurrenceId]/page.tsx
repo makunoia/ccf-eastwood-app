@@ -4,6 +4,8 @@ import { db } from "@/lib/db"
 import { getEventName } from "@/lib/metadata"
 import { CheckinBoard } from "../checkin-board"
 import { getEffectiveFormConfig } from "@/lib/forms/context-config-server"
+import { getFormConfig } from "@/lib/forms/config"
+import { resolveWalkInAccess } from "@/lib/events/walk-in-access"
 
 async function getOccurrenceWithEvent(occurrenceId: string) {
   return db.eventOccurrence.findUnique({
@@ -23,6 +25,7 @@ async function getOccurrenceWithEvent(occurrenceId: string) {
           themeColorPrimary: true,
           registrationPageBannerUrl: true,
           autoAssignBreakout: true,
+          walkInOccurrence: { select: { id: true, isOpen: true } },
           ministries: {
             select: {
               ministry: {
@@ -156,6 +159,16 @@ export default async function OccurrenceCheckinPage({
       ? occurrence.event.ministries[0].ministry.lifeStageId
       : undefined
 
+  // Whether to offer the walk-in link (CCF-133). Note this reads the event's
+  // *configured* walk-in session, not this occurrence: a staffer on an older
+  // session's board must not be handed a link that registers into today's.
+  const walkInConfig = await getFormConfig("EventWalkIn", id)
+  const walkInAccess = resolveWalkInAccess({
+    eventType: occurrence.event.type,
+    formIsOpen: walkInConfig.isOpen,
+    session: occurrence.event.walkInOccurrence,
+  })
+
   const dateLabel = occurrence.date.toLocaleDateString("en-PH", {
     weekday: "long",
     month: "long",
@@ -227,6 +240,7 @@ export default async function OccurrenceCheckinPage({
             defaultLifeStageId={defaultLifeStageId}
             autoAssignBreakout={occurrence.event.autoAssignBreakout}
             config={formFields}
+            walkInOpen={walkInAccess.open}
           />
         </div>
       </div>

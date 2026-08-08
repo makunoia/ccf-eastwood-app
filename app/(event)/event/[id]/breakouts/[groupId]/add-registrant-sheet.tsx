@@ -32,6 +32,7 @@ import { formatDayOfWeek } from "@/lib/format/schedule"
 import { listBreakoutCandidates } from "@/app/(dashboard)/events/matching-actions"
 import type { BreakoutCandidateList } from "@/app/(dashboard)/events/matching-actions"
 import { addRegistrantsToBreakout } from "@/app/(dashboard)/events/breakout-actions"
+import { breakoutOccupancy } from "@/lib/breakouts/occupancy"
 import {
   filterBreakoutCandidates,
   sortCandidates,
@@ -154,9 +155,14 @@ function CandidatePicker({
     [candidates]
   )
 
-  const remaining =
-    data?.memberLimit == null ? Infinity : data.memberLimit - data.currentCount
-  const atCapacity = remaining <= 0
+  const occupancy = breakoutOccupancy({
+    memberCount: data?.currentCount ?? 0,
+    memberLimit: data?.memberLimit ?? null,
+  })
+  // Infinity keeps the `selected.size >` comparison below meaningful for an
+  // uncapped group, where "remaining" is genuinely not a number.
+  const remaining = occupancy.remaining ?? Infinity
+  const atCapacity = occupancy.isFull
   const overCapacity = selected.size > remaining
 
   function toggle(id: string) {

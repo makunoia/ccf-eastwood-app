@@ -17,8 +17,13 @@ import { GroupTypeBadge } from "@/components/group-type-badge"
 import {
   ACTIVE_WEIGHT_FIELDS,
   GATE_FIELDS,
+  activeWeightFieldsFor,
+  gateFieldsFor,
 } from "@/lib/validations/matching-weights"
 import type { MatchResult, GroupSummary } from "@/lib/matching/types"
+
+/** Which matching context a card is rendering results for. */
+export type MatchingScope = "SmallGroup" | "Breakout"
 
 // ─── Fit reasons ──────────────────────────────────────────────────────────────
 
@@ -159,7 +164,19 @@ function FactorRow({ result, factorKey, isGate }: {
   )
 }
 
-export function MatchBreakdown({ result }: { result: MatchResult }) {
+/**
+ * `context` narrows the grid to the factors that context actually scores.
+ * Breakout matching ignores work location, meeting format, industry and
+ * capacity, and showing a "Weak" bar for a factor that carries no weight is
+ * worse than showing nothing.
+ */
+export function MatchBreakdown({
+  result,
+  context = "SmallGroup",
+}: {
+  result: MatchResult
+  context?: MatchingScope
+}) {
   return (
     <div className="space-y-4">
       <div>
@@ -167,7 +184,7 @@ export function MatchBreakdown({ result }: { result: MatchResult }) {
           Requirements met
         </p>
         <div className="divide-y">
-          {GATE_FIELDS.map((f) => (
+          {gateFieldsFor(context).map((f) => (
             <FactorRow key={f.key} result={result} factorKey={f.key} isGate />
           ))}
         </div>
@@ -177,7 +194,7 @@ export function MatchBreakdown({ result }: { result: MatchResult }) {
           Weighted factors
         </p>
         <div className="divide-y">
-          {ACTIVE_WEIGHT_FIELDS.map((f) => (
+          {activeWeightFieldsFor(context).map((f) => (
             <FactorRow key={f.key} result={result} factorKey={f.key} />
           ))}
         </div>
@@ -203,6 +220,8 @@ type SmallGroupMatchCardProps = {
   /** Admin surfaces pass this to reveal the per-factor breakdown grid. Kept off
    *  by default so it never renders on the public join page. */
   showBreakdown?: boolean
+  /** Narrows the breakdown to the factors this context scores. */
+  context?: MatchingScope
 }
 
 export function SmallGroupMatchCard({
@@ -214,6 +233,7 @@ export function SmallGroupMatchCard({
   assigningLabel = "Assigning…",
   subtitle,
   showBreakdown = false,
+  context = "SmallGroup",
 }: SmallGroupMatchCardProps) {
   const score = Math.round(result.totalScore * 100)
   const [detailsOpen, setDetailsOpen] = React.useState(false)
@@ -316,7 +336,7 @@ export function SmallGroupMatchCard({
               </p>
             )}
 
-            {showBreakdown && <MatchBreakdown result={result} />}
+            {showBreakdown && <MatchBreakdown result={result} context={context} />}
           </div>
 
           <DialogFooter className="border-t px-6 pt-4 pb-6">

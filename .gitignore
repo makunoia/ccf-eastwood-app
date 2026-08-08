@@ -44,8 +44,10 @@ next-env.d.ts
 .env*.local
 /docs/superpowers
 
-# Ticket verification tests are generated per-session — not committed
-tests/tickets/*.test.ts
+# tests/tickets/*.test.ts used to be ignored as per-session scratch. It stopped
+# being that a long time ago — the directory is now 60+ complete suites that are
+# the only coverage several features have. Ignoring them meant they lived in one
+# working tree, unreviewed, and drifted red without anyone noticing.
 
 # Playwright test output artifacts
 /test-results

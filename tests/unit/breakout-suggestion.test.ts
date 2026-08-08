@@ -2,21 +2,39 @@ import { describe, it, expect } from "vitest"
 import {
   suggestBreakoutGroup,
   breakoutPickerOptions,
+  withoutOccupancy,
   type BreakoutCandidate,
 } from "@/lib/breakout-suggestion"
+import { breakoutOccupancy } from "@/lib/breakouts/occupancy"
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function makeGroup(overrides: Partial<BreakoutCandidate> = {}): BreakoutCandidate {
+/**
+ * Tests still express capacity as the raw `memberCount` / `memberLimit` pair —
+ * that's how a group is actually configured. The reduction to `isFull` /
+ * `roomRatio` (which is what `BreakoutCandidate` now carries, so the numbers
+ * needn't be shipped to a public registrant) happens here, exactly as the server
+ * mapper does it.
+ */
+function makeGroup(
+  overrides: Partial<Omit<BreakoutCandidate, "isFull" | "roomRatio" | "occupancy">> & {
+    memberLimit?: number | null
+    memberCount?: number
+  } = {}
+): BreakoutCandidate {
+  const { memberLimit = null, memberCount = 0, ...rest } = overrides
+  const occupancy = breakoutOccupancy({ memberCount, memberLimit })
   return {
     id: "g1",
     name: "Group",
     genderFocus: null,
     ageRangeMin: null,
     ageRangeMax: null,
-    memberLimit: null,
-    memberCount: 0,
-    ...overrides,
+    isFull: occupancy.isFull,
+    roomRatio:
+      memberLimit == null || memberLimit === 0 ? null : (occupancy.remaining as number) / memberLimit,
+    occupancy: { memberCount, memberLimit },
+    ...rest,
   }
 }
 
@@ -235,25 +253,67 @@ describe("suggestBreakoutGroup", () => {
 // ─── breakoutPickerOptions ────────────────────────────────────────────────────
 
 describe("breakoutPickerOptions", () => {
-  // The regression this pins: the browse list used to filter by gender and age,
-  // so a registrant with neither recorded — because the form never asked, or
-  // because they answered an age bucket instead of a birth year — saw every
-  // gendered and age-ranged group disappear from the dropdown.
-  it("keeps gendered groups regardless of the registrant's gender", () => {
-    const groups = [
-      makeGroup({ id: "male-g", genderFocus: "Male" }),
-      makeGroup({ id: "female-g", genderFocus: "Female" }),
-      makeGroup({ id: "mixed-g", genderFocus: "Mixed" }),
-      makeGroup({ id: "open-g", genderFocus: null }),
-    ]
-    expect(breakoutPickerOptions(groups).map((g) => g.id)).toEqual([
-      "male-g",
-      "female-g",
-      "mixed-g",
-      "open-g",
-    ])
+  describe("gender filtering", () => {
+    // A men's breakout group is not something a woman can join, so listing it is
+    // a dead end she can walk into.
+    it("hides groups focused on the other gender", () => {
+      const groups = [
+        makeGroup({ id: "male-g", genderFocus: "Male" }),
+        makeGroup({ id: "female-g", genderFocus: "Female" }),
+      ]
+      expect(breakoutPickerOptions(groups, { gender: "Female" }).map((g) => g.id)).toEqual([
+        "female-g",
+      ])
+    })
+
+    it("keeps Mixed and unset-focus groups for either gender", () => {
+      const groups = [
+        makeGroup({ id: "mixed-g", genderFocus: "Mixed" }),
+        makeGroup({ id: "open-g", genderFocus: null }),
+      ]
+      expect(breakoutPickerOptions(groups, { gender: "Male" }).map((g) => g.id)).toEqual([
+        "mixed-g",
+        "open-g",
+      ])
+      expect(breakoutPickerOptions(groups, { gender: "Female" }).map((g) => g.id)).toEqual([
+        "mixed-g",
+        "open-g",
+      ])
+    })
+
+    // The regression this pins: filtering on a *missing* gender made every
+    // gendered group disappear for a registrant the form never asked, which
+    // could empty the dropdown entirely.
+    it("filters nothing when gender is unknown", () => {
+      const groups = [
+        makeGroup({ id: "male-g", genderFocus: "Male" }),
+        makeGroup({ id: "female-g", genderFocus: "Female" }),
+        makeGroup({ id: "mixed-g", genderFocus: "Mixed" }),
+      ]
+      expect(breakoutPickerOptions(groups, { gender: null }).map((g) => g.id)).toEqual([
+        "male-g",
+        "female-g",
+        "mixed-g",
+      ])
+    })
+
+    it("filters nothing when no profile is passed at all", () => {
+      const groups = [
+        makeGroup({ id: "male-g", genderFocus: "Male" }),
+        makeGroup({ id: "female-g", genderFocus: "Female" }),
+      ]
+      expect(breakoutPickerOptions(groups).map((g) => g.id)).toEqual(["male-g", "female-g"])
+    })
+
+    it("can filter down to nothing when every group is for the other gender", () => {
+      const groups = [makeGroup({ id: "male-g", genderFocus: "Male" })]
+      expect(breakoutPickerOptions(groups, { gender: "Female" })).toEqual([])
+    })
   })
 
+  // Age and capacity stay surfaced rather than applied — they are soft, and a
+  // registrant who answered an age bucket instead of a birth year would lose
+  // every age-ranged group for no good reason.
   it("keeps age-restricted groups when the registrant has no birth year", () => {
     const groups = [
       makeGroup({ id: "ranged", ageRangeMin: 20, ageRangeMax: 30 }),
@@ -296,5 +356,66 @@ describe("breakoutPickerOptions", () => {
 
   it("returns an empty list when the event has no groups", () => {
     expect(breakoutPickerOptions([])).toEqual([])
+  })
+})
+
+// ─── withoutOccupancy ─────────────────────────────────────────────────────────
+
+describe("withoutOccupancy", () => {
+  // The public registration form renders this same picker. Occupancy is an
+  // admin-facing operational number, and it used to sit in the public page's
+  // payload — unrendered, but readable by anyone who opened devtools.
+  it("drops the raw headcounts", () => {
+    const stripped = withoutOccupancy([makeGroup({ memberLimit: 12, memberCount: 8 })])
+    expect(stripped[0].occupancy).toBeNull()
+  })
+
+  it("leaves no headcount anywhere in the serialized payload", () => {
+    const stripped = withoutOccupancy([
+      makeGroup({ id: "a", name: "Alpha", memberLimit: 12, memberCount: 8 }),
+      makeGroup({ id: "b", name: "Bravo", memberLimit: null, memberCount: 40 }),
+    ])
+    const json = JSON.stringify(stripped)
+    expect(json).not.toContain("memberCount")
+    expect(json).not.toContain("memberLimit")
+    expect(json).not.toContain("40")
+  })
+
+  it("keeps fullness, which is a fact about the choice rather than an occupancy figure", () => {
+    const [full, open] = withoutOccupancy([
+      makeGroup({ id: "full", memberLimit: 5, memberCount: 5 }),
+      makeGroup({ id: "open", memberLimit: 5, memberCount: 1 }),
+    ])
+    expect(full.isFull).toBe(true)
+    expect(open.isFull).toBe(false)
+  })
+
+  it("still suggests the same group once the counts are gone", () => {
+    const groups = [
+      makeGroup({ id: "roomy", memberLimit: 10, memberCount: 1 }),
+      makeGroup({ id: "tight", memberLimit: 10, memberCount: 9 }),
+    ]
+    const profile = { gender: null, birthYear: null }
+    expect(suggestBreakoutGroup(withoutOccupancy(groups), profile)?.id).toBe(
+      suggestBreakoutGroup(groups, profile)?.id
+    )
+  })
+
+  it("still refuses to suggest a full group", () => {
+    const stripped = withoutOccupancy([makeGroup({ memberLimit: 5, memberCount: 5 })])
+    expect(suggestBreakoutGroup(stripped, { gender: null, birthYear: null })).toBeNull()
+  })
+
+  it("gives the picker no occupancy to render", () => {
+    const [option] = breakoutPickerOptions(
+      withoutOccupancy([makeGroup({ memberLimit: 12, memberCount: 8 })])
+    )
+    expect(option.occupancyView).toBeNull()
+  })
+
+  it("gives a staffed surface the occupancy to render", () => {
+    const [option] = breakoutPickerOptions([makeGroup({ memberLimit: 12, memberCount: 8 })])
+    expect(option.occupancyView?.label).toBe("8 / 12")
+    expect(option.occupancyView?.remaining).toBe(4)
   })
 })

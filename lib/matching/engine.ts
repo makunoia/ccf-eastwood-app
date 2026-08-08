@@ -17,12 +17,25 @@ import {
   scoreCareerDetailed,
   scoreCapacityDetailed,
 } from "./scorers"
-import { ACTIVE_WEIGHT_KEYS, DEFAULT_WEIGHTS } from "@/lib/validations/matching-weights"
+import {
+  ACTIVE_WEIGHT_KEYS,
+  DEFAULT_WEIGHTS,
+  type ActiveWeightKey,
+} from "@/lib/validations/matching-weights"
 
+/**
+ * `activeKeys` is how a context narrows what it scores on. Small groups use all
+ * six; breakout groups pass a two-key set (see `BREAKOUT_ACTIVE_WEIGHT_KEYS`)
+ * because a table that meets once during an event has no city, format or
+ * industry worth weighing. Every sub-score is still computed and returned in
+ * `breakdown`/`coverage` — it's cheap, and the UI decides what to render — but
+ * only the active keys reach the weighted sum, the normaliser and `confidence`.
+ */
 export function scoreGroup(
   candidate: CandidateProfile,
   group: GroupProfile,
-  weights: WeightConfig
+  weights: WeightConfig,
+  activeKeys: readonly ActiveWeightKey[] = ACTIVE_WEIGHT_KEYS
 ): MatchResult {
   const factors = {
     lifeStage: scoreLifeStageDetailed(candidate.lifeStageId, group.lifeStageIds),
@@ -50,7 +63,7 @@ export function scoreGroup(
   let weightedSum = 0
   let activeWeightTotal = 0
   let knownWeight = 0
-  for (const key of ACTIVE_WEIGHT_KEYS) {
+  for (const key of activeKeys) {
     const w = weights[key]
     activeWeightTotal += w
     weightedSum += factors[key].score * w
@@ -58,9 +71,10 @@ export function scoreGroup(
   }
 
   // Degenerate config (all active weights zero) — fall back to defaults rather
-  // than divide by zero.
+  // than divide by zero. Same key set, so a breakout config that zeroes both of
+  // its factors still falls back to breakout scoring, not small-group scoring.
   if (activeWeightTotal <= 0) {
-    return scoreGroup(candidate, group, DEFAULT_WEIGHTS)
+    return scoreGroup(candidate, group, DEFAULT_WEIGHTS, activeKeys)
   }
 
   const totalScore = weightedSum / activeWeightTotal

@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { birthMonthSchema, birthYearSchema } from "./birth-date"
 
 /**
  * The matching profile a person can fill in about themselves — the fields the
@@ -17,8 +18,8 @@ export const matchingProfileSchema = z.object({
   meetingPreference: z.enum(["Online", "Hybrid", "InPerson"]).nullable().optional(),
   workCity: z.string().nullable().optional(),
   workIndustry: z.string().nullable().optional(),
-  birthMonth: z.number().int().min(1).max(12).nullable().optional(),
-  birthYear: z.number().int().min(1900).nullable().optional(),
+  birthMonth: birthMonthSchema.nullable().optional(),
+  birthYear: birthYearSchema.nullable().optional(),
   scheduleDayOfWeek: z.number().int().min(0).max(6).nullable().optional(),
   scheduleTimeStart: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
   scheduleTimeEnd: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),

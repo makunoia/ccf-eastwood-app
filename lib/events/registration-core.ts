@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
 import { suggestBreakoutGroup } from "@/lib/breakout-suggestion"
 import { fetchBreakoutCandidates } from "@/lib/breakout-suggestion-server"
+import { breakoutOccupancy } from "@/lib/breakouts/occupancy"
 import { tryCreateSmallGroupRequestFromBreakout } from "@/lib/create-small-group-request"
 import { createSeekerRequestFromRegistration } from "@/lib/small-groups/seeker-requests"
 import { buildStoredScheduleSlot } from "@/lib/matching/candidate-schedule"
@@ -63,7 +64,12 @@ async function fetchAssignedBreakoutDetails(groupId: string): Promise<AssignedBr
 
 /**
  * Assign a registrant to a breakout group based on:
- *  - explicit pick (selectedBreakoutGroupId) — wins if provided & valid & not full
+ *  - explicit pick (selectedBreakoutGroupId) — wins if provided & valid; capacity
+ *    blocks it unless `allowOverCapacity` is set, which the caller grants only to
+ *    a signed-in staff member at the door. Their picker deliberately offers full
+ *    groups, so dropping the pick here would silently contradict the UI. Every
+ *    anonymous submission — including one to the public walk-in route — stays
+ *    capacity-gated.
  *  - else autoAssignBreakout on the event — runs the simple Gender/Age/Capacity matcher
  *  - else nothing
  * Best-effort: failures are swallowed and return null.
@@ -78,7 +84,8 @@ export async function assignBreakoutForRegistrant(
   registrantId: string,
   eventId: string,
   selectedBreakoutGroupId: string | null,
-  profile: { gender: Gender | null; birthYear: number | null }
+  profile: { gender: Gender | null; birthYear: number | null },
+  allowOverCapacity = false
 ): Promise<AssignedBreakout> {
   try {
     const event = await db.event.findUnique({
@@ -102,14 +109,18 @@ export async function assignBreakoutForRegistrant(
           _count: { select: { members: true } },
         },
       })
-      if (
-        picked &&
-        picked.eventId === eventId &&
-        (picked.memberLimit == null || picked._count.members < picked.memberLimit)
-      ) {
+      const pickedIsFull =
+        !!picked &&
+        breakoutOccupancy({
+          memberCount: picked._count.members,
+          memberLimit: picked.memberLimit,
+        }).isFull
+      if (picked && picked.eventId === eventId && (allowOverCapacity || !pickedIsFull)) {
         chosenGroupId = picked.id
       }
     } else if (event.autoAssignBreakout) {
+      // Auto-assign stays capacity-gated regardless: nobody chose this group, so
+      // there is no intent to honour.
       const candidates = await fetchBreakoutCandidates(eventId, null, false)
       const best = suggestBreakoutGroup(candidates, profile)
       if (best) chosenGroupId = best.id
@@ -429,10 +440,18 @@ export async function completeEventRegistration(opts: {
   /** Provenance when the registration came in through a cluster's shared form. */
   clusterId?: string | null
   walkIn?: { occurrenceId: string | null } | null
+  /**
+   * Whether an explicit breakout pick may exceed the group's member limit.
+   *
+   * Decided by the caller from the *session*, not from `walkIn`. The walk-in
+   * route is public, so "this is a walk-in" is a claim the request makes about
+   * itself and cannot buy a capacity override on its own.
+   */
+  allowOverCapacity?: boolean
   /** Existing registration to reuse instead of creating (walk-in / cluster reuse semantics). */
   existingRegistrantId?: string | null
 }): Promise<{ id: string; breakoutGroup: AssignedBreakout }> {
-  const { eventId, person, data, breakoutPick, profile, clusterId, walkIn, existingRegistrantId } = opts
+  const { eventId, person, data, breakoutPick, profile, clusterId, walkIn, allowOverCapacity, existingRegistrantId } = opts
 
   let registrantId: string
   if (existingRegistrantId) {
@@ -465,7 +484,13 @@ export async function completeEventRegistration(opts: {
     registrantId = registrant.id
   }
 
-  const breakoutGroup = await assignBreakoutForRegistrant(registrantId, eventId, breakoutPick, profile)
+  const breakoutGroup = await assignBreakoutForRegistrant(
+    registrantId,
+    eventId,
+    breakoutPick,
+    profile,
+    !!allowOverCapacity
+  )
 
   // Someone who asked to join a DGroup becomes a request an admin can actually
   // see (CCF-101). Raised here rather than in each caller so every entry point —

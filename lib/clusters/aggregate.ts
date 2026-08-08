@@ -24,6 +24,10 @@ import {
   type ClusterRegistrationExportRow,
 } from "@/lib/exports/cluster-registrations"
 import {
+  resolveClusterCheckinShortcut,
+  type ClusterCheckinShortcut,
+} from "./checkin-shortcuts"
+import {
   buildClusterRoster,
   isOnClusterDay,
   personKeyFor,
@@ -215,6 +219,75 @@ export async function getClusterRegistrantRows(
       }
     })
     .filter((row) => isOnClusterDay(row, scope))
+}
+
+/**
+ * Every cluster event's public check-in link, in cluster order.
+ *
+ * Resolves the session each event's link should point at — the one the cluster
+ * names, else the event's occurrence on the cluster's date — and reads the
+ * OneTime Public access switch, then hands both to the pure resolver.
+ */
+export async function getClusterCheckinShortcuts(
+  events: AccessibleClusterEvent[],
+  clusterDate: Date | null
+): Promise<ClusterCheckinShortcut[]> {
+  if (events.length === 0) return []
+
+  const oneTimeIds = events.filter((e) => e.type === "OneTime").map((e) => e.id)
+  const sessionEvents = events.filter((e) => e.type !== "OneTime")
+  const linkedIds = sessionEvents
+    .map((e) => e.linkedOccurrenceId)
+    .filter((id): id is string => !!id)
+  // Events whose cluster link names no session fall back to the day's occurrence.
+  const byDateEventIds = sessionEvents
+    .filter((e) => !e.linkedOccurrenceId)
+    .map((e) => e.id)
+
+  const occurrenceOr: object[] = []
+  if (linkedIds.length > 0) occurrenceOr.push({ id: { in: linkedIds } })
+  if (byDateEventIds.length > 0 && clusterDate) {
+    occurrenceOr.push({
+      eventId: { in: byDateEventIds },
+      date: utcDayRange(clusterDate),
+    })
+  }
+
+  const [occurrences, closedConfigs] = await Promise.all([
+    occurrenceOr.length > 0
+      ? db.eventOccurrence.findMany({
+          where: { OR: occurrenceOr },
+          select: { id: true, eventId: true, date: true, isOpen: true },
+        })
+      : Promise.resolve([]),
+    // A missing FormConfig row means open, so only explicit `isOpen: false`
+    // counts as closed — same reading as the cluster Forms page.
+    oneTimeIds.length > 0
+      ? db.formConfig.findMany({
+          where: {
+            key: "EventCheckIn",
+            eventId: { in: oneTimeIds },
+            isOpen: false,
+          },
+          select: { eventId: true },
+        })
+      : Promise.resolve([]),
+  ])
+
+  const byId = new Map(occurrences.map((o) => [o.id, o]))
+  const byEvent = new Map(occurrences.map((o) => [o.eventId, o]))
+  const closedEventIds = new Set(closedConfigs.map((c) => c.eventId))
+
+  return events.map((event) => {
+    const occurrence = event.linkedOccurrenceId
+      ? (byId.get(event.linkedOccurrenceId) ?? null)
+      : (byEvent.get(event.id) ?? null)
+    return resolveClusterCheckinShortcut({
+      event,
+      formIsOpen: !closedEventIds.has(event.id),
+      occurrence,
+    })
+  })
 }
 
 /**
