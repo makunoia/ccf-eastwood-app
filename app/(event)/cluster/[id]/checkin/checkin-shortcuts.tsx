@@ -17,12 +17,28 @@ import { Button } from "@/components/ui/button"
  * each event's own public form. Offering walk-in registration alone made it read
  * as though walk-in were the only door, so every event's check-in link (and the
  * session it opens) sits here beside it.
+ *
+ * The public form links open in a new tab, the one place in the app that does so
+ * besides the bus manifest. This board is a live monitor a staffer keeps up for
+ * the whole day, and the forms it points at are worked in long stretches — one
+ * walk-in after another. Navigating away in place meant surrendering the board on
+ * every trip to the door and rebuilding it on the way back. The admin links below
+ * (fix a closed form, open a session) stay in-tab: those are ordinary navigation
+ * inside the workspace, not a second surface to keep open.
  */
 
 const TYPE_LABEL: Record<ClusterCheckinShortcut["eventType"], string> = {
   OneTime: "One-time",
   MultiDay: "Multi-day",
   Recurring: "Recurring",
+}
+
+/**
+ * Sighted users get the new tab as it happens; a screen reader user gets it in
+ * the link's name, before they commit to following it.
+ */
+function NewTabHint() {
+  return <span className="sr-only">(opens in a new tab)</span>
 }
 
 export function ClusterCheckinShortcuts({
@@ -62,11 +78,11 @@ export function ClusterCheckinShortcuts({
                 Registers and checks someone in across the day&apos;s events at once
               </p>
             </div>
-            {/* Same-tab: this is a PWA, and the walk-in form carries a Back link. */}
             <Button asChild variant="outline" size="sm" className="shrink-0">
-              <Link href={walkInHref}>
+              <Link href={walkInHref} target="_blank" rel="noopener noreferrer">
                 <IconUserPlus className="size-4" />
                 Open
+                <NewTabHint />
               </Link>
             </Button>
           </div>
@@ -129,12 +145,11 @@ function ShortcutRow({
         </p>
       </div>
       {shortcut.href ? (
-        // Same-tab, like every other link in the app — this is a PWA, so a new
-        // window would strand the staffer with no way back to the board.
         <Button asChild variant="outline" size="sm" className="shrink-0">
-          <Link href={shortcut.href}>
+          <Link href={shortcut.href} target="_blank" rel="noopener noreferrer">
             <IconDeviceMobileCheck className="size-4" />
             Check-in
+            <NewTabHint />
           </Link>
         </Button>
       ) : closed && canConfigure ? (
