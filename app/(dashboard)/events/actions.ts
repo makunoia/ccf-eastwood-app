@@ -1230,21 +1230,69 @@ export async function checkInToOccurrence(
   }
 }
 
+/**
+ * Open or close a session's check-in — and point the walk-in door at it.
+ *
+ * The walk-in form gates on `Event.walkInOccurrenceId` (CCF-133), which was its
+ * own setting on Forms → Walk-in. That left two switches for one act: staff
+ * opened check-in on this screen and the door still read "No session is open for
+ * walk-in right now", because nothing had named the session. Opening check-in is
+ * the moment a session becomes the live one, so it is the moment that names it.
+ *
+ * Still a single stored target rather than a fallback search — a walk-in must
+ * never resolve to a session nobody chose, which is the bug the stored field was
+ * introduced to kill. Forms → Walk-in stays, for pointing the door somewhere
+ * other than the session you just opened.
+ *
+ * Closing only clears the pointer when it points *here*, so closing yesterday's
+ * session cannot shut a door aimed at today's.
+ */
 export async function setOccurrenceCheckinOpen(
   occurrenceId: string,
-  isOpen: boolean,
-  eventId: string
-): Promise<ActionResult> {
+  isOpen: boolean
+): Promise<ActionResult<{ walkInChanged: boolean }>> {
   const authError = await requireWrite()
   if (authError) return { success: false, error: authError.error }
 
   try {
+    // The owning event is read from the occurrence. It used to be a third
+    // argument, fine when it only fed revalidatePath — but it now picks which
+    // event's walk-in door moves, and a caller doesn't get to decide that.
+    const occurrence = await db.eventOccurrence.findUnique({
+      where: { id: occurrenceId },
+      select: { id: true, eventId: true },
+    })
+    if (!occurrence) return { success: false, error: "Session not found" }
+
     await db.eventOccurrence.update({
       where: { id: occurrenceId },
       data: { isOpen },
     })
-    revalidatePath(`/event/${eventId}/sessions`)
-    return { success: true, data: undefined }
+
+    // Reported back so the UI can say what happened to the door instead of
+    // guessing: closing a session the door was never aimed at leaves it alone.
+    let walkInChanged = true
+    if (isOpen) {
+      await db.event.update({
+        where: { id: occurrence.eventId },
+        data: { walkInOccurrenceId: occurrenceId },
+      })
+    } else {
+      // updateMany so "clear it only if it still points here" is one atomic
+      // condition instead of a read the next request could race.
+      const cleared = await db.event.updateMany({
+        where: { id: occurrence.eventId, walkInOccurrenceId: occurrenceId },
+        data: { walkInOccurrenceId: null },
+      })
+      walkInChanged = cleared.count > 0
+    }
+
+    revalidatePath(`/event/${occurrence.eventId}/sessions`)
+    revalidatePath(`/event/${occurrence.eventId}/forms/EventWalkIn`)
+    revalidatePath(`/events/${occurrence.eventId}/walk-in`)
+    revalidatePath(`/events/${occurrence.eventId}/checkin`)
+    revalidatePath(`/events/${occurrence.eventId}/checkin/${occurrenceId}`)
+    return { success: true, data: { walkInChanged } }
   } catch {
     return { success: false, error: "Failed to update session" }
   }

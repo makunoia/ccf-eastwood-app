@@ -22,6 +22,10 @@ import { setWalkInOccurrence } from "@/app/(dashboard)/events/form-config-action
  * no session selected — or a selected session that is closed — means the walk-in
  * form is off, whatever its Public access switch says.
  *
+ * Opening a session's check-in on Sessions writes this field too, so the common
+ * path never comes through here. What's left for this control is the uncommon
+ * one: aiming the door at a session other than the one just opened.
+ *
  * Only rendered for MultiDay/Recurring events. OneTime events have no occurrences
  * at all; a walk-in there stamps `attendedAt` on the registrant.
  */
@@ -96,7 +100,7 @@ export function WalkInSessionSetting({
       className="max-w-2xl"
       icon={IconCalendarEvent}
       title={`Walk-in ${sessionNoun}`}
-      description={`Which ${sessionNoun} someone registering at the door is checked into. Walk-in is unavailable while this is unset or its ${sessionNoun} is closed.`}
+      description={`Which ${sessionNoun} someone registering at the door is checked into. Opening a ${sessionNoun}'s check-in on Sessions sets this automatically — change it here only to aim the door somewhere else.`}
       control={
         <Select
           value={selected ?? NONE}

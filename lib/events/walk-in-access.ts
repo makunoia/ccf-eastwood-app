@@ -9,9 +9,10 @@ import type { EventType } from "@/app/generated/prisma/client"
  *  1. The walk-in form's own `FormConfig.isOpen`. It defaults closed — a
  *     standalone URL that registers *and* records attendance is a live
  *     attendance surface, so staff open it for the day.
- *  2. For MultiDay/Recurring, the session an admin named on the walk-in form
- *     config must exist and be open. OneTime events have no occurrences at all;
- *     a walk-in there stamps `attendedAt`, so there is nothing to check.
+ *  2. For MultiDay/Recurring, the event's named session must exist and be open.
+ *     It is named by opening that session's check-in on Sessions, or by hand on
+ *     the walk-in form config. OneTime events have no occurrences at all; a
+ *     walk-in there stamps `attendedAt`, so there is nothing to check.
  *
  * Neither gate is the registration form's. Closing pre-registration the night
  * before must leave the door running, which is the whole point of the split.
@@ -57,5 +58,5 @@ export const WALK_IN_CLOSED_MESSAGE = "Walk-in registration isn't open right now
 export function walkInClosedAdminHint(reason: WalkInClosedReason): string {
   return reason === "formClosed"
     ? "Walk-in is closed. Open it from the Walk-in form."
-    : "No open session is selected for walk-in. Pick one on the Walk-in form."
+    : "No open session is selected for walk-in. Open a session's check-in on Sessions."
 }

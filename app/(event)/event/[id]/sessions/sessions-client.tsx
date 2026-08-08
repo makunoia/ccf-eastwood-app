@@ -542,10 +542,20 @@ export function SessionsClient({
 
   async function handleToggleOpen(occurrenceId: string, currentlyOpen: boolean) {
     setTogglingId(occurrenceId)
-    const result = await setOccurrenceCheckinOpen(occurrenceId, !currentlyOpen, eventId)
+    const result = await setOccurrenceCheckinOpen(occurrenceId, !currentlyOpen)
     setTogglingId(null)
     if (result.success) {
-      toast.success(currentlyOpen ? "Check-in closed" : "Check-in opened")
+      // Says the second effect out loud: this switch also aims the walk-in door
+      // (see `setOccurrenceCheckinOpen`), and staff shouldn't have to learn that
+      // from a door that stopped working. Silent when the door didn't move —
+      // closing a session it was never aimed at changes nothing.
+      toast.success(currentlyOpen ? "Check-in closed" : "Check-in opened", {
+        description: !result.data.walkInChanged
+          ? undefined
+          : currentlyOpen
+            ? "Walk-in is off until you open a session."
+            : "Walk-in now registers into this session.",
+      })
       router.refresh()
     } else {
       toast.error(result.error)
