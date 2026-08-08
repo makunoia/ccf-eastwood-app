@@ -146,7 +146,7 @@ Three types with different behavior:
 | Volunteers | ✅ | ✅ | ✅ |
 | Check-in | `attendedAt` on registrant | Per day (`OccurrenceAttendee`) | Per occurrence (`OccurrenceAttendee`) |
 
-**Event workspace** (`/event/[id]/...`): dashboard, registrants, sessions, sessions/[occurrenceId], breakouts, volunteers, baptism, embarkation, settings. Old `/events/[id]` URLs redirect to new workspace routes. PWA — no `target="_blank"` except bus manifest print.
+**Event workspace** (`/event/[id]/...`): dashboard, registrants, sessions, sessions/[occurrenceId], breakouts, volunteers, baptism, embarkation, settings. Old `/events/[id]` URLs redirect to new workspace routes. PWA — no `target="_blank"` except bus manifest print and the cluster check-in board's Shortcuts (the public check-in/walk-in form links, which are worked alongside the live board).
 
 **Public URLs (no login):** `/events/[id]/register`, `/events/[id]/checkin`
 
