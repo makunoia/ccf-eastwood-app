@@ -20,6 +20,7 @@ import {
   resolveAnonymousGuest,
   resolveConfirmedGuest,
   resolveConfirmedMember,
+  stampClusterProvenance,
   type AssignedBreakout,
   type PersonRef,
   type ResolvedProfile,
@@ -476,6 +477,19 @@ export async function registerForCluster(
 
         const existingRegistrationId = await findExistingEventRegistration(eventId, person)
         if (existingRegistrationId && !walkIn) {
+          // Already registered, so there is nothing to create — but they DID just
+          // sign up for this day, and the day roll-up reads that from the
+          // provenance column. Stamping it here is the whole difference between
+          // the roster placing them on the day and drawing "—": the stamp used to
+          // live only past this `continue`, on the reuse branch of
+          // `completeEventRegistration`, so an existing registration could never
+          // acquire one — and registering again, the obvious thing for an admin
+          // to try, ran straight back into the same short-circuit.
+          //
+          // Only the stamp is repeated. Breakout assignment and the DGroup seeker
+          // request stay on the far side: those happened when the person first
+          // registered, and re-running them would double-file the same person.
+          await stampClusterProvenance(existingRegistrationId, cluster.id)
           results.push({
             eventId,
             eventName: event.name,

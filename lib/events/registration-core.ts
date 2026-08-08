@@ -185,6 +185,31 @@ export async function findExistingEventRegistration(
 }
 
 /**
+ * Record that a registration belongs to a cluster's day.
+ *
+ * The day roll-up counts a session event's registration only on evidence — the
+ * person checked in, or they signed up through this day's link — because a
+ * `EventRegistrant` on a Recurring event covers the whole series, not one date.
+ * This column is that second piece of evidence, so anything that puts a person
+ * through a cluster's shared form has to leave it behind, including the paths
+ * that reuse a registration the person already had.
+ *
+ * Fills a null rather than overwriting, so the day a registration was first made
+ * for stands. `EventClusterEvent.eventId` is unique — an event belongs to at
+ * most one cluster — so no second day ever competes for the column; the guard is
+ * about not rewriting history. Conditional update rather than read-then-write.
+ */
+export async function stampClusterProvenance(
+  registrantId: string,
+  clusterId: string
+): Promise<void> {
+  await db.eventRegistrant.updateMany({
+    where: { id: registrantId, registrationClusterId: null },
+    data: { registrationClusterId: clusterId },
+  })
+}
+
+/**
  * Confirmed member: fill in only profile fields that are currently null, then
  * return the stored gender/birth year (the form's answer wins over the stored
  * one for breakout matching, combined by the caller).
@@ -459,14 +484,8 @@ export async function completeEventRegistration(opts: {
     // Provenance on the reuse path. Someone already registered who comes back
     // through the cluster's shared link still arrived through that link, and the
     // day roll-up counts people by this column — without the stamp, every
-    // returning walk-in was invisible to it. Conditional update rather than
-    // read-then-write, and it only fills a null so an earlier stamp stands.
-    if (clusterId) {
-      await db.eventRegistrant.updateMany({
-        where: { id: registrantId, registrationClusterId: null },
-        data: { registrationClusterId: clusterId },
-      })
-    }
+    // returning walk-in was invisible to it.
+    if (clusterId) await stampClusterProvenance(registrantId, clusterId)
   } else {
     const registrant = await db.eventRegistrant.create({
       data: {
