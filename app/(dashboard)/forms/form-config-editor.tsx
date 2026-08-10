@@ -106,6 +106,9 @@ export function FormConfigEditor({
             className="text-sm font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
           >
             View public form
+            {/* Worked alongside this screen, so it opens in a new tab — the
+                config stays put while the form is filled in and submitted. */}
+            <span className="sr-only"> (opens in a new tab)</span>
           </a>
         )}
       </SettingCard>

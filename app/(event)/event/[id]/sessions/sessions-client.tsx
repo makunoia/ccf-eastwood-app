@@ -224,7 +224,7 @@ function OccurrenceActions({
               rel="noopener noreferrer"
             >
               <IconExternalLink className="size-4" />
-              <span className="sr-only">Open check-in page</span>
+              <span className="sr-only">Open check-in page (opens in a new tab)</span>
             </a>
           </Button>
         </TooltipTrigger>
@@ -349,6 +349,7 @@ function OccurrenceCard({
             >
               <IconExternalLink className="size-4" />
               Check-in page
+              <span className="sr-only"> (opens in a new tab)</span>
             </a>
           </Button>
         </div>
