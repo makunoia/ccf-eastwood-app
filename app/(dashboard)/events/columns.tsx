@@ -13,6 +13,8 @@ import {
 } from "@/components/ui/dropdown-menu"
 import Link from "next/link"
 
+import { formatDate, formatDateRange } from "@/lib/format/date-range"
+
 export type EventRow = {
   id: string
   name: string
@@ -30,29 +32,6 @@ export type EventRow = {
   recurrenceDayOfWeek: number | null
   recurrenceFrequency: "Weekly" | "Biweekly" | "Monthly" | null
   recurrenceEndDate: string | null
-}
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-PH", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  })
-}
-
-function formatDateRange(start: string, end: string) {
-  const s = new Date(start)
-  const e = new Date(end)
-  const opts: Intl.DateTimeFormatOptions = {
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  }
-  if (s.getUTCFullYear() === e.getUTCFullYear()) {
-    return `${s.toLocaleDateString("en-PH", opts)} – ${e.toLocaleDateString("en-PH", { ...opts, year: "numeric" })}`
-  }
-  return `${formatDate(start)} – ${formatDate(end)}`
 }
 
 export function RowActions({ row }: { row: EventRow }) {
@@ -102,8 +81,13 @@ export function buildColumns(): ColumnDef<EventRow>[] {
     {
       id: "date",
       header: "Date",
-      cell: ({ row }) =>
-        formatDateRange(row.original.startDate, row.original.endDate),
+      cell: ({ row }) => {
+        const { type, startDate, endDate } = row.original
+        // A OneTime event happens on a single day — never show it as a range,
+        // even if an older row carries a drifted endDate.
+        if (type === "OneTime") return formatDate(startDate)
+        return formatDateRange(startDate, endDate)
+      },
     },
     {
       id: "registration",
