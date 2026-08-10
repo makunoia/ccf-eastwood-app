@@ -489,15 +489,23 @@ export function buildAssistantTools(session: Session) {
 
     promote_guest_to_member: tool({
       description:
-        "Promote a guest to member by adding them to a DGroup. Requires user approval. Creates the Member record and links history.",
+        "Promote a guest to member, optionally adding them to a DGroup. Requires user approval. Creates the Member record and links history.",
       inputSchema: z.object({
         guestId: z.string(),
-        groupId: z.string().describe("The DGroup the new member joins"),
+        groupId: z
+          .string()
+          .optional()
+          .describe("The DGroup the new member joins. Omit to promote without a DGroup."),
+        dateJoined: z
+          .string()
+          .optional()
+          .describe("YYYY-MM-DD. Defaults to today."),
       }),
-      execute: async ({ guestId, groupId }) => {
+      execute: async ({ guestId, groupId, dateJoined }) => {
         if (!write("Guests")) return PERMISSION_DENIED("Guests")
-        if (!write("SmallGroups")) return PERMISSION_DENIED("DGroups")
-        return promoteGuestToMember(guestId, groupId)
+        // Only a placement touches DGroups; a groupless promotion does not.
+        if (groupId && !write("SmallGroups")) return PERMISSION_DENIED("DGroups")
+        return promoteGuestToMember(guestId, groupId ?? null, { dateJoined })
       },
     }),
 

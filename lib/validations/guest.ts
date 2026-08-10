@@ -58,6 +58,29 @@ export const guestSchema = z.object({
 
 export type GuestInput = z.infer<typeof guestSchema>
 
+/**
+ * Promoting a guest to a member. Both fields are about the Member being created,
+ * not the Guest being read.
+ *
+ * `groupId` is nullable on purpose: a member can exist without a DGroup, and
+ * admins need to record someone as a member before — or without — placing them.
+ */
+export const promoteGuestSchema = z.object({
+  groupId: z
+    .string()
+    .optional()
+    .nullable()
+    .transform((v) => (v === "" || v == null ? null : v)),
+  // Mirrors memberSchema.dateJoined: a "YYYY-MM-DD" string becoming UTC midnight.
+  dateJoined: z
+    .string()
+    .min(1, "Date joined is required")
+    .transform((v) => new Date(v))
+    .refine((d) => !isNaN(d.getTime()), { message: "Invalid date joined" }),
+})
+
+export type PromoteGuestInput = z.input<typeof promoteGuestSchema>
+
 export type GuestFormValues = {
   firstName: string
   lastName: string

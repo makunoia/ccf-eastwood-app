@@ -1,11 +1,15 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import type { Prisma } from "@/app/generated/prisma/client"
+import { Prisma, type SmallGroupStatus } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import { canWrite } from "@/lib/permissions"
-import { guestSchema, type GuestFormValues } from "@/lib/validations/guest"
+import {
+  guestSchema,
+  promoteGuestSchema,
+  type GuestFormValues,
+} from "@/lib/validations/guest"
 import {
   matchingProfileSchema,
   type MatchingProfileInput,
@@ -196,12 +200,37 @@ export async function setGuestsLifeStageBatch(
   }
 }
 
+/**
+ * Promotes a guest to a full member, optionally placing them in a DGroup.
+ *
+ * The DGroup is optional because joining one is not what makes someone a member —
+ * it used to be the only way to become one, which left admins unable to record a
+ * plain member at all. With no group the new Member simply has no `smallGroupId`
+ * and no `groupStatus`, the same shape as any admin-created member.
+ */
 export async function promoteGuestToMember(
   guestId: string,
-  groupId: string
+  groupId?: string | null,
+  opts?: { dateJoined?: string }
 ): Promise<ActionResult<{ memberId: string }>> {
-  const authError = await requireWrite()
-  if (authError) return { success: false, error: authError.error }
+  const session = await auth()
+  if (!session?.user) return { success: false, error: "Not authenticated." }
+  if (!canWrite(session, "Guests")) return { success: false, error: "Unauthorized." }
+
+  const parsed = promoteGuestSchema.safeParse({
+    groupId: groupId ?? null,
+    dateJoined: opts?.dateJoined ?? new Date().toISOString().slice(0, 10),
+  })
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
+  }
+  const { groupId: targetGroupId, dateJoined } = parsed.data
+
+  // Placing someone in a DGroup writes to SmallGroups; promoting without one
+  // doesn't touch a group at all, so it stays a Guests-only operation.
+  if (targetGroupId && !canWrite(session, "SmallGroups")) {
+    return { success: false, error: "Unauthorized." }
+  }
 
   try {
     const guest = await db.guest.findUnique({
@@ -221,14 +250,17 @@ export async function promoteGuestToMember(
     })
     if (dup.conflict) return { success: false, error: dup.message }
 
-    const group = await db.smallGroup.findUnique({
-      where: { id: groupId },
-      select: { id: true, status: true },
-    })
-    if (!group) return { success: false, error: "DGroup not found" }
+    let group: { id: string; status: SmallGroupStatus } | null = null
+    if (targetGroupId) {
+      group = await db.smallGroup.findUnique({
+        where: { id: targetGroupId },
+        select: { id: true, status: true },
+      })
+      if (!group) return { success: false, error: "DGroup not found" }
 
-    const overCapacity = await assertGroupCapacity(db, groupId)
-    if (overCapacity) return { success: false, error: overCapacity }
+      const overCapacity = await assertGroupCapacity(db, targetGroupId)
+      if (overCapacity) return { success: false, error: overCapacity }
+    }
 
     const guestEventIds = await db.eventRegistrant.findMany({
       where: { guestId },
@@ -239,22 +271,82 @@ export async function promoteGuestToMember(
       const { memberId } = await promoteGuestRecord(tx, {
         guestId,
         guest,
-        dateJoined: new Date(),
+        dateJoined,
         group,
         schedule: "raw",
       })
+
+      // A guest can be sitting on a DGroup request awaiting leader confirmation.
+      // Promoting them directly answers it, so resolve it here rather than leaving
+      // a live confirmation link pointing at someone who is already a member.
+      const pending = await tx.smallGroupMemberRequest.findMany({
+        where: { guestId, status: "Pending" },
+        select: { id: true, smallGroupId: true },
+      })
+      const now = new Date()
+
+      // Seeker requests name no group — being promoted doesn't find them one, so
+      // they stay open. They only need repointing so the row doesn't keep
+      // referring to the guest identity this person no longer uses.
+      const seeking = pending.filter((r) => r.smallGroupId === null)
+      if (seeking.length > 0) {
+        await tx.smallGroupMemberRequest.updateMany({
+          where: { id: { in: seeking.map((r) => r.id) } },
+          data: { memberId, guestId: null },
+        })
+      }
+
+      for (const req of pending) {
+        if (req.smallGroupId === null) continue
+        // One group per member: a request for any other group can no longer be met.
+        const confirmed = req.smallGroupId === targetGroupId
+        await tx.smallGroupMemberRequest.update({
+          where: { id: req.id },
+          data: {
+            status: confirmed ? "Confirmed" : "Rejected",
+            resolvedAt: now,
+            memberId,
+            guestId: null,
+          },
+        })
+        await tx.smallGroupLog.create({
+          data: {
+            smallGroupId: req.smallGroupId,
+            action: confirmed ? "TempAssignmentConfirmed" : "TempAssignmentRejected",
+            memberId,
+            performedByUserId: session.user.id ?? null,
+            description: confirmed
+              ? `${guest.firstName} ${guest.lastName} was promoted to member by an admin and added to the group`
+              : `${guest.firstName} ${guest.lastName} was promoted to member by an admin without joining this group, so the request was closed`,
+          },
+        })
+      }
+
       return memberId
     })
 
     revalidatePath("/guests")
+    revalidatePath(`/guests/${guestId}`)
     revalidatePath("/members")
-    revalidatePath(`/small-groups/${groupId}`)
+    revalidatePath(`/members/${result}`)
+    if (targetGroupId) {
+      revalidatePath("/small-groups")
+      revalidatePath(`/small-groups/${targetGroupId}`)
+    }
     for (const { eventId } of guestEventIds) {
       revalidatePath(`/event/${eventId}/dashboard`)
     }
 
     return { success: true, data: { memberId: result } }
-  } catch {
+  } catch (error) {
+    // checkDuplicateContactInfo is a read-then-write check, so two admins
+    // promoting same-email guests at once can still collide on Member.email.
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      return { success: false, error: "A member with this email already exists" }
+    }
     return { success: false, error: "Failed to promote guest to member" }
   }
 }

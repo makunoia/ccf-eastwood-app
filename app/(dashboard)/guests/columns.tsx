@@ -1,9 +1,20 @@
 "use client"
 
+import * as React from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { type ColumnDef } from "@tanstack/react-table"
+import { IconDots, IconEye, IconUserCheck } from "@tabler/icons-react"
 
+import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { buildSelectionColumn } from "@/components/batch/selection-column"
+import { PromoteGuestDialog } from "./promote-guest-dialog"
 
 export type GuestRow = {
   id: string
@@ -26,7 +37,48 @@ export type GuestRow = {
   notes: string | null
 }
 
-export function buildColumns(selectable = false): ColumnDef<GuestRow>[] {
+function RowActions({ row }: { row: GuestRow }) {
+  const router = useRouter()
+  const [promoteOpen, setPromoteOpen] = React.useState(false)
+  const preferredFirstName = row.nickname?.trim() || row.firstName
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon" className="size-8">
+            <span className="sr-only">Open menu</span>
+            <IconDots className="size-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={() => router.push(`/guests/${row.id}`)}>
+            <IconEye className="mr-2 size-4" />
+            View
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => setPromoteOpen(true)}>
+            <IconUserCheck className="mr-2 size-4" />
+            Promote to member
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <PromoteGuestDialog
+        guestId={row.id}
+        guestName={`${preferredFirstName} ${row.lastName}`}
+        open={promoteOpen}
+        onOpenChange={setPromoteOpen}
+        // The list only shows un-promoted guests, so the row leaves on success.
+        onPromoted={() => router.refresh()}
+      />
+    </>
+  )
+}
+
+export function buildColumns({
+  selectable = false,
+  canWrite = false,
+}: { selectable?: boolean; canWrite?: boolean } = {}): ColumnDef<GuestRow>[] {
   return [
     ...(selectable ? [buildSelectionColumn<GuestRow>()] : []),
     {
@@ -86,5 +138,13 @@ export function buildColumns(selectable = false): ColumnDef<GuestRow>[] {
           timeZone: "UTC",
         }),
     },
+    ...(canWrite
+      ? [
+          {
+            id: "actions",
+            cell: ({ row }) => <RowActions row={row.original} />,
+          } satisfies ColumnDef<GuestRow>,
+        ]
+      : []),
   ]
 }

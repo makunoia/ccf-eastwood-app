@@ -4,6 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
+import { IconUserCheck } from "@tabler/icons-react"
 import { DetailPageHeader } from "@/components/detail-page-header"
 import { BreadcrumbOverride } from "@/components/breadcrumb-context"
 
@@ -46,6 +47,7 @@ import {
   type GuestFormValues,
 } from "@/lib/validations/guest"
 import { createGuest, updateGuest, deleteGuest } from "./actions"
+import { PromoteGuestDialog } from "./promote-guest-dialog"
 import { GuestPipelineStepper } from "./guest-pipeline-stepper"
 import type { GuestPipelineStatus } from "@/lib/guest-utils"
 import { MobileFormActions } from "@/components/mobile-form-actions"
@@ -120,6 +122,7 @@ export function GuestForm({ guest, ageRanges = [], sourceEvent, eventHistory, ac
   const [saving, setSaving] = React.useState(false)
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
+  const [promoteOpen, setPromoteOpen] = React.useState(false)
   const [activeTab, setActiveTab] = React.useState("profile")
   const [dirty, setDirty] = React.useState(false)
   const [pendingTab, setPendingTab] = React.useState<string | null>(null)
@@ -222,11 +225,23 @@ export function GuestForm({ guest, ageRanges = [], sourceEvent, eventHistory, ac
             <Button type="submit" form="guest-form" disabled={saving}>
               {saving ? "Adding…" : "Add Guest"}
             </Button>
-          ) : dirty && activeTab === "profile" && !isPromoted ? (
-            <Button type="submit" form="guest-form" disabled={saving}>
-              {saving ? "Saving…" : "Save changes"}
-            </Button>
-          ) : null
+          ) : (
+            <div className="flex items-center gap-2">
+              {/* In the header, not the Match tab: promoting is a decision about
+                  this person, not about a particular DGroup. */}
+              {!isPromoted && (
+                <Button type="button" variant="outline" onClick={() => setPromoteOpen(true)}>
+                  <IconUserCheck className="mr-2 size-4" />
+                  Promote to member
+                </Button>
+              )}
+              {dirty && activeTab === "profile" && !isPromoted && (
+                <Button type="submit" form="guest-form" disabled={saving}>
+                  {saving ? "Saving…" : "Save changes"}
+                </Button>
+              )}
+            </div>
+          )
         }
         status={
           isEdit && pipelineStatus ? (
@@ -522,6 +537,18 @@ export function GuestForm({ guest, ageRanges = [], sourceEvent, eventHistory, ac
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {isEdit && (
+        <PromoteGuestDialog
+          guestId={guest!.id}
+          guestName={`${preferredFirstName} ${guest!.lastName}`}
+          open={promoteOpen}
+          onOpenChange={setPromoteOpen}
+          // This page becomes a locked, read-only record the moment they're a
+          // member — the member profile is where the work continues.
+          onPromoted={(memberId) => router.push(`/members/${memberId}`)}
+        />
+      )}
     </Tabs>
   )
 }

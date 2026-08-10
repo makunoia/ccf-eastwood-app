@@ -28,7 +28,7 @@ describe("CCF-63", () => {
       data: { name: "Test Group", leaderId: leader.id, language: [], leaderConfirmationToken: token },
     })
     const guest = await db.guest.create({
-      data: { firstName: "Jane", lastName: "Doe", language: [] },
+      data: { firstName: "Jane", lastName: "Doe", nickname: "Janie", language: [] },
     })
     const request = await db.smallGroupMemberRequest.create({
       data: { smallGroupId: group.id, guestId: guest.id, status: "Pending" },
@@ -70,6 +70,10 @@ describe("CCF-63", () => {
       expect(updatedRequest?.status).toBe("Confirmed")
       const updatedGuest = await db.guest.findUnique({ where: { id: guest.id } })
       expect(updatedGuest?.memberId).not.toBeNull()
+      // This path used to build the Member from its own field list, which had no
+      // nickname in it — the name the person actually goes by was lost here.
+      const member = await db.member.findUniqueOrThrow({ where: { id: updatedGuest!.memberId! } })
+      expect(member.nickname).toBe("Janie")
     })
   })
 

@@ -31,7 +31,13 @@ async function seedEventWithBreakout() {
 
 async function seedGuestCouple() {
   const husband = await db.guest.create({
-    data: { firstName: "Hubby", lastName: "Cruz", email: "hubby@x.com", language: [] },
+    data: {
+      firstName: "Hubby",
+      lastName: "Cruz",
+      nickname: "Hubs",
+      email: "hubby@x.com",
+      language: [],
+    },
   })
   const wife = await db.guest.create({
     data: { firstName: "Wifey", lastName: "Cruz", email: "wifey@x.com", language: [] },
@@ -142,6 +148,9 @@ describe("confirmCatchMechCoupleRequests", () => {
     const members = await db.member.findMany({ where: { smallGroupId: group.id } })
     expect(members).toHaveLength(2)
     expect(members.every((m) => m.groupStatus === "Member")).toBe(true)
+    // This path used to drop the nickname on the floor — it had its own copy of
+    // the field list and that list was missing one.
+    expect(members.find((m) => m.firstName === "Hubby")?.nickname).toBe("Hubs")
 
     // Family links repointed from guests to the new members
     const links = await db.familyMember.findMany({ where: { familyId: family.id } })

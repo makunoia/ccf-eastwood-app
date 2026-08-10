@@ -40,7 +40,7 @@ async function seedGuestRegistrant(
   extra: { scheduleDayOfWeek?: number; scheduleTimeStart?: string } = {}
 ) {
   const guest = await db.guest.create({
-    data: { firstName, lastName: "Santos", language: [], ...extra },
+    data: { firstName, lastName: "Santos", nickname: `${firstName}-nick`, language: [], ...extra },
     select: { id: true },
   })
   const registrant = await db.eventRegistrant.create({
@@ -97,9 +97,18 @@ describe("resolveConfirmations — batched writes land the same as sequential on
 
     const members = await db.member.findMany({
       where: { smallGroupId: group.id, groupStatus: "Member" },
-      select: { firstName: true },
+      select: { firstName: true, nickname: true },
     })
     expect(members.map((m) => m.firstName).sort()).toEqual(["Ana", "Ben", "Cara", "Dan", "Eli"])
+    // The batched path built the Member from its own field list, which had no
+    // nickname in it — the name the person actually goes by was lost here.
+    expect(members.map((m) => m.nickname).sort()).toEqual([
+      "Ana-nick",
+      "Ben-nick",
+      "Cara-nick",
+      "Dan-nick",
+      "Eli-nick",
+    ])
 
     // Each guest is linked to its own new member — not all to the first one.
     const guests = await db.guest.findMany({ select: { memberId: true } })

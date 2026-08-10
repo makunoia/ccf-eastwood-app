@@ -16,6 +16,19 @@ const WRITE_TOOL_TITLES: Record<string, string> = {
   mark_registrant_attended: "Mark registrant as attended",
 }
 
+/**
+ * The title an approving admin reads. Absent fields don't render as rows, so
+ * "no DGroup" and "DGroup not mentioned" would otherwise look identical on the
+ * one tool where that difference matters.
+ */
+function toolTitle(toolName: string, input: unknown): string {
+  if (toolName === "promote_guest_to_member") {
+    const groupId = (input as { groupId?: string } | null)?.groupId
+    return groupId ? "Promote guest to member and add to DGroup" : "Promote guest to member (no DGroup)"
+  }
+  return WRITE_TOOL_TITLES[toolName] ?? labelize(toolName)
+}
+
 function labelize(key: string): string {
   return key
     .replace(/([A-Z])/g, " $1")
@@ -65,7 +78,7 @@ export function ApprovalCard({
       <CardContent className="space-y-2 px-3">
         <div className="flex items-center gap-1.5 text-sm font-medium">
           <IconAlertTriangle className="size-4 text-amber-500" />
-          {WRITE_TOOL_TITLES[toolName] ?? labelize(toolName)}
+          {toolTitle(toolName, input)}
         </div>
         {rows.length > 0 && (
           <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-0.5 text-xs">
