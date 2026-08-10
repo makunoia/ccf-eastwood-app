@@ -50,6 +50,42 @@ export type ProfileFormValues = {
   ageRangeMax: string
 }
 
+// ─── Unlinking a facilitator ─────────────────────────────────────────────────
+
+/**
+ * What the profile becomes when a group's facilitator is *unlinked*.
+ *
+ * Swapping one facilitator for another still leaves the criteria alone — they
+ * are the group's own, hand-entered, and a facilitator change must never
+ * silently rewrite what a group matches for. Emptying the slot is the different
+ * case: the table has nobody running it, so it carries no criteria and no Catch
+ * Mech target either (`linkedSmallGroupId` is cleared alongside this).
+ *
+ * A Prisma update fragment, but built from plain objects — no import, so the
+ * module stays safe for the client components that already pull `profileRows`
+ * from here. Lives here rather than in the actions file because that one is
+ * `"use server"`, where every export has to be an async function. A function
+ * rather than a const so each caller spreads its own arrays.
+ */
+export function clearedMatchingProfile() {
+  return {
+    lifeStages: { set: [] as { id: string }[] },
+    genderFocus: null,
+    language: { set: [] as string[] },
+    ageRangeMin: null,
+    ageRangeMax: null,
+  }
+}
+
+/** The same clearing, as the edit drawers hold their form state. */
+export const CLEARED_PROFILE_FORM: ProfileFormValues = {
+  lifeStageIds: [],
+  genderFocus: "",
+  language: [],
+  ageRangeMin: "",
+  ageRangeMax: "",
+}
+
 // ─── Timothy ─────────────────────────────────────────────────────────────────
 
 /**

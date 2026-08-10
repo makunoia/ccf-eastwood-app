@@ -3,6 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import {
+  IconAlertTriangle,
   IconArrowsExchange,
   IconCheck,
   IconDots,
@@ -285,6 +286,18 @@ function FacilitatorSection({
               </SelectContent>
             </Select>
           </div>
+          {/* Unassigning is destructive by side effect — the action clears the
+              group's criteria and Catch Mech target with the facilitator. Say so
+              before the save, not after. */}
+          {role === "facilitator" && selectedId === UNASSIGNED && volunteer && (
+            <p className="text-muted-foreground flex items-start gap-1.5 text-xs">
+              <IconAlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+              <span>
+                Unassigning also clears this group&apos;s matching profile and its
+                Catch Mech DGroup.
+              </span>
+            </p>
+          )}
           {role === "facilitator" && selectedId !== UNASSIGNED && ledGroups.length > 1 && (
             <div className="space-y-1.5">
               <Label>

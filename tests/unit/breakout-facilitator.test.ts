@@ -218,6 +218,9 @@ describe("regression", () => {
  * (CCF-138), which meant assigning someone silently rewrote what the group
  * matched for and made the profile read-only in both edit drawers. These tests
  * pin the reversal, and that the Catch Mech link still travels with the change.
+ *
+ * The one exception is *unlinking*: a group with no facilitator keeps no
+ * criteria either.
  */
 describe("setFacilitator leaves the matching profile alone", () => {
   async function seedLedGroup(leaderId: string, name: string) {
@@ -302,7 +305,10 @@ describe("setFacilitator leaves the matching profile alone", () => {
     expect(updated?.language).toEqual(["Cebuano"])
   })
 
-  it("keeps them when the facilitator is unassigned", async () => {
+  // A swap keeps the criteria; emptying the slot does not. Nobody runs the
+  // table, so it matches for nothing — see the unlink block in
+  // tests/integration/breakout-group-update.test.ts for the full contract.
+  it("clears them when the facilitator is unassigned", async () => {
     const { event, member1, vol1, breakoutGroup } = await seedEventWithVolunteers()
     await seedOwnProfile(breakoutGroup.id)
     const sg = await seedLedGroup(member1.id, "Alpha")
@@ -310,10 +316,17 @@ describe("setFacilitator leaves the matching profile alone", () => {
 
     await setFacilitator(breakoutGroup.id, null, "facilitator", event.id, null)
 
-    const updated = await db.breakoutGroup.findUnique({ where: { id: breakoutGroup.id } })
+    const updated = await db.breakoutGroup.findUnique({
+      where: { id: breakoutGroup.id },
+      include: { lifeStages: true },
+    })
     expect(updated?.facilitatorId).toBeNull()
     expect(updated?.linkedSmallGroupId).toBeNull()
-    expect(updated?.genderFocus).toBe("Female")
+    expect(updated?.genderFocus).toBeNull()
+    expect(updated?.language).toEqual([])
+    expect(updated?.ageRangeMin).toBeNull()
+    expect(updated?.ageRangeMax).toBeNull()
+    expect(updated?.lifeStages).toHaveLength(0)
   })
 
   // The link is not matching — it decides which DGroup receives this group's

@@ -35,7 +35,11 @@ import {
 } from "@/components/ui/select"
 import { LANGUAGE_OPTIONS } from "@/lib/constants/group-options"
 import { updateBreakoutGroup, deleteBreakoutGroup } from "@/app/(dashboard)/events/breakout-actions"
-import { GENDER_FOCUS_LABELS, missingTimothyFields } from "@/lib/breakouts/profile"
+import {
+  CLEARED_PROFILE_FORM,
+  GENDER_FOCUS_LABELS,
+  missingTimothyFields,
+} from "@/lib/breakouts/profile"
 import { FacilitatorLeadership } from "@/components/breakouts/facilitator-leadership"
 
 /** Shown, not inherited — a breakout group's criteria are its own. */
@@ -106,14 +110,21 @@ function EditDialog({
     }
   }, [open, group])
 
-  // Only the Catch Mech routing target moves with the facilitator — the matching
-  // criteria are this group's own and are never overwritten by a facilitator
-  // change, here or in `setFacilitator`.
+  // Swapping one facilitator for another moves only the Catch Mech routing
+  // target: the matching criteria are this group's own and a swap never
+  // rewrites them. *Emptying* the slot is the other case — the group is left
+  // with no facilitator, so it keeps no criteria either. The server clears them
+  // regardless (`updateBreakoutGroup`); blanking the fields here keeps the form
+  // showing what is about to be saved.
   function handleVolunteerChange(volunteerId: string) {
     const vol = volunteers.find((v) => v.id === volunteerId)
     const led = vol?.member.ledGroups ?? []
     setSourceGroupId(led.length === 1 ? led[0].id : "")
-    setForm((f) => ({ ...f, facilitatorId: volunteerId }))
+    setForm((f) => ({
+      ...f,
+      facilitatorId: volunteerId,
+      ...(volunteerId === "" && group.facilitatorId ? CLEARED_PROFILE_FORM : {}),
+    }))
   }
 
   const selectedVol = volunteers.find((v) => v.id === form.facilitatorId) ?? null

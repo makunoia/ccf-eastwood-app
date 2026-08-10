@@ -7,14 +7,13 @@ import {
   languageOptions,
   filterBreakoutCandidates,
   visibleFilters,
-  criteriaToFilters,
   sortCandidates,
   activeFilterCount,
+  attributeFilterCount,
   hasAttributeFilters,
   CANDIDATE_FILTER_KEYS,
   type BreakoutCandidate,
   type CandidateDemographics,
-  type BreakoutCriteria,
 } from "@/lib/breakouts/candidate-filters"
 import {
   BARE_EVENT_FORM_CONFIG,
@@ -46,6 +45,7 @@ function candidate(
     mobileNumber: null,
     isMember: true,
     isAnonymous: false,
+    isVolunteer: false,
     demographics: { ...EMPTY_DEMOGRAPHICS, ...demographics },
     score: 0.5,
     confidence: 0.5,
@@ -309,6 +309,54 @@ describe("filterBreakoutCandidates", () => {
   })
 })
 
+// ─── role ────────────────────────────────────────────────────────────────────
+
+describe("filterBreakoutCandidates — participant / volunteer", () => {
+  const pool = () => [
+    candidate("Ana", {}, { isVolunteer: false }),
+    candidate("Ben", {}, { isVolunteer: true }),
+    anonymous("Walk In"),
+  ]
+
+  it("keeps everyone when no role is set", () => {
+    expect(filterBreakoutCandidates(pool(), {}, NOW).map((c) => c.name)).toEqual([
+      "Ana",
+      "Ben",
+      "Walk In",
+    ])
+  })
+
+  it("keeps only volunteers", () => {
+    expect(
+      filterBreakoutCandidates(pool(), { role: "volunteer" }, NOW).map((c) => c.name)
+    ).toEqual(["Ben"])
+  })
+
+  it("keeps only non-volunteers", () => {
+    expect(
+      filterBreakoutCandidates(pool(), { role: "participant" }, NOW).map((c) => c.name)
+    ).toEqual(["Ana", "Walk In"])
+  })
+
+  // Regression: role is answerable for a walk-in, unlike every attribute
+  // filter. Were it treated as one, the picker would list the walk-in under
+  // "hidden — no profile info" while also showing it in the results.
+  it("keeps an anonymous walk-in under the participant filter", () => {
+    const out = filterBreakoutCandidates([anonymous("Walk In")], { role: "participant" }, NOW)
+    expect(out.map((c) => c.name)).toEqual(["Walk In"])
+  })
+
+  it("combines with an attribute filter", () => {
+    const pool = [
+      candidate("Ana", { gender: "Female" }, { isVolunteer: true }),
+      candidate("Bea", { gender: "Female" }, { isVolunteer: false }),
+      candidate("Ben", { gender: "Male" }, { isVolunteer: true }),
+    ]
+    const out = filterBreakoutCandidates(pool, { gender: "Female", role: "volunteer" }, NOW)
+    expect(out.map((c) => c.name)).toEqual(["Ana"])
+  })
+})
+
 // ─── activeFilterCount / hasAttributeFilters ─────────────────────────────────
 
 describe("activeFilterCount", () => {
@@ -332,6 +380,18 @@ describe("activeFilterCount", () => {
   it("counts day 0 (Sunday), which is falsy", () => {
     expect(activeFilterCount({ scheduleDayOfWeek: 0 })).toBe(1)
     expect(hasAttributeFilters({ scheduleDayOfWeek: 0 })).toBe(true)
+  })
+
+  it("counts role in the chip but not as an attribute filter", () => {
+    expect(activeFilterCount({ role: "volunteer" })).toBe(1)
+    expect(attributeFilterCount({ role: "volunteer" })).toBe(0)
+    expect(hasAttributeFilters({ role: "volunteer" })).toBe(false)
+  })
+
+  it("adds role on top of the attribute filters", () => {
+    const filters = { gender: "Female", role: "participant" } as const
+    expect(activeFilterCount(filters)).toBe(2)
+    expect(attributeFilterCount(filters)).toBe(1)
   })
 })
 
@@ -391,65 +451,6 @@ describe("visibleFilters", () => {
     expect(visibleFilters(config(), withYear)).toContain("age")
     expect(visibleFilters(config(), withBucket)).toContain("age")
     expect(visibleFilters(config(), [candidate("C")])).not.toContain("age")
-  })
-})
-
-// ─── criteriaToFilters ───────────────────────────────────────────────────────
-
-describe("criteriaToFilters", () => {
-  const base: BreakoutCriteria = {
-    lifeStageIds: [],
-    genderFocus: null,
-    language: [],
-    ageRangeMin: null,
-    ageRangeMax: null,
-    meetingFormat: null,
-    locationCity: null,
-    scheduleDayOfWeek: null,
-  }
-
-  it("produces no filters from empty criteria", () => {
-    expect(criteriaToFilters(base)).toEqual({})
-  })
-
-  it("sets gender for a single-gender group", () => {
-    expect(criteriaToFilters({ ...base, genderFocus: "Female" }).gender).toBe("Female")
-  })
-
-  it("sets no gender filter for a Mixed group", () => {
-    expect(criteriaToFilters({ ...base, genderFocus: "Mixed" }).gender).toBeUndefined()
-  })
-
-  it("carries a single life stage but not several", () => {
-    expect(criteriaToFilters({ ...base, lifeStageIds: ["ls-1"] }).lifeStageId).toBe("ls-1")
-    expect(
-      criteriaToFilters({ ...base, lifeStageIds: ["ls-1", "ls-2"] }).lifeStageId
-    ).toBeUndefined()
-  })
-
-  it("carries only the bound that is set", () => {
-    const out = criteriaToFilters({ ...base, ageRangeMin: 25 })
-    expect(out.minAge).toBe(25)
-    expect(out.maxAge).toBeUndefined()
-  })
-
-  it("normalizes the group's location city", () => {
-    expect(criteriaToFilters({ ...base, locationCity: " Makati " }).workCity).toBe("makati")
-  })
-
-  it("ignores a blank location city", () => {
-    expect(criteriaToFilters({ ...base, locationCity: "  " }).workCity).toBeUndefined()
-  })
-
-  it("carries Sunday (day 0) rather than dropping it as falsy", () => {
-    expect(criteriaToFilters({ ...base, scheduleDayOfWeek: 0 }).scheduleDayOfWeek).toBe(0)
-  })
-
-  it("copies the language array rather than aliasing it", () => {
-    const criteria = { ...base, language: ["Tagalog"] }
-    const out = criteriaToFilters(criteria)
-    out.languages!.push("English")
-    expect(criteria.language).toEqual(["Tagalog"])
   })
 })
 

@@ -27,7 +27,7 @@ vi.mock("@/lib/auth", () => ({
 }))
 
 import { db } from "@/lib/db"
-import { updateBreakoutGroup } from "@/app/(dashboard)/events/breakout-actions"
+import { setFacilitator, updateBreakoutGroup } from "@/app/(dashboard)/events/breakout-actions"
 
 beforeEach(async () => {
   vi.clearAllMocks()
@@ -244,6 +244,149 @@ describe("updateBreakoutGroup and the matching profile", () => {
     expect(updated?.meetingFormat).toBeNull()
     expect(updated?.locationCity).toBeNull()
     expect(updated?.schedules).toHaveLength(0)
+  })
+})
+
+// ─── Unlinking the facilitator ────────────────────────────────────────────────
+
+/**
+ * A swap is not an unlink. Changing facilitator never rewrites what a group
+ * matches for — the criteria are hand-entered and the group's own — but leaving
+ * the slot empty means nobody runs the table, so it carries no criteria and no
+ * Catch Mech target either. Both write paths have to agree.
+ */
+describe("unlinking a facilitator clears the matching profile", () => {
+  /** Gives the seeded group a full profile and a Catch Mech target. */
+  async function withProfile(groupId: string, linkedSmallGroupId: string) {
+    const lifeStage = await db.lifeStage.create({ data: { name: "Young Pro", order: 0 } })
+    await db.breakoutGroup.update({
+      where: { id: groupId },
+      data: {
+        linkedSmallGroupId,
+        lifeStages: { connect: { id: lifeStage.id } },
+        genderFocus: "Female",
+        language: ["English"],
+        ageRangeMin: 25,
+        ageRangeMax: 35,
+      },
+    })
+    return lifeStage
+  }
+
+  function readGroup(groupId: string) {
+    return db.breakoutGroup.findUnique({
+      where: { id: groupId },
+      include: { lifeStages: true },
+    })
+  }
+
+  it("clears every factor via setFacilitator", async () => {
+    const { event, group, faci } = await seed()
+    await withProfile(group.id, faci.ledGroup.id)
+
+    const result = await setFacilitator(group.id, null, "facilitator", event.id)
+
+    expect(result.success).toBe(true)
+    const updated = await readGroup(group.id)
+    expect(updated?.facilitatorId).toBeNull()
+    expect(updated?.linkedSmallGroupId).toBeNull()
+    expect(updated?.lifeStages).toHaveLength(0)
+    expect(updated?.genderFocus).toBeNull()
+    expect(updated?.language).toEqual([])
+    expect(updated?.ageRangeMin).toBeNull()
+    expect(updated?.ageRangeMax).toBeNull()
+  })
+
+  // Regression: this is exactly what 444912e protected — a facilitator change
+  // must not silently rewrite what the group matches for.
+  it("leaves the profile alone when one facilitator replaces another", async () => {
+    const { event, group, faci, coFaci } = await seed()
+    const lifeStage = await withProfile(group.id, faci.ledGroup.id)
+    // Free the second volunteer's slot so they can take the facilitator one.
+    await setFacilitator(group.id, null, "coFacilitator", event.id)
+
+    const result = await setFacilitator(group.id, coFaci.vol.id, "facilitator", event.id)
+
+    expect(result.success).toBe(true)
+    const updated = await readGroup(group.id)
+    expect(updated?.facilitatorId).toBe(coFaci.vol.id)
+    expect(updated?.genderFocus).toBe("Female")
+    expect(updated?.language).toEqual(["English"])
+    expect(updated?.lifeStages.map((ls) => ls.id)).toEqual([lifeStage.id])
+  })
+
+  it("leaves the profile alone when the co-facilitator is unlinked", async () => {
+    const { event, group, faci } = await seed()
+    await withProfile(group.id, faci.ledGroup.id)
+
+    const result = await setFacilitator(group.id, null, "coFacilitator", event.id)
+
+    expect(result.success).toBe(true)
+    const updated = await readGroup(group.id)
+    expect(updated?.coFacilitatorId).toBeNull()
+    expect(updated?.facilitatorId).toBe(faci.vol.id)
+    expect(updated?.genderFocus).toBe("Female")
+    expect(updated?.lifeStages).toHaveLength(1)
+    expect(updated?.linkedSmallGroupId).toBe(faci.ledGroup.id)
+  })
+
+  // The drawer blanks its own fields on the same change, but a stale client —
+  // or a direct caller — must not be able to keep criteria on a group it just
+  // emptied the facilitator slot of.
+  it("clears via updateBreakoutGroup even when the payload carries criteria", async () => {
+    const { event, group, faci } = await seed()
+    const lifeStage = await withProfile(group.id, faci.ledGroup.id)
+
+    const result = await updateBreakoutGroup(
+      group.id,
+      event.id,
+      drawerPayload({
+        facilitatorId: null,
+        linkedSmallGroupId: faci.ledGroup.id,
+        lifeStageIds: [lifeStage.id],
+        genderFocus: "Female",
+        language: ["English"],
+        ageRangeMin: 25,
+        ageRangeMax: 35,
+      })
+    )
+
+    expect(result.success).toBe(true)
+    const updated = await readGroup(group.id)
+    expect(updated?.facilitatorId).toBeNull()
+    expect(updated?.linkedSmallGroupId).toBeNull()
+    expect(updated?.lifeStages).toHaveLength(0)
+    expect(updated?.genderFocus).toBeNull()
+    expect(updated?.language).toEqual([])
+    expect(updated?.ageRangeMin).toBeNull()
+  })
+
+  // It is the transition that clears, not the state: a group that never had a
+  // facilitator can still be given criteria, and saving it again keeps them.
+  it("keeps criteria on a group that already had no facilitator", async () => {
+    const { event, group } = await seed()
+    const lifeStage = await db.lifeStage.create({ data: { name: "Singles", order: 0 } })
+    await db.breakoutGroup.update({
+      where: { id: group.id },
+      data: { facilitatorId: null },
+    })
+
+    const result = await updateBreakoutGroup(
+      group.id,
+      event.id,
+      drawerPayload({
+        facilitatorId: null,
+        lifeStageIds: [lifeStage.id],
+        genderFocus: "Mixed",
+        language: ["Tagalog"],
+      })
+    )
+
+    expect(result.success).toBe(true)
+    const updated = await readGroup(group.id)
+    expect(updated?.genderFocus).toBe("Mixed")
+    expect(updated?.language).toEqual(["Tagalog"])
+    expect(updated?.lifeStages.map((ls) => ls.id)).toEqual([lifeStage.id])
   })
 })
 

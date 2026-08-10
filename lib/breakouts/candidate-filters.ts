@@ -66,6 +66,14 @@ export type BreakoutCandidate = {
    * ever match them.
    */
   isAnonymous: boolean
+  /**
+   * Serving at this event — the member behind the registrant has a Volunteer
+   * record on it that hasn't been rejected. Facilitators never reach the picker
+   * (see `unassignedCandidateWhere`), but everyone else who signed up to serve
+   * is a normal candidate, and an admin seating tables wants to see which.
+   * Guests are always false: `Volunteer.memberId` is required.
+   */
+  isVolunteer: boolean
   demographics: CandidateDemographics
   score: number
   confidence: number
@@ -90,6 +98,12 @@ export type CandidateFilters = {
   workCity?: string
   meetingPreference?: "Online" | "Hybrid" | "InPerson"
   scheduleDayOfWeek?: number
+  /**
+   * Serving or not. Not an attribute filter: it is known for everyone, walk-ins
+   * included, so it never drops someone for having no profile — see
+   * `attributeFilterCount`.
+   */
+  role?: "participant" | "volunteer"
 }
 
 export const EMPTY_CANDIDATE_FILTERS: CandidateFilters = {}
@@ -219,12 +233,21 @@ function matchesSearch(c: BreakoutCandidate, query: string): boolean {
 
 // ─── The filter ──────────────────────────────────────────────────────────────
 
-/** True when no attribute filter is set (search alone doesn't count). */
+/** True when an attribute filter is set (search and role don't count). */
 export function hasAttributeFilters(f: CandidateFilters): boolean {
-  return activeFilterCount(f) > 0
+  return attributeFilterCount(f) > 0
 }
 
-export function activeFilterCount(f: CandidateFilters): number {
+/**
+ * How many filters can only be answered from a profile.
+ *
+ * Kept apart from `activeFilterCount` because the picker uses this one to decide
+ * whether anyone was dropped for having no profile at all. Role is known for
+ * everyone — an anonymous walk-in is simply a participant — so folding it in
+ * here would list a walk-in under "N hidden — no profile info" while it is also
+ * sitting in the main results.
+ */
+export function attributeFilterCount(f: CandidateFilters): number {
   return [
     f.lifeStageId,
     f.gender,
@@ -235,6 +258,11 @@ export function activeFilterCount(f: CandidateFilters): number {
     f.meetingPreference,
     f.scheduleDayOfWeek !== undefined ? "sched" : undefined,
   ].filter((v) => v !== undefined).length
+}
+
+/** Everything the "N filters" chip should count, role included. */
+export function activeFilterCount(f: CandidateFilters): number {
+  return attributeFilterCount(f) + (f.role !== undefined ? 1 : 0)
 }
 
 /**
@@ -254,6 +282,11 @@ export function filterBreakoutCandidates(
 ): BreakoutCandidate[] {
   return candidates.filter((c) => {
     if (filters.search && !matchesSearch(c, filters.search)) return false
+
+    // Before the attribute filters: this one is answerable for everyone,
+    // including the anonymous walk-ins the rest of them can't speak to.
+    if (filters.role === "volunteer" && !c.isVolunteer) return false
+    if (filters.role === "participant" && c.isVolunteer) return false
 
     const d = c.demographics
 
@@ -352,46 +385,6 @@ export function visibleFilters(
     if (fields.some((f) => config[f])) return true
     return candidates.some((c) => hasValue(c.demographics))
   })
-}
-
-// ─── "Match this group" prefill ──────────────────────────────────────────────
-
-/** The group-side criteria the prefill button reads. */
-export type BreakoutCriteria = {
-  lifeStageIds: string[]
-  /** Already resolved through deriveEffectiveGenderFocus on the server. */
-  genderFocus: "Male" | "Female" | "Mixed" | null
-  language: string[]
-  ageRangeMin: number | null
-  ageRangeMax: number | null
-  meetingFormat: "Online" | "Hybrid" | "InPerson" | null
-  locationCity: string | null
-  scheduleDayOfWeek: number | null
-}
-
-/**
- * Turn the group's own criteria into a filter set — the "Match this group"
- * button. Only unambiguous criteria carry over:
- *
- *  - A "Mixed" or unset gender focus means the group takes anyone, so no filter.
- *  - Multiple life stages can't be expressed by a single-select, so none is set.
- *  - An unset bound stays unset rather than becoming 0 or Infinity.
- */
-export function criteriaToFilters(criteria: BreakoutCriteria): CandidateFilters {
-  const filters: CandidateFilters = {}
-
-  if (criteria.lifeStageIds.length === 1) filters.lifeStageId = criteria.lifeStageIds[0]
-  if (criteria.genderFocus === "Male" || criteria.genderFocus === "Female") {
-    filters.gender = criteria.genderFocus
-  }
-  if (criteria.language.length > 0) filters.languages = [...criteria.language]
-  if (criteria.ageRangeMin !== null) filters.minAge = criteria.ageRangeMin
-  if (criteria.ageRangeMax !== null) filters.maxAge = criteria.ageRangeMax
-  if (criteria.meetingFormat !== null) filters.meetingPreference = criteria.meetingFormat
-  if (criteria.locationCity?.trim()) filters.workCity = normalizeCity(criteria.locationCity)
-  if (criteria.scheduleDayOfWeek !== null) filters.scheduleDayOfWeek = criteria.scheduleDayOfWeek
-
-  return filters
 }
 
 // ─── Sorting ─────────────────────────────────────────────────────────────────
