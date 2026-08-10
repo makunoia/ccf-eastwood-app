@@ -23,6 +23,8 @@ export const eventClusterSettingsSchema = z.object({
   isOpen: z.boolean().optional(),
   // The door form's own switch (CCF-133) — independent of `isOpen` above.
   walkInIsOpen: z.boolean().optional(),
+  // The check-in kiosk's switch — independent of both.
+  checkInIsOpen: z.boolean().optional(),
   registrationStart: z.coerce.date().nullable().optional(),
   registrationEnd: z.coerce.date().nullable().optional(),
   logoUrl: optionalTrimmed.optional(),

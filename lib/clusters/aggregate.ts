@@ -21,6 +21,7 @@ import {
 import {
   buildClusterExportColumns,
   type ClusterExportColumnState,
+  type ClusterExportEvent,
   type ClusterRegistrationExportRow,
 } from "@/lib/exports/cluster-registrations"
 import {
@@ -51,9 +52,14 @@ export type AccessibleClusterEvent = ClusterRosterEvent & {
   linkedOccurrenceDate: Date | null
 }
 
-/** The cluster's member events this user may see, in cluster order. */
-export async function getAccessibleClusterEvents(
-  session: Session | null,
+/**
+ * All of the cluster's member events, in cluster order, unfiltered by permission.
+ *
+ * For the public surfaces, which have no session to scope by — the kiosk serves
+ * whoever holds the day's link and must see the whole day. Authenticated callers
+ * want {@link getAccessibleClusterEvents}.
+ */
+export async function getClusterEvents(
   clusterId: string
 ): Promise<AccessibleClusterEvent[]> {
   const rows = await db.eventClusterEvent.findMany({
@@ -74,13 +80,20 @@ export async function getAccessibleClusterEvents(
       },
     },
   })
-  return rows
-    .map((r) => ({
-      ...r.event,
-      linkedOccurrenceId: r.occurrenceId,
-      linkedOccurrenceDate: r.occurrence?.date ?? null,
-    }))
-    .filter((e) => canAccessEvent(session, e.id))
+  return rows.map((r) => ({
+    ...r.event,
+    linkedOccurrenceId: r.occurrenceId,
+    linkedOccurrenceDate: r.occurrence?.date ?? null,
+  }))
+}
+
+/** The cluster's member events this user may see, in cluster order. */
+export async function getAccessibleClusterEvents(
+  session: Session | null,
+  clusterId: string
+): Promise<AccessibleClusterEvent[]> {
+  const events = await getClusterEvents(clusterId)
+  return events.filter((e) => canAccessEvent(session, e.id))
 }
 
 /**
@@ -222,16 +235,20 @@ export async function getClusterRegistrantRows(
 }
 
 /**
- * Every cluster event's public check-in link, in cluster order.
+ * Every cluster event's check-in verdict for the day, in cluster order: the
+ * status the admin board badges, plus the occurrence the kiosk records against.
  *
  * Resolves the session each event's link should point at — the one the cluster
  * names, else the event's occurrence on the cluster's date — and reads the
  * OneTime Public access switch, then hands both to the pure resolver.
+ *
+ * Shared by the board's Shortcuts and the public cluster kiosk so the two can
+ * never disagree about whether an event is accepting check-ins right now.
  */
-export async function getClusterCheckinShortcuts(
+export async function resolveClusterCheckinTargets(
   events: AccessibleClusterEvent[],
   clusterDate: Date | null
-): Promise<ClusterCheckinShortcut[]> {
+): Promise<{ shortcut: ClusterCheckinShortcut; occurrenceId: string | null }[]> {
   if (events.length === 0) return []
 
   const oneTimeIds = events.filter((e) => e.type === "OneTime").map((e) => e.id)
@@ -282,12 +299,24 @@ export async function getClusterCheckinShortcuts(
     const occurrence = event.linkedOccurrenceId
       ? (byId.get(event.linkedOccurrenceId) ?? null)
       : (byEvent.get(event.id) ?? null)
-    return resolveClusterCheckinShortcut({
-      event,
-      formIsOpen: !closedEventIds.has(event.id),
-      occurrence,
-    })
+    return {
+      shortcut: resolveClusterCheckinShortcut({
+        event,
+        formIsOpen: !closedEventIds.has(event.id),
+        occurrence,
+      }),
+      occurrenceId: occurrence?.id ?? null,
+    }
   })
+}
+
+/** Every cluster event's public check-in link, in cluster order. */
+export async function getClusterCheckinShortcuts(
+  events: AccessibleClusterEvent[],
+  clusterDate: Date | null
+): Promise<ClusterCheckinShortcut[]> {
+  const targets = await resolveClusterCheckinTargets(events, clusterDate)
+  return targets.map((t) => t.shortcut)
 }
 
 /**
@@ -350,11 +379,37 @@ const PERSON_PROFILE_SELECT = {
   ageRangeBucket: { select: { label: true } },
 } as const
 
+/** First non-null wins — profile answers repeat across a person's registrations. */
+function firstOf<T>(existing: T | null, incoming: T | null): T | null {
+  return existing ?? incoming
+}
+
+/** Union of two semicolon-joined lists, order preserved, duplicates dropped. */
+function mergeList(existing: string | null, incoming: string | null): string | null {
+  const parts = [existing, incoming]
+    .filter((v): v is string => !!v)
+    .flatMap((v) => v.split("; "))
+  const unique = [...new Set(parts)]
+  return unique.length > 0 ? unique.join("; ") : null
+}
+
+/** The earlier of two ISO timestamps, ignoring nulls. */
+function earlier(existing: string | null, incoming: string | null): string | null {
+  if (!existing) return incoming
+  if (!incoming) return existing
+  return incoming < existing ? incoming : existing
+}
+
 /**
- * Flat registration records for the cluster's CSV export — one row per
- * `EventRegistrant`, not per person, so a person on three of the day's events
- * exports three rows. Scoped to the events this user may see; check-in state is
- * scoped to the cluster's day exactly like the roster.
+ * Registration records for the cluster's CSV export — **one row per person**,
+ * not per `EventRegistrant`. Someone on three of the day's events is one row
+ * whose `perEvent` map names all three; exporting them three times would repeat
+ * their entire profile and break every count in the spreadsheet.
+ *
+ * Scoped to the events this user may see; check-in state is scoped to the
+ * cluster's day exactly like the roster. Identity is the roster's `personKeyFor`
+ * — a walk-in with no Member/Guest FK stays its own row, since we have nothing
+ * to merge it on.
  *
  * Every answer the registration form can gather is resolved here, in the same
  * precedence the registrant detail page uses (per-event value → Member → Guest →
@@ -381,6 +436,7 @@ export async function getClusterRegistrationExportRows(
   const registrants = await db.eventRegistrant.findMany({
     where: { eventId: { in: events.map((e) => e.id) } },
     select: {
+      id: true,
       eventId: true,
       memberId: true,
       guestId: true,
@@ -420,7 +476,7 @@ export async function getClusterRegistrationExportRows(
           claimedSatellite: true,
         },
       },
-      event: { select: { name: true, type: true } },
+      event: { select: { type: true } },
       occurrenceAttendances: {
         ...occurrenceScopeFilter(events, scope),
         orderBy: { checkedInAt: "asc" },
@@ -454,10 +510,12 @@ export async function getClusterRegistrationExportRows(
         : null
 
     return {
+      id: r.id,
       eventId: r.eventId,
       eventType: r.event.type,
       hasLinkedSession: linked !== null,
-      eventName: r.event.name,
+      memberId: r.memberId,
+      guestId: r.guestId,
       firstName: r.member?.firstName ?? r.guest?.firstName ?? r.firstName ?? "",
       lastName: r.member?.lastName ?? r.guest?.lastName ?? r.lastName ?? "",
       // The per-event nickname wins over the one on the profile — same
@@ -509,12 +567,83 @@ export async function getClusterRegistrationExportRows(
   // Recurring event's whole standing roster.
   const dayRows = rows.filter((row) => isOnClusterDay(row, scope))
 
-  // Cluster order first (the order the day runs in), then the roster's
-  // last-name/first-name ordering so both screens read the same way.
-  dayRows.sort((a, b) => {
-    const orderCmp =
-      (eventOrder.get(a.eventId) ?? 0) - (eventOrder.get(b.eventId) ?? 0)
-    if (orderCmp !== 0) return orderCmp
+  // Fold in cluster order, so when two registrations disagree on a per-event
+  // answer (a nickname, a dietary note) the earlier event on the day wins —
+  // a stable rule rather than whatever order the database returned.
+  dayRows.sort(
+    (a, b) => (eventOrder.get(a.eventId) ?? 0) - (eventOrder.get(b.eventId) ?? 0)
+  )
+
+  const byPerson = new Map<string, ClusterRegistrationExportRow>()
+  for (const row of dayRows) {
+    const {
+      id,
+      eventId,
+      eventType: _eventType,
+      hasLinkedSession: _linked,
+      memberId,
+      guestId,
+      registrationClusterId,
+      ...fields
+    } = row
+    const key = personKeyFor({ id, memberId, guestId })
+    const participation = fields.checkedIn ? "CheckedIn" : "Registered"
+    const existing = byPerson.get(key)
+
+    if (!existing) {
+      byPerson.set(key, {
+        ...fields,
+        personKey: key,
+        perEvent: { [eventId]: participation },
+        viaSharedForm: registrationClusterId === clusterId,
+      })
+      continue
+    }
+
+    // A person can hold two registrations on the SAME event (a duplicate
+    // sign-up); having arrived beats merely having signed up.
+    existing.perEvent[eventId] =
+      existing.perEvent[eventId] === "CheckedIn" ? "CheckedIn" : participation
+
+    existing.registeredAt =
+      earlier(existing.registeredAt, fields.registeredAt) ?? existing.registeredAt
+    existing.checkedInAt = earlier(existing.checkedInAt, fields.checkedInAt)
+    existing.checkedIn = existing.checkedIn || fields.checkedIn
+    existing.viaSharedForm =
+      existing.viaSharedForm || registrationClusterId === clusterId
+
+    existing.nickname = firstOf(existing.nickname, fields.nickname)
+    existing.email = firstOf(existing.email, fields.email)
+    existing.mobile = existing.mobile || fields.mobile
+    existing.lifeStage = firstOf(existing.lifeStage, fields.lifeStage)
+    existing.birthDate = firstOf(existing.birthDate, fields.birthDate)
+    existing.ageRange = firstOf(existing.ageRange, fields.ageRange)
+    existing.gender = firstOf(existing.gender, fields.gender)
+    existing.language = firstOf(existing.language, fields.language)
+    existing.meetingPreference = firstOf(
+      existing.meetingPreference,
+      fields.meetingPreference
+    )
+    existing.schedule = firstOf(existing.schedule, fields.schedule)
+    existing.workCity = firstOf(existing.workCity, fields.workCity)
+    existing.claimedSmallGroup = firstOf(
+      existing.claimedSmallGroup,
+      fields.claimedSmallGroup
+    )
+    existing.household = firstOf(existing.household, fields.household)
+    existing.dietary = firstOf(existing.dietary, fields.dietary)
+    // Per-event facts that genuinely differ per registration: keep them all.
+    existing.breakoutGroup = mergeList(existing.breakoutGroup, fields.breakoutGroup)
+    existing.paymentReference = mergeList(
+      existing.paymentReference,
+      fields.paymentReference
+    )
+    existing.isPaid = existing.isPaid || fields.isPaid
+  }
+
+  // The roster's last-name/first-name ordering, so the CSV and the registrants
+  // screen list the same people in the same order.
+  return [...byPerson.values()].sort((a, b) => {
     const lastCmp = a.lastName.localeCompare(b.lastName, undefined, {
       sensitivity: "base",
     })
@@ -523,16 +652,6 @@ export async function getClusterRegistrationExportRows(
       sensitivity: "base",
     })
   })
-
-  return dayRows.map(
-    ({
-      eventId: _eventId,
-      eventType: _eventType,
-      hasLinkedSession: _linked,
-      registrationClusterId: _clusterId,
-      ...row
-    }) => row
-  )
 }
 
 /**
@@ -556,19 +675,29 @@ export async function getClusterFormCoverage(
   ])
 }
 
-/** Export payload for the cluster registrants screen: rows + column offer. */
+/**
+ * Export payload for the cluster registrants screen: rows + column offer + the
+ * events themselves, since a row's events are columns now and the client has to
+ * build the same registry the offer was computed from.
+ */
 export async function getClusterRegistrationExport(
   session: Session | null,
   clusterId: string
 ): Promise<{
   rows: ClusterRegistrationExportRow[]
   columns: ClusterExportColumnState[]
+  events: ClusterExportEvent[]
 }> {
-  const [rows, coverage] = await Promise.all([
+  const [rows, coverage, accessible] = await Promise.all([
     getClusterRegistrationExportRows(session, clusterId),
     getClusterFormCoverage(session, clusterId),
+    getAccessibleClusterEvents(session, clusterId),
   ])
-  return { rows, columns: buildClusterExportColumns(coverage, rows) }
+  const events: ClusterExportEvent[] = accessible.map((e) => ({
+    id: e.id,
+    name: e.name,
+  }))
+  return { rows, columns: buildClusterExportColumns(coverage, rows, events), events }
 }
 
 export type ClusterEventStat = {

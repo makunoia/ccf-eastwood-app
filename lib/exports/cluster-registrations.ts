@@ -8,6 +8,13 @@ import type { EventFormConfigData, FormToggleKey } from "@/lib/forms/context-con
  * cluster's forms actually gather, the client uses the same registry to render
  * the column picker and build the CSV. No Prisma, no Blob — importable by both.
  *
+ * **One row per PERSON, not per registration.** A cluster is one day, and a
+ * person on three of that day's events is one person — exporting them three
+ * times repeats their whole profile (name, mobile, life stage, household…) and
+ * makes every count in the spreadsheet wrong. Their events live across the row
+ * instead, one column per cluster event, mirroring the roster matrix on the
+ * registrants screen the export is launched from.
+ *
  * Two ideas carried over from `lib/forms/registration-responses.ts`, because an
  * export that disagrees with the registrant detail page would be worse than no
  * export at all:
@@ -20,14 +27,33 @@ import type { EventFormConfigData, FormToggleKey } from "@/lib/forms/context-con
  *    asked, so an admin can tell "nobody answered" from "we stopped asking".
  */
 
-/** One registration record — a person on one of the cluster's events. */
+/** An event of the cluster, as a column in the export. */
+export type ClusterExportEvent = { id: string; name: string }
+
+/** How a person stands on one of the day's events. Absent = not on it at all. */
+export type ClusterParticipation = "CheckedIn" | "Registered"
+
+const PARTICIPATION_LABEL: Record<ClusterParticipation, string> = {
+  CheckedIn: "Checked in",
+  Registered: "Registered",
+}
+
+/** One person on the cluster's day, with every event they're on folded in. */
 export type ClusterRegistrationExportRow = {
+  /** Stable identity: member:<id> | guest:<id> | registrant:<id> (anonymous). */
+  personKey: string
+  /** Per cluster event id — how they stand on it, absent when they aren't on it. */
+  perEvent: Record<string, ClusterParticipation | undefined>
+
   // Registration record (core — always available)
-  eventName: string
+  /** Earliest registration across the day's events. */
   registeredAt: string // ISO datetime
+  /** They reached at least one of the day's events through the shared link. */
   viaSharedForm: boolean
+  /** They checked in to at least one of the day's events. */
   checkedIn: boolean
-  checkedInAt: string | null // ISO datetime, null when they never checked in
+  /** Earliest check-in across the day's events; null when they never arrived. */
+  checkedInAt: string | null // ISO datetime
   firstName: string
   lastName: string
   email: string | null
@@ -52,10 +78,16 @@ export type ClusterRegistrationExportRow = {
   paymentReference: string | null
 }
 
-/** Picker groups, named after the steps of the form they come from. */
+/**
+ * Picker groups, named after the steps of the form they come from — except
+ * "Events", which is the day itself. Who the person is comes first, then the
+ * events they're on, then the timestamps: a row should read left-to-right the
+ * way the registrants table does.
+ */
 export const CLUSTER_EXPORT_GROUPS = [
-  "Registration record",
   "Personal Information",
+  "Events",
+  "Registration record",
   "DGroup Info",
   "Breakout Group",
   "Your Household",
@@ -74,6 +106,11 @@ type ColumnDef = {
   value: (row: ClusterRegistrationExportRow) => CSVCell
 }
 
+/** Column key for one of the cluster's events. Namespaced so it can't collide. */
+export function eventColumnKey(eventId: string): string {
+  return `event:${eventId}`
+}
+
 function formatManilaDateTime(iso: string | null): string {
   if (!iso) return ""
   const d = new Date(iso)
@@ -90,18 +127,15 @@ function formatManilaDateTime(iso: string | null): string {
 const yesNo = (v: boolean): string => (v ? "Yes" : "No")
 
 /**
- * Every column, in export order. Ordering and grouping mirror `REGISTER_LAYOUT`
- * in `lib/forms/context-config.ts` — the picker should read like the form the
- * admin configured, not like the database.
+ * Every column that doesn't depend on which events the cluster holds, in export
+ * order. Ordering and grouping mirror `REGISTER_LAYOUT` in
+ * `lib/forms/context-config.ts` — the picker should read like the form the admin
+ * configured, not like the database.
+ *
+ * Use `clusterExportColumns(events)` to get the real registry: it splices the
+ * cluster's per-event columns into the "Events" slot.
  */
 export const CLUSTER_EXPORT_COLUMNS: readonly ColumnDef[] = [
-  // ── Registration record ──
-  { key: "eventName", label: "Event", group: "Registration record", toggle: null, value: (r) => r.eventName },
-  { key: "registeredAt", label: "Registered At", group: "Registration record", toggle: null, value: (r) => formatManilaDateTime(r.registeredAt) },
-  { key: "viaSharedForm", label: "Via Shared Form", group: "Registration record", toggle: null, value: (r) => yesNo(r.viaSharedForm) },
-  { key: "checkedIn", label: "Checked In", group: "Registration record", toggle: null, value: (r) => yesNo(r.checkedIn) },
-  { key: "checkedInAt", label: "Checked In At", group: "Registration record", toggle: null, value: (r) => formatManilaDateTime(r.checkedInAt) },
-
   // ── Personal Information ──
   { key: "firstName", label: "First Name", group: "Personal Information", toggle: null, value: (r) => r.firstName },
   { key: "lastName", label: "Last Name", group: "Personal Information", toggle: null, value: (r) => r.lastName },
@@ -113,6 +147,13 @@ export const CLUSTER_EXPORT_COLUMNS: readonly ColumnDef[] = [
   { key: "birthDate", label: "Birth Month + Year", group: "Personal Information", toggle: "fieldBirthDate", value: (r) => r.birthDate },
   { key: "ageRange", label: "Age Range", group: "Personal Information", toggle: "fieldAgeRange", value: (r) => r.ageRange },
   { key: "gender", label: "Gender", group: "Personal Information", toggle: "fieldGender", value: (r) => r.gender },
+
+  // ── Registration record ──
+  // Person-level roll-ups of the day: earliest of each, "any" for the flags.
+  { key: "registeredAt", label: "First Registered At", group: "Registration record", toggle: null, value: (r) => formatManilaDateTime(r.registeredAt) },
+  { key: "viaSharedForm", label: "Via Shared Form", group: "Registration record", toggle: null, value: (r) => yesNo(r.viaSharedForm) },
+  { key: "checkedIn", label: "Checked In (any event)", group: "Registration record", toggle: null, value: (r) => yesNo(r.checkedIn) },
+  { key: "checkedInAt", label: "First Checked In At", group: "Registration record", toggle: null, value: (r) => formatManilaDateTime(r.checkedInAt) },
 
   // ── DGroup Info ──
   { key: "language", label: "Language", group: "DGroup Info", toggle: "fieldLanguage", value: (r) => r.language },
@@ -130,6 +171,32 @@ export const CLUSTER_EXPORT_COLUMNS: readonly ColumnDef[] = [
 ]
 
 export type ClusterExportColumnKey = (typeof CLUSTER_EXPORT_COLUMNS)[number]["key"]
+
+/**
+ * The real registry for a cluster: the static columns plus one column per event
+ * the caller may see, valued "Checked in" / "Registered" / blank.
+ *
+ * The event columns are what a person-per-row export owes the admin — they carry
+ * the fact the old duplicate rows carried, in a shape a spreadsheet can filter
+ * and total. Grouping puts them between the person and their timestamps; sorting
+ * by group is stable, so within a group the declared order is kept.
+ */
+export function clusterExportColumns(events: ClusterExportEvent[]): ColumnDef[] {
+  const eventColumns: ColumnDef[] = events.map((event) => ({
+    key: eventColumnKey(event.id),
+    label: event.name,
+    group: "Events",
+    toggle: null,
+    value: (row: ClusterRegistrationExportRow) => {
+      const participation = row.perEvent[event.id]
+      return participation ? PARTICIPATION_LABEL[participation] : ""
+    },
+  }))
+  const order = (group: ClusterExportGroup) => CLUSTER_EXPORT_GROUPS.indexOf(group)
+  return [...CLUSTER_EXPORT_COLUMNS, ...eventColumns].sort(
+    (a, b) => order(a.group) - order(b.group),
+  )
+}
 
 /** A column offered in the picker, with why it is on offer. */
 export type ClusterExportColumnState = {
@@ -162,8 +229,9 @@ function isEmpty(cell: CSVCell): boolean {
 export function buildClusterExportColumns(
   config: EventFormConfigData,
   rows: ClusterRegistrationExportRow[],
+  events: ClusterExportEvent[] = [],
 ): ClusterExportColumnState[] {
-  return CLUSTER_EXPORT_COLUMNS.flatMap((column): ClusterExportColumnState[] => {
+  return clusterExportColumns(events).flatMap((column): ClusterExportColumnState[] => {
     const collected = column.toggle ? config[column.toggle] === true : false
     const hasData =
       column.key === "isPaid"
@@ -193,9 +261,10 @@ export function defaultSelectedColumns(columns: ClusterExportColumnState[]): str
 export function buildClusterRegistrationsTable(
   rows: ClusterRegistrationExportRow[],
   selectedKeys: string[],
+  events: ClusterExportEvent[] = [],
 ): { headers: string[]; cells: CSVCell[][] } {
   const selected = new Set(selectedKeys)
-  const columns = CLUSTER_EXPORT_COLUMNS.filter((c) => selected.has(c.key))
+  const columns = clusterExportColumns(events).filter((c) => selected.has(c.key))
   return {
     headers: columns.map((c) => c.label),
     cells: rows.map((row) => columns.map((c) => c.value(row))),

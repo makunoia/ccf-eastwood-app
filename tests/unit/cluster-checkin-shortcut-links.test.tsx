@@ -32,6 +32,8 @@ function renderShortcuts(props: Partial<React.ComponentProps<typeof ClusterCheck
   return render(
     <ClusterCheckinShortcuts
       shortcuts={[makeShortcut()]}
+      checkInHref="/register/c/tok-1/check-in"
+      checkInSettingsHref={null}
       walkInHref="/register/c/tok-1/walk-in"
       walkInSettingsHref={null}
       canConfigure
@@ -40,9 +42,13 @@ function renderShortcuts(props: Partial<React.ComponentProps<typeof ClusterCheck
   )
 }
 
-/** Accessible names carry the sr-only hint, so match on the visible label alone. */
+/**
+ * Accessible names carry the sr-only hint, so match on the visible label plus
+ * the row name — the two day-wide doors both show a button reading "Open".
+ */
 const checkinLink = () => screen.getByRole("link", { name: /^Check-in/ })
-const walkInLink = () => screen.getByRole("link", { name: /^Open/ })
+const walkInLink = () => screen.getByRole("link", { name: /^Open Walk-in registration/ })
+const kioskLink = () => screen.getByRole("link", { name: /^Open Day check-in/ })
 
 describe("cluster check-in shortcuts — link targets", () => {
   it("opens an event's check-in form in a new tab", () => {
@@ -61,9 +67,18 @@ describe("cluster check-in shortcuts — link targets", () => {
 
   // A `target="_blank"` link without this hands the opened page a live
   // `window.opener` back into the authenticated board.
+  it("opens the day's check-in kiosk in a new tab", () => {
+    renderShortcuts()
+    const link = kioskLink()
+    expect(link.getAttribute("href")).toBe("/register/c/tok-1/check-in")
+    expect(link.getAttribute("target")).toBe("_blank")
+  })
+
+  // A `target="_blank"` link without this hands the opened page a live
+  // `window.opener` back into the authenticated board.
   it("pairs every new-tab link with rel=noopener", () => {
     renderShortcuts()
-    for (const link of [checkinLink(), walkInLink()]) {
+    for (const link of [checkinLink(), walkInLink(), kioskLink()]) {
       expect(link.getAttribute("rel")).toContain("noopener")
     }
   })
@@ -71,7 +86,11 @@ describe("cluster check-in shortcuts — link targets", () => {
   it("names the new tab for screen readers", () => {
     renderShortcuts()
     expect(checkinLink().textContent).toContain("opens in a new tab")
-    expect(walkInLink().textContent).toContain("opens in a new tab")
+    // The two day-wide doors carry it in their aria-label, which is also what
+    // tells them apart — both buttons read "Open".
+    for (const link of [walkInLink(), kioskLink()]) {
+      expect(link.getAttribute("aria-label")).toContain("opens in a new tab")
+    }
   })
 
   it("keeps the admin fix-it link for a closed session in the same tab", () => {
@@ -92,5 +111,23 @@ describe("cluster check-in shortcuts — link targets", () => {
     const settings = screen.getByRole("link", { name: "Open it on the Walk-in form" })
     expect(settings.getAttribute("href")).toBe("/cluster/c1/forms/walk-in")
     expect(settings.getAttribute("target")).toBeNull()
+  })
+
+  it("swaps the kiosk button for its switch link while check-in is closed", () => {
+    renderShortcuts({
+      checkInHref: null,
+      checkInSettingsHref: "/cluster/c1/forms/check-in",
+    })
+    expect(screen.queryByRole("link", { name: /^Open Day check-in/ })).toBeNull()
+    const settings = screen.getByRole("link", { name: "Open it on the Check-in form" })
+    expect(settings.getAttribute("href")).toBe("/cluster/c1/forms/check-in")
+    expect(settings.getAttribute("target")).toBeNull()
+  })
+
+  // Read-only staff get neither the link nor the switch — both hrefs arrive null
+  // and the row must disappear rather than render a button that goes nowhere.
+  it("drops the kiosk row entirely when neither link is available", () => {
+    renderShortcuts({ checkInHref: null, checkInSettingsHref: null })
+    expect(screen.queryByText("Day check-in")).toBeNull()
   })
 })

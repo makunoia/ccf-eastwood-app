@@ -1,0 +1,81 @@
+import type { Metadata } from "next"
+import { notFound } from "next/navigation"
+import { db } from "@/lib/db"
+import { PublicFormShell } from "@/components/public-form-shell"
+import { FormClosed } from "@/components/form-closed"
+import { clusterWalkInPath } from "@/lib/public-routes"
+import type { FormTheme } from "@/lib/forms/config"
+import { formatDate } from "../cluster-register-view"
+import { ClusterCheckinBoard } from "./cluster-checkin-board"
+
+/**
+ * The cluster day's check-in kiosk — the third and last of a cluster's public
+ * surfaces, alongside the shared registration form and the walk-in door.
+ *
+ * Its own switch (`checkInIsOpen`), for the same reason the door has one: the
+ * three open and close on different schedules. Registration typically closes the
+ * night before, while the kiosk and the door run through the morning.
+ *
+ * No session picker and no event picker. `EventClusterEvent` already records
+ * which session of a recurring event each cluster day stands for, and the point
+ * of this screen is that the person doesn't have to choose.
+ */
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ token: string }>
+}): Promise<Metadata> {
+  const { token } = await params
+  const cluster = await db.eventCluster.findUnique({
+    where: { publicToken: token },
+    select: { name: true },
+  })
+  return {
+    title: { absolute: cluster ? `Check-in · ${cluster.name}` : "Check-in" },
+  }
+}
+
+export default async function ClusterCheckinPage({
+  params,
+}: {
+  params: Promise<{ token: string }>
+}) {
+  const { token } = await params
+  const cluster = await db.eventCluster.findUnique({
+    where: { publicToken: token },
+    select: {
+      name: true,
+      date: true,
+      checkInIsOpen: true,
+      walkInIsOpen: true,
+      logoUrl: true,
+      themeColorPrimary: true,
+      registrationPageBannerUrl: true,
+    },
+  })
+  if (!cluster) notFound()
+
+  if (!cluster.checkInIsOpen) {
+    return <FormClosed title="Check-in is currently unavailable" />
+  }
+
+  const theme: FormTheme = {
+    title: `${cluster.name} Check-in`,
+    description: cluster.date ? formatDate(cluster.date) : null,
+    logoUrl: cluster.logoUrl,
+    bannerUrl: cluster.registrationPageBannerUrl,
+    primaryColor: cluster.themeColorPrimary,
+  }
+
+  return (
+    <PublicFormShell theme={theme} alt={cluster.name}>
+      <ClusterCheckinBoard
+        token={token}
+        // Only offered while the door is actually open, so someone who can't
+        // find themselves is never sent to a page that just tells them no.
+        walkInHref={cluster.walkInIsOpen ? clusterWalkInPath(token) : null}
+      />
+    </PublicFormShell>
+  )
+}

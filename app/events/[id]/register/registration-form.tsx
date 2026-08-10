@@ -219,8 +219,13 @@ type WalkInConfig = {
     birthMonth?: string
     birthYear?: string
   }
-  // Where "Back" / "Done" returns to — the check-in board this walk-in came from.
-  backHref: string
+  /**
+   * Where "Back" / "Done" returns to — the check-in board this walk-in came from.
+   * Always a public route: the door is reachable without a session, so pointing it
+   * at an admin screen bounces whoever is standing at it to /login. Omitted when
+   * there is no public board to return to, and the way back is simply not offered.
+   */
+  backHref?: string
 }
 
 // Cluster mode (CCF-132): the shared "Event Day" form. Identity + profile are
@@ -309,7 +314,7 @@ function DoneActions({
       <Button className="w-full" variant={variant} onClick={onReset}>
         {walkIn ? "Register another walk-in" : "Register another person"}
       </Button>
-      {walkIn && (
+      {walkIn?.backHref && (
         <Button className="w-full" variant="ghost" asChild>
           <Link href={walkIn.backHref}>Back to check-in</Link>
         </Button>
@@ -2382,7 +2387,7 @@ export function RegistrationForm({
                 <Button type="button" variant="outline" onClick={handleBack}>
                   Back
                 </Button>
-              ) : walkIn ? (
+              ) : walkIn?.backHref ? (
                 <Button type="button" variant="outline" asChild>
                   <Link href={walkIn.backHref}>Back</Link>
                 </Button>
@@ -2402,7 +2407,7 @@ export function RegistrationForm({
               <Button type="button" className="w-full" disabled={submitting} onClick={handleSubmit}>
                 {submitting ? "Checking…" : walkIn ? "Register & Check In" : "Register"}
               </Button>
-              {walkIn && (
+              {walkIn?.backHref && (
                 <Button type="button" variant="ghost" className="w-full" asChild>
                   <Link href={walkIn.backHref}>Back</Link>
                 </Button>

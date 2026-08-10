@@ -72,13 +72,20 @@ beforeEach(() => {
   })
 })
 
-const WALK_IN = {
-  occurrenceId: null,
-  prefill: { mobileNumber: "+63 917 111 2222" },
-  backHref: "/cluster/c1/checkin",
+type WalkInProp = {
+  occurrenceId: string | null
+  prefill: { mobileNumber?: string }
+  backHref?: string
 }
 
-function renderForm(walkIn?: typeof WALK_IN) {
+const WALK_IN: WalkInProp = {
+  occurrenceId: null,
+  prefill: { mobileNumber: "+63 917 111 2222" },
+  // The public kiosk, not the cluster workspace — see the "way back" tests below.
+  backHref: "/register/c/tok-1/check-in",
+}
+
+function renderForm(walkIn?: WalkInProp) {
   return render(
     <RegistrationForm
       cluster={{ token: "tok-1", events: [{ id: "e1", name: "Sunday Service" }] }}
@@ -119,7 +126,29 @@ describe("walk-in form — after a submission", () => {
     // Still reachable — the queue does end.
     expect(
       screen.getByRole("link", { name: "Back to check-in" }).getAttribute("href")
-    ).toBe("/cluster/c1/checkin")
+    ).toBe("/register/c/tok-1/check-in")
+  })
+
+  /**
+   * The door is a public route. Its way back used to point at the cluster
+   * workspace, which bounced anyone unauthenticated to /login the moment they
+   * finished registering someone — and pulled a staffer who opened the door in
+   * its own tab back into the admin app behind it. With no public board to
+   * return to, the button is simply not offered.
+   */
+  it("offers no way back when the door has no public board behind it", async () => {
+    renderForm({ occurrenceId: null, prefill: {} })
+    await submitOnce("Juan", "dela Cruz")
+
+    expect(screen.getByRole("button", { name: "Register another walk-in" })).toBeDefined()
+    expect(screen.queryByRole("link", { name: "Back to check-in" })).toBeNull()
+  })
+
+  it("drops the in-form Back button too when there is nowhere public to go", () => {
+    renderForm({ occurrenceId: null, prefill: {} })
+
+    // The cluster form is multi-step, so step 1 is where a "Back" would sit.
+    expect(screen.queryByRole("link", { name: "Back" })).toBeNull()
   })
 
   it("puts a blank form back up, clearing the mobile the walk-in was seeded with", async () => {

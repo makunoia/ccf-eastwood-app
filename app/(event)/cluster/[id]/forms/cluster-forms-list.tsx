@@ -29,10 +29,14 @@ function titleLink(href: string, label: string) {
 export function ClusterFormsList({
   clusterId,
   initialIsOpen,
+  walkInIsOpen,
+  checkInIsOpen,
   eventCount,
 }: {
   clusterId: string
   initialIsOpen: boolean
+  walkInIsOpen: boolean
+  checkInIsOpen: boolean
   eventCount: number
 }) {
   const router = useRouter()
@@ -76,20 +80,29 @@ export function ClusterFormsList({
         }
       />
 
+      {/* Each of the three surfaces owns its switch, so each row reports its own
+          state. The switches themselves live on the config pages; only the
+          shared form's is duplicated here, where it is flipped most often. */}
       <SettingCard
         icon={IconUserPlus}
         title={titleLink(`${base}/walk-in`, "Walk-in Registration")}
-        description="The same form in door mode — staff-supervised, always available, checks people in on the spot."
-        control={<span className="text-sm text-muted-foreground">Always on</span>}
+        description="The same form in door mode — staff-supervised, registers and checks people in on the spot."
+        control={
+          <span className="text-sm text-muted-foreground">
+            {walkInIsOpen ? "Open" : "Closed"}
+          </span>
+        }
       />
 
       <SettingCard
         icon={IconDoorEnter}
-        title={titleLink(`${base}/check-in`, "Check-in Forms")}
-        description="Each event keeps its own check-in form — every link for the day, in one place."
+        title={titleLink(`${base}/check-in`, "Check-in")}
+        description={`One kiosk for the whole day, plus each event's own form — ${eventCount} ${
+          eventCount === 1 ? "event" : "events"
+        }.`}
         control={
           <span className="text-sm text-muted-foreground">
-            {eventCount} {eventCount === 1 ? "event" : "events"}
+            {checkInIsOpen ? "Open" : "Closed"}
           </span>
         }
       />

@@ -61,3 +61,29 @@ export function clusterRegisterPath(publicToken: string): string {
 export function clusterWalkInPath(publicToken: string): string {
   return `${clusterRegisterPath(publicToken)}/walk-in`
 }
+
+/**
+ * The day's check-in kiosk: finds someone already registered and records their
+ * attendance across every event of the day at once. Never creates a
+ * registration — that is the walk-in door's job, and this screen links to it.
+ */
+export function clusterCheckinPath(publicToken: string): string {
+  return `${clusterRegisterPath(publicToken)}/check-in`
+}
+
+/**
+ * Where the cluster walk-in door's "Back" goes — the public kiosk, never the
+ * cluster workspace.
+ *
+ * The door is a public route, so an admin href here bounces whoever is standing
+ * at it to /login, and drags an admin who opened the door in its own tab back
+ * into the app they already had open behind it. `undefined` when the kiosk is
+ * closed: it answers to its own switch, and a way back to a closed link is worse
+ * than no way back at all.
+ */
+export function clusterWalkInBackPath(
+  publicToken: string,
+  checkInIsOpen: boolean
+): string | undefined {
+  return checkInIsOpen ? clusterCheckinPath(publicToken) : undefined
+}
