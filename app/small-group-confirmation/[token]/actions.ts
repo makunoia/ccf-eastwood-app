@@ -2,8 +2,11 @@
 
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
-import { repointFamilyLinks } from "@/lib/family-links"
-import { buildStoredScheduleSlot } from "@/lib/matching/candidate-schedule"
+import {
+  PROMOTABLE_GUEST_SELECT,
+  assertGroupCapacity,
+  promoteGuestRecord,
+} from "@/lib/people/promote-guest"
 import { clearUpwardSatelliteOnConfirm } from "@/lib/small-groups/upward-satellite"
 import {
   recordConfirmationSubmission,
@@ -82,28 +85,7 @@ export async function submitMemberConfirmations(
             fromGroupId: true,
             breakoutGroupId: true,
             status: true,
-            guest: {
-              select: {
-                firstName: true,
-                lastName: true,
-                email: true,
-                phone: true,
-                notes: true,
-                lifeStageId: true,
-                gender: true,
-                language: true,
-                birthMonth: true,
-                birthYear: true,
-                workCity: true,
-                workIndustry: true,
-                ageRangeBucketId: true,
-                meetingPreference: true,
-                scheduleDayOfWeek: true,
-                scheduleTimeStart: true,
-                scheduleTimeEnd: true,
-                memberId: true,
-              },
-            },
+            guest: { select: PROMOTABLE_GUEST_SELECT },
             member: { select: { firstName: true, lastName: true } },
           },
         })
@@ -133,90 +115,22 @@ export async function submitMemberConfirmations(
             // Skip if already promoted
             if (!guest.memberId) {
               // Check capacity
-              const sg = await tx.smallGroup.findUnique({
-                where: { id: group.id },
-                select: { memberLimit: true, _count: { select: { members: true } } },
-              })
-              if (sg?.memberLimit !== null && sg!._count.members >= sg!.memberLimit!) {
+              const overCapacity = await assertGroupCapacity(tx, group.id)
+              if (overCapacity) {
                 // Skip — group is full; leave request pending
                 continue
               }
 
-              // Check if a member with the same email already exists to avoid
-              // a P2002 unique constraint violation on Member.email.
-              const existingByEmail = guest.email
-                ? await tx.member.findUnique({
-                    where: { email: guest.email },
-                    select: { id: true },
-                  })
-                : null
-
-              let resolvedMemberId: string
-
-              if (existingByEmail) {
-                // Re-use the existing member — just move them into this group
-                await tx.member.update({
-                  where: { id: existingByEmail.id },
-                  data: { smallGroupId: group.id, groupStatus: "Member" },
-                })
-                resolvedMemberId = existingByEmail.id
-              } else {
-                const newMember = await tx.member.create({
-                  data: {
-                    firstName: guest.firstName,
-                    lastName: guest.lastName,
-                    email: guest.email ?? null,
-                    phone: guest.phone ?? null,
-                    notes: guest.notes ?? null,
-                    lifeStageId: guest.lifeStageId ?? null,
-                    gender: guest.gender ?? null,
-                    language: guest.language,
-                    birthMonth: guest.birthMonth ?? null,
-                    birthYear: guest.birthYear ?? null,
-                    workCity: guest.workCity ?? null,
-                    workIndustry: guest.workIndustry ?? null,
-                    // Carried over so a bracket collected at registration survives promotion.
-                    ageRangeBucketId: guest.ageRangeBucketId ?? null,
-                    meetingPreference: guest.meetingPreference ?? null,
-                    dateJoined: now,
-                    smallGroupId: group.id,
-                    groupStatus: "Member",
-                    // Times are optional — a day-only availability is normalised
-                    // into a whole-day slot rather than lost on promotion.
-                    ...(() => {
-                      const slot = buildStoredScheduleSlot(
-                        guest.scheduleDayOfWeek,
-                        guest.scheduleTimeStart,
-                        guest.scheduleTimeEnd
-                      )
-                      return slot
-                        ? {
-                            schedulePreferences: {
-                              create: {
-                                dayOfWeek: slot.dayOfWeek,
-                                timeStart: slot.timeStart,
-                                timeEnd: slot.timeEnd,
-                              },
-                            },
-                          }
-                        : {}
-                    })(),
-                  },
-                  select: { id: true },
-                })
-                resolvedMemberId = newMember.id
-              }
-
-              // Link guest → member and transfer event registrations
-              await tx.guest.update({
-                where: { id: req.guestId },
-                data: { memberId: resolvedMemberId },
+              // `reuseExistingMemberByEmail` keeps a leader mid-confirmation from
+              // hitting a P2002 on the unique Member.email.
+              const { memberId: resolvedMemberId } = await promoteGuestRecord(tx, {
+                guestId: req.guestId,
+                guest,
+                dateJoined: now,
+                group,
+                reuseExistingMemberByEmail: true,
+                schedule: "normalized",
               })
-              await tx.eventRegistrant.updateMany({
-                where: { guestId: req.guestId },
-                data: { memberId: resolvedMemberId, guestId: null },
-              })
-              await repointFamilyLinks(tx, { guestId: req.guestId }, { memberId: resolvedMemberId })
 
               await tx.smallGroupLog.create({
                 data: {

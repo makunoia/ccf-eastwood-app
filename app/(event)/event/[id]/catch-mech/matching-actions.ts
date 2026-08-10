@@ -5,6 +5,11 @@ import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import { canWrite } from "@/lib/permissions"
 import { repointFamilyLinks, findSpouseOfPerson } from "@/lib/family-links"
+import {
+  PROMOTABLE_GUEST_SELECT,
+  promoteGuestRecord,
+  type PromotableGuest,
+} from "@/lib/people/promote-guest"
 import { matchSmallGroups } from "@/lib/matching"
 import { scoreGroup } from "@/lib/matching/engine"
 import { scoreGender, scoreLifeStage, scoreSchedule } from "@/lib/matching/scorers"
@@ -516,27 +521,9 @@ type CoupleRequestRecord = {
   guestId: string | null
   memberId: string | null
   fromGroupId: string | null
-  guest: {
-    memberId: string | null
-    firstName: string
-    lastName: string
-    email: string | null
-    phone: string | null
-    notes: string | null
-    lifeStageId: string | null
-    gender: "Male" | "Female" | null
-    language: string[]
-    birthMonth: number | null
-    birthYear: number | null
-    workCity: string | null
-    workIndustry: string | null
-    ageRangeBucketId: string | null
-    meetingPreference: "Online" | "Hybrid" | "InPerson" | null
-    scheduleDayOfWeek: number | null
-    scheduleTimeStart: string | null
-    scheduleTimeEnd: string | null
-    member: { id: string; smallGroupId: string | null } | null
-  } | null
+  // Derived, not spelled out: the promotable field list has to stay in lockstep
+  // with what `promoteGuestRecord` copies.
+  guest: (PromotableGuest & { member: { id: string; smallGroupId: string | null } | null }) | null
   member: { id: string; firstName: string; lastName: string; smallGroupId: string | null } | null
 }
 
@@ -549,24 +536,7 @@ const COUPLE_REQUEST_SELECT = {
   fromGroupId: true,
   guest: {
     select: {
-      memberId: true,
-      firstName: true,
-      lastName: true,
-      email: true,
-      phone: true,
-      notes: true,
-      lifeStageId: true,
-      gender: true,
-      language: true,
-      birthMonth: true,
-      birthYear: true,
-      workCity: true,
-      workIndustry: true,
-      ageRangeBucketId: true,
-      meetingPreference: true,
-      scheduleDayOfWeek: true,
-      scheduleTimeStart: true,
-      scheduleTimeEnd: true,
+      ...PROMOTABLE_GUEST_SELECT,
       member: { select: { id: true, smallGroupId: true } },
     },
   },
@@ -640,71 +610,17 @@ export async function confirmCatchMechCoupleRequests(
         if (req.guestId && req.guest) {
           const guest = req.guest
           if (!guest.memberId) {
-            // Reuse an existing member with the same email to avoid a P2002
-            const existingByEmail = guest.email
-              ? await tx.member.findUnique({ where: { email: guest.email }, select: { id: true } })
-              : null
-
-            if (existingByEmail) {
-              await tx.member.update({
-                where: { id: existingByEmail.id },
-                data: { smallGroupId: group.id, groupStatus: "Member" },
-              })
-              promotedMemberId = existingByEmail.id
-            } else {
-              const promotedSchedule = buildStoredScheduleSlot(
-                guest.scheduleDayOfWeek,
-                guest.scheduleTimeStart,
-                guest.scheduleTimeEnd
-              )
-              const newMember = await tx.member.create({
-                data: {
-                  firstName: guest.firstName,
-                  lastName: guest.lastName,
-                  email: guest.email ?? null,
-                  phone: guest.phone ?? null,
-                  notes: guest.notes ?? null,
-                  lifeStageId: guest.lifeStageId ?? null,
-                  gender: guest.gender ?? null,
-                  language: guest.language,
-                  birthMonth: guest.birthMonth ?? null,
-                  birthYear: guest.birthYear ?? null,
-                  workCity: guest.workCity ?? null,
-                  workIndustry: guest.workIndustry ?? null,
-                  // Carried over so a bracket collected at registration survives promotion.
-                  ageRangeBucketId: guest.ageRangeBucketId ?? null,
-                  meetingPreference: guest.meetingPreference ?? null,
-                  dateJoined: now,
-                  smallGroupId: group.id,
-                  groupStatus: "Member",
-                  // Times are optional — a day-only availability is normalised
-                  // into a whole-day slot rather than lost on promotion.
-                  ...(promotedSchedule
-                    ? {
-                        schedulePreferences: {
-                          create: {
-                            dayOfWeek: promotedSchedule.dayOfWeek,
-                            timeStart: promotedSchedule.timeStart,
-                            timeEnd: promotedSchedule.timeEnd,
-                          },
-                        },
-                      }
-                    : {}),
-                },
-                select: { id: true },
-              })
-              promotedMemberId = newMember.id
-            }
-
-            await tx.guest.update({
-              where: { id: req.guestId },
-              data: { memberId: promotedMemberId },
+            // `reuseExistingMemberByEmail` avoids a P2002 on the unique Member.email.
+            // Seat capacity for the pair was already checked above.
+            const promoted = await promoteGuestRecord(tx, {
+              guestId: req.guestId,
+              guest,
+              dateJoined: now,
+              group,
+              reuseExistingMemberByEmail: true,
+              schedule: "normalized",
             })
-            await tx.eventRegistrant.updateMany({
-              where: { guestId: req.guestId },
-              data: { memberId: promotedMemberId, guestId: null },
-            })
-            await repointFamilyLinks(tx, { guestId: req.guestId }, { memberId: promotedMemberId })
+            promotedMemberId = promoted.memberId
 
             await tx.smallGroupLog.create({
               data: {

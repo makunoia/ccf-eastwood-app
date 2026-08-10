@@ -12,7 +12,11 @@ import {
 } from "@/lib/validations/matching-profile"
 import { applyGuestMatchingProfile } from "@/lib/people/matching-profile"
 import { checkDuplicateContactInfo } from "@/lib/duplicate-check"
-import { repointFamilyLinks } from "@/lib/family-links"
+import {
+  PROMOTABLE_GUEST_SELECT,
+  assertGroupCapacity,
+  promoteGuestRecord,
+} from "@/lib/people/promote-guest"
 import { runBatchDelete } from "@/lib/batch"
 import { PERSON_NAME_FIELDS, personSearchWhere } from "@/lib/search/name-search"
 import type { BatchDeleteResult } from "@/components/batch/types"
@@ -202,27 +206,7 @@ export async function promoteGuestToMember(
   try {
     const guest = await db.guest.findUnique({
       where: { id: guestId },
-      select: {
-        memberId: true,
-        firstName: true,
-        lastName: true,
-        nickname: true,
-        email: true,
-        phone: true,
-        notes: true,
-        lifeStageId: true,
-        gender: true,
-        language: true,
-        birthMonth: true,
-        birthYear: true,
-        workCity: true,
-        workIndustry: true,
-        ageRangeBucketId: true,
-        meetingPreference: true,
-        scheduleDayOfWeek: true,
-        scheduleTimeStart: true,
-        scheduleTimeEnd: true,
-      },
+      select: PROMOTABLE_GUEST_SELECT,
     })
 
     if (!guest) return { success: false, error: "Guest not found" }
@@ -239,19 +223,12 @@ export async function promoteGuestToMember(
 
     const group = await db.smallGroup.findUnique({
       where: { id: groupId },
-      select: {
-        status: true,
-        memberLimit: true,
-        _count: { select: { members: true } },
-      },
+      select: { id: true, status: true },
     })
     if (!group) return { success: false, error: "DGroup not found" }
-    if (group.memberLimit !== null && group._count.members >= group.memberLimit) {
-      return {
-        success: false,
-        error: `This group has reached its member limit of ${group.memberLimit}`,
-      }
-    }
+
+    const overCapacity = await assertGroupCapacity(db, groupId)
+    if (overCapacity) return { success: false, error: overCapacity }
 
     const guestEventIds = await db.eventRegistrant.findMany({
       where: { guestId },
@@ -259,60 +236,14 @@ export async function promoteGuestToMember(
     })
 
     const result = await db.$transaction(async (tx) => {
-      const newMember = await tx.member.create({
-        data: {
-          firstName: guest.firstName,
-          lastName: guest.lastName,
-          nickname: guest.nickname ?? null,
-          email: guest.email ?? null,
-          phone: guest.phone ?? null,
-          notes: guest.notes ?? null,
-          lifeStageId: guest.lifeStageId ?? null,
-          gender: guest.gender ?? null,
-          language: guest.language,
-          birthMonth: guest.birthMonth ?? null,
-          birthYear: guest.birthYear ?? null,
-          workCity: guest.workCity ?? null,
-          workIndustry: guest.workIndustry ?? null,
-          // Carried over so a bracket collected at registration survives promotion.
-          ageRangeBucketId: guest.ageRangeBucketId ?? null,
-          meetingPreference: guest.meetingPreference ?? null,
-          dateJoined: new Date(),
-          smallGroupId: groupId,
-          groupStatus: "Member",
-          ...(guest.scheduleDayOfWeek !== null &&
-          guest.scheduleTimeStart !== null
-            ? {
-                schedulePreferences: {
-                  create: {
-                    dayOfWeek: guest.scheduleDayOfWeek,
-                    timeStart: guest.scheduleTimeStart,
-                    timeEnd: guest.scheduleTimeEnd ?? null,
-                  },
-                },
-              }
-            : {}),
-        },
-        select: { id: true },
+      const { memberId } = await promoteGuestRecord(tx, {
+        guestId,
+        guest,
+        dateJoined: new Date(),
+        group,
+        schedule: "raw",
       })
-
-      await tx.guest.update({
-        where: { id: guestId },
-        data: { memberId: newMember.id },
-      })
-
-      await tx.eventRegistrant.updateMany({
-        where: { guestId },
-        data: { memberId: newMember.id, guestId: null },
-      })
-
-      await repointFamilyLinks(tx, { guestId }, { memberId: newMember.id })
-
-      if (group.status === "Pending") {
-        await tx.smallGroup.update({ where: { id: groupId }, data: { status: "Active" } })
-      }
-
-      return newMember.id
+      return memberId
     })
 
     revalidatePath("/guests")

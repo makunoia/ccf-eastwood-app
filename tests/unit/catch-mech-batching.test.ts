@@ -77,6 +77,7 @@ function guestRegistrant(n: number): FetchedRegistrant {
     guest: {
       firstName: `Guest${n}`,
       lastName: "Test",
+      nickname: null,
       memberId: null,
       email: null,
       phone: null,
@@ -92,6 +93,7 @@ function guestRegistrant(n: number): FetchedRegistrant {
       meetingPreference: null,
       scheduleDayOfWeek: null,
       scheduleTimeStart: null,
+      scheduleTimeEnd: null,
     },
   } as FetchedRegistrant
 }
