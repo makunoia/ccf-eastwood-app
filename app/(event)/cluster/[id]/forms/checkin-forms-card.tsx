@@ -75,6 +75,7 @@ export function CheckinFormsCard({ rows }: { rows: ClusterCheckinFormRow[] }) {
                     className="text-sm font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
                   >
                     View check-in form
+                    <span className="sr-only"> (opens in a new tab)</span>
                   </a>
                   <Link
                     href={`/event/${row.eventId}/forms/EventCheckIn`}

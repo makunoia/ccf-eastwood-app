@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
-import { canWrite } from "@/lib/permissions"
+import { canRead, canWrite } from "@/lib/permissions"
 import {
   smallGroupSchema,
   type SmallGroupFormValues,
@@ -819,5 +819,55 @@ export async function dismissSeekerRequest(requestId: string): Promise<ActionRes
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to dismiss request" }
+  }
+}
+
+export type SmallGroupOption = {
+  id: string
+  name: string
+  leaderName: string
+  memberCount: number
+  memberLimit: number | null
+}
+
+/**
+ * Every DGroup, for pickers that need the whole list rather than a search.
+ *
+ * No query parameter on purpose: DGroups number in the dozens, and the combobox
+ * that consumes this filters client-side. `memberCount`/`memberLimit` ride along
+ * so a picker can show a group is full before the server rejects the placement.
+ *
+ * Read-only, so it checks `canRead` rather than `requireWrite` — the guest
+ * promotion dialog is reachable by a Guests admin who cannot edit DGroups.
+ */
+export async function listSmallGroupOptions(): Promise<ActionResult<SmallGroupOption[]>> {
+  const session = await auth()
+  if (!session?.user) return { success: false, error: "Not authenticated." }
+  if (!canRead(session, "SmallGroups")) return { success: false, error: "Unauthorized." }
+
+  try {
+    const groups = await db.smallGroup.findMany({
+      select: {
+        id: true,
+        name: true,
+        memberLimit: true,
+        leader: { select: { firstName: true, lastName: true } },
+        _count: { select: { members: true } },
+      },
+      orderBy: { name: "asc" },
+    })
+
+    return {
+      success: true,
+      data: groups.map((g) => ({
+        id: g.id,
+        name: g.name,
+        leaderName: g.leader ? `${g.leader.firstName} ${g.leader.lastName}` : "",
+        memberCount: g._count.members,
+        memberLimit: g.memberLimit,
+      })),
+    }
+  } catch {
+    return { success: false, error: "Failed to load DGroups" }
   }
 }

@@ -8,6 +8,7 @@ import {
   getClusterFormSuccessMessage,
 } from "@/lib/forms/context-config-server"
 import { isWithinRegistrationWindow } from "@/lib/events/registration-window"
+import { clusterWalkInBackPath } from "@/lib/public-routes"
 import type { FormTheme } from "@/lib/forms/config"
 
 /**
@@ -29,6 +30,7 @@ export async function getCluster(token: string) {
       date: true,
       isOpen: true,
       walkInIsOpen: true,
+      checkInIsOpen: true,
       registrationStart: true,
       registrationEnd: true,
       logoUrl: true,
@@ -86,7 +88,7 @@ export async function ClusterRegisterView({
     ? {
         occurrenceId: null,
         prefill: mobile ? { mobileNumber: mobile } : {},
-        backHref: `/cluster/${cluster.id}/checkin`,
+        backHref: clusterWalkInBackPath(token, cluster.checkInIsOpen),
       }
     : undefined
 

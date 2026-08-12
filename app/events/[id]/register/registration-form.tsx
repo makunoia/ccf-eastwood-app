@@ -219,8 +219,13 @@ type WalkInConfig = {
     birthMonth?: string
     birthYear?: string
   }
-  // Where "Back" / "Done" returns to — the check-in board this walk-in came from.
-  backHref: string
+  /**
+   * Where "Back" / "Done" returns to — the check-in board this walk-in came from.
+   * Always a public route: the door is reachable without a session, so pointing it
+   * at an admin screen bounces whoever is standing at it to /login. Omitted when
+   * there is no public board to return to, and the way back is simply not offered.
+   */
+  backHref?: string
 }
 
 // Cluster mode (CCF-132): the shared "Event Day" form. Identity + profile are
@@ -283,6 +288,39 @@ function FormShell({
 function RequiredMark({ on }: { on: boolean }) {
   if (!on) return null
   return <span className="text-destructive">*</span>
+}
+
+/**
+ * What a finished submission offers next.
+ *
+ * The door is a queue: the staffer who just registered a walk-in has the next one
+ * standing in front of them. Sending them back to the check-in board — the only
+ * thing this screen used to offer — meant re-opening the form for every single
+ * person, so a blank form is the primary action here, exactly as it is on the
+ * public form. The way back is still on screen, one rung quieter, for the end of
+ * the queue.
+ */
+function DoneActions({
+  walkIn,
+  onReset,
+  variant,
+}: {
+  walkIn?: WalkInConfig
+  onReset: () => void
+  variant?: React.ComponentProps<typeof Button>["variant"]
+}) {
+  return (
+    <div className="w-full space-y-2">
+      <Button className="w-full" variant={variant} onClick={onReset}>
+        {walkIn ? "Register another walk-in" : "Register another person"}
+      </Button>
+      {walkIn?.backHref && (
+        <Button className="w-full" variant="ghost" asChild>
+          <Link href={walkIn.backHref}>Back to check-in</Link>
+        </Button>
+      )}
+    </div>
+  )
 }
 
 export function RegistrationForm({
@@ -548,6 +586,11 @@ export function RegistrationForm({
     setNoEmail(!cfg.fieldEmail)
     setSmallGroupIntent(null)
     setClaimedSmallGroupId("")
+    // The satellite pair travels into the payload the same way `claimedSmallGroupId`
+    // does, so leaving it behind would file the next person at the door under the
+    // previous person's satellite.
+    setClaimedElsewhere(false)
+    setClaimedSatellite("")
     setClaimedGroupQuery("")
     setClaimedGroupResults([])
     setMatchedMember(null)
@@ -558,6 +601,8 @@ export function RegistrationForm({
     setAssignedBreakout(null)
     setSelectedEventIds([])
     setClusterResults(null)
+    setPrimaryRole("FatherHusband")
+    setHouseholdMembers([])
     setFormStep(1)
     setPrivacyAccepted(false)
   }
@@ -1022,15 +1067,7 @@ export function RegistrationForm({
               ))}
             </div>
           </div>
-          {walkIn ? (
-            <Button className="w-full" asChild>
-              <Link href={walkIn.backHref}>Back to check-in</Link>
-            </Button>
-          ) : (
-            <Button className="w-full" onClick={handleReset}>
-              Register another person
-            </Button>
-          )}
+          <DoneActions walkIn={walkIn} onReset={handleReset} />
         </CardContent>
       </FormShell>
     )
@@ -1096,15 +1133,7 @@ export function RegistrationForm({
               </div>
             )}
           </div>
-          {walkIn ? (
-            <Button className="w-full" asChild>
-              <Link href={walkIn.backHref}>Back to check-in</Link>
-            </Button>
-          ) : (
-            <Button className="w-full" onClick={handleReset}>
-              Register another person
-            </Button>
-          )}
+          <DoneActions walkIn={walkIn} onReset={handleReset} />
         </CardContent>
       </FormShell>
     )
@@ -1126,15 +1155,7 @@ export function RegistrationForm({
               You&apos;re serving as a volunteer at this event — you&apos;re already included and don&apos;t need to register as an attendee.
             </p>
           </div>
-          {walkIn ? (
-            <Button className="w-full" variant="outline" asChild>
-              <Link href={walkIn.backHref}>Back to check-in</Link>
-            </Button>
-          ) : (
-            <Button className="w-full" variant="outline" onClick={handleReset}>
-              Register another person
-            </Button>
-          )}
+          <DoneActions walkIn={walkIn} onReset={handleReset} variant="outline" />
         </CardContent>
       </FormShell>
     )
@@ -2366,7 +2387,7 @@ export function RegistrationForm({
                 <Button type="button" variant="outline" onClick={handleBack}>
                   Back
                 </Button>
-              ) : walkIn ? (
+              ) : walkIn?.backHref ? (
                 <Button type="button" variant="outline" asChild>
                   <Link href={walkIn.backHref}>Back</Link>
                 </Button>
@@ -2386,7 +2407,7 @@ export function RegistrationForm({
               <Button type="button" className="w-full" disabled={submitting} onClick={handleSubmit}>
                 {submitting ? "Checking…" : walkIn ? "Register & Check In" : "Register"}
               </Button>
-              {walkIn && (
+              {walkIn?.backHref && (
                 <Button type="button" variant="ghost" className="w-full" asChild>
                   <Link href={walkIn.backHref}>Back</Link>
                 </Button>

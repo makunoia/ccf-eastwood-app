@@ -619,6 +619,11 @@ model EventCluster {
   // versa. Clusters can't use FormConfig for this — that table is keyed by
   // eventId only.
   walkInIsOpen Boolean  @default(false)
+  // And again, for the day's check-in kiosk. A third switch rather than a reuse
+  // of the two above: the door creates registrations, the kiosk only records
+  // attendance for people already registered, and a day routinely wants one
+  // running without the other.
+  checkInIsOpen Boolean @default(false)
   registrationStart DateTime?
   registrationEnd   DateTime?
   // Registration page customization — mirrors Event's public form fields

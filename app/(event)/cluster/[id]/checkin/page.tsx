@@ -10,7 +10,7 @@ import {
 } from "@/lib/clusters/aggregate"
 import { buildClusterRoster } from "@/lib/clusters/roster"
 import { canWrite } from "@/lib/permissions"
-import { clusterWalkInPath } from "@/lib/public-routes"
+import { clusterCheckinPath, clusterWalkInPath } from "@/lib/public-routes"
 import { DetailPageHeader } from "@/components/detail-page-header"
 import { StatCard } from "@/components/session-stat-card"
 import { ClusterCheckinClient } from "./checkin-client"
@@ -30,7 +30,13 @@ export default async function ClusterCheckinPage({
 
   const cluster = await db.eventCluster.findUnique({
     where: { id },
-    select: { id: true, date: true, publicToken: true, walkInIsOpen: true },
+    select: {
+      id: true,
+      date: true,
+      publicToken: true,
+      walkInIsOpen: true,
+      checkInIsOpen: true,
+    },
   })
   if (!cluster) notFound()
 
@@ -82,8 +88,8 @@ export default async function ClusterCheckinPage({
         title="Check-in"
         subtitle={
           <p className="text-sm text-muted-foreground">
-            Live status across the day&apos;s events — check-in happens on each
-            event&apos;s own form · {checkedInCount} of {people.length} checked in
+            Live status across the day&apos;s events — attendance is recorded on
+            the kiosk below · {checkedInCount} of {people.length} checked in
           </p>
         }
       />
@@ -105,6 +111,19 @@ export default async function ClusterCheckinPage({
         <ClusterCheckinShortcuts
           shortcuts={shortcuts}
           canConfigure={writable}
+          // The day's kiosk. Same treatment as the door below it: hidden from
+          // read-only staff because it writes attendance, and swapped for the
+          // switch link while closed so the row never dead-ends.
+          checkInHref={
+            writable && accessibleEvents.length > 0 && cluster.checkInIsOpen
+              ? clusterCheckinPath(cluster.publicToken)
+              : null
+          }
+          checkInSettingsHref={
+            writable && accessibleEvents.length > 0 && !cluster.checkInIsOpen
+              ? `/cluster/${cluster.id}/forms/check-in`
+              : null
+          }
           // The door link registers and checks someone in across the day in one
           // pass. Hidden from read-only staff: it writes registrations and
           // attendance. Also null while the door is closed (CCF-133) — the

@@ -20,6 +20,7 @@ import {
   CLUSTER_EXPORT_GROUPS,
   defaultSelectedColumns,
   type ClusterExportColumnState,
+  type ClusterExportEvent,
   type ClusterRegistrationExportRow,
 } from "@/lib/exports/cluster-registrations"
 import { getClusterRegistrationsExport } from "./export-actions"
@@ -34,6 +35,7 @@ type Props = {
 type Loaded = {
   rows: ClusterRegistrationExportRow[]
   columns: ClusterExportColumnState[]
+  events: ClusterExportEvent[]
 }
 
 export function ClusterExportButton({ clusterId, filename, disabled }: Props) {
@@ -70,10 +72,10 @@ export function ClusterExportButton({ clusterId, filename, disabled }: Props) {
 
   function handleDownload() {
     if (!data) return
-    exportClusterRegistrationsCSV(filename, data.rows, selected)
+    exportClusterRegistrationsCSV(filename, data.rows, selected, data.events)
     setOpen(false)
     toast.success(
-      `Exported ${data.rows.length} registration${data.rows.length === 1 ? "" : "s"}.`,
+      `Exported ${data.rows.length} ${data.rows.length === 1 ? "person" : "people"}.`,
     )
   }
 
@@ -97,7 +99,8 @@ export function ClusterExportButton({ clusterId, filename, disabled }: Props) {
             <DialogTitle>Export registrations</DialogTitle>
             <DialogDescription>
               Everything the day&apos;s registration forms collected. One row per
-              registration — someone on three events exports three rows.
+              person — someone on three of the day&apos;s events is a single row,
+              with a column per event showing whether they checked in.
             </DialogDescription>
           </DialogHeader>
 
@@ -111,7 +114,7 @@ export function ClusterExportButton({ clusterId, filename, disabled }: Props) {
               <div className="flex items-center justify-between gap-2 text-sm">
                 <p className="text-muted-foreground">
                   {selected.length} of {data.columns.length} columns ·{" "}
-                  {data.rows.length} registration{data.rows.length === 1 ? "" : "s"}
+                  {data.rows.length} {data.rows.length === 1 ? "person" : "people"}
                 </p>
                 <div className="flex gap-1">
                   <Button

@@ -76,7 +76,7 @@ export function GuestsTable({
   guests: GuestRow[]
   canWrite?: boolean
 }) {
-  const columns = buildColumns(canWrite)
+  const columns = buildColumns({ selectable: canWrite, canWrite })
 
   return (
     <>

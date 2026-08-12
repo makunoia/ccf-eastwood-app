@@ -16,6 +16,7 @@
 import type { DeclineReason, Prisma } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import { repointFamilyLinksBatch } from "@/lib/family-links"
+import { PROMOTABLE_GUEST_SELECT, buildPromotedMemberData } from "@/lib/people/promote-guest"
 import { clearUpwardSatelliteOnConfirm } from "@/lib/small-groups/upward-satellite"
 import type { ConfirmDecision, ResolvedDecision } from "@/lib/catch-mech/decisions"
 
@@ -26,27 +27,7 @@ const registrantSelect = {
   memberId: true,
   guestId: true,
   member: { select: { firstName: true, lastName: true, smallGroupId: true } },
-  guest: {
-    select: {
-      firstName: true,
-      lastName: true,
-      memberId: true,
-      email: true,
-      phone: true,
-      notes: true,
-      lifeStageId: true,
-      gender: true,
-      language: true,
-      birthMonth: true,
-      birthYear: true,
-      workCity: true,
-      workIndustry: true,
-      ageRangeBucketId: true,
-      meetingPreference: true,
-      scheduleDayOfWeek: true,
-      scheduleTimeStart: true,
-    },
-  },
+  guest: { select: PROMOTABLE_GUEST_SELECT },
 } satisfies Prisma.EventRegistrantSelect
 
 export type FetchedRegistrant = Prisma.EventRegistrantGetPayload<{
@@ -265,37 +246,28 @@ export async function resolveConfirmations(
     // memberLimit is a soft target that steers auto-matching suggestions, never a
     // hard wall — silently dropping a confirmed person (no member, no request, no
     // error) left them stuck on the form with the status never transitioning.
-    const newMember = await tx.member.create({
-      data: {
-        firstName: guest.firstName,
-        lastName: guest.lastName,
-        email: guest.email && takenEmails.has(guest.email) ? null : (guest.email ?? null),
-        phone: guest.phone ?? null,
-        notes: guest.notes ?? null,
-        lifeStageId: guest.lifeStageId ?? null,
-        gender: guest.gender ?? null,
-        language: guest.language,
-        birthMonth: guest.birthMonth ?? null,
-        birthYear: guest.birthYear ?? null,
-        workCity: guest.workCity ?? null,
-        workIndustry: guest.workIndustry ?? null,
-        // Carried over so a bracket collected at registration survives promotion.
-        ageRangeBucketId: guest.ageRangeBucketId ?? null,
-        meetingPreference: guest.meetingPreference ?? null,
-        dateJoined: now,
-        smallGroupId: a.smallGroupId,
-        groupStatus: "Member",
-      },
-      select: { id: true },
+    //
+    // Only the field copy is shared with the other promotion sites, not
+    // `promoteGuestRecord`: this loop's whole point is one statement per table for
+    // the batch, and the helper's nested schedule create would put the per-guest
+    // round trip back. An email already taken by another Member is dropped rather
+    // than reused — a faci confirming a table shouldn't silently merge two people.
+    const { data, schedule } = buildPromotedMemberData(guest, {
+      dateJoined: now,
+      groupId: a.smallGroupId,
+      email: guest.email && takenEmails.has(guest.email) ? null : (guest.email ?? null),
+      schedule: "raw",
     })
+    const newMember = await tx.member.create({ data, select: { id: true } })
 
     // Lifted out of the create above: as a nested write it cost a second round
     // trip per guest, and one createMany covers the whole table instead.
-    if (guest.scheduleDayOfWeek !== null && guest.scheduleTimeStart !== null) {
+    if (schedule) {
       schedules.push({
         memberId: newMember.id,
-        dayOfWeek: guest.scheduleDayOfWeek,
-        timeStart: guest.scheduleTimeStart,
+        dayOfWeek: schedule.dayOfWeek,
+        timeStart: schedule.timeStart,
+        timeEnd: schedule.timeEnd,
       })
     }
 

@@ -200,8 +200,11 @@ async function getGuestEventRegistrations(guestId: string) {
     where: { guestId },
     orderBy: { createdAt: "desc" },
     include: {
+      // MultiDay/Recurring attendance lives here, not on attendedAt.
+      _count: { select: { occurrenceAttendances: true } },
       event: {
         include: {
+          _count: { select: { occurrences: true } },
           ministries: { include: { ministry: { select: { name: true } } } },
         },
       },

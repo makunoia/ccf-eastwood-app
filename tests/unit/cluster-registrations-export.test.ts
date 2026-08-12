@@ -3,7 +3,10 @@ import {
   CLUSTER_EXPORT_COLUMNS,
   buildClusterExportColumns,
   buildClusterRegistrationsTable,
+  clusterExportColumns,
   defaultSelectedColumns,
+  eventColumnKey,
+  type ClusterExportEvent,
   type ClusterRegistrationExportRow,
 } from "@/lib/exports/cluster-registrations"
 import { toCSV } from "@/lib/csv-export"
@@ -26,11 +29,17 @@ function config(...on: FormToggleKey[]): EventFormConfigData {
   return { ...BARE_EVENT_FORM_CONFIG, ...Object.fromEntries(on.map((k) => [k, true])) }
 }
 
+const EVENTS: ClusterExportEvent[] = [
+  { id: "evt-service", name: "Sunday Service" },
+  { id: "evt-youth", name: "Youth Night" },
+]
+
 function row(
   overrides: Partial<ClusterRegistrationExportRow> = {}
 ): ClusterRegistrationExportRow {
   return {
-    eventName: "Sunday Service",
+    personKey: "member:m1",
+    perEvent: { "evt-service": "CheckedIn" },
     registeredAt: "2026-03-01T01:30:00.000Z", // 09:30 in Asia/Manila
     viaSharedForm: true,
     checkedIn: true,
@@ -61,21 +70,30 @@ function row(
 
 describe("buildClusterExportColumns", () => {
   it("offers the core columns even when the forms ask for nothing else", () => {
-    const columns = buildClusterExportColumns(BARE_EVENT_FORM_CONFIG, [row()])
+    const columns = buildClusterExportColumns(BARE_EVENT_FORM_CONFIG, [row()], EVENTS)
 
     expect(columns.every((c) => c.core)).toBe(true)
     expect(columns.map((c) => c.label)).toEqual([
-      "Event",
-      "Registered At",
-      "Via Shared Form",
-      "Checked In",
-      "Checked In At",
       "First Name",
       "Last Name",
       "Mobile",
       "Email",
       "Type",
+      // One column per cluster event, between the person and their timestamps.
+      "Sunday Service",
+      "Youth Night",
+      "First Registered At",
+      "Via Shared Form",
+      "Checked In (any event)",
+      "First Checked In At",
     ])
+  })
+
+  it("offers a column for every cluster event, even one nobody signed up for", () => {
+    // A blank event column is information: it says the event drew nobody.
+    const columns = buildClusterExportColumns(BARE_EVENT_FORM_CONFIG, [row()], EVENTS)
+    const youth = columns.find((c) => c.key === eventColumnKey("evt-youth"))
+    expect(youth).toMatchObject({ label: "Youth Night", core: true, hasData: false })
   })
 
   it("offers a field the form asks for even when nobody answered it", () => {
@@ -157,33 +175,50 @@ describe("buildClusterRegistrationsTable", () => {
   it("renders the selected columns, formatting times in Asia/Manila", () => {
     const { headers, cells } = buildClusterRegistrationsTable(
       [row({ nickname: "Johnny" })],
-      ["eventName", "firstName", "nickname", "registeredAt", "checkedIn", "checkedInAt"]
+      ["firstName", "nickname", "registeredAt", "checkedIn", "checkedInAt"],
+      EVENTS
     )
 
     expect(headers).toEqual([
-      "Event",
-      "Registered At",
-      "Checked In",
-      "Checked In At",
       "First Name",
       "Nickname",
+      "First Registered At",
+      "Checked In (any event)",
+      "First Checked In At",
     ])
     const [cell] = cells
-    expect(cell[0]).toBe("Sunday Service")
-    expect(String(cell[1])).toMatch(/^2026-03-01 /)
-    expect(String(cell[1]).toLowerCase()).toContain("9:30")
-    expect(cell[2]).toBe("Yes")
-    expect(String(cell[3]).toLowerCase()).toContain("10:05")
-    expect(cell[4]).toBe("Juan")
-    expect(cell[5]).toBe("Johnny")
+    expect(cell[0]).toBe("Juan")
+    expect(cell[1]).toBe("Johnny")
+    expect(String(cell[2])).toMatch(/^2026-03-01 /)
+    expect(String(cell[2]).toLowerCase()).toContain("9:30")
+    expect(cell[3]).toBe("Yes")
+    expect(String(cell[4]).toLowerCase()).toContain("10:05")
+  })
+
+  it("renders one column per event: checked in, registered, or blank", () => {
+    const { headers, cells } = buildClusterRegistrationsTable(
+      [
+        row({ perEvent: { "evt-service": "CheckedIn", "evt-youth": "Registered" } }),
+        row({ perEvent: { "evt-youth": "CheckedIn" } }),
+      ],
+      [eventColumnKey("evt-service"), eventColumnKey("evt-youth")],
+      EVENTS
+    )
+
+    expect(headers).toEqual(["Sunday Service", "Youth Night"])
+    expect(cells).toEqual([
+      ["Checked in", "Registered"],
+      ["", "Checked in"],
+    ])
   })
 
   it("orders columns by the registry, not by the order they were ticked", () => {
     const { headers } = buildClusterRegistrationsTable(
       [row()],
-      ["type", "eventName", "lastName", "firstName"]
+      ["type", eventColumnKey("evt-service"), "lastName", "firstName"],
+      EVENTS
     )
-    expect(headers).toEqual(["Event", "First Name", "Last Name", "Type"])
+    expect(headers).toEqual(["First Name", "Last Name", "Type", "Sunday Service"])
   })
 
   it("renders every form answer when the whole set is selected", () => {
@@ -203,33 +238,43 @@ describe("buildClusterRegistrationsTable", () => {
       dietary: "Other — no shellfish",
       isPaid: true,
       paymentReference: "GC-0001",
+      perEvent: { "evt-service": "CheckedIn", "evt-youth": "Registered" },
     })
-    const keys = CLUSTER_EXPORT_COLUMNS.map((c) => c.key)
-    const { headers, cells } = buildClusterRegistrationsTable([full], keys)
+    const keys = clusterExportColumns(EVENTS).map((c) => c.key)
+    const { headers, cells } = buildClusterRegistrationsTable([full], keys, EVENTS)
 
     expect(headers).toHaveLength(keys.length)
     expect(cells[0]).toHaveLength(keys.length)
     expect(cells[0].every((c) => c !== null && String(c).trim() !== "")).toBe(true)
   })
 
-  it("renders an unchecked-in registration with an empty timestamp", () => {
+  it("renders someone who never arrived with an empty timestamp", () => {
     const { cells } = buildClusterRegistrationsTable(
       [row({ checkedIn: false, checkedInAt: null })],
-      ["checkedIn", "checkedInAt"]
+      ["checkedIn", "checkedInAt"],
+      EVENTS
     )
     expect(cells[0]).toEqual(["No", ""])
   })
 
-  it("returns headers only when there are no registrations", () => {
-    const { headers, cells } = buildClusterRegistrationsTable([], ["eventName"])
-    expect(headers).toEqual(["Event"])
+  it("returns headers only when there is nobody on the day", () => {
+    const { headers, cells } = buildClusterRegistrationsTable(
+      [],
+      [eventColumnKey("evt-service")],
+      EVENTS
+    )
+    expect(headers).toEqual(["Sunday Service"])
     expect(cells).toEqual([])
   })
 
-  it("escapes names containing commas or quotes", () => {
+  it("escapes event names and person names containing commas or quotes", () => {
+    const events: ClusterExportEvent[] = [
+      { id: "evt-youth", name: 'Youth Night, "Ignite"' },
+    ]
     const { headers, cells } = buildClusterRegistrationsTable(
-      [row({ eventName: 'Youth Night, "Ignite"', lastName: "Dela Cruz, Jr." })],
-      ["eventName", "lastName"]
+      [row({ lastName: "Dela Cruz, Jr.", perEvent: { "evt-youth": "Registered" } })],
+      [eventColumnKey("evt-youth"), "lastName"],
+      events
     )
     const csv = toCSV(headers, cells)
     expect(csv).toContain('"Youth Night, ""Ignite"""')

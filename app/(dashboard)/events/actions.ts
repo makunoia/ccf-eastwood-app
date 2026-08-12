@@ -66,6 +66,18 @@ import {
 } from "@/lib/validations/household"
 import { formatPhilippinePhone } from "@/lib/utils"
 import { contactHintFrom } from "@/lib/contact-hint"
+import {
+  buildNameMatcher,
+  findEventRegistrantsForLookup,
+  findEventVolunteersForLookup,
+  matchesContactQuery,
+  registrantContact,
+  registrantIdentityKey,
+  type CheckinSubject,
+  type CheckinSubjectKind,
+  type RegistrantLookupRow,
+  type VolunteerLookupRow,
+} from "@/lib/events/checkin-lookup"
 import { createSeekerRequestFromRegistration } from "@/lib/small-groups/seeker-requests"
 import type { Gender } from "@/app/generated/prisma/client"
 
@@ -1230,21 +1242,69 @@ export async function checkInToOccurrence(
   }
 }
 
+/**
+ * Open or close a session's check-in — and point the walk-in door at it.
+ *
+ * The walk-in form gates on `Event.walkInOccurrenceId` (CCF-133), which was its
+ * own setting on Forms → Walk-in. That left two switches for one act: staff
+ * opened check-in on this screen and the door still read "No session is open for
+ * walk-in right now", because nothing had named the session. Opening check-in is
+ * the moment a session becomes the live one, so it is the moment that names it.
+ *
+ * Still a single stored target rather than a fallback search — a walk-in must
+ * never resolve to a session nobody chose, which is the bug the stored field was
+ * introduced to kill. Forms → Walk-in stays, for pointing the door somewhere
+ * other than the session you just opened.
+ *
+ * Closing only clears the pointer when it points *here*, so closing yesterday's
+ * session cannot shut a door aimed at today's.
+ */
 export async function setOccurrenceCheckinOpen(
   occurrenceId: string,
-  isOpen: boolean,
-  eventId: string
-): Promise<ActionResult> {
+  isOpen: boolean
+): Promise<ActionResult<{ walkInChanged: boolean }>> {
   const authError = await requireWrite()
   if (authError) return { success: false, error: authError.error }
 
   try {
+    // The owning event is read from the occurrence. It used to be a third
+    // argument, fine when it only fed revalidatePath — but it now picks which
+    // event's walk-in door moves, and a caller doesn't get to decide that.
+    const occurrence = await db.eventOccurrence.findUnique({
+      where: { id: occurrenceId },
+      select: { id: true, eventId: true },
+    })
+    if (!occurrence) return { success: false, error: "Session not found" }
+
     await db.eventOccurrence.update({
       where: { id: occurrenceId },
       data: { isOpen },
     })
-    revalidatePath(`/event/${eventId}/sessions`)
-    return { success: true, data: undefined }
+
+    // Reported back so the UI can say what happened to the door instead of
+    // guessing: closing a session the door was never aimed at leaves it alone.
+    let walkInChanged = true
+    if (isOpen) {
+      await db.event.update({
+        where: { id: occurrence.eventId },
+        data: { walkInOccurrenceId: occurrenceId },
+      })
+    } else {
+      // updateMany so "clear it only if it still points here" is one atomic
+      // condition instead of a read the next request could race.
+      const cleared = await db.event.updateMany({
+        where: { id: occurrence.eventId, walkInOccurrenceId: occurrenceId },
+        data: { walkInOccurrenceId: null },
+      })
+      walkInChanged = cleared.count > 0
+    }
+
+    revalidatePath(`/event/${occurrence.eventId}/sessions`)
+    revalidatePath(`/event/${occurrence.eventId}/forms/EventWalkIn`)
+    revalidatePath(`/events/${occurrence.eventId}/walk-in`)
+    revalidatePath(`/events/${occurrence.eventId}/checkin`)
+    revalidatePath(`/events/${occurrence.eventId}/checkin/${occurrenceId}`)
+    return { success: true, data: { walkInChanged } }
   } catch {
     return { success: false, error: "Failed to update session" }
   }
@@ -1279,11 +1339,7 @@ type SmallGroupPrompt = {
   }
 }
 
-// A check-in subject is either an event registrant or an event volunteer — never both.
-// Volunteers are looked up via their linked Member and recorded with the same attendance
-// machinery (OccurrenceAttendee for sessions, attendedAt for OneTime).
-export type CheckinSubjectKind = "registrant" | "volunteer"
-export type CheckinSubject = { kind: CheckinSubjectKind; id: string }
+export type { CheckinSubjectKind, CheckinSubject } from "@/lib/events/checkin-lookup"
 
 type CheckinRegistrantResult = {
   kind: CheckinSubjectKind
@@ -1305,84 +1361,10 @@ type CheckinAmbiguousResult = {
 }
 
 // ── Shared check-in lookup machinery ──────────────────────────────────────────
-// All public lookup modes (mobile/email, full name, last name + birthday) load
-// the same registrant/volunteer rows and resolve candidates identically — only
-// the filter differs.
-
-// Members are looked up as registrants and as volunteers, and both paths need the
-// same profile columns to decide whether to raise the DGroup prompt.
-const MEMBER_LOOKUP_SELECT = {
-  id: true,
-  firstName: true,
-  lastName: true,
-  nickname: true,
-  email: true,
-  phone: true,
-  birthMonth: true,
-  birthYear: true,
-  smallGroupId: true,
-  lifeStageId: true,
-  gender: true,
-  language: true,
-  meetingPreference: true,
-  workCity: true,
-  ageRangeBucketId: true,
-  schedulePreferences: {
-    select: { dayOfWeek: true, timeStart: true, timeEnd: true },
-    orderBy: { createdAt: "asc" as const },
-    take: 1,
-  },
-  groupRequests: { select: { status: true, resolvedAt: true } },
-} as const
-
-function findEventRegistrantsForLookup(eventId: string) {
-  return db.eventRegistrant.findMany({
-    where: { eventId },
-    select: {
-      id: true,
-      firstName: true,
-      lastName: true,
-      nickname: true,
-      email: true,
-      mobileNumber: true,
-      attendedAt: true,
-      guestId: true,
-      memberId: true,
-      member: {
-        select: MEMBER_LOOKUP_SELECT,
-      },
-      guest: {
-        select: {
-          firstName: true,
-          lastName: true,
-          nickname: true,
-          email: true,
-          phone: true,
-          birthMonth: true,
-          birthYear: true,
-          lifeStageId: true,
-          gender: true,
-          language: true,
-          meetingPreference: true,
-          workCity: true,
-          scheduleDayOfWeek: true,
-          scheduleTimeStart: true,
-          scheduleTimeEnd: true,
-          ageRangeBucketId: true,
-          claimedSmallGroupId: true,
-          claimedSatellite: true,
-          groupRequests: { select: { status: true, resolvedAt: true } },
-        },
-      },
-    },
-  })
-}
-
-type RegistrantLookupRow = Awaited<ReturnType<typeof findEventRegistrantsForLookup>>[number]
-
-function normalizeNameInput(v: string): string {
-  return v.trim().replace(/\s+/g, " ").toLowerCase()
-}
+// The loaders, matchers and identity key live in `lib/events/checkin-lookup.ts`
+// so the cluster kiosk can reuse them across a whole day's events. The
+// single-event path below composes the same pieces in the same order it always
+// ran them, passing `[eventId]`.
 
 /**
  * An open request means an admin already has this person in the placement queue.
@@ -1494,18 +1476,6 @@ async function resolveRegistrantCandidate(
   }
 }
 
-// One person can own several rows for the same event — two registrations from a
-// duplicate sign-up, or a volunteer who also registered. Keying on the underlying
-// Member/Guest collapses those into a single check-in subject; rows with no linked
-// profile fall back to name + contact.
-function registrantIdentityKey(r: RegistrantLookupRow): string {
-  if (r.memberId) return `member:${r.memberId}`
-  if (r.guestId) return `guest:${r.guestId}`
-  const name = normalizeNameInput(`${r.firstName ?? ""} ${r.lastName ?? ""}`)
-  const contact = (r.mobileNumber ?? r.email ?? "").toLowerCase().replace(/\s+/g, "")
-  return `anon:${name}|${contact}`
-}
-
 // Keeps one candidate per identity, preferring a record that is already checked in
 // so the board never offers to check in someone it just recorded.
 function dedupeCheckinCandidates(
@@ -1580,25 +1550,15 @@ export async function lookupCheckinRegistrant(
   if (!q) return { success: true, data: null }
 
   try {
-    const lq = q.toLowerCase()
-    const qNorm = q.replace(/\s+/g, "")
-
-    const matchedRegistrants = (await findEventRegistrantsForLookup(eventId)).filter((r) => {
-      const email = r.member?.email ?? r.guest?.email ?? r.email ?? ""
-      const phone = r.member?.phone ?? r.guest?.phone ?? r.mobileNumber ?? ""
-      return (
-        email.toLowerCase() === lq ||
-        phone.replace(/\s+/g, "") === qNorm
-      )
-    })
+    const matchedRegistrants = (await findEventRegistrantsForLookup([eventId])).filter((r) =>
+      matchesContactQuery(registrantContact(r), q)
+    )
 
     // Event volunteers are matched on their linked member's phone/email and recorded
     // with the same attendance machinery.
-    const matchedVolunteers = (await findEventVolunteersForLookup(eventId)).filter((v) => {
-      const email = v.member.email ?? ""
-      const phone = v.member.phone ?? ""
-      return email.toLowerCase() === lq || phone.replace(/\s+/g, "") === qNorm
-    })
+    const matchedVolunteers = (await findEventVolunteersForLookup([eventId])).filter((v) =>
+      matchesContactQuery({ email: v.member.email, phone: v.member.phone }, q)
+    )
 
     return {
       success: true,
@@ -1608,21 +1568,6 @@ export async function lookupCheckinRegistrant(
     return { success: false, error: "Lookup failed. Please try again." }
   }
 }
-
-// Loader/resolver for volunteer check-in subjects, shared by the lookup paths below.
-function findEventVolunteersForLookup(eventId: string) {
-  return db.volunteer.findMany({
-    where: { eventId },
-    select: {
-      id: true,
-      attendedAt: true,
-      memberId: true,
-      member: { select: MEMBER_LOOKUP_SELECT },
-    },
-  })
-}
-
-type VolunteerLookupRow = Awaited<ReturnType<typeof findEventVolunteersForLookup>>[number]
 
 async function resolveVolunteerCandidate(
   v: VolunteerLookupRow,
@@ -1663,7 +1608,7 @@ export async function lookupCheckinRegistrantByProfile(
   if (!ln || !birthMonth || !birthYear) return { success: true, data: null }
 
   try {
-    const matchedRegistrants = (await findEventRegistrantsForLookup(eventId)).filter((r) => {
+    const matchedRegistrants = (await findEventRegistrantsForLookup([eventId])).filter((r) => {
       if (r.member) {
         return (
           r.member.lastName.toLowerCase() === ln &&
@@ -1682,7 +1627,7 @@ export async function lookupCheckinRegistrantByProfile(
     })
 
     // Match event volunteers by their linked member's last name + birthday.
-    const matchedVolunteers = (await findEventVolunteersForLookup(eventId)).filter(
+    const matchedVolunteers = (await findEventVolunteersForLookup([eventId])).filter(
       (v) =>
         v.member.lastName.toLowerCase() === ln &&
         v.member.birthMonth === birthMonth &&
@@ -1703,20 +1648,11 @@ export async function searchCheckinByName(
   query: string,
   occurrenceId: string | null
 ): Promise<ActionResult<CheckinRegistrantResult[]>> {
-  const q = normalizeNameInput(query)
-  if (!q || q.length < 2) return { success: true, data: [] }
-  const words = q.split(/\s+/).filter(Boolean)
-
-  // Every word must appear somewhere in the name or in a nickname, so "kuya jun
-  // santos" still finds "Junior Santos" nicknamed "Kuya Jun".
-  function nameContains(first: string, last: string, nicknames: (string | null)[]): boolean {
-    const full = normalizeNameInput(`${first} ${last}`)
-    const nicks = nicknames.filter(Boolean).map((n) => normalizeNameInput(n as string))
-    return words.every((w) => full.includes(w) || nicks.some((n) => n.includes(w)))
-  }
+  const nameContains = buildNameMatcher(query)
+  if (!nameContains) return { success: true, data: [] }
 
   try {
-    const allRegistrants = await findEventRegistrantsForLookup(eventId)
+    const allRegistrants = await findEventRegistrantsForLookup([eventId])
     const matchedRegistrants = allRegistrants.filter((r) => {
       const first = r.member?.firstName ?? r.guest?.firstName ?? r.firstName ?? ""
       const last = r.member?.lastName ?? r.guest?.lastName ?? r.lastName ?? ""
@@ -1727,7 +1663,7 @@ export async function searchCheckinByName(
       ])
     })
 
-    const allVolunteers = await findEventVolunteersForLookup(eventId)
+    const allVolunteers = await findEventVolunteersForLookup([eventId])
     const matchedVolunteers = allVolunteers.filter((v) =>
       nameContains(v.member.firstName, v.member.lastName, [v.member.nickname])
     )

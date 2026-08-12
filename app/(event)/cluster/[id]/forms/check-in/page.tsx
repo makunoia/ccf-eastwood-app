@@ -5,11 +5,13 @@ import { IconArrowLeft } from "@tabler/icons-react"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { getAccessibleClusterEvents } from "@/lib/clusters/aggregate"
+import { clusterCheckinPath } from "@/lib/public-routes"
 import { PageHeader } from "@/components/page-header"
 import { CheckinFormsCard, type ClusterCheckinFormRow } from "../checkin-forms-card"
+import { ClusterCheckInAccess } from "./check-in-access"
 
 export const metadata: Metadata = {
-  title: "Check-in Forms",
+  title: "Check-in",
 }
 
 export default async function ClusterCheckinFormsPage({
@@ -21,7 +23,7 @@ export default async function ClusterCheckinFormsPage({
   const { id } = await params
   const cluster = await db.eventCluster.findUnique({
     where: { id },
-    select: { id: true },
+    select: { id: true, publicToken: true, checkInIsOpen: true },
   })
   if (!cluster) notFound()
 
@@ -70,12 +72,24 @@ export default async function ClusterCheckinFormsPage({
           Forms
         </Link>
         <PageHeader
-          title="Check-in Forms"
-          description="Every event keeps its own check-in form — the day's links in one place"
+          title="Check-in"
+          description="One kiosk for the whole day, plus each event's own check-in form"
         />
       </div>
 
-      <CheckinFormsCard rows={rows} />
+      <ClusterCheckInAccess
+        clusterId={cluster.id}
+        publicPath={clusterCheckinPath(cluster.publicToken)}
+        initialIsOpen={cluster.checkInIsOpen}
+      />
+
+      {/* The per-event kiosks still exist and the board's Shortcuts still point
+          at them — an event that hasn't opened its own form is skipped by the
+          day's kiosk, and this is where that gets fixed. */}
+      <div className="flex flex-col gap-2">
+        <h2 className="text-sm font-medium">Each event&apos;s own check-in form</h2>
+        <CheckinFormsCard rows={rows} />
+      </div>
     </div>
   )
 }

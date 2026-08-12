@@ -24,9 +24,10 @@ import { resolveWalkInAccess } from "@/lib/events/walk-in-access"
  *  - It ignores the registration form's toggle and the event's Opens/Closes
  *    window entirely. Those belong to the form people fill in ahead of the day;
  *    closing pre-registration the night before must not close the door.
- *  - The session comes from `Event.walkInOccurrenceId`, chosen by an admin on the
- *    Walk-in form config. It used to ride in the URL as `?checkin=<id>`, where a
- *    stale value reached the form and only failed on submit.
+ *  - The session comes from `Event.walkInOccurrenceId`, set by opening a session's
+ *    check-in on Sessions (or overridden on the Walk-in form config). It used to
+ *    ride in the URL as `?checkin=<id>`, where a stale value reached the form and
+ *    only failed on submit.
  *  - No session selected, or a selected session that is closed, means the walk-in
  *    form is unavailable — said plainly, rather than rendering a form that cannot
  *    succeed.

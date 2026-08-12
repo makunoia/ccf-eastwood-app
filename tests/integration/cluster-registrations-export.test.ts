@@ -8,16 +8,20 @@ import {
   getClusterRegistrationExportRows,
 } from "@/lib/clusters/aggregate"
 import { getClusterRegistrationsExport } from "@/app/(event)/cluster/[id]/registrants/export-actions"
+import { eventColumnKey } from "@/lib/exports/cluster-registrations"
 
 /**
  * Export of registration records for an Event Cluster.
  *
- *  - integration: one row per registration (not per person), every form answer
+ *  - integration: one row per PERSON (not per registration), every form answer
  *                 resolved from Member → Guest → the registrant's own fields,
- *                 ordered by cluster order then last/first name; the column
- *                 offer follows what the cluster's forms actually ask for
+ *                 ordered by last/first name; the column offer follows what the
+ *                 cluster's forms actually ask for, plus a column per event
+ *  - regression:  a person on several of the day's events exports once, with
+ *                 their events across the row instead of duplicated rows
  *  - edge case:   dateless cluster, cluster with no events, walk-in with no FK,
- *                 check-in scoped to the cluster's day (OneTime vs occurrence)
+ *                 duplicate registrations on one event, check-in scoped to the
+ *                 cluster's day (OneTime vs occurrence)
  *  - permissions: unauthenticated / no Export action / partial event access
  *  - unit:        column model covered in tests/unit/cluster-registrations-export
  *  - e2e:         skipped — the download is a Blob click over an action already
@@ -80,7 +84,7 @@ async function seedEvent(
 }
 
 describe("getClusterRegistrationExportRows", () => {
-  it("returns one row per registration with names resolved from member, guest, or the registrant", async () => {
+  it("returns one row per person with names resolved from member, guest, or the registrant", async () => {
     const cluster = await seedCluster()
     const service = await seedEvent(cluster.id, "Service", 0)
     const youth = await seedEvent(cluster.id, "Youth Night", 1)
@@ -133,14 +137,9 @@ describe("getClusterRegistrationExportRows", () => {
 
     const rows = await getClusterRegistrationExportRows(adminSession, cluster.id)
 
-    expect(rows).toHaveLength(4)
-    // Cluster order first (Service before Youth Night), then last/first name.
-    expect(rows.map((r) => [r.eventName, r.lastName])).toEqual([
-      ["Service", "Lopez"],
-      ["Service", "Reyes"],
-      ["Service", "Santos"],
-      ["Youth Night", "Santos"],
-    ])
+    // Four registrations, three people — the member's two events are one row.
+    expect(rows).toHaveLength(3)
+    expect(rows.map((r) => r.lastName)).toEqual(["Lopez", "Reyes", "Santos"])
 
     expect(rows[2]).toMatchObject({
       firstName: "Maria",
@@ -151,6 +150,10 @@ describe("getClusterRegistrationExportRows", () => {
       viaSharedForm: false,
       checkedIn: false,
       checkedInAt: null,
+      perEvent: {
+        [service.id]: "Registered",
+        [youth.id]: "Registered",
+      },
     })
     expect(rows[1]).toMatchObject({
       firstName: "Pedro",
@@ -158,6 +161,7 @@ describe("getClusterRegistrationExportRows", () => {
       mobile: "+63 917 333 4444",
       type: "Guest",
       viaSharedForm: true,
+      perEvent: { [service.id]: "Registered" },
     })
     expect(rows[0]).toMatchObject({
       firstName: "Ana",
@@ -166,7 +170,132 @@ describe("getClusterRegistrationExportRows", () => {
       mobile: "+63 917 555 6666",
       type: "Guest",
     })
+    // The walk-in is on the Service only — no Youth Night key at all.
+    expect(rows[0].perEvent[youth.id]).toBeUndefined()
     expect(new Date(rows[0].registeredAt).getTime()).not.toBeNaN()
+  })
+
+  it("regression — the same person on several events exports a single row", async () => {
+    const cluster = await seedCluster()
+    const service = await seedEvent(cluster.id, "Service", 0)
+    const youth = await seedEvent(cluster.id, "Youth Night", 1)
+    const retreat = await seedEvent(cluster.id, "Retreat", 2)
+
+    const guest = await db.guest.create({
+      data: {
+        firstName: "Pedro",
+        lastName: "Reyes",
+        phone: "+63 917 333 4444",
+        language: [],
+      },
+    })
+    const earliest = new Date("2026-07-30T02:00:00Z")
+    const later = new Date("2026-08-01T02:00:00Z")
+    const arrivedAt = new Date("2026-08-02T01:10:00Z")
+
+    await db.eventRegistrant.create({
+      data: { eventId: service.id, guestId: guest.id, createdAt: later },
+    })
+    await db.eventRegistrant.create({
+      data: {
+        eventId: youth.id,
+        guestId: guest.id,
+        createdAt: earliest,
+        registrationClusterId: cluster.id,
+        attendedAt: arrivedAt,
+      },
+    })
+    // Not on the Retreat — that column stays blank for them.
+
+    const rows = await getClusterRegistrationExportRows(adminSession, cluster.id)
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({
+      personKey: `guest:${guest.id}`,
+      lastName: "Reyes",
+      // Earliest registration and check-in across the day, "any" for the flags.
+      registeredAt: earliest.toISOString(),
+      checkedIn: true,
+      checkedInAt: arrivedAt.toISOString(),
+      viaSharedForm: true,
+      perEvent: {
+        [service.id]: "Registered",
+        [youth.id]: "CheckedIn",
+      },
+    })
+    expect(rows[0].perEvent[retreat.id]).toBeUndefined()
+  })
+
+  it("edge case — two registrations on one event collapse, check-in winning", async () => {
+    const cluster = await seedCluster()
+    const service = await seedEvent(cluster.id, "Service", 0)
+    const guest = await db.guest.create({
+      data: { firstName: "Pedro", lastName: "Reyes", language: [] },
+    })
+    await db.eventRegistrant.create({
+      data: { eventId: service.id, guestId: guest.id },
+    })
+    await db.eventRegistrant.create({
+      data: {
+        eventId: service.id,
+        guestId: guest.id,
+        attendedAt: new Date("2026-08-02T01:10:00Z"),
+      },
+    })
+
+    const rows = await getClusterRegistrationExportRows(adminSession, cluster.id)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].perEvent[service.id]).toBe("CheckedIn")
+  })
+
+  it("edge case — walk-ins with no member or guest stay separate rows", async () => {
+    // Nothing links two anonymous walk-ins, so merging them on name would be a
+    // guess — and a wrong one for two different people who share a name.
+    const cluster = await seedCluster()
+    const service = await seedEvent(cluster.id, "Service", 0)
+    for (const _ of [0, 1]) {
+      await db.eventRegistrant.create({
+        data: { eventId: service.id, firstName: "Ana", lastName: "Lopez" },
+      })
+    }
+
+    const rows = await getClusterRegistrationExportRows(adminSession, cluster.id)
+    expect(rows).toHaveLength(2)
+    expect(new Set(rows.map((r) => r.personKey)).size).toBe(2)
+  })
+
+  it("keeps every breakout group and payment reference a person picked up", async () => {
+    const cluster = await seedCluster()
+    const service = await seedEvent(cluster.id, "Service", 0, { price: 50000 })
+    const youth = await seedEvent(cluster.id, "Youth Night", 1, { price: 25000 })
+    const guest = await db.guest.create({
+      data: { firstName: "Pedro", lastName: "Reyes", language: [] },
+    })
+
+    for (const [event, table, reference] of [
+      [service, "Table 4", "GC-0001"],
+      [youth, "Table 9", "GC-0002"],
+    ] as const) {
+      const registrant = await db.eventRegistrant.create({
+        data: {
+          eventId: event.id,
+          guestId: guest.id,
+          isPaid: true,
+          paymentReference: reference,
+        },
+      })
+      const breakout = await db.breakoutGroup.create({
+        data: { eventId: event.id, name: table },
+      })
+      await db.breakoutGroupMember.create({
+        data: { breakoutGroupId: breakout.id, registrantId: registrant.id },
+      })
+    }
+
+    const [row] = await getClusterRegistrationExportRows(adminSession, cluster.id)
+    expect(row.breakoutGroup).toBe("Table 4; Table 9")
+    expect(row.paymentReference).toBe("GC-0001; GC-0002")
+    expect(row.isPaid).toBe(true)
   })
 
   it("resolves every form answer a registration can carry", async () => {
@@ -426,7 +555,9 @@ describe("getClusterRegistrationExportRows", () => {
     } as unknown as Session
 
     const rows = await getClusterRegistrationExportRows(scopedStaff, cluster.id)
-    expect(rows.map((r) => r.eventName)).toEqual(["Youth Night"])
+    expect(rows).toHaveLength(1)
+    expect(Object.keys(rows[0].perEvent)).toEqual([youth.id])
+    expect(rows[0].perEvent[service.id]).toBeUndefined()
   })
 })
 
@@ -533,8 +664,12 @@ describe("getClusterRegistrationsExport", () => {
     expect(result.success).toBe(true)
     if (!result.success) return
     expect(result.data.rows).toHaveLength(1)
-    expect(result.data.rows[0]).toMatchObject({ eventName: "Service", lastName: "Lopez" })
-    expect(result.data.columns.some((c) => c.key === "eventName")).toBe(true)
+    expect(result.data.rows[0]).toMatchObject({ lastName: "Lopez" })
+    expect(result.data.rows[0].perEvent[event.id]).toBe("Registered")
+    // The cluster's events travel with the payload — the client rebuilds the
+    // same registry the column offer was computed from.
+    expect(result.data.events).toEqual([{ id: event.id, name: "Service" }])
+    expect(result.data.columns.some((c) => c.key === eventColumnKey(event.id))).toBe(true)
   })
 
   it("rejects unauthenticated callers", async () => {

@@ -191,8 +191,13 @@ export function EmbarkationClient({ eventId, buses, registrants, volunteers }: P
               </div>
               <div className="flex items-center gap-2">
                 <Button size="sm" variant="outline" asChild>
-                  <Link href={`/events/${eventId}/buses/${bus.id}/manifest`} target="_blank">
+                  <Link
+                    href={`/events/${eventId}/buses/${bus.id}/manifest`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
                     Print manifest
+                    <span className="sr-only"> (opens in a new tab)</span>
                   </Link>
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => openAssignDialog(bus.id)}>

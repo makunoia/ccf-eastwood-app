@@ -61,11 +61,11 @@ async function seedRegistrant(eventId: string, data: Record<string, unknown> = {
   return db.eventRegistrant.create({ data: { eventId, ...data } })
 }
 
-/** A confirmed volunteer, optionally facilitating a breakout group. */
+/** A volunteer (Confirmed unless told otherwise), optionally facilitating a group. */
 async function seedVolunteer(
   eventId: string,
   memberId: string,
-  opts: { facilitates?: string; coFacilitates?: string } = {}
+  opts: { facilitates?: string; coFacilitates?: string; status?: "Pending" | "Confirmed" | "Rejected" } = {}
 ) {
   const committee = await db.volunteerCommittee.create({
     data: { name: `Committee ${memberId}`, eventId },
@@ -79,7 +79,7 @@ async function seedVolunteer(
       eventId,
       committeeId: committee.id,
       preferredRoleId: role.id,
-      status: "Confirmed",
+      status: opts.status ?? "Confirmed",
     },
   })
   if (opts.facilitates) {
@@ -290,45 +290,77 @@ describe("listBreakoutCandidates", () => {
     ])
   })
 
-  describe("criteria", () => {
-    it("derives gender focus from the facilitator when the group sets none", async () => {
+  describe("isVolunteer", () => {
+    it("flags a registrant whose member is serving at this event", async () => {
       const event = await seedEvent()
       const group = await seedGroup(event.id)
-      const faci = await seedMember({ firstName: "Faci", gender: "Female" })
-      await seedVolunteer(event.id, faci.id, { facilitates: group.id })
+      const member = await seedMember({ firstName: "Serving" })
+      await seedVolunteer(event.id, member.id)
+      await seedRegistrant(event.id, { memberId: member.id })
 
       const result = await listBreakoutCandidates(group.id, event.id)
       expect(result.success).toBe(true)
       if (!result.success) return
-      expect(result.data.criteria.genderFocus).toBe("Female")
+      expect(result.data.candidates[0].isVolunteer).toBe(true)
     })
 
-    it("falls back to the linked small group when facilitators have no gender", async () => {
+    it("leaves an ordinary participant unflagged", async () => {
       const event = await seedEvent()
-      const leader = await seedMember({ firstName: "Leader" })
-      const smallGroup = await db.smallGroup.create({
-        data: { name: "DGroup", leaderId: leader.id, genderFocus: "Male", language: [] },
-      })
-      const group = await seedGroup(event.id, { linkedSmallGroupId: smallGroup.id })
-      const faci = await seedMember({ firstName: "Faci", gender: null })
-      await seedVolunteer(event.id, faci.id, { facilitates: group.id })
+      const group = await seedGroup(event.id)
+      const member = await seedMember({ firstName: "Plain" })
+      await seedRegistrant(event.id, { memberId: member.id })
 
       const result = await listBreakoutCandidates(group.id, event.id)
       expect(result.success).toBe(true)
       if (!result.success) return
-      expect(result.data.criteria.genderFocus).toBe("Male")
+      expect(result.data.candidates[0].isVolunteer).toBe(false)
     })
 
-    it("prefers an explicit gender focus over the facilitator's", async () => {
+    // Volunteer hangs off Member, so a guest can never be one.
+    it("leaves a guest unflagged", async () => {
       const event = await seedEvent()
-      const group = await seedGroup(event.id, { genderFocus: "Mixed" })
-      const faci = await seedMember({ firstName: "Faci", gender: "Female" })
-      await seedVolunteer(event.id, faci.id, { facilitates: group.id })
+      const group = await seedGroup(event.id)
+      const guest = await seedGuest()
+      await seedRegistrant(event.id, { guestId: guest.id })
 
       const result = await listBreakoutCandidates(group.id, event.id)
       expect(result.success).toBe(true)
       if (!result.success) return
-      expect(result.data.criteria.genderFocus).toBe("Mixed")
+      expect(result.data.candidates[0].isVolunteer).toBe(false)
+    })
+
+    it("counts a Pending sign-up but not a Rejected one", async () => {
+      const event = await seedEvent()
+      const group = await seedGroup(event.id)
+      const pending = await seedMember({ firstName: "Pending" })
+      const rejected = await seedMember({ firstName: "Rejected" })
+      await seedVolunteer(event.id, pending.id, { status: "Pending" })
+      await seedVolunteer(event.id, rejected.id, { status: "Rejected" })
+      await seedRegistrant(event.id, { memberId: pending.id })
+      await seedRegistrant(event.id, { memberId: rejected.id })
+
+      const result = await listBreakoutCandidates(group.id, event.id)
+      expect(result.success).toBe(true)
+      if (!result.success) return
+
+      const byName = new Map(result.data.candidates.map((c) => [c.name, c.isVolunteer]))
+      expect(byName.get("Pending Cruz")).toBe(true)
+      expect(byName.get("Rejected Cruz")).toBe(false)
+    })
+
+    // Scoped to the event being seated: serving elsewhere says nothing here.
+    it("ignores a volunteer record on another event", async () => {
+      const event = await seedEvent()
+      const other = await seedEvent("Other")
+      const group = await seedGroup(event.id)
+      const member = await seedMember({ firstName: "Elsewhere" })
+      await seedVolunteer(other.id, member.id)
+      await seedRegistrant(event.id, { memberId: member.id })
+
+      const result = await listBreakoutCandidates(group.id, event.id)
+      expect(result.success).toBe(true)
+      if (!result.success) return
+      expect(result.data.candidates[0].isVolunteer).toBe(false)
     })
   })
 

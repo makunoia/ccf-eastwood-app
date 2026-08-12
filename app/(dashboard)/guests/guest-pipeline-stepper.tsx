@@ -18,7 +18,9 @@ const STAGE_DESCRIPTION: Record<GuestPipelineStatus, string> = {
   Matched: "Was placed in a breakout group at an event and is ready to be connected to a DGroup.",
   Declined: "Was placed in a breakout group but membership was declined by the group leader. Assign to another DGroup.",
   Pending: "Has a pending DGroup assignment — awaiting confirmation from the group leader.",
-  Member: "Has joined a DGroup and been promoted to a full member.",
+  // Not "has joined a DGroup" — an admin can promote someone without placing
+  // them in one, so joining a group is a common route here, not the definition.
+  Member: "Has been promoted to a full member.",
 }
 
 const CHEVRON = 18

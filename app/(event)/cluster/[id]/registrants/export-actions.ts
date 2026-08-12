@@ -5,6 +5,7 @@ import { canExport } from "@/lib/permissions"
 import { getClusterRegistrationExport } from "@/lib/clusters/aggregate"
 import type {
   ClusterExportColumnState,
+  ClusterExportEvent,
   ClusterRegistrationExportRow,
 } from "@/lib/exports/cluster-registrations"
 
@@ -15,12 +16,14 @@ type ActionResult<T> =
 export type ClusterRegistrationExportPayload = {
   rows: ClusterRegistrationExportRow[]
   columns: ClusterExportColumnState[]
+  events: ClusterExportEvent[]
 }
 
 /**
- * Every registration record for a cluster — one row per registrant per event,
- * covering only the cluster events the caller may see — together with the
- * columns worth offering, so the picker can say which fields the forms gather.
+ * Everyone on a cluster's day — one row per person, with a column per cluster
+ * event they're on, covering only the events the caller may see — together with
+ * the columns worth offering, so the picker can say which fields the forms
+ * gather.
  */
 export async function getClusterRegistrationsExport(
   clusterId: string,

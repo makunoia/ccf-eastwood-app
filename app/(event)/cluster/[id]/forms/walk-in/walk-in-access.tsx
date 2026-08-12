@@ -55,9 +55,14 @@ export function ClusterWalkInAccess({
       {isOpen ? (
         <a
           href={publicPath}
+          target="_blank"
+          rel="noopener noreferrer"
           className="text-sm font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 transition-colors hover:decoration-foreground"
         >
           View walk-in form
+          {/* The door is worked alongside this screen, so it opens in a new tab —
+              said out loud for screen readers, the way the board's Shortcuts do. */}
+          <span className="sr-only"> (opens in a new tab)</span>
         </a>
       ) : (
         <p className="text-sm text-muted-foreground">

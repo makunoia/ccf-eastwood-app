@@ -3,22 +3,30 @@ import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { db } from "@/lib/db"
 import { promoteGuestToMember } from "@/app/(dashboard)/guests/actions"
+import {
+  PROMOTABLE_GUEST_SELECT,
+  buildPromotedMemberData,
+  type PromotableGuest,
+} from "@/lib/people/promote-guest"
 
 /**
  * CCF-123 regression — an Age Range collected at registration must survive
  * guest→member promotion.
  *
  * Found by audit, not by the original implementation: four separate promotion
- * paths build the new Member from an explicit field list, and all four silently
- * dropped `ageRangeBucketId`. The duplicate-profile merge was fine because it
- * uses a generic `fillNulls` over the whole record instead of a hand-written
- * list — which is exactly why the explicit lists are the fragile ones.
+ * paths built the new Member from an explicit field list, and all four silently
+ * dropped `ageRangeBucketId`. (`nickname` was dropped by three of them, found the
+ * same way.) The duplicate-profile merge was fine because it uses a generic
+ * `fillNulls` over the whole record instead of a hand-written list — which is
+ * exactly why the explicit lists were the fragile ones.
  *
- * The static check below covers all four sites at once, since three of them are
- * reachable only through public token flows that are awkward to drive here.
+ * The fix was to delete the four lists: `lib/people/promote-guest.ts` now owns the
+ * copy. So the guards below no longer chase one column. They check the two things
+ * that make a repeat impossible — that no site has grown a private field list
+ * again, and that every Guest column is either copied or explicitly excused.
  */
 
-/** Every promotion site that hand-copies Guest fields onto a new Member. */
+/** Every site that turns a Guest into a Member. */
 const PROMOTION_SITES = [
   "app/(dashboard)/guests/actions.ts",
   "app/small-group-confirmation/[token]/actions.ts",
@@ -28,6 +36,40 @@ const PROMOTION_SITES = [
   "lib/catch-mech/confirmations.ts",
   "app/(event)/event/[id]/catch-mech/matching-actions.ts",
 ]
+
+/**
+ * Guest columns a promotion is not supposed to copy, each for a stated reason.
+ * Anything not listed here must reach the new Member — that is the whole guard.
+ * Adding a column to this list should require justifying it in review.
+ */
+const INTENTIONALLY_NOT_COPIED: Record<string, string> = {
+  id: "the Member gets its own id",
+  createdAt: "when the Guest row appeared, not when they became a member",
+  updatedAt: "managed by Prisma",
+  memberId: "the promotion link itself",
+  claimedSmallGroupId: "a self-reported claim, superseded by the real placement",
+  claimedSatellite: "same — a self-reported claim, not a member attribute",
+  scheduleDayOfWeek: "becomes a SchedulePreference row, not a Member column",
+  scheduleTimeStart: "becomes a SchedulePreference row, not a Member column",
+  scheduleTimeEnd: "becomes a SchedulePreference row, not a Member column",
+}
+
+/** Scalar column names on the Guest model, read straight from the schema. */
+function guestScalarColumns(): string[] {
+  const schema = readFileSync(join(process.cwd(), "prisma/schema.prisma"), "utf8")
+  const model = schema.match(/^model Guest \{$([\s\S]*?)^\}$/m)
+  if (!model) throw new Error("Could not find the Guest model in prisma/schema.prisma")
+
+  const relationTypes = /^(Member|Guest|LifeStage|AgeRangeBucket|SmallGroup|EventRegistrant|SmallGroupMemberRequest|SmallGroupLog|FamilyMember)\b/
+
+  return model[1]
+    .split("\n")
+    .map((line) => line.replace(/\/\/.*$/, "").trim())
+    .filter((line) => line && !line.startsWith("@@"))
+    .map((line) => line.split(/\s+/))
+    .filter(([, type]) => type && !relationTypes.test(type))
+    .map(([name]) => name)
+}
 
 beforeEach(async () => {
   await db.$executeRaw`TRUNCATE
@@ -40,21 +82,46 @@ afterAll(async () => {
   await db.$disconnect()
 })
 
-describe("CCF-123 regression — promotion carries the age bracket", () => {
-  it("every hand-written promotion site copies ageRangeBucketId", () => {
-    // A guard against the next person adding a promotion path — or a new column
-    // — and forgetting one of the four.
+describe("CCF-123 regression — promotion carries every guest column", () => {
+  it("no promotion site keeps a private copy of the field list", () => {
+    // A guard against the next person adding a promotion path — or quietly
+    // reintroducing a hand-written one next to the shared helper.
     for (const site of PROMOTION_SITES) {
       const source = readFileSync(join(process.cwd(), site), "utf8")
       expect(
-        source.includes("ageRangeBucketId: guest.ageRangeBucketId"),
-        `${site} must carry ageRangeBucketId onto the promoted Member`
+        source.includes("@/lib/people/promote-guest"),
+        `${site} must promote through lib/people/promote-guest`
       ).toBe(true)
-      // It must also be selected, or the copy above reads undefined.
       expect(
-        source.includes("ageRangeBucketId: true"),
-        `${site} must select ageRangeBucketId on the guest it promotes`
-      ).toBe(true)
+        /firstName:\s*guest\.firstName/.test(source),
+        `${site} must not hand-copy guest fields onto a Member — use buildPromotedMemberData`
+      ).toBe(false)
+    }
+  })
+
+  it("every Guest column is either copied onto the Member or explicitly excused", () => {
+    // The real CCF-123 fix: a new Guest column now fails this test instead of
+    // silently vanishing at promotion time.
+    const expected = guestScalarColumns().filter((c) => !(c in INTENTIONALLY_NOT_COPIED))
+    // Without this the loop below passes vacuously if the schema parse ever drifts.
+    expect(expected.length, "schema parse found no copyable Guest columns").toBeGreaterThan(10)
+
+    // A fixture with every field populated, so a dropped column shows up as a
+    // missing key rather than an indistinguishable null.
+    const guest = Object.fromEntries(
+      Object.keys(PROMOTABLE_GUEST_SELECT).map((k) => [k, k === "language" ? ["en"] : `${k}-value`])
+    ) as unknown as PromotableGuest
+    const { data } = buildPromotedMemberData(guest, { dateJoined: new Date() })
+
+    for (const column of expected) {
+      expect(
+        Object.keys(PROMOTABLE_GUEST_SELECT),
+        `PROMOTABLE_GUEST_SELECT must read Guest.${column}`
+      ).toContain(column)
+      expect(
+        data[column as keyof typeof data],
+        `buildPromotedMemberData must carry Guest.${column} onto the Member`
+      ).toBe(guest[column as keyof PromotableGuest])
     }
   })
 

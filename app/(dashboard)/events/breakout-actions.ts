@@ -17,7 +17,7 @@ import {
   tryCancelSmallGroupRequestFromBreakout,
   tryTransferSmallGroupRequestFromBreakout,
 } from "@/lib/create-small-group-request"
-import { missingTimothyFields } from "@/lib/breakouts/profile"
+import { clearedMatchingProfile, missingTimothyFields } from "@/lib/breakouts/profile"
 
 type ActionResult<T = void> =
   | { success: true; data: T }
@@ -154,6 +154,12 @@ export async function updateBreakoutGroup(
     }
   }
 
+  // Emptying the facilitator slot clears the profile, whatever the form sent —
+  // the drawer blanks its own fields on the same change, but the server is the
+  // one that decides. It's the *transition* that clears: a group created without
+  // a facilitator keeps criteria someone typed, and later saves don't wipe them.
+  const unlinkedFacilitator = existing.facilitatorId !== null && nextFacilitatorId === null
+
   try {
     await db.breakoutGroup.update({
       where: { id: groupId },
@@ -162,12 +168,16 @@ export async function updateBreakoutGroup(
         facilitatorId: nextFacilitatorId,
         coFacilitatorId: nextCoFacilitatorId,
         memberLimit: memberLimit ?? null,
-        linkedSmallGroupId: linkedSmallGroupId ?? null,
-        lifeStages: { set: profile.lifeStageIds.map((id) => ({ id })) },
-        genderFocus: profile.genderFocus ?? null,
-        language: profile.language,
-        ageRangeMin: profile.ageRangeMin ?? null,
-        ageRangeMax: profile.ageRangeMax ?? null,
+        ...(unlinkedFacilitator
+          ? { linkedSmallGroupId: null, ...clearedMatchingProfile() }
+          : {
+              linkedSmallGroupId: linkedSmallGroupId ?? null,
+              lifeStages: { set: profile.lifeStageIds.map((id) => ({ id })) },
+              genderFocus: profile.genderFocus ?? null,
+              language: profile.language,
+              ageRangeMin: profile.ageRangeMin ?? null,
+              ageRangeMax: profile.ageRangeMax ?? null,
+            }),
       },
     })
     revalidatePath(`/event/${eventId}/breakouts`)
@@ -688,13 +698,21 @@ export async function setFacilitator(
       }
     }
 
+    // Unassigning the facilitator takes the group's matching profile and Catch
+    // Mech target with it — a table nobody runs matches for nothing. Only this
+    // slot: the co-facilitator is a second pair of hands, not the owner, and a
+    // swap between two facilitators leaves the criteria untouched.
+    const unlinked = role === "facilitator" && volunteerId === null
+
     await db.breakoutGroup.update({
       where: { id: groupId },
       data: role === "facilitator"
-        ? {
-            facilitatorId: volunteerId,
-            ...(linkedSmallGroupId !== undefined ? { linkedSmallGroupId } : {}),
-          }
+        ? unlinked
+          ? { facilitatorId: null, linkedSmallGroupId: null, ...clearedMatchingProfile() }
+          : {
+              facilitatorId: volunteerId,
+              ...(linkedSmallGroupId !== undefined ? { linkedSmallGroupId } : {}),
+            }
         : { coFacilitatorId: volunteerId },
     })
     revalidatePath(`/event/${eventId}/breakouts/${groupId}`)

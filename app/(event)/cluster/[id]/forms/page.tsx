@@ -19,7 +19,7 @@ export default async function ClusterFormsPage({
   const { id } = await params
   const cluster = await db.eventCluster.findUnique({
     where: { id },
-    select: { id: true, isOpen: true },
+    select: { id: true, isOpen: true, walkInIsOpen: true, checkInIsOpen: true },
   })
   if (!cluster) notFound()
 
@@ -34,6 +34,8 @@ export default async function ClusterFormsPage({
       <ClusterFormsList
         clusterId={id}
         initialIsOpen={cluster.isOpen}
+        walkInIsOpen={cluster.walkInIsOpen}
+        checkInIsOpen={cluster.checkInIsOpen}
         eventCount={events.length}
       />
     </div>

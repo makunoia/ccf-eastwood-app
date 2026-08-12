@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { IconSparkles, IconX, IconAlertTriangle } from "@tabler/icons-react"
+import { IconX, IconAlertTriangle } from "@tabler/icons-react"
 import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
@@ -37,7 +37,6 @@ import {
   filterBreakoutCandidates,
   sortCandidates,
   visibleFilters,
-  criteriaToFilters,
   activeFilterCount,
   hasAttributeFilters,
   cityOptions,
@@ -137,9 +136,11 @@ function CandidatePicker({
   // drops them. Surface that instead of letting them vanish silently.
   const hiddenNoProfile = React.useMemo(() => {
     if (!hasAttributeFilters(filters)) return []
+    // Role travels with search: it is answerable for a walk-in, so a walk-in the
+    // role filter excluded must not reappear here as merely "no profile".
     return filterBreakoutCandidates(
       candidates.filter((c) => c.isAnonymous),
-      { search: filters.search }
+      { search: filters.search, role: filters.role }
     )
   }, [candidates, filters])
 
@@ -255,16 +256,27 @@ function CandidatePicker({
         />
 
         <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            className="gap-1.5"
-            disabled={!data}
-            onClick={() => data && setFilters(criteriaToFilters(data.criteria))}
+          {/* Outside the grid below on purpose: that grid is driven by the
+              event's form config, and whether someone is serving is not a form
+              field — it's true of the whole pool, walk-ins included. */}
+          <Select
+            value={filters.role ?? ALL}
+            onValueChange={(v) =>
+              setFilters((f) => ({
+                ...f,
+                role: v === ALL ? undefined : (v as "participant" | "volunteer"),
+              }))
+            }
           >
-            <IconSparkles className="size-4" />
-            Match this group
-          </Button>
+            <SelectTrigger size="sm" className="w-auto gap-1 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>All people</SelectItem>
+              <SelectItem value="participant">Participants only</SelectItem>
+              <SelectItem value="volunteer">Volunteers only</SelectItem>
+            </SelectContent>
+          </Select>
           {(activeCount > 0 || searchText) && (
             <Button
               size="sm"
@@ -608,6 +620,13 @@ function CandidateRow({
         <Badge variant="outline" className="shrink-0 text-xs">
           {candidate.isMember ? "Member" : "Guest"}
         </Badge>
+        {/* Visible without applying the filter — someone serving is easy to seat
+            by mistake. */}
+        {candidate.isVolunteer && (
+          <Badge variant="secondary" className="shrink-0 text-xs">
+            Volunteer
+          </Badge>
+        )}
       </div>
       {candidate.passesGates ? (
         <Badge variant="outline" className={`shrink-0 text-xs ${band.className}`}>

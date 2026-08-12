@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest"
 import {
+  clusterCheckinPath,
   clusterRegisterPath,
+  clusterWalkInBackPath,
   clusterWalkInPath,
   isPublicPath,
 } from "@/lib/public-routes"
@@ -33,6 +35,27 @@ describe("isPublicPath", () => {
       expect(isPublicPath(new URL(clusterWalkInPath("abc123"), "http://x").pathname)).toBe(
         true
       )
+    })
+
+    /**
+     * Regression: the door's "Back" / "Back to check-in" pointed at
+     * `/cluster/[id]/checkin` — the admin board. Finishing a walk-in on a public
+     * link therefore dumped the person at the door onto /login, and an admin who
+     * opened the door from the workspace ended up back inside the workspace.
+     */
+    describe("the walk-in door's way back", () => {
+      it("returns to the public kiosk, never the cluster workspace", () => {
+        const back = clusterWalkInBackPath("abc123", true)
+        expect(back).toBe(clusterCheckinPath("abc123"))
+        expect(isPublicPath(back!)).toBe(true)
+        expect(back).not.toContain("/cluster/")
+      })
+
+      it("offers nothing while the kiosk is closed", () => {
+        // The kiosk has its own switch — a way back to a closed link is worse
+        // than no way back.
+        expect(clusterWalkInBackPath("abc123", false)).toBeUndefined()
+      })
     })
 
     it("does not allow the authenticated cluster workspace", () => {

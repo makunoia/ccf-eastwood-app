@@ -146,7 +146,7 @@ Three types with different behavior:
 | Volunteers | ✅ | ✅ | ✅ |
 | Check-in | `attendedAt` on registrant | Per day (`OccurrenceAttendee`) | Per occurrence (`OccurrenceAttendee`) |
 
-**Event workspace** (`/event/[id]/...`): dashboard, registrants, sessions, sessions/[occurrenceId], breakouts, volunteers, baptism, embarkation, settings. Old `/events/[id]` URLs redirect to new workspace routes. PWA — no `target="_blank"` except bus manifest print.
+**Event workspace** (`/event/[id]/...`): dashboard, registrants, sessions, sessions/[occurrenceId], breakouts, volunteers, baptism, embarkation, settings. Old `/events/[id]` URLs redirect to new workspace routes. PWA — admin navigation never uses `target="_blank"`. The exceptions are links that leave the workspace for a **public form** or a **print surface**: bus manifest print, "View public form"/"View check-in form"/"View walk-in form" on the Forms pages, the session check-in links, and the cluster check-in board's Shortcuts. Those are worked alongside the admin screen that launched them, so the screen behind has to survive; pair every one with `rel="noopener noreferrer"` and an `sr-only` "(opens in a new tab)" hint.
 
 **Public URLs (no login):** `/events/[id]/register`, `/events/[id]/checkin`
 

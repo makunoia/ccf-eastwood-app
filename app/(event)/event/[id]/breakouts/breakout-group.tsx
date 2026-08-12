@@ -55,7 +55,11 @@ import { PageHeader, PageActions, type PageAction } from "@/components/page-head
 import { FilterBar, FilterField } from "@/components/filter-bar"
 import { ImportWizard } from "@/components/import/import-wizard"
 import { LANGUAGE_OPTIONS } from "@/lib/constants/group-options"
-import { GENDER_FOCUS_LABELS, missingTimothyFields } from "@/lib/breakouts/profile"
+import {
+  CLEARED_PROFILE_FORM,
+  GENDER_FOCUS_LABELS,
+  missingTimothyFields,
+} from "@/lib/breakouts/profile"
 import { FacilitatorLeadership } from "@/components/breakouts/facilitator-leadership"
 import {
   createBreakoutGroup,
@@ -153,14 +157,20 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
     }
   }, [open, group, defaultLifeStageIds])
 
-  // Only the Catch Mech routing target moves with the facilitator — the matching
-  // criteria are this group's own and are never overwritten by a facilitator
-  // change, here or in `setFacilitator`.
+  // Swapping one facilitator for another moves only the Catch Mech routing
+  // target — the matching criteria are this group's own and a swap never
+  // rewrites them. Emptying the slot on an existing group is the other case: it
+  // clears the profile server-side (`updateBreakoutGroup`), so the fields are
+  // blanked here to match. On a new group there is nothing to clear.
   function handleVolunteerChange(volunteerId: string) {
     const vol = volunteers.find((v) => v.id === volunteerId)
     const led = vol?.member.ledGroups ?? []
     setSourceGroupId(led.length === 1 ? led[0].id : "")
-    setForm((f) => ({ ...f, facilitatorId: volunteerId }))
+    setForm((f) => ({
+      ...f,
+      facilitatorId: volunteerId,
+      ...(volunteerId === "" && group?.facilitatorId ? CLEARED_PROFILE_FORM : {}),
+    }))
   }
 
   const selectedVolunteer = volunteers.find((v) => v.id === form.facilitatorId) ?? null

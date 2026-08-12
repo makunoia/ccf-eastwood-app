@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest"
 import { db } from "@/lib/db"
 import { setFormOpen } from "@/app/(dashboard)/forms/actions"
 import { setWalkInOccurrence } from "@/app/(dashboard)/events/form-config-actions"
+import { setOccurrenceCheckinOpen } from "@/app/(dashboard)/events/actions"
+import { resolveWalkInAccess } from "@/lib/events/walk-in-access"
 import { getFormConfig } from "@/lib/forms/config"
 import { checkInWalkInRegistrant } from "@/lib/events/registration-core"
 import { updateEventCluster } from "@/app/(dashboard)/events/cluster-actions"
@@ -185,6 +187,124 @@ describe("walk-in session", () => {
     })
     expect(updated?.walkInOccurrence?.id).toBe(occurrence.id)
     expect(updated?.walkInOccurrence?.isOpen).toBe(false)
+  })
+})
+
+describe("opening check-in aims the walk-in door", () => {
+  /**
+   * The bug this pins: staff opened a session on Sessions and the door still read
+   * "No session is open for walk-in right now", because only the Walk-in form's
+   * dropdown ever wrote `walkInOccurrenceId`. Two switches, one act.
+   */
+
+  it("points the door at the session whose check-in was opened", async () => {
+    const event = await seedEvent("Sunday Service")
+    const occurrence = await seedOccurrence(event.id, "2026-08-09", false)
+
+    const result = await setOccurrenceCheckinOpen(occurrence.id, true)
+    expect(result.success).toBe(true)
+
+    const updated = await db.event.findUnique({
+      where: { id: event.id },
+      select: { walkInOccurrenceId: true },
+    })
+    expect(updated?.walkInOccurrenceId).toBe(occurrence.id)
+  })
+
+  it("opens the door end to end, with the form switch on", async () => {
+    // The two gates the public page reads, asserted together — neither alone is
+    // what the staff member at the door experiences.
+    const event = await seedEvent("Sunday Service")
+    const occurrence = await seedOccurrence(event.id, "2026-08-09", false)
+    await setFormOpen("EventWalkIn", event.id, true)
+
+    await setOccurrenceCheckinOpen(occurrence.id, true)
+
+    const row = await db.event.findUnique({
+      where: { id: event.id },
+      select: { type: true, walkInOccurrence: { select: { id: true, isOpen: true } } },
+    })
+    const access = resolveWalkInAccess({
+      eventType: row!.type,
+      formIsOpen: (await getFormConfig("EventWalkIn", event.id)).isOpen,
+      session: row!.walkInOccurrence,
+    })
+    expect(access).toEqual({ open: true, occurrenceId: occurrence.id })
+  })
+
+  it("repoints when a second session is opened", async () => {
+    const event = await seedEvent("Sunday Service")
+    const first = await seedOccurrence(event.id, "2026-08-09", false)
+    const second = await seedOccurrence(event.id, "2026-08-16", false)
+
+    await setOccurrenceCheckinOpen(first.id, true)
+    await setOccurrenceCheckinOpen(second.id, true)
+
+    const updated = await db.event.findUnique({
+      where: { id: event.id },
+      select: { walkInOccurrenceId: true },
+    })
+    expect(updated?.walkInOccurrenceId).toBe(second.id)
+  })
+
+  it("clears the door when the session it points at is closed", async () => {
+    const event = await seedEvent("Sunday Service")
+    const occurrence = await seedOccurrence(event.id, "2026-08-09", false)
+    await setOccurrenceCheckinOpen(occurrence.id, true)
+
+    const result = await setOccurrenceCheckinOpen(occurrence.id, false)
+    expect(result).toEqual({ success: true, data: { walkInChanged: true } })
+
+    const updated = await db.event.findUnique({
+      where: { id: event.id },
+      select: { walkInOccurrenceId: true },
+    })
+    expect(updated?.walkInOccurrenceId).toBeNull()
+  })
+
+  it("leaves the door alone when closing a session it isn't aimed at", async () => {
+    // Closing yesterday's session must not shut a door aimed at today's.
+    const event = await seedEvent("Sunday Service")
+    const yesterday = await seedOccurrence(event.id, "2026-08-08", true)
+    const today = await seedOccurrence(event.id, "2026-08-09", false)
+    await setOccurrenceCheckinOpen(today.id, true)
+
+    const result = await setOccurrenceCheckinOpen(yesterday.id, false)
+    expect(result).toEqual({ success: true, data: { walkInChanged: false } })
+
+    const updated = await db.event.findUnique({
+      where: { id: event.id },
+      select: { walkInOccurrenceId: true },
+    })
+    expect(updated?.walkInOccurrenceId).toBe(today.id)
+  })
+
+  it("moves only the door of the session's own event", async () => {
+    // The event is derived from the occurrence rather than passed in — a caller
+    // can't aim one event's session at another event's door.
+    const event = await seedEvent("Sunday Service")
+    const other = await seedEvent("Youth Night")
+    const occurrence = await seedOccurrence(event.id, "2026-08-09", false)
+
+    await setOccurrenceCheckinOpen(occurrence.id, true)
+
+    const [owner, bystander] = await Promise.all([
+      db.event.findUnique({
+        where: { id: event.id },
+        select: { walkInOccurrenceId: true },
+      }),
+      db.event.findUnique({
+        where: { id: other.id },
+        select: { walkInOccurrenceId: true },
+      }),
+    ])
+    expect(owner?.walkInOccurrenceId).toBe(occurrence.id)
+    expect(bystander?.walkInOccurrenceId).toBeNull()
+  })
+
+  it("errors on an unknown session", async () => {
+    const result = await setOccurrenceCheckinOpen("does-not-exist", true)
+    expect(result.success).toBe(false)
   })
 })
 

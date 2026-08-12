@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest"
 import {
+  clearedMatchingProfile,
+  CLEARED_PROFILE_FORM,
   isProfileEmpty,
   profileRows,
   formatAgeRange,
@@ -155,5 +157,40 @@ describe("missingTimothyFields", () => {
   it("no longer requires meeting format or schedule", () => {
     expect(missingTimothyFields(complete)).not.toContain("Meeting Format")
     expect(missingTimothyFields(complete)).not.toContain("Meeting Schedule")
+  })
+})
+
+describe("clearedMatchingProfile", () => {
+  // Unlinking a facilitator clears the group's criteria; both write paths
+  // (`setFacilitator` and `updateBreakoutGroup`) spread this same fragment, so
+  // what it covers is what "cleared" means.
+  it("empties every factor the profile is made of", () => {
+    expect(clearedMatchingProfile()).toEqual({
+      lifeStages: { set: [] },
+      genderFocus: null,
+      language: { set: [] },
+      ageRangeMin: null,
+      ageRangeMax: null,
+    })
+  })
+
+  it("covers exactly the fields isProfileEmpty reads", () => {
+    const cleared = profile({
+      lifeStages: [],
+      genderFocus: clearedMatchingProfile().genderFocus,
+      language: [],
+      ageRangeMin: clearedMatchingProfile().ageRangeMin,
+      ageRangeMax: clearedMatchingProfile().ageRangeMax,
+    })
+    expect(isProfileEmpty(cleared)).toBe(true)
+  })
+
+  it("blanks the drawers' form state to match", () => {
+    expect(missingTimothyFields(CLEARED_PROFILE_FORM)).toEqual([
+      "Life Stage",
+      "Gender Focus",
+      "Language",
+      "Age Range",
+    ])
   })
 })

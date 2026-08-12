@@ -7,7 +7,6 @@ import {
   matchBreakoutGroups,
   scoreCandidatesForBreakout,
   buildCandidateFromRegistrant,
-  deriveEffectiveGenderFocus,
 } from "@/lib/matching"
 import { MAX_BREAKOUT_CANDIDATES } from "@/lib/breakouts/candidate-filters"
 import type { MatchResult } from "@/lib/matching/types"
@@ -17,7 +16,7 @@ import { registrantName, registrantNameSelect } from "@/lib/metadata"
 import { getEffectiveFormConfigs } from "@/lib/forms/context-config-server"
 import { mergeFormConfigs } from "@/lib/forms/registration-responses"
 import type { EventFormConfigData } from "@/lib/forms/context-config"
-import type { BreakoutCandidate, BreakoutCriteria } from "@/lib/breakouts/candidate-filters"
+import type { BreakoutCandidate } from "@/lib/breakouts/candidate-filters"
 
 type ActionResult<T> =
   | { success: true; data: T }
@@ -157,8 +156,6 @@ const CANDIDATE_PERSON_SELECT = {
 } as const
 
 export type BreakoutCandidateList = {
-  /** The group's own criteria, with gender focus already resolved. */
-  criteria: BreakoutCriteria
   /** Merged across Register/WalkIn/CheckIn — the surface someone used isn't recorded. */
   formConfig: EventFormConfigData
   lifeStages: { id: string; name: string }[]
@@ -192,22 +189,14 @@ export async function listBreakoutCandidates(
   if (denied) return { success: false, error: denied.error }
 
   try {
+    // Capacity only. The group's criteria used to come back too, to prefill the
+    // filters from — that button is gone, and scoring re-reads the group itself
+    // in `scoreCandidatesForBreakout`.
     const group = await db.breakoutGroup.findFirst({
       where: { id: groupId, eventId },
       select: {
         memberLimit: true,
-        language: true,
-        ageRangeMin: true,
-        ageRangeMax: true,
-        meetingFormat: true,
-        locationCity: true,
-        genderFocus: true,
-        lifeStages: { select: { id: true } },
-        schedules: { select: { dayOfWeek: true }, orderBy: { dayOfWeek: "asc" } },
         _count: { select: { members: true } },
-        facilitator: { select: { member: { select: { gender: true } } } },
-        coFacilitator: { select: { member: { select: { gender: true } } } },
-        linkedSmallGroup: { select: { genderFocus: true } },
       },
     })
     if (!group) return { success: false, error: "Breakout group not found" }
@@ -229,6 +218,15 @@ export async function listBreakoutCandidates(
               ...CANDIDATE_PERSON_SELECT,
               schedulePreferences: {
                 select: { dayOfWeek: true, timeStart: true, timeEnd: true },
+              },
+              // Is this person serving at this event? Existence is the whole
+              // question, so one row is enough. Rejected sign-ups don't count;
+              // Pending ones do — someone about to be confirmed to serve
+              // shouldn't be seated at a table by accident.
+              volunteers: {
+                where: { eventId, status: { not: "Rejected" as const } },
+                select: { id: true },
+                take: 1,
               },
             },
           },
@@ -272,6 +270,8 @@ export async function listBreakoutCandidates(
         mobileNumber: r.mobileNumber,
         isMember: r.memberId !== null,
         isAnonymous: person === null,
+        // Guests are never volunteers — Volunteer hangs off Member.
+        isVolunteer: (r.member?.volunteers.length ?? 0) > 0,
         demographics: {
           lifeStageId: person?.lifeStageId ?? null,
           gender: person?.gender ?? null,
@@ -294,23 +294,6 @@ export async function listBreakoutCandidates(
     return {
       success: true,
       data: {
-        criteria: {
-          lifeStageIds: group.lifeStages.map((ls) => ls.id),
-          // Resolved here, not on the client: the page's group query carries
-          // neither facilitator gender nor the linked small group's focus.
-          genderFocus: deriveEffectiveGenderFocus(
-            group.genderFocus,
-            group.facilitator?.member.gender,
-            group.coFacilitator?.member.gender,
-            group.linkedSmallGroup?.genderFocus
-          ),
-          language: group.language,
-          ageRangeMin: group.ageRangeMin,
-          ageRangeMax: group.ageRangeMax,
-          meetingFormat: group.meetingFormat,
-          locationCity: group.locationCity,
-          scheduleDayOfWeek: group.schedules[0]?.dayOfWeek ?? null,
-        },
         formConfig: mergeFormConfigs(formConfigs),
         lifeStages,
         ageRangeBuckets,
