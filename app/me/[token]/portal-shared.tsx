@@ -13,12 +13,9 @@ import * as React from "react"
 import { IconClock, IconDeviceLaptop, IconUsers } from "@tabler/icons-react"
 import { Label } from "@/components/ui/label"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+  PersonCombobox,
+  type PersonComboboxOption,
+} from "@/components/ui/person-combobox"
 import { CouplesBadge } from "@/components/group-type-badge"
 import { EXTERNAL_SATELLITES_BY_REGION } from "@/lib/constants/ccf-satellites"
 import { formatSchedule } from "@/lib/format/schedule"
@@ -106,6 +103,15 @@ export function GroupDetailRow({
  * "Who is your leader?" then "which of their groups?". Asked in that order
  * because people know their leader's name, not the group's — and it collapses
  * the second step automatically when a leader runs exactly one group.
+ *
+ * Both steps are `PersonCombobox` — the same searchable picker the satellite
+ * list and the admin forms use. Search is the point (Eastwood has more leaders
+ * than anyone scrolls through), but it also fixes the DGroup step outright: it
+ * used to be a Radix `Select` whose trigger carried custom content instead of a
+ * `Select.Value`, and `position="item-aligned"` silently gives up — never placing
+ * the list, never focusing it — when there is no value node *or* no selected
+ * item. A leader with one group auto-selects, so the broken path only ever
+ * showed for leaders running two or more.
  */
 export function LeaderGroupPicker({
   leaderOptions,
@@ -120,6 +126,9 @@ export function LeaderGroupPicker({
   selectedGroupId: string
   onGroupChange: (groupId: string) => void
 }) {
+  const leaderFieldId = React.useId()
+  const groupFieldId = React.useId()
+
   const selectedLeader = leaderOptions.find((l) => l.id === selectedLeaderId)
   const selectedGroup =
     selectedLeader?.groups.find((g) => g.id === selectedGroupId) ?? null
@@ -130,64 +139,62 @@ export function LeaderGroupPicker({
     onGroupChange(leader && leader.groups.length === 1 ? leader.groups[0].id : "")
   }
 
+  const leaderChoices: PersonComboboxOption[] = leaderOptions.map((l) => ({
+    value: l.id,
+    label: l.name,
+    hint: l.groups.length > 1 ? `${l.groups.length} groups` : undefined,
+  }))
+
+  // The row keeps the group's name as its searchable label and hangs the
+  // schedule/mode summary — plus the Couples tag — off the side.
+  const groupChoices: PersonComboboxOption[] = (selectedLeader?.groups ?? []).map(
+    (g) => {
+      const summary = groupSummaryLine(g)
+      return {
+        value: g.id,
+        label: g.name,
+        hint: (
+          <span className="flex items-center gap-1.5">
+            {summary}
+            {g.groupType === "Couples" && <CouplesBadge />}
+          </span>
+        ),
+      }
+    }
+  )
+
   return (
     <>
       <div className="space-y-2">
-        <Label>1. Group leader</Label>
-        <Select value={selectedLeaderId} onValueChange={handleLeader}>
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Select a leader" />
-          </SelectTrigger>
-          <SelectContent>
-            {leaderOptions.map((l) => (
-              <SelectItem key={l.id} value={l.id}>
-                {l.name}
-                {l.groups.length > 1 ? ` (${l.groups.length} groups)` : ""}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <Label htmlFor={leaderFieldId}>1. Group leader</Label>
+        <PersonCombobox
+          id={leaderFieldId}
+          options={leaderChoices}
+          value={selectedLeaderId}
+          onValueChange={handleLeader}
+          placeholder="Select a leader"
+          searchPlaceholder="Search leaders…"
+          emptyText="No leader found."
+        />
       </div>
 
       <div className="space-y-2">
-        <Label className={selectedLeader ? "" : "text-muted-foreground"}>
+        <Label
+          htmlFor={groupFieldId}
+          className={selectedLeader ? "" : "text-muted-foreground"}
+        >
           2. DGroup
         </Label>
-        <Select
+        <PersonCombobox
+          id={groupFieldId}
+          options={groupChoices}
           value={selectedGroupId}
           onValueChange={onGroupChange}
           disabled={!selectedLeader}
-        >
-          {/* Custom trigger content keeps the trigger to a single line while the
-              dropdown rows below carry the full details. */}
-          <SelectTrigger className="w-full">
-            {selectedGroup ? (
-              <span className="truncate">{selectedGroup.name}</span>
-            ) : (
-              <span className="text-muted-foreground">
-                {selectedLeader ? "Select a group" : "Choose a leader first"}
-              </span>
-            )}
-          </SelectTrigger>
-          <SelectContent>
-            {selectedLeader?.groups.map((g) => {
-              const summary = groupSummaryLine(g)
-              return (
-                <SelectItem key={g.id} value={g.id} className="py-2">
-                  <div className="flex flex-col gap-1">
-                    <span className="flex items-center gap-2 font-medium">
-                      {g.name}
-                      {g.groupType === "Couples" && <CouplesBadge />}
-                    </span>
-                    {summary && (
-                      <span className="text-xs text-muted-foreground">{summary}</span>
-                    )}
-                  </div>
-                </SelectItem>
-              )
-            })}
-          </SelectContent>
-        </Select>
+          placeholder={selectedLeader ? "Select a group" : "Choose a leader first"}
+          searchPlaceholder="Search groups…"
+          emptyText="No group found."
+        />
 
         {/* Details of the chosen group — stays visible after the dropdown closes
             so the person can confirm before submitting. */}
