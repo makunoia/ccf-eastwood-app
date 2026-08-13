@@ -3,6 +3,7 @@ import "server-only"
 import type { Prisma } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import type { BreakoutCandidate } from "@/lib/breakout-suggestion"
+import { ENABLED_BREAKOUT_WHERE } from "@/lib/breakouts/candidate-pool"
 import { breakoutOccupancy } from "@/lib/breakouts/occupancy"
 import { deriveEffectiveGenderFocus } from "@/lib/breakouts/gender-focus"
 
@@ -53,6 +54,7 @@ export async function fetchBreakoutCandidates(
   const groups = await db.breakoutGroup.findMany({
     where: {
       eventId,
+      ...ENABLED_BREAKOUT_WHERE,
       ...(requireCheckedIn ? facilitatorGate(eventId, occurrenceId) : {}),
     },
     orderBy: { createdAt: "asc" },
@@ -102,15 +104,25 @@ export async function fetchBreakoutCandidates(
 
 export type BreakoutAvailability = {
   candidates: BreakoutCandidate[]
-  /** Breakout groups on the event before the facilitator gate is applied. */
+  /**
+   * The event's *enabled* breakout groups, before the facilitator gate.
+   *
+   * Switched-off groups are excluded because this number exists to explain an
+   * empty picker to a member of the public, and "your table hosts haven't
+   * arrived yet" is the wrong explanation when an admin has deliberately taken
+   * every group out of play. Counting only enabled groups makes an all-off event
+   * indistinguishable from an event with no groups — which is what off means on
+   * a public route. The admin-side `breakoutPickerReadiness` keeps the ungated
+   * count instead, because there the difference is the whole point.
+   */
   totalGroups: number
 }
 
 /**
- * `fetchBreakoutCandidates` plus the ungated group count.
+ * `fetchBreakoutCandidates` plus the enabled group count.
  *
  * Rendering surfaces need both to tell two very different empty states apart:
- * "this event has no breakout groups" (nothing to say — drop the step) versus
+ * "this event has nothing to offer" (nothing to say — drop the step) versus
  * "it has groups but none is staffed right now" (say so — the person at the
  * kiosk is otherwise looking at a step that silently vanished).
  */
@@ -121,14 +133,19 @@ export async function fetchBreakoutAvailability(
 ): Promise<BreakoutAvailability> {
   const [candidates, totalGroups] = await Promise.all([
     fetchBreakoutCandidates(eventId, occurrenceId, requireCheckedIn),
-    db.breakoutGroup.count({ where: { eventId } }),
+    db.breakoutGroup.count({ where: { eventId, ...ENABLED_BREAKOUT_WHERE } }),
   ])
   return { candidates, totalGroups }
 }
 
 export type BreakoutPickerReadiness = {
   totalGroups: number
-  /** Groups with a facilitator or co-facilitator assigned — the rest can never pass the gate. */
+  /** Of those, the ones still switched on — a disabled group is never offered. */
+  enabledGroups: number
+  /**
+   * Enabled groups with a facilitator or co-facilitator assigned — the rest can
+   * never pass the gate.
+   */
   staffedGroups: number
 }
 
@@ -139,18 +156,25 @@ export type BreakoutPickerReadiness = {
  * "Staffed" here means *assigned*, not checked in — check-in is a runtime fact
  * that changes during the event, whereas an unstaffed group is a standing
  * configuration problem the admin can fix now.
+ *
+ * Three figures rather than two because switching groups off is a third way to
+ * empty the picker, and it has a different fix from the other two. `totalGroups`
+ * stays deliberately ungated so "you have no groups" and "you have groups but
+ * they're all off" can be told apart.
  */
 export async function breakoutPickerReadiness(
   eventId: string
 ): Promise<BreakoutPickerReadiness> {
-  const [totalGroups, staffedGroups] = await Promise.all([
+  const [totalGroups, enabledGroups, staffedGroups] = await Promise.all([
     db.breakoutGroup.count({ where: { eventId } }),
+    db.breakoutGroup.count({ where: { eventId, ...ENABLED_BREAKOUT_WHERE } }),
     db.breakoutGroup.count({
       where: {
         eventId,
+        ...ENABLED_BREAKOUT_WHERE,
         OR: [{ facilitatorId: { not: null } }, { coFacilitatorId: { not: null } }],
       },
     }),
   ])
-  return { totalGroups, staffedGroups }
+  return { totalGroups, enabledGroups, staffedGroups }
 }

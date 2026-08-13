@@ -28,6 +28,13 @@ type PersonEvent = {
   eventName: string
   registrantId: string
   checkedIn: boolean
+  standing: "CheckedIn" | "OnDay" | "SeriesOnly"
+}
+
+const STANDING_TITLE: Record<PersonEvent["standing"], string> = {
+  CheckedIn: "checked in",
+  OnDay: "registered for this day",
+  SeriesOnly: "on the series — no sign-up or check-in for this day",
 }
 
 type Person = {
@@ -124,11 +131,7 @@ export function ClusterRegistrantsClient({
                         <Link
                           key={e.eventId}
                           href={`/event/${e.eventId}/registrants/${e.registrantId}`}
-                          title={
-                            e.checkedIn
-                              ? `${e.eventName} — checked in`
-                              : `${e.eventName} — registered`
-                          }
+                          title={`${e.eventName} — ${STANDING_TITLE[e.standing]}`}
                         >
                           <Badge
                             variant={e.checkedIn ? "default" : "outline"}
@@ -136,7 +139,14 @@ export function ClusterRegistrantsClient({
                               "font-normal transition-colors",
                               e.checkedIn
                                 ? "hover:bg-primary/85"
-                                : "hover:bg-muted"
+                                : "hover:bg-muted",
+                              // Registered, but nothing ties it to this day.
+                              // Dimmed rather than hidden — the registration is
+                              // real, and dropping the chip was what made these
+                              // people look unregistered while the event screen
+                              // refused to add them again.
+                              e.standing === "SeriesOnly" &&
+                                "border-dashed text-muted-foreground"
                             )}
                           >
                             {e.checkedIn && <IconCheck className="size-3" />}

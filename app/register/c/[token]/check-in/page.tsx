@@ -70,12 +70,17 @@ export default async function ClusterCheckinPage({
 
   return (
     <PublicFormShell theme={theme} alt={cluster.name}>
-      <ClusterCheckinBoard
-        token={token}
-        // Only offered while the door is actually open, so someone who can't
-        // find themselves is never sent to a page that just tells them no.
-        walkInHref={cluster.walkInIsOpen ? clusterWalkInPath(token) : null}
-      />
+      {/* The board renders chrome-less, exactly like the per-event `CheckinBoard`,
+          so the card body is the page's to supply — the same one the per-event
+          check-in page wraps it in. `PublicFormShell` only gives the column. */}
+      <div className="overflow-hidden rounded-lg border bg-card">
+        <ClusterCheckinBoard
+          token={token}
+          // Only offered while the door is actually open, so someone who can't
+          // find themselves is never sent to a page that just tells them no.
+          walkInHref={cluster.walkInIsOpen ? clusterWalkInPath(token) : null}
+        />
+      </div>
     </PublicFormShell>
   )
 }

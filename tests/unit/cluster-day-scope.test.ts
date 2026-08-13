@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest"
-import { isOnClusterDay, type ClusterDayScope } from "@/lib/clusters/roster"
+import {
+  buildClusterRoster,
+  isOnClusterDay,
+  standingFor,
+  type ClusterDayScope,
+} from "@/lib/clusters/roster"
 import type { EventType } from "@/app/generated/prisma/client"
 
 /**
@@ -12,12 +17,16 @@ const scope: ClusterDayScope = {
   date: new Date("2026-08-02T00:00:00Z"),
 }
 
+/** Well clear of the scope date, so a row only counts on evidence we set. */
+const LONG_BEFORE = new Date("2026-06-01T00:00:00Z")
+
 function row(
   eventType: EventType,
   overrides: {
     checkedIn?: boolean
     registrationClusterId?: string | null
     hasLinkedSession?: boolean
+    registeredAt?: Date
   } = {}
 ) {
   return {
@@ -25,6 +34,7 @@ function row(
     checkedIn: overrides.checkedIn ?? false,
     registrationClusterId: overrides.registrationClusterId ?? null,
     hasLinkedSession: overrides.hasLinkedSession ?? false,
+    registeredAt: overrides.registeredAt ?? LONG_BEFORE,
   }
 }
 
@@ -75,5 +85,139 @@ describe("isOnClusterDay", () => {
         dateless
       )
     ).toBe(true)
+  })
+
+  // ── Registering on the day is evidence too ──
+  //
+  // Only the cluster's shared form stamps `registrationClusterId`, so someone
+  // signing up on the day through an individual event's own link had no way to
+  // carry it. Before this clause they were dropped from the roster entirely —
+  // rendered as "not registered" while the add-registrant screen refused to add
+  // them again, because the registration was already there.
+
+  it("counts a session registrant who signed up on the cluster's day", () => {
+    expect(
+      isOnClusterDay(
+        // 12:31pm Manila on the day — the shape of the production report.
+        row("Recurring", { registeredAt: new Date("2026-08-02T04:31:00Z") }),
+        scope
+      )
+    ).toBe(true)
+  })
+
+  it("reads the day in Manila time, not UTC", () => {
+    // 00:30 Manila on 2 Aug is 1 Aug 16:30 UTC. A raw-UTC window would put the
+    // day eight hours early and miss everyone who registered before 8am local.
+    expect(
+      isOnClusterDay(
+        row("Recurring", { registeredAt: new Date("2026-08-01T16:30:00Z") }),
+        scope
+      )
+    ).toBe(true)
+    // 11pm Manila the evening BEFORE — outside the day at the other edge.
+    expect(
+      isOnClusterDay(
+        row("Recurring", { registeredAt: new Date("2026-08-01T15:00:00Z") }),
+        scope
+      )
+    ).toBe(false)
+  })
+
+  it("excludes a sign-up made the day after in Manila", () => {
+    // 00:30 Manila on 3 Aug.
+    expect(
+      isOnClusterDay(
+        row("Recurring", { registeredAt: new Date("2026-08-02T16:30:00Z") }),
+        scope
+      )
+    ).toBe(false)
+  })
+
+  it("does not let the timestamp rescue a dateless cluster's linked session", () => {
+    // No date means no window to test against; the linked session is the scope.
+    const dateless: ClusterDayScope = { clusterId: "cluster-1", date: null }
+    expect(
+      isOnClusterDay(
+        row("Recurring", {
+          hasLinkedSession: true,
+          registeredAt: new Date("2026-08-02T04:31:00Z"),
+        }),
+        dateless
+      )
+    ).toBe(false)
+  })
+
+  it("cannot grow later — the evidence is a fixed timestamp", () => {
+    // The alternative (counting a linked session's whole series) would sweep in
+    // people retroactively as new occurrences appear, silently moving figures
+    // for days already reported. A registration date never moves.
+    const registeredAt = new Date("2026-08-02T04:31:00Z")
+    const before = isOnClusterDay(row("Recurring", { registeredAt }), scope)
+    const after = isOnClusterDay(
+      row("Recurring", { registeredAt, hasLinkedSession: true }),
+      scope
+    )
+    expect(before).toBe(true)
+    expect(after).toBe(true)
+  })
+})
+
+describe("standingFor", () => {
+  it("names the three states a cell can be in", () => {
+    expect(standingFor({ registrantId: "r1", checkedIn: true, onClusterDay: true })).toBe(
+      "CheckedIn"
+    )
+    expect(
+      standingFor({ registrantId: "r1", checkedIn: false, onClusterDay: true })
+    ).toBe("OnDay")
+    expect(
+      standingFor({ registrantId: "r1", checkedIn: false, onClusterDay: false })
+    ).toBe("SeriesOnly")
+  })
+})
+
+describe("buildClusterRoster — day scoping is a flag, not a filter", () => {
+  const events = [{ id: "e1", name: "PAG", type: "Recurring" as const }]
+  const base = {
+    eventId: "e1",
+    eventType: "Recurring" as const,
+    memberId: "m1",
+    guestId: null,
+    firstName: "Mark",
+    lastName: "Noya",
+    phone: null,
+    isMember: true,
+    hasLinkedSession: true,
+    registrationClusterId: null,
+    registeredAt: LONG_BEFORE,
+  }
+
+  it("keeps a series-only registrant on the roster with the flag down", () => {
+    // The bug this replaces: the row was dropped, so the dashboard rendered "—"
+    // ("not registered") for someone who was registered — and unaddable.
+    const roster = buildClusterRoster(events, [
+      { ...base, id: "r1", checkedIn: false, onClusterDay: false },
+    ])
+    expect(roster.rows).toHaveLength(1)
+    expect(roster.rows[0].perEvent.e1).toEqual({
+      registrantId: "r1",
+      checkedIn: false,
+      onClusterDay: false,
+    })
+    expect(standingFor(roster.rows[0].perEvent.e1!)).toBe("SeriesOnly")
+  })
+
+  it("keeps the strongest of two registrations on the same event", () => {
+    const roster = buildClusterRoster(events, [
+      { ...base, id: "r1", checkedIn: true, onClusterDay: true },
+      { ...base, id: "r2", checkedIn: false, onClusterDay: false },
+    ])
+    expect(roster.rows[0].perEvent.e1?.registrantId).toBe("r1")
+    // …in either arrival order — the rule is rank, not last-write-wins.
+    const reversed = buildClusterRoster(events, [
+      { ...base, id: "r2", checkedIn: false, onClusterDay: false },
+      { ...base, id: "r1", checkedIn: true, onClusterDay: true },
+    ])
+    expect(reversed.rows[0].perEvent.e1?.registrantId).toBe("r1")
   })
 })

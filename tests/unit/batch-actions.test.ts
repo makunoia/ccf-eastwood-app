@@ -17,6 +17,26 @@ import {
   setSmallGroupsLifeStageBatch,
 } from "@/app/(dashboard)/small-groups/actions"
 
+/**
+ * Every DGroup requires a leader (SmallGroup.leaderId is NOT NULL). These tests
+ * don't care who it is, so each group gets a throwaway member. The leader has no
+ * smallGroupId of their own, so they never count toward a group's roster.
+ */
+let __leaderSeq = 0
+async function aLeader(): Promise<string> {
+  const m = await db.member.create({
+    data: {
+      firstName: `Leader${++__leaderSeq}`,
+      lastName: "Seed",
+      dateJoined: new Date(),
+      language: [],
+    },
+    select: { id: true },
+  })
+  return m.id
+}
+
+
 beforeEach(async () => {
   vi.clearAllMocks()
   await db.$executeRaw`TRUNCATE "Volunteer", "CommitteeRole", "VolunteerCommittee", "SmallGroupMemberRequest", "SmallGroupLog", "Event", "SmallGroup", "Member", "Guest", "LifeStage" RESTART IDENTITY CASCADE`
@@ -189,8 +209,8 @@ describe("setMembersLifeStageBatch", () => {
 
 describe("deleteSmallGroupsBatch / setSmallGroupsLifeStageBatch", () => {
   it("deletes selected groups", async () => {
-    const a = await db.smallGroup.create({ data: { name: "Group A" } })
-    const b = await db.smallGroup.create({ data: { name: "Group B" } })
+    const a = await db.smallGroup.create({ data: { leaderId: await aLeader(), name: "Group A" } })
+    const b = await db.smallGroup.create({ data: { leaderId: await aLeader(), name: "Group B" } })
 
     const result = await deleteSmallGroupsBatch([a.id])
     expect(result.success).toBe(true)
@@ -202,7 +222,7 @@ describe("deleteSmallGroupsBatch / setSmallGroupsLifeStageBatch", () => {
 
   it("sets the life stage on the selected groups", async () => {
     const ls = await db.lifeStage.create({ data: { name: "Mixed", order: 1 } })
-    const a = await db.smallGroup.create({ data: { name: "Group A" } })
+    const a = await db.smallGroup.create({ data: { leaderId: await aLeader(), name: "Group A" } })
 
     const result = await setSmallGroupsLifeStageBatch([a.id], ls.id)
     expect(result.success).toBe(true)

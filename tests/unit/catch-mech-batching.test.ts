@@ -181,18 +181,26 @@ describe("resolveConfirmations — batched round trips", () => {
     expect(ten.count() - five.count()).toBe(15)
   })
 
-  it("places everyone joining the same group with one member.updateMany", async () => {
-    const registrants = Array.from({ length: 4 }, (_, i) => ({
-      id: `reg-${i}`,
-      memberId: `member-${i}`,
-      guestId: null,
-      member: { firstName: "A", lastName: "B", smallGroupId: null },
-      guest: null,
-    })) as FetchedRegistrant[]
+  it("places everyone joining the same group in batched member.updateMany calls", async () => {
+    const existingMembers = (n: number) =>
+      Array.from({ length: n }, (_, i) => ({
+        id: `reg-${i}`,
+        memberId: `member-${i}`,
+        guestId: null,
+        member: { firstName: "A", lastName: "B", smallGroupId: null },
+        guest: null,
+      })) as FetchedRegistrant[]
 
-    const f = await run(registrants, confirmAll(4))
-    expect(f.count("member", "updateMany")).toBe(1)
-    expect(f.count("member", "create")).toBe(0)
+    const four = await run(existingMembers(4), confirmAll(4))
+    // Two, not one: the placement is a single batched updateMany, and
+    // `clearUpwardSatelliteOnConfirm` adds one more for the whole batch — being
+    // confirmed into a DGroup here supersedes any declared satellite.
+    expect(four.count("member", "updateMany")).toBe(2)
+    expect(four.count("member", "create")).toBe(0)
+
+    // Both are constant: doubling the roster must not move this number.
+    const eight = await run(existingMembers(8), confirmAll(8))
+    expect(eight.count("member", "updateMany")).toBe(2)
   })
 
   it("collapses declines sharing a reason into one updateMany", async () => {

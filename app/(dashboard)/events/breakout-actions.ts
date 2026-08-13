@@ -189,6 +189,45 @@ export async function updateBreakoutGroup(
   }
 }
 
+/**
+ * Take a breakout group in or out of play.
+ *
+ * Off blocks every *automatic and public* route into the group — the
+ * registration picker, the walk-in picker, auto-assign, match suggestions — and
+ * nothing else. The roster, the facilitator and the catch-mech follow-through
+ * stay exactly as they are, and an admin standing on the group's own screen can
+ * still add or transfer people in deliberately. See `BreakoutGroup.isEnabled`.
+ */
+export async function setBreakoutGroupEnabled(
+  groupId: string,
+  eventId: string,
+  isEnabled: boolean
+): Promise<ActionResult> {
+  const denied = await requireEventWrite(eventId)
+  if (denied) return { success: false, error: denied.error }
+
+  try {
+    // updateMany so the event scope is part of the write itself rather than a
+    // separate read the next request could race past.
+    const { count } = await db.breakoutGroup.updateMany({
+      where: { id: groupId, eventId },
+      data: { isEnabled },
+    })
+    if (count === 0) return { success: false, error: "Breakout group not found" }
+
+    revalidatePath(`/event/${eventId}/breakouts`)
+    revalidatePath(`/event/${eventId}/breakouts/${groupId}`)
+    // The public surfaces that offer the picker, and the form builder whose
+    // Breakout warning counts how many groups are still switched on.
+    revalidatePath(`/events/${eventId}/register`)
+    revalidatePath(`/events/${eventId}/walk-in`)
+    revalidatePath(`/event/${eventId}/forms/EventRegister`)
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to update breakout group" }
+  }
+}
+
 export async function deleteBreakoutGroup(
   groupId: string,
   eventId: string

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { IconUserSearch, IconUserPlus, IconUserOff, IconAlertTriangle, IconCheck } from "@tabler/icons-react"
+import { IconUserSearch, IconUserPlus, IconAlertTriangle, IconCheck } from "@tabler/icons-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { PersonCombobox, type PersonComboboxOption } from "@/components/ui/person-combobox"
@@ -24,7 +24,9 @@ type Props = {
   onResolutionChange: (rowIndexes: number[], resolution: LeaderResolution) => void
 }
 
-type RowMode = "link" | "create" | "none"
+// No "none": every DGroup has a leader, so an unresolved row is skipped at import
+// rather than offered as a way to create a group nobody leads.
+type RowMode = "link" | "create"
 
 // Groups rows that share the same leader identity (mobile > email > name).
 // Rows with absolutely no identity data are intentionally kept separate.
@@ -108,9 +110,6 @@ function LeaderGroupCard({
         email:     row.leaderEmail  || undefined,
         mobile:    row.leaderMobile || undefined,
       })
-    } else if (next === "none") {
-      setSelectedMemberId("")
-      onResolutionChange({ type: "none" })
     } else {
       setSelectedMemberId("")
     }
@@ -269,25 +268,6 @@ function LeaderGroupCard({
           </div>
         </label>
 
-        <label className="flex items-start gap-2.5 cursor-pointer">
-          <input
-            type="radio"
-            name={`leader-mode-${cardKey}`}
-            value="none"
-            checked={mode === "none"}
-            onChange={() => handleModeChange("none")}
-            className="mt-0.5 accent-primary"
-          />
-          <div className="flex-1 flex flex-col gap-1.5">
-            <span className="text-sm flex items-center gap-1.5">
-              <IconUserOff className="size-3.5 text-muted-foreground" />
-              Import without a leader
-              <span className="text-xs text-muted-foreground">
-                — assign a leader later
-              </span>
-            </span>
-          </div>
-        </label>
       </div>
     </div>
   )
@@ -312,12 +292,6 @@ export function StepLeaderResolution({ rows, resolutions, members, membersLoadin
     }
   }
 
-  function handleSetRemainingNone() {
-    for (const group of unresolvedGroups) {
-      onResolutionChange(group.rowIndexes, { type: "none" })
-    }
-  }
-
   return (
     <div className="flex flex-col gap-4">
       {/* Banner */}
@@ -327,7 +301,9 @@ export function StepLeaderResolution({ rows, resolutions, members, membersLoadin
           <span className="font-medium">{groups.length} leader{groups.length !== 1 ? "s" : ""}</span>
           {" "}could not be automatically matched.
           {unresolvedCount > 0 && (
-            <span className="ml-1 font-medium">({unresolvedCount} remaining)</span>
+            <span className="ml-1 font-medium">
+              ({unresolvedCount} remaining — these groups will be skipped)
+            </span>
           )}
         </span>
         <Button
@@ -338,15 +314,6 @@ export function StepLeaderResolution({ rows, resolutions, members, membersLoadin
           disabled={unresolvedGroups.length === 0}
         >
           Create remaining{unresolvedGroups.length > 0 ? ` (${unresolvedGroups.length})` : ""} as new Members
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-7 text-xs shrink-0"
-          onClick={handleSetRemainingNone}
-          disabled={unresolvedGroups.length === 0}
-        >
-          Import remaining without leader
         </Button>
       </div>
 

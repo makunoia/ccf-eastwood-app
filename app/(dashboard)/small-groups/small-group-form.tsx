@@ -71,6 +71,7 @@ import {
   cancelTempAssignment,
 } from "./actions"
 import type { SpouseInfo } from "@/lib/family-links"
+import type { SmallGroupLogAction } from "@/app/generated/prisma/client"
 import { Checkbox } from "@/components/ui/checkbox"
 import { searchGuests, promoteGuestToMember } from "@/app/(dashboard)/guests/actions"
 import { Badge } from "@/components/ui/badge"
@@ -118,9 +119,17 @@ type PendingRequest = {
   createdAt: Date
 }
 
+/**
+ * The group's timeline is a merge of two sources: real `SmallGroupLog` rows, and
+ * `ConfirmationSubmission` rows folded in as a synthetic action that has no enum
+ * value of its own. Spelled as a union so both are covered by one exhaustive
+ * label map instead of an untyped lookup that silently renders a raw enum name.
+ */
+type GroupLogAction = SmallGroupLogAction | "ConfirmationSubmitted"
+
 type GroupLogEntry = {
   id: string
-  action: string
+  action: GroupLogAction
   description: string | null
   performedByName: string | null
   createdAt: Date
@@ -162,7 +171,16 @@ function toFormValues(group: SmallGroupRow): SmallGroupFormValues {
   }
 }
 
-const LOG_ACTION_LABELS: Record<string, string> = {
+/**
+ * Group-centric wording, deliberately not `SMALL_GROUP_LOG_LABEL`: that map reads
+ * from the *person's* side ("Added to DGroup") for the member and guest timelines,
+ * which is redundant on the group's own page.
+ *
+ * Typed over `GroupLogAction` rather than `Record<string, string>` so a new action
+ * can't be introduced without a label here — which is how `LeaderChanged` and
+ * `MemberStatusChanged` came to be missing.
+ */
+const LOG_ACTION_LABELS: Record<GroupLogAction, string> = {
   GroupCreated: "Group created",
   MemberAdded: "Member added",
   MemberRemoved: "Member removed",
@@ -170,6 +188,8 @@ const LOG_ACTION_LABELS: Record<string, string> = {
   TempAssignmentCreated: "Temp assignment created",
   TempAssignmentConfirmed: "Assignment confirmed",
   TempAssignmentRejected: "Assignment rejected/cancelled",
+  LeaderChanged: "Leader changed",
+  MemberStatusChanged: "Member status changed",
   ConfirmationSubmitted: "Confirmation form submitted",
 }
 

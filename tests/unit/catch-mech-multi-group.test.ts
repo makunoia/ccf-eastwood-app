@@ -18,6 +18,26 @@ import type { ConfirmDecision } from "@/lib/catch-mech/decisions"
 import { getSessionData } from "@/app/events/[id]/catch-mech/[token]/page"
 import { SLUG_CONFIG } from "@/app/(event)/event/[id]/catch-mech/status-slug"
 
+/**
+ * Every DGroup requires a leader (SmallGroup.leaderId is NOT NULL). These tests
+ * don't care who it is, so each group gets a throwaway member. The leader has no
+ * smallGroupId of their own, so they never count toward a group's roster.
+ */
+let __leaderSeq = 0
+async function aLeader(): Promise<string> {
+  const m = await db.member.create({
+    data: {
+      firstName: `Leader${++__leaderSeq}`,
+      lastName: "Seed",
+      dateJoined: new Date(),
+      language: [],
+    },
+    select: { id: true },
+  })
+  return m.id
+}
+
+
 beforeEach(async () => {
   await db.$executeRaw`TRUNCATE "Event", "Member", "Guest", "SmallGroup", "BreakoutGroup", "Volunteer", "VolunteerCommittee", "CommitteeRole", "EventRegistrant", "BreakoutGroupMember", "CatchMechSession", "SmallGroupMemberRequest", "SmallGroupLog" RESTART IDENTITY CASCADE`
 })
@@ -200,7 +220,7 @@ describe("faci leading multiple small groups", () => {
 
   it("rejects a group the faci does not lead", async () => {
     const s = await seed({ ledGroups: ["Makati East", "BGC Young Pros"] })
-    const foreign = await db.smallGroup.create({ data: { name: "Someone Else's", language: [] } })
+    const foreign = await db.smallGroup.create({ data: { leaderId: await aLeader(), name: "Someone Else's", language: [] } })
 
     const result = await submitCatchMechConfirmations(s.session.token, [
       { registrantId: s.attendees[0].registrant.id, status: "confirmed", targetGroupId: foreign.id },

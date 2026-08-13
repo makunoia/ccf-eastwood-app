@@ -8,6 +8,11 @@ import { breakoutOccupancy } from "@/lib/breakouts/occupancy"
 import { tryCreateSmallGroupRequestFromBreakout } from "@/lib/create-small-group-request"
 import { createSeekerRequestFromRegistration } from "@/lib/small-groups/seeker-requests"
 import { buildStoredScheduleSlot } from "@/lib/matching/candidate-schedule"
+import {
+  ProfileCollisionError,
+  shouldWriteProfileField,
+  touchedFieldSet,
+} from "@/lib/events/profile-merge"
 import type { RegistrantData } from "@/lib/validations/event-registrant"
 import type { Gender, MeetingFormat } from "@/app/generated/prisma/client"
 
@@ -105,6 +110,7 @@ export async function assignBreakoutForRegistrant(
         select: {
           id: true,
           eventId: true,
+          isEnabled: true,
           memberLimit: true,
           _count: { select: { members: true } },
         },
@@ -115,7 +121,18 @@ export async function assignBreakoutForRegistrant(
           memberCount: picked._count.members,
           memberLimit: picked.memberLimit,
         }).isFull
-      if (picked && picked.eventId === eventId && (allowOverCapacity || !pickedIsFull)) {
+      // `isEnabled` is re-checked here and not only where the picker was built:
+      // this id arrives in a submitted payload, so a form rendered before the
+      // group was switched off — or one edited by hand — must not land anyone in
+      // it. Unlike capacity there is no `allowOverCapacity` counterpart; a
+      // switched-off group is closed to every public route, and admins place
+      // people from the group's own screen instead.
+      if (
+        picked &&
+        picked.eventId === eventId &&
+        picked.isEnabled &&
+        (allowOverCapacity || !pickedIsFull)
+      ) {
         chosenGroupId = picked.id
       }
     } else if (event.autoAssignBreakout) {
@@ -142,8 +159,23 @@ export async function assignBreakoutForRegistrant(
 // Walk-in mode: check the registrant in immediately after registration.
 // Sessions (MultiDay/Recurring) record an OccurrenceAttendee; OneTime events
 // set attendedAt — only when null, preserving the first check-in time.
+//
+// The session id arrives in a submitted payload from a *public* route, so it is
+// re-scoped to the registrant's own event before anything is written. The page
+// only ever renders the id `resolveWalkInSession` chose, so this changes nothing
+// for real traffic; what it stops is a hand-edited POST recording attendance at
+// another event's session, which would quietly inflate that event's numbers on
+// every surface that counts occurrence attendance. Silent rather than an error:
+// the registration itself succeeded, and there is no one at the door to act on
+// a failure about an id they never saw.
 export async function checkInWalkInRegistrant(registrantId: string, occurrenceId: string | null) {
   if (occurrenceId !== null) {
+    const occurrence = await db.eventOccurrence.findFirst({
+      where: { id: occurrenceId, event: { registrants: { some: { id: registrantId } } } },
+      select: { id: true },
+    })
+    if (!occurrence) return
+
     await db.occurrenceAttendee.upsert({
       where: { occurrenceId_registrantId: { occurrenceId, registrantId } },
       create: { occurrenceId, registrantId },
@@ -210,13 +242,75 @@ export async function stampClusterProvenance(
 }
 
 /**
- * Confirmed member: fill in only profile fields that are currently null, then
- * return the stored gender/birth year (the form's answer wins over the stored
- * one for breakout matching, combined by the caller).
+ * Fields the person edited on the review screen, named the way the payload names
+ * them (CCF-147). A named field overwrites what is stored; everything else keeps
+ * the fill-if-empty rule — see `lib/events/profile-merge.ts`.
+ *
+ * This arrives from a public client, so a crafted POST could claim every field is
+ * touched. What actually gates it is the second factor on the confirm card:
+ * reaching the confirmed-member/guest path at all now means having proved the
+ * record's birth month and year. Claiming everything is touched is then
+ * equivalent to a verified owner editing every field, which is a thing they are
+ * allowed to do.
+ */
+export type TouchedFields = readonly string[] | null | undefined
+
+/**
+ * Refuse to hand a mobile or email to a second record.
+ *
+ * Scoped to the *same model* deliberately. A Member and an active Guest sharing
+ * a number is an ordinary duplicate-person situation the lookup already resolves
+ * by preferring the Member, and blocking on it would reject legitimate
+ * registrations. Two Members — or two active Guests — sharing one is the case
+ * that makes the ladder permanently ambiguous, and that is what this stops.
+ */
+async function assertNoContactCollision(opts: {
+  model: "member" | "guest"
+  selfId: string
+  phone?: string | null
+  email?: string | null
+}): Promise<void> {
+  const { model, selfId, phone, email } = opts
+  if (phone) {
+    const clash =
+      model === "member"
+        ? await db.member.findFirst({ where: { phone, id: { not: selfId } }, select: { id: true } })
+        : await db.guest.findFirst({
+            where: { phone, memberId: null, id: { not: selfId } },
+            select: { id: true },
+          })
+    if (clash) {
+      throw new ProfileCollisionError(
+        "That mobile number already belongs to another profile. Please check it, or leave it as it was."
+      )
+    }
+  }
+  if (email) {
+    const clash =
+      model === "member"
+        ? await db.member.findFirst({ where: { email, id: { not: selfId } }, select: { id: true } })
+        : await db.guest.findFirst({
+            where: { email, memberId: null, id: { not: selfId } },
+            select: { id: true },
+          })
+    if (clash) {
+      throw new ProfileCollisionError(
+        "That email address already belongs to another profile. Please check it, or leave it as it was."
+      )
+    }
+  }
+}
+
+/**
+ * Confirmed member: fill in only profile fields that are currently null — unless
+ * the person edited one on the review screen, which overwrites — then return the
+ * stored gender/birth year (the form's answer wins over the stored one for
+ * breakout matching, combined by the caller).
  */
 export async function resolveConfirmedMember(
   memberId: string,
-  data: RegistrantData
+  data: RegistrantData,
+  touchedFields?: TouchedFields
 ): Promise<ResolvedProfile> {
   const existing = await db.member.findUniqueOrThrow({
     where: { id: memberId },
@@ -231,30 +325,48 @@ export async function resolveConfirmedMember(
       schedulePreferences: { select: { id: true }, take: 1 },
     },
   })
+  const touched = touchedFieldSet(touchedFields)
   const memberUpdates: Record<string, unknown> = {}
+  /** `stored` is the column, `field` is the payload key `touchedFields` speaks in. */
+  const put = (column: string, stored: unknown, field: string, incoming: unknown) => {
+    if (shouldWriteProfileField(stored, incoming, touched, field)) memberUpdates[column] = incoming
+  }
+
   // Only the anonymous-guest branch carries a nickname onto `EventRegistrant`, so
   // without this the answer was collected and dropped for anyone who confirmed as
   // an existing member. Fill-if-empty like every other field here: a nickname
   // already on file is the one they chose, and a one-off spelling typed at
   // registration shouldn't overwrite it.
-  if (!existing.nickname && data.nickname) memberUpdates.nickname = data.nickname
-  if (!existing.email && data.email) memberUpdates.email = data.email
-  if (!existing.phone && data.mobileNumber) memberUpdates.phone = data.mobileNumber
-  if (existing.birthMonth == null && data.birthMonth != null) memberUpdates.birthMonth = data.birthMonth
-  if (existing.birthYear == null && data.birthYear != null) memberUpdates.birthYear = data.birthYear
-  if (!existing.lifeStageId && data.lifeStageId) memberUpdates.lifeStageId = data.lifeStageId
-  if (!existing.gender && data.gender) memberUpdates.gender = data.gender
-  if (!existing.language?.length && data.language?.length) memberUpdates.language = data.language
-  if (!existing.meetingPreference && data.meetingPreference) memberUpdates.meetingPreference = data.meetingPreference
-  if (!existing.workCity && data.workCity) memberUpdates.workCity = data.workCity
-  if (!existing.ageRangeBucketId && data.ageRangeBucketId) memberUpdates.ageRangeBucketId = data.ageRangeBucketId
+  put("nickname", existing.nickname, "nickname", data.nickname)
+  put("email", existing.email, "email", data.email)
+  put("phone", existing.phone, "mobileNumber", data.mobileNumber)
+  put("birthMonth", existing.birthMonth, "birthMonth", data.birthMonth)
+  put("birthYear", existing.birthYear, "birthYear", data.birthYear)
+  put("lifeStageId", existing.lifeStageId, "lifeStageId", data.lifeStageId)
+  put("gender", existing.gender, "gender", data.gender)
+  put("language", existing.language, "language", data.language)
+  put("meetingPreference", existing.meetingPreference, "meetingPreference", data.meetingPreference)
+  put("workCity", existing.workCity, "workCity", data.workCity)
+  put("ageRangeBucketId", existing.ageRangeBucketId, "ageRangeBucketId", data.ageRangeBucketId)
+
+  // Only a *changed* identifier can collide — leaving the value alone can't
+  // introduce a duplicate that wasn't already there.
+  await assertNoContactCollision({
+    model: "member",
+    selfId: memberId,
+    phone: memberUpdates.phone as string | undefined,
+    email: memberUpdates.email as string | undefined,
+  })
+
   // Schedule is a `SchedulePreference` relation for members (guests keep it in
   // scalar columns). Without this the form's Schedule field was collected and
   // then thrown away for anyone who confirmed as a member.
   // Times are optional — a day-only answer ("Tuesdays, any time") is still a
   // real preference, so it is normalised into a whole-day slot rather than
   // dropped.
-  if (existing.schedulePreferences.length === 0 && data.scheduleDayOfWeek != null) {
+  const hasStoredSchedule = existing.schedulePreferences.length > 0
+  const scheduleEdited = touched.has("scheduleDayOfWeek")
+  if ((!hasStoredSchedule || scheduleEdited) && data.scheduleDayOfWeek != null) {
     const slot = buildStoredScheduleSlot(
       data.scheduleDayOfWeek,
       data.scheduleTimeStart,
@@ -262,6 +374,11 @@ export async function resolveConfirmedMember(
     )
     if (slot) {
       memberUpdates.schedulePreferences = {
+        // Editing availability *replaces* it rather than adding a second slot:
+        // the form collects one window, so leaving the old one behind would have
+        // the member claiming two conflicting availabilities with no way to tell
+        // which they meant. Only reached when they actually edited the field.
+        ...(hasStoredSchedule ? { deleteMany: {} } : {}),
         create: {
           dayOfWeek: slot.dayOfWeek,
           timeStart: slot.timeStart,
@@ -277,10 +394,14 @@ export async function resolveConfirmedMember(
   return { gender: existing.gender, birthYear: existing.birthYear }
 }
 
-/** Confirmed guest: fill in only profile fields that are currently null; returns stored gender/birth year. */
+/**
+ * Confirmed guest: fill in only profile fields that are currently null — unless
+ * the person edited one on the review screen; returns stored gender/birth year.
+ */
 export async function resolveConfirmedGuest(
   guestId: string,
-  data: RegistrantData
+  data: RegistrantData,
+  touchedFields?: TouchedFields
 ): Promise<ResolvedProfile> {
   const existing = await db.guest.findUniqueOrThrow({
     where: { id: guestId },
@@ -293,27 +414,58 @@ export async function resolveConfirmedGuest(
       claimedSmallGroupId: true, claimedSatellite: true,
     },
   })
+  const touched = touchedFieldSet(touchedFields)
   const guestUpdates: Record<string, unknown> = {}
+  const put = (column: string, stored: unknown, field: string, incoming: unknown) => {
+    if (shouldWriteProfileField(stored, incoming, touched, field)) guestUpdates[column] = incoming
+  }
+
   // Same fill-if-empty rule as the member path — see `resolveConfirmedMember`.
-  if (!existing.nickname && data.nickname) guestUpdates.nickname = data.nickname
-  if (!existing.email && data.email) guestUpdates.email = data.email
-  if (!existing.phone && data.mobileNumber) guestUpdates.phone = data.mobileNumber
-  if (existing.birthMonth == null && data.birthMonth != null) guestUpdates.birthMonth = data.birthMonth
-  if (existing.birthYear == null && data.birthYear != null) guestUpdates.birthYear = data.birthYear
-  if (!existing.lifeStageId && data.lifeStageId) guestUpdates.lifeStageId = data.lifeStageId
-  if (!existing.gender && data.gender) guestUpdates.gender = data.gender
-  if (!existing.language?.length && data.language?.length) guestUpdates.language = data.language
-  if (!existing.meetingPreference && data.meetingPreference) guestUpdates.meetingPreference = data.meetingPreference
-  if (!existing.workCity && data.workCity) guestUpdates.workCity = data.workCity
-  if (!existing.ageRangeBucketId && data.ageRangeBucketId) guestUpdates.ageRangeBucketId = data.ageRangeBucketId
-  if (existing.scheduleDayOfWeek == null && data.scheduleDayOfWeek != null) guestUpdates.scheduleDayOfWeek = data.scheduleDayOfWeek
-  if (!existing.scheduleTimeStart && data.scheduleTimeStart) guestUpdates.scheduleTimeStart = data.scheduleTimeStart
-  if (!existing.scheduleTimeEnd && data.scheduleTimeEnd) guestUpdates.scheduleTimeEnd = data.scheduleTimeEnd
+  put("nickname", existing.nickname, "nickname", data.nickname)
+  put("email", existing.email, "email", data.email)
+  put("phone", existing.phone, "mobileNumber", data.mobileNumber)
+  put("birthMonth", existing.birthMonth, "birthMonth", data.birthMonth)
+  put("birthYear", existing.birthYear, "birthYear", data.birthYear)
+  put("lifeStageId", existing.lifeStageId, "lifeStageId", data.lifeStageId)
+  put("gender", existing.gender, "gender", data.gender)
+  put("language", existing.language, "language", data.language)
+  put("meetingPreference", existing.meetingPreference, "meetingPreference", data.meetingPreference)
+  put("workCity", existing.workCity, "workCity", data.workCity)
+  put("ageRangeBucketId", existing.ageRangeBucketId, "ageRangeBucketId", data.ageRangeBucketId)
+  put("scheduleDayOfWeek", existing.scheduleDayOfWeek, "scheduleDayOfWeek", data.scheduleDayOfWeek)
+  if (touched.has("scheduleDayOfWeek") && "scheduleDayOfWeek" in guestUpdates) {
+    // The window belongs to the day, so an edited day carries its times with it —
+    // including empty ones. This is the one place a submission may clear a stored
+    // value: leaving yesterday's 19:00–21:00 attached to a newly-chosen Saturday
+    // would describe a slot the person never picked, which is worse than losing
+    // it. The member path does the same thing by replacing the relation row.
+    guestUpdates.scheduleTimeStart = data.scheduleTimeStart ?? null
+    guestUpdates.scheduleTimeEnd = data.scheduleTimeEnd ?? null
+  } else {
+    put("scheduleTimeStart", existing.scheduleTimeStart, "scheduleTimeStart", data.scheduleTimeStart)
+    put("scheduleTimeEnd", existing.scheduleTimeEnd, "scheduleTimeEnd", data.scheduleTimeEnd)
+  }
   // Either side counts as "already answered" — filling one while the other is
-  // set would leave the guest claiming two different DGroups.
+  // set would leave the guest claiming two different DGroups. An edit on the
+  // review screen is allowed past that guard, and clears its opposite so the
+  // pair can never both be set.
   const claimsNoGroup = !existing.claimedSmallGroupId && !existing.claimedSatellite
-  if (claimsNoGroup && data.claimedSmallGroupId) guestUpdates.claimedSmallGroupId = data.claimedSmallGroupId
-  if (claimsNoGroup && data.claimedSatellite) guestUpdates.claimedSatellite = data.claimedSatellite
+  const claimEdited = touched.has("claimedSmallGroupId") || touched.has("claimedSatellite")
+  if ((claimsNoGroup || claimEdited) && data.claimedSmallGroupId) {
+    guestUpdates.claimedSmallGroupId = data.claimedSmallGroupId
+    guestUpdates.claimedSatellite = null
+  }
+  if ((claimsNoGroup || claimEdited) && data.claimedSatellite) {
+    guestUpdates.claimedSatellite = data.claimedSatellite
+    guestUpdates.claimedSmallGroupId = null
+  }
+
+  await assertNoContactCollision({
+    model: "guest",
+    selfId: guestId,
+    phone: guestUpdates.phone as string | undefined,
+    email: guestUpdates.email as string | undefined,
+  })
 
   if (Object.keys(guestUpdates).length > 0) {
     await db.guest.update({ where: { id: guestId }, data: guestUpdates })

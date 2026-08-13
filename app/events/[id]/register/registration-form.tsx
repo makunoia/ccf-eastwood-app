@@ -51,6 +51,18 @@ import {
   createHouseholdRegistration,
   lookupMemberForRegistration,
 } from "@/app/(dashboard)/events/actions"
+import {
+  lookupProfileByMobile,
+  revealProfileForRegistration,
+  type MaskedProfileCandidate,
+} from "@/app/(dashboard)/events/registration-lookup-actions"
+import {
+  fieldsStillNeeded,
+  mergedAnswersFor,
+  prefillFromProfile,
+  profileSummaryRows,
+  type RegistrationProfileSnapshot,
+} from "@/lib/forms/profile-prefill"
 import type { AssignedBreakout } from "@/lib/events/registration-core"
 import {
   registerForCluster,
@@ -95,7 +107,24 @@ const BREAKOUT_NOTICE_COPY: Record<BreakoutNoticeKind, { title: string; body: st
   },
 }
 
-type Step = "form" | "confirm" | "disambiguate" | "early-confirm" | "early-disambiguate" | "done" | "volunteer-blocked"
+/**
+ * `identify*` are the CCF-147 step-0 gate, which runs *before* the form. The
+ * review screen is deliberately not a step of its own: accepting a match lands
+ * on `"form"` with a profile attached, so the shortened flow inherits every
+ * downstream step (cluster events, DGroup, breakout, dietary, payment, privacy)
+ * instead of forking a second copy of them that could drift.
+ */
+type Step =
+  | "identify"
+  | "identify-confirm"
+  | "identify-ambiguous"
+  | "form"
+  | "confirm"
+  | "disambiguate"
+  | "early-confirm"
+  | "early-disambiguate"
+  | "done"
+  | "volunteer-blocked"
 
 type LifeStage = { id: string; name: string }
 type AgeRangeBucket = { id: string; label: string }
@@ -346,7 +375,13 @@ export function RegistrationForm({
   const includeSmallGroup = cfg.sectionSmallGroup
   const includeDietary = cfg.sectionDietary
   const includePayment = cfg.sectionPayment
-  const [step, setStep] = React.useState<Step>("form")
+  /**
+   * The mobile-first gate only makes sense on a form that collects a mobile
+   * number. With the field off there is nothing to look anyone up by, so the
+   * form opens exactly where it always did.
+   */
+  const identifyFirst = cfg.fieldMobile
+  const [step, setStep] = React.useState<Step>(identifyFirst ? "identify" : "form")
   const [form, setForm] = React.useState<FormValues>({
     ...defaultForm,
     lifeStageId: defaultLifeStageId,
@@ -385,6 +420,26 @@ export function RegistrationForm({
     []
   )
   const [submitting, setSubmitting] = React.useState(false)
+  // ── Step 0: pull an existing profile by mobile number (CCF-147) ────────────
+  const [identifyMatch, setIdentifyMatch] = React.useState<MaskedProfileCandidate | null>(null)
+  const [identifyCandidates, setIdentifyCandidates] = React.useState<MaskedProfileCandidate[] | null>(null)
+  const [secondFactorMonth, setSecondFactorMonth] = React.useState("")
+  const [secondFactorYear, setSecondFactorYear] = React.useState("")
+  const [identifyError, setIdentifyError] = React.useState<string | null>(null)
+  /** The profile the person confirmed. Non-null turns step 1 into the review screen. */
+  const [profileSnapshot, setProfileSnapshot] = React.useState<RegistrationProfileSnapshot | null>(null)
+  const [editingProfile, setEditingProfile] = React.useState(false)
+  /**
+   * Payload keys the person edited on the review screen. Only these overwrite the
+   * stored profile server-side — everything else keeps fill-if-empty, so a value
+   * they merely looked at is never rewritten. See `lib/events/profile-merge.ts`.
+   */
+  const [touchedFields, setTouchedFields] = React.useState<string[]>([])
+  /**
+   * The record the person said "not me" to. Kept so neither the later lookups nor
+   * the server-side dedup ladder can put them back on it.
+   */
+  const [rejectedRecordId, setRejectedRecordId] = React.useState<string | null>(null)
   const [matchedMember, setMatchedMember] = React.useState<MatchedMember | null>(null)
   const [confirmedMember, setConfirmedMember] = React.useState<MatchedMember | null>(null)
   const [skipSmallGroup, setSkipSmallGroup] = React.useState(false)
@@ -550,6 +605,51 @@ export function RegistrationForm({
     [form, noMobile, noEmail, smallGroupIntent]
   )
 
+  /**
+   * What the fast path still has to ask.
+   *
+   * The profile is merged *under* the typed answers and handed to the same
+   * `missingRequiredFields` the server runs — so the skip keys off profile nulls,
+   * not off "we already showed them a screen". A Required field the profile can't
+   * satisfy is still Required.
+   */
+  const stillNeeded = React.useMemo(
+    () =>
+      profileSnapshot
+        ? fieldsStillNeeded(cfg, formContext, mergedAnswersFor(profileSnapshot, answers))
+        : [],
+    [profileSnapshot, cfg, formContext, answers]
+  )
+
+  /**
+   * Whether a Personal Information field renders as an input.
+   *
+   * With no profile, or once they've asked to edit, the section is its normal
+   * self. On the review screen it collapses to the summary card plus only the
+   * questions the profile genuinely couldn't answer.
+   */
+  function showPersonalField(field: FormFieldKey): boolean {
+    if (!cfg[field]) return false
+    if (!profileSnapshot || editingProfile) return true
+    return stillNeeded.includes(field)
+  }
+
+  /**
+   * The subset of `stillNeeded` that actually renders on this screen. The DGroup
+   * step owns the rest, and promising "a couple more things" for questions that
+   * live two steps away would be a lie.
+   */
+  const stillNeededHere = React.useMemo(() => {
+    const personal = formLayoutFor(formContext).find((sec) => sec.key === "personal")
+    return stillNeeded.filter((f) => personal?.fields.includes(f))
+  }, [stillNeeded, formContext])
+
+  /** Name has no toggle — it is always collected — so it needs its own gate. */
+  const showNameFields = !profileSnapshot || editingProfile
+
+  /** Step 0 answered the "who is this?" question, either way. */
+  const identityResolved = profileSnapshot !== null || rejectedRecordId !== null
+
   /** Required fields left blank in one step, in the order they're rendered. */
   function missingInSection(stepKey: string): FormFieldKey[] {
     const layoutKey = stepKey === "personal" ? "personal" : "sectionSmallGroup"
@@ -577,7 +677,19 @@ export function RegistrationForm({
   }, [formStep])
 
   function handleReset() {
-    setStep("form")
+    // Back to the gate, not to the form: the walk-in kiosk resets between
+    // people, and leaving a resolved profile behind would register the next
+    // person at the door as the previous one.
+    setStep(identifyFirst ? "identify" : "form")
+    setIdentifyMatch(null)
+    setIdentifyCandidates(null)
+    setSecondFactorMonth("")
+    setSecondFactorYear("")
+    setIdentifyError(null)
+    setProfileSnapshot(null)
+    setEditingProfile(false)
+    setTouchedFields([])
+    setRejectedRecordId(null)
     setForm({ ...defaultForm, lifeStageId: defaultLifeStageId })
     // Back to the same starting point as a fresh mount, not to false — a form
     // that doesn't collect mobile must not come back from a reset acting as
@@ -613,8 +725,171 @@ export function RegistrationForm({
     )
   }
 
-  function set(field: keyof FormValues, value: string) {
+  function set(field: keyof FormValues, value: string | string[]) {
     setForm((prev) => ({ ...prev, [field]: value }))
+    // Only meaningful against a pulled profile: with no profile there is nothing
+    // to overwrite, and marking everything touched would hand the server a claim
+    // it has no reason to act on.
+    if (profileSnapshot) {
+      setTouchedFields((prev) => (prev.includes(field) ? prev : [...prev, field]))
+    }
+  }
+
+  // ── Step 0 handlers (CCF-147) ─────────────────────────────────────────────
+
+  /** Fall through to the form the way it has always worked, number retained. */
+  function goToManualForm() {
+    setStep("form")
+    setFormStep(1)
+  }
+
+  function openIdentifyConfirm(candidate: MaskedProfileCandidate) {
+    setIdentifyMatch(candidate)
+    setSecondFactorMonth("")
+    setSecondFactorYear("")
+    setIdentifyError(null)
+    setStep("identify-confirm")
+  }
+
+  async function handleIdentifyLookup() {
+    if (noMobile) {
+      goToManualForm()
+      return
+    }
+    if (!form.mobileNumber.trim()) {
+      setIdentifyError("Enter your mobile number, or choose to fill in the form manually.")
+      return
+    }
+    setSubmitting(true)
+    setIdentifyError(null)
+    const result = await lookupProfileByMobile({
+      mobileNumber: form.mobileNumber,
+      // Cluster mode has no single event, so there is no volunteer record to check.
+      eventId: cluster ? null : eventId,
+    })
+    setSubmitting(false)
+
+    if (result.outcome === "rateLimited") {
+      setIdentifyError(
+        "Too many lookups from this connection. Wait a minute, or fill in the form manually."
+      )
+      return
+    }
+    if (result.outcome === "none") {
+      goToManualForm()
+      return
+    }
+    if (result.outcome === "ambiguous") {
+      setIdentifyCandidates(result.candidates)
+      setIdentifyError(null)
+      setStep("identify-ambiguous")
+      return
+    }
+    const { outcome: _outcome, ...candidate } = result
+    openIdentifyConfirm(candidate)
+  }
+
+  /**
+   * Attach a revealed profile and hand over to the ordinary form, which renders
+   * step 1 as the review screen. Deliberately never auto-submits, even when the
+   * profile answers everything: the person is being asked to *review*, and a
+   * form that registered them the instant they proved their birthday would take
+   * the review away.
+   */
+  function applyProfile(profile: RegistrationProfileSnapshot) {
+    if (profile.isVolunteer) {
+      setMatchedMember({
+        id: profile.recordId,
+        firstName: profile.firstName,
+        lastName: profile.lastName,
+        email: profile.email,
+        phone: profile.phone,
+        matchedBy: "mobile",
+        recordType: profile.recordType,
+        isVolunteer: true,
+      })
+      setStep("volunteer-blocked")
+      return
+    }
+
+    setProfileSnapshot(profile)
+    setEditingProfile(false)
+    setTouchedFields([])
+    setForm((prev) => ({ ...prev, ...prefillFromProfile(profile) }))
+    // Drives the existing fast path in `handleSubmit`, so submission links to the
+    // record we pulled instead of running the dedup ladder again.
+    setConfirmedMember({
+      id: profile.recordId,
+      firstName: profile.firstName,
+      lastName: profile.lastName,
+      email: profile.email,
+      phone: profile.phone,
+      matchedBy: "mobile",
+      recordType: profile.recordType,
+      isVolunteer: false,
+      smallGroupId: profile.smallGroupId,
+    })
+
+    // Same two DGroup rules the existing early-confirm applies: someone already
+    // in a group isn't asked about one, and a member without one is assumed to
+    // want the question.
+    if (profile.recordType === "member" && profile.smallGroupId) setSkipSmallGroup(true)
+    if (profile.recordType === "member" && !profile.smallGroupId) setSmallGroupIntent("wants")
+
+    setIdentifyMatch(null)
+    setIdentifyCandidates(null)
+    setStep("form")
+    setFormStep(1)
+  }
+
+  async function handleIdentifyConfirm() {
+    if (!identifyMatch) return
+
+    if (identifyMatch.needsSecondFactor) {
+      if (!secondFactorMonth || !secondFactorYear) {
+        setIdentifyError("Enter your birth month and year to continue.")
+        return
+      }
+      if (!isValidBirthYear(parseInt(secondFactorYear, 10))) {
+        setIdentifyError(birthYearMessage())
+        return
+      }
+    }
+
+    setSubmitting(true)
+    setIdentifyError(null)
+    const result = await revealProfileForRegistration({
+      recordId: identifyMatch.recordId,
+      recordType: identifyMatch.recordType,
+      birthMonth: secondFactorMonth ? parseInt(secondFactorMonth, 10) : null,
+      birthYear: secondFactorYear ? parseInt(secondFactorYear, 10) : null,
+      eventId: cluster ? null : eventId,
+    })
+    setSubmitting(false)
+
+    if (!result.ok) {
+      setIdentifyError(
+        result.reason === "rateLimited"
+          ? "Too many attempts from this connection. Wait a minute and try again."
+          : result.reason === "notFound"
+            ? "We couldn't open that profile. Please fill in the form instead."
+            : "That birth month and year don't match this profile."
+      )
+      return
+    }
+    applyProfile(result.profile)
+  }
+
+  /**
+   * "No, not me." The rejected record is remembered so the later lookups can't
+   * quietly put them back on it — see `identityResolved` and `register`.
+   */
+  function handleIdentifyReject() {
+    if (identifyMatch) setRejectedRecordId(identifyMatch.recordId)
+    setIdentifyMatch(null)
+    setIdentifyCandidates(null)
+    setIdentifyError(null)
+    goToManualForm()
   }
 
   async function handleNext() {
@@ -680,8 +955,13 @@ export function RegistrationForm({
         return
       }
 
-      // Early member lookup before the Small Group step so we can adapt the form
-      if (includeSmallGroup) {
+      // Early member lookup before the Small Group step so we can adapt the form.
+      // Skipped once step 0 has settled who this is: asking "is this you?" a
+      // second time — of someone who just proved their birthday, or who just said
+      // "not me" — is noise, not a safety net. Someone who *skipped* step 0 or
+      // whose number found nothing still gets it, since the email and
+      // name+birthday rungs are the ones step 0 never tries.
+      if (includeSmallGroup && !identityResolved) {
         const hasMobile = !noMobile && !!form.mobileNumber
         const hasEmail = !noEmail && !!form.email
         const hasBirthday = !!form.birthMonth && !!form.birthYear
@@ -827,7 +1107,7 @@ export function RegistrationForm({
     const hasEmail = !noEmail && !!form.email
     const hasBirthday = !!form.birthMonth && !!form.birthYear
 
-    if (hasMobile || hasEmail || hasBirthday) {
+    if ((hasMobile || hasEmail || hasBirthday) && !identityResolved) {
       const match = await lookupMemberForRegistration({
         mobileNumber: hasMobile ? form.mobileNumber : null,
         email: hasEmail ? form.email : null,
@@ -851,7 +1131,9 @@ export function RegistrationForm({
       setSubmitting(false)
     }
 
-    await register(null)
+    // A rejected guest match must not be re-matched by phone/email/name on the
+    // server either — that ladder is exactly what they just said no to.
+    await register(null, null, rejectedRecordId ? true : undefined)
   }
 
   async function register(
@@ -921,7 +1203,8 @@ export function RegistrationForm({
         confirmedGuestId,
         skipDeduplication,
         selectedEventIds,
-        walkIn ? true : undefined
+        walkIn ? true : undefined,
+        touchedFields
       )
       setSubmitting(false)
       if (result.success) {
@@ -959,7 +1242,8 @@ export function RegistrationForm({
           confirmedGuestId,
           skipDeduplication,
           selectedBreakoutId || null,
-          walkIn ? { occurrenceId: walkIn.occurrenceId } : undefined
+          walkIn ? { occurrenceId: walkIn.occurrenceId } : undefined,
+          touchedFields
         )
       : await createRegistrant(
           eventId!,
@@ -968,7 +1252,8 @@ export function RegistrationForm({
           confirmedGuestId,
           skipDeduplication,
           selectedBreakoutId || null,
-          walkIn ? { occurrenceId: walkIn.occurrenceId } : undefined
+          walkIn ? { occurrenceId: walkIn.occurrenceId } : undefined,
+          touchedFields
         )
     setSubmitting(false)
 
@@ -1134,6 +1419,159 @@ export function RegistrationForm({
             )}
           </div>
           <DoneActions walkIn={walkIn} onReset={handleReset} />
+        </CardContent>
+      </FormShell>
+    )
+  }
+
+  // ── Step 0: "What's your mobile number?" (CCF-147) ────────────────────────
+  if (step === "identify") {
+    return (
+      <FormShell plain={plain}>
+        <CardHeader>
+          <CardTitle>What&apos;s your mobile number?</CardTitle>
+          <CardDescription>
+            If you&apos;ve registered with us before, we&apos;ll pull up your details so you
+            don&apos;t have to type them again.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="identifyMobile">Mobile Number</Label>
+            <OptionalPhonePHInput
+              id="identifyMobile"
+              value={form.mobileNumber}
+              onChange={(v) => {
+                set("mobileNumber", v)
+                setIdentifyError(null)
+              }}
+              noNumber={noMobile}
+              onNoNumberChange={setNoMobile}
+              hideOptOut={cfg.fieldMobileRequired}
+            />
+          </div>
+
+          {identifyError && (
+            <p className="text-sm text-destructive" role="alert">
+              {identifyError}
+            </p>
+          )}
+
+          <Button className="w-full" onClick={handleIdentifyLookup} disabled={submitting}>
+            {submitting ? "Checking…" : "Continue"}
+          </Button>
+
+          <button
+            type="button"
+            onClick={goToManualForm}
+            className="w-full text-sm text-muted-foreground underline decoration-dashed underline-offset-4 hover:text-foreground transition-colors"
+          >
+            Skip — fill in the form manually
+          </button>
+        </CardContent>
+      </FormShell>
+    )
+  }
+
+  // ── Step 0: "Is this you?" — masked identity + second factor ──────────────
+  if (step === "identify-confirm" && identifyMatch) {
+    return (
+      <FormShell plain={plain}>
+        <CardHeader>
+          <CardTitle>Is this you?</CardTitle>
+          <CardDescription>
+            We found a profile with this mobile number.
+            {identifyMatch.needsSecondFactor
+              ? " Confirm your birth month and year to open it."
+              : ""}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Masked on purpose: anyone can type anyone's number into this form,
+              so the card has to be safe to show a stranger. */}
+          <div className="rounded-lg border p-4 text-sm space-y-1">
+            <p className="font-medium tracking-wide">{identifyMatch.maskedName}</p>
+            {identifyMatch.contactHint && (
+              <p className="text-muted-foreground">{identifyMatch.contactHint}</p>
+            )}
+          </div>
+
+          {identifyMatch.needsSecondFactor && (
+            <BirthMonthYearInput
+              id="secondFactor"
+              label="Your birth month and year"
+              required
+              month={secondFactorMonth}
+              year={secondFactorYear}
+              onMonthChange={(v) => {
+                setSecondFactorMonth(v)
+                setIdentifyError(null)
+              }}
+              onYearChange={(v) => {
+                setSecondFactorYear(v)
+                setIdentifyError(null)
+              }}
+            />
+          )}
+
+          {identifyError && (
+            <p className="text-sm text-destructive" role="alert">
+              {identifyError}
+            </p>
+          )}
+
+          <div className="flex gap-2">
+            <Button className="flex-1" onClick={handleIdentifyConfirm} disabled={submitting}>
+              {submitting ? "Please wait…" : "Yes, that's me"}
+            </Button>
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={handleIdentifyReject}
+              disabled={submitting}
+            >
+              No, not me
+            </Button>
+          </div>
+        </CardContent>
+      </FormShell>
+    )
+  }
+
+  // ── Step 0: one number, several profiles (shared family handsets) ─────────
+  if (step === "identify-ambiguous" && identifyCandidates) {
+    return (
+      <FormShell plain={plain}>
+        <CardHeader>
+          <CardTitle>Which one is you?</CardTitle>
+          <CardDescription>
+            Several profiles share this mobile number. Pick yours, or choose &quot;None of
+            these&quot;.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {identifyCandidates.map((c) => (
+            <button
+              key={c.recordId}
+              type="button"
+              onClick={() => openIdentifyConfirm(c)}
+              className="w-full rounded-lg border p-4 text-left text-sm transition-colors hover:bg-muted/50"
+            >
+              <p className="font-medium tracking-wide">{c.maskedName}</p>
+              {c.contactHint && <p className="text-muted-foreground">{c.contactHint}</p>}
+            </button>
+          ))}
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => {
+              setIdentifyCandidates(null)
+              goToManualForm()
+            }}
+            disabled={submitting}
+          >
+            None of these
+          </Button>
         </CardContent>
       </FormShell>
     )
@@ -1411,34 +1849,71 @@ export function RegistrationForm({
           {/* ── Personal Information ── */}
           {(!isMultiStep || currentSectionKey === "personal") && (
             <>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label htmlFor="firstName">
-                    First Name <span className="text-destructive">*</span>
-                  </Label>
-                  <Input
-                    id="firstName"
-                    value={form.firstName}
-                    onChange={(e) => set("firstName", e.target.value)}
-                    placeholder="Juan"
-                    required={!isMultiStep}
-                  />
+              {/* ── Review screen (CCF-147) ──
+                  The profile we already hold, shown as a summary the person can
+                  submit as-is. Below it, only the questions the profile couldn't
+                  answer. "Edit details" swaps the whole thing back to the normal
+                  inputs, already filled in. */}
+              {profileSnapshot && !editingProfile && (
+                <div className="space-y-4">
+                  <div className="rounded-lg border p-4 text-sm">
+                    <dl className="space-y-2">
+                      {profileSummaryRows(profileSnapshot, cfg, { lifeStages, ageRanges }).map(
+                        (row) => (
+                          <div key={row.key} className="flex gap-3">
+                            <dt className="w-28 shrink-0 text-muted-foreground">{row.label}</dt>
+                            <dd className="font-medium wrap-break-word">{row.value}</dd>
+                          </div>
+                        )
+                      )}
+                    </dl>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => setEditingProfile(true)}
+                  >
+                    Edit details
+                  </Button>
+                  {stillNeededHere.length > 0 && (
+                    <p className="text-sm text-muted-foreground">
+                      Just a couple more things before you&apos;re done.
+                    </p>
+                  )}
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="lastName">
-                    Last Name <span className="text-destructive">*</span>
-                  </Label>
-                  <Input
-                    id="lastName"
-                    value={form.lastName}
-                    onChange={(e) => set("lastName", e.target.value)}
-                    placeholder="dela Cruz"
-                    required={!isMultiStep}
-                  />
-                </div>
-              </div>
+              )}
 
-              {cfg.fieldNickname && (
+              {showNameFields && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="firstName">
+                      First Name <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                      id="firstName"
+                      value={form.firstName}
+                      onChange={(e) => set("firstName", e.target.value)}
+                      placeholder="Juan"
+                      required={!isMultiStep}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="lastName">
+                      Last Name <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                      id="lastName"
+                      value={form.lastName}
+                      onChange={(e) => set("lastName", e.target.value)}
+                      placeholder="dela Cruz"
+                      required={!isMultiStep}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {showPersonalField("fieldNickname") && (
                 <div className="space-y-2">
                   <Label htmlFor="nickname">
                     Nickname <RequiredMark on={cfg.fieldNicknameRequired} />
@@ -1452,7 +1927,7 @@ export function RegistrationForm({
                 </div>
               )}
 
-              {cfg.fieldMobile && (
+              {showPersonalField("fieldMobile") && (
                 <div className="space-y-2">
                   <Label htmlFor="mobileNumber">
                     Mobile Number <RequiredMark on={cfg.fieldMobileRequired} />
@@ -1468,7 +1943,7 @@ export function RegistrationForm({
                 </div>
               )}
 
-              {cfg.fieldEmail && (
+              {showPersonalField("fieldEmail") && (
                 <div className="space-y-2">
                   <Label htmlFor="email">
                     Email <RequiredMark on={cfg.fieldEmailRequired} />
@@ -1488,7 +1963,7 @@ export function RegistrationForm({
               {/* Life Stage sits with the other demographics rather than in the
                   DGroup step: it describes the person, and ministries are scoped by
                   it, so it's worth asking whether or not they want a group. */}
-              {cfg.fieldLifeStage && lifeStages.length > 0 && (
+              {showPersonalField("fieldLifeStage") && lifeStages.length > 0 && (
                 <div className="space-y-2">
                   <Label htmlFor="lifeStage">
                     Life Stage <RequiredMark on={cfg.fieldLifeStageRequired} />
@@ -1513,7 +1988,7 @@ export function RegistrationForm({
                 </div>
               )}
 
-              {cfg.fieldBirthDate && (
+              {showPersonalField("fieldBirthDate") && (
                 <BirthMonthYearInput
                   required={cfg.fieldBirthDateRequired}
                   month={form.birthMonth}
@@ -1523,7 +1998,7 @@ export function RegistrationForm({
                 />
               )}
 
-              {cfg.fieldAgeRange && ageRanges.length > 0 && (
+              {showPersonalField("fieldAgeRange") && ageRanges.length > 0 && (
                 <div className="space-y-2">
                   <Label htmlFor="ageRange">
                     Age Range <RequiredMark on={cfg.fieldAgeRangeRequired} />
@@ -1547,7 +2022,7 @@ export function RegistrationForm({
                 </div>
               )}
 
-              {cfg.fieldGender && (
+              {showPersonalField("fieldGender") && (
                 <div className="space-y-2">
                   <Label>
                     Gender <RequiredMark on={cfg.fieldGenderRequired} />
@@ -1797,7 +2272,7 @@ export function RegistrationForm({
                       <MultiSelect
                         options={LANGUAGE_OPTIONS}
                         value={form.language}
-                        onChange={(v) => setForm((prev) => ({ ...prev, language: v }))}
+                        onChange={(v) => set("language", v)}
                         placeholder="Select language(s)"
                       />
                     </div>

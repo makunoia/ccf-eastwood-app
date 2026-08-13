@@ -221,6 +221,10 @@ export async function copyEventFormConfig(
  *
  * OneTime events never set this: they have no occurrences, and a walk-in there
  * stamps `attendedAt` on the registrant instead.
+ *
+ * Also switches the event back to `Pinned`, since naming a session is what
+ * "pinned" means — picking one from the dropdown has to end Latest mode, or the
+ * pick would save and then be ignored.
  */
 export async function setWalkInOccurrence(
   eventId: string,
@@ -251,7 +255,46 @@ export async function setWalkInOccurrence(
 
     await db.event.update({
       where: { id: eventId },
-      data: { walkInOccurrenceId: occurrenceId },
+      data: { walkInOccurrenceId: occurrenceId, walkInSessionMode: "Pinned" },
+    })
+    revalidateFormSurfaces(eventId)
+    revalidatePath(`/events/${eventId}/checkin`, "layout")
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to set the walk-in session" }
+  }
+}
+
+/**
+ * Aim the door at whichever session is newest, from now on.
+ *
+ * The dropdown's other option. A Recurring event creates a session each time
+ * check-in is opened, so a pinned target is correct for one night and stale after
+ * that; this makes "the session we just started" the standing answer instead of a
+ * weekly chore. See `lib/events/walk-in-session.ts` for the resolution rule.
+ *
+ * The stale pin is left in the column on purpose: it is ignored while in Latest
+ * mode, and keeping it means switching back doesn't lose which session was named.
+ */
+export async function setWalkInLatestSession(eventId: string): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
+  try {
+    const event = await db.event.findUnique({
+      where: { id: eventId },
+      select: { id: true, type: true },
+    })
+    if (!event) return { success: false, error: "Event not found." }
+    // OneTime events have no sessions to be latest of, so there is nothing this
+    // mode could mean for them.
+    if (event.type === "OneTime") {
+      return { success: false, error: "One-time events have no sessions to pick." }
+    }
+
+    await db.event.update({
+      where: { id: eventId },
+      data: { walkInSessionMode: "Latest" },
     })
     revalidateFormSurfaces(eventId)
     revalidatePath(`/events/${eventId}/checkin`, "layout")

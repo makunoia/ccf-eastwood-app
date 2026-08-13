@@ -177,6 +177,7 @@ export default async function BreakoutGroupDetailPage({
             eventId={eventId}
             lifeStages={lifeStages}
             volunteers={confirmedVolunteers}
+            isEnabled={group.isEnabled}
           />
         }
       />

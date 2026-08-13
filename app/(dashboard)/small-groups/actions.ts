@@ -10,6 +10,11 @@ import {
 } from "@/lib/validations/small-group"
 import { runBatchDelete } from "@/lib/batch"
 import { findSpouse, type SpouseInfo } from "@/lib/family-links"
+import {
+  logMembershipMove,
+  logLeaderChange,
+  logGroupStatusChange,
+} from "@/lib/small-groups/membership-log"
 import type { BatchDeleteResult } from "@/components/batch/types"
 
 type ActionResult<T = void> =
@@ -69,6 +74,10 @@ export async function createSmallGroup(
 
       // Auto-assign leader to parent group when parent is set
       if (parsed.data.parentGroupId) {
+        const leader = await tx.member.findUnique({
+          where: { id: parsed.data.leaderId },
+          select: { firstName: true, lastName: true, smallGroupId: true },
+        })
         await tx.member.update({
           where: { id: parsed.data.leaderId },
           data: {
@@ -76,6 +85,16 @@ export async function createSmallGroup(
             groupStatus: "Member",
           },
         })
+        if (leader) {
+          await logMembershipMove(tx, {
+            memberId: parsed.data.leaderId,
+            memberName: `${leader.firstName} ${leader.lastName}`,
+            fromGroupId: leader.smallGroupId,
+            toGroupId: parsed.data.parentGroupId,
+            actor: { userId: actorId },
+            context: `as the leader of "${parsed.data.name}"`,
+          })
+        }
       }
 
       await tx.smallGroupLog.create({
@@ -163,13 +182,20 @@ export async function updateSmallGroup(
     }
   }
 
-  // Fetch current state to detect changes to parentGroupId or leaderId
+  // Fetch current state to detect changes to parentGroupId or leaderId. The
+  // outgoing leader's name comes along because only `description` will still
+  // name them if that member is ever deleted.
   const current = await db.smallGroup.findUnique({
     where: { id },
-    select: { parentGroupId: true, leaderId: true },
+    select: {
+      parentGroupId: true,
+      leaderId: true,
+      leader: { select: { firstName: true, lastName: true } },
+    },
   })
 
   try {
+    const actorId = await getActorId()
     await db.$transaction(async (tx) => {
       await tx.smallGroup.update({
         where: { id },
@@ -193,10 +219,34 @@ export async function updateSmallGroup(
         },
       })
 
-      // Auto-assign leader to parent group when parentGroupId or leaderId changes
       const parentChanged = parsed.data.parentGroupId !== (current?.parentGroupId ?? null)
       const leaderChanged = parsed.data.leaderId !== current?.leaderId
+
+      if (leaderChanged) {
+        const incoming = await tx.member.findUnique({
+          where: { id: parsed.data.leaderId },
+          select: { firstName: true, lastName: true },
+        })
+        if (incoming) {
+          await logLeaderChange(tx, {
+            smallGroupId: id,
+            toLeaderId: parsed.data.leaderId,
+            toLeaderName: `${incoming.firstName} ${incoming.lastName}`,
+            fromLeaderId: current?.leaderId ?? null,
+            fromLeaderName: current?.leader
+              ? `${current.leader.firstName} ${current.leader.lastName}`
+              : null,
+            actor: { userId: actorId },
+          })
+        }
+      }
+
+      // Auto-assign leader to parent group when parentGroupId or leaderId changes
       if (parsed.data.parentGroupId && (parentChanged || leaderChanged)) {
+        const leader = await tx.member.findUnique({
+          where: { id: parsed.data.leaderId },
+          select: { firstName: true, lastName: true, smallGroupId: true },
+        })
         await tx.member.update({
           where: { id: parsed.data.leaderId },
           data: {
@@ -204,19 +254,48 @@ export async function updateSmallGroup(
             groupStatus: "Member",
           },
         })
+        if (leader) {
+          await logMembershipMove(tx, {
+            memberId: parsed.data.leaderId,
+            memberName: `${leader.firstName} ${leader.lastName}`,
+            fromGroupId: leader.smallGroupId,
+            toGroupId: parsed.data.parentGroupId,
+            actor: { userId: actorId },
+            context: `as the leader of "${parsed.data.name}"`,
+          })
+        }
       }
 
       // Moving the parent to an outside satellite undoes that auto-assignment:
       // the leader now reports elsewhere, so drop the membership this created.
       // Scoped to the old parent so a hand-picked group is never touched.
       if (parsed.data.parentSatellite && parentChanged && current?.parentGroupId) {
-        await tx.member.updateMany({
+        const leaderId = current.leaderId ?? parsed.data.leaderId
+        const removed = await tx.member.updateMany({
           where: {
-            id: current.leaderId ?? parsed.data.leaderId,
+            id: leaderId,
             smallGroupId: current.parentGroupId,
           },
           data: { smallGroupId: null, groupStatus: null },
         })
+        // updateMany, so the scoping above may have matched nobody — only log a
+        // departure that actually happened.
+        if (removed.count > 0) {
+          const leader = await tx.member.findUnique({
+            where: { id: leaderId },
+            select: { firstName: true, lastName: true },
+          })
+          if (leader) {
+            await logMembershipMove(tx, {
+              memberId: leaderId,
+              memberName: `${leader.firstName} ${leader.lastName}`,
+              fromGroupId: current.parentGroupId,
+              toGroupId: null,
+              actor: { userId: actorId },
+              context: `when "${parsed.data.name}" moved to an outside satellite`,
+            })
+          }
+        }
       }
     })
     revalidatePath("/small-groups")
@@ -328,29 +407,35 @@ export async function addMemberToGroup(
     }
 
     const actorId = await getActorId()
+    // The group they are leaving, read before the update overwrites it — the
+    // picker offers members who are already in another group, and one group per
+    // member means adding them here is also a removal from there.
     const member = await db.member.findUnique({
       where: { id: memberId },
-      select: { firstName: true, lastName: true },
+      select: { firstName: true, lastName: true, smallGroupId: true },
     })
-    await db.member.update({
-      where: { id: memberId },
-      data: { smallGroupId: groupId, groupStatus: "Member" },
-    })
-    if (group.status === "Pending") {
-      await db.smallGroup.update({ where: { id: groupId }, data: { status: "Active" } })
-    }
-    await db.smallGroupLog.create({
-      data: {
-        smallGroupId: groupId,
-        action: "MemberAdded",
+    if (!member) return { success: false, error: "Member not found" }
+
+    const fromGroupId = member.smallGroupId
+    await db.$transaction(async (tx) => {
+      await tx.member.update({
+        where: { id: memberId },
+        data: { smallGroupId: groupId, groupStatus: "Member" },
+      })
+      if (group.status === "Pending") {
+        await tx.smallGroup.update({ where: { id: groupId }, data: { status: "Active" } })
+      }
+      await logMembershipMove(tx, {
         memberId,
-        performedByUserId: actorId,
-        description: member
-          ? `${member.firstName} ${member.lastName} was added to the group`
-          : "A member was added to the group",
-      },
+        memberName: `${member.firstName} ${member.lastName}`,
+        fromGroupId,
+        toGroupId: groupId,
+        actor: { userId: actorId },
+      })
     })
+
     revalidatePath(`/small-groups/${groupId}`)
+    if (fromGroupId) revalidatePath(`/small-groups/${fromGroupId}`)
     revalidatePath("/small-groups")
     return { success: true, data: undefined }
   } catch {
@@ -410,14 +495,16 @@ export async function addCoupleToGroup(
       }
     }
 
+    // smallGroupId included so each spouse's previous group records their exit —
+    // the two of them can arrive from two different groups, or from none.
     const [member, spouse] = await Promise.all([
       db.member.findUnique({
         where: { id: memberId },
-        select: { firstName: true, lastName: true },
+        select: { firstName: true, lastName: true, smallGroupId: true },
       }),
       db.member.findUnique({
         where: { id: spouseMemberId },
-        select: { firstName: true, lastName: true },
+        select: { firstName: true, lastName: true, smallGroupId: true },
       }),
     ])
     if (!member || !spouse) return { success: false, error: "Member not found" }
@@ -432,14 +519,13 @@ export async function addCoupleToGroup(
           where: { id },
           data: { smallGroupId: groupId, groupStatus: "Member" },
         })
-        await tx.smallGroupLog.create({
-          data: {
-            smallGroupId: groupId,
-            action: "MemberAdded",
-            memberId: id,
-            performedByUserId: actorId,
-            description: `${person.firstName} ${person.lastName} was added to the group (couple)`,
-          },
+        await logMembershipMove(tx, {
+          memberId: id,
+          memberName: `${person.firstName} ${person.lastName}`,
+          fromGroupId: person.smallGroupId,
+          toGroupId: groupId,
+          actor: { userId: actorId },
+          context: "(couple)",
         })
       }
       if (group.status === "Pending") {
@@ -448,6 +534,9 @@ export async function addCoupleToGroup(
     })
 
     revalidatePath(`/small-groups/${groupId}`)
+    for (const from of [member.smallGroupId, spouse.smallGroupId]) {
+      if (from) revalidatePath(`/small-groups/${from}`)
+    }
     revalidatePath("/small-groups")
     return { success: true, data: undefined }
   } catch {
@@ -500,10 +589,28 @@ export async function updateMemberGroupStatus(
   if (authError) return { success: false, error: authError.error }
 
   try {
-    await db.member.update({
+    const actorId = await getActorId()
+    const member = await db.member.findUnique({
       where: { id: memberId },
-      data: { groupStatus: status },
+      select: { firstName: true, lastName: true, groupStatus: true },
     })
+    if (!member) return { success: false, error: "Member not found" }
+
+    await db.$transaction(async (tx) => {
+      await tx.member.update({
+        where: { id: memberId },
+        data: { groupStatus: status },
+      })
+      await logGroupStatusChange(tx, {
+        smallGroupId: groupId,
+        memberId,
+        memberName: `${member.firstName} ${member.lastName}`,
+        from: member.groupStatus,
+        to: status,
+        actor: { userId: actorId },
+      })
+    })
+
     revalidatePath(`/small-groups/${groupId}`)
     return { success: true, data: undefined }
   } catch {

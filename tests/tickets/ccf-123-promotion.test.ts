@@ -49,6 +49,8 @@ const INTENTIONALLY_NOT_COPIED: Record<string, string> = {
   memberId: "the promotion link itself",
   claimedSmallGroupId: "a self-reported claim, superseded by the real placement",
   claimedSatellite: "same — a self-reported claim, not a member attribute",
+  selfServiceToken:
+    "the guest's own portal token; promotion mints a fresh Member.selfServiceToken rather than reusing it",
   scheduleDayOfWeek: "becomes a SchedulePreference row, not a Member column",
   scheduleTimeStart: "becomes a SchedulePreference row, not a Member column",
   scheduleTimeEnd: "becomes a SchedulePreference row, not a Member column",

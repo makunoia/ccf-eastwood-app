@@ -7,21 +7,15 @@ import { IconCheck, IconClock, IconMessageCircle, IconX } from "@tabler/icons-re
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { TimelineEntry } from "@/components/ui/timeline-entry"
-import { logActorName } from "@/lib/small-group-log"
+import { logActorName, SMALL_GROUP_LOG_LABEL } from "@/lib/small-group-log"
+import type { SmallGroupLogAction } from "@/app/generated/prisma/client"
 import { toast } from "sonner"
 import { addCatchMechComment } from "../../matching-actions"
 
 type SmallGroupLogEntry = {
   kind: "smallGroupLog"
   id: string
-  action:
-    | "GroupCreated"
-    | "MemberAdded"
-    | "MemberRemoved"
-    | "MemberTransferred"
-    | "TempAssignmentCreated"
-    | "TempAssignmentConfirmed"
-    | "TempAssignmentRejected"
+  action: SmallGroupLogAction
   description: string | null
   createdAt: Date
   smallGroup: { id: string; name: string }
@@ -39,15 +33,6 @@ type CommentEntry = {
 
 export type CatchMechActivityEntry = SmallGroupLogEntry | CommentEntry
 
-const ACTION_LABEL: Record<SmallGroupLogEntry["action"], string> = {
-  GroupCreated: "Group created",
-  MemberAdded: "Added to DGroup",
-  MemberRemoved: "Removed from DGroup",
-  MemberTransferred: "Transferred to another group",
-  TempAssignmentCreated: "Temporary assignment created",
-  TempAssignmentConfirmed: "Temporary assignment confirmed",
-  TempAssignmentRejected: "Temporary assignment rejected",
-}
 
 function iconForAction(action: SmallGroupLogEntry["action"]) {
   if (action === "TempAssignmentRejected" || action === "MemberRemoved") {
@@ -143,7 +128,7 @@ export function CatchMechActivityLog({ entries, requestId, canViewSmallGroup }: 
                   <p className="text-xs text-muted-foreground">Action by {logActorName(entry)}</p>
                 )}
                 <p className="text-sm font-medium">
-                  {entry.description ?? ACTION_LABEL[entry.action]}
+                  {entry.description ?? SMALL_GROUP_LOG_LABEL[entry.action]}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {canViewSmallGroup ? (

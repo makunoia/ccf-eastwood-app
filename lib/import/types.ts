@@ -65,10 +65,16 @@ export type UnmatchedLeaderRow = {
   leaderMobile: string
 }
 
+/**
+ * How an unmatched leader column in the CSV gets turned into a real Member.
+ *
+ * There is deliberately no "none" variant: SmallGroup.leaderId is NOT NULL, so a
+ * group cannot be imported without a leader. Rows left unresolved are skipped
+ * with an explanatory error rather than creating a group nobody leads.
+ */
 export type LeaderResolution =
   | { type: "link"; memberId: string; memberName: string }
   | { type: "create"; firstName: string; lastName: string; email?: string; mobile?: string }
-  | { type: "none" }
 
 export type ImportWizardConfig = {
   entity: ImportEntity

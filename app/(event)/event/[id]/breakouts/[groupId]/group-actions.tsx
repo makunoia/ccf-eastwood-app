@@ -41,6 +41,7 @@ import {
   missingTimothyFields,
 } from "@/lib/breakouts/profile"
 import { FacilitatorLeadership } from "@/components/breakouts/facilitator-leadership"
+import { BreakoutEnabledSwitch } from "../enabled-switch"
 
 /** Shown, not inherited — a breakout group's criteria are its own. */
 type LedGroup = {
@@ -303,11 +304,14 @@ export function GroupActions({
   eventId,
   lifeStages,
   volunteers,
+  isEnabled,
 }: {
   group: EditableGroupData
   eventId: string
   lifeStages: { id: string; name: string }[]
   volunteers: Volunteer[]
+  /** Separate from `group` because it isn't part of the edit form — it's a switch, not a field. */
+  isEnabled: boolean
 }) {
   const router = useRouter()
   const [editOpen, setEditOpen] = React.useState(false)
@@ -328,6 +332,14 @@ export function GroupActions({
 
   return (
     <>
+      <BreakoutEnabledSwitch
+        key={`${group.id}-${isEnabled}`}
+        groupId={group.id}
+        eventId={eventId}
+        isEnabled={isEnabled}
+        groupName={group.name}
+        showLabel
+      />
       <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
         <IconPencil className="size-4" />
         Edit

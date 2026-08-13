@@ -8,6 +8,26 @@ import {
   getSpouseForMember,
 } from "@/app/(dashboard)/small-groups/actions"
 
+/**
+ * Every DGroup requires a leader (SmallGroup.leaderId is NOT NULL). These tests
+ * don't care who it is, so each group gets a throwaway member. The leader has no
+ * smallGroupId of their own, so they never count toward a group's roster.
+ */
+let __leaderSeq = 0
+async function aLeader(): Promise<string> {
+  const m = await db.member.create({
+    data: {
+      firstName: `Leader${++__leaderSeq}`,
+      lastName: "Seed",
+      dateJoined: new Date(),
+      language: [],
+    },
+    select: { id: true },
+  })
+  return m.id
+}
+
+
 beforeEach(async () => {
   await db.$executeRaw`TRUNCATE "Family", "FamilyMember", "Member", "Guest", "SmallGroup", "SmallGroupMemberRequest", "SmallGroupLog", "LifeStage", "MatchingWeightConfig" RESTART IDENTITY CASCADE`
 })
@@ -175,7 +195,7 @@ describe("addCoupleToGroup", () => {
   it("adds both spouses atomically with two log entries", async () => {
     const { husband, wife } = await seedCouple()
     const group = await db.smallGroup.create({
-      data: { name: "Couples G", groupType: "Couples" },
+      data: { leaderId: await aLeader(), name: "Couples G", groupType: "Couples" },
     })
 
     const result = await addCoupleToGroup(group.id, husband.id, wife.id)
@@ -200,7 +220,7 @@ describe("addCoupleToGroup", () => {
     const { husband, wife } = await seedCouple()
     const existing = await seedMember("Existing")
     const group = await db.smallGroup.create({
-      data: { name: "Tight G", groupType: "Couples", memberLimit: 2 },
+      data: { leaderId: await aLeader(), name: "Tight G", groupType: "Couples", memberLimit: 2 },
     })
     await db.member.update({
       where: { id: existing.id },
@@ -222,7 +242,7 @@ describe("addCoupleToGroup", () => {
   it("rejects a member paired with themselves", async () => {
     const solo = await seedMember("Solo")
     const group = await db.smallGroup.create({
-      data: { name: "G", groupType: "Couples" },
+      data: { leaderId: await aLeader(), name: "G", groupType: "Couples" },
     })
     const result = await addCoupleToGroup(group.id, solo.id, solo.id)
     expect(result.success).toBe(false)
@@ -232,7 +252,7 @@ describe("addCoupleToGroup", () => {
 describe("getSpouseForMember action", () => {
   it("returns spouse info including their current group", async () => {
     const { husband, wife } = await seedCouple()
-    const someGroup = await db.smallGroup.create({ data: { name: "Existing G" } })
+    const someGroup = await db.smallGroup.create({ data: { leaderId: await aLeader(), name: "Existing G" } })
     await db.member.update({
       where: { id: wife.id },
       data: { smallGroupId: someGroup.id, groupStatus: "Member" },
@@ -248,9 +268,9 @@ describe("getSpouseForMember action", () => {
 
 describe("matching excludes Couples groups from individual suggestions", () => {
   it("suggests only Regular groups to a guest", async () => {
-    const regular = await db.smallGroup.create({ data: { name: "Regular G" } })
+    const regular = await db.smallGroup.create({ data: { leaderId: await aLeader(), name: "Regular G" } })
     await db.smallGroup.create({
-      data: { name: "Couples G", groupType: "Couples" },
+      data: { leaderId: await aLeader(), name: "Couples G", groupType: "Couples" },
     })
     const guest = await db.guest.create({
       data: { firstName: "Seeker", lastName: "Guest", language: [] },
@@ -261,9 +281,9 @@ describe("matching excludes Couples groups from individual suggestions", () => {
   })
 
   it("suggests only Regular groups to a member (regression: Regular default keeps prior behavior)", async () => {
-    const regular = await db.smallGroup.create({ data: { name: "Regular G" } })
+    const regular = await db.smallGroup.create({ data: { leaderId: await aLeader(), name: "Regular G" } })
     await db.smallGroup.create({
-      data: { name: "Couples G", groupType: "Couples" },
+      data: { leaderId: await aLeader(), name: "Couples G", groupType: "Couples" },
     })
     const member = await seedMember("Seeker")
 

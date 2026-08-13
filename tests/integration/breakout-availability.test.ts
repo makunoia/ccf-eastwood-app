@@ -169,6 +169,7 @@ describe("breakoutPickerReadiness — what the form builder warns on", () => {
     // configured?" — a fixable standing problem, not a runtime one.
     expect(await breakoutPickerReadiness(event.id)).toEqual({
       totalGroups: 3,
+      enabledGroups: 3,
       staffedGroups: 1,
     })
   })
@@ -182,6 +183,7 @@ describe("breakoutPickerReadiness — what the form builder warns on", () => {
 
     expect(await breakoutPickerReadiness(event.id)).toEqual({
       totalGroups: 1,
+      enabledGroups: 1,
       staffedGroups: 1,
     })
   })
@@ -193,6 +195,7 @@ describe("breakoutPickerReadiness — what the form builder warns on", () => {
 
     expect(await breakoutPickerReadiness(event.id)).toEqual({
       totalGroups: 2,
+      enabledGroups: 2,
       staffedGroups: 0,
     })
   })
@@ -207,6 +210,7 @@ describe("breakoutPickerReadiness — what the form builder warns on", () => {
 
     expect(await breakoutPickerReadiness(event.id)).toEqual({
       totalGroups: 1,
+      enabledGroups: 1,
       staffedGroups: 0,
     })
   })

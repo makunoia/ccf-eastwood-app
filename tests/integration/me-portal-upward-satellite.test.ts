@@ -12,6 +12,26 @@ import { requestGroupChange, setUpwardSatellite } from "@/app/me/[token]/actions
 import { submitMemberConfirmations } from "@/app/small-group-confirmation/[token]/actions"
 import { clearUpwardSatelliteOnConfirm } from "@/lib/small-groups/upward-satellite"
 
+/**
+ * Every DGroup requires a leader (SmallGroup.leaderId is NOT NULL). These tests
+ * don't care who it is, so each group gets a throwaway member. The leader has no
+ * smallGroupId of their own, so they never count toward a group's roster.
+ */
+let __leaderSeq = 0
+async function aLeader(): Promise<string> {
+  const m = await db.member.create({
+    data: {
+      firstName: `Leader${++__leaderSeq}`,
+      lastName: "Seed",
+      dateJoined: new Date(),
+      language: [],
+    },
+    select: { id: true },
+  })
+  return m.id
+}
+
+
 beforeEach(async () => {
   await db.$executeRaw`TRUNCATE "Member", "Guest", "SmallGroup", "SmallGroupLog", "SmallGroupMemberRequest", "ConfirmationSubmission" RESTART IDENTITY CASCADE`
 })
@@ -32,8 +52,11 @@ async function seedMember(firstName: string, token?: string) {
   })
 }
 
-async function seedGroup(name: string, leaderId: string | null = null) {
-  return db.smallGroup.create({ data: { name, leaderId, language: [] } })
+/** Groups always have a leader; callers who don't care about who get a throwaway. */
+async function seedGroup(name: string, leaderId?: string) {
+  return db.smallGroup.create({
+    data: { name, leaderId: leaderId ?? (await aLeader()), language: [] },
+  })
 }
 
 describe("setUpwardSatellite", () => {
@@ -164,15 +187,58 @@ describe("setUpwardSatellite", () => {
     expect(res.success).toBe(false)
   })
 
-  it("rejects a member who leads no group", async () => {
+  it("accepts a member who leads no group, recording it on the member", async () => {
+    // Behaviour change: this used to be refused ("Only DGroup leaders can set
+    // this"), which put the question after the thing it gates. The portal now
+    // asks who your leader is *before* you add the groups you lead, so someone
+    // who leads nothing needs somewhere to put the answer — Member.upwardSatellite.
     const member = await seedMember("Plain", "tok-1")
-    // Leads nothing — there is no group to record the satellite on.
+
     const res = await setUpwardSatellite("tok-1", "CCF Cebu")
 
-    expect(res.success).toBe(false)
-    if (res.success) return
-    expect(res.error).toMatch(/leaders/i)
+    expect(res.success).toBe(true)
+    const refreshed = await db.member.findUnique({ where: { id: member.id } })
+    expect(refreshed?.upwardSatellite).toBe("CCF Cebu")
     expect(await db.smallGroup.count({ where: { leaderId: member.id } })).toBe(0)
+  })
+
+  it("records the satellite on the member as well as their groups", async () => {
+    const leader = await seedMember("Lea", "tok-1")
+    const led = await seedGroup("Led Group", leader.id)
+
+    expect((await setUpwardSatellite("tok-1", "CCF Iloilo")).success).toBe(true)
+
+    expect(
+      (await db.member.findUnique({ where: { id: leader.id } }))?.upwardSatellite
+    ).toBe("CCF Iloilo")
+    expect(
+      (await db.smallGroup.findUnique({ where: { id: led.id } }))?.parentSatellite
+    ).toBe("CCF Iloilo")
+  })
+
+  it("clears both copies when passed null", async () => {
+    const leader = await seedMember("Lea", "tok-1")
+    await db.member.update({
+      where: { id: leader.id },
+      data: { upwardSatellite: "CCF Cebu" },
+    })
+    const led = await db.smallGroup.create({
+      data: {
+        name: "Led Group",
+        leaderId: leader.id,
+        parentSatellite: "CCF Cebu",
+        language: [],
+      },
+    })
+
+    expect((await setUpwardSatellite("tok-1", null)).success).toBe(true)
+
+    expect(
+      (await db.member.findUnique({ where: { id: leader.id } }))?.upwardSatellite
+    ).toBeNull()
+    expect(
+      (await db.smallGroup.findUnique({ where: { id: led.id } }))?.parentSatellite
+    ).toBeNull()
   })
 
   it("rejects an unknown token", async () => {
@@ -327,6 +393,26 @@ describe("clearUpwardSatelliteOnConfirm", () => {
       .toBeNull()
     expect((await db.smallGroup.findUnique({ where: { id: otherLeaders.id } }))?.parentSatellite)
       .toBe("CCF Davao")
+  })
+
+  it("clears the member-level copy too, including for someone who leads nothing", async () => {
+    // Both copies record one fact, so a confirmed local membership has to take
+    // out both — otherwise the portal keeps showing the stale satellite.
+    const confirmed = await seedMember("Confirmed")
+    const untouched = await seedMember("Untouched")
+    await db.member.updateMany({
+      where: { id: { in: [confirmed.id, untouched.id] } },
+      data: { upwardSatellite: "CCF Cebu" },
+    })
+
+    await db.$transaction((tx) => clearUpwardSatelliteOnConfirm(tx, [confirmed.id]))
+
+    expect(
+      (await db.member.findUnique({ where: { id: confirmed.id } }))?.upwardSatellite
+    ).toBeNull()
+    expect(
+      (await db.member.findUnique({ where: { id: untouched.id } }))?.upwardSatellite
+    ).toBe("CCF Cebu")
   })
 
   it("is a no-op for an empty batch — most confirmations involve no leader", async () => {

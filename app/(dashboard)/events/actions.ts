@@ -33,8 +33,10 @@ import {
   resolveAnonymousGuest,
   resolveConfirmedGuest,
   resolveConfirmedMember,
+  type TouchedFields,
   type AssignedBreakout,
 } from "@/lib/events/registration-core"
+import { ProfileCollisionError } from "@/lib/events/profile-merge"
 import { isEventStaffViewer } from "@/lib/events/staff-viewer"
 import { registrantSchema } from "@/lib/validations/event-registrant"
 import {
@@ -44,6 +46,7 @@ import {
   seriesContainsDate,
 } from "@/lib/events/occurrence-series"
 import { isWithinRegistrationWindow } from "@/lib/events/registration-window"
+import { latestWalkInSession } from "@/lib/events/walk-in-session"
 import { fieldsForContext } from "@/lib/forms/context-config"
 import { getEffectiveFormConfig } from "@/lib/forms/context-config-server"
 import {
@@ -590,7 +593,10 @@ export async function createRegistrant(
   selectedBreakoutGroupId?: string | null,
   // Walk-in mode (check-in kiosk): reuse an existing registration instead of
   // erroring, and check the person in immediately after registering.
-  walkIn?: { occurrenceId: string | null }
+  walkIn?: { occurrenceId: string | null },
+  // Fields the person edited on the review screen (CCF-147) — these overwrite the
+  // stored profile; everything else keeps fill-if-empty.
+  touchedFields?: TouchedFields
 ): Promise<ActionResult<{ id: string; breakoutGroup: AssignedBreakout }>> {
   const parsed = registrantSchema.safeParse(raw)
   if (!parsed.success) {
@@ -662,7 +668,7 @@ export async function createRegistrant(
         return { success: false, error: "You're already registered for this event." }
       }
 
-      const stored = await resolveConfirmedMember(confirmedMemberId, parsed.data)
+      const stored = await resolveConfirmedMember(confirmedMemberId, parsed.data, touchedFields)
       const result = await completeEventRegistration({
         eventId,
         person: { memberId: confirmedMemberId },
@@ -686,7 +692,7 @@ export async function createRegistrant(
         return { success: false, error: "You're already registered for this event." }
       }
 
-      const stored = await resolveConfirmedGuest(confirmedGuestId, parsed.data)
+      const stored = await resolveConfirmedGuest(confirmedGuestId, parsed.data, touchedFields)
       const result = await completeEventRegistration({
         eventId,
         person: { guestId: confirmedGuestId },
@@ -727,7 +733,12 @@ export async function createRegistrant(
       })
       return { success: true, data: result }
     }
-  } catch {
+  } catch (error) {
+    // A contact collision is the person's to fix, so it has to survive the
+    // catch-all as itself rather than becoming "please try again".
+    if (error instanceof ProfileCollisionError) {
+      return { success: false, error: error.message }
+    }
     return { success: false, error: "Failed to register. Please try again." }
   }
 }
@@ -1258,6 +1269,12 @@ export async function checkInToOccurrence(
  *
  * Closing only clears the pointer when it points *here*, so closing yesterday's
  * session cannot shut a door aimed at today's.
+ *
+ * An event set to follow its latest session has no pointer to move: the door is
+ * resolved per request. This still reports whether the door moved, by asking
+ * whether *this* session is the latest one — a toast that claimed "walk-in now
+ * registers into this session" while the door sat on a newer one would be worse
+ * than no toast.
  */
 export async function setOccurrenceCheckinOpen(
   occurrenceId: string,
@@ -1272,7 +1289,7 @@ export async function setOccurrenceCheckinOpen(
     // event's walk-in door moves, and a caller doesn't get to decide that.
     const occurrence = await db.eventOccurrence.findUnique({
       where: { id: occurrenceId },
-      select: { id: true, eventId: true },
+      select: { id: true, eventId: true, event: { select: { walkInSessionMode: true } } },
     })
     if (!occurrence) return { success: false, error: "Session not found" }
 
@@ -1284,7 +1301,10 @@ export async function setOccurrenceCheckinOpen(
     // Reported back so the UI can say what happened to the door instead of
     // guessing: closing a session the door was never aimed at leaves it alone.
     let walkInChanged = true
-    if (isOpen) {
+    if (occurrence.event.walkInSessionMode === "Latest") {
+      const latest = await latestWalkInSession(occurrence.eventId)
+      walkInChanged = latest?.id === occurrenceId
+    } else if (isOpen) {
       await db.event.update({
         where: { id: occurrence.eventId },
         data: { walkInOccurrenceId: occurrenceId },
@@ -1708,7 +1728,9 @@ export async function createHouseholdRegistration(
   confirmedGuestId?: string | null,
   skipDeduplication?: boolean,
   selectedBreakoutGroupId?: string | null,
-  walkIn?: { occurrenceId: string | null }
+  walkIn?: { occurrenceId: string | null },
+  /** Review-screen edits (CCF-147) — forwarded to the primary's resolver. */
+  touchedFields?: TouchedFields
 ): Promise<
   ActionResult<{
     id: string
@@ -1783,7 +1805,8 @@ export async function createHouseholdRegistration(
     confirmedGuestId,
     skipDeduplication,
     selectedBreakoutGroupId,
-    walkIn
+    walkIn,
+    touchedFields
   )
   if (!primaryResult.success) return primaryResult
 

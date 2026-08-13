@@ -17,6 +17,7 @@ import { DEFAULT_WEIGHTS } from "@/lib/validations/matching-weights"
 import { MatchingContext } from "@/app/generated/prisma/client"
 import { buildStoredScheduleSlot } from "@/lib/matching/candidate-schedule"
 import { clearUpwardSatelliteOnConfirm } from "@/lib/small-groups/upward-satellite"
+import { logMembershipMove } from "@/lib/small-groups/membership-log"
 import type { MatchResult, CandidateProfile, TimeSlot } from "@/lib/matching/types"
 
 /** Meeting times are optional — a day-only schedule still yields a slot. */
@@ -648,18 +649,23 @@ export async function confirmCatchMechCoupleRequests(
               where: { id: guest.memberId },
               data: { smallGroupId: group.id, groupStatus: "Member" },
             })
-            await tx.smallGroupLog.create({
-              data: {
-                smallGroupId: group.id,
-                action: "MemberAdded",
-                memberId: guest.memberId,
-                performedByUserId: session.user.id ?? null,
-                description: `${guest.firstName} ${guest.lastName} joined the group (couple confirmation)`,
-              },
+            // That member may already sit in a group, so this is a move, not just
+            // an arrival — `logMembershipMove` records whichever it turns out to be.
+            await logMembershipMove(tx, {
+              memberId: guest.memberId,
+              memberName: `${guest.firstName} ${guest.lastName}`,
+              fromGroupId: guest.member?.smallGroupId ?? null,
+              toGroupId: group.id,
+              actor: { userId: session.user.id ?? null },
+              context: "(couple confirmation)",
             })
           }
         } else if (req.memberId && req.member) {
           const memberName = `${req.member.firstName} ${req.member.lastName}`
+          // Where they actually are, not `req.fromGroupId` — that records the group
+          // the request was raised against and is null for a request that never
+          // named one, which would lose the departure entirely.
+          const fromGroupId = req.member.smallGroupId
           await tx.member.update({
             where: { id: req.memberId },
             data: { smallGroupId: group.id, groupStatus: "Member" },
@@ -676,15 +682,15 @@ export async function confirmCatchMechCoupleRequests(
               description: `${memberName} was confirmed by admin as part of a couple`,
             },
           })
-          await tx.smallGroupLog.create({
-            data: {
-              smallGroupId: group.id,
-              action: "MemberTransferred",
-              memberId: req.memberId,
-              fromGroupId: req.fromGroupId ?? null,
-              toGroupId: group.id,
-              description: `${memberName} transferred into this group (couple confirmation)`,
-            },
+          // Writes the departure into the old group too, which the single
+          // destination-side entry here used to drop.
+          await logMembershipMove(tx, {
+            memberId: req.memberId,
+            memberName,
+            fromGroupId,
+            toGroupId: group.id,
+            actor: { userId: session.user.id ?? null },
+            context: "(couple confirmation)",
           })
         }
 

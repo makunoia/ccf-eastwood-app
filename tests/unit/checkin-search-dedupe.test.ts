@@ -307,7 +307,10 @@ describe("walk-in page – the door surface", () => {
   })
 
   it("takes the session from configuration, never from the URL", () => {
-    expect(page).toContain("event.walkInOccurrence")
+    // The pin and the Latest-mode lookup both live behind this one resolver, so
+    // the page has no way to name a session of its own — see lib/events/walk-in-session.ts.
+    expect(page).toContain("resolveWalkInSession(event)")
+    expect(page).toContain("walkInSessionMode: true")
     // `mobile` is the only search param it reads — no `checkin` to hand-edit.
     // (The string "checkin" still appears in the back-link to the board.)
     expect(page).toContain("searchParams: Promise<{ mobile?: string }>")

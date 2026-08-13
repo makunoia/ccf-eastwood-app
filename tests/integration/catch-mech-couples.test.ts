@@ -6,6 +6,26 @@ import {
   findCatchMechSmallGroupMatches,
 } from "@/app/(event)/event/[id]/catch-mech/matching-actions"
 
+/**
+ * Every DGroup requires a leader (SmallGroup.leaderId is NOT NULL). These tests
+ * don't care who it is, so each group gets a throwaway member. The leader has no
+ * smallGroupId of their own, so they never count toward a group's roster.
+ */
+let __leaderSeq = 0
+async function aLeader(): Promise<string> {
+  const m = await db.member.create({
+    data: {
+      firstName: `Leader${++__leaderSeq}`,
+      lastName: "Seed",
+      dateJoined: new Date(),
+      language: [],
+    },
+    select: { id: true },
+  })
+  return m.id
+}
+
+
 beforeEach(async () => {
   await db.$executeRaw`TRUNCATE "Family", "FamilyMember", "Member", "Guest", "SmallGroup", "SmallGroupMemberRequest", "SmallGroupLog", "EventRegistrant", "Event", "BreakoutGroup", "MatchingWeightConfig", "SchedulePreference" RESTART IDENTITY CASCADE`
 })
@@ -62,7 +82,7 @@ describe("findSpouseOfPerson — guest-capable derivation", () => {
   })
 
   it("resolves a guest's member-spouse with their current group", async () => {
-    const group = await db.smallGroup.create({ data: { name: "G" } })
+    const group = await db.smallGroup.create({ data: { leaderId: await aLeader(), name: "G" } })
     const memberWife = await db.member.create({
       data: {
         firstName: "MemberWife", lastName: "Cruz", dateJoined: new Date(),
@@ -98,7 +118,7 @@ describe("confirmCatchMechCoupleRequests", () => {
     const { event, breakout } = await seedEventWithBreakout()
     const { husband, wife, family } = await seedGuestCouple()
     const group = await db.smallGroup.create({
-      data: {
+      data: { leaderId: await aLeader(),
         name: "Couples SG",
         groupType: groupOverrides.groupType ?? "Couples",
         genderFocus: "Mixed",
@@ -175,7 +195,7 @@ describe("confirmCatchMechCoupleRequests", () => {
   it("rejects when the requests target different groups", async () => {
     const { event, reqH, wife } = await seedPendingCouple()
     const otherGroup = await db.smallGroup.create({
-      data: { name: "Other", groupType: "Couples" },
+      data: { leaderId: await aLeader(), name: "Other", groupType: "Couples" },
     })
     const otherReq = await db.smallGroupMemberRequest.create({
       data: { smallGroupId: otherGroup.id, guestId: wife.id },
@@ -205,7 +225,8 @@ describe("confirmCatchMechCoupleRequests", () => {
     ])
     expect(gH?.memberId).toBeNull()
     expect(gW?.memberId).toBeNull()
-    expect(await db.member.count()).toBe(0)
+    // Scoped to promoted members — a bare count would also pick up the group's leader.
+    expect(await db.member.count({ where: { guest: { isNot: null } } })).toBe(0)
   })
 
   it("rejects the same request passed twice", async () => {
@@ -218,9 +239,9 @@ describe("confirmCatchMechCoupleRequests", () => {
 describe("catch-mech matching — couples groups gated on having a spouse", () => {
   it("includes couples groups for a registrant with a spouse, excludes them otherwise", async () => {
     const { event } = await seedEventWithBreakout()
-    const regularGroup = await db.smallGroup.create({ data: { name: "Regular G" } })
+    const regularGroup = await db.smallGroup.create({ data: { leaderId: await aLeader(), name: "Regular G" } })
     const couplesGroup = await db.smallGroup.create({
-      data: { name: "Couples G", groupType: "Couples", genderFocus: "Mixed" },
+      data: { leaderId: await aLeader(), name: "Couples G", groupType: "Couples", genderFocus: "Mixed" },
     })
 
     const { husband } = await seedGuestCouple()

@@ -47,7 +47,7 @@ export function clusterFormPrerequisites(): Promise<TogglePrerequisites> {
 }
 
 /**
- * An event's form, including the three separate reasons its Breakout step can be
+ * An event's form, including the four separate reasons its Breakout step can be
  * enabled and still never appear. They are mutually exclusive and ordered most-
  * to least-decisive, so the admin gets the one thing to fix rather than a list.
  */
@@ -55,7 +55,7 @@ export async function eventFormPrerequisites(
   eventId: string,
   autoAssignBreakout: boolean
 ): Promise<TogglePrerequisites> {
-  const [globals, { totalGroups, staffedGroups }] = await Promise.all([
+  const [globals, { totalGroups, enabledGroups, staffedGroups }] = await Promise.all([
     globalFieldPrerequisites(),
     breakoutPickerReadiness(eventId),
   ])
@@ -72,11 +72,18 @@ export async function eventFormPrerequisites(
       message:
         "This event has no breakout groups yet, so the step won't appear. Create one in Breakouts.",
     }
-  } else if (staffedGroups === 0) {
-    // Walk-in only — the public form offers every group regardless of staffing.
+  } else if (enabledGroups === 0) {
+    // Distinct from "no groups": the fix is a switch, not a new group.
     prerequisites.sectionBreakout = {
-      message: `Walk-ins only see groups whose facilitator has checked in, and none of the ${totalGroups} breakout group${
-        totalGroups === 1 ? " has" : "s have"
+      message: `All ${totalGroups} of this event's breakout group${
+        totalGroups === 1 ? " is" : "s are"
+      } switched off, so there is nothing to offer and the step won't appear. Switch one on in Breakouts.`,
+    }
+  } else if (staffedGroups === 0) {
+    // Walk-in only — the public form offers every enabled group regardless of staffing.
+    prerequisites.sectionBreakout = {
+      message: `Walk-ins only see groups whose facilitator has checked in, and none of the ${enabledGroups} breakout group${
+        enabledGroups === 1 ? " has" : "s have"
       } a facilitator assigned — so this step won't appear at the door. Assign facilitators in Breakouts.`,
       contexts: ["WalkIn"],
     }

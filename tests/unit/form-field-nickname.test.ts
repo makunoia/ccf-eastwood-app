@@ -187,7 +187,11 @@ describe("nickname — the surfaces read the toggle", () => {
   )
 
   it("renders the input only when the field is on", () => {
-    expect(form).toContain("{cfg.fieldNickname && (")
+    // Since CCF-147 the gate also hides a field the pulled profile already
+    // answered, so the toggle is read through `showPersonalField` — which
+    // returns false for a disabled field before anything else is considered.
+    expect(form).toContain('showPersonalField("fieldNickname")')
+    expect(form).toContain('if (!cfg[field]) return false')
     // The label carries a `*` marker since CCF-142, so match the field rather
     // than the whole element.
     expect(form).toMatch(/<Label htmlFor="nickname">\s*Nickname/)

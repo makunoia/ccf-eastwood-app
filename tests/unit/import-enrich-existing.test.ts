@@ -4,6 +4,26 @@ import { importGuests } from "@/app/(dashboard)/guests/import-actions"
 import { importMembers } from "@/app/(dashboard)/members/import-actions"
 import { importSmallGroups } from "@/app/(dashboard)/small-groups/import-actions"
 
+/**
+ * Every DGroup requires a leader (SmallGroup.leaderId is NOT NULL). These tests
+ * don't care who it is, so each group gets a throwaway member. The leader has no
+ * smallGroupId of their own, so they never count toward a group's roster.
+ */
+let __leaderSeq = 0
+async function aLeader(): Promise<string> {
+  const m = await db.member.create({
+    data: {
+      firstName: `Leader${++__leaderSeq}`,
+      lastName: "Seed",
+      dateJoined: new Date(),
+      language: [],
+    },
+    select: { id: true },
+  })
+  return m.id
+}
+
+
 afterAll(async () => {
   await db.$disconnect()
 })
@@ -108,7 +128,7 @@ describe("existing-record enrichment during imports", () => {
   })
 
   it("fills missing small-group fields without overwriting populated ones", async () => {
-    const leader = await db.member.create({
+    await db.member.create({
       data: {
         firstName: "Leader",
         lastName: "Person",
@@ -118,8 +138,12 @@ describe("existing-record enrichment during imports", () => {
       },
       select: { id: true },
     })
+    // The group already has a leader — it always does — so the CSV naming a
+    // different one must not win. Enrichment adds data; it never replaces it.
+    const incumbentLeaderId = await aLeader()
     const existing = await db.smallGroup.create({
       data: {
+        leaderId: incumbentLeaderId,
         name: "Alpha Group",
         locationCity: "Quezon City",
       },
@@ -148,7 +172,7 @@ describe("existing-record enrichment during imports", () => {
       select: { leaderId: true, locationCity: true, memberLimit: true },
     })
     expect(updated).toMatchObject({
-      leaderId: leader.id,
+      leaderId: incumbentLeaderId,
       locationCity: "Quezon City",
       memberLimit: 12,
     })

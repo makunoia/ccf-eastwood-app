@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures/registration-event"
+import { test, expect, startFormManually } from "./fixtures/registration-event"
 import type { Page } from "@playwright/test"
 
 /**
@@ -21,7 +21,8 @@ async function bodyPointerEventsLock(page: Page) {
 }
 
 async function gotoDGroupStep(page: Page, registerPath: string) {
-  await page.goto(registerPath)
+  // Past the CCF-147 mobile-number gate — these specs are about the DGroup step.
+  await startFormManually(page, registerPath)
   await page.getByLabel("First Name").fill("Juan")
   await page.getByLabel("Last Name").fill("dela Cruz")
   await page.getByRole("button", { name: "Next", exact: true }).click()

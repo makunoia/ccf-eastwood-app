@@ -322,6 +322,22 @@ export async function promoteGuestToMember(
         })
       }
 
+      // The placement itself, logged separately from any request it answered — the
+      // other three promotion sites pair TempAssignmentConfirmed with this, and a
+      // direct admin promotion usually answers no request at all, so without it the
+      // group's trail has no record of how this member arrived.
+      if (group) {
+        await tx.smallGroupLog.create({
+          data: {
+            smallGroupId: group.id,
+            action: "MemberAdded",
+            memberId,
+            performedByUserId: session.user.id ?? null,
+            description: `${guest.firstName} ${guest.lastName} joined the group after being promoted to member by an admin`,
+          },
+        })
+      }
+
       return memberId
     })
 

@@ -68,6 +68,7 @@ import {
   // autoAssignBreakouts, // CCF-124: re-enable with the Auto-Assign button
 } from "@/app/(dashboard)/events/breakout-actions"
 import { breakoutOccupancy } from "@/lib/breakouts/occupancy"
+import { BreakoutEnabledSwitch } from "./enabled-switch"
 import { checkBreakoutDuplicates, importBreakoutGroups } from "./import-actions"
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -92,6 +93,7 @@ export type BreakoutGroupRow = {
   coFacilitator: { id: string; member: { id: string; firstName: string; lastName: string; ledGroups: LedGroup[] } } | null
   memberLimit: number | null
   memberCount: number
+  isEnabled: boolean
   linkedSmallGroupId: string | null
   linkedSmallGroup: { id: string; name: string } | null
   lifeStages: { id: string; name: string }[]
@@ -454,14 +456,23 @@ function buildColumns(
     {
       accessorKey: "name",
       header: "Name",
+      // The badge, not just the switch: a row you are scanning past should say
+      // it is out of play without your eye having to reach the last column.
       cell: ({ row }) => (
-        <Link
-          href={`/event/${eventId}/breakouts/${row.original.id}`}
-          onClick={onNavigate}
-          className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-        >
-          {row.original.name}
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/event/${eventId}/breakouts/${row.original.id}`}
+            onClick={onNavigate}
+            className={`font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors${
+              row.original.isEnabled ? "" : " text-muted-foreground"
+            }`}
+          >
+            {row.original.name}
+          </Link>
+          {!row.original.isEnabled && (
+            <Badge variant="outline" className="text-xs text-muted-foreground">Off</Badge>
+          )}
+        </div>
       ),
     },
     {
@@ -514,6 +525,20 @@ function buildColumns(
         ),
     },
     {
+      id: "enabled",
+      header: "Enabled",
+      accessorFn: (row) => (row.isEnabled ? 1 : 0),
+      cell: ({ row }) => (
+        <BreakoutEnabledSwitch
+          key={`${row.original.id}-${row.original.isEnabled}`}
+          groupId={row.original.id}
+          eventId={eventId}
+          isEnabled={row.original.isEnabled}
+          groupName={row.original.name}
+        />
+      ),
+    },
+    {
       id: "actions",
       cell: ({ row }) => (
         <RowActions
@@ -552,6 +577,7 @@ export function BreakoutGroupsTable({
 }: Props) {
   const [search, setSearch] = React.useState("")
   const [lifeStageFilter, setLifeStageFilter] = React.useState("_all")
+  const [statusFilter, setStatusFilter] = React.useState<"_all" | "enabled" | "disabled">("_all")
   const [createOpen, setCreateOpen] = React.useState(false)
   const [importOpen, setImportOpen] = React.useState(false)
   const [editingGroup, setEditingGroup] = React.useState<BreakoutGroupRow | null>(null)
@@ -572,8 +598,13 @@ export function BreakoutGroupsTable({
     if (lifeStageFilter !== "_all") {
       rows = rows.filter((g) => g.lifeStages.some((ls) => ls.id === lifeStageFilter))
     }
+    if (statusFilter !== "_all") {
+      rows = rows.filter((g) => g.isEnabled === (statusFilter === "enabled"))
+    }
     return rows
-  }, [breakoutGroups, search, lifeStageFilter])
+  }, [breakoutGroups, search, lifeStageFilter, statusFilter])
+
+  const hasFilters = search.trim() !== "" || lifeStageFilter !== "_all" || statusFilter !== "_all"
 
   const saveBreakoutIds = React.useCallback(() => {
     sessionStorage.setItem("breakoutListIds", JSON.stringify(filtered.map((g) => g.id)))
@@ -654,10 +685,13 @@ export function BreakoutGroupsTable({
         searchValue={search}
         searchPlaceholder="Search by name or facilitator…"
         onSearch={setSearch}
-        activeCount={lifeStageFilter !== "_all" ? 1 : 0}
+        activeCount={
+          (lifeStageFilter !== "_all" ? 1 : 0) + (statusFilter !== "_all" ? 1 : 0)
+        }
         onClear={() => {
           setSearch("")
           setLifeStageFilter("_all")
+          setStatusFilter("_all")
         }}
       >
         <FilterField label="Life stage">
@@ -673,6 +707,21 @@ export function BreakoutGroupsTable({
             </SelectContent>
           </Select>
         </FilterField>
+        <FilterField label="Status">
+          <Select
+            value={statusFilter}
+            onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="_all">All groups</SelectItem>
+              <SelectItem value="enabled">Enabled</SelectItem>
+              <SelectItem value="disabled">Disabled</SelectItem>
+            </SelectContent>
+          </Select>
+        </FilterField>
       </FilterBar>
 
       {/* Table */}
@@ -683,7 +732,7 @@ export function BreakoutGroupsTable({
           emptyState={
             <>
               <IconUsers className="size-8" />
-              <p className="text-sm">{search || lifeStageFilter !== "_all" ? "No groups match your filters." : "No breakout groups yet."}</p>
+              <p className="text-sm">{hasFilters ? "No groups match your filters." : "No breakout groups yet."}</p>
             </>
           }
         />
@@ -694,7 +743,7 @@ export function BreakoutGroupsTable({
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
             <IconUsers className="size-8" />
-            <p className="text-sm">{search || lifeStageFilter !== "_all" ? "No groups match your filters." : "No breakout groups yet."}</p>
+            <p className="text-sm">{hasFilters ? "No groups match your filters." : "No breakout groups yet."}</p>
           </div>
         ) : (
           filtered.map((group) => (
@@ -705,12 +754,27 @@ export function BreakoutGroupsTable({
               className="rounded-lg border bg-card p-4 hover:bg-muted/50 transition-colors"
             >
               <div className="flex items-start justify-between gap-2">
-                <p className="font-medium">{group.name}</p>
+                <p className={`font-medium${group.isEnabled ? "" : " text-muted-foreground"}`}>
+                  {group.name}
+                </p>
                 <div onClick={(e) => e.stopPropagation()}>
                   <RowActions row={group} eventId={eventId} onEdit={setEditingGroup} onDelete={setDeletingGroup} />
                 </div>
               </div>
               <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
+                <span className="text-muted-foreground">Status</span>
+                {/* preventDefault as well as stopPropagation: the whole card is a
+                    Link, and stopping propagation alone still lets it navigate. */}
+                <div onClick={(e) => { e.preventDefault(); e.stopPropagation() }}>
+                  <BreakoutEnabledSwitch
+                    key={`${group.id}-${group.isEnabled}`}
+                    groupId={group.id}
+                    eventId={eventId}
+                    isEnabled={group.isEnabled}
+                    groupName={group.name}
+                    showLabel
+                  />
+                </div>
                 <span className="text-muted-foreground">Facilitator</span>
                 <span>{group.facilitator ? volunteerName(group.facilitator) : <span className="text-muted-foreground">Unassigned</span>}</span>
                 <span className="text-muted-foreground">DGroup</span>

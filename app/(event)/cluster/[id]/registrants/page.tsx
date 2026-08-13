@@ -6,7 +6,7 @@ import {
   getAccessibleClusterEvents,
   getClusterRegistrantRows,
 } from "@/lib/clusters/aggregate"
-import { buildClusterRoster } from "@/lib/clusters/roster"
+import { buildClusterRoster, standingFor } from "@/lib/clusters/roster"
 import { canExport } from "@/lib/permissions"
 import { DetailPageHeader } from "@/components/detail-page-header"
 import { ClusterExportButton } from "./cluster-export-button"
@@ -49,11 +49,18 @@ export default async function ClusterRegistrantsPage({
         eventName: c.event.name,
         registrantId: c.cell!.registrantId,
         checkedIn: c.cell!.checkedIn,
+        standing: standingFor(c.cell!),
       }))
-    const earliest = personEvents
-      .map((e) => registeredAtById.get(e.registrantId))
-      .filter((d): d is Date => d !== undefined)
-      .sort((a, b) => a.getTime() - b.getTime())[0]
+    // "Registered" describes the day when the person has any part in it, so a
+    // series-only registration can't drag the timestamp back to whenever they
+    // joined the series. Only someone with nothing else falls back to it.
+    const dated = (only: boolean) =>
+      personEvents
+        .filter((e) => !only || e.standing !== "SeriesOnly")
+        .map((e) => registeredAtById.get(e.registrantId))
+        .filter((d): d is Date => d !== undefined)
+        .sort((a, b) => a.getTime() - b.getTime())[0]
+    const earliest = dated(true) ?? dated(false)
     return {
       key: person.key,
       firstName: person.firstName,
@@ -64,6 +71,14 @@ export default async function ClusterRegistrantsPage({
       registeredAt: earliest?.toISOString() ?? null,
     }
   })
+
+  // The header describes the DAY, so it counts only what belongs to it — the
+  // series-only people are listed below but tallied separately.
+  const dayRows = rows.filter((r) => r.onClusterDay)
+  const dayPeople = people.filter((p) =>
+    p.events.some((e) => e.standing !== "SeriesOnly")
+  ).length
+  const seriesOnlyPeople = people.length - dayPeople
 
   const exportDate = (cluster.date ?? new Date()).toISOString().split("T")[0]
   const exportSlug =
@@ -87,9 +102,12 @@ export default async function ClusterRegistrantsPage({
         }
         subtitle={
           <p className="text-sm text-muted-foreground">
-            {people.length} {people.length === 1 ? "person" : "people"} ·{" "}
-            {rows.length} registration{rows.length === 1 ? "" : "s"} across{" "}
-            {events.length} event{events.length === 1 ? "" : "s"}
+            {dayPeople} {dayPeople === 1 ? "person" : "people"} · {dayRows.length}{" "}
+            registration{dayRows.length === 1 ? "" : "s"} across {events.length}{" "}
+            event{events.length === 1 ? "" : "s"}
+            {seriesOnlyPeople > 0 && (
+              <> · {seriesOnlyPeople} more on a recurring event&apos;s series</>
+            )}
           </p>
         }
       />

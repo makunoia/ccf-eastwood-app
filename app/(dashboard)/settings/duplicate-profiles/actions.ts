@@ -6,6 +6,7 @@ import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import { isSuperAdmin } from "@/lib/permissions"
 import { repointFamilyLinks } from "@/lib/family-links"
+import { displayPersonName, personNameKey } from "@/lib/people/name-key"
 
 type DuplicateRecord = {
   id: string
@@ -14,8 +15,10 @@ type DuplicateRecord = {
   recordType: "member" | "guest"
 }
 
+export type DuplicateField = "phone" | "email" | "name"
+
 type DuplicateGroup = {
-  field: "phone" | "email"
+  field: DuplicateField
   value: string
   records: DuplicateRecord[]
 }
@@ -23,6 +26,11 @@ type DuplicateGroup = {
 type ActionResult<T = void> =
   | { success: true; data: T }
   | { success: false; error: string }
+
+/** Identity of a record across both tables — ids are unique, the type keeps it readable. */
+function recordKey(r: DuplicateRecord): string {
+  return `${r.recordType}:${r.id}`
+}
 
 export async function getDuplicateProfiles(): Promise<ActionResult<DuplicateGroup[]>> {
   try {
@@ -38,29 +46,41 @@ export async function getDuplicateProfiles(): Promise<ActionResult<DuplicateGrou
 
     const phoneMap = new Map<string, DuplicateRecord[]>()
     const emailMap = new Map<string, DuplicateRecord[]>()
+    // Keyed by the normalized name key; `value` keeps the first spelling seen so
+    // the UI shows a real name rather than the sorted, de-accented key.
+    const nameMap = new Map<string, { value: string; records: DuplicateRecord[] }>()
 
-    for (const m of members) {
-      const record: DuplicateRecord = { id: m.id, firstName: m.firstName, lastName: m.lastName, recordType: "member" }
-      if (m.phone) {
-        const key = m.phone.trim().toLowerCase()
+    function index(record: DuplicateRecord, phone: string | null, email: string | null) {
+      if (phone) {
+        const key = phone.trim().toLowerCase()
         phoneMap.set(key, [...(phoneMap.get(key) ?? []), record])
       }
-      if (m.email) {
-        const key = m.email.trim().toLowerCase()
+      if (email) {
+        const key = email.trim().toLowerCase()
         emailMap.set(key, [...(emailMap.get(key) ?? []), record])
+      }
+      const nameKey = personNameKey(record.firstName, record.lastName)
+      if (nameKey) {
+        const existing = nameMap.get(nameKey)
+        const value = existing?.value ?? displayPersonName(record.firstName, record.lastName)
+        nameMap.set(nameKey, { value, records: [...(existing?.records ?? []), record] })
       }
     }
 
+    for (const m of members) {
+      index(
+        { id: m.id, firstName: m.firstName, lastName: m.lastName, recordType: "member" },
+        m.phone,
+        m.email,
+      )
+    }
+
     for (const g of guests) {
-      const record: DuplicateRecord = { id: g.id, firstName: g.firstName, lastName: g.lastName, recordType: "guest" }
-      if (g.phone) {
-        const key = g.phone.trim().toLowerCase()
-        phoneMap.set(key, [...(phoneMap.get(key) ?? []), record])
-      }
-      if (g.email) {
-        const key = g.email.trim().toLowerCase()
-        emailMap.set(key, [...(emailMap.get(key) ?? []), record])
-      }
+      index(
+        { id: g.id, firstName: g.firstName, lastName: g.lastName, recordType: "guest" },
+        g.phone,
+        g.email,
+      )
     }
 
     const groups: DuplicateGroup[] = []
@@ -70,6 +90,17 @@ export async function getDuplicateProfiles(): Promise<ActionResult<DuplicateGrou
     }
     for (const [value, records] of emailMap) {
       if (records.length > 1) groups.push({ field: "email", value, records })
+    }
+
+    // A name match over people already flagged by a shared phone or email adds
+    // nothing but a second card for the same merge decision, so drop any name
+    // group whose records are all covered by one contact group.
+    const contactSets = groups.map((g) => new Set(g.records.map(recordKey)))
+    for (const { value, records } of nameMap.values()) {
+      if (records.length < 2) continue
+      const covered = contactSets.some((set) => records.every((r) => set.has(recordKey(r))))
+      if (covered) continue
+      groups.push({ field: "name", value, records })
     }
 
     return { success: true, data: groups }

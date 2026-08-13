@@ -1,9 +1,12 @@
 "use server"
 
+import { randomUUID } from "crypto"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
+import type { Prisma } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import { findSpouse, type SpouseInfo } from "@/lib/family-links"
+import { PROMOTABLE_GUEST_SELECT, promoteGuestRecord } from "@/lib/people/promote-guest"
 import { PERSON_NAME_FIELDS, personSearchWhere } from "@/lib/search/name-search"
 import { upwardSatelliteSchema } from "@/lib/validations/small-group"
 
@@ -20,6 +23,57 @@ async function getMemberByToken(token: string) {
       firstName: true,
       lastName: true,
       smallGroupId: true,
+      upwardSatellite: true,
+    },
+  })
+}
+
+/**
+ * Whether this person has answered "who is your leader?" — the prerequisite for
+ * adding groups they lead. Three answers count, because all three name someone:
+ * a confirmed DGroup here, a declared satellite, or a request awaiting a leader.
+ * A pending request counts on purpose: they have answered, and holding the rest
+ * of the portal hostage to someone else's confirmation helps nobody.
+ */
+async function hasDeclaredLeader(member: {
+  id: string
+  smallGroupId: string | null
+  upwardSatellite: string | null
+}): Promise<boolean> {
+  if (member.smallGroupId || member.upwardSatellite) return true
+  const pending = await db.smallGroupMemberRequest.findFirst({
+    where: { memberId: member.id, status: "Pending" },
+    select: { id: true },
+  })
+  return pending !== null
+}
+
+/**
+ * The request + log pair written whenever someone asks to join a DGroup through
+ * the portal. Shared by the member's change-group flow and the guest's very
+ * first declaration so the two produce identical, indistinguishable history.
+ */
+async function createJoinRequest(
+  tx: Prisma.TransactionClient,
+  args: {
+    memberId: string
+    memberName: string
+    toGroupId: string
+    fromGroupId?: string | null
+  }
+) {
+  const { memberId, memberName, toGroupId, fromGroupId = null } = args
+  await tx.smallGroupMemberRequest.create({
+    data: { smallGroupId: toGroupId, memberId, fromGroupId },
+  })
+  await tx.smallGroupLog.create({
+    data: {
+      smallGroupId: toGroupId,
+      action: "TempAssignmentCreated",
+      memberId,
+      fromGroupId,
+      toGroupId,
+      description: `${memberName} requested to ${fromGroupId ? "transfer to" : "join"} this group via the member portal (pending leader confirmation)`,
     },
   })
 }
@@ -35,7 +89,13 @@ async function getLedGroup(token: string, groupId: string) {
       name: true,
       leaderId: true,
       memberLimit: true,
-      _count: { select: { members: true } },
+      _count: {
+        select: {
+          members: true,
+          childGroups: true,
+          memberRequests: { where: { status: "Pending" } },
+        },
+      },
     },
   })
   if (!group || group.leaderId !== member.id) return null
@@ -114,22 +174,11 @@ export async function requestGroupChange(
       // Cebu" is still the only true answer, and clearing it on a request that
       // then gets rejected would leave the member with no upward record at all.
       // `clearUpwardSatelliteOnConfirm` drops it at confirmation instead.
-      await tx.smallGroupMemberRequest.create({
-        data: {
-          smallGroupId: toGroupId,
-          memberId: member.id,
-          fromGroupId: member.smallGroupId,
-        },
-      })
-      await tx.smallGroupLog.create({
-        data: {
-          smallGroupId: toGroupId,
-          action: "TempAssignmentCreated",
-          memberId: member.id,
-          fromGroupId: member.smallGroupId,
-          toGroupId,
-          description: `${memberName} requested to ${member.smallGroupId ? "transfer to" : "join"} this group via the member portal (pending leader confirmation)`,
-        },
+      await createJoinRequest(tx, {
+        memberId: member.id,
+        memberName,
+        toGroupId,
+        fromGroupId: member.smallGroupId,
       })
     })
 
@@ -187,11 +236,16 @@ export async function cancelGroupChange(
 // ─── My Group (leader reports to another satellite) ──────────────────────────
 
 /**
- * A leader whose own DGroup leader sits outside CCF Eastwood has nobody here to
- * request to join — they name the satellite instead. It is stored on every group
- * they lead (`SmallGroup.parentSatellite`), mirroring the admin form, and is
- * mutually exclusive with `parentGroupId`. Passing `null` clears it, putting them
- * back on the request-to-join path.
+ * Someone whose own DGroup leader sits outside CCF Eastwood has nobody here to
+ * request to join — they name the satellite instead. Passing `null` clears it,
+ * putting them back on the request-to-join path.
+ *
+ * Recorded in two places, deliberately: on `Member.upwardSatellite`, because the
+ * portal now asks this *before* anyone adds the groups they lead and a member who
+ * leads nothing would otherwise have nowhere to put the answer; and mirrored onto
+ * `SmallGroup.parentSatellite` for every group they do lead, which is where the
+ * admin form and the group hierarchy read it from. It is mutually exclusive with
+ * `parentGroupId` on the group side and with `smallGroupId` on the member side.
  */
 export async function setUpwardSatellite(
   token: string,
@@ -210,25 +264,24 @@ export async function setUpwardSatellite(
     }
     const value = parsed.data
 
-    // Only leaders have somewhere to record this — a plain member's upward
-    // DGroup is just their own membership.
+    // Read for the revalidation list below; no longer a gate. Leading a group
+    // used to be required here, which put the question after the thing it is
+    // supposed to come before.
     const ledGroups = await db.smallGroup.findMany({
       where: { leaderId: member.id },
       select: { id: true },
     })
-    if (ledGroups.length === 0) {
-      return {
-        success: false,
-        error: "Only DGroup leaders can set this — you don't lead a group yet",
-      }
-    }
 
     const memberName = `${member.firstName} ${member.lastName}`
 
     await db.$transaction(async (tx) => {
+      await tx.member.update({
+        where: { id: member.id },
+        data: { upwardSatellite: value },
+      })
+
       // Matched by leader rather than by the ids read above, so a group created
-      // between that read and this write is covered too. The pre-flight read
-      // stays because it produces the "you lead no group" error.
+      // between that read and this write is covered too.
       await tx.smallGroup.updateMany({
         where: { leaderId: member.id },
         // The parent is either a DGroup here or a satellite — never both.
@@ -287,6 +340,139 @@ export async function setUpwardSatellite(
     for (const g of ledGroups) revalidatePath(`/small-groups/${g.id}`)
     if (member.smallGroupId) revalidatePath(`/small-groups/${member.smallGroupId}`)
     return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to save your DGroup" }
+  }
+}
+
+// ─── Guest onboarding ────────────────────────────────────────────────────────
+
+export type DeclareLeaderInput =
+  | { scope: "eastwood"; groupId: string }
+  | { scope: "satellite"; satellite: string }
+
+/**
+ * A guest's first and only step in the portal: name your leader.
+ *
+ * Answering promotes them to a Member — without a DGroup, because naming a
+ * leader is not the same as being confirmed into their group. `SmallGroup.leaderId`
+ * requires a Member, so this is also what makes it possible for them to register
+ * the groups they lead on the next screen. From here on they are indistinguishable
+ * from anyone else in the portal, which is why the answer is recorded through the
+ * same two paths a member uses: a pending request, or a declared satellite.
+ *
+ * The Guest row is kept (it is their history) and its self-reported claim fields
+ * are updated to match, the way the check-in kiosk writes them.
+ */
+export async function declareLeaderAndJoin(
+  token: string,
+  input: DeclareLeaderInput
+): Promise<ActionResult<{ token: string }>> {
+  try {
+    if (!token) return { success: false, error: "Invalid or expired link" }
+
+    const guest = await db.guest.findUnique({
+      where: { selfServiceToken: token },
+      select: { id: true, ...PROMOTABLE_GUEST_SELECT },
+    })
+    if (!guest) return { success: false, error: "Invalid or expired link" }
+    if (guest.memberId) {
+      return { success: false, error: "You've already told us who your leader is" }
+    }
+
+    // Validate before promoting: a rejected answer must leave them a guest.
+    let satellite: string | null = null
+    let toGroup: { id: string; name: string } | null = null
+
+    if (input.scope === "satellite") {
+      const parsed = upwardSatelliteSchema.safeParse(input.satellite)
+      if (!parsed.success || !parsed.data) {
+        return {
+          success: false,
+          error: parsed.success
+            ? "Please choose a CCF satellite"
+            : (parsed.error.issues[0]?.message ?? "Unknown CCF satellite"),
+        }
+      }
+      satellite = parsed.data
+    } else {
+      const group = await db.smallGroup.findUnique({
+        where: { id: input.groupId },
+        select: {
+          id: true,
+          name: true,
+          status: true,
+          memberLimit: true,
+          _count: { select: { members: true } },
+        },
+      })
+      if (!group || group.status === "Inactive") {
+        return { success: false, error: "Group not found" }
+      }
+      if (group.memberLimit !== null && group._count.members >= group.memberLimit) {
+        return { success: false, error: "This group is already full" }
+      }
+      toGroup = { id: group.id, name: group.name }
+    }
+
+    const guestName = `${guest.firstName} ${guest.lastName}`
+
+    const memberToken = await db.$transaction(async (tx) => {
+      const { memberId } = await promoteGuestRecord(tx, {
+        guestId: guest.id,
+        guest,
+        dateJoined: new Date(),
+        // Naming a leader is an intention, not a confirmed placement.
+        group: null,
+        // Public token flow — an email already belonging to a Member means this
+        // is that Member, not a second copy of them.
+        reuseExistingMemberByEmail: true,
+        schedule: "normalized",
+      })
+
+      // A reused Member may already have a portal token; only mint a new one when
+      // there is none, so an existing link keeps working.
+      const existing = await tx.member.findUnique({
+        where: { id: memberId },
+        select: { selfServiceToken: true },
+      })
+      const nextToken = existing?.selfServiceToken ?? randomUUID()
+
+      await tx.member.update({
+        where: { id: memberId },
+        data: {
+          selfServiceToken: nextToken,
+          upwardSatellite: satellite,
+        },
+      })
+
+      // Keep the guest's own self-reported answer in step with the declaration.
+      // The two claim fields are mutually exclusive.
+      await tx.guest.update({
+        where: { id: guest.id },
+        data: {
+          claimedSatellite: satellite,
+          claimedSmallGroupId: toGroup?.id ?? null,
+        },
+      })
+
+      if (toGroup) {
+        await createJoinRequest(tx, {
+          memberId,
+          memberName: guestName,
+          toGroupId: toGroup.id,
+        })
+      }
+
+      return nextToken
+    })
+
+    revalidatePath("/guests")
+    revalidatePath("/members")
+    if (toGroup) revalidateGroupPages(toGroup.id)
+    else revalidatePath("/small-groups")
+
+    return { success: true, data: { token: memberToken } }
   } catch {
     return { success: false, error: "Failed to save your DGroup" }
   }
@@ -376,6 +562,15 @@ export async function createLedGroup(
     const member = await getMemberByToken(token)
     if (!member) return { success: false, error: "Invalid or expired link" }
 
+    // Discipleship runs upward before it runs downward: we ask who disciples you
+    // before recording who you disciple, so nobody enters the tree rootless.
+    if (!(await hasDeclaredLeader(member))) {
+      return {
+        success: false,
+        error: "Tell us who your DGroup leader is before adding a group you lead",
+      }
+    }
+
     const parsed = ledGroupDetailsSchema.safeParse(raw)
     if (!parsed.success) {
       return {
@@ -407,6 +602,9 @@ export async function createLedGroup(
           groupType,
           // Couples groups host married pairs — gender focus is always Mixed.
           genderFocus: groupType === "Couples" ? "Mixed" : undefined,
+          // A satellite declared before this group existed belongs on it too —
+          // that is where the admin form and the hierarchy read it from.
+          parentSatellite: member.upwardSatellite,
           meetingFormat,
           locationCity,
           language,
@@ -500,6 +698,51 @@ export async function updateLedGroupDetails(
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to update group details" }
+  }
+}
+
+/**
+ * Deletes a group the token holder leads, for the case it exists to serve: one
+ * created here by mistake. Only an *empty* group qualifies, and "empty" means
+ * more than an empty roster — a group can also be somebody's parent, or have
+ * people waiting at the door. Each of those is a person the delete would affect
+ * silently (members are unassigned, child groups orphaned, requests cascaded
+ * away by the FKs), so each gets its own refusal instead.
+ */
+export async function deleteLedGroup(
+  token: string,
+  groupId: string
+): Promise<ActionResult> {
+  try {
+    const ctx = await getLedGroup(token, groupId)
+    if (!ctx) return { success: false, error: "Invalid or expired link" }
+
+    const { group } = ctx
+    if (group._count.members > 0) {
+      return {
+        success: false,
+        error: "Remove everyone from this group before deleting it",
+      }
+    }
+    if (group._count.childGroups > 0) {
+      return {
+        success: false,
+        error: "Other DGroups report to this one — an admin needs to move them first",
+      }
+    }
+    if (group._count.memberRequests > 0) {
+      return {
+        success: false,
+        error: "Someone is waiting to join this group — respond to the request first",
+      }
+    }
+
+    await db.smallGroup.delete({ where: { id: groupId } })
+
+    revalidateGroupPages(groupId)
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to delete group" }
   }
 }
 

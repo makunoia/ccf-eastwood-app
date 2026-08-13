@@ -7,6 +7,7 @@ import { FormClosed } from "@/components/form-closed"
 import { getFormConfig } from "@/lib/forms/config"
 import { getEffectiveFormConfig } from "@/lib/forms/context-config-server"
 import { resolveWalkInAccess } from "@/lib/events/walk-in-access"
+import { resolveWalkInSession } from "@/lib/events/walk-in-session"
 
 async function getEvent(id: string) {
   return db.event.findUnique({
@@ -22,6 +23,7 @@ async function getEvent(id: string) {
       registrationPageBannerUrl: true,
       autoAssignBreakout: true,
       walkInOccurrence: { select: { id: true, isOpen: true } },
+      walkInSessionMode: true,
       ministries: {
         select: {
           ministry: {
@@ -179,7 +181,7 @@ export default async function CheckinPage({
   const walkInAccess = resolveWalkInAccess({
     eventType: event.type,
     formIsOpen: walkInConfig.isOpen,
-    session: event.walkInOccurrence,
+    session: await resolveWalkInSession(event),
   })
 
   return (

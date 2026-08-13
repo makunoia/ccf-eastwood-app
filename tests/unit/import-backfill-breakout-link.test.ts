@@ -3,6 +3,26 @@ import { db } from "@/lib/db"
 import { importSmallGroups } from "@/app/(dashboard)/small-groups/import-actions"
 import { formatPhilippinePhone } from "@/lib/utils"
 
+/**
+ * Every DGroup requires a leader (SmallGroup.leaderId is NOT NULL). These tests
+ * don't care who it is, so each group gets a throwaway member. The leader has no
+ * smallGroupId of their own, so they never count toward a group's roster.
+ */
+let __leaderSeq = 0
+async function aLeader(): Promise<string> {
+  const m = await db.member.create({
+    data: {
+      firstName: `Leader${++__leaderSeq}`,
+      lastName: "Seed",
+      dateJoined: new Date(),
+      language: [],
+    },
+    select: { id: true },
+  })
+  return m.id
+}
+
+
 beforeEach(async () => {
   await db.$executeRaw`TRUNCATE
     "SmallGroupMemberRequest", "SmallGroupLog", "BreakoutGroupMember", "BreakoutGroup",
@@ -86,7 +106,7 @@ describe("breakout link back-fill on small group import", () => {
     })
 
     // Pre-existing link to some other group — must be preserved.
-    const otherGroup = await db.smallGroup.create({ data: { name: "Existing Link" } })
+    const otherGroup = await db.smallGroup.create({ data: { leaderId: await aLeader(), name: "Existing Link" } })
     await db.breakoutGroup.update({
       where: { id: breakoutGroup.id },
       data: { linkedSmallGroupId: otherGroup.id },

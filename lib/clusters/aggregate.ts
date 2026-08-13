@@ -20,8 +20,10 @@ import {
 } from "@/lib/forms/registration-responses"
 import {
   buildClusterExportColumns,
+  PARTICIPATION_RANK,
   type ClusterExportColumnState,
   type ClusterExportEvent,
+  type ClusterParticipation,
   type ClusterRegistrationExportRow,
 } from "@/lib/exports/cluster-registrations"
 import {
@@ -171,9 +173,15 @@ function pickAttendance<T extends { occurrenceId: string }>(
  *  - **Attendance** is read from the linked session when the cluster names one,
  *    else from occurrences on the cluster's date — without either, anyone who
  *    attended ANY past session showed as checked in on today's roster.
- *  - **Registration** is filtered by `isOnClusterDay` — without it, every person
- *    who ever registered for the weekly service appeared on every cluster day
- *    containing it, whether or not they came.
+ *  - **Registration** is marked by `isOnClusterDay` — without the distinction,
+ *    every person who ever registered for the weekly service counted on every
+ *    cluster day containing it, whether or not they came.
+ *
+ * Rows are **flagged, never dropped**. Day-scoping is a question about counts,
+ * and answering it by withholding rows made the roster claim someone was not
+ * registered when they were — while the add-registrant screen, reading the same
+ * row, refused to add them again. Every count here filters on `onClusterDay`;
+ * the surfaces decide for themselves whether to show the rest.
  *
  * A null scope (or a cluster with no date and no linked sessions) keeps the
  * unscoped behavior: there is no day to scope to.
@@ -208,30 +216,29 @@ export async function getClusterRegistrantRows(
       },
     },
   })
-  return registrants
-    .map((r) => {
-      const linked = linkedByEvent.get(r.eventId) ?? null
-      return {
-        id: r.id,
-        eventId: r.eventId,
-        eventType: r.event.type,
-        memberId: r.memberId,
-        guestId: r.guestId,
-        firstName: r.member?.firstName ?? r.guest?.firstName ?? r.firstName ?? "",
-        lastName: r.member?.lastName ?? r.guest?.lastName ?? r.lastName ?? "",
-        phone: r.member?.phone ?? r.guest?.phone ?? null,
-        isMember: r.memberId !== null,
-        // OneTime events check in via attendedAt; session events via occurrences.
-        checkedIn:
-          r.event.type === "OneTime"
-            ? r.attendedAt !== null
-            : pickAttendance(r.occurrenceAttendances, linked).length > 0,
-        hasLinkedSession: linked !== null,
-        registrationClusterId: r.registrationClusterId,
-        registeredAt: r.createdAt,
-      }
-    })
-    .filter((row) => isOnClusterDay(row, scope))
+  return registrants.map((r) => {
+    const linked = linkedByEvent.get(r.eventId) ?? null
+    const row = {
+      id: r.id,
+      eventId: r.eventId,
+      eventType: r.event.type,
+      memberId: r.memberId,
+      guestId: r.guestId,
+      firstName: r.member?.firstName ?? r.guest?.firstName ?? r.firstName ?? "",
+      lastName: r.member?.lastName ?? r.guest?.lastName ?? r.lastName ?? "",
+      phone: r.member?.phone ?? r.guest?.phone ?? null,
+      isMember: r.memberId !== null,
+      // OneTime events check in via attendedAt; session events via occurrences.
+      checkedIn:
+        r.event.type === "OneTime"
+          ? r.attendedAt !== null
+          : pickAttendance(r.occurrenceAttendances, linked).length > 0,
+      hasLinkedSession: linked !== null,
+      registrationClusterId: r.registrationClusterId,
+      registeredAt: r.createdAt,
+    }
+    return { ...row, onClusterDay: isOnClusterDay(row, scope) }
+  })
 }
 
 /**
@@ -501,6 +508,18 @@ export async function getClusterRegistrationExportRows(
       r.event.type === "OneTime"
         ? r.attendedAt
         : (pickAttendance(r.occurrenceAttendances, linked)[0]?.checkedInAt ?? null)
+    // Computed from `createdAt` itself, not the ISO string below — the day test
+    // needs the instant, and stringifying first would hand it a Date-shaped lie.
+    const onClusterDay = isOnClusterDay(
+      {
+        eventType: r.event.type,
+        checkedIn: checkedInAt !== null,
+        hasLinkedSession: linked !== null,
+        registrationClusterId: r.registrationClusterId,
+        registeredAt: r.createdAt,
+      },
+      scope
+    )
     const person = r.member ?? r.guest ?? null
     const memberSchedule = r.member?.schedulePreferences?.[0] ?? null
     const householdKey = r.memberId
@@ -514,6 +533,7 @@ export async function getClusterRegistrationExportRows(
       eventId: r.eventId,
       eventType: r.event.type,
       hasLinkedSession: linked !== null,
+      onClusterDay,
       memberId: r.memberId,
       guestId: r.guestId,
       firstName: r.member?.firstName ?? r.guest?.firstName ?? r.firstName ?? "",
@@ -563,31 +583,52 @@ export async function getClusterRegistrationExportRows(
   })
 
   // Same day scope as the roster and the dashboard — an export launched from
-  // the registrants screen must describe the day that screen is showing, not a
-  // Recurring event's whole standing roster.
-  const dayRows = rows.filter((row) => isOnClusterDay(row, scope))
-
-  // Fold in cluster order, so when two registrations disagree on a per-event
-  // answer (a nickname, a dietary note) the earlier event on the day wins —
-  // a stable rule rather than whatever order the database returned.
-  dayRows.sort(
-    (a, b) => (eventOrder.get(a.eventId) ?? 0) - (eventOrder.get(b.eventId) ?? 0)
-  )
+  // the registrants screen must describe the day that screen is showing. The
+  // series-only rows travel with it rather than being dropped, carrying their
+  // own participation value, so the spreadsheet can distinguish "wasn't here"
+  // from "we have no record of them" the way the roster now does.
+  //
+  // Fold day rows first, then in cluster order: when two registrations disagree
+  // on a per-event answer (a nickname, a dietary note) the day's answer wins,
+  // and within the day the earlier event does — a stable rule rather than
+  // whatever order the database returned.
+  rows.sort((a, b) => {
+    if (a.onClusterDay !== b.onClusterDay) return a.onClusterDay ? -1 : 1
+    return (eventOrder.get(a.eventId) ?? 0) - (eventOrder.get(b.eventId) ?? 0)
+  })
 
   const byPerson = new Map<string, ClusterRegistrationExportRow>()
-  for (const row of dayRows) {
+  // "First registered at" should describe the day when the person has any part
+  // in it, so a newly-carried series-only row can never drag an existing row's
+  // timestamp backwards. Only someone with nothing but series-only rows falls
+  // back to those, which is the one case where it is all we have.
+  const dayRegisteredAt = new Map<string, string>()
+
+  for (const row of rows) {
     const {
       id,
       eventId,
       eventType: _eventType,
       hasLinkedSession: _linked,
+      onClusterDay,
       memberId,
       guestId,
       registrationClusterId,
       ...fields
     } = row
     const key = personKeyFor({ id, memberId, guestId })
-    const participation = fields.checkedIn ? "CheckedIn" : "Registered"
+    const participation: ClusterParticipation = fields.checkedIn
+      ? "CheckedIn"
+      : onClusterDay
+        ? "Registered"
+        : "SeriesOnly"
+    if (onClusterDay) {
+      dayRegisteredAt.set(
+        key,
+        earlier(dayRegisteredAt.get(key) ?? null, fields.registeredAt) ??
+          fields.registeredAt
+      )
+    }
     const existing = byPerson.get(key)
 
     if (!existing) {
@@ -601,9 +642,11 @@ export async function getClusterRegistrationExportRows(
     }
 
     // A person can hold two registrations on the SAME event (a duplicate
-    // sign-up); having arrived beats merely having signed up.
-    existing.perEvent[eventId] =
-      existing.perEvent[eventId] === "CheckedIn" ? "CheckedIn" : participation
+    // sign-up); the one that says the most wins.
+    const held = existing.perEvent[eventId]
+    if (!held || PARTICIPATION_RANK[participation] > PARTICIPATION_RANK[held]) {
+      existing.perEvent[eventId] = participation
+    }
 
     existing.registeredAt =
       earlier(existing.registeredAt, fields.registeredAt) ?? existing.registeredAt
@@ -643,7 +686,12 @@ export async function getClusterRegistrationExportRows(
 
   // The roster's last-name/first-name ordering, so the CSV and the registrants
   // screen list the same people in the same order.
-  return [...byPerson.values()].sort((a, b) => {
+  return [...byPerson.values()]
+    .map((row) => ({
+      ...row,
+      registeredAt: dayRegisteredAt.get(row.personKey) ?? row.registeredAt,
+    }))
+    .sort((a, b) => {
     const lastCmp = a.lastName.localeCompare(b.lastName, undefined, {
       sensitivity: "base",
     })
@@ -727,6 +775,13 @@ export type ClusterOverview = {
      * figure is comparable to `uniquePeople` sitting next to it.
      */
     viaSharedLinkPeople: number
+    /**
+     * PEOPLE on the roster with no registration belonging to this day at all —
+     * they hold a standing series registration and nothing more. Excluded from
+     * every figure above; surfaced so the roster's third state can be explained
+     * rather than left to look like a rendering quirk.
+     */
+    seriesOnlyPeople: number
   }
 }
 
@@ -751,9 +806,12 @@ export async function getClusterOverview(
     getClusterSeriesTotals(eventIds),
   ])
   const roster = buildClusterRoster(events, rows)
+  // Every figure below describes the DAY. The roster carries the series-only
+  // rows too, so each count filters rather than trusting the row set.
+  const dayRows = rows.filter((r) => r.onClusterDay)
 
   const eventStats: ClusterEventStat[] = events.map((e) => {
-    const eventRows = rows.filter((r) => r.eventId === e.id)
+    const eventRows = dayRows.filter((r) => r.eventId === e.id)
     return {
       eventId: e.id,
       name: e.name,
@@ -766,9 +824,13 @@ export async function getClusterOverview(
   })
 
   const viaSharedLink = new Set(
-    rows
+    dayRows
       .filter((r) => r.registrationClusterId === clusterId)
       .map((r) => personKeyFor(r))
+  )
+
+  const onDayPeople = roster.rows.filter((p) =>
+    Object.values(p.perEvent).some((cell) => cell?.onClusterDay)
   )
 
   return {
@@ -776,12 +838,13 @@ export async function getClusterOverview(
     eventStats,
     roster,
     totals: {
-      registrations: rows.length,
-      uniquePeople: roster.rows.length,
+      registrations: dayRows.length,
+      uniquePeople: onDayPeople.length,
       checkedInPeople: roster.rows.filter((p) =>
         Object.values(p.perEvent).some((cell) => cell?.checkedIn)
       ).length,
       viaSharedLinkPeople: viaSharedLink.size,
+      seriesOnlyPeople: roster.rows.length - onDayPeople.length,
     },
   }
 }

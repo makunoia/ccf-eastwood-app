@@ -83,6 +83,37 @@ describe("eventFormPrerequisites — breakout warnings", () => {
     expect(result.sectionBreakout?.message).toContain("1 breakout group has a facilitator")
   })
 
+  it("distinguishes 'all groups switched off' from 'no groups'", async () => {
+    const event = await seedEvent()
+    const volunteer = await seedFacilitatorVolunteer(event.id)
+    await db.breakoutGroup.create({
+      data: { name: "Off", eventId: event.id, facilitatorId: volunteer.id, isEnabled: false },
+    })
+
+    const result = await eventFormPrerequisites(event.id, false)
+
+    // Staffed, so the staffing warning would not have fired — and "create one"
+    // would be the wrong instruction when one already exists.
+    expect(result.sectionBreakout?.message).toContain("switched off")
+    expect(result.sectionBreakout?.message).toContain("Switch one on")
+    expect(result.sectionBreakout?.message).not.toContain("no breakout groups yet")
+    // Off closes the public form's picker too, so this one isn't Walk-in scoped.
+    expect(result.sectionBreakout?.contexts).toBeUndefined()
+  })
+
+  it("counts only enabled groups in the staffing warning", async () => {
+    const event = await seedEvent()
+    await db.breakoutGroup.create({ data: { name: "On", eventId: event.id } })
+    await db.breakoutGroup.create({
+      data: { name: "Off", eventId: event.id, isEnabled: false },
+    })
+
+    // Two groups exist, one is in play — the number quoted has to be the one the
+    // admin can act on.
+    const result = await eventFormPrerequisites(event.id, false)
+    expect(result.sectionBreakout?.message).toContain("1 breakout group has a facilitator")
+  })
+
   it("stays quiet once a group is staffed", async () => {
     const event = await seedEvent()
     const volunteer = await seedFacilitatorVolunteer(event.id)
