@@ -2,9 +2,16 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { IconCheck, IconUsersGroup, IconX } from "@tabler/icons-react"
+import { IconCheck, IconDots, IconUsersGroup, IconX } from "@tabler/icons-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Separator } from "@/components/ui/separator"
 import {
   Sheet,
@@ -214,6 +221,48 @@ function RequestDetailSheet({
   )
 }
 
+// ─── Row actions ────────────────────────────────────────────────────────────────
+
+/**
+ * The per-row decision menu, matching the `RowActions` every other list table
+ * uses. A pair of always-visible Approve/Deny buttons put two competing calls to
+ * action on every row of a queue that is read top-to-bottom — the menu keeps the
+ * row scannable and still puts both one click away.
+ */
+function RequestRowActions({
+  request,
+  onDecide,
+}: {
+  request: RequestRow
+  onDecide: (request: RequestRow, decision: RequestDecision) => void
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" className="size-8">
+          {/* Named per row — a table of "Open menu" tells a screen reader nothing. */}
+          <span className="sr-only">Decide {request.personName}&apos;s request</span>
+          <IconDots className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onSelect={() => onDecide(request, "approve")}>
+          <IconCheck className="mr-2 size-4" />
+          Approve
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onSelect={() => onDecide(request, "deny")}
+          className="text-destructive focus:text-destructive"
+        >
+          <IconX className="mr-2 size-4" />
+          Deny
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
 // ─── Requests table ─────────────────────────────────────────────────────────────
 
 export function RequestsTable({
@@ -366,7 +415,7 @@ export function RequestsTable({
               <TableHead>Target Group</TableHead>
               <TableHead>Leader</TableHead>
               <TableHead>Requested</TableHead>
-              {canWrite && <TableHead className="w-0 text-right">Decision</TableHead>}
+              {canWrite && <TableHead className="w-0" />}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -422,24 +471,7 @@ export function RequestsTable({
                 </TableCell>
                 {canWrite && (
                   <TableCell onClick={(e) => e.stopPropagation()}>
-                    <div className="flex justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => decide(r, "deny")}
-                      >
-                        <IconX className="size-4" />
-                        Deny
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => decide(r, "approve")}
-                      >
-                        <IconCheck className="size-4" />
-                        Approve
-                      </Button>
-                    </div>
+                    <RequestRowActions request={r} onDecide={decide} />
                   </TableCell>
                 )}
               </TableRow>
