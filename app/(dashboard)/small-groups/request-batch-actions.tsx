@@ -5,6 +5,7 @@ import { IconCheck, IconChecklist, IconX } from "@tabler/icons-react"
 
 import { Button } from "@/components/ui/button"
 import { useBatchSelection } from "@/components/batch/batch-selection-provider"
+import { SelectionSummary } from "@/components/batch/selection-summary"
 import { RequestDecisionDialog } from "./request-decision-dialog"
 import { type RequestDecision } from "./actions"
 
@@ -48,19 +49,13 @@ export function RequestBatchActions() {
   return (
     <>
       <div className="flex items-center gap-2">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-8"
-          onClick={() => {
+        <SelectionSummary
+          count={count}
+          onClear={() => {
             selection.clear()
             selection.setSelectMode(false)
           }}
-          aria-label="Clear selection"
-        >
-          <IconX className="size-4" />
-        </Button>
-        <span className="text-sm font-medium whitespace-nowrap">{count} selected</span>
+        />
         <Button variant="outline" onClick={() => setDecision("deny")}>
           <IconX className="size-4" />
           Deny

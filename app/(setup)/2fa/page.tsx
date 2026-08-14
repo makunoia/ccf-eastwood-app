@@ -89,7 +89,9 @@ export default function Setup2faPage() {
 
                 {showManualKey && (
                   <div className="rounded-md bg-muted px-4 py-3 text-center">
-                    <p className="text-xs text-muted-foreground mb-1">Manual entry key</p>
+                    {/* foreground/60, not muted-foreground: muted-on-muted is 4.35:1
+                        in light mode, under the AA floor. See tests/unit/contrast-on-filled-surfaces. */}
+                    <p className="text-xs text-foreground/60 mb-1">Manual entry key</p>
                     <p className="font-mono text-sm tracking-widest break-all select-all">
                       {secret}
                     </p>

@@ -160,7 +160,7 @@ export function buildColumns(selectable = false): ColumnDef<SmallGroupRow>[] {
             </span>
           )}
           {row.original.status === "Inactive" && (
-            <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+            <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-foreground/60">
               Inactive
             </span>
           )}

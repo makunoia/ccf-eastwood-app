@@ -163,7 +163,7 @@ function LeaderGroupCard({
           {/* Affected groups */}
           <div className="flex flex-wrap gap-1 mt-1">
             {groupNames.map((name) => (
-              <span key={name} className="text-xs bg-muted rounded px-1.5 py-0.5 text-muted-foreground">
+              <span key={name} className="text-xs bg-muted rounded px-1.5 py-0.5 text-foreground/60">
                 {name}
               </span>
             ))}

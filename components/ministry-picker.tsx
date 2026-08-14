@@ -39,7 +39,7 @@ function MinistryAvatar({ ministry }: { ministry: MinistryOption }) {
     )
   }
   return (
-    <div className="flex size-8 shrink-0 items-center justify-center rounded-md border bg-muted text-[10px] font-medium text-muted-foreground">
+    <div className="flex size-8 shrink-0 items-center justify-center rounded-md border bg-muted text-[10px] font-medium text-foreground/60">
       {initialsFor(ministry.name)}
     </div>
   )
