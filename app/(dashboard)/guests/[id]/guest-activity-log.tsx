@@ -1,19 +1,17 @@
 import Link from "next/link"
 import { IconCalendar, IconCheck, IconClock, IconMessageCircle, IconUserCheck, IconX } from "@tabler/icons-react"
 import { TimelineEntry } from "@/components/ui/timeline-entry"
-import { logActorName } from "@/lib/small-group-log"
+import {
+  logActorName,
+  SMALL_GROUP_LOG_LABEL,
+  SMALL_GROUP_LOG_TONE,
+} from "@/lib/small-group-log"
+import type { SmallGroupLogAction } from "@/app/generated/prisma/client"
 
 type SmallGroupLogEntry = {
   kind: "smallGroupLog"
   id: string
-  action:
-    | "GroupCreated"
-    | "MemberAdded"
-    | "MemberRemoved"
-    | "MemberTransferred"
-    | "TempAssignmentCreated"
-    | "TempAssignmentConfirmed"
-    | "TempAssignmentRejected"
+  action: SmallGroupLogAction
   description: string | null
   createdAt: Date
   smallGroup: {
@@ -50,18 +48,11 @@ type CatchMechCommentEntry = {
 
 export type ActivityEntry = SmallGroupLogEntry | EventRegistrationEntry | PromotionEntry | CatchMechCommentEntry
 
-const ACTION_LABEL: Record<SmallGroupLogEntry["action"], string> = {
-  GroupCreated: "Group created",
-  MemberAdded: "Added to DGroup",
-  MemberRemoved: "Removed from DGroup",
-  MemberTransferred: "Transferred to another group",
-  TempAssignmentCreated: "Temporary assignment created",
-  TempAssignmentConfirmed: "Temporary assignment confirmed",
-  TempAssignmentRejected: "Temporary assignment rejected",
-}
 
 function iconForSmallGroupAction(action: SmallGroupLogEntry["action"]) {
-  if (action === "TempAssignmentRejected" || action === "MemberRemoved") {
+  const tone = SMALL_GROUP_LOG_TONE[action]
+
+  if (tone === "negative") {
     return (
       <span className="inline-flex size-5 items-center justify-center rounded-full bg-destructive/10">
         <IconX className="size-3 text-destructive" />
@@ -69,7 +60,7 @@ function iconForSmallGroupAction(action: SmallGroupLogEntry["action"]) {
     )
   }
 
-  if (action === "MemberAdded" || action === "TempAssignmentConfirmed") {
+  if (tone === "positive") {
     return (
       <span className="inline-flex size-5 items-center justify-center rounded-full bg-emerald-50">
         <IconCheck className="size-3 text-emerald-700" />
@@ -202,7 +193,7 @@ export function GuestActivityLog({ entries }: { entries: ActivityEntry[] }) {
               <p className="text-xs text-muted-foreground">Action by {logActorName(entry)}</p>
             )}
             <p className="text-sm font-medium">
-              {entry.description ?? ACTION_LABEL[entry.action]}
+              {entry.description ?? SMALL_GROUP_LOG_LABEL[entry.action]}
             </p>
             <p className="text-xs text-muted-foreground">
               <Link

@@ -9,6 +9,7 @@ import {
   setClusterEventSession,
   updateEventCluster,
 } from "@/app/(dashboard)/events/cluster-actions"
+import { standingFor } from "@/lib/clusters/roster"
 import {
   getClusterOverview,
   getClusterRegistrationExportRows,
@@ -199,10 +200,20 @@ describe("changing the session moves the day's figures", () => {
   }
 
   it("counts only the linked session's attendees", async () => {
-    const { cluster } = await seedTwoSessionCluster()
+    const { cluster, service } = await seedTwoSessionCluster()
 
     const overview = await getClusterOverview(adminSession, cluster.id)
-    expect(overview.roster.rows.map((p) => p.firstName)).toEqual(["ThisWeek"])
+    // All three are listed — the roster stopped hiding rows — but only the one
+    // at the linked session belongs to the day, which is what the figures count.
+    expect(overview.roster.rows.map((p) => p.firstName)).toEqual([
+      "Absent",
+      "LastWeek",
+      "ThisWeek",
+    ])
+    expect(
+      overview.roster.rows.map((p) => standingFor(p.perEvent[service.id]!))
+    ).toEqual(["SeriesOnly", "SeriesOnly", "CheckedIn"])
+    expect(overview.totals.seriesOnlyPeople).toBe(2)
     expect(overview.totals.uniquePeople).toBe(1)
     expect(overview.totals.checkedInPeople).toBe(1)
     expect(overview.eventStats[0]).toMatchObject({
@@ -224,16 +235,27 @@ describe("changing the session moves the day's figures", () => {
     expect(result.success).toBe(true)
 
     const overview = await getClusterOverview(adminSession, cluster.id)
-    expect(overview.roster.rows.map((p) => p.firstName)).toEqual(["LastWeek"])
+    // The day moved, so the standing moved with it — same rows, new verdicts.
+    expect(
+      overview.roster.rows.map((p) => standingFor(p.perEvent[service.id]!))
+    ).toEqual(["SeriesOnly", "CheckedIn", "SeriesOnly"])
+    expect(overview.totals.uniquePeople).toBe(1)
     expect(overview.eventStats[0]).toMatchObject({ registered: 1, checkedIn: 1 })
   })
 
   it("carries the same scope into the CSV export", async () => {
-    const { cluster } = await seedTwoSessionCluster()
+    const { cluster, service } = await seedTwoSessionCluster()
 
     const rows = await getClusterRegistrationExportRows(adminSession, cluster.id)
-    expect(rows.map((r) => r.firstName)).toEqual(["ThisWeek"])
-    expect(rows[0].checkedIn).toBe(true)
+    // Everyone is exported; the event column carries the distinction, so the
+    // spreadsheet can tell "wasn't here" from "we have no record of them".
+    expect(rows.map((r) => r.firstName)).toEqual(["Absent", "LastWeek", "ThisWeek"])
+    expect(rows.map((r) => r.perEvent[service.id])).toEqual([
+      "SeriesOnly",
+      "SeriesOnly",
+      "CheckedIn",
+    ])
+    expect(rows.map((r) => r.checkedIn)).toEqual([false, false, true])
   })
 
   it("reports the linked session's date on the event tile", async () => {
@@ -476,12 +498,15 @@ describe("existing clusters are untouched", () => {
   }
 
   it("regression — a legacy link still counts by the cluster's date window", async () => {
-    const { cluster } = await seedLegacyCluster()
+    const { cluster, service } = await seedLegacyCluster()
 
     const overview = await getClusterOverview(adminSession, cluster.id)
     // Same answer the date-window rule gave before session selection shipped:
-    // whoever attended on the cluster's date.
-    expect(overview.roster.rows.map((p) => p.firstName)).toEqual(["ThisWeek"])
+    // whoever attended on the cluster's date is who the day COUNTS.
+    expect(
+      overview.roster.rows.map((p) => standingFor(p.perEvent[service.id]!))
+    ).toEqual(["SeriesOnly", "SeriesOnly", "CheckedIn"])
+    expect(overview.totals.uniquePeople).toBe(1)
     expect(overview.totals.checkedInPeople).toBe(1)
     expect(overview.eventStats[0]).toMatchObject({
       registered: 1,

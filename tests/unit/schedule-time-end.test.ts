@@ -262,8 +262,29 @@ describe("createSmallGroup / updateSmallGroup — scheduleTimeEnd", () => {
 })
 
 describe("importSmallGroups — schedule time parsing", () => {
+  // A group can't be imported without a leader, so every row names one that
+  // already exists. These tests are about time parsing, not leader resolution.
+  const IMPORT_LEADER_EMAIL = "schedule.leader@example.com"
+
+  beforeEach(async () => {
+    await db.member.create({
+      data: {
+        firstName: "Schedule",
+        lastName: "Leader",
+        email: IMPORT_LEADER_EMAIL,
+        dateJoined: new Date(),
+        language: [],
+      },
+    })
+  })
+
   function importRow(mapped: Record<string, string>) {
-    return [{ mapped, resolution: "use-csv" as const }]
+    return [
+      {
+        mapped: { leaderEmail: IMPORT_LEADER_EMAIL, ...mapped },
+        resolution: "use-csv" as const,
+      },
+    ]
   }
 
   it("parses 12-hour am/pm meeting times and stores canonical 24-hour HH:MM", async () => {

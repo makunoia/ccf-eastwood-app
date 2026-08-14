@@ -105,8 +105,14 @@ describe("cluster day provenance — registering again through the day link", ()
     expect(first.success).toBe(true)
     if (!first.success) return
 
-    // The roster can't place them on the day yet — this is the "—" the admin sees.
-    expect(await rosterCell(cluster.id, event.id)).toBeUndefined()
+    // The roster can't place them on the day yet. It used to drop the row here,
+    // rendering "—" ("not registered") for someone plainly registered; now the
+    // cell survives and says what is actually true. Their sign-up predates the
+    // cluster's date, so the timestamp doesn't speak for them either.
+    expect(await rosterCell(cluster.id, event.id)).toMatchObject({
+      checkedIn: false,
+      onClusterDay: false,
+    })
 
     // The admin's instinct: put them through the day's shared form.
     const again = await registerForCluster(

@@ -5,6 +5,7 @@ import { db } from "@/lib/db"
 import type { DuplicateMatch, ImportResult, RowResolution, UnmatchedLeaderRow, LeaderResolution } from "@/lib/import/types"
 import { enrichArray, enrichNullable, enrichText } from "@/lib/import/enrich"
 import { formatPhilippinePhone } from "@/lib/utils"
+import { logLeaderChange } from "@/lib/small-groups/membership-log"
 import { GenderFocus, MeetingFormat, Prisma, SmallGroupType } from "@/app/generated/prisma/client"
 
 type ActionResult<T = void> =
@@ -237,7 +238,8 @@ function splitLifeStages(raw: string | null | undefined): string[] {
 function enrichSmallGroupData(
   existing: {
     name: string
-    leaderId: string | null
+    /** Non-null: every DGroup has a leader, so enrichment can only ever keep it. */
+    leaderId: string
     parentGroupId: string | null
     genderFocus: GenderFocus | null
     language: string[]
@@ -268,7 +270,7 @@ function enrichSmallGroupData(
 ) {
   return {
     name: enrichText(existing.name, incoming.name) ?? existing.name,
-    leaderId: enrichNullable(existing.leaderId, incoming.leaderId),
+    leaderId: enrichNullable(existing.leaderId, incoming.leaderId) ?? existing.leaderId,
     parentGroupId: enrichNullable(existing.parentGroupId, incoming.parentGroupId),
     genderFocus: enrichNullable(existing.genderFocus, incoming.genderFocus),
     language: enrichArray(existing.language, incoming.language),
@@ -385,7 +387,9 @@ export async function importSmallGroups(
         }
       }
 
-      // A null leaderId is allowed — the group is imported without a leader.
+      // A row that creates a group must resolve a leader; every DGroup has one.
+      // Updates may leave it unresolved — they keep whichever leader is already
+      // set — so the refusal lives on the create path, not here.
 
       // ── Parent group (map lookup) ──────────────────────────────────────────
       let parentGroupId: string | null = null
@@ -408,9 +412,10 @@ export async function importSmallGroups(
       // null = column blank or unparseable — never changes an existing group's type
       const csvGroupType = mapped.groupType ? parseGroupType(mapped.groupType) : null
 
+      // leaderId is deliberately not in here: each branch below decides for itself
+      // whether an unresolved leader is fatal (create) or simply left alone (update).
       const data = {
         name:              groupName,
-        leaderId,
         parentGroupId,
         genderFocus:       mapped.genderFocus      ? parseGenderFocus(mapped.genderFocus)        : null,
         language:          mapped.language?.trim() ? [mapped.language.trim()]                    : [],
@@ -454,7 +459,7 @@ export async function importSmallGroups(
           result.skipped++
           continue
         }
-        const enriched = enrichSmallGroupData(existing, data)
+        const enriched = enrichSmallGroupData(existing, { ...data, leaderId })
         // Union existing + incoming life stages (enrich = add data, don't drop).
         const enrichedLifeStageIds = enrichArray(
           existing.lifeStages.map((ls) => ls.id),
@@ -484,22 +489,63 @@ export async function importSmallGroups(
 
       if (existingId && resolution === "use-csv") {
         // CSV wins when the column is provided; a blank cell keeps the current type.
-        const existingType = await db.smallGroup.findUnique({
+        // The outgoing leader comes along so a handover can be logged by name.
+        const existingGroup = await db.smallGroup.findUnique({
           where: { id: existingId },
-          select: { groupType: true },
-        })
-        const finalType = csvGroupType ?? existingType?.groupType ?? SmallGroupType.Regular
-        await db.smallGroup.update({
-          where: { id: existingId },
-          data: {
-            ...data,
-            groupType: finalType,
-            ...(finalType === SmallGroupType.Couples ? { genderFocus: GenderFocus.Mixed } : {}),
-            lifeStages: { set: lifeStageIds.map((id) => ({ id })) },
+          select: {
+            groupType: true,
+            leaderId: true,
+            leader: { select: { firstName: true, lastName: true } },
           },
         })
-        if (data.leaderId) touchedLeaderIds.add(data.leaderId)
+        const finalType = csvGroupType ?? existingGroup?.groupType ?? SmallGroupType.Regular
+
+        await db.$transaction(async (tx) => {
+          await tx.smallGroup.update({
+            where: { id: existingId },
+            data: {
+              ...data,
+              // CSV wins on every other column, but a blank leader cell cannot win
+              // here — it would leave the group without one.
+              ...(leaderId ? { leaderId } : {}),
+              groupType: finalType,
+              ...(finalType === SmallGroupType.Couples ? { genderFocus: GenderFocus.Mixed } : {}),
+              lifeStages: { set: lifeStageIds.map((id) => ({ id })) },
+            },
+          })
+
+          if (leaderId && existingGroup && leaderId !== existingGroup.leaderId) {
+            const incoming = await tx.member.findUnique({
+              where: { id: leaderId },
+              select: { firstName: true, lastName: true },
+            })
+            if (incoming) {
+              await logLeaderChange(tx, {
+                smallGroupId: existingId,
+                toLeaderId: leaderId,
+                toLeaderName: `${incoming.firstName} ${incoming.lastName}`,
+                fromLeaderId: existingGroup.leaderId,
+                fromLeaderName: existingGroup.leader
+                  ? `${existingGroup.leader.firstName} ${existingGroup.leader.lastName}`
+                  : null,
+                context: "(CSV import)",
+              })
+            }
+          }
+        })
+
+        if (leaderId) touchedLeaderIds.add(leaderId)
         result.updated++
+        continue
+      }
+
+      if (!leaderId) {
+        result.errors.push({
+          row: i,
+          message:
+            "No leader found for this group — add a Leader Mobile or Leader Email that matches a member, or supply the leader's name so one can be created",
+        })
+        result.skipped++
         continue
       }
 
@@ -507,12 +553,13 @@ export async function importSmallGroups(
       await db.smallGroup.create({
         data: {
           ...data,
+          leaderId,
           groupType: createType,
           ...(createType === SmallGroupType.Couples ? { genderFocus: GenderFocus.Mixed } : {}),
           lifeStages: { connect: lifeStageIds.map((id) => ({ id })) },
         },
       })
-      if (data.leaderId) touchedLeaderIds.add(data.leaderId)
+      touchedLeaderIds.add(leaderId)
       result.created++
     } catch (e) {
       console.error(`[importSmallGroups] row ${i} failed:`, e)

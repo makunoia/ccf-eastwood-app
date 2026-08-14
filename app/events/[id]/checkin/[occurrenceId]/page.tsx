@@ -6,6 +6,7 @@ import { CheckinBoard } from "../checkin-board"
 import { getEffectiveFormConfig } from "@/lib/forms/context-config-server"
 import { getFormConfig } from "@/lib/forms/config"
 import { resolveWalkInAccess } from "@/lib/events/walk-in-access"
+import { resolveWalkInSession } from "@/lib/events/walk-in-session"
 
 async function getOccurrenceWithEvent(occurrenceId: string) {
   return db.eventOccurrence.findUnique({
@@ -26,6 +27,7 @@ async function getOccurrenceWithEvent(occurrenceId: string) {
           registrationPageBannerUrl: true,
           autoAssignBreakout: true,
           walkInOccurrence: { select: { id: true, isOpen: true } },
+          walkInSessionMode: true,
           ministries: {
             select: {
               ministry: {
@@ -166,7 +168,7 @@ export default async function OccurrenceCheckinPage({
   const walkInAccess = resolveWalkInAccess({
     eventType: occurrence.event.type,
     formIsOpen: walkInConfig.isOpen,
-    session: occurrence.event.walkInOccurrence,
+    session: await resolveWalkInSession(occurrence.event),
   })
 
   const dateLabel = occurrence.date.toLocaleDateString("en-PH", {

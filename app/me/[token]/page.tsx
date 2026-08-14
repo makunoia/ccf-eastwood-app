@@ -1,8 +1,51 @@
 import type { Metadata } from "next"
-import { notFound } from "next/navigation"
+import { randomUUID } from "crypto"
+import { notFound, redirect } from "next/navigation"
 import { db } from "@/lib/db"
 import { mapCouplesInRoster } from "@/lib/family-links"
+import { getLeaderOptions } from "@/lib/small-groups/leader-options"
+import { GuestOnboardingClient } from "./guest-onboarding-client"
 import { MePortalClient } from "./me-portal-client"
+
+/**
+ * A guest holds a token of their own until they name their leader, which promotes
+ * them. Resolving members first keeps a promoted guest's old link working: their
+ * guest row survives promotion, so it is followed through to the member portal
+ * rather than dead-ending on a screen they have already finished.
+ */
+async function resolveGuestToken(token: string) {
+  const guest = await db.guest.findUnique({
+    where: { selfServiceToken: token },
+    select: {
+      id: true,
+      firstName: true,
+      nickname: true,
+      memberId: true,
+      claimedSmallGroupId: true,
+      claimedSatellite: true,
+    },
+  })
+  if (!guest) notFound()
+
+  if (guest.memberId) {
+    const member = await db.member.findUnique({
+      where: { id: guest.memberId },
+      select: { id: true, selfServiceToken: true },
+    })
+    if (!member) notFound()
+    let memberToken = member.selfServiceToken
+    if (!memberToken) {
+      memberToken = randomUUID()
+      await db.member.update({
+        where: { id: member.id },
+        data: { selfServiceToken: memberToken },
+      })
+    }
+    redirect(`/me/${memberToken}`)
+  }
+
+  return guest
+}
 
 export const metadata: Metadata = {
   title: { absolute: "Member Portal" },
@@ -35,6 +78,7 @@ export default async function MemberPortalPage({
           leader: { select: { firstName: true, lastName: true } },
         },
       },
+      upwardSatellite: true,
       ledGroups: {
         orderBy: { name: "asc" },
         select: {
@@ -64,9 +108,23 @@ export default async function MemberPortalPage({
       },
     },
   })
-  if (!member) notFound()
+  if (!member) {
+    const guest = await resolveGuestToken(token)
+    return (
+      <GuestOnboardingClient
+        token={token}
+        guest={{
+          firstName: guest.firstName,
+          nickname: guest.nickname,
+          claimedGroupId: guest.claimedSmallGroupId,
+          claimedSatellite: guest.claimedSatellite,
+        }}
+        leaderOptions={await getLeaderOptions()}
+      />
+    )
+  }
 
-  const [pendingRequest, groupOptions] = await Promise.all([
+  const [pendingRequest, leaderOptions] = await Promise.all([
     db.smallGroupMemberRequest.findFirst({
       where: { memberId: member.id, status: "Pending" },
       select: {
@@ -74,66 +132,8 @@ export default async function MemberPortalPage({
         smallGroup: { select: { id: true, name: true } },
       },
     }),
-    db.smallGroup.findMany({
-      where: {
-        status: "Active",
-        ...(member.smallGroup ? { id: { not: member.smallGroup.id } } : {}),
-      },
-      orderBy: { name: "asc" },
-      select: {
-        id: true,
-        name: true,
-        leaderId: true,
-        groupType: true,
-        meetingFormat: true,
-        scheduleDayOfWeek: true,
-        scheduleTimeStart: true,
-        scheduleTimeEnd: true,
-        leader: { select: { firstName: true, lastName: true } },
-      },
-    }),
+    getLeaderOptions(member.smallGroup?.id),
   ])
-
-  // Group the target groups by their leader so the change-group flow can ask
-  // "which leader?" before "which of their groups?".
-  type GroupOption = {
-    id: string
-    name: string
-    groupType: string
-    meetingFormat: string | null
-    scheduleDayOfWeek: number | null
-    scheduleTimeStart: string | null
-    scheduleTimeEnd: string | null
-  }
-  const leaderMap = new Map<
-    string,
-    { id: string; name: string; groups: GroupOption[] }
-  >()
-  for (const g of groupOptions) {
-    // A group can only be requested through its leader — skip leaderless ones.
-    if (!g.leaderId || !g.leader) continue
-    let entry = leaderMap.get(g.leaderId)
-    if (!entry) {
-      entry = {
-        id: g.leaderId,
-        name: `${g.leader.firstName} ${g.leader.lastName}`,
-        groups: [],
-      }
-      leaderMap.set(g.leaderId, entry)
-    }
-    entry.groups.push({
-      id: g.id,
-      name: g.name,
-      groupType: g.groupType,
-      meetingFormat: g.meetingFormat,
-      scheduleDayOfWeek: g.scheduleDayOfWeek,
-      scheduleTimeStart: g.scheduleTimeStart,
-      scheduleTimeEnd: g.scheduleTimeEnd,
-    })
-  }
-  const leaderOptions = Array.from(leaderMap.values()).sort((a, b) =>
-    a.name.localeCompare(b.name)
-  )
 
   // For Couples groups, derive each member's in-group spouse from Family data so
   // the roster can pair them. Non-couples groups skip the lookup entirely.
@@ -150,10 +150,20 @@ export default async function MemberPortalPage({
     })
   )
 
-  // Upward accountability belongs to the leader, not to each group they lead, so
-  // the portal shows a single satellite — the first one set across their groups.
+  // Upward accountability belongs to the person, not to each group they lead, so
+  // the portal shows a single satellite. The member column is the source of truth;
+  // the fall back to the groups covers leaders who declared one before that column
+  // existed.
   const upwardSatellite =
-    ledGroups.find((g) => g.parentSatellite)?.parentSatellite ?? null
+    member.upwardSatellite ??
+    ledGroups.find((g) => g.parentSatellite)?.parentSatellite ??
+    null
+
+  // "Who is your leader?" comes before "which groups do you lead?" — the same
+  // three answers `hasDeclaredLeader` accepts server-side.
+  const canAddGroup = Boolean(
+    member.smallGroup || upwardSatellite || pendingRequest
+  )
 
   return (
     <MePortalClient
@@ -165,6 +175,7 @@ export default async function MemberPortalPage({
       }}
       myGroup={member.smallGroup}
       upwardSatellite={upwardSatellite}
+      canAddGroup={canAddGroup}
       pendingRequest={
         pendingRequest?.smallGroup
           ? {

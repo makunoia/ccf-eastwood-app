@@ -16,6 +16,7 @@ import {
 } from "@/lib/forms/context-config-server"
 import { resolveEventBrand } from "@/lib/forms/event-brand"
 import { resolveWalkInAccess } from "@/lib/events/walk-in-access"
+import { resolveWalkInSession } from "@/lib/events/walk-in-session"
 
 /**
  * The door surface (CCF-133). Same form component as `/register`, a different
@@ -25,9 +26,11 @@ import { resolveWalkInAccess } from "@/lib/events/walk-in-access"
  *    window entirely. Those belong to the form people fill in ahead of the day;
  *    closing pre-registration the night before must not close the door.
  *  - The session comes from `Event.walkInOccurrenceId`, set by opening a session's
- *    check-in on Sessions (or overridden on the Walk-in form config). It used to
- *    ride in the URL as `?checkin=<id>`, where a stale value reached the form and
- *    only failed on submit.
+ *    check-in on Sessions (or overridden on the Walk-in form config) — unless the
+ *    event is set to follow its latest session, in which case it is resolved from
+ *    that rule instead. Either way it is config, not the URL: it used to ride in
+ *    as `?checkin=<id>`, where a stale value reached the form and only failed on
+ *    submit.
  *  - No session selected, or a selected session that is closed, means the walk-in
  *    form is unavailable — said plainly, rather than rendering a form that cannot
  *    succeed.
@@ -55,6 +58,7 @@ async function getEvent(id: string) {
       registrationPageBannerUrl: true,
       walkInOccurrenceId: true,
       walkInOccurrence: { select: { id: true, isOpen: true } },
+      walkInSessionMode: true,
       ministries: {
         select: {
           ministry: {
@@ -98,7 +102,7 @@ export default async function WalkInPage({
   const access = resolveWalkInAccess({
     eventType: event.type,
     formIsOpen: formConfig.isOpen,
-    session: event.walkInOccurrence,
+    session: await resolveWalkInSession(event),
   })
   if (!access.open) {
     return (

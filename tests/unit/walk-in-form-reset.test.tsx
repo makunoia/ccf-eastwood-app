@@ -34,6 +34,12 @@ vi.mock("@/app/(dashboard)/events/actions", () => ({
 vi.mock("@/app/(dashboard)/guests/actions", () => ({
   searchMembersForLeaderLookup: vi.fn(async () => ({ success: true, data: [] })),
 }))
+// The CCF-147 step-0 gate. These specs skip past it rather than exercise it, but
+// the module still has to resolve — it reaches the database otherwise.
+vi.mock("@/app/(dashboard)/events/registration-lookup-actions", () => ({
+  lookupProfileByMobile: vi.fn(async () => ({ outcome: "none" })),
+  revealProfileForRegistration: vi.fn(async () => ({ ok: false, reason: "notFound" })),
+}))
 
 beforeAll(() => {
   // Radix probes for all of these in jsdom.
@@ -103,8 +109,14 @@ const firstNameInput = () => screen.getByLabelText(/First Name/) as HTMLInputEle
 const lastNameInput = () => screen.getByLabelText(/Last Name/) as HTMLInputElement
 const mobileInput = () => screen.getByLabelText(/Mobile/) as HTMLInputElement
 
-/** Personal → Events → submit, for a person nobody has on file. */
+/** Past the CCF-147 mobile-number gate and onto the form itself. */
+function skipGate() {
+  fireEvent.click(screen.getByRole("button", { name: /Skip — fill in the form manually/ }))
+}
+
+/** Gate → Personal → Events → submit, for a person nobody has on file. */
 async function submitOnce(firstName: string, lastName: string) {
+  skipGate()
   fireEvent.change(firstNameInput(), { target: { value: firstName } })
   fireEvent.change(lastNameInput(), { target: { value: lastName } })
   fireEvent.click(screen.getByRole("button", { name: "Next" }))
@@ -146,6 +158,7 @@ describe("walk-in form — after a submission", () => {
 
   it("drops the in-form Back button too when there is nowhere public to go", () => {
     renderForm({ occurrenceId: null, prefill: {} })
+    skipGate()
 
     // The cluster form is multi-step, so step 1 is where a "Back" would sit.
     expect(screen.queryByRole("link", { name: "Back" })).toBeNull()
@@ -157,18 +170,22 @@ describe("walk-in form — after a submission", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Register another walk-in" }))
 
-    await waitFor(() => expect(firstNameInput()).toBeDefined())
-    expect(firstNameInput().value).toBe("")
-    expect(lastNameInput().value).toBe("")
+    // Reset returns to the gate, not to the form: the next person at the door is
+    // a different person, and their number is the first question.
+    await waitFor(() => expect(mobileInput()).toBeDefined())
     // The `?mobile=` prefill belonged to the person who just registered.
     expect(mobileInput().value).toBe("")
+
+    skipGate()
+    expect(firstNameInput().value).toBe("")
+    expect(lastNameInput().value).toBe("")
   })
 
   it("registers the next person on their own details, not the last one's", async () => {
     renderWalkInForm()
     await submitOnce("Juan", "dela Cruz")
     fireEvent.click(screen.getByRole("button", { name: "Register another walk-in" }))
-    await waitFor(() => expect(firstNameInput().value).toBe(""))
+    await waitFor(() => expect(mobileInput().value).toBe(""))
 
     await submitOnce("Maria", "Santos")
 
@@ -185,6 +202,8 @@ describe("walk-in form — after a submission", () => {
     await submitOnce("Juan", "dela Cruz")
     fireEvent.click(screen.getByRole("button", { name: "Register another walk-in" }))
 
+    await waitFor(() => expect(mobileInput().value).toBe(""))
+    skipGate()
     fireEvent.change(await screen.findByLabelText(/First Name/), {
       target: { value: "Maria" },
     })
@@ -202,6 +221,7 @@ describe("walk-in form — after a submission", () => {
       <RegistrationForm eventId="e1" eventName="Sunday Service" walkIn={WALK_IN} />
     )
 
+    skipGate()
     fireEvent.change(firstNameInput(), { target: { value: "Juan" } })
     fireEvent.change(lastNameInput(), { target: { value: "dela Cruz" } })
     fireEvent.click(screen.getByRole("checkbox", { name: /I agree to/ }))
@@ -209,8 +229,9 @@ describe("walk-in form — after a submission", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Register another walk-in" }))
 
-    await waitFor(() => expect(firstNameInput().value).toBe(""))
-    expect(mobileInput().value).toBe("")
+    await waitFor(() => expect(mobileInput().value).toBe(""))
+    skipGate()
+    expect(firstNameInput().value).toBe("")
   })
 
   it("keeps the public form's own wording when there is no door involved", async () => {

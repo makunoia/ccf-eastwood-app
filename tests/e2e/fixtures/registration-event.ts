@@ -23,9 +23,29 @@ export type SeededEvent = {
   registerPath: string
 }
 
+/** A Member the step-0 lookup can find, with a birthday to prove against. */
+export type SeededMember = {
+  id: string
+  firstName: string
+  lastName: string
+  /** Canonical, as stored. */
+  mobile: string
+  /**
+   * The ten local digits, which is what `PhonePHInput` actually accepts — it
+   * renders `917 123 4567` and normalises to the canonical form on the way out.
+   * A spec that types this and still finds the record is the UI-level proof that
+   * input format doesn't matter.
+   */
+  local: string
+  birthMonth: string
+  birthYear: string
+}
+
 type Fixtures = {
   /** A OneTime event whose Register form has the DGroup step and its Selects on. */
   dgroupEvent: SeededEvent
+  /** An existing member for the CCF-147 shortened flow. */
+  returningMember: SeededMember
 }
 
 async function withDb<T>(fn: (client: Client) => Promise<T>): Promise<T> {
@@ -72,6 +92,54 @@ export const test = base.extend<Fixtures>({
 
     await withDb((client) => client.query(`DELETE FROM "Event" WHERE "id" = $1`, [id]))
   },
+
+  returningMember: async ({}, provide) => {
+    const id = `e2e-m-${randomUUID()}`
+    // A number nobody else in the test DB holds, so the lookup can't come back
+    // ambiguous and land the spec on the picker instead of the confirm card.
+    const suffix = String(Math.floor(1_000_000 + Math.random() * 8_999_999))
+    const local = `917${suffix}`
+    const mobile = `+63 917 ${suffix.slice(0, 3)} ${suffix.slice(3)}`
+
+    await withDb(async (client) => {
+      // `language` is a non-nullable scalar list — omitting it violates the
+      // constraint, the raw-SQL twin of the Prisma `language: []` requirement.
+      await client.query(
+        `INSERT INTO "Member"
+           ("id", "firstName", "lastName", "phone", "email",
+            "birthMonth", "birthYear", "workCity", "dateJoined", "language", "updatedAt")
+         VALUES ($1, 'Maria', 'Santos', $2, $3, 4, 1992, 'Makati', NOW(), '{}'::text[], NOW())`,
+        [id, mobile, `e2e-${id}@example.com`]
+      )
+    })
+
+    await provide({
+      id,
+      firstName: "Maria",
+      lastName: "Santos",
+      mobile,
+      local,
+      birthMonth: "April",
+      birthYear: "1992",
+    })
+
+    await withDb((client) => client.query(`DELETE FROM "Member" WHERE "id" = $1`, [id]))
+  },
 })
+
+/**
+ * Open the registration form past the CCF-147 mobile-number gate.
+ *
+ * Every spec that wants the form itself goes through here, so the gate is
+ * exercised exactly once (in the specs that are about it) rather than being
+ * re-navigated by hand in a dozen places.
+ */
+export async function startFormManually(
+  page: import("@playwright/test").Page,
+  registerPath: string
+) {
+  await page.goto(registerPath)
+  await page.getByRole("button", { name: "Skip — fill in the form manually" }).click()
+}
 
 export { expect } from "@playwright/test"

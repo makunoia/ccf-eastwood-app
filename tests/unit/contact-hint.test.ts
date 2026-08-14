@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { contactHintFrom, maskEmail, maskPhone } from "@/lib/contact-hint"
+import { contactHintFrom, maskEmail, maskName, maskPhone } from "@/lib/contact-hint"
 
 // These strings are rendered on public, unauthenticated pages (check-in, catch-mech
 // volunteer follow-up), so the assertions here are a privacy boundary: only the last
@@ -37,5 +37,25 @@ describe("contactHintFrom", () => {
   it("falls back to the email, then to null", () => {
     expect(contactHintFrom(null, "maria@example.com")).toBe("m•••@example.com")
     expect(contactHintFrom(null, null)).toBeNull()
+  })
+})
+
+describe("maskName", () => {
+  it("reduces every word to its initial", () => {
+    expect(maskName("Maria", "Santos")).toBe("M••• S•••")
+  })
+
+  it("masks middle names and suffixes too — a trailing 'Jr.' is the distinctive part", () => {
+    expect(maskName("Juan Miguel", "dela Cruz Jr.")).toBe("J••• M••• d••• C••• J•••")
+  })
+
+  it("skips nulls and blanks rather than emitting a stray bullet", () => {
+    expect(maskName("Maria", null)).toBe("M•••")
+    expect(maskName("  Maria  ", "")).toBe("M•••")
+  })
+
+  it("never returns an empty string — an unnamed record still renders as something", () => {
+    expect(maskName()).toBe("•••")
+    expect(maskName(null, "   ")).toBe("•••")
   })
 })

@@ -314,6 +314,45 @@ describe("group placement", () => {
     const after = await db.smallGroup.findUniqueOrThrow({ where: { id: group.id } })
     expect(after.status).toBe("Pending")
   })
+
+  it("logs the placement even when no request was waiting to be answered", async () => {
+    const group = await seedGroup()
+    const guest = await seedGuest()
+
+    expect((await promoteGuestToMember(guest.id, group.id)).success).toBe(true)
+
+    const member = await memberFor(guest.id)
+    const logs = await db.smallGroupLog.findMany({ where: { smallGroupId: group.id } })
+    expect(logs).toHaveLength(1)
+    expect(logs[0]).toMatchObject({
+      action: "MemberAdded",
+      memberId: member.id,
+      performedByUserId: "user-1",
+    })
+  })
+
+  it("logs both the answered request and the placement", async () => {
+    const group = await seedGroup()
+    const guest = await seedGuest()
+    await db.smallGroupMemberRequest.create({
+      data: { smallGroupId: group.id, guestId: guest.id, status: "Pending" },
+    })
+
+    await promoteGuestToMember(guest.id, group.id)
+
+    const logs = await db.smallGroupLog.findMany({ where: { smallGroupId: group.id } })
+    expect(logs.map((l) => l.action).sort()).toEqual(["MemberAdded", "TempAssignmentConfirmed"])
+  })
+
+  it("writes no group log when the promotion places nobody", async () => {
+    const group = await seedGroup()
+    const guest = await seedGuest()
+
+    expect((await promoteGuestToMember(guest.id)).success).toBe(true)
+
+    // A groupless promotion is not an event in any group's history.
+    expect(await db.smallGroupLog.count({ where: { smallGroupId: group.id } })).toBe(0)
+  })
 })
 
 describe("pending DGroup requests", () => {
@@ -372,9 +411,9 @@ describe("pending DGroup requests", () => {
     await promoteGuestToMember(guest.id, group.id)
 
     const logs = await db.smallGroupLog.findMany({ where: { smallGroupId: group.id } })
-    expect(logs).toHaveLength(1)
-    expect(logs[0].action).toBe("TempAssignmentConfirmed")
-    expect(logs[0].performedByUserId).toBe("user-1")
+    const resolution = logs.filter((l) => l.action === "TempAssignmentConfirmed")
+    expect(resolution).toHaveLength(1)
+    expect(resolution[0].performedByUserId).toBe("user-1")
   })
 
   it("leaves a seeker request open — being promoted doesn't find them a group", async () => {

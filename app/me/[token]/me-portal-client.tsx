@@ -7,6 +7,7 @@ import {
   IconArrowsExchange,
   IconClock,
   IconDeviceLaptop,
+  IconDotsVertical,
   IconHeart,
   IconMapPin,
   IconPencil,
@@ -23,6 +24,12 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { MultiSelect } from "@/components/ui/multi-select"
 import { ScheduleInput } from "@/components/ui/schedule-input"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import {
   Dialog,
   DialogContent,
@@ -50,12 +57,12 @@ import {
 } from "@/components/ui/select"
 import { PersonCombobox } from "@/components/ui/person-combobox"
 import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
-import { EXTERNAL_SATELLITES_BY_REGION } from "@/lib/constants/ccf-satellites"
 import {
   addCoupleToLedGroup,
   addMemberToLedGroup,
   cancelGroupChange,
   createLedGroup,
+  deleteLedGroup,
   getSpouseForLedGroupMember,
   removeMemberFromLedGroup,
   requestGroupChange,
@@ -64,78 +71,18 @@ import {
   updateLedGroupDetails,
   type MemberSearchResult,
 } from "./actions"
+import {
+  LeaderGroupPicker,
+  MEETING_FORMAT_LABELS,
+  SATELLITE_OPTIONS,
+  formatGroupSchedule as formatSchedule,
+  type LeaderOption,
+  type UpwardScope,
+} from "./portal-shared"
 import type { SpouseInfo } from "@/lib/family-links"
 import { CouplesBadge } from "@/components/group-type-badge"
 
-const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
-
-const MEETING_FORMAT_LABELS: Record<string, string> = {
-  Online: "Online",
-  Hybrid: "Hybrid",
-  InPerson: "In Person",
-}
-
 const NO_CITY = "_none"
-
-// Where a leader's own DGroup sits — here at Eastwood (request to join one) or
-// at another CCF satellite (declare it, nothing to request).
-type UpwardScope = "eastwood" | "satellite"
-
-const SATELLITE_OPTIONS = EXTERNAL_SATELLITES_BY_REGION.flatMap(
-  ({ region, satellites }) =>
-    satellites.map((name) => ({ value: name, label: name, hint: region }))
-)
-
-function formatTime(hhmm: string): string {
-  const [h, m] = hhmm.split(":").map(Number)
-  const period = h < 12 ? "AM" : "PM"
-  const hour = h % 12 || 12
-  return `${hour}:${String(m).padStart(2, "0")} ${period}`
-}
-
-// Times are optional — a group that only declares its meeting day still shows.
-function formatSchedule(day: number | null, start: string | null, end: string | null): string | null {
-  if (day === null) return null
-  if (!start) return DAY_NAMES[day]
-  const time = end ? `${formatTime(start)} – ${formatTime(end)}` : formatTime(start)
-  return `${DAY_NAMES[day]} · ${time}`
-}
-
-function modeLabel(format: string | null): string | null {
-  if (!format) return null
-  return MEETING_FORMAT_LABELS[format] ?? format
-}
-
-// Compact one-line summary used inside the group dropdown rows. Group type is
-// shown separately as a badge (Couples), so it's left out of this line.
-function groupSummaryLine(g: GroupOption): string {
-  const parts = [
-    formatSchedule(g.scheduleDayOfWeek, g.scheduleTimeStart, g.scheduleTimeEnd),
-    modeLabel(g.meetingFormat),
-  ].filter(Boolean)
-  return parts.join(" · ")
-}
-
-
-function GroupDetailRow({
-  icon,
-  label,
-  value,
-}: {
-  icon: React.ReactNode
-  label: string
-  value: React.ReactNode
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <dt className="flex items-center gap-1.5 text-muted-foreground">
-        {icon}
-        {label}
-      </dt>
-      <dd className="font-medium text-right">{value || "—"}</dd>
-    </div>
-  )
-}
 
 type GroupStatus = "Member" | "Timothy" | "Leader" | null
 
@@ -162,22 +109,6 @@ type LedGroup = {
   }[]
 }
 
-type GroupOption = {
-  id: string
-  name: string
-  groupType: string
-  meetingFormat: "Online" | "Hybrid" | "InPerson" | string | null
-  scheduleDayOfWeek: number | null
-  scheduleTimeStart: string | null
-  scheduleTimeEnd: string | null
-}
-
-type LeaderOption = {
-  id: string
-  name: string
-  groups: GroupOption[]
-}
-
 type Props = {
   token: string
   member: {
@@ -196,6 +127,8 @@ type Props = {
   pendingRequest: { id: string; groupId: string; groupName: string } | null
   /** The CCF satellite this member's own DGroup leader belongs to, if declared. */
   upwardSatellite: string | null
+  /** Whether they've answered "who is your leader?" — the gate on adding groups. */
+  canAddGroup: boolean
   ledGroups: LedGroup[]
   leaderOptions: LeaderOption[]
 }
@@ -206,6 +139,7 @@ export function MePortalClient({
   myGroup,
   pendingRequest,
   upwardSatellite,
+  canAddGroup,
   ledGroups,
   leaderOptions,
 }: Props) {
@@ -247,12 +181,13 @@ export function MePortalClient({
             pendingRequest={pendingRequest}
             upwardSatellite={upwardSatellite}
             leaderOptions={leaderOptions}
-            ledGroupCount={ledGroups.length}
           />
 
-          {ledGroups.length > 0 && (
-            <LedGroupsSection token={token} ledGroups={ledGroups} />
-          )}
+          <LedGroupsSection
+            token={token}
+            ledGroups={ledGroups}
+            canAddGroup={canAddGroup}
+          />
         </div>
       </div>
     </div>
@@ -264,9 +199,11 @@ export function MePortalClient({
 function LedGroupsSection({
   token,
   ledGroups,
+  canAddGroup,
 }: {
   token: string
   ledGroups: LedGroup[]
+  canAddGroup: boolean
 }) {
   const [createOpen, setCreateOpen] = React.useState(false)
   // Bumped each time the create dialog opens so it remounts with empty fields.
@@ -288,11 +225,32 @@ function LedGroupsSection({
             Manage your groups and their members.
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={openCreate}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={openCreate}
+          disabled={!canAddGroup}
+        >
           <IconPlus className="size-4" />
           Add group
         </Button>
       </div>
+
+      {!canAddGroup && (
+        <p className="rounded-xl border border-dashed bg-background px-5 py-6 text-sm leading-6 text-muted-foreground">
+          Tell us who your own DGroup leader is first — answer{" "}
+          <span className="font-medium text-foreground">My group</span> above and
+          you can add the groups you lead here.
+        </p>
+      )}
+
+      {canAddGroup && ledGroups.length === 0 && (
+        <p className="rounded-xl border border-dashed bg-background px-5 py-6 text-sm leading-6 text-muted-foreground">
+          You don&apos;t lead any DGroups yet. Add one and you can manage its
+          members from here.
+        </p>
+      )}
+
       <div className="space-y-4">
         {ledGroups.map((g) => (
           <LedGroupCard key={g.id} token={token} group={g} />
@@ -317,20 +275,16 @@ function MyGroupSection({
   pendingRequest,
   upwardSatellite,
   leaderOptions,
-  ledGroupCount,
 }: Pick<
   Props,
   "token" | "myGroup" | "pendingRequest" | "upwardSatellite" | "leaderOptions"
-> & { ledGroupCount: number }) {
+>) {
   const router = useRouter()
   const [dialogOpen, setDialogOpen] = React.useState(false)
   const [selectedLeaderId, setSelectedLeaderId] = React.useState("")
   const [selectedGroupId, setSelectedGroupId] = React.useState("")
   const [submitting, setSubmitting] = React.useState(false)
   const [cancelling, setCancelling] = React.useState(false)
-  // Only a leader has a group to hang the satellite on — a plain member's upward
-  // DGroup is just their own membership.
-  const canDeclareSatellite = ledGroupCount > 0
   const [scope, setScope] = React.useState<UpwardScope>(
     upwardSatellite ? "satellite" : "eastwood"
   )
@@ -341,22 +295,11 @@ function MyGroupSection({
     ? formatSchedule(myGroup.scheduleDayOfWeek, myGroup.scheduleTimeStart, myGroup.scheduleTimeEnd)
     : null
 
-  const selectedLeader = leaderOptions.find((l) => l.id === selectedLeaderId)
-  const selectedGroup =
-    selectedLeader?.groups.find((g) => g.id === selectedGroupId) ?? null
-
   function resetSelection() {
     setSelectedLeaderId("")
     setSelectedGroupId("")
     setScope(upwardSatellite ? "satellite" : "eastwood")
     setSatellite(upwardSatellite ?? "")
-  }
-
-  function handleLeaderChange(leaderId: string) {
-    setSelectedLeaderId(leaderId)
-    // Auto-pick the group when the chosen leader has exactly one.
-    const leader = leaderOptions.find((l) => l.id === leaderId)
-    setSelectedGroupId(leader && leader.groups.length === 1 ? leader.groups[0].id : "")
   }
 
   function handleDialogOpenChange(open: boolean) {
@@ -471,17 +414,13 @@ function MyGroupSection({
           </div>
           <p className="mt-4 border-t pt-4 text-sm leading-6 text-muted-foreground">
             Because your leader is outside CCF Eastwood, there&apos;s no DGroup here
-            to link — this is recorded on the{" "}
-            {ledGroupCount === 1 ? "group" : "groups"} you lead instead.
+            to link — we record the satellite instead.
           </p>
         </div>
       ) : (
         <div className="rounded-xl border border-dashed bg-background px-5 py-6 text-sm leading-6 text-muted-foreground">
           You&apos;re not part of a DGroup yet. You can send a request to join one
-          below
-          {canDeclareSatellite
-            ? " — or tell us if your leader is from another CCF satellite."
-            : "."}
+          below — or tell us if your leader is from another CCF satellite.
         </div>
       )}
 
@@ -520,37 +459,32 @@ function MyGroupSection({
               {myGroup ? "Change DGroup" : "My DGroup"}
             </DialogTitle>
             <DialogDescription>
-              {canDeclareSatellite
-                ? "Your DGroup is either here at CCF Eastwood or at another CCF satellite."
-                : "Choose the leader first, then pick their group. Your request will be sent to that leader for confirmation."}
+              Your DGroup is either here at CCF Eastwood or at another CCF
+              satellite.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            {/* Where the member's own DGroup sits — leaders only, since the
-                satellite is stored on the group they lead. */}
-            {canDeclareSatellite && (
-              <div className="space-y-2">
-                <Label>Where is your DGroup?</Label>
-                <Select
-                  value={scope}
-                  onValueChange={(v) => setScope(v as UpwardScope)}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="eastwood">
-                      Here at CCF Eastwood
-                    </SelectItem>
-                    <SelectItem value="satellite">
-                      My leader is from another CCF satellite
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+            <div className="space-y-2">
+              <Label>Where is your DGroup?</Label>
+              <Select
+                value={scope}
+                onValueChange={(v) => setScope(v as UpwardScope)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="eastwood">
+                    Here at CCF Eastwood
+                  </SelectItem>
+                  <SelectItem value="satellite">
+                    My leader is from another CCF satellite
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-            {scope === "satellite" && canDeclareSatellite ? (
+            {scope === "satellite" ? (
               <div className="space-y-2">
                 <Label>CCF satellite</Label>
                 <PersonCombobox
@@ -562,8 +496,8 @@ function MyGroupSection({
                   emptyText="No satellite found."
                 />
                 <p className="text-xs leading-5 text-muted-foreground">
-                  There&apos;s no request to send — this is saved on the{" "}
-                  {ledGroupCount === 1 ? "group" : "groups"} you lead.
+                  There&apos;s no request to send — your leader is outside CCF
+                  Eastwood, so there&apos;s no DGroup here to link.
                   {myGroup
                     ? ` You'll also be removed from ${myGroup.name}, since that stood in for your DGroup.`
                     : ""}
@@ -578,99 +512,13 @@ function MyGroupSection({
               </div>
             ) : (
               <>
-                {/* Step 1 — leader */}
-                <div className="space-y-2">
-                  <Label>1. Group leader</Label>
-                  <Select value={selectedLeaderId} onValueChange={handleLeaderChange}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select a leader" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {leaderOptions.map((l) => (
-                        <SelectItem key={l.id} value={l.id}>
-                          {l.name}
-                          {l.groups.length > 1 ? ` (${l.groups.length} groups)` : ""}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Step 2 — group */}
-                <div className="space-y-2">
-                  <Label className={selectedLeader ? "" : "text-muted-foreground"}>
-                    2. DGroup
-                  </Label>
-                  <Select
-                    value={selectedGroupId}
-                    onValueChange={setSelectedGroupId}
-                    disabled={!selectedLeader}
-                  >
-                    {/* Custom trigger content keeps the trigger to a single line
-                        while the dropdown rows below carry the full details. */}
-                    <SelectTrigger className="w-full">
-                      {selectedGroup ? (
-                        <span className="truncate">{selectedGroup.name}</span>
-                      ) : (
-                        <span className="text-muted-foreground">
-                          {selectedLeader ? "Select a group" : "Choose a leader first"}
-                        </span>
-                      )}
-                    </SelectTrigger>
-                    <SelectContent>
-                      {selectedLeader?.groups.map((g) => {
-                        const summary = groupSummaryLine(g)
-                        return (
-                          <SelectItem key={g.id} value={g.id} className="py-2">
-                            <div className="flex flex-col gap-1">
-                              <span className="flex items-center gap-2 font-medium">
-                                {g.name}
-                                {g.groupType === "Couples" && <CouplesBadge />}
-                              </span>
-                              {summary && (
-                                <span className="text-xs text-muted-foreground">
-                                  {summary}
-                                </span>
-                              )}
-                            </div>
-                          </SelectItem>
-                        )
-                      })}
-                    </SelectContent>
-                  </Select>
-
-                  {/* Details of the chosen group — stays visible after the
-                      dropdown closes so the member can confirm before submitting. */}
-                  {selectedGroup && (
-                    <dl className="mt-1 space-y-1.5 rounded-lg border bg-muted/30 p-3 text-sm">
-                      <GroupDetailRow
-                        icon={<IconUsers className="size-3.5" />}
-                        label="Type"
-                        value={
-                          selectedGroup.groupType === "Couples" ? (
-                            <CouplesBadge />
-                          ) : (
-                            "Regular"
-                          )
-                        }
-                      />
-                      <GroupDetailRow
-                        icon={<IconClock className="size-3.5" />}
-                        label="Schedule"
-                        value={formatSchedule(
-                          selectedGroup.scheduleDayOfWeek,
-                          selectedGroup.scheduleTimeStart,
-                          selectedGroup.scheduleTimeEnd
-                        )}
-                      />
-                      <GroupDetailRow
-                        icon={<IconDeviceLaptop className="size-3.5" />}
-                        label="Mode"
-                        value={modeLabel(selectedGroup.meetingFormat)}
-                      />
-                    </dl>
-                  )}
-                </div>
+                <LeaderGroupPicker
+                  leaderOptions={leaderOptions}
+                  selectedLeaderId={selectedLeaderId}
+                  onLeaderChange={setSelectedLeaderId}
+                  selectedGroupId={selectedGroupId}
+                  onGroupChange={setSelectedGroupId}
+                />
 
                 {upwardSatellite && (
                   <p className="text-xs leading-5 text-muted-foreground">
@@ -706,6 +554,8 @@ function LedGroupCard({ token, group }: { token: string; group: LedGroup }) {
     name: string
   } | null>(null)
   const [removing, setRemoving] = React.useState(false)
+  const [deleteOpen, setDeleteOpen] = React.useState(false)
+  const [deleting, setDeleting] = React.useState(false)
 
   const schedule = formatSchedule(
     group.scheduleDayOfWeek,
@@ -751,6 +601,24 @@ function LedGroupCard({ token, group }: { token: string; group: LedGroup }) {
     router.refresh()
   }
 
+  async function handleDelete() {
+    setDeleting(true)
+    const result = await deleteLedGroup(token, group.id)
+    setDeleting(false)
+    if (!result.success) {
+      toast.error(result.error)
+      return
+    }
+    setDeleteOpen(false)
+    toast.success("Group deleted")
+    router.refresh()
+  }
+
+  // Deleting is only offered for a group with nobody in it. The server checks
+  // more than this (child groups, pending requests), but an empty roster is the
+  // one condition the card can see, and it's the one that matters here.
+  const isEmpty = members.length === 0
+
   return (
     <div className="rounded-xl border bg-background p-5 shadow-sm">
       <div className="flex items-start justify-between gap-3">
@@ -788,28 +656,40 @@ function LedGroupCard({ token, group }: { token: string; group: LedGroup }) {
             )}
           </div>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="shrink-0"
-          onClick={() => setEditOpen(true)}
-        >
-          <IconPencil className="size-4" />
-          Edit
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="-mr-2 -mt-1 shrink-0 text-muted-foreground"
+              aria-label={`More actions for ${group.name}`}
+            >
+              <IconDotsVertical className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              disabled={!isEmpty}
+              onSelect={() => setDeleteOpen(true)}
+              className="text-destructive focus:text-destructive"
+            >
+              <IconTrash className="size-4" />
+              Delete group
+            </DropdownMenuItem>
+            {!isEmpty && (
+              <p className="max-w-52 px-2 py-1.5 text-xs leading-4 text-muted-foreground">
+                Only an empty group can be deleted — remove its members first.
+              </p>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* Members */}
       <div className="mt-5 space-y-2 border-t pt-4">
-        <div className="flex items-center justify-between">
-          <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-            Members
-          </p>
-          <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
-            <IconPlus className="size-4" />
-            Add member
-          </Button>
-        </div>
+        <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+          Members
+        </p>
         {group.members.length > 0 ? (
           <ul className="divide-y rounded-lg border">
             {orderedMembers.map((m) => (
@@ -851,6 +731,19 @@ function LedGroupCard({ token, group }: { token: string; group: LedGroup }) {
         ) : (
           <p className="text-sm text-muted-foreground">No members yet</p>
         )}
+      </div>
+
+      {/* The two things a leader actually does here, given their own row rather
+          than crowded against the group's name and the roster heading. */}
+      <div className="mt-5 flex flex-wrap gap-2 border-t pt-4">
+        <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
+          <IconPlus className="size-4" />
+          Add member
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
+          <IconPencil className="size-4" />
+          Edit
+        </Button>
       </div>
 
       <LedGroupFormDialog
@@ -896,6 +789,31 @@ function LedGroupCard({ token, group }: { token: string; group: LedGroup }) {
               className="bg-destructive text-white hover:bg-destructive/90"
             >
               {removing ? "Removing…" : "Remove"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete group?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {group.name} will be deleted, along with its history. This cannot be
+              undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                handleDelete()
+              }}
+              disabled={deleting}
+              className="bg-destructive text-white hover:bg-destructive/90"
+            >
+              {deleting ? "Deleting…" : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

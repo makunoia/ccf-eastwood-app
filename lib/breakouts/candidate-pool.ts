@@ -19,6 +19,21 @@ import type { Prisma } from "@/app/generated/prisma/client"
  * volunteer who is still attached as a facilitator is excluded too. That was the
  * pre-existing behavior and changing it is a separate decision.
  */
+/**
+ * The other half of eligibility: which *groups* may still receive someone
+ * without an admin explicitly putting them there.
+ *
+ * Spelled as a shared constant because it has to hold identically in three
+ * queries that otherwise share nothing — the public/walk-in picker
+ * (`fetchBreakoutCandidates`), the scorer (`matchBreakoutGroups`) and the
+ * registration write (`assignBreakoutForRegistrant`). A group that is off in one
+ * of them and on in another is the bug this prevents.
+ *
+ * Deliberately *not* applied to the admin add/transfer paths: switching a group
+ * off aims at the automatic and public routes, not at staff judgment.
+ */
+export const ENABLED_BREAKOUT_WHERE = { isEnabled: true } as const satisfies Prisma.BreakoutGroupWhereInput
+
 export function unassignedCandidateWhere(eventId: string): Prisma.EventRegistrantWhereInput {
   return {
     breakoutGroupMemberships: { none: {} },

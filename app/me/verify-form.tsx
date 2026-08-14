@@ -42,7 +42,7 @@ export function VerifyForm() {
           autoFocus
         />
         <p className="text-xs leading-5 text-muted-foreground">
-          Enter the number connected to your CCF Eastwood member record.
+          Enter the number you gave us at CCF Eastwood.
         </p>
         {error && (
           <p className="text-xs font-medium text-destructive" role="alert">

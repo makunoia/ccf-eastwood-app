@@ -293,7 +293,7 @@ export function SmallGroupMatchCard({
 
           <div className="flex-1 space-y-4 overflow-y-auto px-6 py-4">
             {lowConfidence && (
-              <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+              <p className="rounded-md bg-muted px-3 py-2 text-xs text-foreground/60">
                 Limited profile information — this score is based on only part of the
                 profile.
               </p>

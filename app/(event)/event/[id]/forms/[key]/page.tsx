@@ -22,6 +22,7 @@ import { RegistrationWindowSetting } from "@/components/forms/registration-windo
 import { VolunteerInfoUrlCopier } from "@/components/forms/volunteer-info-url-copier"
 import { WalkInSessionSetting } from "@/components/forms/walk-in-session-setting"
 import { formatOccurrenceDate } from "@/lib/format/occurrence"
+import { latestWalkInSession } from "@/lib/events/walk-in-session"
 
 function toDateInput(d: Date | null): string {
   return d ? d.toISOString().split("T")[0] : ""
@@ -60,6 +61,7 @@ export default async function EventFormEditorPage({
       registrationPageDescription: true,
       registrationPageBannerUrl: true,
       walkInOccurrenceId: true,
+      walkInSessionMode: true,
     },
   })
   if (!event) notFound()
@@ -85,16 +87,21 @@ export default async function EventFormEditorPage({
       ? await getEventFormSuccessMessages(id)
       : null
 
-  // Walk-in registers into one named session (CCF-133). OneTime events have no
-  // occurrences to pick from — a walk-in there stamps `attendedAt` instead.
-  const walkInOccurrences =
-    meta.key === "EventWalkIn" && event.type !== "OneTime"
-      ? await db.eventOccurrence.findMany({
-          where: { eventId: id },
-          orderBy: { date: "asc" },
-          select: { id: true, date: true, isOpen: true },
-        })
-      : []
+  // Walk-in registers into one named session (CCF-133), or follows whichever one
+  // is newest. OneTime events have no occurrences to pick from — a walk-in there
+  // stamps `attendedAt` instead.
+  const showWalkInSession = meta.key === "EventWalkIn" && event.type !== "OneTime"
+  const walkInOccurrences = showWalkInSession
+    ? await db.eventOccurrence.findMany({
+        where: { eventId: id },
+        orderBy: { date: "asc" },
+        select: { id: true, date: true, isOpen: true },
+      })
+    : []
+  // Which session "latest" resolves to *right now*, read through the same helper
+  // the public door uses so the card can never advertise a different session than
+  // the one people would be registered into.
+  const latestWalkIn = showWalkInSession ? await latestWalkInSession(id) : null
 
   /**
    * MultiDay and Recurring check-in has no event-wide open state to own: each
@@ -209,7 +216,7 @@ export default async function EventFormEditorPage({
 
       {meta.key === "EventWalkIn" && (
         <div className="flex flex-col gap-8">
-          {event.type !== "OneTime" && (
+          {showWalkInSession && (
             <WalkInSessionSetting
               eventId={id}
               sessionsHref={`/event/${id}/sessions`}
@@ -218,7 +225,20 @@ export default async function EventFormEditorPage({
                 label: formatOccurrenceDate(o.date),
                 isOpen: o.isOpen,
               }))}
-              initial={event.walkInOccurrenceId}
+              initial={
+                event.walkInSessionMode === "Latest"
+                  ? { mode: "Latest" }
+                  : { mode: "Pinned", occurrenceId: event.walkInOccurrenceId }
+              }
+              latest={
+                latestWalkIn
+                  ? {
+                      id: latestWalkIn.id,
+                      label: formatOccurrenceDate(latestWalkIn.date),
+                      isOpen: latestWalkIn.isOpen,
+                    }
+                  : null
+              }
               sessionNoun={event.type === "Recurring" ? "session" : "day"}
             />
           )}

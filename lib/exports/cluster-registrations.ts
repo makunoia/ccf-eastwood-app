@@ -30,12 +30,32 @@ import type { EventFormConfigData, FormToggleKey } from "@/lib/forms/context-con
 /** An event of the cluster, as a column in the export. */
 export type ClusterExportEvent = { id: string; name: string }
 
-/** How a person stands on one of the day's events. Absent = not on it at all. */
-export type ClusterParticipation = "CheckedIn" | "Registered"
+/**
+ * How a person stands on one of the day's events. Absent = not on it at all.
+ *
+ * `SeriesOnly` is a registration on a Recurring/MultiDay event that carries no
+ * evidence for this particular day — they signed up for the series at some other
+ * time and neither checked in nor came through the day's link. It is deliberately
+ * distinct from a blank: the person IS registered, and an export that blanked
+ * them would tell an admin to go add someone the system already holds.
+ */
+export type ClusterParticipation = "CheckedIn" | "Registered" | "SeriesOnly"
 
 const PARTICIPATION_LABEL: Record<ClusterParticipation, string> = {
   CheckedIn: "Checked in",
   Registered: "Registered",
+  SeriesOnly: "On the series",
+}
+
+/**
+ * Which value survives when one person holds two registrations on the same
+ * event: having arrived beats having signed up for the day, which beats merely
+ * standing on the series. Mirrors `STANDING_RANK` in `lib/clusters/roster.ts`.
+ */
+export const PARTICIPATION_RANK: Record<ClusterParticipation, number> = {
+  CheckedIn: 2,
+  Registered: 1,
+  SeriesOnly: 0,
 }
 
 /** One person on the cluster's day, with every event they're on folded in. */

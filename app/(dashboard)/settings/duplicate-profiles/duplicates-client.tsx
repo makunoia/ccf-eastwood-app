@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { IconAlertTriangle, IconCheck, IconCircleCheckFilled, IconCircleXFilled } from "@tabler/icons-react"
+import { IconAlertTriangle, IconCheck, IconCircleCheckFilled, IconCircleXFilled, IconUsers } from "@tabler/icons-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -27,14 +27,22 @@ type DuplicateRecord = {
   recordType: "member" | "guest"
 }
 
+type DuplicateField = "phone" | "email" | "name"
+
 type DuplicateGroup = {
-  field: "phone" | "email"
+  field: DuplicateField
   value: string
   records: DuplicateRecord[]
 }
 
 type Props = {
   groups: DuplicateGroup[]
+}
+
+const FIELD_LABEL: Record<DuplicateField, string> = {
+  phone: "Phone",
+  email: "Email",
+  name: "Name",
 }
 
 type Selection = {
@@ -118,7 +126,7 @@ function ResultsStep({ results, onClose }: { results: MergeResults | null; onClo
                   <IconCircleXFilled className="size-4 text-destructive shrink-0 mt-0.5" />
                   <div className="min-w-0 flex-1 space-y-0.5">
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="font-mono text-xs">{f.value}</span>
+                      <span className={f.field === "name" ? "text-xs" : "font-mono text-xs"}>{f.value}</span>
                       <span className="text-xs text-muted-foreground">({f.field})</span>
                       <span className="text-muted-foreground">·</span>
                       <span className="text-xs">
@@ -145,7 +153,7 @@ function ResultsStep({ results, onClose }: { results: MergeResults | null; onClo
                 <div key={i} className="flex items-start gap-2 px-3 py-2 text-sm">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="font-mono text-xs">{s.value}</span>
+                      <span className={s.field === "name" ? "text-xs" : "font-mono text-xs"}>{s.value}</span>
                       <span className="text-xs text-muted-foreground">({s.field})</span>
                       <span className="text-muted-foreground">·</span>
                       <span className="text-xs">
@@ -173,7 +181,7 @@ function ResultsStep({ results, onClose }: { results: MergeResults | null; onClo
 }
 
 type FailureRow = {
-  field: "phone" | "email"
+  field: DuplicateField
   value: string
   keeperName: string
   keeperType: "member" | "guest"
@@ -182,7 +190,7 @@ type FailureRow = {
 }
 
 type SuccessRow = {
-  field: "phone" | "email"
+  field: DuplicateField
   value: string
   keeperName: string
   keeperType: "member" | "guest"
@@ -218,6 +226,12 @@ export function DuplicatesClient({ groups }: Props) {
     window.addEventListener("beforeunload", onBeforeUnload)
     return () => window.removeEventListener("beforeunload", onBeforeUnload)
   }, [submitting])
+
+  const nameGroupCount = React.useMemo(
+    () => groups.filter((g) => g.field === "name").length,
+    [groups],
+  )
+  const contactGroupCount = groups.length - nameGroupCount
 
   // Tally valid and invalid selections
   const tally = React.useMemo(() => {
@@ -255,6 +269,9 @@ export function DuplicatesClient({ groups }: Props) {
     setSelections((prev) => {
       const next = new Map(prev)
       for (const g of groups) {
+        // Name matches are a weak signal — they stay a deliberate, per-group
+        // decision and are never swept up by "select all".
+        if (g.field === "name") continue
         if (next.has(groupKey(g))) continue
         // Pick the first Member in the group if any (avoids invalid Guest-as-keeper combos)
         const memberPick = g.records.find((r) => r.recordType === "member")
@@ -277,7 +294,7 @@ export function DuplicatesClient({ groups }: Props) {
 
     // Build the server payload and a parallel display-context array indexed identically.
     type Context = {
-      field: "phone" | "email"
+      field: DuplicateField
       value: string
       keeperName: string
       keeperType: "member" | "guest"
@@ -384,7 +401,9 @@ export function DuplicatesClient({ groups }: Props) {
     return (
       <div className="rounded-lg border border-dashed p-10 text-center">
         <p className="text-sm font-medium">No duplicates found</p>
-        <p className="mt-1 text-sm text-muted-foreground">All phone and email addresses are unique across Members and Guests.</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          No phone number, email address, or full name is shared across Members and Guests.
+        </p>
       </div>
     )
   }
@@ -394,11 +413,21 @@ export function DuplicatesClient({ groups }: Props) {
       <div className="space-y-4 pb-24">
         <div className="flex items-center justify-between gap-2">
           <p className="text-sm text-muted-foreground">
-            {groups.length} duplicate {groups.length === 1 ? "contact" : "contacts"} found
+            {groups.length} potential {groups.length === 1 ? "duplicate" : "duplicates"} found
+            {nameGroupCount > 0 && (
+              <>
+                {" "}· {contactGroupCount} by contact, {nameGroupCount} by name
+              </>
+            )}
           </p>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={selectAllMembersAsKeepers}>
-              Select all (prefer Member)
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={selectAllMembersAsKeepers}
+              disabled={contactGroupCount === 0}
+            >
+              Select all contact matches (prefer Member)
             </Button>
             <Button variant="ghost" size="sm" onClick={clearAll} disabled={selections.size === 0}>
               Clear
@@ -412,12 +441,24 @@ export function DuplicatesClient({ groups }: Props) {
           return (
             <div key={groupKey(group)} className="rounded-lg border p-4 space-y-3">
               <div className="flex items-center gap-2">
-                <IconAlertTriangle className="size-4 text-amber-500 shrink-0" />
-                <span className="text-sm font-medium font-mono">{group.value}</span>
+                {group.field === "name" ? (
+                  <IconUsers className="size-4 text-muted-foreground shrink-0" />
+                ) : (
+                  <IconAlertTriangle className="size-4 text-amber-500 shrink-0" />
+                )}
+                <span className={["text-sm font-medium", group.field === "name" ? "" : "font-mono"].join(" ")}>
+                  {group.value}
+                </span>
                 <Badge variant="outline" className="text-xs">
-                  {group.field === "phone" ? "Phone" : "Email"}
+                  {FIELD_LABEL[group.field]}
                 </Badge>
               </div>
+              {group.field === "name" && (
+                <p className="text-xs text-muted-foreground">
+                  Same name, different contact details — two people can share a name, so open each profile and
+                  confirm before merging.
+                </p>
+              )}
               <div className="divide-y rounded-md border">
                 {group.records.map((record) => {
                   const isKeeper = sel?.keeperId === record.id

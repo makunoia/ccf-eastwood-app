@@ -5,6 +5,7 @@ import { IconCheck, IconCalendarEvent, IconForms, IconUserCheck, IconUsers } fro
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { getClusterOverview } from "@/lib/clusters/aggregate"
+import { standingFor } from "@/lib/clusters/roster"
 import { DetailPageHeader } from "@/components/detail-page-header"
 import { StatCard } from "@/components/session-stat-card"
 import { Badge } from "@/components/ui/badge"
@@ -212,20 +213,35 @@ export default async function ClusterDashboardPage({
                       </TableCell>
                       {overview.events.map((e) => {
                         const cell = person.perEvent[e.id]
+                        const standing = cell ? standingFor(cell) : null
                         return (
                           <TableCell key={e.id} className="text-center">
-                            {cell ? (
-                              cell.checkedIn ? (
-                                <span className="inline-flex items-center gap-1 text-green-600">
-                                  <IconCheck className="size-4" />
-                                  <span className="sr-only">Checked in</span>
+                            {standing === "CheckedIn" ? (
+                              <span className="inline-flex items-center gap-1 text-green-600">
+                                <IconCheck className="size-4" />
+                                <span className="sr-only">Checked in</span>
+                              </span>
+                            ) : standing === "OnDay" ? (
+                              <span
+                                className="inline-block size-2 rounded-full bg-primary/60 align-middle"
+                                title="Registered for this day"
+                              >
+                                <span className="sr-only">Registered</span>
+                              </span>
+                            ) : standing === "SeriesOnly" ? (
+                              // Registered, but nothing ties the registration to
+                              // THIS day. Its own glyph on purpose: showing it as
+                              // "—" told admins the person was not registered,
+                              // while the add-registrant screen refused to add
+                              // them because the registration already existed.
+                              <span
+                                className="inline-block size-2 rounded-full border border-primary/60 align-middle"
+                                title="Registered for the series — no sign-up or check-in for this day"
+                              >
+                                <span className="sr-only">
+                                  On the series, not this day
                                 </span>
-                              ) : (
-                                <span
-                                  className="inline-block size-2 rounded-full bg-primary/60"
-                                  title="Registered"
-                                />
-                              )
+                              </span>
                             ) : (
                               <span className="text-muted-foreground/40">—</span>
                             )}
@@ -240,8 +256,20 @@ export default async function ClusterDashboardPage({
             <p className="text-xs text-muted-foreground">
               <IconCheck className="inline size-3 text-green-600" /> checked in ·{" "}
               <span className="inline-block size-2 rounded-full bg-primary/60 align-middle" />{" "}
-              registered · — not registered
+              registered for this day ·{" "}
+              <span className="inline-block size-2 rounded-full border border-primary/60 align-middle" />{" "}
+              on the series only · — not registered
             </p>
+            {overview.totals.seriesOnlyPeople > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {overview.totals.seriesOnlyPeople}{" "}
+                {overview.totals.seriesOnlyPeople === 1 ? "person is" : "people are"}{" "}
+                registered for a recurring event in this day but have no sign-up
+                through the day link and no check-in, so they are listed without
+                counting toward the figures above. Checking them in moves them
+                into the day.
+              </p>
+            )}
           </div>
         )}
       </div>

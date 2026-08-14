@@ -3,6 +3,7 @@ import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { mapCouplesInRoster } from "@/lib/family-links"
 import { logActorName } from "@/lib/small-group-log"
+import type { SmallGroupLogAction } from "@/app/generated/prisma/client"
 import { SmallGroupForm } from "../small-group-form"
 import { type SmallGroupRow } from "../columns"
 
@@ -26,7 +27,12 @@ export type PendingRequest = {
 
 export type GroupLogEntry = {
   id: string
-  action: string
+  /**
+   * Real log rows carry a `SmallGroupLogAction`; confirmation submissions are
+   * folded into the same timeline under a synthetic action with no enum value.
+   * The union is what lets the renderer's label map be exhaustive.
+   */
+  action: SmallGroupLogAction | "ConfirmationSubmitted"
   description: string | null
   performedByName: string | null
   createdAt: Date
@@ -111,14 +117,14 @@ async function getSmallGroup(id: string): Promise<(SmallGroupRow & {
   const logs: GroupLogEntry[] = [
     ...g.logs.map((l) => ({
       id: l.id,
-      action: l.action as string,
+      action: l.action,
       description: l.description,
       performedByName: logActorName(l),
       createdAt: l.createdAt,
     })),
     ...submissions.map((s) => ({
       id: `submission-${s.id}`,
-      action: "ConfirmationSubmitted",
+      action: "ConfirmationSubmitted" as const,
       description: `${s.submittedByName} submitted the confirmation form — ${s.confirmedCount} confirmed, ${s.declinedCount} declined, ${s.deferredCount} deferred`,
       performedByName: null,
       createdAt: s.createdAt,

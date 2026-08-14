@@ -8,7 +8,8 @@ import { canWrite } from "@/lib/permissions"
 import { memberSchema, type MemberFormValues } from "@/lib/validations/member"
 import { checkDuplicateContactInfo } from "@/lib/duplicate-check"
 import { buildScheduleSlot } from "@/lib/matching/candidate-schedule"
-import { runBatchDelete } from "@/lib/batch"
+import { runBatchDelete, BatchDeleteBlocked } from "@/lib/batch"
+import { logMembershipMove } from "@/lib/small-groups/membership-log"
 import type { BatchDeleteResult } from "@/components/batch/types"
 
 type ActionResult<T = void> =
@@ -135,12 +136,68 @@ export async function deleteMember(id: string): Promise<ActionResult> {
   if (authError) return { success: false, error: authError.error }
 
   try {
-    await db.member.delete({ where: { id } })
+    const session = await auth()
+    // The FK is ON DELETE RESTRICT, so this is enforced either way — the read is
+    // here to name the groups instead of surfacing a bare constraint violation.
+    const blocking = await describeLedGroups(id)
+    if (blocking) return { success: false, error: blocking }
+
+    await db.$transaction(async (tx) => {
+      await logMemberDeparture(tx, id, session?.user?.id ?? null)
+      await tx.member.delete({ where: { id } })
+    })
     revalidatePath("/members")
+    revalidatePath("/small-groups")
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to delete member" }
   }
+}
+
+/**
+ * Every DGroup has a leader, so a member who leads one cannot be deleted — the
+ * group would be left with nobody. Returns the refusal to show the admin, naming
+ * the groups so they know what to reassign, or null when nothing blocks.
+ */
+async function describeLedGroups(memberId: string): Promise<string | null> {
+  const led = await db.smallGroup.findMany({
+    where: { leaderId: memberId },
+    select: { name: true },
+    orderBy: { name: "asc" },
+  })
+  if (led.length === 0) return null
+
+  const names = led.map((g) => `"${g.name}"`).join(", ")
+  return `This member leads ${led.length === 1 ? "a DGroup" : `${led.length} DGroups`} (${names}). Assign a new leader before deleting them.`
+}
+
+/**
+ * Records a deleted member's exit from their DGroup before the row disappears.
+ *
+ * `SmallGroupLog.memberId` is `ON DELETE SET NULL`, so their past entries survive
+ * the delete but stop pointing at anyone — `description` is the only part that
+ * still names them. Writing the departure first means the group's history ends
+ * with a reason instead of a roster that quietly shrank.
+ */
+async function logMemberDeparture(
+  tx: Parameters<Parameters<typeof db.$transaction>[0]>[0],
+  memberId: string,
+  actorUserId: string | null
+): Promise<void> {
+  const member = await tx.member.findUnique({
+    where: { id: memberId },
+    select: { firstName: true, lastName: true, smallGroupId: true },
+  })
+  if (!member?.smallGroupId) return
+
+  await logMembershipMove(tx, {
+    memberId,
+    memberName: `${member.firstName} ${member.lastName}`,
+    fromGroupId: member.smallGroupId,
+    toGroupId: null,
+    actor: { userId: actorUserId },
+    context: "when their member record was deleted",
+  })
 }
 
 export async function deleteMembersBatch(
@@ -152,6 +209,7 @@ export async function deleteMembersBatch(
   if (ids.length === 0) return { success: true, data: { deleted: 0, failed: [] } }
 
   try {
+    const session = await auth()
     const members = await db.member.findMany({
       where: { id: { in: ids } },
       select: { id: true, firstName: true, lastName: true },
@@ -163,11 +221,22 @@ export async function deleteMembersBatch(
     const result = await runBatchDelete({
       ids,
       names,
-      deleteOne: (id) => db.member.delete({ where: { id } }).then(() => undefined),
+      deleteOne: async (id) => {
+        // Rejected per-member rather than failing the whole batch: deleting nine
+        // members shouldn't be blocked by the tenth turning out to lead a group.
+        const blocking = await describeLedGroups(id)
+        if (blocking) throw new BatchDeleteBlocked(blocking)
+
+        await db.$transaction(async (tx) => {
+          await logMemberDeparture(tx, id, session?.user?.id ?? null)
+          await tx.member.delete({ where: { id } })
+        })
+      },
       fkReason: "leads a DGroup or has linked records",
     })
 
     revalidatePath("/members")
+    revalidatePath("/small-groups")
     return { success: true, data: result }
   } catch {
     return { success: false, error: "Failed to delete members" }

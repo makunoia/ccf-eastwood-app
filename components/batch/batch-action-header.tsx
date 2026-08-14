@@ -5,6 +5,7 @@ import { IconChecklist, IconTrash, IconX } from "@tabler/icons-react"
 
 import { Button } from "@/components/ui/button"
 import { useBatchSelection } from "./batch-selection-provider"
+import { SelectionSummary } from "./selection-summary"
 import { BulkDeleteDialog } from "./bulk-delete-dialog"
 import { BulkLifeStageDialog } from "./bulk-life-stage-dialog"
 import { type BatchDeleteFn, type BatchLifeStageFn } from "./types"
@@ -68,21 +69,13 @@ export function BatchActionHeader({
   return (
     <>
       <div className="flex items-center gap-2">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-8"
-          onClick={() => {
+        <SelectionSummary
+          count={count}
+          onClear={() => {
             selection.clear()
             selection.setSelectMode(false)
           }}
-          aria-label="Clear selection"
-        >
-          <IconX className="size-4" />
-        </Button>
-        <span className="text-sm font-medium whitespace-nowrap">
-          {count} selected
-        </span>
+        />
         <Button variant="outline" onClick={() => setLifeStageOpen(true)}>
           Set life stage
         </Button>

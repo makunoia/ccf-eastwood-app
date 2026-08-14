@@ -274,7 +274,7 @@ function BrandingTab({
                     className="size-12 rounded-lg object-contain border bg-muted p-0.5"
                   />
                 ) : (
-                  <div className="size-12 rounded-lg border bg-muted flex items-center justify-center text-xs text-muted-foreground">
+                  <div className="size-12 rounded-lg border bg-muted flex items-center justify-center text-xs text-foreground/60">
                     No logo
                   </div>
                 )}

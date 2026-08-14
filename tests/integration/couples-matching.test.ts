@@ -3,6 +3,26 @@ import { db } from "@/lib/db"
 import { matchCouplesGroups } from "@/lib/matching"
 import { requestCoupleAssignment } from "@/app/(dashboard)/small-groups/actions"
 
+/**
+ * Every DGroup requires a leader (SmallGroup.leaderId is NOT NULL). These tests
+ * don't care who it is, so each group gets a throwaway member. The leader has no
+ * smallGroupId of their own, so they never count toward a group's roster.
+ */
+let __leaderSeq = 0
+async function aLeader(): Promise<string> {
+  const m = await db.member.create({
+    data: {
+      firstName: `Leader${++__leaderSeq}`,
+      lastName: "Seed",
+      dateJoined: new Date(),
+      language: [],
+    },
+    select: { id: true },
+  })
+  return m.id
+}
+
+
 beforeEach(async () => {
   await db.$executeRaw`TRUNCATE "Family", "FamilyMember", "Member", "Guest", "SmallGroup", "SmallGroupMemberRequest", "SmallGroupLog", "MatchingWeightConfig", "SchedulePreference" RESTART IDENTITY CASCADE`
 })
@@ -30,9 +50,9 @@ async function seedCoupleMembers(overrides: { birthYearB?: number } = {}) {
 describe("matchCouplesGroups", () => {
   it("returns only Couples groups", async () => {
     const { husband, wife } = await seedCoupleMembers()
-    await db.smallGroup.create({ data: { name: "Regular G" } })
+    await db.smallGroup.create({ data: { leaderId: await aLeader(), name: "Regular G" } })
     const couples = await db.smallGroup.create({
-      data: { name: "Couples G", groupType: "Couples", genderFocus: "Mixed" },
+      data: { leaderId: await aLeader(), name: "Couples G", groupType: "Couples", genderFocus: "Mixed" },
     })
 
     const results = await matchCouplesGroups({ memberIdA: husband.id, memberIdB: wife.id })
@@ -45,14 +65,14 @@ describe("matchCouplesGroups", () => {
       data: { firstName: "Occ", lastName: "Upant", dateJoined: new Date(), language: [] },
     })
     const tight = await db.smallGroup.create({
-      data: { name: "Tight", groupType: "Couples", genderFocus: "Mixed", memberLimit: 2 },
+      data: { leaderId: await aLeader(), name: "Tight", groupType: "Couples", genderFocus: "Mixed", memberLimit: 2 },
     })
     await db.member.update({
       where: { id: occupant.id },
       data: { smallGroupId: tight.id, groupStatus: "Member" },
     })
     const roomy = await db.smallGroup.create({
-      data: { name: "Roomy", groupType: "Couples", genderFocus: "Mixed", memberLimit: 4 },
+      data: { leaderId: await aLeader(), name: "Roomy", groupType: "Couples", genderFocus: "Mixed", memberLimit: 4 },
     })
 
     const results = await matchCouplesGroups({ memberIdA: husband.id, memberIdB: wife.id })
@@ -65,14 +85,14 @@ describe("matchCouplesGroups", () => {
       data: { name: "Led", groupType: "Couples", leaderId: husband.id },
     })
     const wifesCurrent = await db.smallGroup.create({
-      data: { name: "Current", groupType: "Couples" },
+      data: { leaderId: await aLeader(), name: "Current", groupType: "Couples" },
     })
     await db.member.update({
       where: { id: wife.id },
       data: { smallGroupId: wifesCurrent.id, groupStatus: "Member" },
     })
     const rejectedHusband = await db.smallGroup.create({
-      data: { name: "Rejected", groupType: "Couples" },
+      data: { leaderId: await aLeader(), name: "Rejected", groupType: "Couples" },
     })
     await db.smallGroupMemberRequest.create({
       data: {
@@ -83,7 +103,7 @@ describe("matchCouplesGroups", () => {
       },
     })
     const open = await db.smallGroup.create({
-      data: { name: "Open", groupType: "Couples" },
+      data: { leaderId: await aLeader(), name: "Open", groupType: "Couples" },
     })
 
     const results = await matchCouplesGroups({ memberIdA: husband.id, memberIdB: wife.id })
@@ -95,10 +115,10 @@ describe("matchCouplesGroups", () => {
     // Wife born 1960 — outside the "young couples" 25–40 age range
     const { husband, wife } = await seedCoupleMembers({ birthYearB: 1960 })
     const fitsBoth = await db.smallGroup.create({
-      data: { name: "Fits Both", groupType: "Couples", genderFocus: "Mixed" },
+      data: { leaderId: await aLeader(), name: "Fits Both", groupType: "Couples", genderFocus: "Mixed" },
     })
     const youngOnly = await db.smallGroup.create({
-      data: {
+      data: { leaderId: await aLeader(),
         name: "Young Couples",
         groupType: "Couples",
         genderFocus: "Mixed",
@@ -131,13 +151,13 @@ describe("matchCouplesGroups", () => {
 describe("requestCoupleAssignment", () => {
   it("creates paired pending requests with transfer metadata and logs", async () => {
     const { husband, wife } = await seedCoupleMembers()
-    const oldGroup = await db.smallGroup.create({ data: { name: "Old" } })
+    const oldGroup = await db.smallGroup.create({ data: { leaderId: await aLeader(), name: "Old" } })
     await db.member.update({
       where: { id: husband.id },
       data: { smallGroupId: oldGroup.id, groupStatus: "Member" },
     })
     const couples = await db.smallGroup.create({
-      data: { name: "Couples G", groupType: "Couples" },
+      data: { leaderId: await aLeader(), name: "Couples G", groupType: "Couples" },
     })
 
     const result = await requestCoupleAssignment(couples.id, husband.id, wife.id)
@@ -165,7 +185,7 @@ describe("requestCoupleAssignment", () => {
 
   it("rejects a Regular group target", async () => {
     const { husband, wife } = await seedCoupleMembers()
-    const regular = await db.smallGroup.create({ data: { name: "Regular" } })
+    const regular = await db.smallGroup.create({ data: { leaderId: await aLeader(), name: "Regular" } })
     const result = await requestCoupleAssignment(regular.id, husband.id, wife.id)
     expect(result.success).toBe(false)
   })
@@ -173,7 +193,7 @@ describe("requestCoupleAssignment", () => {
   it("rejects when one spouse already has a pending request there", async () => {
     const { husband, wife } = await seedCoupleMembers()
     const couples = await db.smallGroup.create({
-      data: { name: "Couples G", groupType: "Couples" },
+      data: { leaderId: await aLeader(), name: "Couples G", groupType: "Couples" },
     })
     await db.smallGroupMemberRequest.create({
       data: { smallGroupId: couples.id, memberId: wife.id, status: "Pending" },
@@ -186,12 +206,12 @@ describe("requestCoupleAssignment", () => {
   it("rejects when capacity cannot fit both or a spouse is already in the group", async () => {
     const { husband, wife } = await seedCoupleMembers()
     const full = await db.smallGroup.create({
-      data: { name: "Full", groupType: "Couples", memberLimit: 1 },
+      data: { leaderId: await aLeader(), name: "Full", groupType: "Couples", memberLimit: 1 },
     })
     expect((await requestCoupleAssignment(full.id, husband.id, wife.id)).success).toBe(false)
 
     const couples = await db.smallGroup.create({
-      data: { name: "Has Wife", groupType: "Couples" },
+      data: { leaderId: await aLeader(), name: "Has Wife", groupType: "Couples" },
     })
     await db.member.update({
       where: { id: wife.id },
@@ -203,7 +223,7 @@ describe("requestCoupleAssignment", () => {
   it("rejects a member paired with themselves", async () => {
     const { husband } = await seedCoupleMembers()
     const couples = await db.smallGroup.create({
-      data: { name: "C", groupType: "Couples" },
+      data: { leaderId: await aLeader(), name: "C", groupType: "Couples" },
     })
     expect((await requestCoupleAssignment(couples.id, husband.id, husband.id)).success).toBe(false)
   })

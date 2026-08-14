@@ -8,7 +8,9 @@ import { cn } from "@/lib/utils"
 export type PersonComboboxOption = {
   value: string
   label: string
-  hint?: string
+  /** Trailing detail for the row. A node, not just a string, so a caller can
+   *  hang a badge off the option — the label stays the searchable text. */
+  hint?: React.ReactNode
 }
 
 type PersonComboboxProps = {

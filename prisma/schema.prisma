@@ -129,6 +129,12 @@ enum SmallGroupLogAction {
   TempAssignmentCreated
   TempAssignmentConfirmed
   TempAssignmentRejected
+  // Who leads the group changed. The subject (`memberId`) is the incoming leader;
+  // the outgoing one is named in `description`, which is all that survives if that
+  // member is later deleted.
+  LeaderChanged
+  // A member's standing within the group moved between Member / Timothy / Leader.
+  MemberStatusChanged
 }
 
 enum SmallGroupStatus {
@@ -182,6 +188,15 @@ enum FormContext {
   Register
   WalkIn
   CheckIn
+}
+
+// How an event's walk-in form decides which session it registers people into.
+// `Pinned` reads `Event.walkInOccurrenceId` — one session an admin named.
+// `Latest` follows the event's most recently created session instead, so a
+// Recurring event whose sessions appear one at a time never has to be re-pointed.
+enum WalkInSessionMode {
+  Pinned
+  Latest
 }
 
 enum PermissionAction {
@@ -329,6 +344,13 @@ model Member {
   smallGroupId        String?
   smallGroup          SmallGroup?         @relation("SmallGroupMembers", fields: [smallGroupId], references: [id])
   groupStatus         MemberGroupStatus?  // null when not in a group; set when member joins
+  // "My DGroup leader is at another CCF satellite" — the member-level twin of
+  // Guest.claimedSatellite, holding a name from lib/constants/ccf-satellites.ts.
+  // Mutually exclusive with smallGroupId (a leader is either here or elsewhere),
+  // and mirrored onto SmallGroup.parentSatellite for every group they lead. It
+  // lives here as well as on the group because the answer is asked before the
+  // first group exists — a member who leads nothing has nowhere else to put it.
+  upwardSatellite     String?
 
   // Matching fields
   gender              Gender?
@@ -395,6 +417,11 @@ model Guest {
   // exclusive (app-enforced).
   claimedSatellite    String?
 
+  // Self-service token for the public /me portal, mirroring Member.selfServiceToken.
+  // A guest gets one so the "who is your leader?" step has a refresh-safe URL; once
+  // they answer they are promoted and the portal hands them their member token.
+  selfServiceToken String? @unique
+
   // Promotion — set when Guest is added to a Small Group and becomes a Member
   memberId    String?  @unique
   member      Member?  @relation(fields: [memberId], references: [id])
@@ -459,8 +486,12 @@ model SchedulePreference {
 model SmallGroup {
   id            String         @id @default(cuid())
   name          String
-  leaderId      String?
-  leader        Member?        @relation("SmallGroupLeader", fields: [leaderId], references: [id])
+  // Required, and Restrict on delete: a DGroup without a leader is not a state the
+  // app has any screen for. This was briefly optional with ON DELETE SET NULL —
+  // swept in as collateral by 20260606145226, whose subject was occurrence series —
+  // which let deleting a member silently orphan every group they led.
+  leaderId      String
+  leader        Member         @relation("SmallGroupLeader", fields: [leaderId], references: [id], onDelete: Restrict)
   parentGroupId String?
   parentGroup   SmallGroup?    @relation("SmallGroupHierarchy", fields: [parentGroupId], references: [id])
   childGroups   SmallGroup[]   @relation("SmallGroupHierarchy")
@@ -564,6 +595,12 @@ model Event {
   // occurrences, and a walk-in there stamps `attendedAt` instead.
   walkInOccurrenceId          String?
   walkInOccurrence            EventOccurrence? @relation("EventWalkInSession", fields: [walkInOccurrenceId], references: [id], onDelete: SetNull)
+  // Whether that pin is read at all. `Latest` ignores it and resolves the door to
+  // the event's most recently created session at request time — the one case where
+  // "resolved, not named" is what the admin asked for, because a Recurring event
+  // grows a session every time check-in is opened and re-picking it weekly is the
+  // step that gets forgotten. The isOpen gate still applies either way.
+  walkInSessionMode           WalkInSessionMode @default(Pinned)
   createdAt             DateTime            @default(now())
   updatedAt             DateTime            @updatedAt
 
@@ -803,6 +840,12 @@ model BreakoutGroup {
   meetingFormat MeetingFormat?
   locationCity  String?
   memberLimit   Int?
+
+  // Off takes the group out of every automatic and public intake path — the
+  // registration picker, the walk-in picker, auto-assign, match suggestions.
+  // Admin screens can still place people in deliberately, and the group keeps
+  // its roster, its facilitator and its linked DGroup.
+  isEnabled     Boolean      @default(true)
 
   // Linked small group for temp-membership assignment on registrant assignment
   linkedSmallGroupId String?

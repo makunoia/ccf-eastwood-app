@@ -2,11 +2,31 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest"
 import { db } from "@/lib/db"
 import { matchSmallGroups } from "@/lib/matching"
 
+/**
+ * Every DGroup requires a leader (SmallGroup.leaderId is NOT NULL). These tests
+ * don't care who it is, so each group gets a throwaway member. The leader has no
+ * smallGroupId of their own, so they never count toward a group's roster.
+ */
+let __leaderSeq = 0
+async function aLeader(): Promise<string> {
+  const m = await db.member.create({
+    data: {
+      firstName: `Leader${++__leaderSeq}`,
+      lastName: "Seed",
+      dateJoined: new Date(),
+      language: [],
+    },
+    select: { id: true },
+  })
+  return m.id
+}
+
+
 const DAY_MS = 24 * 60 * 60 * 1000
 
 async function seedGroups() {
-  const groupA = await db.smallGroup.create({ data: { name: "Group A" } })
-  const groupB = await db.smallGroup.create({ data: { name: "Group B" } })
+  const groupA = await db.smallGroup.create({ data: { leaderId: await aLeader(), name: "Group A" } })
+  const groupB = await db.smallGroup.create({ data: { leaderId: await aLeader(), name: "Group B" } })
   return { groupA, groupB }
 }
 

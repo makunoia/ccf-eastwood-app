@@ -17,6 +17,26 @@ import {
   matchBreakoutGroups,
 } from "@/lib/matching"
 
+/**
+ * Every DGroup requires a leader (SmallGroup.leaderId is NOT NULL). These tests
+ * don't care who it is, so each group gets a throwaway member. The leader has no
+ * smallGroupId of their own, so they never count toward a group's roster.
+ */
+let __leaderSeq = 0
+async function aLeader(): Promise<string> {
+  const m = await db.member.create({
+    data: {
+      firstName: `Leader${++__leaderSeq}`,
+      lastName: "Seed",
+      dateJoined: new Date(),
+      language: [],
+    },
+    select: { id: true },
+  })
+  return m.id
+}
+
+
 beforeEach(async () => {
   await db.$executeRaw`TRUNCATE "SmallGroupMemberRequest", "SmallGroupLog", "BreakoutGroupMember", "BreakoutGroupSchedule", "BreakoutGroup", "Volunteer", "CommitteeRole", "VolunteerCommittee", "EventRegistrant", "EventOccurrence", "Event", "SmallGroup", "Member", "Guest", "LifeStage", "MatchingWeightConfig" RESTART IDENTITY CASCADE`
 })
@@ -53,7 +73,7 @@ type GroupOverrides = Partial<{
 async function seedGroup(o: GroupOverrides = {}) {
   const { lifeStageIds, ...rest } = o
   return db.smallGroup.create({
-    data: {
+    data: { leaderId: await aLeader(),
       name: rest.name ?? "Group",
       language: rest.language ?? [],
       ...(lifeStageIds?.length

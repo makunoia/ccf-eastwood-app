@@ -52,7 +52,14 @@ export default async function ClusterCheckinPage({
     clusterId: cluster.id,
     date: cluster.date,
   })
-  const roster = buildClusterRoster(events, rows)
+  // The board is the day's arrivals list, so it stays strictly day-scoped: a
+  // standing series registrant with no evidence for today is not someone this
+  // screen is waiting on. They remain visible on the roster and registrants
+  // screens, which describe who is on the books rather than who is expected.
+  const roster = buildClusterRoster(
+    events,
+    rows.filter((r) => r.onClusterDay)
+  )
 
   // Shortcuts cover every accessible event, not just the ones the board can
   // monitor: a MultiDay event still has a check-in link a staffer needs, even

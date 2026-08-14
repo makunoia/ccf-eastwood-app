@@ -5,6 +5,7 @@ import {
   requestGroupChange,
   cancelGroupChange,
   createLedGroup,
+  deleteLedGroup,
   updateLedGroupDetails,
   addMemberToLedGroup,
   addCoupleToLedGroup,
@@ -36,7 +37,13 @@ afterAll(async () => {
 })
 
 async function seedMember(
-  overrides: Partial<{ firstName: string; lastName: string; phone: string | null; smallGroupId: string | null }> = {}
+  overrides: Partial<{
+    firstName: string
+    lastName: string
+    phone: string | null
+    smallGroupId: string | null
+    upwardSatellite: string | null
+  }> = {}
 ) {
   return db.member.create({
     data: {
@@ -44,10 +51,22 @@ async function seedMember(
       lastName: overrides.lastName ?? "Dela Cruz",
       phone: overrides.phone ?? null,
       smallGroupId: overrides.smallGroupId ?? null,
+      upwardSatellite: overrides.upwardSatellite ?? null,
       dateJoined: new Date(),
       language: [],
     },
   })
+}
+
+/**
+ * Adding a group you lead requires having answered who your own leader is, so
+ * every test that reaches `createLedGroup` needs a member who has. The satellite
+ * is the cheapest of the three accepted answers — it needs no second group.
+ */
+async function seedDeclaredMember(
+  overrides: Parameters<typeof seedMember>[0] = {}
+) {
+  return seedMember({ upwardSatellite: "CCF Cebu", ...overrides })
 }
 
 describe("verifyMemberMobile", () => {
@@ -177,7 +196,7 @@ describe("cancelGroupChange", () => {
 
 describe("createLedGroup", () => {
   it("creates a new group led by the token holder with a GroupCreated log", async () => {
-    const leader = await seedMember({ firstName: "Lead", lastName: "Er" })
+    const leader = await seedDeclaredMember({ firstName: "Lead", lastName: "Er" })
     await db.member.update({ where: { id: leader.id }, data: { selfServiceToken: "new-1" } })
 
     const result = await createLedGroup("new-1", { ...baseDetails, name: "Fresh Group" })
@@ -195,8 +214,22 @@ describe("createLedGroup", () => {
     expect(log?.performedByMemberId).toBe(leader.id)
   })
 
+  it("stamps a declared satellite onto the new group", async () => {
+    // The satellite is declared before the first group exists, so the group has
+    // to inherit it — that is where the admin form reads it from.
+    const leader = await seedDeclaredMember({ upwardSatellite: "CCF Davao" })
+    await db.member.update({ where: { id: leader.id }, data: { selfServiceToken: "sat-new" } })
+
+    const result = await createLedGroup("sat-new", { ...baseDetails, name: "Inherits" })
+    expect(result.success).toBe(true)
+    if (!result.success) return
+
+    const group = await db.smallGroup.findUnique({ where: { id: result.data.id } })
+    expect(group?.parentSatellite).toBe("CCF Davao")
+  })
+
   it("lets a leader who already leads a group add another", async () => {
-    const leader = await seedMember()
+    const leader = await seedDeclaredMember()
     await db.smallGroup.create({ data: { name: "First", leaderId: leader.id } })
     await db.member.update({ where: { id: leader.id }, data: { selfServiceToken: "new-2" } })
 
@@ -213,10 +246,137 @@ describe("createLedGroup", () => {
   })
 
   it("rejects a missing name", async () => {
-    const leader = await seedMember()
+    const leader = await seedDeclaredMember()
     await db.member.update({ where: { id: leader.id }, data: { selfServiceToken: "new-3" } })
     const result = await createLedGroup("new-3", { ...baseDetails, name: "" })
     expect(result.success).toBe(false)
+  })
+
+  describe("the leader-first gate", () => {
+    it("refuses someone who hasn't said who their own leader is", async () => {
+      const member = await seedMember()
+      await db.member.update({ where: { id: member.id }, data: { selfServiceToken: "gate-1" } })
+
+      const result = await createLedGroup("gate-1", baseDetails)
+      expect(result.success).toBe(false)
+      if (result.success) return
+      expect(result.error).toMatch(/who your DGroup leader is/i)
+      expect(await db.smallGroup.count()).toBe(0)
+    })
+
+    it("accepts a member who belongs to a DGroup here", async () => {
+      const other = await seedMember({ firstName: "Other", lastName: "Leader" })
+      const group = await db.smallGroup.create({
+        data: { name: "Theirs", leaderId: other.id },
+      })
+      const member = await seedMember({ smallGroupId: group.id })
+      await db.member.update({ where: { id: member.id }, data: { selfServiceToken: "gate-2" } })
+
+      expect((await createLedGroup("gate-2", baseDetails)).success).toBe(true)
+    })
+
+    it("accepts a member with a pending request — answering is enough, confirmation isn't required", async () => {
+      const other = await seedMember({ firstName: "Other", lastName: "Leader" })
+      const group = await db.smallGroup.create({
+        data: { name: "Theirs", leaderId: other.id },
+      })
+      const member = await seedMember()
+      await db.member.update({ where: { id: member.id }, data: { selfServiceToken: "gate-3" } })
+      await db.smallGroupMemberRequest.create({
+        data: { smallGroupId: group.id, memberId: member.id, status: "Pending" },
+      })
+
+      expect((await createLedGroup("gate-3", baseDetails)).success).toBe(true)
+    })
+
+    it("does not count a request that has already been resolved", async () => {
+      const other = await seedMember({ firstName: "Other", lastName: "Leader" })
+      const group = await db.smallGroup.create({
+        data: { name: "Theirs", leaderId: other.id },
+      })
+      const member = await seedMember()
+      await db.member.update({ where: { id: member.id }, data: { selfServiceToken: "gate-4" } })
+      await db.smallGroupMemberRequest.create({
+        data: { smallGroupId: group.id, memberId: member.id, status: "Rejected" },
+      })
+
+      expect((await createLedGroup("gate-4", baseDetails)).success).toBe(false)
+    })
+  })
+})
+
+describe("deleteLedGroup", () => {
+  async function seedEmptyLedGroup(token: string) {
+    const leader = await seedDeclaredMember()
+    await db.member.update({ where: { id: leader.id }, data: { selfServiceToken: token } })
+    const group = await db.smallGroup.create({
+      data: { name: "Disposable", leaderId: leader.id },
+    })
+    return { leader, group }
+  }
+
+  it("deletes an empty group the token holder leads", async () => {
+    const { group } = await seedEmptyLedGroup("del-1")
+
+    const result = await deleteLedGroup("del-1", group.id)
+    expect(result.success).toBe(true)
+    expect(await db.smallGroup.findUnique({ where: { id: group.id } })).toBeNull()
+  })
+
+  it("refuses a group that still has members", async () => {
+    const { group } = await seedEmptyLedGroup("del-2")
+    await seedMember({ firstName: "Still", lastName: "Here", smallGroupId: group.id })
+
+    const result = await deleteLedGroup("del-2", group.id)
+    expect(result.success).toBe(false)
+    if (result.success) return
+    expect(result.error).toMatch(/remove everyone/i)
+    expect(await db.smallGroup.findUnique({ where: { id: group.id } })).not.toBeNull()
+  })
+
+  it("refuses a group other groups report to", async () => {
+    const { leader, group } = await seedEmptyLedGroup("del-3")
+    await db.smallGroup.create({
+      data: { name: "Child", leaderId: leader.id, parentGroupId: group.id },
+    })
+
+    const result = await deleteLedGroup("del-3", group.id)
+    expect(result.success).toBe(false)
+    if (result.success) return
+    expect(result.error).toMatch(/report to this one/i)
+  })
+
+  it("refuses a group with someone waiting to join", async () => {
+    const { group } = await seedEmptyLedGroup("del-4")
+    const hopeful = await seedMember({ firstName: "Wait", lastName: "Ing" })
+    await db.smallGroupMemberRequest.create({
+      data: { smallGroupId: group.id, memberId: hopeful.id, status: "Pending" },
+    })
+
+    const result = await deleteLedGroup("del-4", group.id)
+    expect(result.success).toBe(false)
+    if (result.success) return
+    expect(result.error).toMatch(/waiting to join/i)
+  })
+
+  it("ignores a resolved request", async () => {
+    const { group } = await seedEmptyLedGroup("del-5")
+    const past = await seedMember({ firstName: "Was", lastName: "Rejected" })
+    await db.smallGroupMemberRequest.create({
+      data: { smallGroupId: group.id, memberId: past.id, status: "Rejected" },
+    })
+
+    expect((await deleteLedGroup("del-5", group.id)).success).toBe(true)
+  })
+
+  it("refuses a group the token holder does not lead", async () => {
+    const stranger = await seedDeclaredMember({ firstName: "Not", lastName: "Mine" })
+    await db.member.update({ where: { id: stranger.id }, data: { selfServiceToken: "del-6" } })
+    const { group } = await seedEmptyLedGroup("del-6-owner")
+
+    const result = await deleteLedGroup("del-6", group.id)
+    expect(result.success).toBe(false)
+    expect(await db.smallGroup.findUnique({ where: { id: group.id } })).not.toBeNull()
   })
 })
 
@@ -330,7 +490,7 @@ describe("couples groups", () => {
   }
 
   it("createLedGroup with Couples type sets Mixed gender focus", async () => {
-    const leader = await seedMember()
+    const leader = await seedDeclaredMember()
     await db.member.update({ where: { id: leader.id }, data: { selfServiceToken: "cpl-1" } })
 
     const result = await createLedGroup("cpl-1", {

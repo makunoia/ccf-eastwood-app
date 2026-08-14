@@ -8,6 +8,7 @@ import {
   getClusterRegistrationExportRows,
   getClusterSharedFormPeopleCounts,
 } from "@/lib/clusters/aggregate"
+import { standingFor } from "@/lib/clusters/roster"
 
 /**
  * Event Cluster dashboard accuracy.
@@ -79,15 +80,16 @@ async function seedOneTime(name: string) {
 
 /** A guest with a standing registration for `eventId`, made long ago. */
 async function seedStandingRegistrant(eventId: string, tag: string) {
+  return seedRegistrantAt(eventId, tag, new Date("2026-02-01T00:00:00Z"))
+}
+
+/** A guest registered for `eventId` at a given instant, with no cluster stamp. */
+async function seedRegistrantAt(eventId: string, tag: string, createdAt: Date) {
   const guest = await db.guest.create({
     data: { firstName: tag, lastName: "Test", language: [] },
   })
   return db.eventRegistrant.create({
-    data: {
-      eventId,
-      guestId: guest.id,
-      createdAt: new Date("2026-02-01T00:00:00Z"),
-    },
+    data: { eventId, guestId: guest.id, createdAt },
   })
 }
 
@@ -114,15 +116,76 @@ describe("day scoping for session events", () => {
 
     const overview = await getClusterOverview(admin, cluster.id)
 
+    // The FIGURES are the day's — that is what this regression pins.
     expect(overview.totals.uniquePeople).toBe(2)
     expect(overview.totals.checkedInPeople).toBe(2)
-    expect(overview.roster.rows).toHaveLength(2)
     expect(overview.eventStats[0]).toMatchObject({
       registered: 2,
       checkedIn: 2,
       // The standing roster is still reported — just not as the day.
       seriesRegistered: 5,
     })
+
+    // The ROSTER carries all five, because day-scoping is a flag now. Dropping
+    // the other three rendered them "not registered" on a screen whose sibling
+    // refused to re-add them; they are listed, marked, and uncounted instead.
+    expect(overview.roster.rows).toHaveLength(5)
+    expect(overview.totals.seriesOnlyPeople).toBe(3)
+    const standings = overview.roster.rows.map((p) =>
+      standingFor(p.perEvent[service.id]!)
+    )
+    expect(standings.filter((s) => s === "CheckedIn")).toHaveLength(2)
+    expect(standings.filter((s) => s === "SeriesOnly")).toHaveLength(3)
+  })
+
+  it("regression — counts someone who signed up on the day through the event's own link", async () => {
+    // Reported from production: a member registered for a clustered Recurring
+    // event at 12:31pm on the day itself, through THAT event's own form. Only
+    // the cluster's shared form stamps `registrationClusterId`, and he hadn't
+    // reached the kiosk yet, so nothing spoke for him — the roster dropped the
+    // row and drew "—", which the legend reads as "not registered". Meanwhile
+    // the event's add-registrant screen refused to add him, correctly, because
+    // the registration was already there. No admin action could reconcile the two.
+    const cluster = await seedCluster()
+    const service = await seedRecurring()
+    await attach(cluster.id, service.id)
+    await seedRegistrantAt(service.id, "SameDay", new Date("2026-08-02T04:31:00Z"))
+    // Someone who joined the series months ago must NOT be swept in with him.
+    await seedStandingRegistrant(service.id, "Standing")
+
+    const overview = await getClusterOverview(admin, cluster.id)
+
+    expect(overview.totals.uniquePeople).toBe(1)
+    expect(overview.eventStats[0]).toMatchObject({
+      registered: 1,
+      checkedIn: 0,
+      seriesRegistered: 2,
+    })
+    const byName = new Map(
+      overview.roster.rows.map((p) => [p.firstName, standingFor(p.perEvent[service.id]!)])
+    )
+    expect(byName.get("SameDay")).toBe("OnDay")
+    expect(byName.get("Standing")).toBe("SeriesOnly")
+  })
+
+  it("edge case — reads the cluster's day in Manila time, not UTC", async () => {
+    // 00:30 Manila on 2 Aug is 1 Aug 16:30 UTC. Cluster dates are stored as UTC
+    // midnight standing for a bare day, so a raw-UTC window would sit eight
+    // hours early and miss everyone who registered before 8am local.
+    const cluster = await seedCluster()
+    const service = await seedRecurring()
+    await attach(cluster.id, service.id)
+    await seedRegistrantAt(service.id, "JustAfterMidnight", new Date("2026-08-01T16:30:00Z"))
+    await seedRegistrantAt(service.id, "NightBefore", new Date("2026-08-01T15:00:00Z"))
+
+    const overview = await getClusterOverview(admin, cluster.id)
+
+    expect(overview.totals.uniquePeople).toBe(1)
+    const byName = new Map(
+      overview.roster.rows.map((p) => [p.firstName, standingFor(p.perEvent[service.id]!)])
+    )
+    expect(byName.get("JustAfterMidnight")).toBe("OnDay")
+    expect(byName.get("NightBefore")).toBe("SeriesOnly")
   })
 
   it("counts a session registrant who signed up through the day link but hasn't arrived", async () => {
@@ -189,7 +252,14 @@ describe("day scoping for session events", () => {
     })
 
     const rows = await getClusterRegistrationExportRows(admin, cluster.id)
-    expect(rows.map((r) => r.firstName)).toEqual(["Present"])
+    // Both are exported, distinguished by their participation value rather than
+    // by presence. A CSV that omitted the standing registrant told the admin to
+    // go add someone the event already holds a registration for.
+    expect(rows.map((r) => r.firstName)).toEqual(["Present", "Standing"])
+    expect(rows.map((r) => r.perEvent[service.id])).toEqual([
+      "CheckedIn",
+      "SeriesOnly",
+    ])
     expect(standing.id).toBeDefined()
   })
 })

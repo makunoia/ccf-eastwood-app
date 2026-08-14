@@ -7,6 +7,7 @@ import {
   BREAKOUT_ACTIVE_WEIGHT_KEYS,
 } from "@/lib/validations/matching-weights"
 import { deriveEffectiveGenderFocus } from "@/lib/breakouts/gender-focus"
+import { ENABLED_BREAKOUT_WHERE } from "@/lib/breakouts/candidate-pool"
 import { scoreGroup, combineCoupleScores } from "./engine"
 import { buildStoredScheduleSlot } from "./candidate-schedule"
 import { scoreGender, scoreLifeStage, scoreSchedule } from "./scorers"
@@ -839,7 +840,10 @@ export async function matchBreakoutGroups(
   const assignedGroupIds = new Set(assignments.map((m) => m.breakoutGroupId))
 
   const groups = await db.breakoutGroup.findMany({
-    where: { eventId },
+    // A group that is switched off is not suggested. This is the automatic
+    // route; an admin who wants someone in there adds them from the group's own
+    // page, which stays open. See `ENABLED_BREAKOUT_WHERE`.
+    where: { eventId, ...ENABLED_BREAKOUT_WHERE },
     select: BREAKOUT_GROUP_SCORE_SELECT,
   })
 

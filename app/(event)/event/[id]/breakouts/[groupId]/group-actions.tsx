@@ -41,6 +41,8 @@ import {
   missingTimothyFields,
 } from "@/lib/breakouts/profile"
 import { FacilitatorLeadership } from "@/components/breakouts/facilitator-leadership"
+import { CatchMechGroupField } from "@/components/breakouts/catch-mech-group-field"
+import { BreakoutEnabledSwitch } from "../enabled-switch"
 
 /** Shown, not inherited — a breakout group's criteria are its own. */
 type LedGroup = {
@@ -204,29 +206,21 @@ function EditDialog({
                 clearable
                 clearLabel="Unassigned"
               />
+              {/* Context, not a control — the criteria below are this group's own
+                  whichever DGroup the facilitator leads. Inside the field so it
+                  reads as this select's footnote, not a stray line. */}
+              {form.facilitatorId && !isFacilitatorTimothy && (
+                <FacilitatorLeadership ledGroups={ledGroups} linkGroups={false} />
+              )}
             </div>
 
-            {/* Context, not a control — the criteria below are this group's own
-                whichever DGroup the facilitator leads. */}
-            {form.facilitatorId && !isFacilitatorTimothy && (
-              <FacilitatorLeadership ledGroups={ledGroups} linkGroups={false} />
-            )}
-
             {form.facilitatorId && ledGroups.length > 1 && (
-              <div className="space-y-1.5">
-                <Label>
-                  Catch Mech DGroup{" "}
-                  <span className="text-muted-foreground font-normal">
-                    (receives this group&apos;s member requests)
-                  </span>
-                </Label>
-                <Select value={sourceGroupId} onValueChange={setSourceGroupId}>
-                  <SelectTrigger><SelectValue placeholder="Select a group…" /></SelectTrigger>
-                  <SelectContent>
-                    {ledGroups.map((g) => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
+              <CatchMechGroupField
+                id="edit-bg-catch-mech"
+                ledGroups={ledGroups}
+                value={sourceGroupId}
+                onValueChange={setSourceGroupId}
+              />
             )}
 
             {isFacilitatorTimothy && (
@@ -303,11 +297,14 @@ export function GroupActions({
   eventId,
   lifeStages,
   volunteers,
+  isEnabled,
 }: {
   group: EditableGroupData
   eventId: string
   lifeStages: { id: string; name: string }[]
   volunteers: Volunteer[]
+  /** Separate from `group` because it isn't part of the edit form — it's a switch, not a field. */
+  isEnabled: boolean
 }) {
   const router = useRouter()
   const [editOpen, setEditOpen] = React.useState(false)
@@ -328,6 +325,14 @@ export function GroupActions({
 
   return (
     <>
+      <BreakoutEnabledSwitch
+        key={`${group.id}-${isEnabled}`}
+        groupId={group.id}
+        eventId={eventId}
+        isEnabled={isEnabled}
+        groupName={group.name}
+        showLabel
+      />
       <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
         <IconPencil className="size-4" />
         Edit
