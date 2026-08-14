@@ -25,6 +25,7 @@ import { SmallGroupsToolbar } from "./toolbar"
 import { SmallGroupsFilters } from "./small-groups-filters"
 import { SmallGroupsTabs } from "./small-groups-tabs"
 import { RequestsTable, type RequestRow } from "./requests-table"
+import { RequestBatchActions } from "./request-batch-actions"
 import { SeekersTable, type SeekerRow } from "./seekers-table"
 import { deleteSmallGroupsBatch, setSmallGroupsLifeStageBatch } from "./actions"
 
@@ -228,11 +229,16 @@ export default async function SmallGroupsPage({
     ])
 
   const writable = canWrite(session, "SmallGroups")
-  const selectionEnabled = writable && tab === "all"
+  // One provider, scoped to whichever tab is showing — the two tables select
+  // different things (groups to delete vs. requests to settle) and a selection
+  // must never survive a tab switch into rows it doesn't describe.
+  const selectionEnabled = writable && (tab === "all" || tab === "requests")
+  const selectableIds =
+    tab === "requests" ? requests.map((r) => r.id) : groups.map((g) => g.id)
 
   return (
     <BatchSelectionProvider
-      allIds={groups.map((g) => g.id)}
+      allIds={selectableIds}
       enabled={selectionEnabled}
     >
       <div className="flex flex-1 flex-col gap-4 p-6">
@@ -253,6 +259,8 @@ export default async function SmallGroupsPage({
                   canExport={canExport(session, "SmallGroups")}
                 />
               </BatchActionHeader>
+            ) : tab === "requests" ? (
+              <RequestBatchActions />
             ) : undefined
           }
         />
@@ -263,7 +271,7 @@ export default async function SmallGroupsPage({
         />
 
         {tab === "requests" ? (
-          <RequestsTable requests={requests} />
+          <RequestsTable requests={requests} canWrite={writable} />
         ) : tab === "seeking" ? (
           <SeekersTable seekers={seekers} canWrite={writable} />
         ) : (

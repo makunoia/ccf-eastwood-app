@@ -29,12 +29,26 @@ import {
 /** Every site that turns a Guest into a Member. */
 const PROMOTION_SITES = [
   "app/(dashboard)/guests/actions.ts",
-  "app/small-group-confirmation/[token]/actions.ts",
+  // Owns the guest promotion for both request-confirmation surfaces — the leader's
+  // token form and the admin approving on their behalf. The leader file used to
+  // promote inline; it delegates here now, so this is the site that must not grow
+  // a private field list.
+  "lib/small-groups/resolve-member-request.ts",
   // Moved out of app/events/[id]/catch-mech/actions.ts: everything exported from a
   // "use server" file is a public endpoint, and prefetchRegistrantData sitting there
   // let anyone read guest emails/phones/notes by registrant id.
   "lib/catch-mech/confirmations.ts",
   "app/(event)/event/[id]/catch-mech/matching-actions.ts",
+]
+
+/**
+ * Sites that resolve a membership request but delegate the promotion itself. They
+ * are checked for the hand-copy smell only — the temptation is to "just inline it
+ * here" for a new surface, which is how the four lists CCF-123 found came about.
+ */
+const DELEGATING_SITES = [
+  "app/small-group-confirmation/[token]/actions.ts",
+  "app/(dashboard)/small-groups/actions.ts",
 ]
 
 /**
@@ -97,6 +111,14 @@ describe("CCF-123 regression — promotion carries every guest column", () => {
       expect(
         /firstName:\s*guest\.firstName/.test(source),
         `${site} must not hand-copy guest fields onto a Member — use buildPromotedMemberData`
+      ).toBe(false)
+    }
+
+    for (const site of DELEGATING_SITES) {
+      const source = readFileSync(join(process.cwd(), site), "utf8")
+      expect(
+        /firstName:\s*guest\.firstName/.test(source),
+        `${site} must not hand-copy guest fields onto a Member — delegate to resolveMemberRequest`
       ).toBe(false)
     }
   })

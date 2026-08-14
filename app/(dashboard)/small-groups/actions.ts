@@ -15,7 +15,14 @@ import {
   logLeaderChange,
   logGroupStatusChange,
 } from "@/lib/small-groups/membership-log"
-import type { BatchDeleteResult } from "@/components/batch/types"
+import {
+  RESOLVABLE_REQUEST_SELECT,
+  personNameOf,
+  resolveMemberRequest,
+  type SkipReason,
+} from "@/lib/small-groups/resolve-member-request"
+import { clearUpwardSatelliteOnConfirm } from "@/lib/small-groups/upward-satellite"
+import type { BatchDeleteResult, BatchFailure } from "@/components/batch/types"
 
 type ActionResult<T = void> =
   | { success: true; data: T }
@@ -872,6 +879,139 @@ export async function cancelTempAssignment(
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to cancel assignment" }
+  }
+}
+
+export type RequestDecision = "approve" | "deny"
+
+export type ResolveRequestsResult = {
+  /** How many pending requests actually changed status. */
+  resolved: number
+  /** Rows left untouched, each with a reason the admin can act on. */
+  failed: BatchFailure[]
+}
+
+const SKIP_REASON_COPY: Record<SkipReason, string> = {
+  "not-pending": "already resolved",
+  "wrong-group": "no longer targets this DGroup",
+  "at-capacity": "the DGroup is at its member limit",
+  "no-person": "has no linked person",
+}
+
+/**
+ * Approve or deny pending DGroup requests **on the group leader's behalf**.
+ *
+ * The leader's own `/small-group-confirmation/[token]` form is the normal path,
+ * but leaders go quiet and the queue stalls, so an admin needs an express way to
+ * settle a request. It runs the same `resolveMemberRequest` the leader form does
+ * — same promotion, same transfer, same audit lines — and only the attribution
+ * differs: `performedByUserId` is the admin, and every log line says the decision
+ * was made on the leader's behalf.
+ *
+ * One transaction per request rather than one for the batch: a single row that
+ * can't be applied (a full group, a request someone else just resolved) should
+ * cost the admin that row, not the other nineteen. Failures come back per row so
+ * the UI can keep exactly those selected.
+ */
+export async function resolveMemberRequestsBatch(
+  ids: string[],
+  decision: RequestDecision
+): Promise<ActionResult<ResolveRequestsResult>> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
+  if (ids.length === 0) return { success: true, data: { resolved: 0, failed: [] } }
+
+  try {
+    const actorId = await getActorId()
+
+    let resolved = 0
+    const failed: BatchFailure[] = []
+    const touchedGroupIds = new Set<string>()
+    const touchedGuestIds = new Set<string>()
+    const breakoutGroupIds = new Set<string>()
+
+    // Deduped: `resolveMemberRequest` guards on the request's *current* status, so
+    // the same id twice in one call would otherwise be read once and applied twice
+    // — promoting the same guest into a second Member.
+    for (const id of new Set(ids)) {
+      try {
+        const result = await db.$transaction(async (tx) => {
+          // Read inside the transaction, never from a prefetch: the not-pending
+          // guard is only honest if it sees the row as it stands right now.
+          const request = await tx.smallGroupMemberRequest.findUnique({
+            where: { id },
+            select: {
+              ...RESOLVABLE_REQUEST_SELECT,
+              smallGroup: { select: { id: true, name: true, status: true, leaderId: true } },
+            },
+          })
+          if (!request?.smallGroup) return null
+
+          const outcome = await resolveMemberRequest(tx, {
+            request,
+            group: request.smallGroup,
+            decision: decision === "approve" ? "confirmed" : "rejected",
+            actor: {
+              userId: actorId,
+              // Attributed to the leader too: the decision is recorded as theirs,
+              // made for them, so the group's own log still reads as one story.
+              memberId: request.smallGroup.leaderId,
+              byLabel: "by an admin on the group leader's behalf",
+            },
+          })
+          // Only an existing Member can hold a satellite, and joining a DGroup
+          // here supersedes it.
+          if (outcome.outcome === "confirmed" && outcome.confirmedMemberId) {
+            await clearUpwardSatelliteOnConfirm(tx, [outcome.confirmedMemberId])
+          }
+          return { outcome, request }
+        })
+
+        if (result === null) {
+          failed.push({ id, name: "Unknown", reason: "no longer exists" })
+          continue
+        }
+
+        const { outcome, request } = result
+        if (outcome.outcome === "skipped") {
+          failed.push({ id, name: personNameOf(request), reason: SKIP_REASON_COPY[outcome.reason] })
+          continue
+        }
+
+        resolved++
+        touchedGroupIds.add(request.smallGroup!.id)
+        if (request.guestId) touchedGuestIds.add(request.guestId)
+        if (request.fromGroupId) touchedGroupIds.add(request.fromGroupId)
+        if (request.breakoutGroupId) breakoutGroupIds.add(request.breakoutGroupId)
+      } catch {
+        failed.push({ id, name: "Unknown", reason: "could not be updated" })
+      }
+    }
+
+    revalidatePath("/small-groups")
+    for (const groupId of touchedGroupIds) revalidatePath(`/small-groups/${groupId}`)
+    if (touchedGuestIds.size > 0) {
+      revalidatePath("/guests")
+      revalidatePath("/members")
+      for (const guestId of touchedGuestIds) revalidatePath(`/guests/${guestId}`)
+    }
+    // A request that came out of a breakout is still tracked on the event's Catch
+    // Mech board, which would otherwise keep showing it as pending.
+    if (breakoutGroupIds.size > 0) {
+      const breakouts = await db.breakoutGroup.findMany({
+        where: { id: { in: [...breakoutGroupIds] } },
+        select: { eventId: true },
+      })
+      for (const eventId of new Set(breakouts.map((b) => b.eventId))) {
+        revalidatePath(`/event/${eventId}/catch-mech`)
+        revalidatePath(`/event/${eventId}/dashboard`)
+      }
+    }
+
+    return { success: true, data: { resolved, failed } }
+  } catch {
+    return { success: false, error: "Failed to update requests" }
   }
 }
 

@@ -2,12 +2,15 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { IconUsersGroup } from "@tabler/icons-react"
+import { IconCheck, IconUsersGroup, IconX } from "@tabler/icons-react"
+import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Separator } from "@/components/ui/separator"
 import {
   Sheet,
   SheetContent,
   SheetDescription,
+  SheetFooter,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
@@ -19,6 +22,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { useBatchSelection } from "@/components/batch/batch-selection-provider"
+import { RequestDecisionDialog } from "./request-decision-dialog"
+import { type RequestDecision } from "./actions"
 
 export type RequestRow = {
   id: string
@@ -58,10 +64,14 @@ function RequestDetailSheet({
   request,
   open,
   onOpenChange,
+  canWrite,
+  onDecide,
 }: {
   request: RequestRow | null
   open: boolean
   onOpenChange: (open: boolean) => void
+  canWrite: boolean
+  onDecide: (request: RequestRow, decision: RequestDecision) => void
 }) {
   if (!request) return null
 
@@ -174,8 +184,31 @@ function RequestDetailSheet({
                 <p className="text-sm text-muted-foreground">No leader assigned</p>
               )}
             </div>
+            {canWrite && (
+              <p className="text-xs text-muted-foreground">
+                Waiting on them to answer their confirmation link. You can settle it here
+                instead — the decision is recorded on their behalf.
+              </p>
+            )}
           </div>
         </div>
+
+        {canWrite && (
+          <SheetFooter className="flex-row gap-2 border-t">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => onDecide(request, "deny")}
+            >
+              <IconX className="size-4" />
+              Deny
+            </Button>
+            <Button className="flex-1" onClick={() => onDecide(request, "approve")}>
+              <IconCheck className="size-4" />
+              Approve
+            </Button>
+          </SheetFooter>
+        )}
       </SheetContent>
     </Sheet>
   )
@@ -183,13 +216,35 @@ function RequestDetailSheet({
 
 // ─── Requests table ─────────────────────────────────────────────────────────────
 
-export function RequestsTable({ requests }: { requests: RequestRow[] }) {
+export function RequestsTable({
+  requests,
+  canWrite = false,
+}: {
+  requests: RequestRow[]
+  canWrite?: boolean
+}) {
+  const selection = useBatchSelection()
   const [selected, setSelected] = React.useState<RequestRow | null>(null)
   const [sheetOpen, setSheetOpen] = React.useState(false)
+  /** The single row being approved/denied from its own buttons. */
+  const [deciding, setDeciding] = React.useState<{
+    request: RequestRow
+    decision: RequestDecision
+  } | null>(null)
+
+  const selectable = canWrite && (selection?.enabled ?? false)
+  // Mobile has no room for a checkbox column, so tapping a card selects only once
+  // the admin has explicitly entered select mode from the header.
+  const cardSelecting = selectable && (selection?.selectMode ?? false)
 
   function openSheet(request: RequestRow) {
     setSelected(request)
     setSheetOpen(true)
+  }
+
+  function decide(request: RequestRow, decision: RequestDecision) {
+    setSheetOpen(false)
+    setDeciding({ request, decision })
   }
 
   if (requests.length === 0) {
@@ -205,35 +260,85 @@ export function RequestsTable({ requests }: { requests: RequestRow[] }) {
     <>
       {/* Mobile cards */}
       <div className="flex flex-col gap-2 md:hidden">
-        {requests.map((r) => (
-          <div
-            key={r.id}
-            className="cursor-pointer rounded-lg border p-4 hover:bg-muted/50 transition-colors"
-            onClick={() => openSheet(r)}
-          >
-            <div className="flex items-center justify-between gap-2">
-              <p className="font-medium">{r.personName}</p>
-              <span
-                className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium ${PERSON_BADGE[r.personType]}`}
-              >
-                {r.personType}
-              </span>
+        {requests.map((r) => {
+          const checked = selection?.isSelected(r.id) ?? false
+          return (
+            <div
+              key={r.id}
+              className="cursor-pointer rounded-lg border p-4 hover:bg-muted/50 transition-colors data-[selected=true]:border-primary"
+              data-selected={checked}
+              onClick={() => {
+                if (cardSelecting) {
+                  selection?.toggle(r.id)
+                  return
+                }
+                openSheet(r)
+              }}
+            >
+              <div className="flex items-start gap-3">
+                {cardSelecting && (
+                  <Checkbox
+                    checked={checked}
+                    onClick={(e) => e.stopPropagation()}
+                    onCheckedChange={() => selection?.toggle(r.id)}
+                    aria-label={`Select ${r.personName}'s request`}
+                    className="mt-0.5"
+                  />
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-medium">{r.personName}</p>
+                    <span
+                      className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium ${PERSON_BADGE[r.personType]}`}
+                    >
+                      {r.personType}
+                    </span>
+                  </div>
+                  <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
+                    <span className="text-muted-foreground">Request</span>
+                    <span>
+                      {r.isTransfer ? `Transfer from ${r.fromGroupName}` : "Join"}
+                    </span>
+                    <span className="text-muted-foreground">Group</span>
+                    <span>{r.targetGroupName}</span>
+                    <span className="text-muted-foreground">Leader</span>
+                    <span>
+                      {r.leaderName ?? "No leader"}
+                      {r.leaderPhone ? ` · ${r.leaderPhone}` : ""}
+                    </span>
+                  </div>
+                  {canWrite && !cardSelecting && (
+                    <div className="mt-3 flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          decide(r, "deny")
+                        }}
+                      >
+                        <IconX className="size-4" />
+                        Deny
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="flex-1"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          decide(r, "approve")
+                        }}
+                      >
+                        <IconCheck className="size-4" />
+                        Approve
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
-            <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
-              <span className="text-muted-foreground">Request</span>
-              <span>
-                {r.isTransfer ? `Transfer from ${r.fromGroupName}` : "Join"}
-              </span>
-              <span className="text-muted-foreground">Group</span>
-              <span>{r.targetGroupName}</span>
-              <span className="text-muted-foreground">Leader</span>
-              <span>
-                {r.leaderName ?? "No leader"}
-                {r.leaderPhone ? ` · ${r.leaderPhone}` : ""}
-              </span>
-            </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
 
       {/* Desktop table */}
@@ -241,11 +346,27 @@ export function RequestsTable({ requests }: { requests: RequestRow[] }) {
         <Table>
           <TableHeader>
             <TableRow>
+              {selectable && (
+                <TableHead className="w-0">
+                  <Checkbox
+                    checked={
+                      selection?.allSelected
+                        ? true
+                        : selection?.someSelected
+                          ? "indeterminate"
+                          : false
+                    }
+                    onCheckedChange={() => selection?.toggleAll()}
+                    aria-label="Select all requests"
+                  />
+                </TableHead>
+              )}
               <TableHead>Person</TableHead>
               <TableHead>Request Type</TableHead>
               <TableHead>Target Group</TableHead>
               <TableHead>Leader</TableHead>
               <TableHead>Requested</TableHead>
+              {canWrite && <TableHead className="w-0 text-right">Decision</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -253,8 +374,18 @@ export function RequestsTable({ requests }: { requests: RequestRow[] }) {
               <TableRow
                 key={r.id}
                 className="cursor-pointer"
+                data-state={selection?.isSelected(r.id) ? "selected" : undefined}
                 onClick={() => openSheet(r)}
               >
+                {selectable && (
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <Checkbox
+                      checked={selection?.isSelected(r.id) ?? false}
+                      onCheckedChange={() => selection?.toggle(r.id)}
+                      aria-label={`Select ${r.personName}'s request`}
+                    />
+                  </TableCell>
+                )}
                 <TableCell>
                   <div className="flex items-center gap-2">
                     <span className="font-medium">{r.personName}</span>
@@ -289,6 +420,28 @@ export function RequestsTable({ requests }: { requests: RequestRow[] }) {
                 <TableCell className="text-sm text-muted-foreground">
                   {formatDate(r.createdAt)}
                 </TableCell>
+                {canWrite && (
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <div className="flex justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => decide(r, "deny")}
+                      >
+                        <IconX className="size-4" />
+                        Deny
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => decide(r, "approve")}
+                      >
+                        <IconCheck className="size-4" />
+                        Approve
+                      </Button>
+                    </div>
+                  </TableCell>
+                )}
               </TableRow>
             ))}
           </TableBody>
@@ -299,6 +452,18 @@ export function RequestsTable({ requests }: { requests: RequestRow[] }) {
         request={selected}
         open={sheetOpen}
         onOpenChange={setSheetOpen}
+        canWrite={canWrite}
+        onDecide={decide}
+      />
+
+      <RequestDecisionDialog
+        open={deciding !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeciding(null)
+        }}
+        ids={deciding ? [deciding.request.id] : []}
+        decision={deciding?.decision ?? "approve"}
+        subject={deciding?.request.personName ?? null}
       />
     </>
   )

@@ -3,10 +3,9 @@
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
 import {
-  PROMOTABLE_GUEST_SELECT,
-  assertGroupCapacity,
-  promoteGuestRecord,
-} from "@/lib/people/promote-guest"
+  RESOLVABLE_REQUEST_SELECT,
+  resolveMemberRequest,
+} from "@/lib/small-groups/resolve-member-request"
 import { clearUpwardSatelliteOnConfirm } from "@/lib/small-groups/upward-satellite"
 import {
   recordConfirmationSubmission,
@@ -69,181 +68,39 @@ export async function submitMemberConfirmations(
     )
 
     await db.$transaction(async (tx) => {
-      let memberConfirmed = false
       // Existing members confirmed into this group. A promoted guest is a brand
       // new Member who leads nothing, so only these can hold a satellite.
       const confirmedMemberIds: string[] = []
 
       for (const { requestId, status: decisionStatus, notes: decisionNotes } of decisions) {
-        const req = await tx.smallGroupMemberRequest.findUnique({
-          where: { id: requestId },
-          select: {
-            id: true,
-            smallGroupId: true,
-            guestId: true,
-            memberId: true,
-            fromGroupId: true,
-            breakoutGroupId: true,
-            status: true,
-            guest: { select: PROMOTABLE_GUEST_SELECT },
-            member: { select: { firstName: true, lastName: true } },
-          },
-        })
-
-        if (!req || req.status !== "Pending" || req.smallGroupId !== group.id) continue
-
         // "pending" means the leader deferred — leave the request untouched
         if (decisionStatus === "pending") continue
 
-        if (req.guestId) {
-          affectedGuestIds.add(req.guestId)
-        }
-        if (req.breakoutGroupId) {
-          affectedBreakoutGroupIds.add(req.breakoutGroupId)
-        }
-
-        const now = new Date()
-        const resolvedStatus = decisionStatus === "confirmed" ? "Confirmed" : "Rejected"
-        let promotedMemberId: string | null = null
-
-        const eventName = eventNameByRequestId.get(req.id) ?? null
-        const catchMechContext = req.breakoutGroupId && eventName ? ` via Catch Mech Link of ${eventName}` : ""
-
-        if (decisionStatus === "confirmed") {
-          if (req.guestId && req.guest) {
-            const guest = req.guest
-            // Skip if already promoted
-            if (!guest.memberId) {
-              // Check capacity
-              const overCapacity = await assertGroupCapacity(tx, group.id)
-              if (overCapacity) {
-                // Skip — group is full; leave request pending
-                continue
-              }
-
-              // `reuseExistingMemberByEmail` keeps a leader mid-confirmation from
-              // hitting a P2002 on the unique Member.email.
-              const { memberId: resolvedMemberId } = await promoteGuestRecord(tx, {
-                guestId: req.guestId,
-                guest,
-                dateJoined: now,
-                group,
-                reuseExistingMemberByEmail: true,
-                schedule: "normalized",
-              })
-
-              await tx.smallGroupLog.create({
-                data: {
-                  smallGroupId: group.id,
-                  action: "TempAssignmentConfirmed",
-                  guestId: req.guestId,
-                  memberId: resolvedMemberId,
-                  performedByMemberId: group.leaderId,
-                  description: `${guest.firstName} ${guest.lastName} was confirmed by the group leader${catchMechContext} and promoted to member`,
-                },
-              })
-              await tx.smallGroupLog.create({
-                data: {
-                  smallGroupId: group.id,
-                  action: "MemberAdded",
-                  memberId: resolvedMemberId,
-                  performedByMemberId: group.leaderId,
-                  description: `${guest.firstName} ${guest.lastName} joined the group${catchMechContext}`,
-                },
-              })
-              promotedMemberId = resolvedMemberId
-              memberConfirmed = true
-            } else {
-              // Guest already promoted externally — track the existing member ID
-              promotedMemberId = guest.memberId
-              memberConfirmed = true
-            }
-          } else if (req.memberId && req.member) {
-            const memberName = `${req.member.firstName} ${req.member.lastName}`
-            // Member transfer: move from old group to new group
-            await tx.member.update({
-              where: { id: req.memberId },
-              data: {
-                smallGroupId: group.id,
-                groupStatus: "Member",
-              },
-            })
-            memberConfirmed = true
-            confirmedMemberIds.push(req.memberId)
-
-            await tx.smallGroupLog.create({
-              data: {
-                smallGroupId: group.id,
-                action: "TempAssignmentConfirmed",
-                memberId: req.memberId,
-                fromGroupId: req.fromGroupId ?? null,
-                toGroupId: group.id,
-                performedByMemberId: group.leaderId,
-                description: `${memberName}'s transfer was confirmed by the group leader${catchMechContext}`,
-              },
-            })
-            await tx.smallGroupLog.create({
-              data: {
-                smallGroupId: group.id,
-                action: "MemberTransferred",
-                memberId: req.memberId,
-                fromGroupId: req.fromGroupId ?? null,
-                toGroupId: group.id,
-                performedByMemberId: group.leaderId,
-                description: `${memberName} transferred into this group${catchMechContext}`,
-              },
-            })
-
-            // Log removal from old group if applicable
-            if (req.fromGroupId) {
-              await tx.smallGroupLog.create({
-                data: {
-                  smallGroupId: req.fromGroupId,
-                  action: "MemberTransferred",
-                  memberId: req.memberId,
-                  fromGroupId: req.fromGroupId,
-                  toGroupId: group.id,
-                  performedByMemberId: group.leaderId,
-                  description: `${memberName} transferred out of this group`,
-                },
-              })
-            }
-          }
-        } else {
-          // Rejected
-          const personName = req.guest
-            ? `${req.guest.firstName} ${req.guest.lastName}`
-            : req.member
-              ? `${req.member.firstName} ${req.member.lastName}`
-              : "Unknown"
-          await tx.smallGroupLog.create({
-            data: {
-              smallGroupId: group.id,
-              action: "TempAssignmentRejected",
-              guestId: req.guestId ?? null,
-              memberId: req.memberId ?? null,
-              performedByMemberId: group.leaderId,
-              description: `${personName}'s membership was declined by the group leader${catchMechContext}`,
-            },
-          })
-        }
-
-        // Mark request resolved
-        await tx.smallGroupMemberRequest.update({
-          where: { id: req.id },
-          data: {
-            status: resolvedStatus,
-            resolvedAt: now,
-            notes: decisionNotes ?? null,
-            // When a guest was promoted, update FK to point to the new member
-            // so the catch mech admin page can match the request by memberId
-            ...(req.guestId && promotedMemberId ? { memberId: promotedMemberId, guestId: null } : {}),
-          },
+        const request = await tx.smallGroupMemberRequest.findUnique({
+          where: { id: requestId },
+          select: RESOLVABLE_REQUEST_SELECT,
         })
-      }
+        if (!request) continue
 
-      if (group.status === "Pending" && memberConfirmed) {
-        await tx.smallGroup.update({ where: { id: group.id }, data: { status: "Active" } })
+        const eventName = eventNameByRequestId.get(request.id) ?? null
+        const result = await resolveMemberRequest(tx, {
+          request,
+          group,
+          decision: decisionStatus === "confirmed" ? "confirmed" : "rejected",
+          actor: { memberId: group.leaderId, byLabel: "by the group leader" },
+          notes: decisionNotes ?? null,
+          contextSuffix:
+            request.breakoutGroupId && eventName
+              ? ` via Catch Mech Link of ${eventName}`
+              : "",
+        })
+        if (result.outcome === "skipped") continue
+
+        if (request.guestId) affectedGuestIds.add(request.guestId)
+        if (request.breakoutGroupId) affectedBreakoutGroupIds.add(request.breakoutGroupId)
+        if (result.outcome === "confirmed" && result.confirmedMemberId) {
+          confirmedMemberIds.push(result.confirmedMemberId)
+        }
       }
 
       // This is where a member-portal request finally lands, so it is where the
