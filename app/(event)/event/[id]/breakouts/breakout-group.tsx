@@ -61,6 +61,7 @@ import {
   missingTimothyFields,
 } from "@/lib/breakouts/profile"
 import { FacilitatorLeadership } from "@/components/breakouts/facilitator-leadership"
+import { CatchMechGroupField } from "@/components/breakouts/catch-mech-group-field"
 import {
   createBreakoutGroup,
   updateBreakoutGroup,
@@ -250,9 +251,9 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
             </div>
 
             <div className="space-y-1.5">
-              <Label>Facilitator</Label>
+              <Label htmlFor="bg-facilitator">Facilitator</Label>
               <Select value={form.facilitatorId} onValueChange={(v) => handleVolunteerChange(v === "_none" ? "" : v)}>
-                <SelectTrigger><SelectValue placeholder="Unassigned" /></SelectTrigger>
+                <SelectTrigger id="bg-facilitator"><SelectValue placeholder="Unassigned" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="_none">Unassigned</SelectItem>
                   {volunteers.map((v) => (
@@ -260,31 +261,21 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
                   ))}
                 </SelectContent>
               </Select>
+              {/* Context, not a control — the criteria below are this group's own
+                  whichever DGroup the facilitator leads. Inside the field so it
+                  reads as this select's footnote, not a stray line. */}
+              {form.facilitatorId && !isFacilitatorTimothy && (
+                <FacilitatorLeadership ledGroups={ledGroups} linkGroups={false} />
+              )}
             </div>
 
-            {/* Context, not a control — the criteria below are this group's own
-                whichever DGroup the facilitator leads. */}
-            {form.facilitatorId && !isFacilitatorTimothy && (
-              <FacilitatorLeadership ledGroups={ledGroups} linkGroups={false} />
-            )}
-
             {form.facilitatorId && ledGroups.length > 1 && (
-              <div className="space-y-1.5">
-                <Label>
-                  Catch Mech DGroup{" "}
-                  <span className="text-muted-foreground font-normal">
-                    (receives this group&apos;s member requests)
-                  </span>
-                </Label>
-                <Select value={sourceGroupId} onValueChange={setSourceGroupId}>
-                  <SelectTrigger><SelectValue placeholder="Select a group…" /></SelectTrigger>
-                  <SelectContent>
-                    {ledGroups.map((g) => (
-                      <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              <CatchMechGroupField
+                id="bg-catch-mech"
+                ledGroups={ledGroups}
+                value={sourceGroupId}
+                onValueChange={setSourceGroupId}
+              />
             )}
 
             {isFacilitatorTimothy && (

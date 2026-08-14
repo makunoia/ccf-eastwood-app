@@ -33,7 +33,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Separator } from "@/components/ui/separator"
 import {
   Table,
   TableBody,
@@ -62,7 +61,7 @@ import {
 } from "@/app/(dashboard)/events/breakout-actions"
 import { AddRegistrantSheet } from "./add-registrant-sheet"
 import { MatchingProfile } from "@/components/breakouts/matching-profile"
-import { FacilitatorLeadership } from "@/components/breakouts/facilitator-leadership"
+import { CatchMechGroupField } from "@/components/breakouts/catch-mech-group-field"
 import { breakoutOccupancy } from "@/lib/breakouts/occupancy"
 
 const UNASSIGNED = "__unassigned__"
@@ -159,9 +158,23 @@ function registrantDisplayName(r: {
   return [r.firstName, r.lastName].filter(Boolean).join(" ") || "Unknown"
 }
 
-// ─── Facilitator section ────────────────────────────────────────────────────────
+// ─── Facilitator cell ───────────────────────────────────────────────────────────
 
-function FacilitatorSection({
+/**
+ * One half of the profile card's top row: who holds the slot, and one control to
+ * change them. Nothing else.
+ *
+ * "Change" sits in the person's own row rather than opposite the section label:
+ * on a wide screen that put the control the better part of a metre away from the
+ * name it changes, with nothing between them.
+ *
+ * The DGroups a facilitator leads, and which of them Catch Mech routes to, are
+ * deliberately absent. They are settings, not identity — they belong where they
+ * are decided (the assign dialog and the edit drawer, which both still show
+ * them), and on a card whose job is "who runs this group" they were two lines of
+ * fine print per person for a fact nobody reads here.
+ */
+function FacilitatorCell({
   label,
   volunteer,
   groupId,
@@ -227,40 +240,35 @@ function FacilitatorSection({
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-2">
-        <p className="type-label text-muted-foreground">{label}</p>
-        <Button variant="ghost" size="sm" className="h-7 gap-1.5 text-xs" onClick={() => setDialogOpen(true)}>
-          <IconPencil className="size-3" />
-          Change
-        </Button>
-      </div>
+    <div className="bg-card p-5">
+      <p className="type-label text-muted-foreground">{label}</p>
 
       {volunteer ? (
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <div className="flex size-8 items-center justify-center rounded-full bg-muted">
-              <IconUser className="size-4 text-muted-foreground" />
-            </div>
-            <span className="font-medium text-sm">
-              {volunteer.member.firstName} {volunteer.member.lastName}
-            </span>
+        <div className="mt-3 flex items-center gap-3">
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted">
+            <IconUser className="size-4 text-muted-foreground" />
           </div>
-          {/* Which DGroup — information only. It no longer decides what this
-              breakout group matches for; the Matching Profile block below is
-              hand-entered and always editable. */}
-          <FacilitatorLeadership
-            ledGroups={volunteer.member.ledGroups}
-            className="ml-10 text-xs text-muted-foreground"
-          />
+          <p className="min-w-0 flex-1 truncate text-sm font-medium">
+            {volunteer.member.firstName} {volunteer.member.lastName}
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-mr-2 h-7 shrink-0 gap-1.5 text-xs"
+            onClick={() => setDialogOpen(true)}
+          >
+            <IconPencil className="size-3" />
+            Change
+          </Button>
         </div>
       ) : (
+        // No "Change" button alongside this one: the empty slot *is* the control.
         <button
-          className="flex w-full items-center gap-2 rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground hover:bg-muted/50 transition-colors"
+          className="mt-3 flex w-full items-center gap-2 rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
           onClick={() => setDialogOpen(true)}
         >
-          <IconUser className="size-4" />
-          Unassigned — click to assign
+          <IconUserPlus className="size-4" />
+          Assign a {label.toLowerCase()}
         </button>
       )}
 
@@ -299,22 +307,12 @@ function FacilitatorSection({
             </p>
           )}
           {role === "facilitator" && selectedId !== UNASSIGNED && ledGroups.length > 1 && (
-            <div className="space-y-1.5">
-              <Label>
-                Catch Mech DGroup{" "}
-                <span className="text-muted-foreground font-normal">
-                  (receives this group&apos;s member requests)
-                </span>
-              </Label>
-              <Select value={linkedGroupId} onValueChange={setLinkedGroupId}>
-                <SelectTrigger><SelectValue placeholder="Select a group…" /></SelectTrigger>
-                <SelectContent>
-                  {ledGroups.map((g) => (
-                    <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <CatchMechGroupField
+              id="assign-catch-mech"
+              ledGroups={ledGroups}
+              value={linkedGroupId}
+              onValueChange={setLinkedGroupId}
+            />
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Cancel</Button>
@@ -786,47 +784,54 @@ export function BreakoutDetail({
 }) {
   return (
     <div className="space-y-6">
-      {/* Facilitators */}
-      <div className="grid gap-6 sm:grid-cols-2">
-        <FacilitatorSection
-          label="Facilitator"
-          volunteer={group.facilitator}
-          groupId={group.id}
-          eventId={group.eventId}
-          role="facilitator"
-          otherVolunteerId={group.coFacilitatorId}
-          availableVolunteers={availableVolunteers}
-        />
-        <FacilitatorSection
-          label="Co-Facilitator"
-          volunteer={group.coFacilitator}
-          groupId={group.id}
-          eventId={group.eventId}
-          role="coFacilitator"
-          otherVolunteerId={group.facilitatorId}
-          availableVolunteers={availableVolunteers}
-        />
-      </div>
+      {/* Who runs this group and what it matches for — one card, because they
+          are one answer. As three unbounded sections stacked on the page they
+          read as three unrelated blocks, and each section's action floated off
+          at the far right of an otherwise empty row. The hairline gaps come from
+          `gap-px` over the border colour: the cells paint their own background,
+          the grid's shows through between them. */}
+      <section className="overflow-hidden rounded-lg border bg-card">
+        <div className="grid gap-px bg-border sm:grid-cols-2">
+          <FacilitatorCell
+            label="Facilitator"
+            volunteer={group.facilitator}
+            groupId={group.id}
+            eventId={group.eventId}
+            role="facilitator"
+            otherVolunteerId={group.coFacilitatorId}
+            availableVolunteers={availableVolunteers}
+          />
+          <FacilitatorCell
+            label="Co-Facilitator"
+            volunteer={group.coFacilitator}
+            groupId={group.id}
+            eventId={group.eventId}
+            role="coFacilitator"
+            otherVolunteerId={group.facilitatorId}
+            availableVolunteers={availableVolunteers}
+          />
+        </div>
 
-      <MatchingProfile
-        profile={{
-          lifeStages: group.lifeStages,
-          genderFocus: group.genderFocus,
-          language: group.language,
-          ageRangeMin: group.ageRangeMin,
-          ageRangeMax: group.ageRangeMax,
-        }}
-        footnote={
-          group.facilitator && group.facilitator.member.ledGroups.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              This facilitator leads no DGroup yet (Timothy) — these criteria seed the
-              DGroup created for them when their first member is confirmed.
-            </p>
-          ) : null
-        }
-      />
-
-      <Separator />
+        <div className="border-t p-5">
+          <MatchingProfile
+            profile={{
+              lifeStages: group.lifeStages,
+              genderFocus: group.genderFocus,
+              language: group.language,
+              ageRangeMin: group.ageRangeMin,
+              ageRangeMax: group.ageRangeMax,
+            }}
+            footnote={
+              group.facilitator && group.facilitator.member.ledGroups.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  This facilitator leads no DGroup yet (Timothy) — these criteria seed the
+                  DGroup created for them when their first member is confirmed.
+                </p>
+              ) : null
+            }
+          />
+        </div>
+      </section>
 
       <MembersTable
         members={group.members}
