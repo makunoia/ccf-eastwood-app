@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterAll, vi } from "vitest"
+import { describe, it, expect, beforeEach, afterAll } from "vitest"
 import { db } from "@/lib/db"
 import { getDuplicateProfiles } from "@/app/(dashboard)/settings/duplicate-profiles/actions"
 
