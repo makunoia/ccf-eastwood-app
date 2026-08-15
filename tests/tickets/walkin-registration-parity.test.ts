@@ -56,6 +56,32 @@ async function seedEvent(type: "OneTime" | "MultiDay" | "Recurring" = "OneTime")
   })
 }
 
+/**
+ * The Breakout module has to be on for anything to be assigned at all (CCF-128),
+ * and `Priced` is dropped here so payment doesn't complicate the breakout cases.
+ */
+async function seedBreakoutEvent(overrides: { autoAssignBreakout?: boolean } = {}) {
+  return db.event.create({
+    data: {
+      name: "Breakout Event",
+      type: "OneTime",
+      startDate: new Date(),
+      endDate: new Date(),
+      autoAssignBreakout: overrides.autoAssignBreakout ?? false,
+      modules: { create: { type: "Breakout" } },
+      eventFormConfigs: FULLY_COLLECTING_FORM,
+    },
+    select: { id: true },
+  })
+}
+
+async function seedBreakoutGroup(eventId: string, name: string) {
+  return db.breakoutGroup.create({
+    data: { eventId, name, language: [] },
+    select: { id: true },
+  })
+}
+
 function payload(overrides: Record<string, unknown> = {}) {
   return {
     firstName: "Walk",
@@ -298,6 +324,162 @@ describe("Walk-in registration parity with public registration", () => {
       })
       expect(registrant?.isPaid).toBe(false)
       expect(registrant?.paymentReference).toBe("GCash-12345")
+    })
+  })
+
+  // The reuse branch of `completeEventRegistration` used to adopt the existing
+  // registrant id and stop there. Everything that lives on `EventRegistrant`
+  // rather than on the person — dietary, payment reference — was written only by
+  // the create branch, so a walk-in for someone who registered earlier collected
+  // those answers and dropped them on the floor. Breakout had the mirror-image
+  // bug: a bare insert against a composite primary key.
+  describe("regression — the reuse path keeps what it collects", () => {
+    it("stores an answer the original registration never collected", async () => {
+      const event = await seedEvent()
+      const mobile = "+63 917 333 4444"
+
+      const first = await createRegistrant(event.id, payload({ mobileNumber: mobile }), null)
+      expect(first.success).toBe(true)
+      if (!first.success) return
+
+      const asWalkIn = await walkIn(event.id, {
+        mobileNumber: mobile,
+        dietaryPreference: "Vegan",
+      })
+      expect(asWalkIn.success).toBe(true)
+      if (!asWalkIn.success) return
+      expect(asWalkIn.data.id).toBe(first.data.id)
+
+      const registrant = await db.eventRegistrant.findUnique({
+        where: { id: first.data.id },
+        select: { dietaryPreference: true },
+      })
+      expect(registrant?.dietaryPreference).toBe("Vegan")
+    })
+
+    it("leaves an answer already on the registration alone", async () => {
+      const event = await seedEvent()
+      const mobile = "+63 917 333 5555"
+
+      const first = await createRegistrant(
+        event.id,
+        payload({ mobileNumber: mobile, dietaryPreference: "Halal" }),
+        null
+      )
+      expect(first.success).toBe(true)
+      if (!first.success) return
+
+      // Fill-if-empty, exactly as the profile writers behave: a value typed at the
+      // door doesn't overwrite one the person already gave.
+      await walkIn(event.id, { mobileNumber: mobile, dietaryPreference: "Vegan" })
+
+      const registrant = await db.eventRegistrant.findUnique({
+        where: { id: first.data.id },
+        select: { dietaryPreference: true },
+      })
+      expect(registrant?.dietaryPreference).toBe("Halal")
+    })
+
+    it("does not add a second breakout membership on reuse", async () => {
+      const event = await seedBreakoutEvent()
+      const group = await seedBreakoutGroup(event.id, "Group A")
+      const mobile = "+63 917 333 6666"
+
+      const first = await createRegistrant(
+        event.id,
+        payload({ mobileNumber: mobile }),
+        null,
+        null,
+        false,
+        group.id
+      )
+      expect(first.success).toBe(true)
+      if (!first.success) return
+      expect(await db.breakoutGroupMember.count()).toBe(1)
+
+      // Same group again. The composite PK made this throw into the swallowing
+      // catch, so the walk-in's confirmation screen reported no breakout at all.
+      const asWalkIn = await createRegistrant(
+        event.id,
+        payload({ mobileNumber: mobile }),
+        null,
+        null,
+        false,
+        group.id,
+        { occurrenceId: null }
+      )
+      expect(asWalkIn.success).toBe(true)
+      if (!asWalkIn.success) return
+
+      expect(await db.breakoutGroupMember.count()).toBe(1)
+      expect(asWalkIn.data.breakoutGroup?.id).toBe(group.id)
+    })
+
+    it("moves the registrant when the reuse picks a different group", async () => {
+      const event = await seedBreakoutEvent()
+      const groupA = await seedBreakoutGroup(event.id, "Group A")
+      const groupB = await seedBreakoutGroup(event.id, "Group B")
+      const mobile = "+63 917 333 7777"
+
+      const first = await createRegistrant(
+        event.id,
+        payload({ mobileNumber: mobile }),
+        null,
+        null,
+        false,
+        groupA.id
+      )
+      expect(first.success).toBe(true)
+      if (!first.success) return
+
+      const asWalkIn = await createRegistrant(
+        event.id,
+        payload({ mobileNumber: mobile }),
+        null,
+        null,
+        false,
+        groupB.id,
+        { occurrenceId: null }
+      )
+      expect(asWalkIn.success).toBe(true)
+
+      const memberships = await db.breakoutGroupMember.findMany({
+        select: { breakoutGroupId: true },
+      })
+      expect(memberships).toHaveLength(1)
+      expect(memberships[0].breakoutGroupId).toBe(groupB.id)
+    })
+
+    it("auto-assign does not move someone who is already placed", async () => {
+      // Auto-assign runs off a null pick. Someone already in a group didn't ask to
+      // be moved, and an admin may have placed them by hand since the first pass.
+      const event = await seedBreakoutEvent({ autoAssignBreakout: true })
+      const group = await seedBreakoutGroup(event.id, "Group A")
+      await seedBreakoutGroup(event.id, "Group B")
+      const mobile = "+63 917 333 8888"
+
+      const first = await createRegistrant(
+        event.id,
+        payload({ mobileNumber: mobile }),
+        null,
+        null,
+        false,
+        group.id
+      )
+      expect(first.success).toBe(true)
+      if (!first.success) return
+
+      const asWalkIn = await walkIn(event.id, { mobileNumber: mobile })
+      expect(asWalkIn.success).toBe(true)
+      if (!asWalkIn.success) return
+
+      const memberships = await db.breakoutGroupMember.findMany({
+        select: { breakoutGroupId: true },
+      })
+      expect(memberships).toHaveLength(1)
+      expect(memberships[0].breakoutGroupId).toBe(group.id)
+      // And it reports where they actually are, rather than "no group".
+      expect(asWalkIn.data.breakoutGroup?.id).toBe(group.id)
     })
   })
 })

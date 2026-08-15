@@ -71,19 +71,50 @@ export const FORM_TOGGLE_KEYS: readonly FormToggleKey[] = [
 // ─── Required flags (CCF-142) ────────────────────────────────────────────────
 
 /**
- * The Required companion of a field toggle, named `<fieldKey>Required` so the
- * pairing is mechanical rather than a lookup table anyone could forget to
- * extend. Only *fields* can be required — a section is a step, not an answer,
- * and an option modifies a section rather than asking anything.
+ * The sections that can be marked Required.
+ *
+ * Not all of them can, and the line is whether the section has a single stored
+ * answer that is either given or blank. Dietary has `dietaryPreference` and
+ * Payment has `paymentReference`; the other three don't:
+ *
+ *  - **Breakout** can be filled by auto-assign, so "unanswered" is satisfiable
+ *    without the person ever choosing.
+ *  - **Family** is legitimately empty for anyone registering alone.
+ *  - **Small Group** is a tri-state intent the step already makes you answer.
+ *
+ * Requiring one of those would enforce something the form can meet by accident,
+ * which is worse than not offering the flag at all.
  */
-export type FormRequiredKey = `${FormFieldKey}Required`
+export const REQUIRABLE_SECTION_KEYS = ["sectionDietary", "sectionPayment"] as const
+export type RequirableSectionKey = (typeof REQUIRABLE_SECTION_KEYS)[number]
 
-export function requiredKeyFor(field: FormFieldKey): FormRequiredKey {
-  return `${field}Required`
+/** Every toggle that can carry a Required companion. */
+export type RequirableKey = FormFieldKey | RequirableSectionKey
+
+export const REQUIRABLE_KEYS: readonly RequirableKey[] = [
+  ...FORM_FIELD_KEYS,
+  ...REQUIRABLE_SECTION_KEYS,
+]
+
+/**
+ * The Required companion of a toggle, named `<key>Required` so the pairing is
+ * mechanical rather than a lookup table anyone could forget to extend. Options
+ * are excluded by construction: an option modifies a section rather than asking
+ * anything.
+ */
+export type FormRequiredKey = `${RequirableKey}Required`
+
+export function requiredKeyFor(key: RequirableKey): FormRequiredKey {
+  return `${key}Required`
 }
 
 export const FORM_REQUIRED_KEYS: readonly FormRequiredKey[] =
-  FORM_FIELD_KEYS.map(requiredKeyFor)
+  REQUIRABLE_KEYS.map(requiredKeyFor)
+
+/** Whether this section is one of the two that can be marked Required. */
+export function isRequirableSection(key: string): key is RequirableSectionKey {
+  return (REQUIRABLE_SECTION_KEYS as readonly string[]).includes(key)
+}
 
 /** Every boolean column persisted on an `EventFormConfig` row. */
 export const FORM_PERSISTED_KEYS: readonly (FormToggleKey | FormRequiredKey)[] = [

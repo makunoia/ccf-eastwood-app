@@ -4,7 +4,15 @@ import { headers } from "next/headers"
 import { z } from "zod"
 import { db } from "@/lib/db"
 import { contactHintFrom, maskEmail, maskName } from "@/lib/contact-hint"
-import type { RegistrationProfileSnapshot } from "@/lib/forms/profile-prefill"
+import { findExistingEventRegistration } from "@/lib/events/registration-core"
+import type { RequirableKey } from "@/lib/forms/context-config"
+import { getEffectiveFormConfig } from "@/lib/forms/context-config-server"
+import {
+  fieldsStillNeeded,
+  mergedAnswersFor,
+  type RegistrationProfileSnapshot,
+} from "@/lib/forms/profile-prefill"
+import { tryIssueIdentityGrant } from "@/lib/security/identity-grant"
 import { checkRateLimit, clientIpFrom, UNKNOWN_IP_BUCKET } from "@/lib/security/rate-limit"
 import { formatPhilippinePhone } from "@/lib/utils"
 
@@ -86,7 +94,53 @@ export type ProfileLookupResult =
 
 export type ProfileRevealResult =
   | { ok: false; reason: "mismatch" | "rateLimited" | "notFound" }
-  | { ok: true; profile: RegistrationProfileSnapshot }
+  | {
+      ok: true
+      profile: RegistrationProfileSnapshot
+      /**
+       * Proof of ownership to hand back on submit, so the write path can honour
+       * an edit to a field that already has a value.
+       *
+       * Null when nothing was actually proven — a record with no birth month and
+       * year on file has no second factor to ask for, so the reveal proceeded on
+       * the mask alone (see `needsSecondFactor`). Those registrations still work;
+       * they keep the fill-if-empty rule and simply cannot overwrite. Closing
+       * that gap is a data-quality job — put birthdays on the records — not a
+       * reason to mint a credential nobody earned.
+       */
+      grant: string | null
+      /**
+       * Whether this person already holds a registration for this event.
+       *
+       * Reported truthfully — including at a walk-in door, where an existing
+       * registration is reused rather than refused. Deciding what to *do* about it
+       * belongs to the caller, next to the volunteer check it sits beside.
+       *
+       * Deliberately absent from `ProfileLookupResult`. The masked lookup answers
+       * to anyone who can type a phone number, so attendance status there would
+       * let a stranger learn who is coming.
+       *
+       * Gated on the same proof as `grant`, and for the same reason: a record with
+       * no birth month and year on file has no second factor to ask for, so the
+       * reveal proceeds on the mask alone (see `needsSecondFactor`) and nothing has
+       * been proved. Those reveals report `false` regardless of the truth — the
+       * duplicate guard in `createRegistrant` still catches them at submit, which
+       * is exactly where they landed before any of this existed.
+       */
+      alreadyRegistered: boolean
+      /**
+       * Enabled-and-required fields this profile still can't answer — what the
+       * form would have to ask even though the person is already registered,
+       * because the admin turned a field on (or made it required) after they
+       * signed up.
+       *
+       * Never the DGroup-nested fields — `askedFieldsFor` drops those, since they
+       * are put only to someone who says they're looking for a group — and never
+       * `sectionPayment`, which the amend path refuses to collect. Dietary *can*
+       * appear: it is one of the two requirable sections.
+       */
+      fieldsStillNeeded: RequirableKey[]
+    }
 
 // ─── Selects ─────────────────────────────────────────────────────────────────
 
@@ -227,7 +281,78 @@ const revealSchema = z.object({
   birthMonth: z.number().int().min(1).max(12).nullish(),
   birthYear: z.number().int().nullish(),
   eventId: z.string().nullish(),
+  /**
+   * Which form is asking. The walk-in door and the public form can be configured
+   * to collect different things, so "what does this profile still not answer?"
+   * has a different answer for each and has to be resolved against the right one.
+   */
+  context: z.enum(["Register", "WalkIn"]).default("Register"),
 })
+
+/**
+ * Where a revealed profile stands with this event: are they on the list already,
+ * and does the form as it stands today ask them anything their profile can't
+ * answer?
+ *
+ * Both are null-event-safe. The cluster form resolves a person before it knows
+ * which events they'll pick, so it reveals with no event at all and gets the
+ * neutral answer rather than a special case.
+ *
+ * `proven` is whether this reveal actually demanded a second factor. Only
+ * `alreadyRegistered` depends on it: that one is a fact about the *event*, and
+ * withholding it is what stops a phone number alone from telling a stranger who
+ * is coming. `fieldsStillNeeded` is derived from the profile that was just
+ * returned and a form config the public form renders anyway, so it discloses
+ * nothing the caller doesn't already hold.
+ */
+async function resolveEventStanding(
+  eventId: string | null | undefined,
+  context: "Register" | "WalkIn",
+  recordId: string,
+  recordType: "member" | "guest",
+  profile: RegistrationProfileSnapshot,
+  proven: boolean
+): Promise<{ alreadyRegistered: boolean; fieldsStillNeeded: RequirableKey[] }> {
+  if (!eventId) return { alreadyRegistered: false, fieldsStillNeeded: [] }
+
+  const [existingRegistrationId, config] = await Promise.all([
+    proven
+      ? findExistingEventRegistration(
+          eventId,
+          recordType === "member" ? { memberId: recordId } : { guestId: recordId }
+        )
+      : null,
+    getEffectiveFormConfig(eventId, context),
+  ])
+
+  /**
+   * Dietary and Payment are answered on the `EventRegistrant`, not on the person,
+   * so the profile snapshot cannot speak for them. Without this an already-
+   * registered person would be told the event still needs a dietary preference
+   * they gave when they signed up.
+   */
+  const storedAnswers = existingRegistrationId
+    ? await db.eventRegistrant.findUnique({
+        where: { id: existingRegistrationId },
+        select: { dietaryPreference: true, dietaryOther: true, paymentReference: true },
+      })
+    : null
+
+  return {
+    alreadyRegistered: existingRegistrationId !== null,
+    // The same pair the form itself runs, rather than a second "is this done?"
+    // rule that could drift from it.
+    fieldsStillNeeded: fieldsStillNeeded(
+      config,
+      context,
+      mergedAnswersFor(profile, { ...storedAnswers })
+    )
+      // Payment is never amendable from a public form — `createRegistrant` strips
+      // it on the amend path — so naming it here would promise a question the
+      // flow then refuses to ask. A *new* registration still has it enforced.
+      .filter((key) => key !== "sectionPayment"),
+  }
+}
 
 /**
  * Reveal a profile once the person has proved they know its birth month + year.
@@ -249,7 +374,7 @@ export async function revealProfileForRegistration(
 
   if (!(await rateLimitOk())) return { ok: false, reason: "rateLimited" }
 
-  const { recordId, recordType, birthMonth, birthYear, eventId } = parsed.data
+  const { recordId, recordType, birthMonth, birthYear, eventId, context } = parsed.data
 
   try {
     const record =
@@ -320,7 +445,21 @@ export async function revealProfileForRegistration(
       isVolunteer,
     }
 
-    return { ok: true, profile }
+    const standing = await resolveEventStanding(
+      eventId,
+      context,
+      record.id,
+      recordType,
+      profile,
+      hasStoredBirthday
+    )
+
+    return {
+      ok: true,
+      profile,
+      grant: hasStoredBirthday ? tryIssueIdentityGrant({ recordId: record.id, recordType }) : null,
+      ...standing,
+    }
   } catch {
     return { ok: false, reason: "notFound" }
   }

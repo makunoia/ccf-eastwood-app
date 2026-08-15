@@ -61,6 +61,7 @@ async function getEventDashboard(
       registrationStart: true,
       registrationEnd: true,
       setupDismissedAt: true,
+      setupSkippedSteps: true,
       modules: { select: { type: true } },
       allMinistries: true,
       recurrenceDayOfWeek: true,
@@ -414,6 +415,7 @@ async function getEventDashboard(
     description: event.description,
     type: event.type,
     setupDismissedAt: event.setupDismissedAt,
+    setupSkippedSteps: event.setupSkippedSteps,
     modules: event.modules.map((m) => m.type),
     startDate: event.startDate.toISOString(),
     endDate: event.endDate.toISOString(),
@@ -460,7 +462,10 @@ async function getEventDashboard(
       startDate: series.startDate,
       endDate: series.endDate,
       sessionCount: series.sessionCount,
+      heldSessionCount: series.heldSessionCount,
       totalAttendance: series.totalAttendance,
+      volunteerAttendance: series.volunteerAttendance,
+      totalCheckIns: series.totalCheckIns,
       averageAttendance: series.averageAttendance,
     })),
     confirmedVolunteerCount,
@@ -511,7 +516,12 @@ export default async function EventDashboardPage({
   // Setup walkthrough — only built while the admin hasn't dismissed it.
   const setup = event.setupDismissedAt
     ? null
-    : await getEventSetupChecklist(event.id, event.type, event.modules)
+    : await getEventSetupChecklist(
+        event.id,
+        event.type,
+        event.modules,
+        event.setupSkippedSteps
+      )
 
   return <EventDashboardClient event={event} setup={setup} layout={layout} />
 }

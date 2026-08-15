@@ -28,9 +28,13 @@ test.describe("Event Registration page", () => {
 
     await expect(page.getByRole("heading", { name: dgroupEvent.name })).toBeVisible()
     await expect(page.getByText("What's your mobile number?")).toBeVisible()
+    // The way past the gate is its own card now, not an underlined aside.
+    await expect(page.getByText("First time with us?")).toBeVisible()
     await expect(
-      page.getByRole("button", { name: "Skip — fill in the form manually" })
+      page.getByRole("button", { name: "Start a new registration" })
     ).toBeVisible()
+    // The gate looks a number up; opting out of the question is the card's job.
+    await expect(page.getByLabel("I don't have a mobile number")).toBeHidden()
   })
 
   test("renders the first step of the form once the gate is skipped", async ({
@@ -147,5 +151,83 @@ test.describe("Registration — pulling up an existing profile", () => {
 
     await expect(page.getByLabel("First Name")).toBeVisible()
     await expect(page.getByLabel("First Name")).toHaveValue("")
+  })
+})
+
+/**
+ * The returning registrant, end to end in a browser.
+ *
+ * What this pins is *where* the news arrives. The behaviour it replaces told
+ * people they were already registered from a `toast.error` fired after the final
+ * Register button — so the assertions below are as much about what is absent from
+ * step 0 (no name fields, no Register button) as about the message itself.
+ */
+test.describe("Registration — someone who is already registered", () => {
+  /**
+   * The step-0 lookup is rate-limited for real — 12 calls per IP per minute,
+   * shared between the lookup and the reveal — and a browser run goes through the
+   * live limiter rather than a mock. The specs above already spend most of that
+   * budget on the default bucket, so this block claims its own; without it the
+   * last test here trips the limit and fails looking for a confirm card that was
+   * never rendered.
+   */
+  test.use({ extraHTTPHeaders: { "x-forwarded-for": "203.0.113.10" } })
+
+  /** Step 0 through the second factor, which is where standing is resolved. */
+  async function identify(
+    page: import("@playwright/test").Page,
+    registerPath: string,
+    member: { local: string; birthMonth: string; birthYear: string }
+  ) {
+    await page.goto(registerPath)
+    await page.getByRole("textbox", { name: "Mobile Number" }).fill(member.local)
+    await page.getByRole("button", { name: "Continue" }).click()
+    await page.getByRole("combobox").first().click()
+    await page.getByRole("option", { name: member.birthMonth, exact: true }).click()
+    await page.getByLabel("Your birth month and year").fill(member.birthYear)
+    await page.getByRole("button", { name: "Yes, that's me" }).click()
+  }
+
+  test("is told at step 0, before filling in anything", async ({
+    page,
+    dgroupEvent,
+    alreadyRegistered,
+  }) => {
+    await identify(page, dgroupEvent.registerPath, alreadyRegistered)
+
+    await expect(page.getByText("You're already registered")).toBeVisible()
+    // The point of the change: no form was walked to find this out. Exact, or
+    // "Register another person" on this very screen matches the substring.
+    await expect(page.getByLabel("First Name")).toBeHidden()
+    await expect(page.getByRole("button", { name: "Register", exact: true })).toBeHidden()
+    await expect(page.getByRole("button", { name: "Edit details" })).toBeHidden()
+  })
+
+  test("can still choose to update their details", async ({
+    page,
+    dgroupEvent,
+    alreadyRegistered,
+  }) => {
+    await identify(page, dgroupEvent.registerPath, alreadyRegistered)
+
+    await page.getByRole("button", { name: "Update my details" }).click()
+    await expect(page.getByText("Personal Information")).toBeVisible()
+  })
+
+  test("is asked only for the field the event started requiring", async ({
+    page,
+    dgroupEvent,
+    nowRequiresLifeStage,
+  }) => {
+    await identify(page, dgroupEvent.registerPath, nowRequiresLifeStage)
+
+    await expect(page.getByText("We just need one more thing")).toBeVisible()
+    await page.getByRole("button", { name: "Continue" }).click()
+
+    // One step, not the whole form again — the DGroup step this event carries is
+    // not reopened for a Personal Information field.
+    await expect(page.getByText("Personal Information")).toBeVisible()
+    await expect(page.getByText(/^Step \d+ of \d+$/)).toBeHidden()
+    await expect(page.getByRole("button", { name: "Register" })).toBeVisible()
   })
 })

@@ -209,7 +209,11 @@ export default async function WalkInPage({
       alt={event.name}
       headerExtra={
         event.price != null ? (
-          <p className={`mt-1 text-sm font-medium ${hasBg ? "" : "text-foreground"}`}>
+          <p
+            className={`mt-4 inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium ${
+              hasBg ? "border-white/25 bg-white/10" : "border-border bg-background text-foreground"
+            }`}
+          >
             ₱
             {(event.price / 100).toLocaleString("en-PH", {
               minimumFractionDigits: 2,

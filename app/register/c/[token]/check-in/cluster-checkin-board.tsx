@@ -26,7 +26,7 @@ import {
  * A deliberately lean sibling of the per-event `CheckinBoard`, not a reuse of
  * it: that component is built around one event and one occurrence, and carries
  * the DGroup prompt, the profile form and household check-in on top. The same
- * lookup feel — name type-ahead, mobile fallback, confirm, auto-reset — over a
+ * lookup feel — name type-ahead, mobile fallback, confirm, reset — over a
  * different unit of work: one person, every event of the day.
  *
  * The screen never creates a registration. An event the person didn't sign up
@@ -34,7 +34,6 @@ import {
  * surface allowed to register someone at the door.
  */
 
-const AUTO_RESET_MS = 4000
 const NAME_DEBOUNCE_MS = 300
 
 type Step = "lookup" | "disambiguate" | "confirm" | "success" | "not-found"
@@ -59,11 +58,9 @@ export function ClusterCheckinBoard({
   const [error, setError] = React.useState<string | null>(null)
 
   const inputRef = React.useRef<HTMLInputElement>(null)
-  const resetTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const nameDebounceTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const reset = React.useCallback(() => {
-    if (resetTimer.current) clearTimeout(resetTimer.current)
     if (nameDebounceTimer.current) clearTimeout(nameDebounceTimer.current)
     setStep("lookup")
     setQuery("")
@@ -78,15 +75,9 @@ export function ClusterCheckinBoard({
     setTimeout(() => inputRef.current?.focus(), 50)
   }, [])
 
-  function scheduleReset() {
-    if (resetTimer.current) clearTimeout(resetTimer.current)
-    resetTimer.current = setTimeout(reset, AUTO_RESET_MS)
-  }
-
   React.useEffect(() => {
     inputRef.current?.focus()
     return () => {
-      if (resetTimer.current) clearTimeout(resetTimer.current)
       if (nameDebounceTimer.current) clearTimeout(nameDebounceTimer.current)
     }
   }, [])
@@ -155,7 +146,6 @@ export function ClusterCheckinBoard({
     setPerson(result.data.person)
     setRecordedCount(result.data.recorded.length)
     setStep("success")
-    scheduleReset()
   }
 
   // ── Lookup ─────────────────────────────────────────────────────────────────
@@ -385,7 +375,9 @@ export function ClusterCheckinBoard({
 
           <EventCellList cells={person.events} walkInHref={walkInHref} />
 
-          <p className="text-xs text-muted-foreground">Returning to start in a moment…</p>
+          <Button className="w-full" onClick={reset}>
+            Check in someone else
+          </Button>
         </div>
       </div>
     )

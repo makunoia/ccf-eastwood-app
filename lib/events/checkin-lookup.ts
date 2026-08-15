@@ -35,6 +35,10 @@ export const MEMBER_LOOKUP_SELECT = {
   birthMonth: true,
   birthYear: true,
   smallGroupId: true,
+  // A member who named another satellite has already answered "are you in a
+  // DGroup?" — the member-side twin of the guest's `claimedSatellite`, and read
+  // for the same reason: don't ask them again at the kiosk.
+  upwardSatellite: true,
   lifeStageId: true,
   gender: true,
   language: true,

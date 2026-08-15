@@ -10,7 +10,10 @@ import {
   FORM_SECTION_KEYS,
   FORM_TOGGLE_KEYS,
   IDENTITY_FIELD_KEYS,
+  REQUIRABLE_SECTION_KEYS,
+  isRequirableSection,
 } from "@/lib/forms/context-config"
+import { missingRequiredFields } from "@/lib/forms/registration-payload"
 
 /**
  * The registration form's toggle registry (CCF-117 / CCF-119 / CCF-142).
@@ -53,20 +56,34 @@ describe("the toggle registry composes from its parts", () => {
   })
 })
 
-describe("Required flags pair off with fields", () => {
-  it("gives every field exactly one, named mechanically", () => {
-    // `<fieldKey>Required` is a template type, not a lookup table — the point is
-    // that nobody can add a field and forget to add its flag.
+describe("Required flags pair off with what can be answered", () => {
+  it("gives every field and every requirable section exactly one, named mechanically", () => {
+    // `<key>Required` is a template type, not a lookup table — the point is that
+    // nobody can add a field and forget to add its flag.
     expect([...FORM_REQUIRED_KEYS].sort()).toEqual(
-      FORM_FIELD_KEYS.map((k) => `${k}Required`).sort()
+      [...FORM_FIELD_KEYS, ...REQUIRABLE_SECTION_KEYS].map((k) => `${k}Required`).sort()
     )
   })
 
-  it("gives none to sections or options", () => {
-    // A section is a step, not an answer; an option modifies a section rather
-    // than asking anything. Neither can be "required".
-    for (const key of [...FORM_SECTION_KEYS, ...FORM_OPTION_KEYS]) {
+  it("gives one only to the sections that own a single stored answer", () => {
+    // Dietary has `dietaryPreference` and Payment has `paymentReference`. The
+    // other three have no answer that can be blank: Breakout is satisfiable by
+    // auto-assign, an empty household is legitimate, and the DGroup step already
+    // makes you answer its intent. Requiring one of those would enforce something
+    // the form can meet by accident.
+    expect([...REQUIRABLE_SECTION_KEYS]).toEqual(["sectionDietary", "sectionPayment"])
+
+    const notRequirable = FORM_SECTION_KEYS.filter((k) => !isRequirableSection(k))
+    for (const key of [...notRequirable, ...FORM_OPTION_KEYS]) {
       expect(FORM_REQUIRED_KEYS as readonly string[]).not.toContain(`${key}Required`)
+    }
+  })
+
+  it("carries a payload key for every requirable section, or Required means nothing", () => {
+    // The twin of `fieldKeysWithoutGate` for sections: a Required flag with no
+    // answer behind it would be a switch that does nothing.
+    for (const key of REQUIRABLE_SECTION_KEYS) {
+      expect(missingRequiredFields({ ...BARE_EVENT_FORM_CONFIG, [key]: true, [`${key}Required`]: true }, {})).toContain(key)
     }
   })
 })

@@ -7,12 +7,17 @@ import { auth } from "@/lib/auth"
 import { isSuperAdmin } from "@/lib/permissions"
 import { repointFamilyLinks } from "@/lib/family-links"
 import { displayPersonName, personNameKey } from "@/lib/people/name-key"
+// Not re-exported from here: Turbopack's server-action transform treats a
+// re-export in a "use server" module as a runtime export and tries to register
+// it as an action. Consumers import the type from the lib module directly.
+import { EMPTY_ACTIVITY, type RecordActivity } from "@/lib/people/duplicate-activity"
 
 type DuplicateRecord = {
   id: string
   firstName: string
   lastName: string
   recordType: "member" | "guest"
+  activity: RecordActivity
 }
 
 export type DuplicateField = "phone" | "email" | "name"
@@ -28,11 +33,144 @@ type ActionResult<T = void> =
   | { success: false; error: string }
 
 /** Identity of a record across both tables — ids are unique, the type keeps it readable. */
-function recordKey(r: DuplicateRecord): string {
+function recordKey(r: { id: string; recordType: "member" | "guest" }): string {
   return `${r.recordType}:${r.id}`
 }
 
+/**
+ * Activity counts for the records that actually landed in a duplicate group.
+ *
+ * Scoped to those ids on purpose: `getDuplicateProfiles` reads every Member and
+ * every active Guest to find the groups, and hanging `_count` off those two
+ * queries would aggregate across the whole table to describe a handful of rows.
+ */
+async function loadActivity(groups: DuplicateGroup[]): Promise<Map<string, RecordActivity>> {
+  const memberIds = new Set<string>()
+  const guestIds = new Set<string>()
+  for (const g of groups) {
+    for (const r of g.records) {
+      ;(r.recordType === "member" ? memberIds : guestIds).add(r.id)
+    }
+  }
+
+  const out = new Map<string, RecordActivity>()
+  if (memberIds.size === 0 && guestIds.size === 0) return out
+
+  const memberIdList = [...memberIds]
+  const guestIdList = [...guestIds]
+
+  const [members, guests, registrants] = await Promise.all([
+    memberIdList.length
+      ? db.member.findMany({
+          where: { id: { in: memberIdList } },
+          select: {
+            id: true,
+            createdAt: true,
+            updatedAt: true,
+            upwardSatellite: true,
+            smallGroup: { select: { name: true } },
+            _count: { select: { ledGroups: true, volunteers: true, familyMemberships: true } },
+          },
+        })
+      : [],
+    guestIdList.length
+      ? db.guest.findMany({
+          where: { id: { in: guestIdList } },
+          select: {
+            id: true,
+            createdAt: true,
+            updatedAt: true,
+            claimedSatellite: true,
+            claimedSmallGroup: { select: { name: true } },
+            _count: { select: { familyMemberships: true } },
+          },
+        })
+      : [],
+    db.eventRegistrant.findMany({
+      where: {
+        OR: [
+          ...(memberIdList.length ? [{ memberId: { in: memberIdList } }] : []),
+          ...(guestIdList.length ? [{ guestId: { in: guestIdList } }] : []),
+        ],
+      },
+      select: {
+        memberId: true,
+        guestId: true,
+        attendedAt: true,
+        createdAt: true,
+        // OneTime attendance lives on `attendedAt`; MultiDay/Recurring on these rows.
+        _count: { select: { occurrenceAttendances: true } },
+      },
+    }),
+  ])
+
+  type Tally = { events: number; checkIns: number; lastAt: Date | null }
+  const tallies = new Map<string, Tally>()
+  for (const r of registrants) {
+    // Both FKs null is an anonymous registrant — it belongs to no profile and
+    // must not be keyed, or it would fold into whichever branch is checked first.
+    if (!r.memberId && !r.guestId) continue
+    const key = r.memberId ? `member:${r.memberId}` : `guest:${r.guestId}`
+    const t = tallies.get(key) ?? { events: 0, checkIns: 0, lastAt: null }
+    t.events += 1
+    t.checkIns += (r.attendedAt ? 1 : 0) + r._count.occurrenceAttendances
+    if (!t.lastAt || r.createdAt > t.lastAt) t.lastAt = r.createdAt
+    tallies.set(key, t)
+  }
+
+  function lastActivity(updatedAt: Date, lastAt: Date | null): string {
+    return (lastAt && lastAt > updatedAt ? lastAt : updatedAt).toISOString()
+  }
+
+  for (const m of members) {
+    const key = `member:${m.id}`
+    const t = tallies.get(key)
+    out.set(key, {
+      events: t?.events ?? 0,
+      checkIns: t?.checkIns ?? 0,
+      ledGroups: m._count.ledGroups,
+      volunteerRoles: m._count.volunteers,
+      familyLinks: m._count.familyMemberships,
+      groupName: m.smallGroup?.name ?? null,
+      groupIsClaimed: false,
+      satellite: m.upwardSatellite,
+      lastActivityAt: lastActivity(m.updatedAt, t?.lastAt ?? null),
+      createdAt: m.createdAt.toISOString(),
+    })
+  }
+
+  for (const g of guests) {
+    const key = `guest:${g.id}`
+    const t = tallies.get(key)
+    out.set(key, {
+      events: t?.events ?? 0,
+      checkIns: t?.checkIns ?? 0,
+      ledGroups: 0,
+      volunteerRoles: 0,
+      familyLinks: g._count.familyMemberships,
+      // Self-reported at check-in, never confirmed — the UI labels it as a claim.
+      groupName: g.claimedSmallGroup?.name ?? null,
+      groupIsClaimed: g.claimedSmallGroup !== null,
+      satellite: g.claimedSatellite,
+      lastActivityAt: lastActivity(g.updatedAt, t?.lastAt ?? null),
+      createdAt: g.createdAt.toISOString(),
+    })
+  }
+
+  return out
+}
+
+/**
+ * Guarded like the two merge actions below, not because the page is Super Admin
+ * only — a `"use server"` export is a callable endpoint no matter who renders the
+ * page that uses it. What comes back is every duplicate candidate's DGroup,
+ * satellite, led-group count, volunteer roles, household links and activity
+ * dates, so an unauthenticated POST here is a bulk read of the directory.
+ */
 export async function getDuplicateProfiles(): Promise<ActionResult<DuplicateGroup[]>> {
+  const session = await auth()
+  if (!isSuperAdmin(session)) return { success: false, error: "Unauthorized" }
+
   try {
     const [members, guests] = await Promise.all([
       db.member.findMany({
@@ -50,7 +188,14 @@ export async function getDuplicateProfiles(): Promise<ActionResult<DuplicateGrou
     // the UI shows a real name rather than the sorted, de-accented key.
     const nameMap = new Map<string, { value: string; records: DuplicateRecord[] }>()
 
-    function index(record: DuplicateRecord, phone: string | null, email: string | null) {
+    function index(
+      base: Omit<DuplicateRecord, "activity">,
+      phone: string | null,
+      email: string | null,
+    ) {
+      // Counts are attached in one scoped pass once the groups are known — see
+      // `loadActivity`. Until then every record carries the empty placeholder.
+      const record: DuplicateRecord = { ...base, activity: EMPTY_ACTIVITY }
       if (phone) {
         const key = phone.trim().toLowerCase()
         phoneMap.set(key, [...(phoneMap.get(key) ?? []), record])
@@ -103,7 +248,16 @@ export async function getDuplicateProfiles(): Promise<ActionResult<DuplicateGrou
       groups.push({ field: "name", value, records })
     }
 
-    return { success: true, data: groups }
+    const activity = await loadActivity(groups)
+    const hydrated = groups.map((g) => ({
+      ...g,
+      records: g.records.map((r) => ({
+        ...r,
+        activity: activity.get(recordKey(r)) ?? EMPTY_ACTIVITY,
+      })),
+    }))
+
+    return { success: true, data: hydrated }
   } catch {
     return { success: false, error: "Failed to load duplicate profiles" }
   }

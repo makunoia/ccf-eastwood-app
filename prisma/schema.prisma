@@ -587,6 +587,11 @@ model Event {
   registrationPageBannerUrl   String?
   // Setup walkthrough — once the admin dismisses the dashboard setup checklist it stays hidden
   setupDismissedAt            DateTime?
+  // Individual walkthrough steps the admin chose to skip (SetupStepKey values).
+  // A skipped step stops counting as outstanding work without pretending it was
+  // done, and can be un-skipped. `@default([])` is load-bearing: without it the
+  // PrismaPg adapter sends NULL for every `event.create` that omits the field.
+  setupSkippedSteps           String[]            @default([])
   // Which session the walk-in form registers people into (CCF-133). Chosen by the
   // admin on the Walk-in form config rather than derived from the URL or resolved
   // at request time, so the door can never silently target a different session
@@ -1298,6 +1303,15 @@ model EventFormConfig {
   fieldLanguageRequired          Boolean @default(false)
   fieldScheduleRequired          Boolean @default(false)
   fieldMeetingPreferenceRequired Boolean @default(false)
+
+  // Per-section Required flags. Only two sections can carry one, and the line is
+  // whether the section owns a single stored answer that is either given or
+  // blank: Dietary has `dietaryPreference`, Payment has `paymentReference`.
+  // Breakout can be satisfied by auto-assign, an empty household is a legitimate
+  // answer, and the DGroup step already makes you answer its intent — requiring
+  // any of those would enforce something the form can meet by accident.
+  sectionDietaryRequired Boolean @default(false)
+  sectionPaymentRequired Boolean @default(false)
 
   // Copy shown under "Welcome, <name>!" on the success screen (CCF-130). Null
   // falls back to the built-in default — the stock copy invites people to bring a

@@ -1,7 +1,15 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest"
 import { db } from "@/lib/db"
-import { getEventSetupChecklist, type SetupStepKey } from "@/lib/events/setup-checklist"
-import { dismissEventSetup } from "@/app/(dashboard)/events/actions"
+import {
+  getEventSetupChecklist,
+  isSetupStepKey,
+  SETUP_STEP_KEYS,
+  type SetupStepKey,
+} from "@/lib/events/setup-checklist"
+import {
+  dismissEventSetup,
+  setEventSetupStepSkipped,
+} from "@/app/(dashboard)/events/actions"
 import { saveEventFormConfig } from "@/app/(dashboard)/events/form-config-actions"
 import type { EventModuleType } from "@/app/generated/prisma/client"
 
@@ -300,6 +308,146 @@ describe("event setup checklist", () => {
 
       await saveEventFormConfig(event.id, "Register", { sectionDietary: false })
       expect(stepDone(await checklistFor(event.id, "OneTime"), "form")).toBe(true)
+    })
+  })
+
+  // Per-step skip — opting out of one step without dismissing the whole card.
+  describe("skipping a step", () => {
+    async function checklistWithSkips(
+      eventId: string,
+      type: "OneTime" | "MultiDay" | "Recurring" = "OneTime",
+      modules: readonly EventModuleType[] = BOTH_MODULES,
+    ) {
+      const event = await db.event.findUniqueOrThrow({ where: { id: eventId } })
+      return getEventSetupChecklist(eventId, type, [...modules], event.setupSkippedSteps)
+    }
+
+    function step(
+      checklist: Awaited<ReturnType<typeof getEventSetupChecklist>>,
+      key: SetupStepKey,
+    ) {
+      return checklist.steps.find((s) => s.key === key)
+    }
+
+    it("defaults to an empty list on a fresh event — no step starts skipped", async () => {
+      const event = await seedEvent("OneTime")
+      expect(event.setupSkippedSteps).toEqual([])
+
+      const checklist = await checklistWithSkips(event.id)
+      expect(checklist.steps.every((s) => !s.skipped)).toBe(true)
+      expect(checklist.skippedCount).toBe(0)
+    })
+
+    it("marks the step skipped and counts it out of the outstanding work", async () => {
+      const event = await seedEvent("OneTime")
+      const result = await setEventSetupStepSkipped(event.id, "breakouts", true)
+      expect(result.success).toBe(true)
+
+      const checklist = await checklistWithSkips(event.id)
+      expect(step(checklist, "breakouts")?.skipped).toBe(true)
+      expect(step(checklist, "breakouts")?.done).toBe(false)
+      expect(checklist.skippedCount).toBe(1)
+      // Skipping never fakes progress — only `skippedCount` moves.
+      expect(checklist.completedCount).toBe(0)
+      // Nor does it shrink the list: the step stays visible so it can be restored.
+      expect(checklist.totalCount).toBe(6)
+    })
+
+    it("restores a skipped step", async () => {
+      const event = await seedEvent("OneTime")
+      await setEventSetupStepSkipped(event.id, "breakouts", true)
+      await setEventSetupStepSkipped(event.id, "breakouts", false)
+
+      const checklist = await checklistWithSkips(event.id)
+      expect(step(checklist, "breakouts")?.skipped).toBe(false)
+      expect(checklist.skippedCount).toBe(0)
+    })
+
+    it("is idempotent — skipping twice stores one key", async () => {
+      const event = await seedEvent("OneTime")
+      await setEventSetupStepSkipped(event.id, "breakouts", true)
+      await setEventSetupStepSkipped(event.id, "breakouts", true)
+
+      const updated = await db.event.findUniqueOrThrow({ where: { id: event.id } })
+      expect(updated.setupSkippedSteps).toEqual(["breakouts"])
+    })
+
+    it("un-skipping a step that was never skipped is a no-op, not an error", async () => {
+      const event = await seedEvent("OneTime")
+      const result = await setEventSetupStepSkipped(event.id, "checkin", false)
+
+      expect(result.success).toBe(true)
+      const updated = await db.event.findUniqueOrThrow({ where: { id: event.id } })
+      expect(updated.setupSkippedSteps).toEqual([])
+    })
+
+    it("rejects an unknown step key instead of storing junk", async () => {
+      const event = await seedEvent("OneTime")
+      const result = await setEventSetupStepSkipped(event.id, "not-a-step", true)
+
+      expect(result.success).toBe(false)
+      const updated = await db.event.findUniqueOrThrow({ where: { id: event.id } })
+      expect(updated.setupSkippedSteps).toEqual([])
+    })
+
+    it("rejects a missing event", async () => {
+      const result = await setEventSetupStepSkipped("nope", "checkin", true)
+      expect(result.success).toBe(false)
+    })
+
+    it("reports allComplete when every remaining step is skipped", async () => {
+      const event = await seedEvent("OneTime")
+      const checklist = await checklistWithSkips(event.id)
+      for (const s of checklist.steps) {
+        await setEventSetupStepSkipped(event.id, s.key, true)
+      }
+
+      const after = await checklistWithSkips(event.id)
+      expect(after.allComplete).toBe(true)
+      // Honest counts behind the "nothing left" state: nothing was actually done.
+      expect(after.completedCount).toBe(0)
+      expect(after.skippedCount).toBe(after.totalCount)
+    })
+
+    it("a skipped step that gets done anyway reads as done, not skipped", async () => {
+      const event = await seedEvent("OneTime")
+      await setEventSetupStepSkipped(event.id, "breakouts", true)
+      const volunteer = await seedConfirmedVolunteer(event.id)
+      await db.breakoutGroup.create({
+        data: { name: "Table 1", eventId: event.id, facilitatorId: volunteer.id },
+      })
+
+      const checklist = await checklistWithSkips(event.id)
+      expect(step(checklist, "breakouts")?.done).toBe(true)
+      expect(checklist.completedCount).toBeGreaterThan(0)
+      // Done wins: the step stops counting as an opt-out.
+      expect(checklist.skippedCount).toBe(0)
+    })
+
+    it("a key for a step this event doesn't show is inert", async () => {
+      // Modules can be turned off after a step was skipped. The stale key stays in
+      // the column rather than being pruned — it simply matches nothing.
+      const event = await seedEvent("OneTime")
+      await setEventSetupStepSkipped(event.id, "breakouts", true)
+
+      const checklist = await checklistWithSkips(event.id, "OneTime", [])
+      expect(checklist.steps.some((s) => s.key === "breakouts")).toBe(false)
+      expect(checklist.skippedCount).toBe(0)
+      expect(checklist.allComplete).toBe(false)
+    })
+
+    it("skips are per event", async () => {
+      const a = await seedEvent("OneTime")
+      const b = await seedEvent("OneTime")
+      await setEventSetupStepSkipped(a.id, "checkin", true)
+
+      expect((await checklistWithSkips(b.id)).skippedCount).toBe(0)
+    })
+
+    it("isSetupStepKey guards exactly the published keys", () => {
+      for (const key of SETUP_STEP_KEYS) expect(isSetupStepKey(key)).toBe(true)
+      expect(isSetupStepKey("committee")).toBe(false)
+      expect(isSetupStepKey("")).toBe(false)
     })
   })
 

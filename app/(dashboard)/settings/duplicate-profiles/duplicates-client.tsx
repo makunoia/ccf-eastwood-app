@@ -3,7 +3,22 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { IconAlertTriangle, IconCheck, IconCircleCheckFilled, IconCircleXFilled, IconUsers } from "@tabler/icons-react"
+import {
+  IconAlertTriangle,
+  IconBuilding,
+  IconCalendarEvent,
+  IconCheck,
+  IconCircleCheck,
+  IconCircleCheckFilled,
+  IconCircleXFilled,
+  IconClock,
+  IconCrown,
+  IconHeartHandshake,
+  IconHome,
+  IconSparkles,
+  IconUsers,
+  IconUsersGroup,
+} from "@tabler/icons-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -14,6 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { dominantIndex, isEmptyActivity, type RecordActivity } from "@/lib/people/duplicate-activity"
 import {
   resolveDuplicateGroups,
   type BatchMergeItemResult,
@@ -25,6 +41,7 @@ type DuplicateRecord = {
   firstName: string
   lastName: string
   recordType: "member" | "guest"
+  activity: RecordActivity
 }
 
 type DuplicateField = "phone" | "email" | "name"
@@ -67,6 +84,168 @@ function isInvalidSelection(g: DuplicateGroup, keeperId: string): string | null 
 }
 
 const MERGE_CHUNK_SIZE = 5
+
+// ─── Activity preview ─────────────────────────────────────────────────────────
+
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? "" : "s"}`
+}
+
+/** "Aug 2026". Month granularity is enough to tell a live record from a dormant one. */
+function monthYear(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-PH", { month: "short", year: "numeric" })
+}
+
+function fullDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-PH", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  })
+}
+
+function Stat({
+  icon: Icon,
+  children,
+  title,
+  muted,
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  children: React.ReactNode
+  title?: string
+  muted?: boolean
+}) {
+  return (
+    <span
+      title={title}
+      className={["inline-flex items-center gap-1 whitespace-nowrap", muted ? "italic" : ""].join(" ")}
+    >
+      <Icon className="size-3.5 shrink-0" />
+      {children}
+    </span>
+  )
+}
+
+/**
+ * One compact line of activity counts for a candidate record.
+ *
+ * Zero-value metrics are dropped rather than rendered as "0 events" — that is
+ * what lets a thin record stay visually quiet next to the live one, so the
+ * keeper decision reads off the row without any extra styling.
+ */
+function ActivityChips({ activity }: { activity: RecordActivity }) {
+  const chips: React.ReactNode[] = []
+
+  if (activity.events > 0) {
+    chips.push(
+      <Stat key="events" icon={IconCalendarEvent} title="Event registrations">
+        {plural(activity.events, "event")}
+      </Stat>,
+    )
+  }
+  if (activity.checkIns > 0) {
+    chips.push(
+      <Stat key="checkins" icon={IconCircleCheck} title="Times checked in">
+        {plural(activity.checkIns, "check-in")}
+      </Stat>,
+    )
+  }
+  if (activity.groupName) {
+    chips.push(
+      <Stat
+        key="group"
+        icon={IconUsersGroup}
+        muted={activity.groupIsClaimed}
+        title={
+          activity.groupIsClaimed
+            ? "Self-reported DGroup from check-in — not confirmed"
+            : "DGroup this profile belongs to"
+        }
+      >
+        {activity.groupIsClaimed ? `Claims ${activity.groupName}` : activity.groupName}
+      </Stat>,
+    )
+  }
+  // Tracked separately because `satellite` is deliberately outside the dominance
+  // vector — it describes a record rather than measuring its use — so a profile
+  // whose only signal is a satellite is still `isEmptyActivity`. See below.
+  const showsSatellite = !activity.groupName && !!activity.satellite
+  if (showsSatellite) {
+    chips.push(
+      <Stat key="satellite" icon={IconBuilding} title="DGroup is at another CCF satellite">
+        {activity.satellite}
+      </Stat>,
+    )
+  }
+  if (activity.ledGroups > 0) {
+    chips.push(
+      <Stat key="leads" icon={IconCrown} title="DGroups this profile leads">
+        Leads {activity.ledGroups}
+      </Stat>,
+    )
+  }
+  if (activity.volunteerRoles > 0) {
+    chips.push(
+      <Stat key="volunteer" icon={IconHeartHandshake} title="Volunteer sign-ups">
+        {plural(activity.volunteerRoles, "role")}
+      </Stat>,
+    )
+  }
+  if (activity.familyLinks > 0) {
+    chips.push(
+      <Stat key="family" icon={IconHome} title="Household links">
+        {plural(activity.familyLinks, "family link")}
+      </Stat>,
+    )
+  }
+
+  const empty = isEmptyActivity(activity)
+  // "No activity" is a claim about the row, not about the vector — printing it
+  // beside a satellite chip has the line contradict itself ("No activity · CCF
+  // Ortigas"). `empty` still drives the dimming and the date below, because for
+  // the keeper decision a satellite genuinely isn't activity; it just isn't
+  // *nothing*, which is what this chip asserts.
+  if (empty && !showsSatellite) {
+    chips.unshift(
+      <Stat key="none" icon={IconCircleXFilled} title="Nothing recorded against this profile">
+        No activity
+      </Stat>,
+    )
+  }
+
+  // For a dormant record the creation date is the date that matters; for a live
+  // one it's the last time anything happened. Show whichever is the real answer.
+  chips.push(
+    <Stat
+      key="when"
+      icon={IconClock}
+      title={
+        `Last activity: ${activity.lastActivityAt ? fullDate(activity.lastActivityAt) : "never"}` +
+        ` · Added: ${fullDate(activity.createdAt)}`
+      }
+    >
+      {empty || !activity.lastActivityAt
+        ? `Added ${monthYear(activity.createdAt)}`
+        : `Active ${monthYear(activity.lastActivityAt)}`}
+    </Stat>,
+  )
+
+  return (
+    <div
+      className={[
+        "flex flex-wrap items-center gap-x-2 gap-y-1 text-xs",
+        empty ? "text-muted-foreground/70" : "text-muted-foreground",
+      ].join(" ")}
+    >
+      {chips.map((chip, i) => (
+        <React.Fragment key={i}>
+          {i > 0 && <span aria-hidden className="text-muted-foreground/40">·</span>}
+          {chip}
+        </React.Fragment>
+      ))}
+    </div>
+  )
+}
 
 function ResultsStep({ results, onClose }: { results: MergeResults | null; onClose: () => void }) {
   if (!results) return null
@@ -438,6 +617,9 @@ export function DuplicatesClient({ groups }: Props) {
         {groups.map((group) => {
           const sel = selections.get(groupKey(group))
           const invalidReason = sel ? isInvalidSelection(group, sel.keeperId) : null
+          // null when no record leads on every count — the ambiguous groups get
+          // no badge at all rather than a guess.
+          const dominantIdx = dominantIndex(group.records.map((r) => r.activity))
           return (
             <div key={groupKey(group)} className="rounded-lg border p-4 space-y-3">
               <div className="flex items-center gap-2">
@@ -460,30 +642,45 @@ export function DuplicatesClient({ groups }: Props) {
                 </p>
               )}
               <div className="divide-y rounded-md border">
-                {group.records.map((record) => {
+                {group.records.map((record, i) => {
                   const isKeeper = sel?.keeperId === record.id
+                  const isMostActive = i === dominantIdx
                   return (
-                    <div key={record.id} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Link
-                          href={record.recordType === "member" ? `/members/${record.id}` : `/guests/${record.id}`}
-                          className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors truncate"
-                        >
-                          {record.firstName} {record.lastName}
-                        </Link>
-                        <Badge variant="secondary" className="text-xs capitalize shrink-0">
-                          {record.recordType}
-                        </Badge>
-                        {isKeeper && (
-                          <Badge variant="default" className="text-xs shrink-0">
-                            <IconCheck className="size-3" />
-                            Keeper
+                    <div key={record.id} className="flex items-start justify-between gap-3 px-3 py-2 text-sm">
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <Link
+                            href={record.recordType === "member" ? `/members/${record.id}` : `/guests/${record.id}`}
+                            className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors truncate"
+                          >
+                            {record.firstName} {record.lastName}
+                          </Link>
+                          <Badge variant="secondary" className="text-xs capitalize shrink-0">
+                            {record.recordType}
                           </Badge>
-                        )}
+                          {isMostActive && (
+                            <Badge
+                              variant="outline"
+                              className="text-xs shrink-0 border-emerald-500/40 text-emerald-700 dark:text-emerald-400"
+                              title="Leads every other record here on every count — most likely the live profile"
+                            >
+                              <IconSparkles className="size-3" />
+                              Most activity
+                            </Badge>
+                          )}
+                          {isKeeper && (
+                            <Badge variant="default" className="text-xs shrink-0">
+                              <IconCheck className="size-3" />
+                              Keeper
+                            </Badge>
+                          )}
+                        </div>
+                        <ActivityChips activity={record.activity} />
                       </div>
                       <Button
                         variant={isKeeper ? "default" : "outline"}
                         size="sm"
+                        className="shrink-0"
                         onClick={() => toggleKeeper(group, record.id)}
                       >
                         {isKeeper ? "Selected" : "Keep this"}

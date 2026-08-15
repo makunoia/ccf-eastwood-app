@@ -7,11 +7,12 @@ import {
   FORM_REQUIRED_KEYS,
   FORM_TOGGLE_DEFAULTS,
   IDENTITY_FIELD_KEYS,
+  REQUIRABLE_KEYS,
   fieldsForContext,
   hasIdentityField,
   requiredKeyFor,
   type EventFormConfigData,
-  type FormFieldKey,
+  type RequirableKey,
 } from "@/lib/forms/context-config"
 import {
   askedFieldsFor,
@@ -30,17 +31,17 @@ function config(overrides: Partial<EventFormConfigData> = {}): EventFormConfigDa
   return { ...BARE_EVENT_FORM_CONFIG, ...overrides }
 }
 
-/** A field switched on and marked required, in one go. */
-function required(field: FormFieldKey): Partial<EventFormConfigData> {
-  return { [field]: true, [requiredKeyFor(field)]: true } as Partial<EventFormConfigData>
+/** A field or requirable section switched on and marked required, in one go. */
+function required(key: RequirableKey): Partial<EventFormConfigData> {
+  return { [key]: true, [requiredKeyFor(key)]: true } as Partial<EventFormConfigData>
 }
 
 describe("the field model", () => {
-  it("pairs every field with a Required key", () => {
-    expect(FORM_REQUIRED_KEYS).toHaveLength(FORM_FIELD_KEYS.length)
-    for (const field of FORM_FIELD_KEYS) {
-      expect(requiredKeyFor(field)).toBe(`${field}Required`)
-      expect(FORM_PERSISTED_KEYS).toContain(requiredKeyFor(field))
+  it("pairs every field and requirable section with a Required key", () => {
+    expect(FORM_REQUIRED_KEYS).toHaveLength(REQUIRABLE_KEYS.length)
+    for (const key of REQUIRABLE_KEYS) {
+      expect(requiredKeyFor(key)).toBe(`${key}Required`)
+      expect(FORM_PERSISTED_KEYS).toContain(requiredKeyFor(key))
     }
   })
 
@@ -153,7 +154,59 @@ describe("missingRequiredFields", () => {
   })
 })
 
+/**
+ * Dietary and Payment can be marked Required even though they have no fields —
+ * the section *is* the answer. This is what makes "the admin added a dietary
+ * question after people registered" a thing the form can act on.
+ */
+describe("missingRequiredFields — requirable sections", () => {
+  it("flags an enabled, required Dietary section left blank", () => {
+    const cfg = config(required("sectionDietary"))
+    expect(missingRequiredFields(cfg, { dietaryPreference: null })).toEqual(["sectionDietary"])
+    expect(missingRequiredFields(cfg, { dietaryPreference: "Vegan" })).toEqual([])
+  })
+
+  it("flags an enabled, required Payment section left blank", () => {
+    const cfg = config(required("sectionPayment"))
+    expect(missingRequiredFields(cfg, { paymentReference: null })).toEqual(["sectionPayment"])
+    expect(missingRequiredFields(cfg, { paymentReference: "GCash-1" })).toEqual([])
+  })
+
+  it("ignores the flag when the section is switched off", () => {
+    // Same rule as fields: a stale Required on a disabled section is ignored on
+    // read rather than cleared on write, so switching it back on restores it.
+    const cfg = config({ sectionDietary: false, sectionDietaryRequired: true })
+    expect(missingRequiredFields(cfg, { dietaryPreference: null })).toEqual([])
+  })
+
+  it("does not demand the free-text tail of Other", () => {
+    // `dietaryOther` is the note attached to one choice, not a second answer —
+    // requiring it would make every non-Other selection fail.
+    const cfg = config(required("sectionDietary"))
+    expect(missingRequiredFields(cfg, { dietaryPreference: "Halal", dietaryOther: null })).toEqual([])
+  })
+
+  it("names the section by its builder label in the error", () => {
+    expect(requiredFieldsMessage(["sectionDietary"])).toBe("Dietary Restrictions is required.")
+    expect(requiredFieldsMessage(["fieldLifeStage", "sectionDietary"])).toBe(
+      "These are required: Life Stage, Dietary Restrictions."
+    )
+  })
+})
+
 describe("askedFieldsFor", () => {
+  it("includes the requirable sections a context has", () => {
+    // Unlike the DGroup-nested fields, nothing can hide these behind an answer —
+    // they are steps in their own right.
+    expect(askedFieldsFor("Register", {})).toContain("sectionDietary")
+    expect(askedFieldsFor("Register", {})).toContain("sectionPayment")
+  })
+
+  it("omits them on Check-in, which has neither step", () => {
+    expect(askedFieldsFor("CheckIn", {})).not.toContain("sectionDietary")
+    expect(askedFieldsFor("CheckIn", {})).not.toContain("sectionPayment")
+  })
+
   it("drops the DGroup-nested fields when the person isn't looking for a group", () => {
     // Regression: requiring a matching field would otherwise block everyone who
     // answers "I'm already in a DGroup" on a question they were never shown.
