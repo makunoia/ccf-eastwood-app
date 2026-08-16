@@ -26,9 +26,11 @@ export default async function DuplicateProfilesPage() {
       <div>
         <h2 className="type-headline">Duplicate Profiles</h2>
         <p className="text-sm text-muted-foreground">
-          Phone numbers, email addresses, and full names shared across Guest and Member records. Pick the keeper for
-          each group, then merge them in one batch — losing records&apos; event history will be preserved on the
-          keeper. Name matches are a weaker signal than contact matches: check each profile before merging.
+          Phone numbers, email addresses, and full names shared across Guest and Member records. Each record shows
+          what it has on it — events, check-ins, DGroups, volunteer roles — so you can tell the live profile from a
+          stray one. Pick the keeper for each group, then merge them in one batch; the losing records&apos; history
+          is preserved on the keeper. Name matches are a weaker signal than contact matches: check each profile
+          before merging.
         </p>
       </div>
 

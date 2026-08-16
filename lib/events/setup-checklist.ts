@@ -12,22 +12,37 @@ import type { EventModuleType } from "@/app/generated/prisma/client"
  * volunteer and breakout steps appear only with their modules enabled. There is no
  * "choose your modules" step: that decision is made on the create-event form
  * (CCF-131), so by the time this checklist renders it has already been answered.
+ *
+ * A step the admin has no intention of doing can be **skipped** individually
+ * (`Event.setupSkippedSteps`) rather than forcing them to dismiss the whole card.
+ * Skipping never fakes completion: `done` still reports the real data signal, and
+ * a step that is later satisfied for real reads as done even while skipped. Only
+ * the outstanding-work maths treats the two alike.
  */
 
-export type SetupStepKey =
-  | "committees"
-  | "volunteers"
-  | "breakouts"
-  | "sessions"
-  | "form"
-  | "register"
-  | "checkin"
+export const SETUP_STEP_KEYS = [
+  "committees",
+  "volunteers",
+  "breakouts",
+  "sessions",
+  "form",
+  "register",
+  "checkin",
+] as const
+
+export type SetupStepKey = (typeof SETUP_STEP_KEYS)[number]
+
+export function isSetupStepKey(value: string): value is SetupStepKey {
+  return (SETUP_STEP_KEYS as readonly string[]).includes(value)
+}
 
 export type SetupStep = {
   key: SetupStepKey
   label: string
   description: string
   done: boolean
+  /** Admin opted out of this step — it stops counting as outstanding work. */
+  skipped: boolean
   /** In-app deep-link to where the step is performed. */
   href: string
   /** CTA hint for the client — Register copies the public link; others are plain deep-links. */
@@ -36,8 +51,11 @@ export type SetupStep = {
 
 export type EventSetupChecklist = {
   steps: SetupStep[]
+  /** Steps genuinely done — a skipped step never inflates this. */
   completedCount: number
+  skippedCount: number
   totalCount: number
+  /** Nothing left to prompt about: every step is either done or skipped. */
   allComplete: boolean
 }
 
@@ -47,6 +65,7 @@ export async function getEventSetupChecklist(
   eventId: string,
   eventType: EventType,
   modules: EventModuleType[] = [],
+  skippedSteps: readonly string[] = [],
 ): Promise<EventSetupChecklist> {
   const base = `/event/${eventId}`
   const isOneTime = eventType === "OneTime"
@@ -92,7 +111,7 @@ export async function getEventSetupChecklist(
         }),
   ])
 
-  const steps: SetupStep[] = []
+  const steps: Omit<SetupStep, "skipped">[] = []
 
   if (hasVolunteers) {
     steps.push(
@@ -159,12 +178,24 @@ export async function getEventSetupChecklist(
     },
   )
 
-  const completedCount = steps.filter((s) => s.done).length
+  // A step whose module was turned off after it was skipped isn't in `steps` at
+  // all, so stale keys in the column are inert — no need to prune them on toggle.
+  const skipped = new Set(skippedSteps)
+  const resolved: SetupStep[] = steps.map((step) => ({
+    ...step,
+    skipped: skipped.has(step.key),
+  }))
+
+  const completedCount = resolved.filter((s) => s.done).length
+  // Only steps skipped *instead of* being done are counted as skipped, so a step
+  // that got done anyway reads as progress rather than as an opt-out.
+  const skippedCount = resolved.filter((s) => s.skipped && !s.done).length
 
   return {
-    steps,
+    steps: resolved,
     completedCount,
-    totalCount: steps.length,
-    allComplete: completedCount === steps.length,
+    skippedCount,
+    totalCount: resolved.length,
+    allComplete: resolved.every((s) => s.done || s.skipped),
   }
 }

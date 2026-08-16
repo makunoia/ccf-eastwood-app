@@ -9,13 +9,18 @@ import { cn } from "@/lib/utils"
 import {
   BARE_EVENT_FORM_CONFIG,
   formLayoutFor,
+  isRequirableSection,
+  parentSectionFor,
   resolveSuccessMessage,
   type EventFormConfigData,
   type FormFieldKey,
+  type FormSectionKey,
+  type RequirableKey,
 } from "@/lib/forms/context-config"
 import {
   askedFieldsFor,
   missingRequiredFields,
+  requiredFieldLabels,
   requiredFieldsMessage,
 } from "@/lib/forms/registration-payload"
 import type { FormContext } from "@/app/generated/prisma/client"
@@ -34,6 +39,7 @@ import { Label } from "@/components/ui/label"
 import { MultiSelect } from "@/components/ui/multi-select"
 import { OptionalEmailInput } from "@/components/ui/optional-email-input"
 import { OptionalPhonePHInput } from "@/components/ui/optional-phone-ph-input"
+import { PhonePHInput } from "@/components/ui/phone-ph-input"
 import { BirthMonthYearInput } from "@/components/ui/birth-month-year-input"
 import { PrivacyPolicyCheckbox } from "@/components/ui/privacy-policy-checkbox"
 import { PersonCombobox } from "@/components/ui/person-combobox"
@@ -125,6 +131,7 @@ type Step =
   | "early-disambiguate"
   | "done"
   | "volunteer-blocked"
+  | "already-registered"
 
 type LifeStage = { id: string; name: string }
 type AgeRangeBucket = { id: string; label: string }
@@ -329,6 +336,29 @@ function RequiredMark({ on }: { on: boolean }) {
  * public form. The way back is still on screen, one rung quieter, for the end of
  * the queue.
  */
+/**
+ * Which of this form's steps a field is rendered in.
+ *
+ * `parentSectionFor` answers in the config's vocabulary (`sectionSmallGroup`),
+ * while the step list uses short keys. This is the single place the two meet, and
+ * it is derived from the layout rather than restating it — move a field between
+ * sections in `formLayoutFor` and amend mode follows it without another edit.
+ */
+const STEP_KEY_BY_SECTION: Record<FormSectionKey, string> = {
+  sectionSmallGroup: "smallgroup",
+  sectionBreakout: "breakout",
+  sectionFamily: "household",
+  sectionDietary: "dietary",
+  sectionPayment: "payment",
+}
+
+function stepKeyForField(key: RequirableKey, context: FormContext): string {
+  // A requirable section names its own step; a field names the step it sits in.
+  if (isRequirableSection(key)) return STEP_KEY_BY_SECTION[key]
+  const parent = parentSectionFor(key, context)
+  return parent ? STEP_KEY_BY_SECTION[parent] : "personal"
+}
+
 function DoneActions({
   walkIn,
   onReset,
@@ -375,6 +405,13 @@ export function RegistrationForm({
   const includeSmallGroup = cfg.sectionSmallGroup
   const includeDietary = cfg.sectionDietary
   const includePayment = cfg.sectionPayment
+  /**
+   * Whether the "Help us connect you" block has anything to show. Every field
+   * under that heading is individually toggleable, so with all four off the
+   * heading promised optional details and then rendered nothing under itself.
+   */
+  const hasMatchingFields =
+    cfg.fieldLanguage || cfg.fieldMeetingPreference || cfg.fieldSchedule || cfg.fieldWorkCity
   /**
    * The mobile-first gate only makes sense on a form that collects a mobile
    * number. With the field off there is nothing to look anyone up by, so the
@@ -428,6 +465,31 @@ export function RegistrationForm({
   const [identifyError, setIdentifyError] = React.useState<string | null>(null)
   /** The profile the person confirmed. Non-null turns step 1 into the review screen. */
   const [profileSnapshot, setProfileSnapshot] = React.useState<RegistrationProfileSnapshot | null>(null)
+  /**
+   * Proof of ownership from the step-0 reveal, carried to submit so an edit to a
+   * field that already has a value is honoured rather than quietly ignored.
+   * Opaque to the client — it is minted and checked server-side.
+   */
+  const [identityGrant, setIdentityGrant] = React.useState<string | null>(null)
+  /**
+   * What the form still has to ask a person who is already registered, because the
+   * admin enabled or required a field after they signed up. Empty means the
+   * already-registered screen is a plain dead end; non-empty turns it into a
+   * two-question detour. Null once amend mode is running on everything (the
+   * "Update my details" opt-in), which is the whole non-payment form.
+   */
+  const [amendFields, setAmendFields] = React.useState<RequirableKey[]>([])
+  /**
+   * Whether this run of the form is amending an existing registration rather than
+   * creating one, and how much of it to show.
+   *
+   * `"needed"` narrows to the steps that hold `amendFields` — the person is here
+   * because the admin required something new, so making them walk the whole form
+   * again would be the very thing this change set out to stop. `"all"` is the
+   * voluntary "Update my details" path, where they came back to change something
+   * and we don't know what.
+   */
+  const [amending, setAmending] = React.useState<"needed" | "all" | null>(null)
   const [editingProfile, setEditingProfile] = React.useState(false)
   /**
    * Payload keys the person edited on the review screen. Only these overwrite the
@@ -560,7 +622,7 @@ export function RegistrationForm({
     }, 300)
   }
 
-  const sections: { key: string; title: string }[] = [
+  const allSections: { key: string; title: string }[] = [
     { key: "personal", title: "Personal Information" },
     ...(cluster ? [{ key: "events", title: "Events" }] : []),
     ...(includeSmallGroup && !skipSmallGroup ? [{ key: "smallgroup", title: "DGroup Info" }] : []),
@@ -569,7 +631,47 @@ export function RegistrationForm({
     ...(includeDietary ? [{ key: "dietary", title: "Dietary Preferences" }] : []),
     ...(includePayment ? [{ key: "payment", title: "Payment" }] : []),
   ]
-  const isMultiStep = sections.length > 1
+
+  /**
+   * Amending shows less of the form than registering does.
+   *
+   * Payment comes off both amend paths: this is a public form re-opening a
+   * registration that already exists, and letting it rewrite a payment reference
+   * is a different decision from letting it fill in a life stage. Payment stays
+   * with the admin.
+   *
+   * `"needed"` narrows further, to just the steps holding the fields the event has
+   * started demanding. Which step a field belongs to comes from `parentSectionFor`
+   * — the layout stays the only thing that knows — rather than a second map here
+   * that would drift the first time a field moves between steps.
+   */
+  const sections = React.useMemo(() => {
+    if (!amending) return allSections
+    const withoutPayment = allSections.filter((s) => s.key !== "payment")
+    if (amending === "all") return withoutPayment
+
+    const wanted = new Set(amendFields.map((f) => stepKeyForField(f, formContext)))
+    const narrowed = withoutPayment.filter((s) => wanted.has(s.key))
+    // A field whose step isn't on this form leaves nothing to show. Falling back
+    // to Personal Information keeps the person on a real screen instead of an
+    // empty one they can't get past.
+    return narrowed.length > 0 ? narrowed : withoutPayment.slice(0, 1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [amending, amendFields, formContext, JSON.stringify(allSections)])
+  /**
+   * The stepped layout is the form's only layout. It used to switch to a
+   * single-card design whenever `sections.length` fell to 1, which made the
+   * layout a function of how many sections the admin happened to leave on —
+   * an event with only Personal Information got one design, an event with
+   * Dietary as well got another, and the same person could meet either. One
+   * chrome also means a section can only ever render as the step it belongs to,
+   * so a step dropped from `sections` can't leak back in inline.
+   *
+   * A handful of *behavioural* branches (not layout) still key off the form
+   * being a single screen — validation that would otherwise live in `handleNext`,
+   * and the native `required` attribute. Those use this instead.
+   */
+  const singleSection = sections.length === 1
   // `sections` is derived from config *and* from answers given along the way, so it
   // can shrink under the step we're standing on — confirming as a member who already
   // has a DGroup drops that step. Every read goes through the clamp, and the
@@ -641,7 +743,10 @@ export function RegistrationForm({
    */
   const stillNeededHere = React.useMemo(() => {
     const personal = formLayoutFor(formContext).find((sec) => sec.key === "personal")
-    return stillNeeded.filter((f) => personal?.fields.includes(f))
+    // A requirable section is a step of its own, never a row on this one.
+    return stillNeeded.filter(
+      (key) => !isRequirableSection(key) && personal?.fields.includes(key)
+    )
   }, [stillNeeded, formContext])
 
   /** Name has no toggle — it is always collected — so it needs its own gate. */
@@ -650,8 +755,13 @@ export function RegistrationForm({
   /** Step 0 answered the "who is this?" question, either way. */
   const identityResolved = profileSnapshot !== null || rejectedRecordId !== null
 
-  /** Required fields left blank in one step, in the order they're rendered. */
-  function missingInSection(stepKey: string): FormFieldKey[] {
+  /** Required answers left blank in one step, in the order they're rendered. */
+  function missingInSection(stepKey: string): RequirableKey[] {
+    // Dietary and Payment are requirable *sections*: the section is itself the
+    // answer, so it checks itself rather than a list of fields nested under it.
+    if (stepKey === "dietary") return missingRequiredFields(cfg, answers, ["sectionDietary"])
+    if (stepKey === "payment") return missingRequiredFields(cfg, answers, ["sectionPayment"])
+
     const layoutKey = stepKey === "personal" ? "personal" : "sectionSmallGroup"
     if (stepKey !== "personal" && stepKey !== "smallgroup") return []
     const section = formLayoutFor(formContext).find((s) => s.key === layoutKey)
@@ -687,6 +797,11 @@ export function RegistrationForm({
     setSecondFactorYear("")
     setIdentifyError(null)
     setProfileSnapshot(null)
+    setIdentityGrant(null)
+    // Amend belongs to the registration it was opened for. Carrying it into the
+    // next person at a walk-in door would file their answers onto someone else's.
+    setAmending(null)
+    setAmendFields([])
     setEditingProfile(false)
     setTouchedFields([])
     setRejectedRecordId(null)
@@ -717,6 +832,21 @@ export function RegistrationForm({
     setHouseholdMembers([])
     setFormStep(1)
     setPrivacyAccepted(false)
+  }
+
+  /**
+   * Open the form as an amendment to the registration this person already has.
+   *
+   * `fields` is what the event now demands and they haven't answered; null is the
+   * voluntary path, where the whole form is fair game. Either way the submission
+   * updates the existing registrant rather than creating a second one — see the
+   * grant check in `createRegistrant`.
+   */
+  function startAmend(fields: RequirableKey[] | null) {
+    setAmending(fields ? "needed" : "all")
+    if (fields) setAmendFields(fields)
+    setStep("form")
+    setFormStep(1)
   }
 
   function toggleSelectedEvent(id: string) {
@@ -752,10 +882,9 @@ export function RegistrationForm({
   }
 
   async function handleIdentifyLookup() {
-    if (noMobile) {
-      goToManualForm()
-      return
-    }
+    // No `noMobile` branch: this screen no longer offers the opt-out, and it is
+    // only reachable when the form collects a mobile at all, so the flag cannot
+    // be set by the time anyone gets here. "Start a new registration" is the exit.
     if (!form.mobileNumber.trim()) {
       setIdentifyError("Enter your mobile number, or choose to fill in the form manually.")
       return
@@ -796,7 +925,11 @@ export function RegistrationForm({
    * form that registered them the instant they proved their birthday would take
    * the review away.
    */
-  function applyProfile(profile: RegistrationProfileSnapshot) {
+  function applyProfile(
+    profile: RegistrationProfileSnapshot,
+    grant: string | null,
+    standing: { alreadyRegistered: boolean; fieldsStillNeeded: RequirableKey[] }
+  ) {
     if (profile.isVolunteer) {
       setMatchedMember({
         id: profile.recordId,
@@ -813,6 +946,7 @@ export function RegistrationForm({
     }
 
     setProfileSnapshot(profile)
+    setIdentityGrant(grant)
     setEditingProfile(false)
     setTouchedFields([])
     setForm((prev) => ({ ...prev, ...prefillFromProfile(profile) }))
@@ -830,14 +964,34 @@ export function RegistrationForm({
       smallGroupId: profile.smallGroupId,
     })
 
-    // Same two DGroup rules the existing early-confirm applies: someone already
-    // in a group isn't asked about one, and a member without one is assumed to
-    // want the question.
+    // Someone already in a group isn't asked about one. A member *without* one
+    // used to have "I want to join a DGroup" pre-ticked here, which made sense
+    // when joining was the only thing they could say. Now that they can also say
+    // they're already in one, pre-ticking answers a question on their behalf —
+    // and a box nobody touched still submits `wantsSmallGroup`, raising a
+    // placement request for someone who may well already have a leader.
     if (profile.recordType === "member" && profile.smallGroupId) setSkipSmallGroup(true)
-    if (profile.recordType === "member" && !profile.smallGroupId) setSmallGroupIntent("wants")
 
     setIdentifyMatch(null)
     setIdentifyCandidates(null)
+
+    /**
+     * Someone already on the list learns it *here*, before the form, rather than
+     * from a toast on the last step after filling in every one of them.
+     *
+     * The walk-in door is exempt for the same reason the server is: it reuses an
+     * existing registration and checks the person in, so "you're already
+     * registered" is not a refusal there, it's the normal case.
+     */
+    if (standing.alreadyRegistered && !walkIn) {
+      // A field the admin turned on (or made required) since they signed up is
+      // the one thing still worth asking for. `fieldsStillNeeded` is empty in the
+      // ordinary case, which is a plain terminal screen.
+      setAmendFields(standing.fieldsStillNeeded)
+      setStep("already-registered")
+      return
+    }
+
     setStep("form")
     setFormStep(1)
   }
@@ -864,6 +1018,9 @@ export function RegistrationForm({
       birthMonth: secondFactorMonth ? parseInt(secondFactorMonth, 10) : null,
       birthYear: secondFactorYear ? parseInt(secondFactorYear, 10) : null,
       eventId: cluster ? null : eventId,
+      // The door and the public form can collect different things, so "what does
+      // this profile still not answer?" has to be asked of the right one.
+      context: walkIn ? "WalkIn" : "Register",
     })
     setSubmitting(false)
 
@@ -877,7 +1034,10 @@ export function RegistrationForm({
       )
       return
     }
-    applyProfile(result.profile)
+    applyProfile(result.profile, result.grant, {
+      alreadyRegistered: result.alreadyRegistered,
+      fieldsStillNeeded: result.fieldsStillNeeded,
+    })
   }
 
   /**
@@ -921,13 +1081,14 @@ export function RegistrationForm({
       return
     }
 
-    // The DGroup step's matching fields. Only reachable — and only checked —
-    // when the person said they're looking for a group; `askedFieldsFor` drops
-    // them otherwise.
-    if (currentSectionKey === "smallgroup") {
-      const missingGroup = missingInSection("smallgroup")
-      if (missingGroup.length > 0) {
-        toast.error(requiredFieldsMessage(missingGroup))
+    // The DGroup step's matching fields (only reachable — and only checked — when
+    // the person said they're looking for a group; `askedFieldsFor` drops them
+    // otherwise), plus the two requirable sections. Caught here, while the input
+    // is still on screen, rather than as a server error after the last step.
+    if (["smallgroup", "dietary", "payment"].includes(currentSectionKey)) {
+      const missingHere = missingInSection(currentSectionKey)
+      if (missingHere.length > 0) {
+        toast.error(requiredFieldsMessage(missingHere))
         return
       }
     }
@@ -1003,6 +1164,20 @@ export function RegistrationForm({
     setFormStep(2)
   }
 
+  /**
+   * Deliberately does *not* check whether this person is already registered.
+   *
+   * It could: `lookupMemberForRegistration` already takes an `eventId` and already
+   * reports `isVolunteer`, so an `alreadyRegistered` beside it would move the
+   * discovery from the last step to this one. But that lookup answers an
+   * unauthenticated caller with no second factor, so attendance status there would
+   * let anyone who types a phone number learn whether that person is coming — the
+   * same leak the step-0 gate withholds from `MaskedProfileCandidate` on purpose.
+   *
+   * Catching it a step earlier isn't worth buying with that, so this path keeps
+   * the submit-side landing in `register()` instead: still a screen with somewhere
+   * to go, just one step later for the people who skipped the gate.
+   */
   function handleEarlyConfirm(match: MatchedMember) {
     if (match.isVolunteer) {
       setMatchedMember(match)
@@ -1037,39 +1212,43 @@ export function RegistrationForm({
       setSkipSmallGroup(true)
     }
 
-    // Auto-check "wants small group" for confirmed members who don't have one yet
-    if (match.recordType === "member" && !match.smallGroupId) {
-      setSmallGroupIntent("wants")
-    }
+    // No auto-check of "wants a DGroup" here either — see the identify path
+    // above. A member with no group on file may be in one we never recorded,
+    // and that is now something they can say.
 
     setMatchedMember(null)
     setStep("form")
 
-    // Compute the new section count to decide whether to advance or submit
-    const newSectionsCount = [
-      true,
-      !!cluster,
-      includeSmallGroup && !willSkipSmallGroup,
-      showBreakoutSection,
-      cfg.sectionFamily,
-      includeDietary,
-      includePayment,
-    ].filter(Boolean).length
-
-    if (newSectionsCount === 1) {
-      // Personal info is the only remaining step — register directly
-      register(
-        match.recordType === "member" ? match.id : null,
-        match.recordType === "guest" ? match.id : null
-      )
-      return
-    }
-
+    // Onto the step after Personal Information, which they have just filled in.
+    //
+    // This used to count the remaining steps and, if none were left, submit on
+    // the spot — so confirming "yes, that's me" registered the person then and
+    // there, with no form and no chance to change their mind. Whether that fired
+    // was a question of which sections the admin had switched on: on an event
+    // with Dietary or Payment the person got a form, and on one without they got
+    // a submission, off the same click. `clampFormStep` already heals a step that
+    // no longer exists, so the last remaining section is simply the one they land
+    // on, with a Register button instead of Next.
     setFormStep(2)
   }
 
   function handleBack() {
     setFormStep(clampFormStep(safeStep - 1, sections.length))
+  }
+
+  /**
+   * Out of the form and back to the mobile-number gate.
+   *
+   * A full reset rather than a step change. The form may be carrying a resolved
+   * profile — its details, its DGroup, its answers — and someone backing out to
+   * try a different number must not land on a form still filled in as the
+   * previous person. Only the number itself survives, since correcting it is the
+   * reason to come back here at all.
+   */
+  function handleBackToIdentify() {
+    const typedMobile = form.mobileNumber
+    handleReset()
+    setForm((prev) => ({ ...prev, mobileNumber: typedMobile }))
   }
 
   async function handleSubmit(e?: React.FormEvent | React.MouseEvent) {
@@ -1085,11 +1264,22 @@ export function RegistrationForm({
       return
     }
 
-    if (!isMultiStep) {
+    // On a one-step form Register is the only button, so `handleNext` — where
+    // this check normally lives — never runs.
+    if (singleSection) {
       if (!form.firstName.trim() || !form.lastName.trim()) {
         toast.error("First and last name are required.")
         return
       }
+    }
+
+    // The last step never passes through `handleNext`, so its own required
+    // answers would otherwise be caught only by the server — as a toast naming a
+    // field on a screen the person is already looking at, after a round trip.
+    const missingHere = missingInSection(currentSectionKey)
+    if (missingHere.length > 0) {
+      toast.error(requiredFieldsMessage(missingHere))
+      return
     }
 
     setSubmitting(true)
@@ -1204,7 +1394,8 @@ export function RegistrationForm({
         skipDeduplication,
         selectedEventIds,
         walkIn ? true : undefined,
-        touchedFields
+        touchedFields,
+        identityGrant
       )
       setSubmitting(false)
       if (result.success) {
@@ -1243,7 +1434,8 @@ export function RegistrationForm({
           skipDeduplication,
           selectedBreakoutId || null,
           walkIn ? { occurrenceId: walkIn.occurrenceId } : undefined,
-          touchedFields
+          touchedFields,
+          identityGrant
         )
       : await createRegistrant(
           eventId!,
@@ -1253,7 +1445,8 @@ export function RegistrationForm({
           skipDeduplication,
           selectedBreakoutId || null,
           walkIn ? { occurrenceId: walkIn.occurrenceId } : undefined,
-          touchedFields
+          touchedFields,
+          identityGrant
         )
     setSubmitting(false)
 
@@ -1273,6 +1466,27 @@ export function RegistrationForm({
         )
       }
       setStep("done")
+    } else if (result.reason === "alreadyRegistered") {
+      /**
+       * The backstop for the people step 0 can't catch: someone the dedup ladder
+       * only resolved by email, or by last name plus birthday, at submit time.
+       *
+       * They still get a screen with somewhere to go rather than a toast that
+       * fades off a form they just finished — but not the amend offer, because
+       * nothing here proved the registration is theirs. Keyed off `reason` rather
+       * than the message so rewording the copy can't silently drop them back onto
+       * the dead end.
+       *
+       * Dropping the grant is what makes that true for the *other* way in here:
+       * a grant that has aged past its TTL still reads as a held credential on
+       * the client, but the server has already refused it — that refusal is why
+       * an amend came back as a duplicate at all. Keeping it would re-offer
+       * "Update my details", which would fail identically and land right back on
+       * this screen, with no way out but a reload.
+       */
+      setIdentityGrant(null)
+      setAmendFields([])
+      setStep("already-registered")
     } else {
       toast.error(result.error)
     }
@@ -1427,49 +1641,76 @@ export function RegistrationForm({
   // ── Step 0: "What's your mobile number?" (CCF-147) ────────────────────────
   if (step === "identify") {
     return (
-      <FormShell plain={plain}>
-        <CardHeader>
-          <CardTitle>What&apos;s your mobile number?</CardTitle>
-          <CardDescription>
-            If you&apos;ve registered with us before, we&apos;ll pull up your details so you
-            don&apos;t have to type them again.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="identifyMobile">Mobile Number</Label>
-            <OptionalPhonePHInput
-              id="identifyMobile"
-              value={form.mobileNumber}
-              onChange={(v) => {
-                set("mobileNumber", v)
-                setIdentifyError(null)
-              }}
-              noNumber={noMobile}
-              onNoNumberChange={setNoMobile}
-              hideOptOut={cfg.fieldMobileRequired}
-            />
-          </div>
+      <div className="space-y-4">
+        <FormShell plain={plain}>
+          <CardHeader>
+            <CardTitle>What&apos;s your mobile number?</CardTitle>
+            <CardDescription>
+              If you&apos;ve registered with us before, we&apos;ll pull up your details so you
+              don&apos;t have to type them again.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="identifyMobile">Mobile Number</Label>
+              {/* No "I don't have one" here, unlike the field on the form itself.
+                  This screen asks for a number in order to *look one up*, and
+                  opting out of the question is what the card below it does — an
+                  escape hatch inside the input as well only gave the same exit
+                  two different shapes. */}
+              <PhonePHInput
+                id="identifyMobile"
+                value={form.mobileNumber}
+                onChange={(v) => {
+                  set("mobileNumber", v)
+                  setIdentifyError(null)
+                }}
+              />
+            </div>
 
-          {identifyError && (
-            <p className="text-sm text-destructive" role="alert">
-              {identifyError}
-            </p>
-          )}
+            {identifyError && (
+              <p className="text-sm text-destructive" role="alert">
+                {identifyError}
+              </p>
+            )}
 
-          <Button className="w-full" onClick={handleIdentifyLookup} disabled={submitting}>
-            {submitting ? "Checking…" : "Continue"}
+            <Button className="w-full" onClick={handleIdentifyLookup} disabled={submitting}>
+              {submitting ? "Checking…" : "Continue"}
+            </Button>
+          </CardContent>
+        </FormShell>
+
+        {/* The other way through, as a card of its own. It used to be a quiet
+            underlined line under the Continue button, which read as a way to
+            dodge the form rather than the ordinary route for anyone we don't
+            have on file yet. */}
+        <FormShell plain={plain}>
+          <CardContent className="space-y-3">
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-foreground">First time with us?</p>
+              <p className="text-sm text-muted-foreground">
+                No number on file yet — fill in your details and we&apos;ll set you up.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={goToManualForm}
+              disabled={submitting}
+            >
+              Start a new registration
+            </Button>
+          </CardContent>
+        </FormShell>
+
+        {/* Without this the door is a dead end: the gate is the first screen a
+            walk-in sees, so the check-in board has to be reachable from it. */}
+        {walkIn?.backHref && (
+          <Button variant="ghost" className="w-full" asChild>
+            <Link href={walkIn.backHref}>Back to check-in</Link>
           </Button>
-
-          <button
-            type="button"
-            onClick={goToManualForm}
-            className="w-full text-sm text-muted-foreground underline decoration-dashed underline-offset-4 hover:text-foreground transition-colors"
-          >
-            Skip — fill in the form manually
-          </button>
-        </CardContent>
-      </FormShell>
+        )}
+      </div>
     )
   }
 
@@ -1572,6 +1813,75 @@ export function RegistrationForm({
           >
             None of these
           </Button>
+        </CardContent>
+      </FormShell>
+    )
+  }
+
+  /**
+   * Already on the list — said at step 0, before the form, rather than by a toast
+   * on the last step of a form they just finished filling in.
+   *
+   * Two shapes, and the difference is whether the event still wants something from
+   * them. Ordinarily this is a dead end and should read like good news. When the
+   * admin has enabled or required a field since they signed up, it becomes a short
+   * detour instead: the questions they haven't answered, and nothing else.
+   */
+  if (step === "already-registered") {
+    // Reached two ways: from step 0 with a revealed profile, and from a failed
+    // submit where the person typed everything in and the dedup ladder only
+    // matched them at the end. The name has to come from whichever happened.
+    const firstName =
+      profileSnapshot?.firstName ||
+      form.nickname.trim() ||
+      form.firstName.trim() ||
+      confirmedMember?.firstName.trim() ||
+      ""
+    const needs = amendFields.length > 0
+    // Amending writes to an existing registration, so it is offered only where
+    // ownership was actually proved. The late path has no grant and gets the
+    // plain dead end — which is still a screen with somewhere to go.
+    const canAmend = identityGrant !== null
+    return (
+      <FormShell plain={plain}>
+        <CardContent className="flex flex-col items-center gap-5 pt-10 pb-6">
+          <div className="flex size-16 items-center justify-center rounded-full bg-green-100">
+            <IconCheck className="size-8 text-green-600" />
+          </div>
+          <div className="text-center space-y-1.5">
+            <p className="text-xl font-semibold">
+              You&apos;re already registered{firstName ? `, ${firstName}` : ""}!
+            </p>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              {needs && canAmend
+                ? `We just need ${amendFields.length === 1 ? "one more thing" : `${amendFields.length} more things`} from you${eventName ? ` for ${eventName}` : ""}.`
+                : resolveSuccessMessage(successMessage, "Register", eventName)}
+            </p>
+            {needs && canAmend && (
+              <p className="text-sm text-muted-foreground">{requiredFieldLabels(amendFields)}</p>
+            )}
+          </div>
+          {needs && canAmend ? (
+            <div className="w-full space-y-2">
+              <Button className="w-full" onClick={() => startAmend(amendFields)}>
+                Continue
+              </Button>
+              <Button className="w-full" variant="ghost" onClick={handleReset}>
+                {walkIn ? "Register another walk-in" : "Register another person"}
+              </Button>
+            </div>
+          ) : (
+            <div className="w-full space-y-2">
+              {/* Nothing is being demanded, but someone who came back specifically
+                  to change an answer shouldn't be turned away. */}
+              {canAmend && (
+                <Button className="w-full" variant="outline" onClick={() => startAmend(null)}>
+                  Update my details
+                </Button>
+              )}
+              <DoneActions walkIn={walkIn} onReset={handleReset} variant={canAmend ? "ghost" : undefined} />
+            </div>
+          )}
         </CardContent>
       </FormShell>
     )
@@ -1799,55 +2109,61 @@ export function RegistrationForm({
   }
 
   return (
-    <FormShell plain={plain} ref={cardRef} className={cn(isMultiStep && "pt-0")}>
-      {isMultiStep ? (
-        <div className="px-6 pt-4 pb-1">
-          {/* Step dots */}
-          <div className="flex items-center gap-1.5 mb-4">
-            {sections.map((s, i) => {
-              const n = i + 1
-              const done = n < safeStep
-              const current = n === safeStep
-              return (
-                <React.Fragment key={s.key}>
-                  <div
-                    className={cn(
-                      "rounded-full shrink-0 transition-all duration-150",
-                      done
-                        ? "size-2 bg-primary/50"
-                        : current
-                          ? "size-2.5 bg-primary"
-                          : "size-2 bg-muted-foreground/25"
-                    )}
-                  />
-                  {i < sections.length - 1 && (
+    <FormShell plain={plain} ref={cardRef} className="pt-0">
+      {/* No bottom padding here, and none on the CardContent below: the Card's own
+          `gap-6` is the single spacer between the header and the fields. Both used
+          to add their own padding on top of that gap, which read as a title crowded
+          against the card's top edge and marooned from the first field — worst on a
+          one-step form, where the progress row isn't there to fill the space. */}
+      <div className="px-6 pt-6">
+        {/* Step dots. A one-step form has no progress to report — a lone dot with
+            no connector reads as a rendering fault — so the whole progress row
+            drops out and the section title carries the header on its own. */}
+        {!singleSection && (
+          <>
+            <div className="flex items-center gap-1.5 mb-4">
+              {sections.map((s, i) => {
+                const n = i + 1
+                const done = n < safeStep
+                const current = n === safeStep
+                return (
+                  <React.Fragment key={s.key}>
                     <div
                       className={cn(
-                        "flex-1 h-px transition-colors",
-                        done ? "bg-primary/40" : "bg-border"
+                        "rounded-full shrink-0 transition-all duration-150",
+                        done
+                          ? "size-2 bg-primary/50"
+                          : current
+                            ? "size-2.5 bg-primary"
+                            : "size-2 bg-muted-foreground/25"
                       )}
                     />
-                  )}
-                </React.Fragment>
-              )
-            })}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Step {safeStep} of {sections.length}
-          </p>
-          <p className="text-lg font-semibold mt-0.5">{sections[safeStep - 1].title}</p>
-        </div>
-      ) : (
-        <CardHeader>
-          <CardTitle>Register</CardTitle>
-          <CardDescription>Fill in your details to register for this event.</CardDescription>
-        </CardHeader>
-      )}
+                    {i < sections.length - 1 && (
+                      <div
+                        className={cn(
+                          "flex-1 h-px transition-colors",
+                          done ? "bg-primary/40" : "bg-border"
+                        )}
+                      />
+                    )}
+                  </React.Fragment>
+                )
+              })}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Step {safeStep} of {sections.length}
+            </p>
+          </>
+        )}
+        <p className={cn("text-lg font-semibold", !singleSection && "mt-0.5")}>
+          {sections[safeStep - 1].title}
+        </p>
+      </div>
 
-      <CardContent className={cn(isMultiStep && "pt-4")}>
+      <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* ── Personal Information ── */}
-          {(!isMultiStep || currentSectionKey === "personal") && (
+          {currentSectionKey === "personal" && (
             <>
               {/* ── Review screen (CCF-147) ──
                   The profile we already hold, shown as a summary the person can
@@ -1895,7 +2211,7 @@ export function RegistrationForm({
                       value={form.firstName}
                       onChange={(e) => set("firstName", e.target.value)}
                       placeholder="Juan"
-                      required={!isMultiStep}
+                      required={singleSection}
                     />
                   </div>
                   <div className="space-y-2">
@@ -1907,7 +2223,7 @@ export function RegistrationForm({
                       value={form.lastName}
                       onChange={(e) => set("lastName", e.target.value)}
                       placeholder="dela Cruz"
-                      required={!isMultiStep}
+                      required={singleSection}
                     />
                   </div>
                 </div>
@@ -2049,7 +2365,7 @@ export function RegistrationForm({
           )}
 
           {/* ── Events (cluster shared form, CCF-132) ── */}
-          {cluster && (!isMultiStep || currentSectionKey === "events") && (
+          {cluster && currentSectionKey === "events" && (
             <div className="space-y-3">
               <p className="text-sm text-muted-foreground">
                 Tick the events you&apos;ll be joining — at least one.
@@ -2082,23 +2398,30 @@ export function RegistrationForm({
           )}
 
           {/* ── Small Group Info ── */}
-          {includeSmallGroup && (!isMultiStep || currentSectionKey === "smallgroup") && (
+          {/* `!skipSmallGroup` is redundant with the step no longer existing, but
+              it is the rule this section actually has — someone already in a DGroup
+              is not asked to join one — so it stays stated where it's enforced. */}
+          {includeSmallGroup && !skipSmallGroup && currentSectionKey === "smallgroup" && (
             <>
-              {!isMultiStep && (
-                <div className="pt-2 border-t">
-                  <p className="text-sm font-medium text-foreground">DGroup</p>
-                </div>
-              )}
-
               {confirmedMember?.recordType === "member" && !confirmedMember.smallGroupId && (
                 <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-foreground">
-                  You&apos;re not in a DGroup yet — joining one is a great next step!
+                  We don&apos;t have a DGroup on file for you — join one, or tell us
+                  about the one you&apos;re already in.
                 </div>
               )}
 
-              {/* For confirmed members: single "Join a Small Group" toggle */}
-              {confirmedMember?.recordType === "member" ? (
-                <div className={cn("flex items-start gap-2", !isMultiStep && "pt-1")}>
+              {/* Two mutually exclusive options, for members and guests alike.
+                  The "already part of one" branch was guest-only for a while,
+                  because a guest has `claimedSmallGroupId` to hold a self-report
+                  and a member had nowhere — `Member.smallGroupId` is real
+                  membership only an admin may set. A member's answer now becomes
+                  a *Pending* join request instead (`recordMemberGroupClaim`), so
+                  membership stays admin-owned and the one group of people most
+                  likely to already have a leader stops being the only ones who
+                  can't say so. Members who *are* on file in a DGroup never reach
+                  here — `skipSmallGroup` drops the section entirely. */}
+              <div className="space-y-2">
+                <div className="flex items-start gap-2">
                   <Checkbox
                     id="wantsSmallGroup"
                     checked={smallGroupIntent === "wants"}
@@ -2106,45 +2429,30 @@ export function RegistrationForm({
                     className="mt-0.5"
                   />
                   <Label htmlFor="wantsSmallGroup" className="text-sm font-normal leading-snug">
-                    Join a DGroup
+                    I want to join a DGroup
                   </Label>
                 </div>
-              ) : (
-                /* For guests / unconfirmed: two mutually exclusive options */
-                <div className={cn("space-y-2", !isMultiStep && "pt-1")}>
-                  <div className="flex items-start gap-2">
-                    <Checkbox
-                      id="wantsSmallGroup"
-                      checked={smallGroupIntent === "wants"}
-                      onCheckedChange={(v) => setSmallGroupIntent(v === true ? "wants" : null)}
-                      className="mt-0.5"
-                    />
-                    <Label htmlFor="wantsSmallGroup" className="text-sm font-normal leading-snug">
-                      I want to join a DGroup
-                    </Label>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <Checkbox
-                      id="alreadyInSmallGroup"
-                      checked={smallGroupIntent === "already_in"}
-                      onCheckedChange={(v) => {
-                        setSmallGroupIntent(v === true ? "already_in" : null)
-                        if (!v) {
-                          setClaimedSmallGroupId("")
-                          setClaimedGroupQuery("")
-                          setClaimedGroupResults([])
-                          setClaimedElsewhere(false)
-                          setClaimedSatellite("")
-                        }
-                      }}
-                      className="mt-0.5"
-                    />
-                    <Label htmlFor="alreadyInSmallGroup" className="text-sm font-normal leading-snug">
-                      I&apos;m already part of a DGroup
-                    </Label>
-                  </div>
+                <div className="flex items-start gap-2">
+                  <Checkbox
+                    id="alreadyInSmallGroup"
+                    checked={smallGroupIntent === "already_in"}
+                    onCheckedChange={(v) => {
+                      setSmallGroupIntent(v === true ? "already_in" : null)
+                      if (!v) {
+                        setClaimedSmallGroupId("")
+                        setClaimedGroupQuery("")
+                        setClaimedGroupResults([])
+                        setClaimedElsewhere(false)
+                        setClaimedSatellite("")
+                      }
+                    }}
+                    className="mt-0.5"
+                  />
+                  <Label htmlFor="alreadyInSmallGroup" className="text-sm font-normal leading-snug">
+                    I&apos;m already part of a DGroup
+                  </Label>
                 </div>
-              )}
+              </div>
 
               {/* Already in a group — leader/group search */}
               {smallGroupIntent === "already_in" && (
@@ -2257,12 +2565,14 @@ export function RegistrationForm({
               {/* Wants to join — matching preferences */}
               {smallGroupIntent === "wants" && (
                 <>
-                  <div className={cn(isMultiStep ? "pt-1" : "pt-2 border-t")}>
-                    <p className="text-sm font-medium text-foreground">Help us connect you</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      These optional details help us find the right Breakout Group for you.
-                    </p>
-                  </div>
+                  {hasMatchingFields && (
+                    <div className="pt-1">
+                      <p className="text-sm font-medium text-foreground">Help us connect you</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        These optional details help us find the right Breakout Group for you.
+                      </p>
+                    </div>
+                  )}
 
                   {cfg.fieldLanguage && (
                     <div className="space-y-2">
@@ -2346,22 +2656,11 @@ export function RegistrationForm({
           )}
 
           {/* ── Breakout Group ── */}
-          {showBreakoutSection && (!isMultiStep || currentSectionKey === "breakout") && (
+          {showBreakoutSection && currentSectionKey === "breakout" && (
             <>
-              {!isMultiStep && (
-                <div className="pt-2 border-t">
-                  <p className="text-sm font-medium text-foreground">Breakout Group</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Pick a group for the event — optional.
-                  </p>
-                </div>
-              )}
-
-              {isMultiStep && (
-                <p className="text-sm text-muted-foreground">
-                  Pick a group for the event — optional.
-                </p>
-              )}
+              <p className="text-sm text-muted-foreground">
+                Pick a group for the event — optional.
+              </p>
 
               {!hasBreakoutChoices && breakoutNotice && (
                 <div className="rounded-lg border border-dashed bg-muted/40 p-4">
@@ -2491,13 +2790,8 @@ export function RegistrationForm({
           )}
 
           {/* ── Household ── */}
-          {cfg.sectionFamily && (!isMultiStep || currentSectionKey === "household") && (
+          {cfg.sectionFamily && currentSectionKey === "household" && (
             <>
-              {!isMultiStep && (
-                <div className="pt-2 border-t">
-                  <p className="text-sm font-medium text-foreground">Your Household</p>
-                </div>
-              )}
               <p className="text-xs text-muted-foreground">
                 {cfg.familySpouseOnly
                   ? "Optional — tell us about your spouse so we can keep you together."
@@ -2760,22 +3054,11 @@ export function RegistrationForm({
           )}
 
           {/* ── Dietary Preferences ── */}
-          {includeDietary && (!isMultiStep || currentSectionKey === "dietary") && (
+          {includeDietary && currentSectionKey === "dietary" && (
             <>
-              {!isMultiStep && (
-                <div className="pt-2 border-t">
-                  <p className="text-sm font-medium text-foreground">Dietary restrictions</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Let us know if you have any dietary preferences.
-                  </p>
-                </div>
-              )}
-
-              {isMultiStep && (
-                <p className="text-sm text-muted-foreground">
-                  Let us know if you have any dietary preferences.
-                </p>
-              )}
+              <p className="text-sm text-muted-foreground">
+                Let us know if you have any dietary preferences.
+              </p>
 
               <div className="space-y-2">
                 <Label>Preference</Label>
@@ -2818,22 +3101,11 @@ export function RegistrationForm({
           )}
 
           {/* ── Payment ── */}
-          {includePayment && (!isMultiStep || currentSectionKey === "payment") && (
+          {includePayment && currentSectionKey === "payment" && (
             <>
-              {!isMultiStep && (
-                <div className="pt-2 border-t">
-                  <p className="text-sm font-medium text-foreground">Payment</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Enter your payment reference (e.g. GCash transaction ID).
-                  </p>
-                </div>
-              )}
-
-              {isMultiStep && (
-                <p className="text-sm text-muted-foreground">
-                  Enter your payment reference (e.g. GCash transaction ID).
-                </p>
-              )}
+              <p className="text-sm text-muted-foreground">
+                Enter your payment reference (e.g. GCash transaction ID).
+              </p>
 
               <div className="space-y-2">
                 <Label htmlFor="paymentReference">Payment reference</Label>
@@ -2848,7 +3120,7 @@ export function RegistrationForm({
           )}
 
           {/* ── Privacy Policy ── */}
-          {(!isMultiStep || safeStep === sections.length) && (
+          {safeStep === sections.length && (
             <PrivacyPolicyCheckbox
               checked={privacyAccepted}
               onCheckedChange={setPrivacyAccepted}
@@ -2856,39 +3128,37 @@ export function RegistrationForm({
           )}
 
           {/* ── Navigation ── */}
-          {isMultiStep ? (
-            <div className="flex gap-2 pt-2">
-              {safeStep > 1 ? (
-                <Button type="button" variant="outline" onClick={handleBack}>
-                  Back
-                </Button>
-              ) : walkIn?.backHref ? (
-                <Button type="button" variant="outline" asChild>
-                  <Link href={walkIn.backHref}>Back</Link>
-                </Button>
-              ) : null}
-              {safeStep < sections.length ? (
-                <Button type="button" className="flex-1" disabled={submitting} onClick={handleNext}>
-                  {submitting ? "Please wait…" : "Next"}
-                </Button>
-              ) : (
-                <Button type="button" className="flex-1" disabled={submitting} onClick={handleSubmit}>
-                  {submitting ? "Checking…" : walkIn ? "Register & Check In" : "Register"}
-                </Button>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <Button type="button" className="w-full" disabled={submitting} onClick={handleSubmit}>
+          <div className="flex gap-2 pt-2">
+            {safeStep > 1 ? (
+              <Button type="button" variant="outline" onClick={handleBack}>
+                Back
+              </Button>
+            ) : identifyFirst ? (
+              // Step 1 used to be a one-way door: the gate handed you the form
+              // and there was no way back to correct the number you typed.
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleBackToIdentify}
+                disabled={submitting}
+              >
+                Back
+              </Button>
+            ) : walkIn?.backHref ? (
+              <Button type="button" variant="outline" asChild>
+                <Link href={walkIn.backHref}>Back</Link>
+              </Button>
+            ) : null}
+            {safeStep < sections.length ? (
+              <Button type="button" className="flex-1" disabled={submitting} onClick={handleNext}>
+                {submitting ? "Please wait…" : "Next"}
+              </Button>
+            ) : (
+              <Button type="button" className="flex-1" disabled={submitting} onClick={handleSubmit}>
                 {submitting ? "Checking…" : walkIn ? "Register & Check In" : "Register"}
               </Button>
-              {walkIn?.backHref && (
-                <Button type="button" variant="ghost" className="w-full" asChild>
-                  <Link href={walkIn.backHref}>Back</Link>
-                </Button>
-              )}
-            </div>
-          )}
+            )}
+          </div>
         </form>
       </CardContent>
     </FormShell>

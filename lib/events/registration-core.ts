@@ -6,6 +6,7 @@ import { suggestBreakoutGroup } from "@/lib/breakout-suggestion"
 import { fetchBreakoutCandidates } from "@/lib/breakout-suggestion-server"
 import { breakoutOccupancy } from "@/lib/breakouts/occupancy"
 import { tryCreateSmallGroupRequestFromBreakout } from "@/lib/create-small-group-request"
+import { recordMemberGroupClaim } from "@/lib/small-groups/member-claim"
 import { createSeekerRequestFromRegistration } from "@/lib/small-groups/seeker-requests"
 import { buildStoredScheduleSlot } from "@/lib/matching/candidate-schedule"
 import {
@@ -75,7 +76,9 @@ async function fetchAssignedBreakoutDetails(groupId: string): Promise<AssignedBr
  *    groups, so dropping the pick here would silently contradict the UI. Every
  *    anonymous submission — including one to the public walk-in route — stays
  *    capacity-gated.
- *  - else autoAssignBreakout on the event — runs the simple Gender/Age/Capacity matcher
+ *  - else autoAssignBreakout on the event — runs the simple Gender/Age/Capacity
+ *    matcher, over the door's staffed-only pool when `atDoor` says this is a
+ *    walk-in, and over every enabled group otherwise.
  *  - else nothing
  * Best-effort: failures are swallowed and return null.
  *
@@ -90,7 +93,17 @@ export async function assignBreakoutForRegistrant(
   eventId: string,
   selectedBreakoutGroupId: string | null,
   profile: { gender: Gender | null; birthYear: number | null },
-  allowOverCapacity = false
+  allowOverCapacity = false,
+  /**
+   * Set when this placement is happening at the door, carrying the session the
+   * walk-in is being checked into (null for OneTime). It makes automatic
+   * placement obey the door's facilitator gate — see the auto-assign branch.
+   *
+   * Unlike `allowOverCapacity` this may be derived straight from the caller's
+   * self-asserted `walkIn` flag, because it only ever makes placement *stricter*.
+   * A forged claim narrows the candidate pool; it can't widen it.
+   */
+  atDoor: { occurrenceId: string | null } | null = null
 ): Promise<AssignedBreakout> {
   try {
     const event = await db.event.findUnique({
@@ -101,6 +114,24 @@ export async function assignBreakoutForRegistrant(
       },
     })
     if (!event || event.modules.length === 0) return null
+
+    // A registrant may already be placed. The reuse paths — a walk-in for someone
+    // who registered earlier, and amend — run this function against a row that has
+    // been through it before, and the bare `create` at the end was wrong both ways:
+    // re-assigning to the same group violates the composite PK and threw into the
+    // catch below, so the person's confirmation claimed no breakout at all; landing
+    // on a different one left them sitting in two groups at once.
+    const current = await db.breakoutGroupMember.findFirst({
+      where: { registrantId, breakoutGroup: { eventId } },
+      select: { breakoutGroupId: true },
+    })
+
+    // Auto-assign never overrides an existing placement: nobody asked to be moved,
+    // and an admin may have placed them by hand since. Report where they already
+    // are rather than re-running the matcher.
+    if (current && !selectedBreakoutGroupId) {
+      return fetchAssignedBreakoutDetails(current.breakoutGroupId)
+    }
 
     let chosenGroupId: string | null = null
 
@@ -138,15 +169,53 @@ export async function assignBreakoutForRegistrant(
     } else if (event.autoAssignBreakout) {
       // Auto-assign stays capacity-gated regardless: nobody chose this group, so
       // there is no intent to honour.
-      const candidates = await fetchBreakoutCandidates(eventId, null, false)
+      //
+      // The same reasoning puts the door's facilitator gate here. The walk-in
+      // picker only ever offers groups whose facilitator is in the room, but
+      // auto-assign ignored that and placed people into unstaffed groups from
+      // the very same form — so the rule held only where a human was choosing,
+      // which is backwards. And because `autoAssignBreakout` also *suppresses*
+      // the picker (`offerBreakoutPicker` on the walk-in page), an event with it
+      // switched on had no gated path at all.
+      const candidates = atDoor
+        ? await fetchBreakoutCandidates(eventId, atDoor.occurrenceId, true)
+        : await fetchBreakoutCandidates(eventId, null, false)
       const best = suggestBreakoutGroup(candidates, profile)
       if (best) chosenGroupId = best.id
     }
 
-    if (!chosenGroupId) return null
+    // A pick that was refused (full, disabled, another event's) leaves nothing
+    // chosen — but someone already placed is still placed, and saying "no group"
+    // to a person sitting in one would be a lie the confirmation screen tells.
+    if (!chosenGroupId) {
+      return current ? fetchAssignedBreakoutDetails(current.breakoutGroupId) : null
+    }
 
-    await db.breakoutGroupMember.create({
-      data: { breakoutGroupId: chosenGroupId, registrantId },
+    // Picking the group they're already in is a no-op, not a second insert.
+    if (current?.breakoutGroupId === chosenGroupId) {
+      return fetchAssignedBreakoutDetails(chosenGroupId)
+    }
+
+    // Picking a different one is a *move*, and it has to be one statement.
+    // Dropping the old membership first is what keeps one registrant in one
+    // breakout group, but split across two calls a failed insert would leave
+    // them in none — silently, since the catch below turns any throw into a
+    // null the confirmation screen reads as "no breakout". That is a worse
+    // outcome than the double-placement this guard was written to prevent.
+    await db.$transaction(async (tx) => {
+      if (current) {
+        await tx.breakoutGroupMember.delete({
+          where: {
+            breakoutGroupId_registrantId: {
+              breakoutGroupId: current.breakoutGroupId,
+              registrantId,
+            },
+          },
+        })
+      }
+      await tx.breakoutGroupMember.create({
+        data: { breakoutGroupId: chosenGroupId, registrantId },
+      })
     })
     await tryCreateSmallGroupRequestFromBreakout(chosenGroupId, registrantId)
     revalidatePath(`/event/${eventId}/breakouts`)
@@ -247,11 +316,15 @@ export async function stampClusterProvenance(
  * the fill-if-empty rule — see `lib/events/profile-merge.ts`.
  *
  * This arrives from a public client, so a crafted POST could claim every field is
- * touched. What actually gates it is the second factor on the confirm card:
- * reaching the confirmed-member/guest path at all now means having proved the
- * record's birth month and year. Claiming everything is touched is then
- * equivalent to a verified owner editing every field, which is a thing they are
- * allowed to do.
+ * touched. What gates it is the identity grant (`lib/security/identity-grant.ts`):
+ * the callers null this out unless the request carries proof that it owns the
+ * record being written to. Claiming everything is touched is then equivalent to a
+ * verified owner editing every field, which is a thing they are allowed to do.
+ *
+ * This comment used to credit the second factor on the confirm card directly, and
+ * that was wrong — `confirmedMemberId` reached this code as an unverified string,
+ * and the mid-form confirm path never asked for a second factor at all. The grant
+ * is what makes the sentence above true rather than aspirational.
  */
 export type TouchedFields = readonly string[] | null | undefined
 
@@ -391,6 +464,32 @@ export async function resolveConfirmedMember(
   if (Object.keys(memberUpdates).length > 0) {
     await db.member.update({ where: { id: memberId }, data: memberUpdates })
   }
+
+  // "I'm already part of a DGroup". The guest resolver below writes this to two
+  // scratch columns; a member has neither, so the answer used to be collected
+  // and silently dropped — for the one group of people most likely to already
+  // have a leader. It now lands where the member portal puts the same answer: a
+  // named leader becomes a *Pending* request (membership stays admin-owned), a
+  // named satellite becomes `upwardSatellite`. Never throws; a registration must
+  // not fail over follow-up bookkeeping.
+  //
+  // Not guarded by `touched`, unlike the fill-if-empty fields above: this is a
+  // question the form asks outright, and `recordMemberGroupClaim` already
+  // no-ops when the member is placed or has an open request.
+  if (data.claimedSmallGroupId) {
+    await recordMemberGroupClaim(
+      memberId,
+      { scope: "group", smallGroupId: data.claimedSmallGroupId },
+      "event registration"
+    )
+  } else if (data.claimedSatellite) {
+    await recordMemberGroupClaim(
+      memberId,
+      { scope: "satellite", satellite: data.claimedSatellite },
+      "event registration"
+    )
+  }
+
   return { gender: existing.gender, birthYear: existing.birthYear }
 }
 
@@ -602,6 +701,46 @@ export async function resolveAnonymousGuest(
 }
 
 /**
+ * The three answers that live on `EventRegistrant` rather than on the person.
+ *
+ * The create branch writes them inline; this is the reuse branch's missing
+ * counterpart. Without it every answer to Dietary or Payment Reference was
+ * collected and then dropped for anyone who already had a registration —
+ * `existingRegistrantId` adopted the row and never touched these columns, so a
+ * walk-in for someone who registered earlier silently discarded what they typed.
+ *
+ * Same fill-if-empty-unless-touched rule as the profile writers, through the same
+ * `shouldWriteProfileField`, so a returning answer can't clobber a stored one and
+ * there is no second merge rule to drift from the first. The column names and the
+ * payload keys coincide for all three, so one string serves as both.
+ */
+async function mergeRegistrantAnswers(
+  registrantId: string,
+  data: RegistrantData,
+  touchedFields?: TouchedFields
+): Promise<void> {
+  const existing = await db.eventRegistrant.findUnique({
+    where: { id: registrantId },
+    select: { dietaryPreference: true, dietaryOther: true, paymentReference: true },
+  })
+  if (!existing) return
+
+  const touched = touchedFieldSet(touchedFields)
+  const updates: Record<string, unknown> = {}
+  const put = (field: "dietaryPreference" | "dietaryOther" | "paymentReference", incoming: unknown) => {
+    if (shouldWriteProfileField(existing[field], incoming, touched, field)) updates[field] = incoming
+  }
+
+  put("dietaryPreference", data.dietaryPreference ?? null)
+  put("dietaryOther", data.dietaryOther)
+  put("paymentReference", data.paymentReference)
+
+  if (Object.keys(updates).length > 0) {
+    await db.eventRegistrant.update({ where: { id: registrantId }, data: updates })
+  }
+}
+
+/**
  * Final per-event step: create the `EventRegistrant` row (or reuse the existing
  * one — walk-in semantics), run breakout assignment, and perform walk-in /
  * open-recurring-session check-in.
@@ -627,8 +766,15 @@ export async function completeEventRegistration(opts: {
   allowOverCapacity?: boolean
   /** Existing registration to reuse instead of creating (walk-in / cluster reuse semantics). */
   existingRegistrantId?: string | null
+  /**
+   * Fields the person edited, in payload vocabulary — the same set the profile
+   * resolvers take. Only consulted on the reuse path, where there is a stored
+   * answer an edit could be overwriting; a freshly created row has nothing to
+   * protect.
+   */
+  touchedFields?: TouchedFields
 }): Promise<{ id: string; breakoutGroup: AssignedBreakout }> {
-  const { eventId, person, data, breakoutPick, profile, clusterId, walkIn, allowOverCapacity, existingRegistrantId } = opts
+  const { eventId, person, data, breakoutPick, profile, clusterId, walkIn, allowOverCapacity, existingRegistrantId, touchedFields } = opts
 
   let registrantId: string
   if (existingRegistrantId) {
@@ -638,6 +784,7 @@ export async function completeEventRegistration(opts: {
     // day roll-up counts people by this column — without the stamp, every
     // returning walk-in was invisible to it.
     if (clusterId) await stampClusterProvenance(registrantId, clusterId)
+    await mergeRegistrantAnswers(registrantId, data, touchedFields)
   } else {
     const registrant = await db.eventRegistrant.create({
       data: {
@@ -660,7 +807,11 @@ export async function completeEventRegistration(opts: {
     eventId,
     breakoutPick,
     profile,
-    !!allowOverCapacity
+    !!allowOverCapacity,
+    // `walkIn` is enough here where it is not enough for `allowOverCapacity`:
+    // this narrows automatic placement to staffed groups, so the worst a forged
+    // flag buys is a stricter pool.
+    walkIn ?? null
   )
 
   // Someone who asked to join a DGroup becomes a request an admin can actually

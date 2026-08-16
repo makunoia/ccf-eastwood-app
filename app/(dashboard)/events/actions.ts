@@ -17,6 +17,7 @@ import {
   type RegistrationWindowValues,
 } from "@/lib/validations/event"
 import { resolveModuleSelection } from "@/lib/events/modules"
+import { isSetupStepKey } from "@/lib/events/setup-checklist"
 import {
   matchingProfileSchema,
   type MatchingProfileInput,
@@ -37,6 +38,7 @@ import {
   type AssignedBreakout,
 } from "@/lib/events/registration-core"
 import { ProfileCollisionError } from "@/lib/events/profile-merge"
+import { verifyIdentityGrant, type GrantSubject } from "@/lib/security/identity-grant"
 import { isEventStaffViewer } from "@/lib/events/staff-viewer"
 import { registrantSchema } from "@/lib/validations/event-registrant"
 import {
@@ -81,12 +83,28 @@ import {
   type RegistrantLookupRow,
   type VolunteerLookupRow,
 } from "@/lib/events/checkin-lookup"
+import { recordMemberGroupClaim } from "@/lib/small-groups/member-claim"
 import { createSeekerRequestFromRegistration } from "@/lib/small-groups/seeker-requests"
 import type { Gender } from "@/app/generated/prisma/client"
 
 type ActionResult<T = void> =
   | { success: true; data: T }
   | { success: false; error: string }
+
+/**
+ * Why a registration was refused, for the cases where the client has to do more
+ * than print the message.
+ *
+ * Only the duplicate needs it today: it routes to a screen with somewhere to go
+ * next rather than a toast that fades off a form the person just filled in.
+ * Matching on the copy to decide that would break the first time anyone rewords
+ * it, so the reason travels as its own field.
+ */
+export type RegistrationFailureReason = "alreadyRegistered"
+
+type RegistrationResult<T> =
+  | { success: true; data: T }
+  | { success: false; error: string; reason?: RegistrationFailureReason }
 
 async function requireWrite(): Promise<{ error: string } | null> {
   const session = await auth()
@@ -376,6 +394,51 @@ export async function dismissEventSetup(eventId: string): Promise<ActionResult> 
   }
 }
 
+/**
+ * Skips (or un-skips) a single walkthrough step. Unlike dismissing, this keeps the
+ * rest of the checklist on screen — it just stops nagging about the one step the
+ * admin has decided this event doesn't need.
+ *
+ * The write is a read-modify-write rather than a `push`, so skipping the same step
+ * twice can't duplicate a key.
+ */
+export async function setEventSetupStepSkipped(
+  eventId: string,
+  stepKey: string,
+  skipped: boolean,
+): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+
+  if (!isSetupStepKey(stepKey)) {
+    return { success: false, error: "Unknown setup step" }
+  }
+
+  try {
+    const event = await db.event.findUnique({
+      where: { id: eventId },
+      select: { setupSkippedSteps: true },
+    })
+    if (!event) return { success: false, error: "Event not found" }
+
+    const next = new Set(event.setupSkippedSteps)
+    if (skipped) next.add(stepKey)
+    else next.delete(stepKey)
+
+    await db.event.update({
+      where: { id: eventId },
+      data: { setupSkippedSteps: [...next] },
+    })
+    revalidatePath(`/event/${eventId}/dashboard`)
+    return { success: true, data: undefined }
+  } catch {
+    return {
+      success: false,
+      error: skipped ? "Failed to skip step" : "Failed to restore step",
+    }
+  }
+}
+
 type MemberLookupResult = {
   id: string
   firstName: string
@@ -596,17 +659,53 @@ export async function createRegistrant(
   walkIn?: { occurrenceId: string | null },
   // Fields the person edited on the review screen (CCF-147) — these overwrite the
   // stored profile; everything else keeps fill-if-empty.
-  touchedFields?: TouchedFields
-): Promise<ActionResult<{ id: string; breakoutGroup: AssignedBreakout }>> {
+  touchedFields?: TouchedFields,
+  // Proof that the caller owns the record named by `confirmedMemberId` /
+  // `confirmedGuestId`, minted by `revealProfileForRegistration` after the second
+  // factor. Without it `touchedFields` is ignored — see `grantedTouchedFields`.
+  grant?: string | null
+): Promise<RegistrationResult<{ id: string; breakoutGroup: AssignedBreakout }>> {
   const parsed = registrantSchema.safeParse(raw)
   if (!parsed.success) {
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
   }
 
   try {
+    /**
+     * Which record this submission claims to be, when it claims to be one at all.
+     * Resolved up front because both the window check and the duplicate guard need
+     * to know whether this is a *new* registration or an amendment to an existing
+     * one, and asking twice would let the two disagree.
+     */
+    const confirmedSubject: GrantSubject | null = confirmedMemberId
+      ? { recordId: confirmedMemberId, recordType: "member" }
+      : confirmedGuestId
+        ? { recordId: confirmedGuestId, recordType: "guest" }
+        : null
+
+    const existingForConfirmed = confirmedSubject
+      ? await findExistingEventRegistration(
+          eventId,
+          confirmedSubject.recordType === "member"
+            ? { memberId: confirmedSubject.recordId }
+            : { guestId: confirmedSubject.recordId }
+        )
+      : null
+
+    /** A proven owner updating the registration they already hold. */
+    const isAmend =
+      existingForConfirmed !== null &&
+      !walkIn &&
+      confirmedSubject !== null &&
+      verifyIdentityGrant(grant, confirmedSubject)
+
     // Enforce the event's Opens/Closes window server-side. Walk-ins are exempt:
     // they're staff-supervised at the door and must go through even after close.
-    if (!walkIn) {
+    // So is an amendment: the window governs who may *join*, and this person
+    // joined before it shut. The case it exists for is an admin who made a field
+    // required after registration closed — enforcing the window there would make
+    // the answer uncollectable by the only route that asks for it.
+    if (!walkIn && !isAmend) {
       const event = await db.event.findUnique({
         where: { id: eventId },
         select: { registrationStart: true, registrationEnd: true },
@@ -629,11 +728,19 @@ export async function createRegistrant(
     Object.assign(parsed.data, sanitizeRegistrantPayload(formConfig, parsed.data))
     // Required fields are checked *after* sanitizing, so a value submitted for a
     // disabled field can't satisfy a stale required flag on that same field.
-    const missing = missingRequiredFields(
-      formConfig,
-      parsed.data,
-      askedFieldsFor(walkIn ? "WalkIn" : "Register", parsed.data)
+    //
+    // Payment comes out of the check on an amend, because the amend refuses to
+    // *collect* it: the form drops the step and the branch below nulls the value
+    // outright. Leaving it in made a required Payment section unsatisfiable —
+    // "Payment reference is required" against a form with no payment step, on the
+    // only route the event offers for answering. `fieldsStillNeeded` already
+    // filters it client-side for the same reason; this is the server half.
+    // Every other requirable key still applies: an amend is exactly where an
+    // admin's newly-required field is meant to get answered.
+    const asked = askedFieldsFor(walkIn ? "WalkIn" : "Register", parsed.data).filter(
+      (key) => !(isAmend && key === "sectionPayment")
     )
+    const missing = missingRequiredFields(formConfig, parsed.data, asked)
     if (missing.length > 0) {
       return { success: false, error: requiredFieldsMessage(missing) }
     }
@@ -648,6 +755,55 @@ export async function createRegistrant(
     // because the form they used never offered a full group.
     const allowOverCapacity = !!walkIn && (await isEventStaffViewer())
 
+    /**
+     * `touchedFields` is not a preference — it is the privilege to **overwrite**
+     * stored profile data instead of only filling blanks. It therefore has to be
+     * earned per record, and this is where that is decided.
+     *
+     * Before the grant existed, `confirmedMemberId` arrived from a public client
+     * as a bare string and was trusted, so a crafted POST naming any member could
+     * rewrite that person's email, phone, birthday or availability. The old
+     * comment on `TouchedFields` claimed the step-0 second factor gated this; it
+     * did not, and the mid-form confirm path never asked for a second factor at
+     * all. An unproven caller now falls back to fill-if-empty, which is what every
+     * caller did before CCF-147 — registration still works, it just can't
+     * clobber.
+     */
+    const grantedTouchedFields = (subject: GrantSubject): TouchedFields =>
+      verifyIdentityGrant(grant, subject) ? touchedFields : null
+
+    /**
+     * Whether an existing registration blocks this submission, or is the thing it
+     * came to update.
+     *
+     * Registering twice is still refused — that is what the duplicate guard is
+     * for, and it stays the default for anyone the request can't prove. Two cases
+     * get through instead:
+     *
+     *  - **Walk-in.** The door reuses the registration and checks the person in.
+     *  - **Amend.** The admin enabled or required a field after this person signed
+     *    up, so the form has to collect it against the registration they already
+     *    have. Only on proof of ownership: without the grant this would let a
+     *    crafted POST rewrite a stranger's answers, which is a worse hole than the
+     *    one the duplicate guard closes.
+     */
+    const isBlockedDuplicate = existingForConfirmed !== null && !walkIn && !isAmend
+
+    /** The person-facing half of the same fact, kept in one place. */
+    const DUPLICATE_ERROR = "You're already registered for this event."
+
+    /**
+     * Payment is not amendable from a public form.
+     *
+     * Rewriting a payment reference on a registration that already exists is a
+     * different decision from filling in a life stage the event has started
+     * asking for: it touches money, and it stays with the admin. The form omits
+     * the step on an amend; this is the server half, so a hand-built payload
+     * can't reach it either. The walk-in door is exempt — staff are standing
+     * there taking the payment.
+     */
+    if (isAmend) parsed.data.paymentReference = null
+
     // The steps below (person resolution → per-event completion) live in
     // lib/events/registration-core.ts so the cluster shared form (CCF-132) can
     // resolve the person once and fan out across events. The order here is the
@@ -658,17 +814,16 @@ export async function createRegistrant(
         return { success: false, error: "You're serving as a volunteer at this event — you don't need to register as an attendee." }
       }
 
-      // Duplicate check — member already registered for this event.
-      // Walk-in mode reuses the existing registration (the person may have
-      // registered under a different contact identifier than they looked up with).
-      const existingRegistrationId = await findExistingEventRegistration(eventId, {
-        memberId: confirmedMemberId,
-      })
-      if (existingRegistrationId && !walkIn) {
-        return { success: false, error: "You're already registered for this event." }
+      if (isBlockedDuplicate) {
+        return { success: false, error: DUPLICATE_ERROR, reason: "alreadyRegistered" }
       }
+      const existingRegistrationId = existingForConfirmed
 
-      const stored = await resolveConfirmedMember(confirmedMemberId, parsed.data, touchedFields)
+      const touched = grantedTouchedFields({
+        recordId: confirmedMemberId,
+        recordType: "member",
+      })
+      const stored = await resolveConfirmedMember(confirmedMemberId, parsed.data, touched)
       const result = await completeEventRegistration({
         eventId,
         person: { memberId: confirmedMemberId },
@@ -681,18 +836,20 @@ export async function createRegistrant(
         walkIn,
         allowOverCapacity,
         existingRegistrantId: existingRegistrationId,
+        touchedFields: touched,
       })
       return { success: true, data: result }
     } else if (confirmedGuestId) {
-      // Duplicate check — guest already registered for this event (walk-in reuses it)
-      const existingRegistrationId = await findExistingEventRegistration(eventId, {
-        guestId: confirmedGuestId,
-      })
-      if (existingRegistrationId && !walkIn) {
-        return { success: false, error: "You're already registered for this event." }
+      if (isBlockedDuplicate) {
+        return { success: false, error: DUPLICATE_ERROR, reason: "alreadyRegistered" }
       }
+      const existingRegistrationId = existingForConfirmed
 
-      const stored = await resolveConfirmedGuest(confirmedGuestId, parsed.data, touchedFields)
+      const touched = grantedTouchedFields({
+        recordId: confirmedGuestId,
+        recordType: "guest",
+      })
+      const stored = await resolveConfirmedGuest(confirmedGuestId, parsed.data, touched)
       const result = await completeEventRegistration({
         eventId,
         person: { guestId: confirmedGuestId },
@@ -705,6 +862,7 @@ export async function createRegistrant(
         walkIn,
         allowOverCapacity,
         existingRegistrantId: existingRegistrationId,
+        touchedFields: touched,
       })
       return { success: true, data: result }
     } else {
@@ -713,9 +871,11 @@ export async function createRegistrant(
       const { guestId } = await resolveAnonymousGuest(parsed.data, skipDeduplication)
 
       // Duplicate check — guest already registered for this event (walk-in reuses it)
+      // No confirmed record means nothing was proven, so there is no amend here —
+      // only the walk-in door reuses a registration on this path.
       const existingRegistrationId = await findExistingEventRegistration(eventId, { guestId })
       if (existingRegistrationId && !walkIn) {
-        return { success: false, error: "You're already registered for this event." }
+        return { success: false, error: DUPLICATE_ERROR, reason: "alreadyRegistered" }
       }
 
       const result = await completeEventRegistration({
@@ -730,6 +890,10 @@ export async function createRegistrant(
         walkIn,
         allowOverCapacity,
         existingRegistrantId: existingRegistrationId,
+        // No confirmed record means nothing was proven, so an edit here can only
+        // ever fill a blank. The dedup ladder may well have landed on an existing
+        // guest, which is exactly why this isn't waved through.
+        touchedFields: null,
       })
       return { success: true, data: result }
     }
@@ -1340,12 +1504,17 @@ export type CheckinPerson = { guestId: string } | { memberId: string }
 type SmallGroupPrompt = {
   person: CheckinPerson
   /**
-   * Whether to offer the "I'm already in one" branch. Guests have a
-   * self-reported `claimedSmallGroupId` to put that answer in; members don't —
-   * `Member.smallGroupId` is real membership, which only an admin may set. The
-   * public registration form draws the same line.
+   * There used to be a `canClaimGroup` flag here gating the "I'm already in one"
+   * branch to guests. The reason was storage, not policy: a guest has
+   * `claimedSmallGroupId` to put a self-report in, and a member had nowhere —
+   * `Member.smallGroupId` is real membership, which only an admin may set.
+   *
+   * `recordMemberGroupClaim` closes that gap the way the member portal already
+   * did — a member naming a leader raises a *Pending* request rather than
+   * writing membership — so the branch is offered to everyone this prompt
+   * reaches, which is only ever a guest or a member. The public registration
+   * form draws the same line.
    */
-  canClaimGroup: boolean
   existingProfile: {
     lifeStageId: string | null
     gender: "Male" | "Female" | null
@@ -1410,7 +1579,6 @@ function guestSmallGroupPrompt(guestId: string, g: GuestPromptRow): SmallGroupPr
   if (!noClaimedGroup || hasOpenGroupRequest(g.groupRequests)) return null
   return {
     person: { guestId },
-    canClaimGroup: true,
     existingProfile: {
       lifeStageId: g.lifeStageId,
       gender: g.gender,
@@ -1435,12 +1603,15 @@ type MemberPromptRow = NonNullable<RegistrantLookupRow["member"]>
  */
 function memberSmallGroupPrompt(memberId: string, m: MemberPromptRow): SmallGroupPrompt | null {
   if (m.smallGroupId) return null
+  // A member who named another CCF satellite has already told us they're in a
+  // DGroup — there's just no local group to link, exactly like a guest with a
+  // `claimedSatellite`. Don't ask them again.
+  if (m.upwardSatellite) return null
   if (hasOpenGroupRequest(m.groupRequests)) return null
   // Members keep availability in a relation; the kiosk form edits one slot.
   const slot = m.schedulePreferences[0] ?? null
   return {
     person: { memberId },
-    canClaimGroup: false,
     existingProfile: {
       lifeStageId: m.lifeStageId,
       gender: m.gender,
@@ -1730,9 +1901,11 @@ export async function createHouseholdRegistration(
   selectedBreakoutGroupId?: string | null,
   walkIn?: { occurrenceId: string | null },
   /** Review-screen edits (CCF-147) — forwarded to the primary's resolver. */
-  touchedFields?: TouchedFields
+  touchedFields?: TouchedFields,
+  /** Ownership proof for the primary; forwarded so their edits are honoured. */
+  grant?: string | null
 ): Promise<
-  ActionResult<{
+  RegistrationResult<{
     id: string
     familyId: string
     breakoutGroup: AssignedBreakout
@@ -1806,7 +1979,8 @@ export async function createHouseholdRegistration(
     skipDeduplication,
     selectedBreakoutGroupId,
     walkIn,
-    touchedFields
+    touchedFields,
+    grant
   )
   if (!primaryResult.success) return primaryResult
 
@@ -2573,35 +2747,74 @@ export async function saveCheckinMatchingProfile(
 
 /**
  * "I'm already in one" on the check-in DGroup prompt — records the group the
- * guest names as self-reported, not as membership. Guest-only: a member has no
- * claimed-group field, and `Member.smallGroupId` is real membership that only an
- * admin may set.
+ * person names as self-reported, never as membership.
+ *
+ * The two record types store that answer in different places, which is why this
+ * takes a `CheckinPerson` rather than a guest id:
+ *
+ *   - **Guest** → `claimedSmallGroupId`, a scratch column for exactly this.
+ *   - **Member** → a *Pending* `SmallGroupMemberRequest` via
+ *     `recordMemberGroupClaim`. `Member.smallGroupId` is real membership that
+ *     only an admin may set, so the claim becomes a request for a leader or an
+ *     admin to confirm — the same shape the member portal produces.
+ *
+ * This used to be guest-only on the grounds that a member had nowhere to put the
+ * answer. They do now, and the kiosk was the last surface still dropping it.
  *
  * Public for the same reason as the other check-in writes, and scoped the same
  * way — see `isCheckinSubject`.
  */
 export async function saveCheckinClaimedGroup(
   eventId: string,
-  guestId: string,
+  person: CheckinPerson,
   smallGroupId: string
 ): Promise<ActionResult> {
   try {
-    if (!(await isCheckinSubject(eventId, { guestId }))) {
+    if (!(await isCheckinSubject(eventId, person))) {
       return { success: false, error: "Not registered for this event." }
     }
     const group = await db.smallGroup.findUnique({
       where: { id: smallGroupId },
-      select: { id: true },
+      select: { id: true, status: true },
     })
     if (!group) return { success: false, error: "DGroup not found" }
+    // `searchMembersForLeaderLookup` doesn't filter `ledGroups` by status, so a
+    // retired group really does reach this screen. Both record types are refused
+    // here rather than only the member one: `recordMemberGroupClaim` already
+    // declines an Inactive group (a Pending request against a dead group has
+    // nobody to confirm it), and without this the guest branch would happily
+    // store a claim the member branch silently dropped — the same answer to the
+    // same question landing two different ways.
+    if (group.status === "Inactive") {
+      return { success: false, error: "That DGroup is no longer active." }
+    }
+
+    if ("memberId" in person) {
+      const result = await recordMemberGroupClaim(
+        person.memberId,
+        { scope: "group", smallGroupId },
+        "event check-in"
+      )
+      // "already-placed" and "already-requested" mean the answer is already on
+      // file — nothing to do, and telling someone at a kiosk their correct answer
+      // failed would be wrong. A no-op that isn't one of those two means the write
+      // did not happen and the person is being told it did, so it surfaces.
+      if (!result.recorded && result.reason !== "already-placed" && result.reason !== "already-requested") {
+        return { success: false, error: "Failed to save DGroup" }
+      }
+      revalidatePath(`/members/${person.memberId}`)
+      revalidatePath("/small-groups")
+      revalidatePath(`/small-groups/${smallGroupId}`)
+      return { success: true, data: undefined }
+    }
 
     await db.guest.update({
-      where: { id: guestId },
+      where: { id: person.guestId },
       // Naming one of our groups supersedes an earlier "my DGroup is at another
       // satellite" answer — the two can't both be true.
       data: { claimedSmallGroupId: smallGroupId, claimedSatellite: null },
     })
-    revalidatePath(`/guests/${guestId}`)
+    revalidatePath(`/guests/${person.guestId}`)
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to save DGroup" }

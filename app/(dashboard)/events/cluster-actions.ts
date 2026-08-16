@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { db } from "@/lib/db"
 import { ProfileCollisionError } from "@/lib/events/profile-merge"
+import { verifyIdentityGrant } from "@/lib/security/identity-grant"
 import { auth } from "@/lib/auth"
 import { canWrite } from "@/lib/permissions"
 import { isWithinRegistrationWindow } from "@/lib/events/registration-window"
@@ -384,7 +385,9 @@ export async function registerForCluster(
   selectedEventIds: string[],
   walkIn?: boolean,
   /** Review-screen edits (CCF-147) — these overwrite the stored profile. */
-  touchedFields?: TouchedFields
+  touchedFields?: TouchedFields,
+  /** Proof of record ownership; without it `touchedFields` is ignored. */
+  grant?: string | null
 ): Promise<ActionResult<{ results: ClusterEventRegistrationResult[] }>> {
   const parsed = registrantSchema.safeParse(raw)
   if (!parsed.success) {
@@ -457,17 +460,27 @@ export async function registerForCluster(
     }
 
     // ── Resolve the person ONCE ─────────────────────────────────────────────
+    // Overwriting a stored profile field takes proof that the caller owns the
+    // record — see `grantedTouchedFields` in ./actions.ts. The grant is scoped to
+    // the record rather than an event precisely so it survives this fan-out.
     let person: PersonRef
     let profile: ResolvedProfile
+    let touched: TouchedFields = null
     if (confirmedMemberId) {
-      const stored = await resolveConfirmedMember(confirmedMemberId, parsed.data, touchedFields)
+      touched = verifyIdentityGrant(grant, { recordId: confirmedMemberId, recordType: "member" })
+        ? touchedFields
+        : null
+      const stored = await resolveConfirmedMember(confirmedMemberId, parsed.data, touched)
       person = { memberId: confirmedMemberId }
       profile = {
         gender: (parsed.data.gender ?? stored.gender) as Gender | null,
         birthYear: parsed.data.birthYear ?? stored.birthYear,
       }
     } else if (confirmedGuestId) {
-      const stored = await resolveConfirmedGuest(confirmedGuestId, parsed.data, touchedFields)
+      touched = verifyIdentityGrant(grant, { recordId: confirmedGuestId, recordType: "guest" })
+        ? touchedFields
+        : null
+      const stored = await resolveConfirmedGuest(confirmedGuestId, parsed.data, touched)
       person = { guestId: confirmedGuestId }
       profile = {
         gender: (parsed.data.gender ?? stored.gender) as Gender | null,
@@ -549,6 +562,7 @@ export async function registerForCluster(
           clusterId: cluster.id,
           walkIn: walkInForEvent,
           existingRegistrantId: existingRegistrationId,
+          touchedFields: touched,
         })
         results.push({
           eventId,

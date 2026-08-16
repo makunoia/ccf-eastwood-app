@@ -103,9 +103,6 @@ describe("check-in DGroup prompt — members", () => {
 
     const prompt = await lookupPrompt(event.id)
     expect(prompt?.person).toEqual({ memberId: member.id })
-    // Members have no self-reported group field, so "I'm already in one" is
-    // guest-only — `Member.smallGroupId` is membership an admin owns.
-    expect(prompt?.canClaimGroup).toBe(false)
   })
 
   it("stays quiet for a member who already has a DGroup", async () => {
@@ -224,6 +221,108 @@ describe("check-in DGroup prompt — members", () => {
     const prompt = await lookupPrompt(event.id)
     expect(prompt?.person).toEqual({ memberId: member.id })
   })
+
+  it("stays quiet for a member who named another CCF satellite", async () => {
+    const event = await seedEvent()
+    const member = await seedMember({ upwardSatellite: "CCF Cebu" })
+    await db.eventRegistrant.create({ data: { eventId: event.id, memberId: member.id } })
+
+    // The member-side twin of a guest's `claimedSatellite`: they have already
+    // said they're in a DGroup, there is just no local group to link. Asking
+    // again at the kiosk would be asking a question they answered.
+    expect(await lookupPrompt(event.id)).toBeNull()
+  })
+})
+
+/**
+ * "I'm already in one" for a member — the branch that was guest-only because a
+ * member had nowhere to put the answer. It now goes where the member portal puts
+ * the same answer, and the rule it must not break is that a self-report at an
+ * unauthenticated kiosk never becomes membership.
+ */
+describe("check-in claim — members", () => {
+  it("turns a member's claim into a Pending request, not a placement", async () => {
+    const event = await seedEvent()
+    const member = await seedMember()
+    const group = await seedGroup()
+    await db.eventRegistrant.create({ data: { eventId: event.id, memberId: member.id } })
+
+    const res = await saveCheckinClaimedGroup(event.id, { memberId: member.id }, group.id)
+    expect(res.success).toBe(true)
+
+    const request = await db.smallGroupMemberRequest.findFirstOrThrow({
+      where: { memberId: member.id },
+    })
+    expect(request.smallGroupId).toBe(group.id)
+    expect(request.status).toBe("Pending")
+
+    const after = await db.member.findUniqueOrThrow({ where: { id: member.id } })
+    expect(after.smallGroupId).toBeNull()
+  })
+
+  it("reports success when the answer is already on file", async () => {
+    const event = await seedEvent()
+    const group = await seedGroup()
+    const member = await seedMember()
+    await db.eventRegistrant.create({ data: { eventId: event.id, memberId: member.id } })
+    await db.smallGroupMemberRequest.create({
+      data: { memberId: member.id, smallGroupId: group.id, status: "Pending" },
+    })
+
+    // Tapping through a second time must not tell someone at a kiosk that their
+    // correct answer failed — and must not stack a duplicate row either.
+    const res = await saveCheckinClaimedGroup(event.id, { memberId: member.id }, group.id)
+    expect(res.success).toBe(true)
+    expect(await db.smallGroupMemberRequest.count({ where: { memberId: member.id } })).toBe(1)
+  })
+
+  it("refuses a member who is not attending this event", async () => {
+    const event = await seedEvent()
+    const member = await seedMember()
+    const group = await seedGroup()
+    // No registrant row and no volunteer row: event attendance is the only thing
+    // scoping these public writes.
+
+    const res = await saveCheckinClaimedGroup(event.id, { memberId: member.id }, group.id)
+    expect(res.success).toBe(false)
+    expect(await db.smallGroupMemberRequest.count()).toBe(0)
+  })
+
+  /**
+   * `searchMembersForLeaderLookup` doesn't filter `ledGroups` by status, so a
+   * retired group really is offered at the kiosk. Both record types have to
+   * refuse it the same way — the member branch used to report success while
+   * `recordMemberGroupClaim` quietly declined (a Pending request against a dead
+   * group has nobody to confirm it), and the guest branch stored the claim.
+   */
+  describe("an inactive DGroup", () => {
+    it("is refused for a member rather than silently dropped", async () => {
+      const event = await seedEvent()
+      const member = await seedMember()
+      const group = await seedGroup()
+      await db.smallGroup.update({ where: { id: group.id }, data: { status: "Inactive" } })
+      await db.eventRegistrant.create({ data: { eventId: event.id, memberId: member.id } })
+
+      const res = await saveCheckinClaimedGroup(event.id, { memberId: member.id }, group.id)
+      expect(res.success).toBe(false)
+      expect(await db.smallGroupMemberRequest.count({ where: { memberId: member.id } })).toBe(0)
+    })
+
+    it("is refused for a guest too, so both answers land the same way", async () => {
+      const event = await seedEvent()
+      const guest = await db.guest.create({
+        data: { firstName: "Maria", lastName: "Santos", phone: PHONE, language: [] },
+      })
+      const group = await seedGroup()
+      await db.smallGroup.update({ where: { id: group.id }, data: { status: "Inactive" } })
+      await db.eventRegistrant.create({ data: { eventId: event.id, guestId: guest.id } })
+
+      const res = await saveCheckinClaimedGroup(event.id, { guestId: guest.id }, group.id)
+      expect(res.success).toBe(false)
+      const after = await db.guest.findUniqueOrThrow({ where: { id: guest.id } })
+      expect(after.claimedSmallGroupId).toBeNull()
+    })
+  })
 })
 
 describe("check-in DGroup prompt — guest behavior is unchanged", () => {
@@ -236,12 +335,11 @@ describe("check-in DGroup prompt — guest behavior is unchanged", () => {
     return { event, guest }
   }
 
-  it("asks a guest who has claimed nothing, and offers the claim branch", async () => {
+  it("asks a guest who has claimed nothing", async () => {
     const { event, guest } = await seedGuestRegistrant()
 
     const prompt = await lookupPrompt(event.id)
     expect(prompt?.person).toEqual({ guestId: guest.id })
-    expect(prompt?.canClaimGroup).toBe(true)
   })
 
   it("stays quiet for a guest who claimed a group", async () => {
@@ -354,7 +452,7 @@ describe("check-in DGroup writes work with no session", () => {
     )
     expect(profileRes.success).toBe(true)
 
-    const claimRes = await saveCheckinClaimedGroup(event.id, guest.id, group.id)
+    const claimRes = await saveCheckinClaimedGroup(event.id, { guestId: guest.id }, group.id)
     expect(claimRes.success).toBe(true)
 
     const saved = await db.guest.findUnique({ where: { id: guest.id } })
@@ -400,7 +498,7 @@ describe("check-in DGroup writes work with no session", () => {
     // these public writes, so an arbitrary id must be rejected.
     expect((await saveCheckinMatchingProfile(event.id, { memberId: member.id }, { workCity: "X" })).success).toBe(false)
     expect((await recordSmallGroupInterestAtCheckin(event.id, { guestId: other.id })).success).toBe(false)
-    expect((await saveCheckinClaimedGroup(event.id, other.id, "whatever")).success).toBe(false)
+    expect((await saveCheckinClaimedGroup(event.id, { guestId: other.id }, "whatever")).success).toBe(false)
 
     const saved = await db.member.findUnique({ where: { id: member.id } })
     expect(saved?.workCity).toBeNull()

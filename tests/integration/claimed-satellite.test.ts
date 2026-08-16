@@ -316,7 +316,7 @@ describe("claimed-group actions vs. claimed satellite", () => {
     })
     await db.eventRegistrant.create({ data: { eventId: event.id, guestId: guest.id } })
 
-    const res = await saveCheckinClaimedGroup(event.id, guest.id, group.id)
+    const res = await saveCheckinClaimedGroup(event.id, { guestId: guest.id }, group.id)
     expect(res.success).toBe(true)
 
     const updated = await db.guest.findUniqueOrThrow({ where: { id: guest.id } })

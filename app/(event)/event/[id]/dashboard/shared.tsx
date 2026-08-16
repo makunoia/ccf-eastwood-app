@@ -83,8 +83,15 @@ export type EventDashboardData = {
     title: string
     startDate: string
     endDate: string
+    /** Sessions assigned to the series, held or upcoming. */
     sessionCount: number
+    /** Sessions already held — the denominator behind `averageAttendance`. */
+    heldSessionCount: number
+    /** Participant check-ins only, like every other attendance figure here. */
     totalAttendance: number
+    volunteerAttendance: number
+    /** Participants + volunteers; reconciles with the Sessions page. */
+    totalCheckIns: number
     averageAttendance: number
   }>
   confirmedVolunteerCount: number

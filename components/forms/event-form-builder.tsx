@@ -59,6 +59,7 @@ import {
   defaultSuccessMessage,
   formLayoutFor,
   hasIdentityField,
+  isRequirableSection,
   requiredKeyFor,
   type EventFormConfigData,
   type FormFieldKey,
@@ -595,6 +596,33 @@ function SectionItem({
         <p className="text-xs text-muted-foreground">{section.description}</p>
         {section.note && <p className="text-xs text-muted-foreground">{section.note}</p>}
         {warning && <PrerequisiteNote message={warning} />}
+
+        {/* Dietary and Payment add a step but no fields, so there is no field row
+            to hang a Required switch off — the section *is* the question. Shown
+            only while the section is on, matching how a field's Required switch
+            hides when the field is off: there is nothing to require yet. */}
+        {sectionKey !== null && isRequirableSection(sectionKey) && enabled && (
+          <div className="flex items-center gap-3 border-t pt-3">
+            <label
+              htmlFor={`${context}-${sectionKey}-required`}
+              className="min-w-0 flex-1 cursor-pointer text-sm"
+            >
+              Require an answer
+              <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">
+                Nobody can submit the form without answering this.
+              </span>
+            </label>
+            <div className={cn(REQUIRED_COL, "flex shrink-0 justify-end")}>
+              <Switch
+                id={`${context}-${sectionKey}-required`}
+                checked={config[requiredKeyFor(sectionKey)]}
+                onCheckedChange={() => onToggle(context, requiredKeyFor(sectionKey))}
+                disabled={pending === `${context}:${requiredKeyFor(sectionKey)}`}
+                aria-label={`${section.title} is required on ${FORM_CONTEXT_META[context].label}`}
+              />
+            </div>
+          </div>
+        )}
 
         {total > 0 && (
           <div className="space-y-3">

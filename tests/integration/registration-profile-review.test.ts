@@ -9,10 +9,18 @@
  *
  * The "no touched fields" cases are the regression guard: with the argument
  * omitted, every path has to behave exactly as it did before this change.
+ *
+ * Overwriting additionally requires an **identity grant** — proof that the caller
+ * owns the record it is writing to. `confirmedMemberId` used to be trusted on
+ * sight, which made `touchedFields` a way for any crafted POST to rewrite any
+ * profile. These tests mint the grant directly so they keep asserting the merge
+ * rule rather than the credential; `describe("without proof of ownership")` at the
+ * bottom is where the credential itself is asserted.
  */
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest"
 import { db } from "@/lib/db"
 import { createRegistrant } from "@/app/(dashboard)/events/actions"
+import { signIdentityGrant } from "@/lib/security/identity-grant"
 
 vi.mock("@/lib/auth", () => ({
   auth: vi.fn(async () => ({ user: { id: "u1", role: "SuperAdmin" } })),
@@ -85,6 +93,10 @@ async function seedGuest(overrides: Record<string, unknown> = {}) {
   })
 }
 
+/** What the step-0 reveal hands back once the second factor checks out. */
+const asOwner = (recordId: string, recordType: "member" | "guest" = "member") =>
+  signIdentityGrant({ recordId, recordType })
+
 /** The payload the review screen submits — the profile as prefilled, plus edits. */
 const reviewedPayload = (overrides: Record<string, unknown> = {}) => ({
   firstName: "Maria",
@@ -120,7 +132,8 @@ describe("submitting a reviewed profile", () => {
       reviewedPayload({ workCity: "Makati" }),
       member.id,
       null, undefined, null, undefined,
-      ["workCity"]
+      ["workCity"],
+      asOwner(member.id)
     )
 
     expect(result.success).toBe(true)
@@ -156,7 +169,7 @@ describe("submitting a reviewed profile", () => {
 
     await createRegistrant(
       event.id, reviewedPayload({ workCity: "" }), member.id,
-      null, undefined, null, undefined, ["workCity"]
+      null, undefined, null, undefined, ["workCity"], asOwner(member.id)
     )
 
     const after = await db.member.findUniqueOrThrow({ where: { id: member.id } })
@@ -171,7 +184,8 @@ describe("submitting a reviewed profile", () => {
       event.id,
       { firstName: "Juan", lastName: "dela Cruz", mobileNumber: MOBILE, workCity: "Makati" },
       null, guest.id, undefined, null, undefined,
-      ["workCity"]
+      ["workCity"],
+      asOwner(guest.id, "guest")
     )
 
     const after = await db.guest.findUniqueOrThrow({ where: { id: guest.id } })
@@ -194,7 +208,8 @@ describe("editing a contact identifier", () => {
       reviewedPayload({ mobileNumber: "+63 918 222 3333" }),
       member.id,
       null, undefined, null, undefined,
-      ["mobileNumber"]
+      ["mobileNumber"],
+      asOwner(member.id)
     )
 
     expect(result.success).toBe(false)
@@ -219,7 +234,8 @@ describe("editing a contact identifier", () => {
       reviewedPayload({ email: "ana@example.com" }),
       member.id,
       null, undefined, null, undefined,
-      ["email"]
+      ["email"],
+      asOwner(member.id)
     )
 
     expect(result.success).toBe(false)
@@ -236,7 +252,8 @@ describe("editing a contact identifier", () => {
       reviewedPayload({ mobileNumber: "0919 555 6666" }),
       member.id,
       null, undefined, null, undefined,
-      ["mobileNumber"]
+      ["mobileNumber"],
+      asOwner(member.id)
     )
 
     expect(result.success).toBe(true)
@@ -252,7 +269,7 @@ describe("editing a contact identifier", () => {
 
     const result = await createRegistrant(
       event.id, reviewedPayload({ mobileNumber: MOBILE }), member.id,
-      null, undefined, null, undefined, ["mobileNumber"]
+      null, undefined, null, undefined, ["mobileNumber"], asOwner(member.id)
     )
 
     // Cross-model duplicates are an ordinary situation the lookup resolves by
@@ -274,7 +291,8 @@ describe("schedule edits", () => {
       reviewedPayload({ scheduleDayOfWeek: 6, scheduleTimeStart: "09:00", scheduleTimeEnd: "11:00" }),
       member.id,
       null, undefined, null, undefined,
-      ["scheduleDayOfWeek"]
+      ["scheduleDayOfWeek"],
+      asOwner(member.id)
     )
 
     const slots = await db.schedulePreference.findMany({ where: { memberId: member.id } })
@@ -311,7 +329,8 @@ describe("schedule edits", () => {
       event.id,
       { firstName: "Juan", lastName: "dela Cruz", mobileNumber: MOBILE, scheduleDayOfWeek: 6 },
       null, guest.id, undefined, null, undefined,
-      ["scheduleDayOfWeek"]
+      ["scheduleDayOfWeek"],
+      asOwner(guest.id, "guest")
     )
 
     const after = await db.guest.findUniqueOrThrow({ where: { id: guest.id } })
@@ -334,6 +353,112 @@ describe("schedule edits", () => {
 
     const after = await db.guest.findUniqueOrThrow({ where: { id: guest.id } })
     expect(after.scheduleDayOfWeek).toBe(0)
+  })
+})
+
+/**
+ * The trust boundary under `touchedFields`.
+ *
+ * `confirmedMemberId` arrives from a public client. Before the grant it was taken
+ * on faith, so naming any member id and claiming every field was "touched" was
+ * enough to rewrite that person's email, phone, birthday or availability from an
+ * unauthenticated request. Overwriting now costs proof; filling a blank never did
+ * and still doesn't, so an honest registration by someone the form couldn't prove
+ * still lands its answers.
+ */
+describe("without proof of ownership", () => {
+  it("ignores touchedFields, falling back to fill-if-empty", async () => {
+    const event = await seedEvent()
+    const member = await seedMember()
+
+    const result = await createRegistrant(
+      event.id,
+      reviewedPayload({ workCity: "Makati" }),
+      member.id,
+      null, undefined, null, undefined,
+      ["workCity"]
+      // ← no grant
+    )
+
+    expect(result.success).toBe(true)
+    const after = await db.member.findUniqueOrThrow({ where: { id: member.id } })
+    expect(after.workCity).toBe("Ortigas")
+  })
+
+  it("still fills a blank field, so an unproven registration is not broken", async () => {
+    const event = await seedEvent()
+    const member = await seedMember({ workCity: null })
+
+    await createRegistrant(
+      event.id,
+      reviewedPayload({ workCity: "Makati" }),
+      member.id,
+      null, undefined, null, undefined,
+      ["workCity"]
+    )
+
+    const after = await db.member.findUniqueOrThrow({ where: { id: member.id } })
+    expect(after.workCity).toBe("Makati")
+  })
+
+  it("refuses a grant that belongs to somebody else's record", async () => {
+    const event = await seedEvent()
+    const member = await seedMember()
+    const other = await seedMember({
+      firstName: "Ana", lastName: "Reyes",
+      email: "ana@example.com", phone: "+63 918 222 3333",
+    })
+
+    // Proving you own your own profile buys nothing against anyone else's.
+    await createRegistrant(
+      event.id,
+      reviewedPayload({ workCity: "Makati" }),
+      member.id,
+      null, undefined, null, undefined,
+      ["workCity"],
+      asOwner(other.id)
+    )
+
+    const after = await db.member.findUniqueOrThrow({ where: { id: member.id } })
+    expect(after.workCity).toBe("Ortigas")
+  })
+
+  it("refuses an expired grant", async () => {
+    const event = await seedEvent()
+    const member = await seedMember()
+
+    const stale = signIdentityGrant(
+      { recordId: member.id, recordType: "member" },
+      Date.now() - 60 * 60 * 1000
+    )
+
+    await createRegistrant(
+      event.id,
+      reviewedPayload({ workCity: "Makati" }),
+      member.id,
+      null, undefined, null, undefined,
+      ["workCity"],
+      stale
+    )
+
+    const after = await db.member.findUniqueOrThrow({ where: { id: member.id } })
+    expect(after.workCity).toBe("Ortigas")
+  })
+
+  it("refuses a member's grant presented on the guest path", async () => {
+    const event = await seedEvent()
+    const guest = await seedGuest()
+
+    await createRegistrant(
+      event.id,
+      { firstName: "Juan", lastName: "dela Cruz", mobileNumber: MOBILE, workCity: "Makati" },
+      null, guest.id, undefined, null, undefined,
+      ["workCity"],
+      asOwner(guest.id, "member")
+    )
+
+    const after = await db.guest.findUniqueOrThrow({ where: { id: guest.id } })
+    expect(after.workCity).toBe("Ortigas")
   })
 })
 

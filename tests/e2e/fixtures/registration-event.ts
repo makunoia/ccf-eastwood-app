@@ -46,6 +46,17 @@ type Fixtures = {
   dgroupEvent: SeededEvent
   /** An existing member for the CCF-147 shortened flow. */
   returningMember: SeededMember
+  /**
+   * `returningMember`, already holding a registration for `dgroupEvent` — the
+   * person the step-0 screen exists for.
+   */
+  alreadyRegistered: SeededMember
+  /**
+   * The same, on an event that has since started *requiring* Life Stage — the
+   * admin-changed-the-form case, where being already registered is a detour
+   * rather than a dead end.
+   */
+  nowRequiresLifeStage: SeededMember
 }
 
 async function withDb<T>(fn: (client: Client) => Promise<T>): Promise<T> {
@@ -125,6 +136,58 @@ export const test = base.extend<Fixtures>({
 
     await withDb((client) => client.query(`DELETE FROM "Member" WHERE "id" = $1`, [id]))
   },
+
+  /**
+   * Depends on both parents so the registration can point at each. Its own teardown
+   * removes the row rather than leaning on the Event cascade: Playwright tears down
+   * dependent fixtures first, but the *order* the two parents unwind in isn't
+   * guaranteed, and a registrant outliving its member would fail the next run.
+   */
+  alreadyRegistered: async ({ dgroupEvent, returningMember }, provide) => {
+    const id = `e2e-r-${randomUUID()}`
+    await withDb((client) =>
+      client.query(
+        `INSERT INTO "EventRegistrant" ("id", "eventId", "memberId", "updatedAt")
+         VALUES ($1, $2, $3, NOW())`,
+        [id, dgroupEvent.id, returningMember.id]
+      )
+    )
+
+    await provide(returningMember)
+
+    await withDb((client) =>
+      client.query(`DELETE FROM "EventRegistrant" WHERE "id" = $1`, [id])
+    )
+  },
+
+  /**
+   * The scenario the amend flow was built for: the person registered, and *then*
+   * the admin made a field required. `dgroupEvent`'s config enables several fields
+   * but requires none, so this flips exactly one — Life Stage, which sits in
+   * Personal Information rather than under the DGroup step, so it is asked of
+   * everyone rather than only of someone seeking a group.
+   */
+  nowRequiresLifeStage: async ({ dgroupEvent, alreadyRegistered }, provide) => {
+    await withDb((client) =>
+      client.query(
+        `UPDATE "EventFormConfig"
+            SET "fieldLifeStage" = true, "fieldLifeStageRequired" = true
+          WHERE "eventId" = $1 AND "context" = 'Register'`,
+        [dgroupEvent.id]
+      )
+    )
+
+    await provide(alreadyRegistered)
+
+    await withDb((client) =>
+      client.query(
+        `UPDATE "EventFormConfig"
+            SET "fieldLifeStage" = false, "fieldLifeStageRequired" = false
+          WHERE "eventId" = $1 AND "context" = 'Register'`,
+        [dgroupEvent.id]
+      )
+    )
+  },
 })
 
 /**
@@ -139,7 +202,7 @@ export async function startFormManually(
   registerPath: string
 ) {
   await page.goto(registerPath)
-  await page.getByRole("button", { name: "Skip — fill in the form manually" }).click()
+  await page.getByRole("button", { name: "Start a new registration" }).click()
 }
 
 export { expect } from "@playwright/test"

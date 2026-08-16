@@ -89,6 +89,8 @@ export type OccurrenceSeriesGroup = {
   startDate: string
   endDate: string
   sessionCount: number
+  /** Sessions already held — what the average divides by. */
+  heldSessionCount: number
   totalAttendance: number
   averageAttendance: number
   occurrences: OccurrenceRow[]
@@ -813,6 +815,11 @@ export function SessionsClient({
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Badge variant="secondary">{formatSessionCount(series.sessionCount)}</Badge>
+                  {/* The average divides by held sessions only, so a series with
+                      sessions still to come has to say which count it used. */}
+                  {series.heldSessionCount < series.sessionCount && (
+                    <Badge variant="secondary">{series.heldSessionCount} held</Badge>
+                  )}
                   <Badge variant="secondary">{series.totalAttendance} total attendance</Badge>
                   <Badge variant="secondary">
                     {formatAverageAttendance(series.averageAttendance)}

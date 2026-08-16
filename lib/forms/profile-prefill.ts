@@ -10,6 +10,7 @@ import {
   FORM_FIELD_META,
   type EventFormConfigData,
   type FormFieldKey,
+  type RequirableKey,
 } from "@/lib/forms/context-config"
 import { askedFieldsFor, missingRequiredFields } from "@/lib/forms/registration-payload"
 import {
@@ -145,7 +146,7 @@ export function fieldsStillNeeded(
   config: EventFormConfigData,
   context: FormContext,
   mergedAnswers: Record<string, unknown>
-): FormFieldKey[] {
+): RequirableKey[] {
   return missingRequiredFields(
     config,
     mergedAnswers,

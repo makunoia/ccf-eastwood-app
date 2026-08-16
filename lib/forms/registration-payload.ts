@@ -2,12 +2,17 @@ import type { FormContext } from "@/app/generated/prisma/client"
 import {
   FORM_FIELD_KEYS,
   FORM_FIELD_META,
+  FORM_SECTION_META,
+  REQUIRABLE_KEYS,
   fieldsForContext,
+  formLayoutFor,
+  isRequirableSection,
   parentSectionFor,
   requiredKeyFor,
   type EventFormConfigData,
   type FormFieldKey,
   type FormToggleKey,
+  type RequirableKey,
 } from "./context-config"
 
 /**
@@ -178,7 +183,14 @@ const REQUIRED_FIELD_PAYLOAD = {
   fieldLanguage: ["language"],
   fieldSchedule: ["scheduleDayOfWeek"],
   fieldMeetingPreference: ["meetingPreference"],
-} as const satisfies Record<FormFieldKey, readonly string[]>
+  // The two requirable sections. Each owns exactly one answer, which is what
+  // makes "required" mean something for them — see `REQUIRABLE_SECTION_KEYS`.
+  // `dietaryOther` is deliberately absent: it's the free-text tail of the Other
+  // option, not a second answer, and demanding it would make every non-Other
+  // choice fail.
+  sectionDietary: ["dietaryPreference"],
+  sectionPayment: ["paymentReference"],
+} as const satisfies Record<RequirableKey, readonly string[]>
 
 /**
  * Whether a payload value counts as given.
@@ -205,13 +217,13 @@ function isAnswered(value: unknown): boolean {
 export function missingRequiredFields(
   config: EventFormConfigData,
   payload: Record<string, unknown>,
-  only?: readonly FormFieldKey[]
-): FormFieldKey[] {
-  const candidates = only ?? FORM_FIELD_KEYS
-  return candidates.filter((field) => {
-    if (!config[field]) return false
-    if (!config[requiredKeyFor(field)]) return false
-    return !REQUIRED_FIELD_PAYLOAD[field].every((key) => isAnswered(payload[key]))
+  only?: readonly RequirableKey[]
+): RequirableKey[] {
+  const candidates = only ?? REQUIRABLE_KEYS
+  return candidates.filter((key) => {
+    if (!config[key]) return false
+    if (!config[requiredKeyFor(key)]) return false
+    return !REQUIRED_FIELD_PAYLOAD[key].every((k) => isAnswered(payload[k]))
   })
 }
 
@@ -226,24 +238,35 @@ export function missingRequiredFields(
  *
  * Derived from `parentSectionFor` rather than a second list of which fields hang
  * off the DGroup step, so the layout stays the only place that knows.
+ *
+ * The requirable sections join the list unconditionally where the context has
+ * them: they are steps in their own right rather than questions nested under
+ * someone's answer, so nothing can hide one the way "I'm already in a group"
+ * hides the matching fields.
  */
 export function askedFieldsFor(
   context: FormContext,
   payload: Record<string, unknown>
-): FormFieldKey[] {
-  return fieldsForContext(context).filter((field) => {
+): RequirableKey[] {
+  const fields = fieldsForContext(context).filter((field) => {
     if (parentSectionFor(field, context) !== "sectionSmallGroup") return true
     return payload.wantsSmallGroup === true
   })
+  const sections = formLayoutFor(context)
+    .map((s) => s.key)
+    .filter(isRequirableSection)
+  return [...fields, ...sections]
 }
 
-/** Field keys as the labels the builder shows, for use in an error message. */
-export function requiredFieldLabels(fields: readonly FormFieldKey[]): string {
-  return fields.map((f) => FORM_FIELD_META[f].label).join(", ")
+/** Toggle keys as the labels the builder shows, for use in an error message. */
+export function requiredFieldLabels(keys: readonly RequirableKey[]): string {
+  return keys
+    .map((k) => (isRequirableSection(k) ? FORM_SECTION_META[k] : FORM_FIELD_META[k]).label)
+    .join(", ")
 }
 
 /** The user-facing error for {@link missingRequiredFields}, in the builder's own labels. */
-export function requiredFieldsMessage(fields: readonly FormFieldKey[]): string {
+export function requiredFieldsMessage(fields: readonly RequirableKey[]): string {
   if (fields.length === 1) return `${requiredFieldLabels(fields)} is required.`
   return `These are required: ${requiredFieldLabels(fields)}.`
 }

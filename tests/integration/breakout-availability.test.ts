@@ -72,18 +72,53 @@ describe("fetchBreakoutAvailability — the walk-in facilitator gate", () => {
 
   it("offers the group once its facilitator has checked in", async () => {
     const { event, committee, role } = await seedEvent()
-    const { member, volunteer } = await seedFacilitator(event.id, committee.id, role.id, "Ben")
+    const { volunteer } = await seedFacilitator(event.id, committee.id, role.id, "Ben")
     await db.breakoutGroup.create({
       data: { name: "Table 2", eventId: event.id, facilitatorId: volunteer.id },
     })
-    await db.eventRegistrant.create({
-      data: { eventId: event.id, memberId: member.id, attendedAt: new Date() },
+    // How a OneTime check-in of a facilitator is actually recorded: on their
+    // Volunteer row, not on an EventRegistrant.
+    await db.volunteer.update({
+      where: { id: volunteer.id },
+      data: { attendedAt: new Date() },
     })
 
     const { candidates, totalGroups } = await fetchBreakoutAvailability(event.id, null, true)
 
     expect(candidates.map((c) => c.name)).toEqual(["Table 2"])
     expect(totalGroups).toBe(1)
+  })
+
+  it("offers the group when a co-facilitator is the one who checked in", async () => {
+    const { event, committee, role } = await seedEvent()
+    const { volunteer } = await seedFacilitator(event.id, committee.id, role.id, "Gia")
+    await db.breakoutGroup.create({
+      data: { name: "Co-led", eventId: event.id, coFacilitatorId: volunteer.id },
+    })
+    await db.volunteer.update({
+      where: { id: volunteer.id },
+      data: { attendedAt: new Date() },
+    })
+
+    const { candidates } = await fetchBreakoutAvailability(event.id, null, true)
+    expect(candidates.map((c) => c.name)).toEqual(["Co-led"])
+  })
+
+  it("still honours a facilitator checked in on the registrant lane", async () => {
+    // Not how the kiosk writes it, but a facilitator hand-added as a registrant
+    // (or imported that way) used to be the *only* thing that passed this gate.
+    // Widening it to volunteers must not drop that.
+    const { event, committee, role } = await seedEvent()
+    const { member, volunteer } = await seedFacilitator(event.id, committee.id, role.id, "Hal")
+    await db.breakoutGroup.create({
+      data: { name: "Table 2b", eventId: event.id, facilitatorId: volunteer.id },
+    })
+    await db.eventRegistrant.create({
+      data: { eventId: event.id, memberId: member.id, attendedAt: new Date() },
+    })
+
+    const { candidates } = await fetchBreakoutAvailability(event.id, null, true)
+    expect(candidates.map((c) => c.name)).toEqual(["Table 2b"])
   })
 
   it("never offers a group with no facilitator assigned — regression for the invisible-forever case", async () => {
@@ -101,7 +136,7 @@ describe("fetchBreakoutAvailability — the walk-in facilitator gate", () => {
 
   it("gates on the specific occurrence for session-based check-in", async () => {
     const { event, committee, role } = await seedEvent()
-    const { member, volunteer } = await seedFacilitator(event.id, committee.id, role.id, "Cy")
+    const { volunteer } = await seedFacilitator(event.id, committee.id, role.id, "Cy")
     await db.breakoutGroup.create({
       data: { name: "Table 3", eventId: event.id, facilitatorId: volunteer.id },
     })
@@ -113,11 +148,10 @@ describe("fetchBreakoutAvailability — the walk-in facilitator gate", () => {
         data: { eventId: event.id, date: new Date("2026-01-02T00:00:00Z") },
       }),
     ])
-    const registrant = await db.eventRegistrant.create({
-      data: { eventId: event.id, memberId: member.id },
-    })
+    // A session check-in of a facilitator: an OccurrenceAttendee carrying
+    // `volunteerId`, with `registrantId` null.
     await db.occurrenceAttendee.create({
-      data: { occurrenceId: today.id, registrantId: registrant.id },
+      data: { occurrenceId: today.id, volunteerId: volunteer.id },
     })
 
     // Present today…
@@ -128,6 +162,41 @@ describe("fetchBreakoutAvailability — the walk-in facilitator gate", () => {
     const absent = await fetchBreakoutAvailability(event.id, tomorrow.id, true)
     expect(absent.candidates).toHaveLength(0)
     expect(absent.totalGroups).toBe(1)
+  })
+
+  it("does not count a facilitator's check-in at another event", async () => {
+    // `Volunteer.attendedAt` is scoped by the volunteer's own eventId, so the
+    // OneTime branch needs no explicit event filter — pinned so it stays true.
+    const { event, committee, role } = await seedEvent()
+    const { member } = await seedFacilitator(event.id, committee.id, role.id, "Ivy")
+    const other = await db.event.create({
+      data: { name: "Other", type: "OneTime", startDate: new Date(), endDate: new Date() },
+    })
+    const otherCommittee = await db.volunteerCommittee.create({
+      data: { name: "Faci", eventId: other.id },
+    })
+    const otherRole = await db.committeeRole.create({
+      data: { name: "Faci", committeeId: otherCommittee.id },
+    })
+    // Same person, checked in at a different event on that event's volunteer row.
+    await db.volunteer.create({
+      data: {
+        memberId: member.id,
+        eventId: other.id,
+        committeeId: otherCommittee.id,
+        preferredRoleId: otherRole.id,
+        status: "Confirmed",
+        attendedAt: new Date(),
+      },
+    })
+    const here = await db.volunteer.findFirst({ where: { memberId: member.id, eventId: event.id } })
+    await db.breakoutGroup.create({
+      data: { name: "Table 4", eventId: event.id, facilitatorId: here!.id },
+    })
+
+    const { candidates, totalGroups } = await fetchBreakoutAvailability(event.id, null, true)
+    expect(candidates).toHaveLength(0)
+    expect(totalGroups).toBe(1)
   })
 
   it("offers every group on the public form, where nobody has checked in yet", async () => {
@@ -145,6 +214,35 @@ describe("fetchBreakoutAvailability — the walk-in facilitator gate", () => {
     // The ungated read stays identical to the long-standing helper.
     const legacy = await fetchBreakoutCandidates(event.id, null, false)
     expect(legacy.map((c) => c.id).sort()).toEqual(candidates.map((c) => c.id).sort())
+  })
+
+  it("opens a group on a named stand-in alone, with no check-in of their own", async () => {
+    // The deliberate exception (CCF-76), pinned here as well as in that ticket's
+    // file because from this side it looks exactly like the bug above: every
+    // other branch of the gate demands attendance and this one doesn't. Naming a
+    // stand-in is explicit admin intent about a group they are looking at, and
+    // intent outranks the gate — the same rule that honours a staff member's
+    // explicit breakout pick at the door while refusing an automatic one.
+    const { event, committee, role } = await seedEvent()
+    const { volunteer } = await seedFacilitator(event.id, committee.id, role.id, "Jo")
+    const { volunteer: sub } = await seedFacilitator(event.id, committee.id, role.id, "Kit")
+    const group = await db.breakoutGroup.create({
+      data: { name: "Table 5", eventId: event.id, facilitatorId: volunteer.id },
+    })
+    const session = await db.eventOccurrence.create({
+      data: { eventId: event.id, date: new Date("2026-03-01T00:00:00Z") },
+    })
+    await db.occurrenceSubFacilitator.create({
+      data: {
+        occurrenceId: session.id,
+        breakoutGroupId: group.id,
+        role: "Facilitator",
+        substituteId: sub.id,
+      },
+    })
+
+    const { candidates } = await fetchBreakoutAvailability(event.id, session.id, true)
+    expect(candidates.map((c) => c.name)).toEqual(["Table 5"])
   })
 
   it("reports zero groups for an event with no breakouts, so no notice is shown", async () => {

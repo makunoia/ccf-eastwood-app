@@ -537,6 +537,10 @@ export function TableLifeStage({ event }: WidgetProps) {
 
 export function ChartSeriesComparison({ event }: WidgetProps) {
   const summaries = event.seriesSummaries
+  // Upcoming sessions sit in a series from the day it is planned. They are out of
+  // the average, so the card says so rather than leaving the bars looking short.
+  const hasUpcoming = summaries.some((series) => series.heldSessionCount < series.sessionCount)
+  const hasVolunteers = summaries.some((series) => series.volunteerAttendance > 0)
 
   return (
     <Card>
@@ -544,7 +548,7 @@ export function ChartSeriesComparison({ event }: WidgetProps) {
         <CardTitle>Series Comparison</CardTitle>
         <CardDescription>
           {summaries.length > 0
-            ? "Average attendance per recurring session group"
+            ? "Average participant check-ins per session held"
             : "No recurring series created yet"}
         </CardDescription>
       </CardHeader>
@@ -580,14 +584,23 @@ export function ChartSeriesComparison({ event }: WidgetProps) {
                         | EventDashboardData["seriesSummaries"][number]
                         | undefined
                       if (!item) return label
+                      const heldLabel =
+                        item.heldSessionCount === item.sessionCount
+                          ? `${item.sessionCount} ${item.sessionCount === 1 ? "session" : "sessions"}`
+                          : `${item.heldSessionCount} of ${item.sessionCount} sessions held`
                       return (
                         <div className="flex flex-col gap-0.5">
                           <span>{label}</span>
                           <span className="font-normal text-muted-foreground">
-                            {formatRange(item.startDate, item.endDate)} · {item.sessionCount}{" "}
-                            {item.sessionCount === 1 ? "session" : "sessions"} ·{" "}
-                            {item.totalAttendance.toLocaleString()} total
+                            {formatRange(item.startDate, item.endDate)} · {heldLabel} ·{" "}
+                            {item.totalAttendance.toLocaleString()} participant check-ins
                           </span>
+                          {item.volunteerAttendance > 0 && (
+                            <span className="font-normal text-muted-foreground">
+                              + {item.volunteerAttendance.toLocaleString()} volunteer check-ins ={" "}
+                              {item.totalCheckIns.toLocaleString()} total
+                            </span>
+                          )}
                         </div>
                       )
                     }}
@@ -607,6 +620,21 @@ export function ChartSeriesComparison({ event }: WidgetProps) {
           </ChartContainer>
         )}
       </CardContent>
+      {(hasUpcoming || hasVolunteers) && (
+        <CardFooter>
+          <p className="text-xs text-muted-foreground">
+            {hasUpcoming && "Sessions that haven’t happened yet are left out of the average. "}
+            {hasVolunteers && (
+              <>
+                Volunteer check-ins are counted separately — the Sessions page totals include them.{" "}
+                <Link href={`/event/${event.id}/sessions`} className={drillLinkClass}>
+                  View sessions →
+                </Link>
+              </>
+            )}
+          </p>
+        </CardFooter>
+      )}
     </Card>
   )
 }

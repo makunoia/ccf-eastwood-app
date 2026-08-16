@@ -58,8 +58,6 @@ type LeaderResult = { id: string; firstName: string; lastName: string; ledGroups
 
 type SmallGroupPrompt = {
   person: CheckinPerson
-  /** Members have no self-reported group field — see the server-side type. */
-  canClaimGroup: boolean
   existingProfile: {
     lifeStageId: string | null
     gender: "Male" | "Female" | null
@@ -130,8 +128,6 @@ type Props = {
   walkInOpen?: boolean
 }
 
-const AUTO_RESET_MS = 4000
-
 export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges = [], defaultLifeStageId = "", autoAssignBreakout = false, config, walkInOpen = false }: Props) {
   const cfg = React.useMemo<EventFormConfigData>(
     () => ({ ...BARE_EVENT_FORM_CONFIG, ...config }),
@@ -156,7 +152,6 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
   })
   const inputRef = React.useRef<HTMLInputElement>(null)
   const phoneLookupRef = React.useRef<HTMLDivElement>(null)
-  const resetTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const nameDebounceTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 
   function focusLookupInput() {
@@ -166,7 +161,6 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
   }
 
   function reset() {
-    if (resetTimer.current) clearTimeout(resetTimer.current)
     if (nameDebounceTimer.current) clearTimeout(nameDebounceTimer.current)
     setStep("lookup")
     setQuery("")
@@ -183,15 +177,9 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
     focusLookupInput()
   }
 
-  function scheduleReset() {
-    if (resetTimer.current) clearTimeout(resetTimer.current)
-    resetTimer.current = setTimeout(reset, AUTO_RESET_MS)
-  }
-
   React.useEffect(() => {
     inputRef.current?.focus()
     return () => {
-      if (resetTimer.current) clearTimeout(resetTimer.current)
       if (nameDebounceTimer.current) clearTimeout(nameDebounceTimer.current)
     }
   }, [])
@@ -227,7 +215,6 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
     })
     if (c.alreadyCheckedIn) {
       setStep("already-in")
-      scheduleReset()
     } else {
       setStep("confirm")
     }
@@ -336,16 +323,13 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
     // otherwise check-in stays a pure attendance surface.
     if (cfg.sectionSmallGroup && matched.smallGroupPrompt !== null) {
       setStep("sg-prompt")
-      // No auto-reset here — the timer only starts when we reach "success"
     } else {
       setStep("success")
-      scheduleReset()
     }
   }
 
   function goToSuccess() {
     setStep("success")
-    scheduleReset()
   }
 
   /** Leaves the household step for whatever would have come next. */
@@ -584,7 +568,6 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
                   })
                   if (c.alreadyCheckedIn) {
                     setStep("already-in")
-                    scheduleReset()
                   } else {
                     setStep("confirm")
                   }
@@ -861,17 +844,16 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
             >
               Yes, I&apos;m interested
             </Button>
-            {/* Only guests can name the group they're already in — a member's
-                membership is admin-owned, so there'd be nowhere to put it. */}
-            {prompt.canClaimGroup && (
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={() => setStep("sg-leader-search")}
-              >
-                I&apos;m already in one
-              </Button>
-            )}
+            {/* Offered to guests and members alike. A member's membership is
+                still admin-owned — naming a leader raises a request for that
+                leader to confirm, it does not place them. */}
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => setStep("sg-leader-search")}
+            >
+              I&apos;m already in one
+            </Button>
             <Button
               variant="ghost"
               className="w-full"
@@ -905,11 +887,11 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
 
   // ── Small Group Leader Search ─────────────────────────────────────────────
   const claimingPerson = matched?.smallGroupPrompt?.person
-  if (step === "sg-leader-search" && claimingPerson && "guestId" in claimingPerson) {
+  if (step === "sg-leader-search" && claimingPerson) {
     return (
       <LeaderSearch
         eventId={eventId}
-        guestId={claimingPerson.guestId}
+        person={claimingPerson}
         onSave={goToSuccess}
         onBack={() => setStep("sg-prompt")}
       />
@@ -940,7 +922,9 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
               </p>
             </div>
           )}
-          <p className="text-xs text-muted-foreground">Returning to start in a moment…</p>
+          <Button className="w-full" onClick={reset}>
+            Check in someone else
+          </Button>
         </div>
       </div>
     )
@@ -1310,12 +1294,17 @@ function ProfileForm({ eventId, person, existingProfile, lifeStages, ageRanges, 
 
 type LeaderSearchProps = {
   eventId: string
-  guestId: string
+  /**
+   * Guest or member — the action stores the answer differently for each (a
+   * guest's `claimedSmallGroupId`, a member's Pending join request), but the
+   * search and the picking are identical, so the screen doesn't care which.
+   */
+  person: CheckinPerson
   onSave: () => void
   onBack: () => void
 }
 
-function LeaderSearch({ eventId, guestId, onSave, onBack }: LeaderSearchProps) {
+function LeaderSearch({ eventId, person, onSave, onBack }: LeaderSearchProps) {
   const [query, setQuery] = React.useState("")
   const [results, setResults] = React.useState<LeaderResult[]>([])
   const [searching, setSearching] = React.useState(false)
@@ -1343,7 +1332,7 @@ function LeaderSearch({ eventId, guestId, onSave, onBack }: LeaderSearchProps) {
   async function handleSelectGroup(smallGroupId: string) {
     setSaving(true)
     setError(null)
-    const res = await saveCheckinClaimedGroup(eventId, guestId, smallGroupId)
+    const res = await saveCheckinClaimedGroup(eventId, person, smallGroupId)
     setSaving(false)
     if (res.success) {
       onSave()

@@ -111,7 +111,7 @@ const mobileInput = () => screen.getByLabelText(/Mobile/) as HTMLInputElement
 
 /** Past the CCF-147 mobile-number gate and onto the form itself. */
 function skipGate() {
-  fireEvent.click(screen.getByRole("button", { name: /Skip — fill in the form manually/ }))
+  fireEvent.click(screen.getByRole("button", { name: "Start a new registration" }))
 }
 
 /** Gate → Personal → Events → submit, for a person nobody has on file. */

@@ -88,8 +88,12 @@ async function seedCheckedInFacilitator(eventId: string, groupId: string, name: 
     where: { id: groupId },
     data: { facilitatorId: volunteer.id },
   })
-  await db.eventRegistrant.create({
-    data: { eventId, memberId: member.id, attendedAt: new Date() },
+  // On their Volunteer row, which is where the kiosk records a facilitator's
+  // arrival. Seeding an attended EventRegistrant instead reads plausibly and is
+  // a lane no real facilitator uses.
+  await db.volunteer.update({
+    where: { id: volunteer.id },
+    data: { attendedAt: new Date() },
   })
   return volunteer
 }
@@ -244,6 +248,82 @@ describe("assignBreakoutForRegistrant", () => {
       })
     ).toBeNull()
     expect(await db.breakoutGroupMember.count()).toBe(0)
+  })
+
+  // ─── The door's facilitator gate reaches automatic placement too ─────────────
+
+  it("auto-assign at the door refuses a group whose facilitator is not in the room", async () => {
+    const event = await seedEvent("Retreat", { autoAssign: true })
+    await seedGroup(event.id, "Unstaffed")
+    const { registrant } = await seedRegistrant(event.id)
+
+    // Enabled, has room, matches on every soft criterion — and nobody there to
+    // receive the walk-in. `atDoor` is what makes automatic placement care.
+    const assigned = await assignBreakoutForRegistrant(
+      registrant.id,
+      event.id,
+      null,
+      { gender: null, birthYear: null },
+      false,
+      { occurrenceId: null }
+    )
+
+    expect(assigned).toBeNull()
+    expect(await db.breakoutGroupMember.count()).toBe(0)
+  })
+
+  it("auto-assign at the door picks the staffed group over the unstaffed one", async () => {
+    const event = await seedEvent("Retreat", { autoAssign: true })
+    await seedGroup(event.id, "Unstaffed")
+    const staffed = await seedGroup(event.id, "Staffed")
+    await seedCheckedInFacilitator(event.id, staffed.id, "Rey")
+    const { registrant } = await seedRegistrant(event.id)
+
+    const assigned = await assignBreakoutForRegistrant(
+      registrant.id,
+      event.id,
+      null,
+      { gender: null, birthYear: null },
+      false,
+      { occurrenceId: null }
+    )
+
+    expect(assigned?.id).toBe(staffed.id)
+  })
+
+  it("auto-assign away from the door still uses every enabled group", async () => {
+    // Pre-registration is not the door: nobody has checked in yet by definition,
+    // so gating there would place nobody at all.
+    const event = await seedEvent("Retreat", { autoAssign: true })
+    const group = await seedGroup(event.id, "Unstaffed")
+    const { registrant } = await seedRegistrant(event.id)
+
+    const assigned = await assignBreakoutForRegistrant(registrant.id, event.id, null, {
+      gender: null,
+      birthYear: null,
+    })
+
+    expect(assigned?.id).toBe(group.id)
+  })
+
+  it("an explicit pick at the door is still honoured — staff intent outranks the gate", async () => {
+    // The gate decides what is *offered*. A pick that arrives anyway was chosen
+    // by someone, and the same reasoning that lets staff exceed a member limit
+    // applies: only automatic placement has no intent to honour.
+    const event = await seedEvent("Retreat", { autoAssign: true })
+    const group = await seedGroup(event.id, "Unstaffed")
+    const { registrant } = await seedRegistrant(event.id)
+
+    const assigned = await assignBreakoutForRegistrant(
+      registrant.id,
+      event.id,
+      group.id,
+      { gender: null, birthYear: null },
+      false,
+      { occurrenceId: null }
+    )
+
+    expect(assigned?.id).toBe(group.id)
   })
 })
 

@@ -11,6 +11,9 @@ import { deriveEffectiveGenderFocus } from "@/lib/breakouts/gender-focus"
  * The facilitator gate: a breakout group is only offered at a staffed surface
  * (the walk-in kiosk) once someone who runs it is actually in the room.
  *
+ * "In the room" means checked in on the volunteer lane — see below; reading only
+ * the registrant lane is what made this gate hold every group back forever.
+ *
  * Note that every branch requires a facilitator relation to exist, so a group
  * with `facilitatorId` and `coFacilitatorId` both null matches nothing and is
  * never offered. That is deliberate — an unstaffed group has nobody to hand the
@@ -21,28 +24,55 @@ function facilitatorGate(
   eventId: string,
   occurrenceId: string | null
 ): Prisma.BreakoutGroupWhereInput {
-  const checkedInHere = (occurrenceId: string) => ({
-    member: {
-      eventRegistrations: {
-        some: { eventId, occurrenceAttendances: { some: { occurrenceId } } },
-      },
-    },
-  })
-  const checkedInAtAll = {
-    member: { eventRegistrations: { some: { eventId, attendedAt: { not: null } } } },
+  // A facilitator is checked in *as a volunteer*. The kiosk resolves them to
+  // their `Volunteer` row and records attendance there — an `OccurrenceAttendee`
+  // carrying `volunteerId` for session events, `Volunteer.attendedAt` for
+  // OneTime (`recordCheckinAttendance`). This is the lane that actually fills.
+  const volunteerCheckedIn: Prisma.VolunteerWhereInput =
+    occurrenceId !== null
+      ? { occurrenceAttendances: { some: { occurrenceId } } }
+      : { attendedAt: { not: null } }
+
+  // The registrant lane, kept as a fallback rather than replaced. It is the only
+  // thing this gate used to look at, which is the bug: `OccurrenceAttendee`
+  // holds *either* a registrantId or a volunteerId and a volunteer is never a
+  // registrant, so a facilitator who checked in normally never matched and every
+  // group stayed held back forever. Events where a facilitator happens to also
+  // hold an EventRegistrant row (hand-added, or imported) still pass.
+  const registrantCheckedIn: Prisma.VolunteerWhereInput =
+    occurrenceId !== null
+      ? {
+          member: {
+            eventRegistrations: {
+              some: { eventId, occurrenceAttendances: { some: { occurrenceId } } },
+            },
+          },
+        }
+      : { member: { eventRegistrations: { some: { eventId, attendedAt: { not: null } } } } }
+
+  const checkedIn: Prisma.VolunteerWhereInput = {
+    OR: [volunteerCheckedIn, registrantCheckedIn],
   }
 
-  if (occurrenceId !== null) {
-    return {
-      OR: [
-        { facilitator: checkedInHere(occurrenceId) },
-        { coFacilitator: checkedInHere(occurrenceId) },
-        { subFacilitators: { some: { occurrenceId } } },
-      ],
-    }
-  }
   return {
-    OR: [{ facilitator: checkedInAtAll }, { coFacilitator: checkedInAtAll }],
+    OR: [
+      { facilitator: checkedIn },
+      { coFacilitator: checkedIn },
+      // Per-occurrence stand-ins only — there is no such thing for OneTime.
+      //
+      // Deliberately the one branch that does NOT require a check-in, and it
+      // reads like a bug until you see why (CCF-76 pins it): naming a stand-in
+      // is a manual act an admin takes on the session screen, in the moment,
+      // about a group they can see. That is explicit human intent, and intent
+      // outranks the gate here for the same reason it does at the door — where
+      // an explicit breakout pick is honoured while automatic placement is not.
+      // The gate exists to stop people being sent somewhere *nobody chose*.
+      //
+      // Don't "fix" this to require attendance without changing CCF-76 first.
+      ...(occurrenceId !== null
+        ? [{ subFacilitators: { some: { occurrenceId } } } as const]
+        : []),
+    ],
   }
 }
 
