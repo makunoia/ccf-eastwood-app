@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { ClusterKind } from "@/app/generated/prisma/client"
+import { MINISTRY_REQUIRED_ERROR } from "@/lib/clusters/copy"
 
 // Event Cluster (CCF-132) — validation for the cluster CRUD actions and the
 // shared-form submission.
@@ -22,8 +23,9 @@ export const eventClusterSettingsSchema = z.object({
   description: optionalTrimmed.optional(),
   date: z.coerce.date().nullable().optional(),
   // What shape of day this is (CCF-148). `Collab` changes three things at once —
-  // no event picker on the shared form, one pooled volunteer roster, and
-  // cluster-owned breakout tables — which is why it is one enum rather than three
+  // the shared form asks which ministry you're part of rather than which events
+  // you're attending, the day's volunteers read as one roster, and the breakout
+  // tables belong to the cluster — which is why it is one enum rather than three
   // switches an admin could combine into a shape no real event has.
   kind: z.nativeEnum(ClusterKind).optional(),
   isOpen: z.boolean().optional(),
@@ -138,30 +140,48 @@ export function validateClusterEventLink(
  * The two cluster kinds answer this differently, and the difference is the whole
  * point of the kind:
  *
- *  - **Parallel** — the person chose, so validate their choice.
- *  - **Collab** — there is nothing to choose. It is one event as far as anyone
- *    attending is concerned, so the answer is always every member event, and the
- *    submitted selection is **ignored rather than trusted**. The client omits the
- *    picker, but a payload is a claim: honouring a partial selection here would
- *    let a crafted request register for one ministry's half of a joint event,
- *    which is not a state the product has.
+ *  - **Parallel** — several events sharing a day. The person ticks the ones they
+ *    are attending, so any number from one upwards is valid.
+ *  - **Collab** — two ministries co-running one event. The person is asked which
+ *    *ministry* they are part of, not which events they are attending, and that
+ *    answer names exactly one event: theirs. So exactly one, never more.
  *
- * Kept beside `validateClusterEventSelection` rather than folded into it — that
- * function is about validating a choice, and half the point here is that no
- * choice was made.
+ * The collab form sends an event id rather than a ministry id — the ministry is
+ * only the label on the choice. That keeps everything downstream of here unaware
+ * that ministries exist, and it means this function needs no ministry lookup to
+ * validate the answer.
+ *
+ * Kept beside `validateClusterEventSelection` rather than folded into it: that
+ * function answers "are these events a legal set", which is still the right
+ * question for a Parallel day and the wrong one for a Collab.
  */
 export function resolveClusterEventSelection(
   kind: ClusterKind,
   selectedEventIds: string[],
   clusterEventIds: string[]
 ): { ok: true; eventIds: string[] } | { ok: false; error: string } {
-  if (kind === ClusterKind.Collab) {
-    if (clusterEventIds.length === 0) {
-      return { ok: false, error: "This event day has no events yet." }
-    }
-    return { ok: true, eventIds: [...clusterEventIds] }
+  if (kind !== ClusterKind.Collab) {
+    return validateClusterEventSelection(selectedEventIds, clusterEventIds)
   }
-  return validateClusterEventSelection(selectedEventIds, clusterEventIds)
+
+  if (clusterEventIds.length === 0) {
+    return { ok: false, error: "This event day has no events yet." }
+  }
+
+  const unique = [...new Set(selectedEventIds)]
+  if (unique.length === 0) {
+    return { ok: false, error: MINISTRY_REQUIRED_ERROR }
+  }
+  // More than one can only come from a hand-built payload — the form is a
+  // single-choice control — and there is no sensible way to honour it: two
+  // ministries is not an answer to "which ministry are you part of".
+  if (unique.length > 1) {
+    return { ok: false, error: MINISTRY_REQUIRED_ERROR }
+  }
+  if (!clusterEventIds.includes(unique[0])) {
+    return { ok: false, error: "That group isn't part of this event day." }
+  }
+  return { ok: true, eventIds: unique }
 }
 
 /** ≥1 unique selected event, all of which must belong to the cluster. */

@@ -64,6 +64,7 @@ import {
 import { ClusterKind, type Gender } from "@/app/generated/prisma/client"
 import { requireClusterWrite } from "@/lib/events/require-event-write"
 import { personKeyFor } from "@/lib/clusters/roster"
+import { MINISTRY_REQUIRED_ERROR } from "@/lib/clusters/copy"
 
 type ActionResult<T = void> =
   | { success: true; data: T }
@@ -82,6 +83,71 @@ function revalidateClusterPaths(clusterId: string) {
   revalidatePath(`/cluster/${clusterId}/registrants`)
   revalidatePath(`/cluster/${clusterId}/checkin`)
   revalidatePath(`/cluster/${clusterId}/settings`)
+}
+
+/**
+ * Why this day can't be a collab, in words an admin can act on.
+ *
+ * A collab form asks "which ministry are you part of?", and that question only has
+ * an answer if every member event names exactly one ministry and no two events
+ * name the same one. A church-wide event (`allMinistries`) has no single answer
+ * either — it deliberately means "every ministry, including ones created later".
+ *
+ * Returns an empty array when the day qualifies. Shared because two actions need
+ * the same rule: switching a day to Collab, and adding an event to one that
+ * already is.
+ */
+async function collabMinistryProblems(
+  clusterId: string,
+  extraEventId?: string
+): Promise<string[]> {
+  const links = await db.eventClusterEvent.findMany({
+    where: { clusterId },
+    orderBy: { order: "asc" },
+    select: { eventId: true },
+  })
+  const eventIds = [...new Set([...links.map((l) => l.eventId), ...(extraEventId ? [extraEventId] : [])])]
+  if (eventIds.length === 0) return ["Add at least one event to the day first."]
+
+  const events = await db.event.findMany({
+    where: { id: { in: eventIds } },
+    select: {
+      id: true,
+      name: true,
+      allMinistries: true,
+      ministries: { select: { ministry: { select: { id: true, name: true } } } },
+    },
+  })
+
+  const problems: string[] = []
+  const ministryOwners = new Map<string, { name: string; events: string[] }>()
+
+  for (const event of events) {
+    if (event.allMinistries) {
+      problems.push(`${event.name} is a church-wide event, so it has no single ministry.`)
+      continue
+    }
+    if (event.ministries.length === 0) {
+      problems.push(`${event.name} has no ministry set.`)
+      continue
+    }
+    if (event.ministries.length > 1) {
+      problems.push(`${event.name} has ${event.ministries.length} ministries — a collab event needs exactly one.`)
+      continue
+    }
+    const { id, name } = event.ministries[0].ministry
+    const entry = ministryOwners.get(id) ?? { name, events: [] }
+    entry.events.push(event.name)
+    ministryOwners.set(id, entry)
+  }
+
+  for (const { name, events: sharing } of ministryOwners.values()) {
+    if (sharing.length > 1) {
+      problems.push(`${sharing.join(" and ")} are both under ${name} — registrants couldn't tell them apart.`)
+    }
+  }
+
+  return problems
 }
 
 // ─── Cluster CRUD (Workstream A) ─────────────────────────────────────────────
@@ -156,6 +222,21 @@ export async function updateEventCluster(
       }
     }
 
+    // A collab form's one question is "which ministry are you part of?", so the
+    // day has to be able to answer it before it can become a collab. Checked here
+    // rather than only in the UI: the switch is a plain enum column, and a day
+    // that slipped into Collab misconfigured would put an unanswerable question in
+    // front of every registrant.
+    if (parsed.data.kind === ClusterKind.Collab) {
+      const problems = await collabMinistryProblems(clusterId)
+      if (problems.length > 0) {
+        return {
+          success: false,
+          error: `This day can't be a collab yet. ${problems.join(" ")}`,
+        }
+      }
+    }
+
     // Drop undefined so an omitted field doesn't overwrite a stored value.
     const data = Object.fromEntries(
       Object.entries(parsed.data).filter(([, v]) => v !== undefined)
@@ -196,7 +277,7 @@ export async function addEventToCluster(
     const [cluster, event, occurrence] = await Promise.all([
       db.eventCluster.findUnique({
         where: { id: clusterId },
-        select: { id: true, date: true },
+        select: { id: true, date: true, kind: true },
       }),
       db.event.findUnique({
         where: { id: eventId },
@@ -249,6 +330,19 @@ export async function addEventToCluster(
       session: occurrence,
     })
     if (!linkCheck.ok) return { success: false, error: linkCheck.error }
+
+    // On a collab, a new event has to keep the ministry question answerable —
+    // adding one with no ministry, or one under a ministry already represented,
+    // would break the form for everyone. Checked with the candidate included.
+    if (cluster.kind === ClusterKind.Collab) {
+      const problems = await collabMinistryProblems(clusterId, event.id)
+      if (problems.length > 0) {
+        return {
+          success: false,
+          error: `${event.name} can't join this collab day. ${problems.join(" ")}`,
+        }
+      }
+    }
 
     const last = await db.eventClusterEvent.findFirst({
       where: { clusterId },
@@ -440,29 +534,31 @@ export async function registerForCluster(
     const linkedSessionByEvent = new Map(
       cluster.events.map((ce) => [ce.event.id, ce.occurrenceId])
     )
-    // A Collab day has no event picker — it registers the person to every member
-    // event and ignores whatever selection the payload carried. See
-    // `resolveClusterEventSelection`.
-    const selection = resolveClusterEventSelection(
-      cluster.kind,
-      selectedEventIds,
-      clusterEvents.map((e) => e.id)
-    )
-    if (!selection.ok) return { success: false, error: selection.error }
-
     /**
-     * Breakout placement and the DGroup seeker request are per-PERSON facts, and
-     * `completeEventRegistration` runs per registrant row. On a Collab that is one
-     * row per member event for the same person, so running them per row would seat
-     * them at one of the day's tables per registration and file one seeker request
-     * per registration. Run both on the first event that takes the registration and
-     * skip them thereafter.
+     * Which events this submission registers for.
      *
-     * Only Collab needs this: on a Parallel day the person picked their events and
-     * each is a genuinely separate registration with its own breakout pool.
+     * A Collab day asks which *ministry* the person is part of, and that answer
+     * names exactly one event. An empty selection is normally an error — except on
+     * an amend, where the ministry step isn't shown at all because the person
+     * already has a registration to amend. That case is resolved below, once the
+     * person is known.
      */
-    const oncePerPerson = cluster.kind === ClusterKind.Collab
-    let personSideEffectsDone = false
+    const isCollab = cluster.kind === ClusterKind.Collab
+    const clusterEventIds = clusterEvents.map((e) => e.id)
+    const mayResolveFromExisting = isCollab && selectedEventIds.length === 0
+
+    let targetEventIds: string[]
+    if (mayResolveFromExisting) {
+      targetEventIds = []
+    } else {
+      const selection = resolveClusterEventSelection(
+        cluster.kind,
+        selectedEventIds,
+        clusterEventIds
+      )
+      if (!selection.ok) return { success: false, error: selection.error }
+      targetEventIds = selection.eventIds
+    }
 
     // Enforce the cluster's shared form config server-side — same crafted-POST
     // defense as the per-event form, but against the CLUSTER's config: profile
@@ -516,10 +612,38 @@ export async function registerForCluster(
       }
     }
 
+    // An amend on a collab arrives with no ministry pick, because the step isn't
+    // shown — the person already has a registration and re-asking which ministry
+    // they belong to would be a question about a decision already made. Resolve the
+    // target from that registration instead. Only reachable when the person was
+    // resolved from a record we hold, which is the same proof the amend flow itself
+    // requires (see `verifyIdentityGrant`).
+    if (mayResolveFromExisting) {
+      const existing = await db.eventRegistrant.findMany({
+        where: {
+          eventId: { in: clusterEventIds },
+          ...("memberId" in person
+            ? { memberId: person.memberId }
+            : { guestId: person.guestId }),
+        },
+        select: { eventId: true },
+      })
+      // Cluster display order, the same tie-break `validateClusterEventSelection`
+      // applies — someone registered to both halves is unusual but not impossible,
+      // and picking arbitrarily would amend a different registration each time.
+      const resolved = clusterEventIds.filter((id) =>
+        existing.some((e) => e.eventId === id)
+      )
+      if (resolved.length === 0) {
+        return { success: false, error: MINISTRY_REQUIRED_ERROR }
+      }
+      targetEventIds = resolved.slice(0, 1)
+    }
+
     // ── Fan out per selected event (partial success) ────────────────────────
     const results: ClusterEventRegistrationResult[] = []
     const eventsById = new Map(clusterEvents.map((e) => [e.id, e]))
-    for (const eventId of selection.eventIds) {
+    for (const eventId of targetEventIds) {
       const event = eventsById.get(eventId)!
       try {
         // Per-event windows still apply inside the fan-out (walk-ins exempt).
@@ -574,7 +698,6 @@ export async function registerForCluster(
               ? { occurrenceId: linkedSession }
               : null
 
-        const skipPersonSideEffects = oncePerPerson && personSideEffectsDone
         const completed = await completeEventRegistration({
           eventId,
           person,
@@ -585,10 +708,7 @@ export async function registerForCluster(
           walkIn: walkInForEvent,
           existingRegistrantId: existingRegistrationId,
           touchedFields: touched,
-          skipBreakout: skipPersonSideEffects,
-          skipSeekerRequest: skipPersonSideEffects,
         })
-        if (oncePerPerson) personSideEffectsDone = true
         results.push({
           eventId,
           eventName: event.name,

@@ -8,8 +8,10 @@ import {
   setFacilitator,
 } from "@/app/(dashboard)/events/breakout-actions"
 import {
+  addEventToCluster,
   carryOverBreakoutGroups,
   registerForCluster,
+  updateEventCluster,
 } from "@/app/(dashboard)/events/cluster-actions"
 import { unassignedCandidateWhere } from "@/lib/breakouts/candidate-pool"
 import { resolvePoolScope } from "@/lib/events/pool-scope"
@@ -22,7 +24,7 @@ import { resolvePoolScope } from "@/lib/events/pool-scope"
  */
 
 beforeEach(async () => {
-  await db.$executeRaw`TRUNCATE "EventFormConfig", "EventCluster", "EventClusterEvent", "Event", "EventRegistrant", "BreakoutGroup", "BreakoutGroupMember", "Volunteer", "VolunteerCommittee", "CommitteeRole", "Member", "Guest", "LifeStage", "EventModule", "SmallGroup", "SmallGroupMemberRequest" RESTART IDENTITY CASCADE`
+  await db.$executeRaw`TRUNCATE "EventFormConfig", "Ministry", "EventMinistry", "EventCluster", "EventClusterEvent", "Event", "EventRegistrant", "BreakoutGroup", "BreakoutGroupMember", "Volunteer", "VolunteerCommittee", "CommitteeRole", "Member", "Guest", "LifeStage", "EventModule", "SmallGroup", "SmallGroupMemberRequest" RESTART IDENTITY CASCADE`
 })
 
 afterAll(async () => {
@@ -518,7 +520,7 @@ describe("carryOverBreakoutGroups", () => {
   })
 })
 
-// ─── The fan-out ─────────────────────────────────────────────────────────────
+// ─── Ministry routing ────────────────────────────────────────────────────────
 
 describe("registerForCluster on a Collab day", () => {
   async function openDay(kind: "Parallel" | "Collab") {
@@ -532,12 +534,32 @@ describe("registerForCluster on a Collab day", () => {
       },
       select: { id: true, publicToken: true },
     })
+    const youthMinistry = await db.ministry.create({
+      data: { name: "Youth" },
+      select: { id: true },
+    })
+    const singlesMinistry = await db.ministry.create({
+      data: { name: "Singles" },
+      select: { id: true },
+    })
     const youth = await db.event.create({
-      data: { name: "Youth Night", type: "OneTime", startDate: DAY, endDate: DAY },
+      data: {
+        name: "Youth Night",
+        type: "OneTime",
+        startDate: DAY,
+        endDate: DAY,
+        ministries: { create: [{ ministryId: youthMinistry.id }] },
+      },
       select: { id: true },
     })
     const singles = await db.event.create({
-      data: { name: "Singles Connect", type: "OneTime", startDate: DAY, endDate: DAY },
+      data: {
+        name: "Singles Connect",
+        type: "OneTime",
+        startDate: DAY,
+        endDate: DAY,
+        ministries: { create: [{ ministryId: singlesMinistry.id }] },
+      },
       select: { id: true },
     })
     await db.eventClusterEvent.createMany({
@@ -561,10 +583,31 @@ describe("registerForCluster on a Collab day", () => {
     mobileNumber: "0917 111 2222",
   }
 
-  it("registers the person to every member event without being asked", async () => {
+  it("registers to the one event the chosen ministry names", async () => {
     const day = await openDay("Collab")
 
-    // Note the empty selection: the form never showed a picker.
+    // The form sends the event id behind the ministry the person picked.
+    const result = await registerForCluster(
+      day.publicToken,
+      payload,
+      null,
+      null,
+      undefined,
+      [day.singlesId]
+    )
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.results).toHaveLength(1)
+      expect(result.data.results[0].eventId).toBe(day.singlesId)
+    }
+
+    const rows = await db.eventRegistrant.findMany({ select: { eventId: true } })
+    expect(rows.map((r) => r.eventId)).toEqual([day.singlesId])
+  })
+
+  it("refuses a submission with no ministry chosen", async () => {
+    const day = await openDay("Collab")
+
     const result = await registerForCluster(
       day.publicToken,
       payload,
@@ -573,41 +616,30 @@ describe("registerForCluster on a Collab day", () => {
       undefined,
       []
     )
-    expect(result.success).toBe(true)
-    if (result.success) {
-      expect(result.data.results).toHaveLength(2)
-      expect(result.data.results.every((r) => r.status === "registered")).toBe(true)
-    }
-
-    const rows = await db.eventRegistrant.findMany({ select: { eventId: true } })
-    expect(rows.map((r) => r.eventId).sort()).toEqual(
-      [day.youthId, day.singlesId].sort()
-    )
+    expect(result.success).toBe(false)
+    if (!result.success) expect(result.error).toContain("ministry")
+    expect(await db.eventRegistrant.count()).toBe(0)
   })
 
-  it("ignores a payload naming only one of the day's events", async () => {
+  it("refuses a payload claiming both ministries", async () => {
     const day = await openDay("Collab")
 
-    // A crafted request claiming to register for one ministry's half only.
     const result = await registerForCluster(
       day.publicToken,
       payload,
       null,
       null,
       undefined,
-      [day.youthId]
+      [day.youthId, day.singlesId]
     )
-    expect(result.success).toBe(true)
-
-    const count = await db.eventRegistrant.count()
-    expect(count).toBe(2)
+    expect(result.success).toBe(false)
+    expect(await db.eventRegistrant.count()).toBe(0)
   })
 
-  it("seats the person at ONE table and files ONE seeker request", async () => {
+  it("places them at one table and files one seeker request", async () => {
     const day = await openDay("Collab")
     // `wantsSmallGroup` is stripped by `sanitizeRegistrantPayload` unless the
-    // day's shared form actually collects it — the config is the authority on
-    // what a submission may claim.
+    // day's shared form actually collects it.
     await db.eventFormConfig.create({
       data: { clusterId: day.id, context: "Register", sectionSmallGroup: true },
     })
@@ -628,18 +660,16 @@ describe("registerForCluster on a Collab day", () => {
       null,
       null,
       undefined,
-      []
+      [day.youthId]
     )
     expect(result.success).toBe(true)
 
-    // Two registrations, but breakout placement and the DGroup request are
-    // per-person facts — the fan-out runs each exactly once.
-    expect(await db.eventRegistrant.count()).toBe(2)
+    expect(await db.eventRegistrant.count()).toBe(1)
     expect(await db.breakoutGroupMember.count()).toBe(1)
     expect(await db.smallGroupMemberRequest.count()).toBe(1)
   })
 
-  it("still honours the picker on a Parallel day", async () => {
+  it("still honours the tickboxes on a Parallel day", async () => {
     const day = await openDay("Parallel")
 
     const result = await registerForCluster(
@@ -648,18 +678,15 @@ describe("registerForCluster on a Collab day", () => {
       null,
       null,
       undefined,
-      [day.youthId]
+      [day.youthId, day.singlesId]
     )
     expect(result.success).toBe(true)
-    if (result.success) expect(result.data.results).toHaveLength(1)
-
-    const rows = await db.eventRegistrant.findMany({ select: { eventId: true } })
-    expect(rows.map((r) => r.eventId)).toEqual([day.youthId])
+    if (result.success) expect(result.data.results).toHaveLength(2)
+    expect(await db.eventRegistrant.count()).toBe(2)
   })
 
-  it("registers what it can when one event's window is closed", async () => {
+  it("reports closed when the chosen ministry's event has shut registration", async () => {
     const day = await openDay("Collab")
-    // Singles closed its own registration yesterday.
     await db.event.update({
       where: { id: day.singlesId },
       data: {
@@ -674,14 +701,273 @@ describe("registerForCluster on a Collab day", () => {
       null,
       null,
       undefined,
+      [day.singlesId]
+    )
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.results).toHaveLength(1)
+      expect(result.data.results[0].status).toBe("closed")
+    }
+    expect(await db.eventRegistrant.count()).toBe(0)
+  })
+
+  // ── The reported bug ──
+  //
+  // Amending re-opens an existing registration, and the ministry step isn't part
+  // of that form: the person already answered it when they first registered.
+  // The submission therefore arrives with an empty selection, which must resolve
+  // to the registration being amended rather than erroring — the shipped version
+  // told them to "select an event" on a screen with no event picker on it.
+  it("resolves an empty selection to the registration already held", async () => {
+    const day = await openDay("Collab")
+    const member = await db.member.create({
+      data: {
+        firstName: "Maria",
+        lastName: "Cruz",
+        dateJoined: new Date(),
+        language: [],
+        phone: "+63 917 111 2222",
+      },
+      select: { id: true },
+    })
+    await db.eventRegistrant.create({
+      data: { eventId: day.singlesId, memberId: member.id },
+    })
+
+    const result = await registerForCluster(
+      day.publicToken,
+      payload,
+      member.id,
+      null,
+      undefined,
       []
     )
     expect(result.success).toBe(true)
     if (result.success) {
-      const byEvent = new Map(result.data.results.map((r) => [r.eventId, r.status]))
-      expect(byEvent.get(day.youthId)).toBe("registered")
-      expect(byEvent.get(day.singlesId)).toBe("closed")
+      expect(result.data.results).toHaveLength(1)
+      expect(result.data.results[0].eventId).toBe(day.singlesId)
+      expect(result.data.results[0].status).toBe("already")
     }
+    // Reused, not duplicated.
     expect(await db.eventRegistrant.count()).toBe(1)
+  })
+
+  it("asks for the ministry when there is no registration to fall back on", async () => {
+    const day = await openDay("Collab")
+    const member = await db.member.create({
+      data: { firstName: "New", lastName: "Person", dateJoined: new Date(), language: [] },
+      select: { id: true },
+    })
+
+    const result = await registerForCluster(
+      day.publicToken,
+      payload,
+      member.id,
+      null,
+      undefined,
+      []
+    )
+    expect(result.success).toBe(false)
+    if (!result.success) expect(result.error).toContain("ministry")
+  })
+})
+
+// ─── The collab precondition ─────────────────────────────────────────────────
+//
+// A collab form's only question is "which ministry are you part of?", which has
+// an answer only when every member event names exactly one ministry and no two
+// name the same. The guard lives on the writes rather than only in the UI: `kind`
+// is a plain enum column, and a day that slipped into Collab misconfigured would
+// put an unanswerable question in front of every registrant.
+
+describe("switching a day to Collab", () => {
+  async function dayWith(
+    events: { name: string; ministries?: string[]; allMinistries?: boolean }[]
+  ) {
+    const cluster = await db.eventCluster.create({
+      data: { name: "Day", date: DAY, kind: "Parallel" },
+      select: { id: true },
+    })
+    let order = 0
+    for (const spec of events) {
+      const ministryIds: string[] = []
+      for (const name of spec.ministries ?? []) {
+        const existing = await db.ministry.findUnique({ where: { name } })
+        ministryIds.push(
+          existing?.id ??
+            (await db.ministry.create({ data: { name }, select: { id: true } })).id
+        )
+      }
+      const event = await db.event.create({
+        data: {
+          name: spec.name,
+          type: "OneTime",
+          startDate: DAY,
+          endDate: DAY,
+          allMinistries: spec.allMinistries ?? false,
+          ministries: { create: ministryIds.map((id) => ({ ministryId: id })) },
+        },
+        select: { id: true },
+      })
+      await db.eventClusterEvent.create({
+        data: { clusterId: cluster.id, eventId: event.id, order: order++ },
+      })
+    }
+    return cluster.id
+  }
+
+  async function toCollab(clusterId: string) {
+    return updateEventCluster(clusterId, { kind: "Collab" })
+  }
+
+  it("succeeds when each event names one distinct ministry", async () => {
+    const id = await dayWith([
+      { name: "Youth Night", ministries: ["Youth"] },
+      { name: "Singles Connect", ministries: ["Singles"] },
+    ])
+    const result = await toCollab(id)
+    expect(result.success).toBe(true)
+
+    const after = await db.eventCluster.findUnique({
+      where: { id },
+      select: { kind: true },
+    })
+    expect(after?.kind).toBe("Collab")
+  })
+
+  it("refuses when an event has no ministry", async () => {
+    const id = await dayWith([
+      { name: "Youth Night", ministries: ["Youth"] },
+      { name: "Singles Connect" },
+    ])
+    const result = await toCollab(id)
+    expect(result.success).toBe(false)
+    if (!result.success) expect(result.error).toContain("no ministry set")
+  })
+
+  it("refuses a church-wide event — every ministry is no single answer", async () => {
+    const id = await dayWith([
+      { name: "Youth Night", ministries: ["Youth"] },
+      { name: "All Church", allMinistries: true },
+    ])
+    const result = await toCollab(id)
+    expect(result.success).toBe(false)
+    if (!result.success) expect(result.error).toContain("church-wide")
+  })
+
+  it("refuses an event naming several ministries", async () => {
+    const id = await dayWith([
+      { name: "Youth Night", ministries: ["Youth", "Kids"] },
+      { name: "Singles Connect", ministries: ["Singles"] },
+    ])
+    const result = await toCollab(id)
+    expect(result.success).toBe(false)
+    if (!result.success) expect(result.error).toContain("exactly one")
+  })
+
+  it("refuses two events sharing one ministry — registrants couldn't tell them apart", async () => {
+    const id = await dayWith([
+      { name: "Singles Connect", ministries: ["Singles"] },
+      { name: "Young Pros", ministries: ["Singles"] },
+    ])
+    const result = await toCollab(id)
+    expect(result.success).toBe(false)
+    if (!result.success) expect(result.error).toContain("both under Singles")
+  })
+
+  it("refuses an empty day", async () => {
+    const id = await dayWith([])
+    const result = await toCollab(id)
+    expect(result.success).toBe(false)
+  })
+
+  it("leaves an unrelated settings save alone", async () => {
+    const id = await dayWith([{ name: "Youth Night" }])
+    // No `kind` in the payload, so the guard must not fire on a day that
+    // wouldn't qualify anyway.
+    const result = await updateEventCluster(id, { name: "Renamed" })
+    expect(result.success).toBe(true)
+  })
+})
+
+describe("adding an event to a Collab day", () => {
+  async function collabDay() {
+    const cluster = await db.eventCluster.create({
+      data: { name: "Day", date: DAY, kind: "Collab" },
+      select: { id: true },
+    })
+    const ministry = await db.ministry.create({
+      data: { name: "Youth" },
+      select: { id: true },
+    })
+    const youth = await db.event.create({
+      data: {
+        name: "Youth Night",
+        type: "OneTime",
+        startDate: DAY,
+        endDate: DAY,
+        ministries: { create: [{ ministryId: ministry.id }] },
+      },
+      select: { id: true },
+    })
+    await db.eventClusterEvent.create({
+      data: { clusterId: cluster.id, eventId: youth.id, order: 0 },
+    })
+    return cluster.id
+  }
+
+  async function candidate(name: string, ministryName?: string) {
+    const ministryIds: string[] = []
+    if (ministryName) {
+      const existing = await db.ministry.findUnique({ where: { name: ministryName } })
+      ministryIds.push(
+        existing?.id ??
+          (await db.ministry.create({ data: { name: ministryName }, select: { id: true } })).id
+      )
+    }
+    return db.event.create({
+      data: {
+        name,
+        type: "OneTime",
+        startDate: DAY,
+        endDate: DAY,
+        ministries: { create: ministryIds.map((id) => ({ ministryId: id })) },
+      },
+      select: { id: true },
+    })
+  }
+
+  it("accepts an event under a ministry not yet represented", async () => {
+    const clusterId = await collabDay()
+    const singles = await candidate("Singles Connect", "Singles")
+    const result = await addEventToCluster(clusterId, singles.id)
+    expect(result.success).toBe(true)
+  })
+
+  it("refuses an event with no ministry", async () => {
+    const clusterId = await collabDay()
+    const orphan = await candidate("Mystery Event")
+    const result = await addEventToCluster(clusterId, orphan.id)
+    expect(result.success).toBe(false)
+    if (!result.success) expect(result.error).toContain("no ministry set")
+    expect(await db.eventClusterEvent.count({ where: { clusterId } })).toBe(1)
+  })
+
+  it("refuses an event duplicating a ministry already on the day", async () => {
+    const clusterId = await collabDay()
+    const second = await candidate("Youth Extra", "Youth")
+    const result = await addEventToCluster(clusterId, second.id)
+    expect(result.success).toBe(false)
+    if (!result.success) expect(result.error).toContain("both under Youth")
+  })
+
+  it("lets a Parallel day take an event with no ministry", async () => {
+    const cluster = await db.eventCluster.create({
+      data: { name: "Day", date: DAY, kind: "Parallel" },
+      select: { id: true },
+    })
+    const orphan = await candidate("Mystery Event")
+    const result = await addEventToCluster(cluster.id, orphan.id)
+    expect(result.success).toBe(true)
   })
 })

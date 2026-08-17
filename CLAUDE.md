@@ -195,7 +195,7 @@ Three independent open/close switches: `isOpen` (shared form), `walkInIsOpen` (d
 | | **Parallel** (default) | **Collab** |
 |---|---|---|
 | Shape | Several events sharing a day | Two ministries co-running **one** event |
-| Registration | Events step asks which to attend | **No picker.** Fans out to *every* member event; the server ignores any submitted selection (`resolveClusterEventSelection`) |
+| Registration | Events step asks which to attend (any number) | **Ministry step** asks which ministry the registrant is part of; that answer routes them to **one** event — theirs. The form sends the event id behind the ministry, so nothing downstream knows ministries exist (`resolveClusterEventSelection`) |
 | Success screen | Per-event breakdown | Collapsed to the cluster's name |
 | Volunteers | Per event | **Union** of member events' rosters — rows stay event-owned; any confirmed volunteer can facilitate any of the day's tables |
 | Breakouts | Per event | **Cluster-owned and exclusive.** Empty by default; member events' standing tables are untouched and unused for the day. `carryOverBreakoutGroups` copies a member event's tables in (optionally with rosters) |
@@ -203,7 +203,9 @@ Three independent open/close switches: `isOpen` (shared form), `walkInIsOpen` (d
 
 The asymmetry is deliberate: someone chose to serve under a *ministry*, so volunteers keep that provenance and pool as a union; a breakout table for a collab session belongs to the *session*, so the day owns a fresh set.
 
-Because the fan-out creates one registrant row per member event, breakout placement and the DGroup seeker request run **once per person** — `completeEventRegistration` takes `skipBreakout` / `skipSeekerRequest` and `registerForCluster` passes them after the first successful event.
+**A Collab requires every member event to name exactly one distinct ministry** — no ministry, several, `allMinistries`, or two events sharing one all make "which ministry are you part of?" unanswerable. Enforced on both writes (`updateEventCluster` switching to Collab, `addEventToCluster`) by `collabMinistryProblems`, and mirrored in cluster Settings so the reason shows before Save. The public form falls back to event names if a day slips through, rather than dead-ending a registrant.
+
+**Amending a collab registration doesn't re-ask the ministry** — the step isn't in `sections`, so the submission arrives with an empty selection and `registerForCluster` resolves the target from the registration being amended. The client's submit guard is gated on the cluster step having actually rendered: a form must never block on an answer it did not ask for.
 
 **Not yet supported on cluster-owned tables:** Catch Mech (`CatchMechSession.eventId` is required) and `OccurrenceSubFacilitator` (keyed by an event's occurrence). CSV import of breakout groups is event-only; carry-over is the cluster equivalent.
 

@@ -790,23 +790,8 @@ export async function completeEventRegistration(opts: {
    * protect.
    */
   touchedFields?: TouchedFields
-  /**
-   * Skip breakout placement and the DGroup seeker request for this event.
-   *
-   * Both are per-PERSON facts, and this function runs per registrant row. That
-   * was the same thing until Collab clusters (CCF-148), where the shared form
-   * registers one person to every member event: the loop would seat them at one
-   * of the day's tables per registration and file one seeker request per
-   * registration. The cluster fan-out therefore runs both exactly once and passes
-   * these for every subsequent event.
-   *
-   * Defaulting to false keeps single-event registration — and Parallel clusters,
-   * where the person picks their events — byte-identical.
-   */
-  skipBreakout?: boolean
-  skipSeekerRequest?: boolean
 }): Promise<{ id: string; breakoutGroup: AssignedBreakout }> {
-  const { eventId, person, data, breakoutPick, profile, clusterId, walkIn, allowOverCapacity, existingRegistrantId, touchedFields, skipBreakout, skipSeekerRequest } = opts
+  const { eventId, person, data, breakoutPick, profile, clusterId, walkIn, allowOverCapacity, existingRegistrantId, touchedFields } = opts
 
   let registrantId: string
   if (existingRegistrantId) {
@@ -834,24 +819,22 @@ export async function completeEventRegistration(opts: {
     registrantId = registrant.id
   }
 
-  const breakoutGroup = skipBreakout
-    ? null
-    : await assignBreakoutForRegistrant(
-        registrantId,
-        eventId,
-        breakoutPick,
-        profile,
-        !!allowOverCapacity,
-        // `walkIn` is enough here where it is not enough for `allowOverCapacity`:
-        // this narrows automatic placement to staffed groups, so the worst a forged
-        // flag buys is a stricter pool.
-        walkIn ?? null
-      )
+  const breakoutGroup = await assignBreakoutForRegistrant(
+    registrantId,
+    eventId,
+    breakoutPick,
+    profile,
+    !!allowOverCapacity,
+    // `walkIn` is enough here where it is not enough for `allowOverCapacity`:
+    // this narrows automatic placement to staffed groups, so the worst a forged
+    // flag buys is a stricter pool.
+    walkIn ?? null
+  )
 
   // Someone who asked to join a DGroup becomes a request an admin can actually
   // see (CCF-101). Raised here rather than in each caller so every entry point —
   // single event, cluster fan-out, household — gets it for free.
-  if (data.wantsSmallGroup && !skipSeekerRequest) {
+  if (data.wantsSmallGroup) {
     await createSeekerRequestFromRegistration(person, eventId)
   }
 

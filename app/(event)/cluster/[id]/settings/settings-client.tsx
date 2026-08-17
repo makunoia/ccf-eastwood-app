@@ -50,6 +50,10 @@ type EventRow = {
   startDate: string
   /** The session this cluster day stands for — Recurring links only. */
   occurrenceId: string | null
+  /** The event's single ministry, or null when it has none / several / all. */
+  ministryName?: string | null
+  /** How many ministries the event names. -1 means church-wide (`allMinistries`). */
+  ministryCount?: number
 }
 
 type SessionRow = {
@@ -83,6 +87,39 @@ function sessionLabel(s: SessionRow): string {
   return s.seriesTitle ? `${formatDate(s.date)} · ${s.seriesTitle}` : formatDate(s.date)
 }
 
+/**
+ * Why this day can't be a collab, in the same words the server would use.
+ *
+ * Deliberately a mirror of `collabMinistryProblems` rather than a call to it: the
+ * point is to show the reason *while the admin is choosing*, before a Save that
+ * would only bounce. The server stays the authority — this can go stale, it can't
+ * grant anything.
+ */
+function collabProblems(events: EventRow[]): string[] {
+  if (events.length === 0) return ["Add at least one event to the day first."]
+  const problems: string[] = []
+  const byMinistry = new Map<string, string[]>()
+
+  for (const e of events) {
+    if (e.ministryCount === -1) {
+      problems.push(`${e.name} is a church-wide event, so it has no single ministry.`)
+    } else if (e.ministryCount === 0) {
+      problems.push(`${e.name} has no ministry set.`)
+    } else if ((e.ministryCount ?? 1) > 1) {
+      problems.push(`${e.name} has ${e.ministryCount} ministries — a collab event needs exactly one.`)
+    } else if (e.ministryName) {
+      byMinistry.set(e.ministryName, [...(byMinistry.get(e.ministryName) ?? []), e.name])
+    }
+  }
+
+  for (const [ministry, sharing] of byMinistry) {
+    if (sharing.length > 1) {
+      problems.push(`${sharing.join(" and ")} are both under ${ministry} — registrants couldn't tell them apart.`)
+    }
+  }
+  return problems
+}
+
 export function ClusterSettingsClient({
   cluster,
   events,
@@ -105,6 +142,7 @@ export function ClusterSettingsClient({
   const [description, setDescription] = React.useState(cluster.description ?? "")
   const [date, setDate] = React.useState(toDateInput(cluster.date))
   const [kind, setKind] = React.useState(cluster.kind)
+  const collabIssues = React.useMemo(() => collabProblems(events), [events])
   const [savingDetails, setSavingDetails] = React.useState(false)
 
   // ── Events ──
@@ -125,6 +163,10 @@ export function ClusterSettingsClient({
   async function saveDetails() {
     if (!name.trim()) {
       toast.error("Name is required.")
+      return
+    }
+    if (kind === "Collab" && collabIssues.length > 0) {
+      toast.error(`This day can't be a collab yet. ${collabIssues.join(" ")}`)
       return
     }
     setSavingDetails(true)
@@ -241,13 +283,29 @@ export function ClusterSettingsClient({
                 <SelectItem value="Collab">One collab event</SelectItem>
               </SelectContent>
             </Select>
+            {kind === "Collab" && collabIssues.length > 0 && (
+              <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
+                <p className="font-medium">This day can&apos;t be a collab yet</p>
+                <ul className="mt-1 list-disc space-y-0.5 pl-5 text-muted-foreground">
+                  {collabIssues.map((issue) => (
+                    <li key={issue}>{issue}</li>
+                  ))}
+                </ul>
+                <p className="mt-2 text-muted-foreground">
+                  A collab form asks registrants which ministry they&apos;re part of,
+                  so each event needs exactly one — set it on the event&apos;s own
+                  settings.
+                </p>
+              </div>
+            )}
             <p className="text-sm text-muted-foreground">
               {kind === "Collab" ? (
                 <>
                   Two or more ministries co-running <strong>one</strong> event. People
-                  register once and aren&apos;t asked which event they&apos;re
-                  attending; the day&apos;s volunteers read as one roster; and the
-                  breakout groups belong to the day, set up fresh for the session.
+                  are asked which ministry they&apos;re part of rather than which event
+                  they&apos;re attending, and that routes them to that ministry&apos;s
+                  event. The day&apos;s volunteers read as one roster, and the breakout
+                  groups belong to the day, set up fresh for the session.
                 </>
               ) : (
                 <>

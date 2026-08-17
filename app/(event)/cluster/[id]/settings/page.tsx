@@ -27,7 +27,19 @@ export default async function ClusterSettingsPage({
         orderBy: { order: "asc" },
         select: {
           occurrenceId: true,
-          event: { select: { id: true, name: true, type: true, startDate: true } },
+          event: {
+            select: {
+              id: true,
+              name: true,
+              type: true,
+              startDate: true,
+              // Whether this day could answer a collab form's "which ministry are
+              // you part of?" — surfaced beside the kind selector so the reason is
+              // visible before Save rather than only in a rejection toast.
+              allMinistries: true,
+              ministries: { select: { ministry: { select: { id: true, name: true } } } },
+            },
+          },
         },
       },
     },
@@ -98,6 +110,11 @@ export default async function ClusterSettingsPage({
           type: e.event.type,
           startDate: e.event.startDate.toISOString(),
           occurrenceId: e.occurrenceId,
+          ministryName:
+            !e.event.allMinistries && e.event.ministries.length === 1
+              ? e.event.ministries[0].ministry.name
+              : null,
+          ministryCount: e.event.allMinistries ? -1 : e.event.ministries.length,
         }))}
         candidates={candidates.map((e) => ({
           id: e.id,

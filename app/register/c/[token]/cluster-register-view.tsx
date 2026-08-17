@@ -43,7 +43,19 @@ export async function getCluster(token: string) {
         orderBy: { order: "asc" },
         select: {
           event: {
-            select: { id: true, name: true, type: true, startDate: true, endDate: true },
+            select: {
+              id: true,
+              name: true,
+              type: true,
+              startDate: true,
+              endDate: true,
+              // The collab form's one question is "which ministry are you part of?",
+              // so the label on each choice is the ministry's name. `allMinistries`
+              // means "every ministry", which is no answer at all — treated the same
+              // as none, and the form falls back to the event name.
+              allMinistries: true,
+              ministries: { select: { ministry: { select: { id: true, name: true } } } },
+            },
           },
         },
       },
@@ -159,6 +171,10 @@ export async function ClusterRegisterView({
             id: ce.event.id,
             name: ce.event.name,
             meta: eventMeta(ce.event),
+            ministry:
+              !ce.event.allMinistries && ce.event.ministries.length === 1
+                ? ce.event.ministries[0].ministry
+                : null,
           })),
         }}
         eventName={cluster.name}
