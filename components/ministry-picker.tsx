@@ -3,6 +3,7 @@
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
+import { MinistryAvatar } from "@/components/ministry-avatar"
 
 export type MinistryOption = {
   id: string
@@ -15,34 +16,6 @@ type Props = {
   selectedIds: string[]
   allMinistries: boolean
   onChange: (next: { ministryIds: string[]; allMinistries: boolean }) => void
-}
-
-/** Two initials from the ministry name, for ministries with no logo uploaded. */
-function initialsFor(name: string): string {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((word) => word[0]?.toUpperCase() ?? "")
-    .join("")
-}
-
-function MinistryAvatar({ ministry }: { ministry: MinistryOption }) {
-  if (ministry.logoUrl) {
-    return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={ministry.logoUrl}
-        alt=""
-        className="size-8 shrink-0 rounded-md border bg-muted object-contain p-0.5"
-      />
-    )
-  }
-  return (
-    <div className="flex size-8 shrink-0 items-center justify-center rounded-md border bg-muted text-[10px] font-medium text-foreground/60">
-      {initialsFor(ministry.name)}
-    </div>
-  )
 }
 
 /**

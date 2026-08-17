@@ -54,7 +54,9 @@ export async function getCluster(token: string) {
               // means "every ministry", which is no answer at all — treated the same
               // as none, and the form falls back to the event name.
               allMinistries: true,
-              ministries: { select: { ministry: { select: { id: true, name: true } } } },
+              ministries: {
+                select: { ministry: { select: { id: true, name: true, logoUrl: true } } },
+              },
             },
           },
         },

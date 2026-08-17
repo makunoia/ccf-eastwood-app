@@ -535,7 +535,7 @@ describe("registerForCluster on a Collab day", () => {
       select: { id: true, publicToken: true },
     })
     const youthMinistry = await db.ministry.create({
-      data: { name: "Youth" },
+      data: { name: "Youth", logoUrl: "https://images.ccfeastwood.app/youth.png" },
       select: { id: true },
     })
     const singlesMinistry = await db.ministry.create({

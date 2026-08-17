@@ -91,6 +91,7 @@ import {
 } from "@/lib/breakout-suggestion"
 import { breakoutOccupancy } from "@/lib/breakouts/occupancy"
 import { MINISTRY_REQUIRED_ERROR } from "@/lib/clusters/copy"
+import { MinistryAvatar } from "@/components/ministry-avatar"
 
 const DAY_NAMES = ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"]
 const MEETING_FORMAT_LABEL: Record<"Online" | "Hybrid" | "InPerson", string> = {
@@ -287,7 +288,7 @@ type ClusterConfig = {
     id: string
     name: string
     meta?: string | null
-    ministry?: { id: string; name: string } | null
+    ministry?: { id: string; name: string; logoUrl: string | null } | null
   }[]
 }
 
@@ -2507,8 +2508,10 @@ export function RegistrationForm({
               </p>
               {cluster.events.map((ev) => {
                 const checked = selectedEventIds.includes(ev.id)
-                // The ministry is the label; the event is the value. Nothing past
-                // this point needs to know ministries exist.
+                // The ministry is the whole label — the event name is deliberately
+                // not shown alongside it. Someone at a collab is picking the group
+                // they belong to, and naming the two underlying events beside it
+                // re-exposes the split the day is meant to hide.
                 const label = ev.ministry?.name ?? ev.name
                 return (
                   <button
@@ -2518,28 +2521,26 @@ export function RegistrationForm({
                     aria-checked={checked}
                     onClick={() => selectOnlyEvent(ev.id)}
                     className={cn(
-                      "flex w-full cursor-pointer items-start gap-3 rounded-lg border p-4 text-left transition-colors hover:bg-muted/50",
+                      "flex w-full cursor-pointer items-center gap-3 rounded-lg border p-4 text-left transition-colors hover:bg-muted/50",
                       checked && "border-primary bg-primary/5"
                     )}
                   >
                     <span
                       className={cn(
-                        "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border",
+                        "flex size-4 shrink-0 items-center justify-center rounded-full border",
                         checked ? "border-primary" : "border-input"
                       )}
                       aria-hidden="true"
                     >
                       {checked && <span className="size-2 rounded-full bg-primary" />}
                     </span>
-                    <span className="min-w-0">
-                      <span className="block text-sm font-medium">{label}</span>
-                      {/* When the ministry names the choice, the event name is the
-                          useful sub-line; when it doesn't, the name is already the
-                          label and repeating it would say nothing. */}
-                      {ev.ministry && (
-                        <span className="block text-xs text-muted-foreground">{ev.name}</span>
-                      )}
-                    </span>
+                    {/* Only when a ministry actually names the choice. On the
+                        event-name fallback there is no ministry to show a badge
+                        for, and initials of an event name would be noise. */}
+                    {ev.ministry && (
+                      <MinistryAvatar ministry={ev.ministry} className="size-10" />
+                    )}
+                    <span className="min-w-0 text-sm font-medium">{label}</span>
                   </button>
                 )
               })}
