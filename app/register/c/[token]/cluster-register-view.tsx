@@ -27,6 +27,7 @@ export async function getCluster(token: string) {
     select: {
       id: true,
       name: true,
+      kind: true,
       date: true,
       isOpen: true,
       walkInIsOpen: true,
@@ -152,6 +153,8 @@ export async function ClusterRegisterView({
       <RegistrationForm
         cluster={{
           token,
+          kind: cluster.kind,
+          name: cluster.name,
           events: cluster.events.map((ce) => ({
             id: ce.event.id,
             name: ce.event.name,

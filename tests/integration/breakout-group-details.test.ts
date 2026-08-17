@@ -39,7 +39,7 @@ describe("getBreakoutGroupDetails", () => {
       },
     })
 
-    const res = await getBreakoutGroupDetails(group.id, event.id)
+    const res = await getBreakoutGroupDetails(group.id, { eventId: event.id })
 
     expect(res.success).toBe(true)
     if (!res.success) return
@@ -77,7 +77,7 @@ describe("getBreakoutGroupDetails", () => {
       })
     }
 
-    const res = await getBreakoutGroupDetails(group.id, event.id)
+    const res = await getBreakoutGroupDetails(group.id, { eventId: event.id })
 
     expect(res.success).toBe(true)
     if (!res.success) return
@@ -102,7 +102,7 @@ describe("getBreakoutGroupDetails", () => {
       data: { name: "Table 3", eventId: event.id, facilitatorId: vol.id },
     })
 
-    const res = await getBreakoutGroupDetails(group.id, event.id)
+    const res = await getBreakoutGroupDetails(group.id, { eventId: event.id })
 
     expect(res.success).toBe(true)
     if (!res.success) return
@@ -115,10 +115,10 @@ describe("getBreakoutGroupDetails", () => {
     const eventB = await seedEvent()
     const group = await db.breakoutGroup.create({ data: { name: "A's group", eventId: eventA.id } })
 
-    const wrong = await getBreakoutGroupDetails(group.id, eventB.id)
+    const wrong = await getBreakoutGroupDetails(group.id, { eventId: eventB.id })
     expect(wrong.success).toBe(false)
 
-    const right = await getBreakoutGroupDetails(group.id, eventA.id)
+    const right = await getBreakoutGroupDetails(group.id, { eventId: eventA.id })
     expect(right.success).toBe(true)
   })
 })

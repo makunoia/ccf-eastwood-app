@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { SmallGroupMatchCard } from "@/components/small-group-match-card"
 import { BreakoutGroupDetailSheet } from "@/components/breakout-group-detail-sheet"
+import type { BreakoutSurface } from "@/lib/breakouts/owner"
 import {
   findBreakoutGroupMatches,
   assignRegistrantToBreakout,
@@ -27,16 +28,16 @@ type EventGroup = {
 
 type Props = {
   registrantId: string
-  eventId: string
+  surface: BreakoutSurface
   /** Set when this registrant is a volunteer facilitating a breakout group */
   facilitatedGroup: { id: string; name: string } | null
-  /** All breakout groups in this event (for direct assignment) */
+  /** Every breakout group in play for this registrant's day (for direct assignment) */
   allEventGroups: EventGroup[]
 }
 
 // ─── Breakout section ─────────────────────────────────────────────────────────
 
-export function BreakoutSection({ registrantId, eventId, facilitatedGroup, allEventGroups }: Props) {
+export function BreakoutSection({ registrantId, surface, facilitatedGroup, allEventGroups }: Props) {
   const router = useRouter()
   const [mode, setMode] = React.useState<"auto" | "browse">("auto")
   const [matchState, setMatchState] = React.useState<"idle" | "loading" | "done">("idle")
@@ -63,7 +64,7 @@ export function BreakoutSection({ registrantId, eventId, facilitatedGroup, allEv
 
   async function handleAssign(groupId: string) {
     setAssigningId(groupId)
-    const res = await assignRegistrantToBreakout(groupId, registrantId, eventId)
+    const res = await assignRegistrantToBreakout(groupId, registrantId, surface.owner)
     setAssigningId(null)
     if (res.success) {
       toast.success("Assigned to breakout group")
@@ -77,7 +78,7 @@ export function BreakoutSection({ registrantId, eventId, facilitatedGroup, allEv
 
   async function handleSearch() {
     setMatchState("loading")
-    const res = await findBreakoutGroupMatches(registrantId, eventId)
+    const res = await findBreakoutGroupMatches(registrantId, surface.owner)
     setMatchState("done")
     if (res.success) setMatchResults(res.data)
     else toast.error(res.error)
@@ -206,7 +207,7 @@ export function BreakoutSection({ registrantId, eventId, facilitatedGroup, allEv
 
       <BreakoutGroupDetailSheet
         groupId={selectedGroupId}
-        eventId={eventId}
+        surface={surface}
         open={sheetOpen}
         onOpenChange={setSheetOpen}
       />

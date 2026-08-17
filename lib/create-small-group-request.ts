@@ -1,6 +1,10 @@
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
+import {
+  BREAKOUT_OWNER_NAME_SELECT,
+  breakoutOccasionName,
+} from "@/lib/breakouts/owner"
 
 async function getActorId(): Promise<string | null> {
   const session = await auth()
@@ -13,12 +17,12 @@ async function getActorId(): Promise<string | null> {
 // when the facilitator leads exactly one group (unambiguous).
 async function resolveLinkedSmallGroup(
   breakoutGroupId: string
-): Promise<{ smallGroupId: string; eventName: string } | null> {
+): Promise<{ smallGroupId: string; occasionName: string | null } | null> {
   const bg = await db.breakoutGroup.findUnique({
     where: { id: breakoutGroupId },
     select: {
       linkedSmallGroupId: true,
-      event: { select: { name: true } },
+      ...BREAKOUT_OWNER_NAME_SELECT,
       facilitator: {
         select: { member: { select: { id: true } } },
       },
@@ -26,9 +30,11 @@ async function resolveLinkedSmallGroup(
   })
   if (!bg) return null
 
-  const eventName = bg.event.name
+  // Either the owning event or the owning collab day (CCF-148) — a cluster-owned
+  // group has no event, and this used to be a bare `bg.event.name`.
+  const occasionName = breakoutOccasionName(bg)
 
-  if (bg.linkedSmallGroupId) return { smallGroupId: bg.linkedSmallGroupId, eventName }
+  if (bg.linkedSmallGroupId) return { smallGroupId: bg.linkedSmallGroupId, occasionName }
 
   // Fallback: auto-resolve only when facilitator leads exactly 1 group
   const facilitatorMemberId = bg.facilitator?.member?.id
@@ -39,7 +45,7 @@ async function resolveLinkedSmallGroup(
     select: { id: true },
     take: 2,
   })
-  return groups.length === 1 ? { smallGroupId: groups[0].id, eventName } : null
+  return groups.length === 1 ? { smallGroupId: groups[0].id, occasionName } : null
 }
 
 export async function tryCreateSmallGroupRequestFromBreakout(
@@ -49,7 +55,11 @@ export async function tryCreateSmallGroupRequestFromBreakout(
   try {
     const resolved = await resolveLinkedSmallGroup(breakoutGroupId)
     if (!resolved) return
-    const { smallGroupId, eventName } = resolved
+    const { smallGroupId, occasionName } = resolved
+    // Named separately because the occasion can now be absent: a group whose
+    // owner row was deleted mid-flight has no label, and "null breakout
+    // placement" must never reach an audit log.
+    const via = occasionName ? `${occasionName} ` : ""
 
     const registrant = await db.eventRegistrant.findUnique({
       where: { id: registrantId },
@@ -86,7 +96,7 @@ export async function tryCreateSmallGroupRequestFromBreakout(
             action: "TempAssignmentCreated",
             guestId: registrant.guestId,
             performedByUserId: actorId,
-            description: `${registrant.guest.firstName} ${registrant.guest.lastName} was temporarily assigned to the group via ${eventName} breakout placement (pending leader confirmation)`,
+            description: `${registrant.guest.firstName} ${registrant.guest.lastName} was temporarily assigned to the group via ${via}breakout placement (pending leader confirmation)`,
           },
         }),
       ])
@@ -114,7 +124,7 @@ export async function tryCreateSmallGroupRequestFromBreakout(
             fromGroupId: registrant.member.smallGroupId ?? null,
             toGroupId: smallGroupId,
             performedByUserId: actorId,
-            description: `${registrant.member.firstName} ${registrant.member.lastName} was temporarily assigned for transfer to this group via ${eventName} breakout placement (pending leader confirmation)`,
+            description: `${registrant.member.firstName} ${registrant.member.lastName} was temporarily assigned for transfer to this group via ${via}breakout placement (pending leader confirmation)`,
           },
         }),
       ])
@@ -216,7 +226,7 @@ export async function tryCancelSmallGroupRequestFromBreakout(
       }),
       db.breakoutGroup.findUnique({
         where: { id: breakoutGroupId },
-        select: { event: { select: { name: true } } },
+        select: BREAKOUT_OWNER_NAME_SELECT,
       }),
     ])
     // Only a Catch Mech decline is groupless, and those are never Pending.
@@ -228,7 +238,7 @@ export async function tryCancelSmallGroupRequestFromBreakout(
         ? `${request.member.firstName} ${request.member.lastName}`
         : "Unknown"
 
-    const eventName = bg?.event?.name
+    const occasionName = bg ? breakoutOccasionName(bg) : null
 
     await db.$transaction([
       db.smallGroupMemberRequest.update({
@@ -241,7 +251,7 @@ export async function tryCancelSmallGroupRequestFromBreakout(
           action: "TempAssignmentRejected",
           guestId: request.guestId ?? null,
           memberId: request.memberId ?? null,
-          description: `Temporary assignment for ${personName} was cancelled — removed from ${eventName ? `${eventName} ` : ''}breakout`,
+          description: `Temporary assignment for ${personName} was cancelled — removed from ${occasionName ? `${occasionName} ` : ''}breakout`,
         },
       }),
     ])

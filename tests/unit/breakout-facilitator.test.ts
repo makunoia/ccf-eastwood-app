@@ -80,7 +80,7 @@ describe("setFacilitator", () => {
   it("assigns a facilitator and persists to DB", async () => {
     const { event, vol1, breakoutGroup } = await seedEventWithVolunteers()
 
-    const result = await setFacilitator(breakoutGroup.id, vol1.id, "facilitator", event.id)
+    const result = await setFacilitator(breakoutGroup.id, vol1.id, "facilitator", { eventId: event.id })
 
     expect(result.success).toBe(true)
     const updated = await db.breakoutGroup.findUnique({ where: { id: breakoutGroup.id } })
@@ -91,7 +91,7 @@ describe("setFacilitator", () => {
   it("assigns a co-facilitator and persists to DB", async () => {
     const { event, vol1, breakoutGroup } = await seedEventWithVolunteers()
 
-    const result = await setFacilitator(breakoutGroup.id, vol1.id, "coFacilitator", event.id)
+    const result = await setFacilitator(breakoutGroup.id, vol1.id, "coFacilitator", { eventId: event.id })
 
     expect(result.success).toBe(true)
     const updated = await db.breakoutGroup.findUnique({ where: { id: breakoutGroup.id } })
@@ -102,8 +102,8 @@ describe("setFacilitator", () => {
   it("allows assigning different volunteers as facilitator and co-facilitator", async () => {
     const { event, vol1, vol2, breakoutGroup } = await seedEventWithVolunteers()
 
-    await setFacilitator(breakoutGroup.id, vol1.id, "facilitator", event.id)
-    const result = await setFacilitator(breakoutGroup.id, vol2.id, "coFacilitator", event.id)
+    await setFacilitator(breakoutGroup.id, vol1.id, "facilitator", { eventId: event.id })
+    const result = await setFacilitator(breakoutGroup.id, vol2.id, "coFacilitator", { eventId: event.id })
 
     expect(result.success).toBe(true)
     const updated = await db.breakoutGroup.findUnique({ where: { id: breakoutGroup.id } })
@@ -114,8 +114,8 @@ describe("setFacilitator", () => {
   it("rejects assigning the same volunteer as both facilitator and co-facilitator", async () => {
     const { event, vol1, breakoutGroup } = await seedEventWithVolunteers()
 
-    await setFacilitator(breakoutGroup.id, vol1.id, "facilitator", event.id)
-    const result = await setFacilitator(breakoutGroup.id, vol1.id, "coFacilitator", event.id)
+    await setFacilitator(breakoutGroup.id, vol1.id, "facilitator", { eventId: event.id })
+    const result = await setFacilitator(breakoutGroup.id, vol1.id, "coFacilitator", { eventId: event.id })
 
     expect(result.success).toBe(false)
     if (!result.success) expect(result.error).toMatch(/different/i)
@@ -126,7 +126,7 @@ describe("setFacilitator", () => {
   it("returns error when volunteer does not belong to the event", async () => {
     const { event, breakoutGroup } = await seedEventWithVolunteers()
 
-    const result = await setFacilitator(breakoutGroup.id, "nonexistent-volunteer-id", "coFacilitator", event.id)
+    const result = await setFacilitator(breakoutGroup.id, "nonexistent-volunteer-id", "coFacilitator", { eventId: event.id })
 
     expect(result.success).toBe(false)
     if (!result.success) expect(result.error).toMatch(/volunteer not found/i)
@@ -135,7 +135,7 @@ describe("setFacilitator", () => {
   it("returns error when breakout group does not exist", async () => {
     const { event, vol1 } = await seedEventWithVolunteers()
 
-    const result = await setFacilitator("nonexistent-group-id", vol1.id, "coFacilitator", event.id)
+    const result = await setFacilitator("nonexistent-group-id", vol1.id, "coFacilitator", { eventId: event.id })
 
     expect(result.success).toBe(false)
     if (!result.success) expect(result.error).toBeDefined()
@@ -143,9 +143,9 @@ describe("setFacilitator", () => {
 
   it("clears facilitator when null is passed", async () => {
     const { event, vol1, breakoutGroup } = await seedEventWithVolunteers()
-    await setFacilitator(breakoutGroup.id, vol1.id, "facilitator", event.id)
+    await setFacilitator(breakoutGroup.id, vol1.id, "facilitator", { eventId: event.id })
 
-    const result = await setFacilitator(breakoutGroup.id, null, "facilitator", event.id)
+    const result = await setFacilitator(breakoutGroup.id, null, "facilitator", { eventId: event.id })
 
     expect(result.success).toBe(true)
     const updated = await db.breakoutGroup.findUnique({ where: { id: breakoutGroup.id } })
@@ -154,9 +154,9 @@ describe("setFacilitator", () => {
 
   it("clears co-facilitator when null is passed", async () => {
     const { event, vol1, breakoutGroup } = await seedEventWithVolunteers()
-    await setFacilitator(breakoutGroup.id, vol1.id, "coFacilitator", event.id)
+    await setFacilitator(breakoutGroup.id, vol1.id, "coFacilitator", { eventId: event.id })
 
-    const result = await setFacilitator(breakoutGroup.id, null, "coFacilitator", event.id)
+    const result = await setFacilitator(breakoutGroup.id, null, "coFacilitator", { eventId: event.id })
 
     expect(result.success).toBe(true)
     const updated = await db.breakoutGroup.findUnique({ where: { id: breakoutGroup.id } })
@@ -170,7 +170,7 @@ describe("regression", () => {
   it("setFacilitator revalidates /event/[id]/breakouts/[groupId], not /events/[id]", async () => {
     const { event, vol1, breakoutGroup } = await seedEventWithVolunteers()
 
-    await setFacilitator(breakoutGroup.id, vol1.id, "coFacilitator", event.id)
+    await setFacilitator(breakoutGroup.id, vol1.id, "coFacilitator", { eventId: event.id })
 
     const calls = vi.mocked(revalidatePath).mock.calls.map(([path]) => path)
     expect(calls.some((p) => p.startsWith("/event/"))).toBe(true)
@@ -182,7 +182,7 @@ describe("regression", () => {
     const { event, vol1, breakoutGroup } = await seedEventWithVolunteers()
 
     // Explicitly pass undefined as the 5th arg — the co-facilitator call from the client does this
-    const result = await setFacilitator(breakoutGroup.id, vol1.id, "coFacilitator", event.id, undefined)
+    const result = await setFacilitator(breakoutGroup.id, vol1.id, "coFacilitator", { eventId: event.id }, undefined)
 
     expect(result.success).toBe(true)
     const updated = await db.breakoutGroup.findUnique({ where: { id: breakoutGroup.id } })
@@ -203,7 +203,7 @@ describe("regression", () => {
     })
 
     // Assigning co-facilitator should not touch linkedSmallGroupId
-    await setFacilitator(breakoutGroup.id, vol1.id, "coFacilitator", event.id, undefined)
+    await setFacilitator(breakoutGroup.id, vol1.id, "coFacilitator", { eventId: event.id }, undefined)
 
     const updated = await db.breakoutGroup.findUnique({ where: { id: breakoutGroup.id } })
     expect(updated?.linkedSmallGroupId).toBe(smallGroup.id)
@@ -262,7 +262,7 @@ describe("setFacilitator leaves the matching profile alone", () => {
     const ownStage = await seedOwnProfile(breakoutGroup.id)
     const sg = await seedLedGroup(member1.id, "Alpha")
 
-    const result = await setFacilitator(breakoutGroup.id, vol1.id, "facilitator", event.id, sg.id)
+    const result = await setFacilitator(breakoutGroup.id, vol1.id, "facilitator", { eventId: event.id }, sg.id)
     expect(result.success).toBe(true)
 
     const updated = await db.breakoutGroup.findUnique({
@@ -284,8 +284,8 @@ describe("setFacilitator leaves the matching profile alone", () => {
     const alpha = await seedLedGroup(member1.id, "Alpha")
     const beta = await seedLedGroup(member2.id, "Beta")
 
-    await setFacilitator(breakoutGroup.id, vol1.id, "facilitator", event.id, alpha.id)
-    await setFacilitator(breakoutGroup.id, vol2.id, "facilitator", event.id, beta.id)
+    await setFacilitator(breakoutGroup.id, vol1.id, "facilitator", { eventId: event.id }, alpha.id)
+    await setFacilitator(breakoutGroup.id, vol2.id, "facilitator", { eventId: event.id }, beta.id)
 
     const updated = await db.breakoutGroup.findUnique({ where: { id: breakoutGroup.id } })
     expect(updated?.genderFocus).toBe("Female")
@@ -297,7 +297,7 @@ describe("setFacilitator leaves the matching profile alone", () => {
     const { event, vol2, breakoutGroup } = await seedEventWithVolunteers()
     await seedOwnProfile(breakoutGroup.id)
 
-    await setFacilitator(breakoutGroup.id, vol2.id, "facilitator", event.id, null)
+    await setFacilitator(breakoutGroup.id, vol2.id, "facilitator", { eventId: event.id }, null)
 
     const updated = await db.breakoutGroup.findUnique({ where: { id: breakoutGroup.id } })
     expect(updated?.facilitatorId).toBe(vol2.id)
@@ -312,9 +312,9 @@ describe("setFacilitator leaves the matching profile alone", () => {
     const { event, member1, vol1, breakoutGroup } = await seedEventWithVolunteers()
     await seedOwnProfile(breakoutGroup.id)
     const sg = await seedLedGroup(member1.id, "Alpha")
-    await setFacilitator(breakoutGroup.id, vol1.id, "facilitator", event.id, sg.id)
+    await setFacilitator(breakoutGroup.id, vol1.id, "facilitator", { eventId: event.id }, sg.id)
 
-    await setFacilitator(breakoutGroup.id, null, "facilitator", event.id, null)
+    await setFacilitator(breakoutGroup.id, null, "facilitator", { eventId: event.id }, null)
 
     const updated = await db.breakoutGroup.findUnique({
       where: { id: breakoutGroup.id },
@@ -335,7 +335,7 @@ describe("setFacilitator leaves the matching profile alone", () => {
     const { event, member1, vol1, breakoutGroup } = await seedEventWithVolunteers()
     const sg = await seedLedGroup(member1.id, "Alpha")
 
-    await setFacilitator(breakoutGroup.id, vol1.id, "facilitator", event.id, sg.id)
+    await setFacilitator(breakoutGroup.id, vol1.id, "facilitator", { eventId: event.id }, sg.id)
 
     const updated = await db.breakoutGroup.findUnique({ where: { id: breakoutGroup.id } })
     expect(updated?.linkedSmallGroupId).toBe(sg.id)

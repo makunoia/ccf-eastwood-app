@@ -22,6 +22,7 @@ export default async function ClusterSettingsPage({
       name: true,
       description: true,
       date: true,
+      kind: true,
       events: {
         orderBy: { order: "asc" },
         select: {
@@ -89,6 +90,7 @@ export default async function ClusterSettingsPage({
           name: cluster.name,
           description: cluster.description,
           date: cluster.date?.toISOString() ?? null,
+          kind: cluster.kind,
         }}
         events={cluster.events.map((e) => ({
           id: e.event.id,

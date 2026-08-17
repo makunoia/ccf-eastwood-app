@@ -3,78 +3,16 @@ import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { requireEventModule } from "@/lib/events/require-module"
 import { unassignedCandidateWhere } from "@/lib/breakouts/candidate-pool"
+import { eventSurface } from "@/lib/breakouts/owner"
+import { breakoutGroupsInclude } from "@/lib/breakouts/queries"
+import { resolvePoolScope } from "@/lib/events/pool-scope"
+import { ClusterBreakoutsNotice } from "@/components/breakouts/cluster-breakouts-notice"
 import { auth } from "@/lib/auth"
 import { canImport } from "@/lib/permissions"
 import { BreakoutGroupsTable } from "./breakout-group"
 
 export const metadata: Metadata = {
   title: "Breakout Groups",
-}
-
-const breakoutGroupsInclude = {
-  orderBy: { createdAt: "asc" } as const,
-  include: {
-    facilitator: {
-      include: {
-        member: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            ledGroups: {
-              select: {
-                id: true,
-                name: true,
-                lifeStages: { select: { id: true } },
-                genderFocus: true,
-                language: true,
-                ageRangeMin: true,
-                ageRangeMax: true,
-                meetingFormat: true,
-                locationCity: true,
-                scheduleDayOfWeek: true,
-                scheduleTimeStart: true,
-                scheduleTimeEnd: true,
-              },
-            },
-          },
-        },
-      },
-    },
-    coFacilitator: {
-      include: {
-        member: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            ledGroups: {
-              select: {
-                id: true,
-                name: true,
-                lifeStages: { select: { id: true } },
-                genderFocus: true,
-                language: true,
-                ageRangeMin: true,
-                ageRangeMax: true,
-                meetingFormat: true,
-                locationCity: true,
-                scheduleDayOfWeek: true,
-                scheduleTimeStart: true,
-                scheduleTimeEnd: true,
-              },
-            },
-          },
-        },
-      },
-    },
-    linkedSmallGroup: {
-      select: { id: true, name: true },
-    },
-    lifeStages: { select: { id: true, name: true }, orderBy: { order: "asc" as const } },
-    schedules: { select: { dayOfWeek: true, timeStart: true, timeEnd: true } },
-    _count: { select: { members: true } },
-  },
 }
 
 async function getEventBreakouts(id: string) {
@@ -92,7 +30,7 @@ async function getEventBreakouts(id: string) {
       _count: { select: { registrants: true } },
       registrants: {
         select: { id: true },
-        where: unassignedCandidateWhere(id),
+        where: unassignedCandidateWhere({ eventId: id }),
       },
       volunteers: {
         where: { status: "Confirmed" },
@@ -138,12 +76,20 @@ export default async function BreakoutsPage({
 }) {
   const { id } = await params
   await requireEventModule(id, "Breakout")
-  const [session, event, lifeStages] = await Promise.all([
+  const [session, event, lifeStages, scope] = await Promise.all([
     auth(),
     getEventBreakouts(id),
     db.lifeStage.findMany({ orderBy: { order: "asc" }, select: { id: true, name: true } }),
+    resolvePoolScope(id),
   ])
   if (!event) notFound()
+
+  // Under a Collab the day's tables live on the cluster, so say so rather than
+  // letting an admin set these up expecting them to be in play.
+  const collabCluster =
+    scope.kind === "Collab" && scope.clusterId && scope.clusterName
+      ? { id: scope.clusterId, name: scope.clusterName }
+      : null
 
   const defaultLifeStageIds =
     event.ministries.length === 1 && event.ministries[0].ministry.lifeStageId
@@ -159,8 +105,14 @@ export default async function BreakoutsPage({
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
+      {collabCluster && (
+        <ClusterBreakoutsNotice
+          clusterId={collabCluster.id}
+          clusterName={collabCluster.name}
+        />
+      )}
       <BreakoutGroupsTable
-        eventId={event.id}
+        surface={eventSurface(event.id)}
         breakoutGroups={breakoutGroupRows}
         registrantCount={event._count.registrants}
         unassignedCount={event.registrants.length}

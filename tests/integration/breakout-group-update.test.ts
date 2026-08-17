@@ -111,7 +111,7 @@ describe("updateBreakoutGroup and the co-facilitator slot", () => {
 
     const result = await updateBreakoutGroup(
       group.id,
-      event.id,
+      { eventId: event.id },
       drawerPayload({ name: "Breakout A (renamed)", facilitatorId: faci.vol.id })
     )
 
@@ -127,7 +127,7 @@ describe("updateBreakoutGroup and the co-facilitator slot", () => {
     const payload = drawerPayload()
     delete (payload as Record<string, unknown>).facilitatorId
 
-    const result = await updateBreakoutGroup(group.id, event.id, payload)
+    const result = await updateBreakoutGroup(group.id, { eventId: event.id }, payload)
 
     expect(result.success).toBe(true)
     const updated = await db.breakoutGroup.findUnique({ where: { id: group.id } })
@@ -139,7 +139,7 @@ describe("updateBreakoutGroup and the co-facilitator slot", () => {
 
     const result = await updateBreakoutGroup(
       group.id,
-      event.id,
+      { eventId: event.id },
       drawerPayload({ facilitatorId: faci.vol.id, coFacilitatorId: null })
     )
 
@@ -153,7 +153,7 @@ describe("updateBreakoutGroup and the co-facilitator slot", () => {
 
     const result = await updateBreakoutGroup(
       group.id,
-      event.id,
+      { eventId: event.id },
       drawerPayload({ facilitatorId: coFaci.vol.id })
     )
 
@@ -176,7 +176,7 @@ describe("updateBreakoutGroup and the matching profile", () => {
 
     const result = await updateBreakoutGroup(
       group.id,
-      event.id,
+      { eventId: event.id },
       drawerPayload({
         facilitatorId: faci.vol.id,
         lifeStageIds: [lifeStage.id],
@@ -208,7 +208,7 @@ describe("updateBreakoutGroup and the matching profile", () => {
 
     const result = await updateBreakoutGroup(
       group.id,
-      event.id,
+      { eventId: event.id },
       drawerPayload({ facilitatorId: faci.vol.id })
     )
 
@@ -227,7 +227,7 @@ describe("updateBreakoutGroup and the matching profile", () => {
 
     const result = await updateBreakoutGroup(
       group.id,
-      event.id,
+      { eventId: event.id },
       drawerPayload({
         facilitatorId: faci.vol.id,
         meetingFormat: "InPerson",
@@ -284,7 +284,7 @@ describe("unlinking a facilitator clears the matching profile", () => {
     const { event, group, faci } = await seed()
     await withProfile(group.id, faci.ledGroup.id)
 
-    const result = await setFacilitator(group.id, null, "facilitator", event.id)
+    const result = await setFacilitator(group.id, null, "facilitator", { eventId: event.id })
 
     expect(result.success).toBe(true)
     const updated = await readGroup(group.id)
@@ -303,9 +303,9 @@ describe("unlinking a facilitator clears the matching profile", () => {
     const { event, group, faci, coFaci } = await seed()
     const lifeStage = await withProfile(group.id, faci.ledGroup.id)
     // Free the second volunteer's slot so they can take the facilitator one.
-    await setFacilitator(group.id, null, "coFacilitator", event.id)
+    await setFacilitator(group.id, null, "coFacilitator", { eventId: event.id })
 
-    const result = await setFacilitator(group.id, coFaci.vol.id, "facilitator", event.id)
+    const result = await setFacilitator(group.id, coFaci.vol.id, "facilitator", { eventId: event.id })
 
     expect(result.success).toBe(true)
     const updated = await readGroup(group.id)
@@ -319,7 +319,7 @@ describe("unlinking a facilitator clears the matching profile", () => {
     const { event, group, faci } = await seed()
     await withProfile(group.id, faci.ledGroup.id)
 
-    const result = await setFacilitator(group.id, null, "coFacilitator", event.id)
+    const result = await setFacilitator(group.id, null, "coFacilitator", { eventId: event.id })
 
     expect(result.success).toBe(true)
     const updated = await readGroup(group.id)
@@ -339,7 +339,7 @@ describe("unlinking a facilitator clears the matching profile", () => {
 
     const result = await updateBreakoutGroup(
       group.id,
-      event.id,
+      { eventId: event.id },
       drawerPayload({
         facilitatorId: null,
         linkedSmallGroupId: faci.ledGroup.id,
@@ -373,7 +373,7 @@ describe("unlinking a facilitator clears the matching profile", () => {
 
     const result = await updateBreakoutGroup(
       group.id,
-      event.id,
+      { eventId: event.id },
       drawerPayload({
         facilitatorId: null,
         lifeStageIds: [lifeStage.id],
@@ -422,7 +422,7 @@ describe("updateBreakoutGroup and Timothy facilitators", () => {
 
     const result = await updateBreakoutGroup(
       group.id,
-      event.id,
+      { eventId: event.id },
       drawerPayload({ facilitatorId: timo.id, genderFocus: "Male" })
     )
 
@@ -445,7 +445,7 @@ describe("updateBreakoutGroup and Timothy facilitators", () => {
 
     const result = await updateBreakoutGroup(
       group.id,
-      event.id,
+      { eventId: event.id },
       drawerPayload({
         facilitatorId: timo.id,
         lifeStageIds: [lifeStage.id],
@@ -468,7 +468,7 @@ describe("updateBreakoutGroup and Timothy facilitators", () => {
 
     const result = await updateBreakoutGroup(
       group.id,
-      event.id,
+      { eventId: event.id },
       drawerPayload({
         facilitatorId: timo.id,
         lifeStageIds: [lifeStage.id],
@@ -492,7 +492,7 @@ describe("updateBreakoutGroup event scoping", () => {
       data: { name: "Other", type: "OneTime", startDate: new Date(), endDate: new Date() },
     })
 
-    const result = await updateBreakoutGroup(group.id, other.id, drawerPayload({ name: "Hijacked" }))
+    const result = await updateBreakoutGroup(group.id, { eventId: other.id }, drawerPayload({ name: "Hijacked" }))
 
     expect(result.success).toBe(false)
     const unchanged = await db.breakoutGroup.findUnique({ where: { id: group.id } })

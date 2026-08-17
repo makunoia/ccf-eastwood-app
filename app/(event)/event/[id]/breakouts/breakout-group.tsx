@@ -69,6 +69,7 @@ import {
   // autoAssignBreakouts, // CCF-124: re-enable with the Auto-Assign button
 } from "@/app/(dashboard)/events/breakout-actions"
 import { breakoutOccupancy } from "@/lib/breakouts/occupancy"
+import { isClusterOwner, type BreakoutSurface } from "@/lib/breakouts/owner"
 import { BreakoutEnabledSwitch } from "./enabled-switch"
 import { checkBreakoutDuplicates, importBreakoutGroups } from "./import-actions"
 
@@ -126,14 +127,14 @@ const EMPTY_FORM = {
 type GroupFormDialogProps = {
   open: boolean
   onOpenChange: (v: boolean) => void
-  eventId: string
+  surface: BreakoutSurface
   group?: BreakoutGroupRow
   lifeStages: { id: string; name: string }[]
   volunteers: Volunteer[]
   defaultLifeStageIds?: string[]
 }
 
-function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volunteers, defaultLifeStageIds = [] }: GroupFormDialogProps) {
+function GroupFormDialog({ open, onOpenChange, surface, group, lifeStages, volunteers, defaultLifeStageIds = [] }: GroupFormDialogProps) {
   const isEdit = !!group
   const [form, setForm] = React.useState(EMPTY_FORM)
   const [sourceGroupId, setSourceGroupId] = React.useState("")
@@ -210,8 +211,8 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
       ageRangeMax: form.ageRangeMax ? Number(form.ageRangeMax) : null,
     }
     const result = isEdit
-      ? await updateBreakoutGroup(group.id, eventId, data)
-      : await createBreakoutGroup(eventId, data)
+      ? await updateBreakoutGroup(group.id, surface.owner, data)
+      : await createBreakoutGroup(surface.owner, data)
     setSaving(false)
     if (result.success) {
       toast.success(isEdit ? "Breakout group updated" : "Breakout group created")
@@ -354,18 +355,18 @@ function GroupFormDialog({ open, onOpenChange, eventId, group, lifeStages, volun
 function DeleteGroupDialog({
   group,
   onOpenChange,
-  eventId,
+  surface,
 }: {
   group: BreakoutGroupRow | null
   onOpenChange: (open: boolean) => void
-  eventId: string
+  surface: BreakoutSurface
 }) {
   const [deleting, setDeleting] = React.useState(false)
 
   async function handleDelete() {
     if (!group) return
     setDeleting(true)
-    const result = await deleteBreakoutGroup(group.id, eventId)
+    const result = await deleteBreakoutGroup(group.id, surface.owner)
     setDeleting(false)
     if (result.success) {
       toast.success("Breakout group deleted")
@@ -400,12 +401,10 @@ function DeleteGroupDialog({
 
 function RowActions({
   row,
-  eventId: _eventId,
   onEdit,
   onDelete,
 }: {
   row: BreakoutGroupRow
-  eventId: string
   onEdit: (group: BreakoutGroupRow) => void
   onDelete: (group: BreakoutGroupRow) => void
 }) {
@@ -438,7 +437,7 @@ function RowActions({
 // ─── Columns ────────────────────────────────────────────────────────────────────
 
 function buildColumns(
-  eventId: string,
+  surface: BreakoutSurface,
   onEdit: (group: BreakoutGroupRow) => void,
   onDelete: (group: BreakoutGroupRow) => void,
   onNavigate?: () => void,
@@ -452,7 +451,7 @@ function buildColumns(
       cell: ({ row }) => (
         <div className="flex items-center gap-2">
           <Link
-            href={`/event/${eventId}/breakouts/${row.original.id}`}
+            href={`${surface.basePath}/breakouts/${row.original.id}`}
             onClick={onNavigate}
             className={`font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors${
               row.original.isEnabled ? "" : " text-muted-foreground"
@@ -523,7 +522,7 @@ function buildColumns(
         <BreakoutEnabledSwitch
           key={`${row.original.id}-${row.original.isEnabled}`}
           groupId={row.original.id}
-          eventId={eventId}
+          surface={surface}
           isEnabled={row.original.isEnabled}
           groupName={row.original.name}
         />
@@ -534,7 +533,6 @@ function buildColumns(
       cell: ({ row }) => (
         <RowActions
           row={row.original}
-          eventId={eventId}
           onEdit={onEdit}
           onDelete={onDelete}
         />
@@ -546,7 +544,7 @@ function buildColumns(
 // ─── Main table component ───────────────────────────────────────────────────────
 
 type Props = {
-  eventId: string
+  surface: BreakoutSurface
   breakoutGroups: BreakoutGroupRow[]
   registrantCount: number
   unassignedCount: number
@@ -557,7 +555,7 @@ type Props = {
 }
 
 export function BreakoutGroupsTable({
-  eventId,
+  surface,
   breakoutGroups,
   registrantCount,
   unassignedCount,
@@ -602,14 +600,14 @@ export function BreakoutGroupsTable({
   }, [filtered])
 
   const columns = React.useMemo(
-    () => buildColumns(eventId, setEditingGroup, setDeletingGroup, saveBreakoutIds),
-    [eventId, saveBreakoutIds]
+    () => buildColumns(surface, setEditingGroup, setDeletingGroup, saveBreakoutIds),
+    [surface, saveBreakoutIds]
   )
 
   // CCF-124: auto-assign handler hidden pending refinement — re-enable with the button below.
   // async function handleAutoAssign() {
   //   setAutoAssigning(true)
-  //   const result = await autoAssignBreakouts(eventId)
+  //   const result = await autoAssignBreakouts(surface.owner)
   //   setAutoAssigning(false)
   //   if (result.success) {
   //     const { assigned, skipped } = result.data
@@ -740,7 +738,7 @@ export function BreakoutGroupsTable({
           filtered.map((group) => (
             <Link
               key={group.id}
-              href={`/event/${eventId}/breakouts/${group.id}`}
+              href={`${surface.basePath}/breakouts/${group.id}`}
               onClick={saveBreakoutIds}
               className="rounded-lg border bg-card p-4 hover:bg-muted/50 transition-colors"
             >
@@ -749,7 +747,7 @@ export function BreakoutGroupsTable({
                   {group.name}
                 </p>
                 <div onClick={(e) => e.stopPropagation()}>
-                  <RowActions row={group} eventId={eventId} onEdit={setEditingGroup} onDelete={setDeletingGroup} />
+                  <RowActions row={group} onEdit={setEditingGroup} onDelete={setDeletingGroup} />
                 </div>
               </div>
               <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
@@ -760,7 +758,7 @@ export function BreakoutGroupsTable({
                   <BreakoutEnabledSwitch
                     key={`${group.id}-${group.isEnabled}`}
                     groupId={group.id}
-                    eventId={eventId}
+                    surface={surface}
                     isEnabled={group.isEnabled}
                     groupName={group.name}
                     showLabel
@@ -793,7 +791,7 @@ export function BreakoutGroupsTable({
       <GroupFormDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        eventId={eventId}
+        surface={surface}
         lifeStages={lifeStages}
         volunteers={volunteers}
         defaultLifeStageIds={defaultLifeStageIds}
@@ -801,7 +799,7 @@ export function BreakoutGroupsTable({
       <GroupFormDialog
         open={!!editingGroup}
         onOpenChange={(open) => { if (!open) setEditingGroup(null) }}
-        eventId={eventId}
+        surface={surface}
         group={editingGroup ?? undefined}
         lifeStages={lifeStages}
         volunteers={volunteers}
@@ -810,15 +808,28 @@ export function BreakoutGroupsTable({
       <DeleteGroupDialog
         group={deletingGroup}
         onOpenChange={(open) => { if (!open) setDeletingGroup(null) }}
-        eventId={eventId}
+        surface={surface}
       />
-      {canImport && (
+      {/* CSV import is event-only. `importBreakoutGroups` matches facilitators
+          against one event's volunteers and creates event-owned groups, and a
+          Collab cluster's equivalent is Carry over, which copies a member event's
+          tables in. Offering this here would silently create groups the cluster
+          page then couldn't see. */}
+      {canImport && !isClusterOwner(surface.owner) && (
         <ImportWizard
-          config={{ entity: "breakout-group", context: { eventId }, useExistingEnriches: true }}
+          config={{
+            entity: "breakout-group",
+            context: { eventId: surface.owner.eventId },
+            useExistingEnriches: true,
+          }}
           open={importOpen}
           onOpenChange={setImportOpen}
-          onCheckDuplicates={(rows) => checkBreakoutDuplicates({ eventId }, rows)}
-          onImport={(rows) => importBreakoutGroups({ eventId }, rows)}
+          onCheckDuplicates={(rows) =>
+            checkBreakoutDuplicates({ eventId: (surface.owner as { eventId: string }).eventId }, rows)
+          }
+          onImport={(rows) =>
+            importBreakoutGroups({ eventId: (surface.owner as { eventId: string }).eventId }, rows)
+          }
         />
       )}
     </div>

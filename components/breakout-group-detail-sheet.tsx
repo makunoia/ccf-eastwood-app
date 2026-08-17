@@ -5,22 +5,23 @@ import { toast } from "sonner"
 
 import { getBreakoutGroupDetails } from "@/app/(dashboard)/events/matching-actions"
 import { GroupDetailSheet, type GroupDetailData } from "@/components/group-detail-sheet"
+import type { BreakoutSurface } from "@/lib/breakouts/owner"
 
 // ─── BreakoutGroupDetailSheet ─────────────────────────────────────────────────
 //
-// Thin wrapper: fetches an event-scoped BreakoutGroup and adapts it into the
+// Thin wrapper: fetches an owner-scoped BreakoutGroup and adapts it into the
 // normalized GroupDetailData shape. Separate from SmallGroupDetailSheet because
-// the fetch is genuinely different — event-scoped authz and a schedules[]
+// the fetch is genuinely different — owner-scoped authz and a schedules[]
 // relation rather than flat scalars.
 
 export function BreakoutGroupDetailSheet({
   groupId,
-  eventId,
+  surface,
   open,
   onOpenChange,
 }: {
   groupId: string | null
-  eventId: string
+  surface: BreakoutSurface
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
@@ -32,7 +33,7 @@ export function BreakoutGroupDetailSheet({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setData(null)
     setLoading(true)
-    getBreakoutGroupDetails(groupId, eventId).then((res) => {
+    getBreakoutGroupDetails(groupId, surface.owner).then((res) => {
       setLoading(false)
       if (!res.success) {
         toast.error(res.error)
@@ -57,7 +58,7 @@ export function BreakoutGroupDetailSheet({
         members: g.members.map((m) => ({ id: m.id, name: m.name })),
       })
     })
-  }, [open, groupId, eventId])
+  }, [open, groupId, surface])
 
   return <GroupDetailSheet data={data} loading={loading} open={open} onOpenChange={onOpenChange} />
 }

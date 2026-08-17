@@ -5,6 +5,8 @@ import { db } from "@/lib/db"
 import { suggestBreakoutGroup } from "@/lib/breakout-suggestion"
 import { fetchBreakoutCandidates } from "@/lib/breakout-suggestion-server"
 import { breakoutOccupancy } from "@/lib/breakouts/occupancy"
+import { isClusterOwner } from "@/lib/breakouts/owner"
+import { resolvePoolScope } from "@/lib/events/pool-scope"
 import { tryCreateSmallGroupRequestFromBreakout } from "@/lib/create-small-group-request"
 import { recordMemberGroupClaim } from "@/lib/small-groups/member-claim"
 import { createSeekerRequestFromRegistration } from "@/lib/small-groups/seeker-requests"
@@ -115,14 +117,21 @@ export async function assignBreakoutForRegistrant(
     })
     if (!event || event.modules.length === 0) return null
 
+    // Which tables are in play: this event's standing set, or the cluster's set
+    // for a Collab day (CCF-148).
+    const { breakoutOwner: owner } = await resolvePoolScope(eventId)
+
     // A registrant may already be placed. The reuse paths — a walk-in for someone
     // who registered earlier, and amend — run this function against a row that has
     // been through it before, and the bare `create` at the end was wrong both ways:
     // re-assigning to the same group violates the composite PK and threw into the
     // catch below, so the person's confirmation claimed no breakout at all; landing
     // on a different one left them sitting in two groups at once.
+    //
+    // Scoped to the owner rather than to the event: a person's standing placement
+    // in their ministry's own group is not the placement this is asking about.
     const current = await db.breakoutGroupMember.findFirst({
-      where: { registrantId, breakoutGroup: { eventId } },
+      where: { registrantId, breakoutGroup: owner },
       select: { breakoutGroupId: true },
     })
 
@@ -141,6 +150,7 @@ export async function assignBreakoutForRegistrant(
         select: {
           id: true,
           eventId: true,
+          clusterId: true,
           isEnabled: true,
           memberLimit: true,
           _count: { select: { members: true } },
@@ -158,9 +168,16 @@ export async function assignBreakoutForRegistrant(
       // it. Unlike capacity there is no `allowOverCapacity` counterpart; a
       // switched-off group is closed to every public route, and admins place
       // people from the group's own screen instead.
+      //
+      // "Belongs to the surface that offered it" is an owner comparison rather
+      // than an event-id one — a collab form offers cluster-owned tables, whose
+      // `eventId` is null.
+      const pickedIsInPlay = isClusterOwner(owner)
+        ? picked?.clusterId === owner.clusterId
+        : picked?.eventId === owner.eventId
       if (
         picked &&
-        picked.eventId === eventId &&
+        pickedIsInPlay &&
         picked.isEnabled &&
         (allowOverCapacity || !pickedIsFull)
       ) {
@@ -184,7 +201,7 @@ export async function assignBreakoutForRegistrant(
       if (best) chosenGroupId = best.id
     }
 
-    // A pick that was refused (full, disabled, another event's) leaves nothing
+    // A pick that was refused (full, disabled, another day's) leaves nothing
     // chosen — but someone already placed is still placed, and saying "no group"
     // to a person sitting in one would be a lie the confirmation screen tells.
     if (!chosenGroupId) {
@@ -773,8 +790,23 @@ export async function completeEventRegistration(opts: {
    * protect.
    */
   touchedFields?: TouchedFields
+  /**
+   * Skip breakout placement and the DGroup seeker request for this event.
+   *
+   * Both are per-PERSON facts, and this function runs per registrant row. That
+   * was the same thing until Collab clusters (CCF-148), where the shared form
+   * registers one person to every member event: the loop would seat them at one
+   * of the day's tables per registration and file one seeker request per
+   * registration. The cluster fan-out therefore runs both exactly once and passes
+   * these for every subsequent event.
+   *
+   * Defaulting to false keeps single-event registration — and Parallel clusters,
+   * where the person picks their events — byte-identical.
+   */
+  skipBreakout?: boolean
+  skipSeekerRequest?: boolean
 }): Promise<{ id: string; breakoutGroup: AssignedBreakout }> {
-  const { eventId, person, data, breakoutPick, profile, clusterId, walkIn, allowOverCapacity, existingRegistrantId, touchedFields } = opts
+  const { eventId, person, data, breakoutPick, profile, clusterId, walkIn, allowOverCapacity, existingRegistrantId, touchedFields, skipBreakout, skipSeekerRequest } = opts
 
   let registrantId: string
   if (existingRegistrantId) {
@@ -802,22 +834,24 @@ export async function completeEventRegistration(opts: {
     registrantId = registrant.id
   }
 
-  const breakoutGroup = await assignBreakoutForRegistrant(
-    registrantId,
-    eventId,
-    breakoutPick,
-    profile,
-    !!allowOverCapacity,
-    // `walkIn` is enough here where it is not enough for `allowOverCapacity`:
-    // this narrows automatic placement to staffed groups, so the worst a forged
-    // flag buys is a stricter pool.
-    walkIn ?? null
-  )
+  const breakoutGroup = skipBreakout
+    ? null
+    : await assignBreakoutForRegistrant(
+        registrantId,
+        eventId,
+        breakoutPick,
+        profile,
+        !!allowOverCapacity,
+        // `walkIn` is enough here where it is not enough for `allowOverCapacity`:
+        // this narrows automatic placement to staffed groups, so the worst a forged
+        // flag buys is a stricter pool.
+        walkIn ?? null
+      )
 
   // Someone who asked to join a DGroup becomes a request an admin can actually
   // see (CCF-101). Raised here rather than in each caller so every entry point —
   // single event, cluster fan-out, household — gets it for free.
-  if (data.wantsSmallGroup) {
+  if (data.wantsSmallGroup && !skipSeekerRequest) {
     await createSeekerRequestFromRegistration(person, eventId)
   }
 

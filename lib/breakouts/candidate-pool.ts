@@ -1,12 +1,14 @@
 import type { Prisma } from "@/app/generated/prisma/client"
+import type { BreakoutOwner } from "./owner"
 
 /**
- * Who is eligible to be placed into one of an event's breakout groups.
+ * Who is eligible to be placed into one of a day's breakout groups.
  *
- * Two rules, both scoped to the event:
- *  1. Not already in a breakout group.
- *  2. Not a facilitator or co-facilitator of any breakout group in this event
- *     (CCF-87 — they run a table, they don't sit at one).
+ * Two rules, both scoped to the groups actually in play (`owner` — an event's
+ * standing tables, or a Collab cluster's tables for the day):
+ *  1. Not already seated in one of THOSE groups.
+ *  2. Not a facilitator or co-facilitator of one of them (CCF-87 — they run a
+ *     table, they don't sit at one).
  *
  * Note this is *not* "excludes all volunteers". A confirmed volunteer who isn't
  * facilitating a table is a normal participant and stays in the pool. The
@@ -17,8 +19,47 @@ import type { Prisma } from "@/app/generated/prisma/client"
  *
  * Deliberately not scoped by `volunteers.status`: a Pending or Rejected
  * volunteer who is still attached as a facilitator is excluded too. That was the
- * pre-existing behavior and changing it is a separate decision.
+ * pre-existing behaviour and changing it is a separate decision.
+ *
+ * ## Why rule 1 is owner-scoped rather than global (CCF-148)
+ *
+ * It used to read `breakoutGroupMemberships: { none: {} }` — "in no breakout
+ * group anywhere". That was harmless while every group belonged to an event,
+ * because an `EventRegistrant` row belongs to exactly one event and only that
+ * event's groups could ever hold it, making the global form and the event-scoped
+ * form equivalent.
+ *
+ * Cluster-owned groups break that equivalence, and badly. `EventRegistrant` is
+ * one row per person per event *series*, not per occurrence, so a member who
+ * attends a ministry's recurring event every week has a single long-lived
+ * registrant row — and that row is already seated in one of that ministry's
+ * standing tables. Under the global clause, every single regular would be
+ * excluded from the collab day's tables: the people the day is actually for.
+ *
+ * Scoping to the owner asks the question the caller means — "is this person
+ * already seated at one of the tables I am filling" — and leaves their standing
+ * placement alone.
  */
+export function unassignedCandidateWhere(
+  owner: BreakoutOwner
+): Prisma.EventRegistrantWhereInput {
+  return {
+    breakoutGroupMemberships: { none: { breakoutGroup: owner } },
+    NOT: {
+      member: {
+        volunteers: {
+          some: {
+            OR: [
+              { facilitatedGroups: { some: owner } },
+              { coFacilitatedGroups: { some: owner } },
+            ],
+          },
+        },
+      },
+    },
+  }
+}
+
 /**
  * The other half of eligibility: which *groups* may still receive someone
  * without an admin explicitly putting them there.
@@ -33,21 +74,3 @@ import type { Prisma } from "@/app/generated/prisma/client"
  * off aims at the automatic and public routes, not at staff judgment.
  */
 export const ENABLED_BREAKOUT_WHERE = { isEnabled: true } as const satisfies Prisma.BreakoutGroupWhereInput
-
-export function unassignedCandidateWhere(eventId: string): Prisma.EventRegistrantWhereInput {
-  return {
-    breakoutGroupMemberships: { none: {} },
-    NOT: {
-      member: {
-        volunteers: {
-          some: {
-            OR: [
-              { facilitatedGroups: { some: { eventId } } },
-              { coFacilitatedGroups: { some: { eventId } } },
-            ],
-          },
-        },
-      },
-    },
-  }
-}

@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { ClusterKind } from "@/app/generated/prisma/client"
 
 // Event Cluster (CCF-132) — validation for the cluster CRUD actions and the
 // shared-form submission.
@@ -20,6 +21,11 @@ export const eventClusterSettingsSchema = z.object({
   name: z.string().min(1, "Name is required").trim().optional(),
   description: optionalTrimmed.optional(),
   date: z.coerce.date().nullable().optional(),
+  // What shape of day this is (CCF-148). `Collab` changes three things at once —
+  // no event picker on the shared form, one pooled volunteer roster, and
+  // cluster-owned breakout tables — which is why it is one enum rather than three
+  // switches an admin could combine into a shape no real event has.
+  kind: z.nativeEnum(ClusterKind).optional(),
   isOpen: z.boolean().optional(),
   // The door form's own switch (CCF-133) — independent of `isOpen` above.
   walkInIsOpen: z.boolean().optional(),
@@ -124,6 +130,38 @@ export function validateClusterEventLink(
     }
   }
   return { ok: true }
+}
+
+/**
+ * Which of the day's events a submission registers for.
+ *
+ * The two cluster kinds answer this differently, and the difference is the whole
+ * point of the kind:
+ *
+ *  - **Parallel** — the person chose, so validate their choice.
+ *  - **Collab** — there is nothing to choose. It is one event as far as anyone
+ *    attending is concerned, so the answer is always every member event, and the
+ *    submitted selection is **ignored rather than trusted**. The client omits the
+ *    picker, but a payload is a claim: honouring a partial selection here would
+ *    let a crafted request register for one ministry's half of a joint event,
+ *    which is not a state the product has.
+ *
+ * Kept beside `validateClusterEventSelection` rather than folded into it — that
+ * function is about validating a choice, and half the point here is that no
+ * choice was made.
+ */
+export function resolveClusterEventSelection(
+  kind: ClusterKind,
+  selectedEventIds: string[],
+  clusterEventIds: string[]
+): { ok: true; eventIds: string[] } | { ok: false; error: string } {
+  if (kind === ClusterKind.Collab) {
+    if (clusterEventIds.length === 0) {
+      return { ok: false, error: "This event day has no events yet." }
+    }
+    return { ok: true, eventIds: [...clusterEventIds] }
+  }
+  return validateClusterEventSelection(selectedEventIds, clusterEventIds)
 }
 
 /** ≥1 unique selected event, all of which must belong to the cluster. */

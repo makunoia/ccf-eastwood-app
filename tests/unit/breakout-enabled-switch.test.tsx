@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 
 import { BreakoutEnabledSwitch } from "@/app/(event)/event/[id]/breakouts/enabled-switch"
+import { eventSurface } from "@/lib/breakouts/owner"
 
 /**
  * The breakout group on/off switch.
@@ -30,7 +31,7 @@ function renderSwitch(isEnabled: boolean) {
   render(
     <BreakoutEnabledSwitch
       groupId="g1"
-      eventId="e1"
+      surface={eventSurface("e1")}
       isEnabled={isEnabled}
       groupName="Table 1"
     />
@@ -52,7 +53,7 @@ describe("BreakoutEnabledSwitch", () => {
     fireEvent.click(el)
 
     await waitFor(() => expect(el.getAttribute("aria-checked")).toBe("false"))
-    expect(setBreakoutGroupEnabled).toHaveBeenCalledWith("g1", "e1", false)
+    expect(setBreakoutGroupEnabled).toHaveBeenCalledWith("g1", { eventId: "e1" }, false)
     // Says what "off" means rather than just "saved" — the consequence is not
     // obvious from the control.
     expect(toastSuccess).toHaveBeenCalledWith(
@@ -82,7 +83,7 @@ describe("BreakoutEnabledSwitch", () => {
     fireEvent.click(el)
 
     await waitFor(() => expect(el.getAttribute("aria-checked")).toBe("true"))
-    expect(setBreakoutGroupEnabled).toHaveBeenCalledWith("g1", "e1", true)
+    expect(setBreakoutGroupEnabled).toHaveBeenCalledWith("g1", { eventId: "e1" }, true)
     expect(toastSuccess).toHaveBeenCalledWith(
       expect.stringContaining("can receive people again")
     )
@@ -90,14 +91,14 @@ describe("BreakoutEnabledSwitch", () => {
 
   it("shows the On/Off word only where asked", () => {
     const { rerender } = render(
-      <BreakoutEnabledSwitch groupId="g1" eventId="e1" isEnabled={false} groupName="Table 1" />
+      <BreakoutEnabledSwitch groupId="g1" surface={eventSurface("e1")} isEnabled={false} groupName="Table 1" />
     )
     expect(screen.queryByText("Off")).toBeNull()
 
     rerender(
       <BreakoutEnabledSwitch
         groupId="g1"
-        eventId="e1"
+        surface={eventSurface("e1")}
         isEnabled={false}
         groupName="Table 1"
         showLabel

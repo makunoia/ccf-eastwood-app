@@ -107,7 +107,7 @@ describe("transferRegistrantToBreakout", () => {
     const r = await seedRegistrant(event.id, { firstName: "Mover", lastName: "One" })
     await place(from.id, r.id)
 
-    const result = await transferRegistrantToBreakout(from.id, to.id, r.id, event.id)
+    const result = await transferRegistrantToBreakout(from.id, to.id, r.id, { eventId: event.id })
 
     expect(result.success).toBe(true)
     expect(await groupIdFor(r.id)).toBe(to.id)
@@ -124,7 +124,7 @@ describe("transferRegistrantToBreakout", () => {
     const r = await seedRegistrant(event.id, { firstName: "Mover", lastName: "One" })
     await place(from.id, r.id)
 
-    await transferRegistrantToBreakout(from.id, to.id, r.id, event.id)
+    await transferRegistrantToBreakout(from.id, to.id, r.id, { eventId: event.id })
 
     expect(await db.breakoutGroupMember.count({ where: { registrantId: r.id } })).toBe(1)
   })
@@ -136,7 +136,7 @@ describe("transferRegistrantToBreakout", () => {
     const r = await seedRegistrant(event.id, { firstName: "Mover", lastName: "One" })
     await place(from.id, r.id)
 
-    await transferRegistrantToBreakout(from.id, to.id, r.id, event.id)
+    await transferRegistrantToBreakout(from.id, to.id, r.id, { eventId: event.id })
 
     const paths = vi.mocked(revalidatePath).mock.calls.map((c) => c[0])
     expect(paths).toContain(`/event/${event.id}/breakouts`)
@@ -159,7 +159,7 @@ describe("transferRegistrantToBreakout guards", () => {
     const r = await seedRegistrant(event.id, { firstName: "Mover", lastName: "One" })
     await place(from.id, r.id)
 
-    const result = await transferRegistrantToBreakout(from.id, to.id, r.id, event.id)
+    const result = await transferRegistrantToBreakout(from.id, to.id, r.id, { eventId: event.id })
 
     expect(result.success).toBe(false)
     // The whole point of the transaction: a rejected move leaves them put.
@@ -175,7 +175,7 @@ describe("transferRegistrantToBreakout guards", () => {
     const r = await seedRegistrant(event.id, { firstName: "Mover", lastName: "One" })
     await place(from.id, r.id)
 
-    const result = await transferRegistrantToBreakout(from.id, to.id, r.id, event.id)
+    const result = await transferRegistrantToBreakout(from.id, to.id, r.id, { eventId: event.id })
 
     expect(result.success).toBe(true)
     expect(await groupIdFor(r.id)).toBe(to.id)
@@ -187,7 +187,7 @@ describe("transferRegistrantToBreakout guards", () => {
     const r = await seedRegistrant(event.id, { firstName: "Mover", lastName: "One" })
     await place(from.id, r.id)
 
-    const result = await transferRegistrantToBreakout(from.id, from.id, r.id, event.id)
+    const result = await transferRegistrantToBreakout(from.id, from.id, r.id, { eventId: event.id })
 
     expect(result.success).toBe(false)
     if (result.success) return
@@ -201,7 +201,7 @@ describe("transferRegistrantToBreakout guards", () => {
     const to = await seedGroup(event.id, { name: "B" })
     const r = await seedRegistrant(event.id, { firstName: "Loose", lastName: "One" })
 
-    const result = await transferRegistrantToBreakout(from.id, to.id, r.id, event.id)
+    const result = await transferRegistrantToBreakout(from.id, to.id, r.id, { eventId: event.id })
 
     expect(result.success).toBe(false)
     if (result.success) return
@@ -216,7 +216,7 @@ describe("transferRegistrantToBreakout guards", () => {
     const to = await seedGroup(event.id, { name: "B" })
     const foreign = await seedRegistrant(other.id, { firstName: "Else", lastName: "Where" })
 
-    const result = await transferRegistrantToBreakout(from.id, to.id, foreign.id, event.id)
+    const result = await transferRegistrantToBreakout(from.id, to.id, foreign.id, { eventId: event.id })
 
     expect(result.success).toBe(false)
     if (result.success) return
@@ -231,7 +231,7 @@ describe("transferRegistrantToBreakout guards", () => {
     const r = await seedRegistrant(event.id, { firstName: "Mover", lastName: "One" })
     await place(from.id, r.id)
 
-    const result = await transferRegistrantToBreakout(from.id, foreign.id, r.id, event.id)
+    const result = await transferRegistrantToBreakout(from.id, foreign.id, r.id, { eventId: event.id })
 
     expect(result.success).toBe(false)
     expect(await groupIdFor(r.id)).toBe(from.id)
@@ -247,7 +247,7 @@ describe("transferRegistrantToBreakout guards", () => {
     // Promoted after the placement — the guard has to be re-checked, not assumed.
     await seedVolunteer(event.id, member.id, { facilitates: to.id })
 
-    const result = await transferRegistrantToBreakout(from.id, to.id, r.id, event.id)
+    const result = await transferRegistrantToBreakout(from.id, to.id, r.id, { eventId: event.id })
 
     expect(result.success).toBe(false)
     if (result.success) return
@@ -263,7 +263,7 @@ describe("transferRegistrantToBreakout guards", () => {
     const r = await seedRegistrant(event.id, { firstName: "Mover", lastName: "One" })
     await place(from.id, r.id)
 
-    const result = await transferRegistrantToBreakout(from.id, to.id, r.id, event.id)
+    const result = await transferRegistrantToBreakout(from.id, to.id, r.id, { eventId: event.id })
 
     expect(result.success).toBe(false)
     expect(await groupIdFor(r.id)).toBe(from.id)
@@ -298,7 +298,7 @@ describe("transferRegistrantToBreakout and the Catch Mech request", () => {
       data: { smallGroupId: sg.id, guestId: guest.id, breakoutGroupId: from.id },
     })
 
-    const result = await transferRegistrantToBreakout(from.id, to.id, r.id, event.id)
+    const result = await transferRegistrantToBreakout(from.id, to.id, r.id, { eventId: event.id })
     expect(result.success).toBe(true)
 
     const after = await db.smallGroupMemberRequest.findUnique({ where: { id: request.id } })
@@ -320,7 +320,7 @@ describe("transferRegistrantToBreakout and the Catch Mech request", () => {
       data: { smallGroupId: sg.id, guestId: guest.id, breakoutGroupId: from.id },
     })
 
-    await transferRegistrantToBreakout(from.id, to.id, r.id, event.id)
+    await transferRegistrantToBreakout(from.id, to.id, r.id, { eventId: event.id })
 
     expect(
       await db.smallGroupLog.count({ where: { action: "TempAssignmentRejected" } })
@@ -339,7 +339,7 @@ describe("transferRegistrantToBreakout and the Catch Mech request", () => {
       data: { smallGroupId: alpha.id, guestId: guest.id, breakoutGroupId: from.id },
     })
 
-    const result = await transferRegistrantToBreakout(from.id, to.id, r.id, event.id)
+    const result = await transferRegistrantToBreakout(from.id, to.id, r.id, { eventId: event.id })
     expect(result.success).toBe(true)
 
     const old = await db.smallGroupMemberRequest.findUnique({ where: { id: original.id } })
@@ -360,7 +360,7 @@ describe("transferRegistrantToBreakout and the Catch Mech request", () => {
     const r = await seedRegistrant(event.id, { guestId: guest.id })
     await place(from.id, r.id)
 
-    const result = await transferRegistrantToBreakout(from.id, to.id, r.id, event.id)
+    const result = await transferRegistrantToBreakout(from.id, to.id, r.id, { eventId: event.id })
 
     expect(result.success).toBe(true)
     expect(await groupIdFor(r.id)).toBe(to.id)

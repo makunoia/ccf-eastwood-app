@@ -50,6 +50,22 @@ enum RecurrenceFrequency {
   Monthly
 }
 
+// What shape of day an EventCluster stands for (CCF-148).
+//
+// `Parallel` is every cluster that existed before this enum: several events
+// sharing a day, which the registrant picks between on the shared form, each
+// keeping its own volunteers and its own breakout tables.
+//
+// `Collab` is one event co-run by two ministries. The shared form asks nothing
+// about events and registers the person to all of them; the member events'
+// volunteer rosters read as one pool; and the day's breakout tables belong to
+// the CLUSTER rather than to either event, so a collab's seating never rewrites
+// a ministry's standing groups.
+enum ClusterKind {
+  Parallel
+  Collab
+}
+
 enum MatchingContext {
   SmallGroup
   Breakout
@@ -653,6 +669,9 @@ model EventCluster {
   name        String
   description String?
   date        DateTime?
+  // What shape of day this is (CCF-148). Defaults to `Parallel`, so every
+  // cluster created before this column behaves exactly as it did.
+  kind        ClusterKind @default(Parallel)
   publicToken String    @unique @default(cuid())
   // Manual open/close for the shared public form (mirrors FormConfig.isOpen)
   isOpen      Boolean   @default(false)
@@ -677,9 +696,12 @@ model EventCluster {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  events      EventClusterEvent[]
-  formConfigs EventFormConfig[]
-  registrants EventRegistrant[]
+  events         EventClusterEvent[]
+  formConfigs    EventFormConfig[]
+  registrants    EventRegistrant[]
+  // A Collab cluster's own breakout tables — the day's groups, as opposed to
+  // either member event's standing ones. See `BreakoutGroup`'s owner comment.
+  breakoutGroups BreakoutGroup[]
 }
 
 model EventClusterEvent {
@@ -828,8 +850,22 @@ model EventRegistrant {
 
 model BreakoutGroup {
   id            String       @id @default(cuid())
-  eventId       String
-  event         Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  // Exactly one of eventId / clusterId is set (app-layer enforced XOR, the same
+  // shape `EventFormConfig` uses — see `isValidBreakoutOwner`).
+  //
+  // An event-owned group is a standing table: it belongs to one event and
+  // persists across that event's occurrences. A cluster-owned group belongs to a
+  // Collab day (CCF-148) and is set up for that session — which is why a collab
+  // gets a fresh set rather than inheriting either ministry's standing tables,
+  // and why seating people on the day can never rewrite those tables.
+  //
+  // Cluster-owned groups seat registrants of ANY of the cluster's member events,
+  // which the schema already permitted: `BreakoutGroupMember` never constrained
+  // the registrant's event to the group's.
+  eventId       String?
+  event         Event?       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  clusterId     String?
+  cluster       EventCluster? @relation(fields: [clusterId], references: [id], onDelete: Cascade)
   name          String
   facilitatorId   String?
   facilitator     Volunteer?   @relation("FacilitatedGroups", fields: [facilitatorId], references: [id])
@@ -864,6 +900,9 @@ model BreakoutGroup {
   catchMechSessions CatchMechSession[]
   subFacilitators   OccurrenceSubFacilitator[]
   confirmationSubmissions ConfirmationSubmission[]
+
+  @@index([eventId])
+  @@index([clusterId])
 }
 
 model BreakoutGroupSchedule {

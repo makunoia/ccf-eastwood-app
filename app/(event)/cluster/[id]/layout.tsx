@@ -15,6 +15,7 @@ async function getClusterMeta(id: string) {
     select: {
       id: true,
       name: true,
+      kind: true,
       logoUrl: true,
       themeColorPrimary: true,
       events: { select: { eventId: true } },
@@ -75,6 +76,7 @@ export default async function ClusterLayout({
         clusterName={cluster.name}
         showBackLink={isSuperAdmin(session)}
         logoUrl={cluster.logoUrl}
+        isCollab={cluster.kind === "Collab"}
       />
       <SidebarInset className="overflow-hidden">
         <BreadcrumbProvider>

@@ -265,10 +265,18 @@ type WalkInConfig = {
 }
 
 // Cluster mode (CCF-132): the shared "Event Day" form. Identity + profile are
-// collected once, an Events step asks which of the day's events the person is
-// attending, and submission fans out one registration per selected event.
+// collected once and submission fans out one registration per event.
+//
+// What the middle step looks like depends on the day's kind (CCF-148):
+//  - `Parallel` — an Events step asks which of the day's events they're attending.
+//  - `Collab` — two ministries co-running ONE event. There is nothing to ask, so
+//    the step is omitted entirely and the submission covers every member event.
+//    The server ignores the selection for a Collab, so this is purely about not
+//    putting a meaningless question in front of someone.
 type ClusterConfig = {
   token: string
+  kind: "Parallel" | "Collab"
+  name: string
   events: { id: string; name: string; meta?: string | null }[]
 }
 
@@ -515,7 +523,10 @@ export function RegistrationForm({
   const [assignedBreakout, setAssignedBreakout] = React.useState<AssignedBreakout | null>(null)
   // Cluster mode: which of the day's events the person is attending, and the
   // per-event outcomes shown on the success screen (partial success).
-  const [selectedEventIds, setSelectedEventIds] = React.useState<string[]>([])
+  // A Collab day is one event: seed every member event rather than asking.
+  const [selectedEventIds, setSelectedEventIds] = React.useState<string[]>(() =>
+    cluster?.kind === "Collab" ? cluster.events.map((e) => e.id) : []
+  )
   const [clusterResults, setClusterResults] = React.useState<ClusterEventRegistrationResult[] | null>(null)
   const [formStep, setFormStep] = React.useState(1)
   const [privacyAccepted, setPrivacyAccepted] = React.useState(false)
@@ -624,7 +635,7 @@ export function RegistrationForm({
 
   const allSections: { key: string; title: string }[] = [
     { key: "personal", title: "Personal Information" },
-    ...(cluster ? [{ key: "events", title: "Events" }] : []),
+    ...(cluster && cluster.kind === "Parallel" ? [{ key: "events", title: "Events" }] : []),
     ...(includeSmallGroup && !skipSmallGroup ? [{ key: "smallgroup", title: "DGroup Info" }] : []),
     ...(showBreakoutSection ? [{ key: "breakout", title: "Breakout Group" }] : []),
     ...(cfg.sectionFamily ? [{ key: "household", title: "Your Household" }] : []),
@@ -1517,6 +1528,22 @@ export function RegistrationForm({
     }
     const ok = (r: ClusterEventRegistrationResult) =>
       r.status === "registered" || r.status === "already" || r.status === "volunteer"
+
+    /**
+     * A Collab day is one event to the person in front of the screen, so the
+     * per-event breakdown is exactly the structure this feature hides — being told
+     * "Youth Night: registered / Singles Connect: registered" after never being
+     * asked about either is confusing at best.
+     *
+     * Any event taking the registration counts as success. A partial fan-out is an
+     * admin problem, and it is already visible to them: the cluster roster computes
+     * a standing per person per event, so a missing half shows up there.
+     */
+    const collapsed = cluster?.kind === "Collab"
+    const collapsedBreakout =
+      collapsed ? clusterResults.find((r) => r.breakoutGroup)?.breakoutGroup ?? null : null
+    const collapsedCheckedIn = collapsed && clusterResults.some((r) => r.checkedIn)
+
     return (
       <FormShell plain={plain}>
         <CardContent className="flex flex-col items-center gap-5 pt-10 pb-6">
@@ -1542,9 +1569,30 @@ export function RegistrationForm({
                   accurate regardless of what the admin wrote. */}
               {anyRegistered
                 ? (successMessage?.trim() ||
-                  "We're so glad you're coming — here's how each event went.")
-                : "None of the selected events could take your registration."}
+                  (collapsed
+                    ? `We're so glad you're coming to ${cluster.name}.`
+                    : "We're so glad you're coming — here's how each event went."))
+                : collapsed
+                  ? "We couldn't take your registration — please ask the team for help."
+                  : "None of the selected events could take your registration."}
             </p>
+            {collapsed ? (
+              <div className="mt-3 space-y-2 text-left">
+                {anyRegistered && (
+                  <div className="rounded-xl border bg-muted/40 px-4 py-3 space-y-0.5">
+                    <p className="text-sm font-semibold">{cluster.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {collapsedCheckedIn ? "Registered · checked in" : "Registered"}
+                    </p>
+                    {collapsedBreakout && (
+                      <p className="text-xs text-muted-foreground">
+                        Breakout group: {collapsedBreakout.name}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
             <div className="mt-3 space-y-2 text-left">
               {clusterResults.map((r) => (
                 <div key={r.eventId} className="rounded-xl border bg-muted/40 px-4 py-3 space-y-0.5">
@@ -1565,6 +1613,7 @@ export function RegistrationForm({
                 </div>
               ))}
             </div>
+            )}
           </div>
           <DoneActions walkIn={walkIn} onReset={handleReset} />
         </CardContent>

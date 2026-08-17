@@ -40,6 +40,7 @@ type ClusterData = {
   name: string
   description: string | null
   date: string | null
+  kind: "Parallel" | "Collab"
 }
 
 type EventRow = {
@@ -103,6 +104,7 @@ export function ClusterSettingsClient({
   const [name, setName] = React.useState(cluster.name)
   const [description, setDescription] = React.useState(cluster.description ?? "")
   const [date, setDate] = React.useState(toDateInput(cluster.date))
+  const [kind, setKind] = React.useState(cluster.kind)
   const [savingDetails, setSavingDetails] = React.useState(false)
 
   // ── Events ──
@@ -130,6 +132,7 @@ export function ClusterSettingsClient({
       name,
       description: description || null,
       date: date ? new Date(date) : null,
+      kind,
     })
     setSavingDetails(false)
     if (result.success) {
@@ -223,6 +226,37 @@ export function ClusterSettingsClient({
               value={date}
               onChange={(e) => setDate(e.target.value)}
             />
+          </div>
+          {/* The kind changes three things at once, so each option says all three
+              rather than leaving an admin to discover the consequences one screen
+              at a time. */}
+          <div className="space-y-2">
+            <Label htmlFor="cluster-kind">What kind of day is this?</Label>
+            <Select value={kind} onValueChange={(v) => setKind(v as "Parallel" | "Collab")}>
+              <SelectTrigger id="cluster-kind" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Parallel">Separate events</SelectItem>
+                <SelectItem value="Collab">One collab event</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-sm text-muted-foreground">
+              {kind === "Collab" ? (
+                <>
+                  Two or more ministries co-running <strong>one</strong> event. People
+                  register once and aren&apos;t asked which event they&apos;re
+                  attending; the day&apos;s volunteers read as one roster; and the
+                  breakout groups belong to the day, set up fresh for the session.
+                </>
+              ) : (
+                <>
+                  Several events sharing a day — parallel or back to back. People pick
+                  which ones they&apos;re attending, and each event keeps its own
+                  volunteers and its own breakout groups.
+                </>
+              )}
+            </p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="cluster-description">Description</Label>

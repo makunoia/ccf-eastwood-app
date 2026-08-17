@@ -43,6 +43,7 @@ import {
 import { FacilitatorLeadership } from "@/components/breakouts/facilitator-leadership"
 import { CatchMechGroupField } from "@/components/breakouts/catch-mech-group-field"
 import { BreakoutEnabledSwitch } from "../enabled-switch"
+import type { BreakoutSurface } from "@/lib/breakouts/owner"
 
 /** Shown, not inherited — a breakout group's criteria are its own. */
 type LedGroup = {
@@ -71,14 +72,14 @@ function EditDialog({
   open,
   onOpenChange,
   group,
-  eventId,
+  surface,
   lifeStages,
   volunteers,
 }: {
   open: boolean
   onOpenChange: (v: boolean) => void
   group: EditableGroupData
-  eventId: string
+  surface: BreakoutSurface
   lifeStages: { id: string; name: string }[]
   volunteers: Volunteer[]
 }) {
@@ -151,7 +152,7 @@ function EditDialog({
       }
     }
     setSaving(true)
-    const result = await updateBreakoutGroup(group.id, eventId, {
+    const result = await updateBreakoutGroup(group.id, surface.owner, {
       name: form.name.trim(),
       facilitatorId: form.facilitatorId || null,
       memberLimit: form.memberLimit ? Number(form.memberLimit) : null,
@@ -294,13 +295,13 @@ function EditDialog({
 
 export function GroupActions({
   group,
-  eventId,
+  surface,
   lifeStages,
   volunteers,
   isEnabled,
 }: {
   group: EditableGroupData
-  eventId: string
+  surface: BreakoutSurface
   lifeStages: { id: string; name: string }[]
   volunteers: Volunteer[]
   /** Separate from `group` because it isn't part of the edit form — it's a switch, not a field. */
@@ -313,11 +314,11 @@ export function GroupActions({
 
   async function handleDelete() {
     setDeleting(true)
-    const result = await deleteBreakoutGroup(group.id, eventId)
+    const result = await deleteBreakoutGroup(group.id, surface.owner)
     setDeleting(false)
     if (result.success) {
       toast.success("Breakout group deleted")
-      router.push(`/event/${eventId}/breakouts`)
+      router.push(`${surface.basePath}/breakouts`)
     } else {
       toast.error(result.error)
     }
@@ -328,7 +329,7 @@ export function GroupActions({
       <BreakoutEnabledSwitch
         key={`${group.id}-${isEnabled}`}
         groupId={group.id}
-        eventId={eventId}
+        surface={surface}
         isEnabled={isEnabled}
         groupName={group.name}
         showLabel
@@ -351,7 +352,7 @@ export function GroupActions({
         open={editOpen}
         onOpenChange={setEditOpen}
         group={group}
-        eventId={eventId}
+        surface={surface}
         lifeStages={lifeStages}
         volunteers={volunteers}
       />

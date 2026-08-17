@@ -11,6 +11,8 @@ import {
   IconSettings,
   IconUserCheck,
   IconUsers,
+  IconUsersGroup,
+  IconHeartHandshake,
 } from "@tabler/icons-react"
 
 import {
@@ -30,6 +32,12 @@ type ClusterSidebarProps = React.ComponentProps<typeof Sidebar> & {
   clusterName: string
   showBackLink: boolean
   logoUrl?: string | null
+  /**
+   * Whether this is a collab day (CCF-148). Volunteers and Breakouts only exist as
+   * cluster-level surfaces for a collab — a Parallel day's events each keep their
+   * own — so the items are absent rather than empty.
+   */
+  isCollab?: boolean
 }
 
 export function ClusterSidebar({
@@ -37,6 +45,7 @@ export function ClusterSidebar({
   clusterName,
   showBackLink,
   logoUrl,
+  isCollab = false,
   ...props
 }: ClusterSidebarProps) {
   const pathname = usePathname()
@@ -50,6 +59,12 @@ export function ClusterSidebar({
     { title: "Dashboard", url: `${base}/dashboard`, icon: IconLayoutDashboard },
     { title: "Registrants", url: `${base}/registrants`, icon: IconUsers },
     { title: "Check-in", url: `${base}/checkin`, icon: IconUserCheck },
+    ...(isCollab
+      ? [
+          { title: "Breakouts", url: `${base}/breakouts`, icon: IconUsersGroup },
+          { title: "Volunteers", url: `${base}/volunteers`, icon: IconHeartHandshake },
+        ]
+      : []),
     { title: "Forms", url: `${base}/forms`, icon: IconForms },
   ]
 

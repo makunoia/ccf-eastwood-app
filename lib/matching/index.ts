@@ -8,6 +8,7 @@ import {
 } from "@/lib/validations/matching-weights"
 import { deriveEffectiveGenderFocus } from "@/lib/breakouts/gender-focus"
 import { ENABLED_BREAKOUT_WHERE } from "@/lib/breakouts/candidate-pool"
+import type { BreakoutOwner } from "@/lib/breakouts/owner"
 import { scoreGroup, combineCoupleScores } from "./engine"
 import { buildStoredScheduleSlot } from "./candidate-schedule"
 import { scoreGender, scoreLifeStage, scoreSchedule } from "./scorers"
@@ -823,7 +824,7 @@ async function loadCandidateProfiles(
 
 export async function matchBreakoutGroups(
   registrantId: string,
-  eventId: string,
+  owner: BreakoutOwner,
   options?: { excludeAssigned?: boolean; limit?: number }
 ): Promise<MatchResult[]> {
   const [profiles, assignments] = await Promise.all([
@@ -843,7 +844,10 @@ export async function matchBreakoutGroups(
     // A group that is switched off is not suggested. This is the automatic
     // route; an admin who wants someone in there adds them from the group's own
     // page, which stays open. See `ENABLED_BREAKOUT_WHERE`.
-    where: { eventId, ...ENABLED_BREAKOUT_WHERE },
+    //
+    // Scoped by owner (CCF-148): the tables in play are one event's standing set
+    // or a Collab cluster's set for the day, never both.
+    where: { ...owner, ...ENABLED_BREAKOUT_WHERE },
     select: BREAKOUT_GROUP_SCORE_SELECT,
   })
 
@@ -900,13 +904,13 @@ export function buildCandidateFromRegistrant(r: {
  */
 export async function scoreCandidatesForBreakout(
   groupId: string,
-  eventId: string,
+  owner: BreakoutOwner,
   profiles: Map<string, CandidateProfile>
 ): Promise<BreakoutCandidateMatch[]> {
   if (profiles.size === 0) return []
 
   const group = await db.breakoutGroup.findFirst({
-    where: { id: groupId, eventId },
+    where: { id: groupId, ...owner },
     select: BREAKOUT_GROUP_SCORE_SELECT,
   })
   if (!group) return []

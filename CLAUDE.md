@@ -172,9 +172,42 @@ Admin manually marks `isPaid = true` and must enter `paymentReference`. Stored o
 MultiDay: occurrences auto-generated for every day in date range (`ensureMultiDayOccurrences()`). Recurring: occurrences created on-demand when check-in page is opened. Walk-ins auto-create an `EventRegistrant` at check-in time.
 
 #### BreakoutGroup
-Sub-groups within an event. Same matching fields as SmallGroup. `id`, `eventId`, `name`, `facilitatorId → Volunteer?`, `coFacilitatorId → Volunteer?`, `linkedSmallGroupId → SmallGroup?` (temp membership target), `lifeStageId?`, `genderFocus?`, `language?`, `ageRangeMin?`, `ageRangeMax?`, `meetingFormat?`, `locationCity?`, `memberLimit?`, `BreakoutGroupSchedule[] { dayOfWeek, timeStart, timeEnd }`, `createdAt`
+Sub-groups within an event **or a Collab cluster**. Same matching fields as SmallGroup. `id`, `eventId?`, `clusterId?`, `name`, `facilitatorId → Volunteer?`, `coFacilitatorId → Volunteer?`, `linkedSmallGroupId → SmallGroup?` (temp membership target), `lifeStageId?`, `genderFocus?`, `language?`, `ageRangeMin?`, `ageRangeMax?`, `meetingFormat?`, `locationCity?`, `memberLimit?`, `BreakoutGroupSchedule[] { dayOfWeek, timeStart, timeEnd }`, `createdAt`
+
+**`eventId` is nullable.** Exactly one of `eventId` / `clusterId` is set — app-layer XOR via `isValidBreakoutOwner` (`lib/breakouts/owner.ts`), the same pattern `EventFormConfig` uses. Never dereference `group.event` without a null check; use `breakoutOccasionName()` for a display label.
+
+**Never scope a breakout query on a bare `eventId`.** Take a `BreakoutOwner` (`{ eventId } | { clusterId }`) and spread it: `where: { id: groupId, ...owner }`. Public/unauthenticated paths that only know an event id resolve their own owner via `resolvePoolScope(eventId)`. Every write action in `breakout-actions.ts` follows this.
 
 **BreakoutGroupMember:** `breakoutGroupId`, `registrantId → EventRegistrant`, `assignedAt`
+
+`EventRegistrant` is one row per person per event **series**, so a recurring event's regular has one long-lived row that stays seated in a standing table. Already-seated guards must therefore be owner-scoped (`breakoutGroupMemberships: { none: { breakoutGroup: owner } }`) — a global `{ none: {} }` would exclude every regular from a collab day's tables. And under a Collab one person holds a row per member event, so "one seat" is enforced **per person** via `personKeyFor`, not per registrant row.
+
+---
+
+## Event Clusters
+
+An `EventCluster` ("Event Day") groups events that share one public registration form and one aggregated admin workspace at `/cluster/[id]/...`. Member events stay independent; the cluster is a layer on top. One cluster per event (`@@unique([eventId])` on `EventClusterEvent`), always one day, and Priced/MultiDay events can't join (`validateClusterEventLink`).
+
+Three independent open/close switches: `isOpen` (shared form), `walkInIsOpen` (door), `checkInIsOpen` (kiosk).
+
+### ClusterKind — `Parallel | Collab`
+
+| | **Parallel** (default) | **Collab** |
+|---|---|---|
+| Shape | Several events sharing a day | Two ministries co-running **one** event |
+| Registration | Events step asks which to attend | **No picker.** Fans out to *every* member event; the server ignores any submitted selection (`resolveClusterEventSelection`) |
+| Success screen | Per-event breakdown | Collapsed to the cluster's name |
+| Volunteers | Per event | **Union** of member events' rosters — rows stay event-owned; any confirmed volunteer can facilitate any of the day's tables |
+| Breakouts | Per event | **Cluster-owned and exclusive.** Empty by default; member events' standing tables are untouched and unused for the day. `carryOverBreakoutGroups` copies a member event's tables in (optionally with rosters) |
+| Cluster nav | Dashboard/Registrants/Check-in/Forms | …plus Breakouts and Volunteers |
+
+The asymmetry is deliberate: someone chose to serve under a *ministry*, so volunteers keep that provenance and pool as a union; a breakout table for a collab session belongs to the *session*, so the day owns a fresh set.
+
+Because the fan-out creates one registrant row per member event, breakout placement and the DGroup seeker request run **once per person** — `completeEventRegistration` takes `skipBreakout` / `skipSeekerRequest` and `registerForCluster` passes them after the first successful event.
+
+**Not yet supported on cluster-owned tables:** Catch Mech (`CatchMechSession.eventId` is required) and `OccurrenceSubFacilitator` (keyed by an event's occurrence). CSV import of breakout groups is event-only; carry-over is the cluster equivalent.
+
+**Code:** `lib/breakouts/owner.ts` (pure owner/surface types), `lib/breakouts/candidate-events.ts`, `lib/events/pool-scope.ts` (the resolver), `lib/events/require-event-write.ts` (`requireEventWrite` / `requireClusterWrite` / `requireBreakoutWrite`), `lib/clusters/aggregate.ts` (`getClusterVolunteerPool`, `getClusterBreakoutPool`, `getClusterMinistries`).
 
 ---
 

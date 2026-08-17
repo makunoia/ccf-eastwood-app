@@ -56,12 +56,14 @@ import {
   eventClusterSchema,
   eventClusterSettingsSchema,
   isSameUtcDay,
+  resolveClusterEventSelection,
   validateClusterEventLink,
-  validateClusterEventSelection,
   type EventClusterInput,
   type EventClusterSettingsInput,
 } from "@/lib/validations/event-cluster"
-import type { Gender } from "@/app/generated/prisma/client"
+import { ClusterKind, type Gender } from "@/app/generated/prisma/client"
+import { requireClusterWrite } from "@/lib/events/require-event-write"
+import { personKeyFor } from "@/lib/clusters/roster"
 
 type ActionResult<T = void> =
   | { success: true; data: T }
@@ -399,6 +401,7 @@ export async function registerForCluster(
       where: { publicToken },
       select: {
         id: true,
+        kind: true,
         isOpen: true,
         registrationStart: true,
         registrationEnd: true,
@@ -437,11 +440,29 @@ export async function registerForCluster(
     const linkedSessionByEvent = new Map(
       cluster.events.map((ce) => [ce.event.id, ce.occurrenceId])
     )
-    const selection = validateClusterEventSelection(
+    // A Collab day has no event picker — it registers the person to every member
+    // event and ignores whatever selection the payload carried. See
+    // `resolveClusterEventSelection`.
+    const selection = resolveClusterEventSelection(
+      cluster.kind,
       selectedEventIds,
       clusterEvents.map((e) => e.id)
     )
     if (!selection.ok) return { success: false, error: selection.error }
+
+    /**
+     * Breakout placement and the DGroup seeker request are per-PERSON facts, and
+     * `completeEventRegistration` runs per registrant row. On a Collab that is one
+     * row per member event for the same person, so running them per row would seat
+     * them at one of the day's tables per registration and file one seeker request
+     * per registration. Run both on the first event that takes the registration and
+     * skip them thereafter.
+     *
+     * Only Collab needs this: on a Parallel day the person picked their events and
+     * each is a genuinely separate registration with its own breakout pool.
+     */
+    const oncePerPerson = cluster.kind === ClusterKind.Collab
+    let personSideEffectsDone = false
 
     // Enforce the cluster's shared form config server-side — same crafted-POST
     // defense as the per-event form, but against the CLUSTER's config: profile
@@ -553,6 +574,7 @@ export async function registerForCluster(
               ? { occurrenceId: linkedSession }
               : null
 
+        const skipPersonSideEffects = oncePerPerson && personSideEffectsDone
         const completed = await completeEventRegistration({
           eventId,
           person,
@@ -563,7 +585,10 @@ export async function registerForCluster(
           walkIn: walkInForEvent,
           existingRegistrantId: existingRegistrationId,
           touchedFields: touched,
+          skipBreakout: skipPersonSideEffects,
+          skipSeekerRequest: skipPersonSideEffects,
         })
+        if (oncePerPerson) personSideEffectsDone = true
         results.push({
           eventId,
           eventName: event.name,
@@ -588,6 +613,181 @@ export async function registerForCluster(
       return { success: false, error: error.message }
     }
     return { success: false, error: "Failed to register. Please try again." }
+  }
+}
+
+// ─── Breakout carry-over (CCF-148) ───────────────────────────────────────────
+
+/**
+ * Copy a member event's breakout tables onto the cluster.
+ *
+ * A Collab cluster owns its own tables and starts with none, because the usual
+ * thing a collab wants is a clean sheet — the distribution is reset and the
+ * groups are set up for that session. Carry-over is the escape hatch for the
+ * other case: same tables, same facilitators, and optionally the same people.
+ *
+ * **Copies, never links.** The cluster gets independent rows. Editing the day's
+ * table must not rewrite the ministry's standing one, which is the entire reason
+ * the tables are cluster-owned in the first place.
+ *
+ * The facilitator FKs copy across unchanged, and that is sound rather than lucky:
+ * volunteers pool as a union under a Collab, so a volunteer of the source event
+ * is already eligible to run any of the day's tables.
+ */
+export async function carryOverBreakoutGroups(
+  clusterId: string,
+  fromEventId: string,
+  opts: { includeMembers: boolean }
+): Promise<
+  ActionResult<{ created: number; membersCopied: number; membersSkipped: number }>
+> {
+  const denied = await requireClusterWrite(clusterId)
+  if (denied) return { success: false, error: denied.error }
+
+  try {
+    const cluster = await db.eventCluster.findUnique({
+      where: { id: clusterId },
+      select: { kind: true, events: { select: { eventId: true } } },
+    })
+    if (!cluster) return { success: false, error: "Event day not found." }
+    if (cluster.kind !== ClusterKind.Collab) {
+      return {
+        success: false,
+        error: "Only a collab event day has its own breakout groups.",
+      }
+    }
+    if (!cluster.events.some((e) => e.eventId === fromEventId)) {
+      return { success: false, error: "That event isn't part of this event day." }
+    }
+
+    const sources = await db.breakoutGroup.findMany({
+      where: { eventId: fromEventId },
+      orderBy: { createdAt: "asc" },
+      select: {
+        name: true,
+        facilitatorId: true,
+        coFacilitatorId: true,
+        genderFocus: true,
+        language: true,
+        ageRangeMin: true,
+        ageRangeMax: true,
+        meetingFormat: true,
+        locationCity: true,
+        memberLimit: true,
+        isEnabled: true,
+        linkedSmallGroupId: true,
+        lifeStages: { select: { id: true } },
+        schedules: { select: { dayOfWeek: true, timeStart: true, timeEnd: true } },
+        members: {
+          select: {
+            registrant: { select: { id: true, memberId: true, guestId: true } },
+          },
+        },
+      },
+    })
+    if (sources.length === 0) {
+      return { success: false, error: "That event has no breakout groups to carry over." }
+    }
+
+    // Names are only unique within a set, and a second carry-over from the other
+    // ministry can legitimately bring another "Table 1". Suffix rather than
+    // reject — refusing the whole batch over a name clash would be the wrong
+    // trade for a bulk action.
+    const existingNames = new Set(
+      (
+        await db.breakoutGroup.findMany({
+          where: { clusterId },
+          select: { name: true },
+        })
+      ).map((g) => g.name.toLowerCase())
+    )
+    function uniqueName(base: string): string {
+      if (!existingNames.has(base.toLowerCase())) {
+        existingNames.add(base.toLowerCase())
+        return base
+      }
+      for (let n = 2; ; n++) {
+        const candidate = `${base} (${n})`
+        if (!existingNames.has(candidate.toLowerCase())) {
+          existingNames.add(candidate.toLowerCase())
+          return candidate
+        }
+      }
+    }
+
+    // One seat per person across the cluster's tables. Resolved by person rather
+    // than by registrant row because the same person holds a registration on
+    // every member event of a Collab — see `personKeyFor`.
+    const seated = new Set(
+      (
+        await db.breakoutGroupMember.findMany({
+          where: { breakoutGroup: { clusterId } },
+          select: { registrant: { select: { id: true, memberId: true, guestId: true } } },
+        })
+      ).map((m) => personKeyFor(m.registrant))
+    )
+
+    let created = 0
+    let membersCopied = 0
+    let membersSkipped = 0
+
+    for (const src of sources) {
+      const group = await db.breakoutGroup.create({
+        data: {
+          clusterId,
+          name: uniqueName(src.name),
+          facilitatorId: src.facilitatorId,
+          coFacilitatorId: src.coFacilitatorId,
+          genderFocus: src.genderFocus,
+          language: src.language,
+          ageRangeMin: src.ageRangeMin,
+          ageRangeMax: src.ageRangeMax,
+          meetingFormat: src.meetingFormat,
+          locationCity: src.locationCity,
+          memberLimit: src.memberLimit,
+          isEnabled: src.isEnabled,
+          linkedSmallGroupId: src.linkedSmallGroupId,
+          lifeStages: { connect: src.lifeStages.map((l) => ({ id: l.id })) },
+          schedules: {
+            create: src.schedules.map((sc) => ({
+              dayOfWeek: sc.dayOfWeek,
+              timeStart: sc.timeStart,
+              timeEnd: sc.timeEnd,
+            })),
+          },
+        },
+        select: { id: true },
+      })
+      created++
+
+      if (!opts.includeMembers) continue
+
+      // The source memberships already point at a member event's registrants, so
+      // they are reusable as they are — no id mapping needed. Capacity is still
+      // honoured: the group was just created empty, so its seat count is exactly
+      // what we have placed into it here.
+      const room = src.memberLimit ?? src.members.length
+      let placed = 0
+      for (const m of src.members) {
+        const key = personKeyFor(m.registrant)
+        if (seated.has(key) || placed >= room) {
+          membersSkipped++
+          continue
+        }
+        await db.breakoutGroupMember.create({
+          data: { breakoutGroupId: group.id, registrantId: m.registrant.id },
+        })
+        seated.add(key)
+        placed++
+        membersCopied++
+      }
+    }
+
+    revalidatePath(`/cluster/${clusterId}/breakouts`)
+    revalidateClusterPaths(clusterId)
+    return { success: true, data: { created, membersCopied, membersSkipped } }
+  } catch {
+    return { success: false, error: "Failed to carry over breakout groups" }
   }
 }
 

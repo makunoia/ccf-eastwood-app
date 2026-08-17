@@ -129,7 +129,7 @@ describe("unassignedCandidateWhere", () => {
     })
 
     const rows = await db.eventRegistrant.findMany({
-      where: { eventId: event.id, ...unassignedCandidateWhere(event.id) },
+      where: { eventId: event.id, ...unassignedCandidateWhere({ eventId: event.id }) },
       select: { id: true },
     })
     expect(rows.map((r) => r.id)).toEqual([free.id])
@@ -147,7 +147,7 @@ describe("unassignedCandidateWhere", () => {
     const participant = await seedRegistrant(event.id, { firstName: "Plain", lastName: "Person" })
 
     const rows = await db.eventRegistrant.findMany({
-      where: { eventId: event.id, ...unassignedCandidateWhere(event.id) },
+      where: { eventId: event.id, ...unassignedCandidateWhere({ eventId: event.id }) },
       select: { id: true },
     })
     expect(rows.map((r) => r.id)).toEqual([participant.id])
@@ -163,7 +163,7 @@ describe("unassignedCandidateWhere", () => {
     const registrant = await seedRegistrant(event.id, { memberId: helper.id })
 
     const rows = await db.eventRegistrant.findMany({
-      where: { eventId: event.id, ...unassignedCandidateWhere(event.id) },
+      where: { eventId: event.id, ...unassignedCandidateWhere({ eventId: event.id }) },
       select: { id: true },
     })
     expect(rows.map((r) => r.id)).toEqual([registrant.id])
@@ -178,7 +178,7 @@ describe("unassignedCandidateWhere", () => {
     const registrantA = await seedRegistrant(eventA.id, { memberId: person.id })
 
     const rows = await db.eventRegistrant.findMany({
-      where: { eventId: eventA.id, ...unassignedCandidateWhere(eventA.id) },
+      where: { eventId: eventA.id, ...unassignedCandidateWhere({ eventId: eventA.id }) },
       select: { id: true },
     })
     expect(rows.map((r) => r.id)).toEqual([registrantA.id])
@@ -194,7 +194,7 @@ describe("listBreakoutCandidates", () => {
     const member = await seedMember({ gender: "Female", language: ["Tagalog"] })
     await seedRegistrant(event.id, { memberId: member.id })
 
-    const result = await listBreakoutCandidates(group.id, event.id)
+    const result = await listBreakoutCandidates(group.id, { eventId: event.id })
     expect(result.success).toBe(true)
     if (!result.success) return
 
@@ -216,7 +216,7 @@ describe("listBreakoutCandidates", () => {
     const male = await seedMember({ firstName: "Ben", gender: "Male" })
     await seedRegistrant(event.id, { memberId: male.id })
 
-    const result = await listBreakoutCandidates(group.id, event.id)
+    const result = await listBreakoutCandidates(group.id, { eventId: event.id })
     expect(result.success).toBe(true)
     if (!result.success) return
 
@@ -233,7 +233,7 @@ describe("listBreakoutCandidates", () => {
     await seedRegistrant(event.id, { guestId: guest.id })
     await seedRegistrant(event.id, { firstName: "Walk", lastName: "In" })
 
-    const result = await listBreakoutCandidates(group.id, event.id)
+    const result = await listBreakoutCandidates(group.id, { eventId: event.id })
     expect(result.success).toBe(true)
     if (!result.success) return
 
@@ -255,7 +255,7 @@ describe("listBreakoutCandidates", () => {
     const member = await seedMember({ ageRangeBucketId: bucket.id })
     await seedRegistrant(event.id, { memberId: member.id })
 
-    const result = await listBreakoutCandidates(group.id, event.id)
+    const result = await listBreakoutCandidates(group.id, { eventId: event.id })
     expect(result.success).toBe(true)
     if (!result.success) return
 
@@ -281,7 +281,7 @@ describe("listBreakoutCandidates", () => {
     })
     await seedRegistrant(event.id, { guestId: guest.id })
 
-    const result = await listBreakoutCandidates(group.id, event.id)
+    const result = await listBreakoutCandidates(group.id, { eventId: event.id })
     expect(result.success).toBe(true)
     if (!result.success) return
 
@@ -298,7 +298,7 @@ describe("listBreakoutCandidates", () => {
       await seedVolunteer(event.id, member.id)
       await seedRegistrant(event.id, { memberId: member.id })
 
-      const result = await listBreakoutCandidates(group.id, event.id)
+      const result = await listBreakoutCandidates(group.id, { eventId: event.id })
       expect(result.success).toBe(true)
       if (!result.success) return
       expect(result.data.candidates[0].isVolunteer).toBe(true)
@@ -310,7 +310,7 @@ describe("listBreakoutCandidates", () => {
       const member = await seedMember({ firstName: "Plain" })
       await seedRegistrant(event.id, { memberId: member.id })
 
-      const result = await listBreakoutCandidates(group.id, event.id)
+      const result = await listBreakoutCandidates(group.id, { eventId: event.id })
       expect(result.success).toBe(true)
       if (!result.success) return
       expect(result.data.candidates[0].isVolunteer).toBe(false)
@@ -323,7 +323,7 @@ describe("listBreakoutCandidates", () => {
       const guest = await seedGuest()
       await seedRegistrant(event.id, { guestId: guest.id })
 
-      const result = await listBreakoutCandidates(group.id, event.id)
+      const result = await listBreakoutCandidates(group.id, { eventId: event.id })
       expect(result.success).toBe(true)
       if (!result.success) return
       expect(result.data.candidates[0].isVolunteer).toBe(false)
@@ -339,7 +339,7 @@ describe("listBreakoutCandidates", () => {
       await seedRegistrant(event.id, { memberId: pending.id })
       await seedRegistrant(event.id, { memberId: rejected.id })
 
-      const result = await listBreakoutCandidates(group.id, event.id)
+      const result = await listBreakoutCandidates(group.id, { eventId: event.id })
       expect(result.success).toBe(true)
       if (!result.success) return
 
@@ -357,7 +357,7 @@ describe("listBreakoutCandidates", () => {
       await seedVolunteer(other.id, member.id)
       await seedRegistrant(event.id, { memberId: member.id })
 
-      const result = await listBreakoutCandidates(group.id, event.id)
+      const result = await listBreakoutCandidates(group.id, { eventId: event.id })
       expect(result.success).toBe(true)
       if (!result.success) return
       expect(result.data.candidates[0].isVolunteer).toBe(false)
@@ -376,7 +376,7 @@ describe("listBreakoutCandidates", () => {
       data: { eventId: event.id, context: "WalkIn", fieldGender: true },
     })
 
-    const result = await listBreakoutCandidates(group.id, event.id)
+    const result = await listBreakoutCandidates(group.id, { eventId: event.id })
     expect(result.success).toBe(true)
     if (!result.success) return
     expect(result.data.formConfig.fieldGender).toBe(true)
@@ -390,7 +390,7 @@ describe("listBreakoutCandidates", () => {
       data: { breakoutGroupId: group.id, registrantId: seated.id },
     })
 
-    const result = await listBreakoutCandidates(group.id, event.id)
+    const result = await listBreakoutCandidates(group.id, { eventId: event.id })
     expect(result.success).toBe(true)
     if (!result.success) return
     expect(result.data.memberLimit).toBe(5)
@@ -403,7 +403,7 @@ describe("listBreakoutCandidates", () => {
       const eventB = await seedEvent("B")
       const groupB = await seedGroup(eventB.id)
 
-      const result = await listBreakoutCandidates(groupB.id, eventA.id)
+      const result = await listBreakoutCandidates(groupB.id, { eventId: eventA.id })
       expect(result.success).toBe(false)
     })
 
@@ -412,7 +412,7 @@ describe("listBreakoutCandidates", () => {
       const group = await seedGroup(event.id)
       asStaff()
 
-      const result = await listBreakoutCandidates(group.id, event.id)
+      const result = await listBreakoutCandidates(group.id, { eventId: event.id })
       expect(result).toEqual({ success: false, error: "Unauthorized." })
     })
 
@@ -424,7 +424,7 @@ describe("listBreakoutCandidates", () => {
         eventAccess: ["some-other-event"],
       })
 
-      const result = await listBreakoutCandidates(group.id, event.id)
+      const result = await listBreakoutCandidates(group.id, { eventId: event.id })
       expect(result).toEqual({ success: false, error: "Unauthorized." })
     })
   })
@@ -439,7 +439,7 @@ describe("addRegistrantsToBreakout", () => {
     const a = await seedRegistrant(event.id, { firstName: "A", lastName: "One" })
     const b = await seedRegistrant(event.id, { firstName: "B", lastName: "Two" })
 
-    const result = await addRegistrantsToBreakout(group.id, [a.id, b.id], event.id)
+    const result = await addRegistrantsToBreakout(group.id, [a.id, b.id], { eventId: event.id })
     expect(result).toEqual({ success: true, data: { added: 2, failed: [] } })
     expect(await db.breakoutGroupMember.count({ where: { breakoutGroupId: group.id } })).toBe(2)
   })
@@ -453,7 +453,7 @@ describe("addRegistrantsToBreakout", () => {
       ids.push(r.id)
     }
 
-    const result = await addRegistrantsToBreakout(group.id, ids, event.id)
+    const result = await addRegistrantsToBreakout(group.id, ids, { eventId: event.id })
     expect(result.success).toBe(true)
     if (!result.success) return
 
@@ -472,7 +472,7 @@ describe("addRegistrantsToBreakout", () => {
     const faciReg = await seedRegistrant(event.id, { memberId: faci.id })
     const ok = await seedRegistrant(event.id, { firstName: "Fine", lastName: "Person" })
 
-    const result = await addRegistrantsToBreakout(group.id, [faciReg.id, ok.id], event.id)
+    const result = await addRegistrantsToBreakout(group.id, [faciReg.id, ok.id], { eventId: event.id })
     expect(result.success).toBe(true)
     if (!result.success) return
 
@@ -495,7 +495,7 @@ describe("addRegistrantsToBreakout", () => {
       data: { breakoutGroupId: groupA.id, registrantId: r.id },
     })
 
-    const result = await addRegistrantsToBreakout(groupB.id, [r.id], event.id)
+    const result = await addRegistrantsToBreakout(groupB.id, [r.id], { eventId: event.id })
     expect(result.success).toBe(true)
     if (!result.success) return
     expect(result.data.added).toBe(0)
@@ -508,7 +508,7 @@ describe("addRegistrantsToBreakout", () => {
     const groupA = await seedGroup(eventA.id)
     const foreign = await seedRegistrant(eventB.id, { firstName: "Other", lastName: "Event" })
 
-    const result = await addRegistrantsToBreakout(groupA.id, [foreign.id], eventA.id)
+    const result = await addRegistrantsToBreakout(groupA.id, [foreign.id], { eventId: eventA.id })
     expect(result.success).toBe(true)
     if (!result.success) return
     expect(result.data.added).toBe(0)
@@ -521,7 +521,7 @@ describe("addRegistrantsToBreakout", () => {
     const group = await seedGroup(event.id)
     const r = await seedRegistrant(event.id, { firstName: "Dupe", lastName: "One" })
 
-    const result = await addRegistrantsToBreakout(group.id, [r.id, r.id, r.id], event.id)
+    const result = await addRegistrantsToBreakout(group.id, [r.id, r.id, r.id], { eventId: event.id })
     expect(result).toEqual({ success: true, data: { added: 1, failed: [] } })
     expect(await db.breakoutGroupMember.count({ where: { breakoutGroupId: group.id } })).toBe(1)
   })
@@ -530,7 +530,7 @@ describe("addRegistrantsToBreakout", () => {
     const event = await seedEvent()
     const group = await seedGroup(event.id)
 
-    const result = await addRegistrantsToBreakout(group.id, [], event.id)
+    const result = await addRegistrantsToBreakout(group.id, [], { eventId: event.id })
     expect(result).toEqual({ success: true, data: { added: 0, failed: [] } })
     expect(await db.breakoutGroupMember.count()).toBe(0)
   })
@@ -547,7 +547,7 @@ describe("addRegistrantsToBreakout", () => {
     const a = await seedRegistrant(event.id, { guestId: guestA.id })
     const b = await seedRegistrant(event.id, { guestId: guestB.id })
 
-    const result = await addRegistrantsToBreakout(group.id, [a.id, b.id], event.id)
+    const result = await addRegistrantsToBreakout(group.id, [a.id, b.id], { eventId: event.id })
     expect(result.success).toBe(true)
     expect(
       await db.smallGroupMemberRequest.count({ where: { smallGroupId: smallGroup.id } })
@@ -559,7 +559,7 @@ describe("addRegistrantsToBreakout", () => {
     const group = await seedGroup(event.id)
     const r = await seedRegistrant(event.id, { firstName: "A", lastName: "One" })
 
-    await addRegistrantsToBreakout(group.id, [r.id], event.id)
+    await addRegistrantsToBreakout(group.id, [r.id], { eventId: event.id })
 
     const paths = vi.mocked(revalidatePath).mock.calls.map((c) => c[0])
     expect(paths).toContain(`/event/${event.id}/breakouts`)
@@ -580,8 +580,8 @@ describe("addRegistrantsToBreakout", () => {
     }
 
     const [a, b] = await Promise.all([
-      addRegistrantsToBreakout(group.id, ids.slice(0, 3), event.id),
-      addRegistrantsToBreakout(group.id, ids.slice(3), event.id),
+      addRegistrantsToBreakout(group.id, ids.slice(0, 3), { eventId: event.id }),
+      addRegistrantsToBreakout(group.id, ids.slice(3), { eventId: event.id }),
     ])
 
     expect(a.success && b.success).toBe(true)
@@ -597,7 +597,7 @@ describe("addRegistrantsToBreakout", () => {
     const group = await seedGroup(event.id)
     const ids = Array.from({ length: MAX_BREAKOUT_BATCH + 1 }, (_, i) => `id-${i}`)
 
-    const result = await addRegistrantsToBreakout(group.id, ids, event.id)
+    const result = await addRegistrantsToBreakout(group.id, ids, { eventId: event.id })
     expect(result.success).toBe(false)
     if (result.success) return
     expect(result.error).toMatch(/more than 500/)
@@ -610,7 +610,7 @@ describe("addRegistrantsToBreakout", () => {
       const r = await seedRegistrant(event.id, { firstName: "A", lastName: "One" })
       asStaff({ permissions: [{ feature: "Events", actions: ["Read"] }] })
 
-      const result = await addRegistrantsToBreakout(group.id, [r.id], event.id)
+      const result = await addRegistrantsToBreakout(group.id, [r.id], { eventId: event.id })
       expect(result).toEqual({ success: false, error: "Unauthorized." })
       expect(await db.breakoutGroupMember.count()).toBe(0)
     })
@@ -621,7 +621,7 @@ describe("addRegistrantsToBreakout", () => {
       const groupB = await seedGroup(eventB.id)
       const r = await seedRegistrant(eventA.id, { firstName: "A", lastName: "One" })
 
-      const result = await addRegistrantsToBreakout(groupB.id, [r.id], eventA.id)
+      const result = await addRegistrantsToBreakout(groupB.id, [r.id], { eventId: eventA.id })
       expect(result).toEqual({ success: false, error: "Breakout group not found" })
       expect(await db.breakoutGroupMember.count()).toBe(0)
     })
@@ -643,7 +643,7 @@ describe("assignRegistrantToBreakout", () => {
     const groupB = await seedGroup(eventB.id)
     const regA = await seedRegistrant(eventA.id, { firstName: "Cross", lastName: "Event" })
 
-    const result = await assignRegistrantToBreakout(groupB.id, regA.id, eventA.id)
+    const result = await assignRegistrantToBreakout(groupB.id, regA.id, { eventId: eventA.id })
 
     expect(result.success).toBe(false)
     // Nothing written: a cross-event membership would also have hidden this
@@ -651,7 +651,7 @@ describe("assignRegistrantToBreakout", () => {
     // `breakoutGroupMemberships: { none: {} }` without an event scope.
     expect(await db.breakoutGroupMember.count()).toBe(0)
     const stillAvailable = await db.eventRegistrant.findMany({
-      where: { eventId: eventA.id, ...unassignedCandidateWhere(eventA.id) },
+      where: { eventId: eventA.id, ...unassignedCandidateWhere({ eventId: eventA.id }) },
       select: { id: true },
     })
     expect(stillAvailable.map((r) => r.id)).toEqual([regA.id])
@@ -664,7 +664,7 @@ describe("assignRegistrantToBreakout", () => {
     await seedVolunteer(event.id, faci.id, { facilitates: group.id })
     const reg = await seedRegistrant(event.id, { memberId: faci.id })
 
-    const result = await assignRegistrantToBreakout(group.id, reg.id, event.id)
+    const result = await assignRegistrantToBreakout(group.id, reg.id, { eventId: event.id })
 
     expect(result.success).toBe(false)
     if (result.success) return
@@ -681,7 +681,7 @@ describe("assignRegistrantToBreakout", () => {
       data: { breakoutGroupId: groupA.id, registrantId: reg.id },
     })
 
-    const result = await assignRegistrantToBreakout(groupB.id, reg.id, event.id)
+    const result = await assignRegistrantToBreakout(groupB.id, reg.id, { eventId: event.id })
     expect(result.success).toBe(false)
     expect(await db.breakoutGroupMember.count({ where: { breakoutGroupId: groupB.id } })).toBe(0)
   })
@@ -692,7 +692,7 @@ describe("assignRegistrantToBreakout", () => {
     const reg = await seedRegistrant(event.id, { firstName: "A", lastName: "One" })
     asStaff({ permissions: [{ feature: "Events", actions: ["Read"] }] })
 
-    const result = await assignRegistrantToBreakout(group.id, reg.id, event.id)
+    const result = await assignRegistrantToBreakout(group.id, reg.id, { eventId: event.id })
     expect(result).toEqual({ success: false, error: "Unauthorized." })
     expect(await db.breakoutGroupMember.count()).toBe(0)
   })
@@ -702,7 +702,7 @@ describe("assignRegistrantToBreakout", () => {
     const group = await seedGroup(event.id)
     const reg = await seedRegistrant(event.id, { firstName: "Fine", lastName: "Person" })
 
-    const result = await assignRegistrantToBreakout(group.id, reg.id, event.id)
+    const result = await assignRegistrantToBreakout(group.id, reg.id, { eventId: event.id })
     expect(result.success).toBe(true)
     expect(await db.breakoutGroupMember.count({ where: { breakoutGroupId: group.id } })).toBe(1)
   })
@@ -716,7 +716,7 @@ describe("assignRegistrantToBreakout", () => {
     })
     const late = await seedRegistrant(event.id, { firstName: "Late", lastName: "Comer" })
 
-    const result = await assignRegistrantToBreakout(group.id, late.id, event.id)
+    const result = await assignRegistrantToBreakout(group.id, late.id, { eventId: event.id })
     expect(result.success).toBe(false)
     if (result.success) return
     expect(result.error).toContain("Late Comer")
@@ -735,7 +735,7 @@ describe("read-action authorization", () => {
       eventAccess: ["different-event"],
     })
 
-    const result = await getBreakoutGroupDetails(group.id, event.id)
+    const result = await getBreakoutGroupDetails(group.id, { eventId: event.id })
     expect(result).toEqual({ success: false, error: "Unauthorized." })
   })
 
@@ -744,7 +744,7 @@ describe("read-action authorization", () => {
     const reg = await seedRegistrant(event.id, { firstName: "A", lastName: "One" })
     asStaff()
 
-    const result = await findBreakoutGroupMatches(reg.id, event.id)
+    const result = await findBreakoutGroupMatches(reg.id, { eventId: event.id })
     expect(result).toEqual({ success: false, error: "Unauthorized." })
   })
 })

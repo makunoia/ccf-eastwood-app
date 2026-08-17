@@ -32,6 +32,7 @@ import { BreakoutSection } from "./breakout-match-section"
 import { RegistrantGuestDetail } from "./registrant-guest-detail"
 import { RegistrantNavHeader } from "./registrant-nav-header"
 import { DeleteRegistrantSection } from "./delete-registrant-section"
+import { eventSurface } from "@/lib/breakouts/owner"
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -293,7 +294,7 @@ export default async function RegistrantDetailPage({
       ) : (
         <BreakoutSection
           registrantId={registrantId}
-          eventId={eventId}
+          surface={eventSurface(eventId)}
           facilitatedGroup={facilitatedGroup ?? null}
           allEventGroups={allEventGroups}
         />

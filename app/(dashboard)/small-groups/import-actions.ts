@@ -596,7 +596,10 @@ export async function importSmallGroups(
 async function linkBreakoutGroupsForLeaders(leaderIds: string[]): Promise<void> {
   if (leaderIds.length === 0) return
 
+  // Two sets, because a breakout group is owned by an event OR by a Collab
+  // cluster (CCF-148) and their breakouts pages live at different paths.
   const affectedEventIds = new Set<string>()
+  const affectedClusterIds = new Set<string>()
 
   for (const leaderId of leaderIds) {
     // Only auto-link when the leader leads a single small group — otherwise the
@@ -613,7 +616,7 @@ async function linkBreakoutGroupsForLeaders(leaderIds: string[]): Promise<void> 
         linkedSmallGroupId: null,
         facilitator: { is: { memberId: leaderId } },
       },
-      select: { id: true, eventId: true },
+      select: { id: true, eventId: true, clusterId: true },
     })
     if (breakouts.length === 0) continue
 
@@ -621,10 +624,16 @@ async function linkBreakoutGroupsForLeaders(leaderIds: string[]): Promise<void> 
       where: { id: { in: breakouts.map((b) => b.id) } },
       data: { linkedSmallGroupId: smallGroupId },
     })
-    for (const b of breakouts) affectedEventIds.add(b.eventId)
+    for (const b of breakouts) {
+      if (b.eventId) affectedEventIds.add(b.eventId)
+      if (b.clusterId) affectedClusterIds.add(b.clusterId)
+    }
   }
 
   for (const eventId of affectedEventIds) {
     revalidatePath(`/event/${eventId}/breakouts`)
+  }
+  for (const clusterId of affectedClusterIds) {
+    revalidatePath(`/cluster/${clusterId}/breakouts`)
   }
 }
