@@ -63,6 +63,7 @@ import { AddRegistrantSheet } from "./add-registrant-sheet"
 import { MatchingProfile } from "@/components/breakouts/matching-profile"
 import { CatchMechGroupField } from "@/components/breakouts/catch-mech-group-field"
 import { breakoutOccupancy } from "@/lib/breakouts/occupancy"
+import type { BreakoutSurface } from "@/lib/breakouts/owner"
 
 const UNASSIGNED = "__unassigned__"
 
@@ -97,6 +98,13 @@ type BreakoutMemberRow = {
   assignedAt: Date
   registrant: {
     id: string
+    /**
+     * The event this registration belongs to. Carried per row because a
+     * cluster-owned table (CCF-148) seats people from either member event, and
+     * their registrant detail page lives in their own event's workspace — the
+     * table's surface cannot supply it.
+     */
+    eventId: string
     memberId: string | null
     guestId: string | null
     firstName: string | null
@@ -125,7 +133,8 @@ type AvailableVolunteer = {
 
 export type BreakoutDetailData = {
   id: string
-  eventId: string
+  /** Null when a Collab cluster owns the table (CCF-148). */
+  eventId: string | null
   name: string
   facilitatorId: string | null
   facilitator: FacilitatorVolunteer | null
@@ -178,7 +187,7 @@ function FacilitatorCell({
   label,
   volunteer,
   groupId,
-  eventId,
+  surface,
   role,
   otherVolunteerId,
   availableVolunteers,
@@ -186,7 +195,7 @@ function FacilitatorCell({
   label: string
   volunteer: FacilitatorVolunteer | null
   groupId: string
-  eventId: string
+  surface: BreakoutSurface
   role: "facilitator" | "coFacilitator"
   otherVolunteerId: string | null
   availableVolunteers: AvailableVolunteer[]
@@ -223,7 +232,7 @@ function FacilitatorCell({
         groupId,
         volunteerId,
         role,
-        eventId,
+        surface.owner,
         role === "facilitator" ? (linkedGroupId || null) : undefined
       )
       if (result.success) {
@@ -377,7 +386,7 @@ function OccurrenceAttendanceCell({
 function MembersTable({
   members,
   groupId,
-  eventId,
+  surface,
   eventType,
   totalOccurrences,
   memberLimit,
@@ -385,7 +394,7 @@ function MembersTable({
 }: {
   members: BreakoutMemberRow[]
   groupId: string
-  eventId: string
+  surface: BreakoutSurface
   eventType: string
   totalOccurrences: number
   memberLimit: number | null
@@ -401,7 +410,7 @@ function MembersTable({
 
   async function handleRemove(row: BreakoutMemberRow) {
     setPendingId(row.registrantId)
-    const result = await removeRegistrantFromBreakout(groupId, row.registrantId, eventId)
+    const result = await removeRegistrantFromBreakout(groupId, row.registrantId, surface.owner)
     setPendingId(null)
     if (result.success) {
       setConfirmRemove(null)
@@ -417,7 +426,7 @@ function MembersTable({
       groupId,
       target.id,
       row.registrantId,
-      eventId
+      surface.owner
     )
     setPendingId(null)
     if (result.success) {
@@ -553,7 +562,7 @@ function MembersTable({
                   <TableRow key={m.registrantId}>
                     <TableCell>
                       <Link
-                        href={`/event/${eventId}/registrants/${r.id}`}
+                        href={`/event/${r.eventId}/registrants/${r.id}`}
                         className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
                       >
                         {name}
@@ -642,7 +651,7 @@ function MembersTable({
         open={addOpen}
         onOpenChange={setAddOpen}
         groupId={groupId}
-        eventId={eventId}
+        surface={surface}
       />
 
       <Dialog
@@ -775,10 +784,12 @@ function TransferDialog({
 
 export function BreakoutDetail({
   group,
+  surface,
   availableVolunteers,
   siblingGroups,
 }: {
   group: BreakoutDetailData
+  surface: BreakoutSurface
   availableVolunteers: AvailableVolunteer[]
   siblingGroups: SiblingGroup[]
 }) {
@@ -796,7 +807,7 @@ export function BreakoutDetail({
             label="Facilitator"
             volunteer={group.facilitator}
             groupId={group.id}
-            eventId={group.eventId}
+            surface={surface}
             role="facilitator"
             otherVolunteerId={group.coFacilitatorId}
             availableVolunteers={availableVolunteers}
@@ -805,7 +816,7 @@ export function BreakoutDetail({
             label="Co-Facilitator"
             volunteer={group.coFacilitator}
             groupId={group.id}
-            eventId={group.eventId}
+            surface={surface}
             role="coFacilitator"
             otherVolunteerId={group.facilitatorId}
             availableVolunteers={availableVolunteers}
@@ -836,7 +847,7 @@ export function BreakoutDetail({
       <MembersTable
         members={group.members}
         groupId={group.id}
-        eventId={group.eventId}
+        surface={surface}
         eventType={group.eventType}
         totalOccurrences={group.totalOccurrences}
         memberLimit={group.memberLimit}

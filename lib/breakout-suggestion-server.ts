@@ -6,6 +6,7 @@ import type { BreakoutCandidate } from "@/lib/breakout-suggestion"
 import { ENABLED_BREAKOUT_WHERE } from "@/lib/breakouts/candidate-pool"
 import { breakoutOccupancy } from "@/lib/breakouts/occupancy"
 import { deriveEffectiveGenderFocus } from "@/lib/breakouts/gender-focus"
+import { resolvePoolScope } from "@/lib/events/pool-scope"
 
 /**
  * The facilitator gate: a breakout group is only offered at a staffed surface
@@ -21,7 +22,7 @@ import { deriveEffectiveGenderFocus } from "@/lib/breakouts/gender-focus"
  * which is why `breakoutPickerReadiness` exists to surface it to admins.
  */
 function facilitatorGate(
-  eventId: string,
+  eventIds: string[],
   occurrenceId: string | null
 ): Prisma.BreakoutGroupWhereInput {
   // A facilitator is checked in *as a volunteer*. The kiosk resolves them to
@@ -44,11 +45,20 @@ function facilitatorGate(
       ? {
           member: {
             eventRegistrations: {
-              some: { eventId, occurrenceAttendances: { some: { occurrenceId } } },
+              some: {
+                eventId: { in: eventIds },
+                occurrenceAttendances: { some: { occurrenceId } },
+              },
             },
           },
         }
-      : { member: { eventRegistrations: { some: { eventId, attendedAt: { not: null } } } } }
+      : {
+          member: {
+            eventRegistrations: {
+              some: { eventId: { in: eventIds }, attendedAt: { not: null } },
+            },
+          },
+        }
 
   const checkedIn: Prisma.VolunteerWhereInput = {
     OR: [volunteerCheckedIn, registrantCheckedIn],
@@ -81,11 +91,16 @@ export async function fetchBreakoutCandidates(
   occurrenceId: string | null,
   requireCheckedIn = true
 ): Promise<BreakoutCandidate[]> {
+  // Keeps taking an event id: every caller is a public or per-event surface that
+  // knows which event it is serving. The owner is resolved here so a collab day's
+  // form offers the CLUSTER's tables rather than the event's standing ones.
+  const { breakoutOwner: owner, candidateEventIds } = await resolvePoolScope(eventId)
+
   const groups = await db.breakoutGroup.findMany({
     where: {
-      eventId,
+      ...owner,
       ...ENABLED_BREAKOUT_WHERE,
-      ...(requireCheckedIn ? facilitatorGate(eventId, occurrenceId) : {}),
+      ...(requireCheckedIn ? facilitatorGate(candidateEventIds, occurrenceId) : {}),
     },
     orderBy: { createdAt: "asc" },
     select: {
@@ -161,9 +176,10 @@ export async function fetchBreakoutAvailability(
   occurrenceId: string | null,
   requireCheckedIn = true
 ): Promise<BreakoutAvailability> {
+  const { breakoutOwner: owner } = await resolvePoolScope(eventId)
   const [candidates, totalGroups] = await Promise.all([
     fetchBreakoutCandidates(eventId, occurrenceId, requireCheckedIn),
-    db.breakoutGroup.count({ where: { eventId, ...ENABLED_BREAKOUT_WHERE } }),
+    db.breakoutGroup.count({ where: { ...owner, ...ENABLED_BREAKOUT_WHERE } }),
   ])
   return { candidates, totalGroups }
 }
@@ -195,12 +211,13 @@ export type BreakoutPickerReadiness = {
 export async function breakoutPickerReadiness(
   eventId: string
 ): Promise<BreakoutPickerReadiness> {
+  const { breakoutOwner: owner } = await resolvePoolScope(eventId)
   const [totalGroups, enabledGroups, staffedGroups] = await Promise.all([
-    db.breakoutGroup.count({ where: { eventId } }),
-    db.breakoutGroup.count({ where: { eventId, ...ENABLED_BREAKOUT_WHERE } }),
+    db.breakoutGroup.count({ where: owner }),
+    db.breakoutGroup.count({ where: { ...owner, ...ENABLED_BREAKOUT_WHERE } }),
     db.breakoutGroup.count({
       where: {
-        eventId,
+        ...owner,
         ...ENABLED_BREAKOUT_WHERE,
         OR: [{ facilitatorId: { not: null } }, { coFacilitatorId: { not: null } }],
       },

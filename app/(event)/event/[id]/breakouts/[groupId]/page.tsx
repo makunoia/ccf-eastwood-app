@@ -8,6 +8,7 @@ import { GroupActions } from "./group-actions"
 import { BreakoutNavHeader } from "./breakout-nav-header"
 import { BreadcrumbOverride } from "@/components/breadcrumb-context"
 import { breakoutOccupancy } from "@/lib/breakouts/occupancy"
+import { eventSurface } from "@/lib/breakouts/owner"
 
 /**
  * Name only. A facilitator's DGroups are shown ("Leads X") and one of them may
@@ -54,6 +55,9 @@ async function getBreakoutGroup(groupId: string, eventId: string) {
           registrant: {
             select: {
               id: true,
+              // The row's own event, so a member links to their registrant page in
+              // the right workspace even when a cluster owns the table (CCF-148).
+              eventId: true,
               memberId: true,
               guestId: true,
               firstName: true,
@@ -174,7 +178,7 @@ export default async function BreakoutGroupDetailPage({
               ageRangeMin: group.ageRangeMin,
               ageRangeMax: group.ageRangeMax,
             }}
-            eventId={eventId}
+            surface={eventSurface(eventId)}
             lifeStages={lifeStages}
             volunteers={confirmedVolunteers}
             isEnabled={group.isEnabled}
@@ -184,6 +188,7 @@ export default async function BreakoutGroupDetailPage({
 
       <div className="flex flex-1 flex-col gap-6 p-6">
       <BreakoutDetail
+        surface={eventSurface(eventId)}
         group={{
           id: group.id,
           eventId,

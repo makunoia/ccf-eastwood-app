@@ -6,6 +6,10 @@ import { GuestEventHistory } from "./guest-event-history"
 import { GuestActivityLog, type ActivityEntry } from "./guest-activity-log"
 import { GuestDetailContent } from "./guest-detail-content"
 import { computeGuestStatus } from "@/lib/guest-utils"
+import {
+  BREAKOUT_OWNER_NAME_SELECT,
+  breakoutOccasionName,
+} from "@/lib/breakouts/owner"
 
 async function getGuest(id: string) {
   const [g, pendingRequest, rejectedRequest] = await Promise.all([
@@ -31,7 +35,7 @@ async function getGuest(id: string) {
                 breakoutGroup: {
                   select: {
                     name: true,
-                    event: { select: { name: true } },
+                    ...BREAKOUT_OWNER_NAME_SELECT,
                     facilitator: {
                       select: {
                         member: { select: { firstName: true, lastName: true } },
@@ -77,7 +81,9 @@ async function getGuest(id: string) {
     if (m) {
       const faci = m.breakoutGroup.facilitator
       matchedBreakout = {
-        eventName: m.breakoutGroup.event.name,
+        // The collab day's name when a cluster owns the table (CCF-148) — which
+        // is the event as far as the guest experienced it.
+        eventName: breakoutOccasionName(m.breakoutGroup) ?? "—",
         breakoutGroupName: m.breakoutGroup.name,
         facilitatorName: faci?.member
           ? `${faci.member.firstName} ${faci.member.lastName}`

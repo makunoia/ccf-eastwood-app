@@ -5,6 +5,9 @@ import { canAccessEvent } from "@/lib/permissions"
 import type { Session } from "next-auth"
 import type { EventType } from "@/app/generated/prisma/client"
 import { getHouseholdLabels } from "@/lib/family-links"
+import { allTokensMatch } from "@/lib/search/name-search"
+import { breakoutGroupsInclude } from "@/lib/breakouts/queries"
+import { unassignedCandidateWhere } from "@/lib/breakouts/candidate-pool"
 import { FORM_CONTEXTS, type EventFormConfigData } from "@/lib/forms/context-config"
 import {
   getClusterFormConfigs,
@@ -847,4 +850,162 @@ export async function getClusterOverview(
       seriesOnlyPeople: roster.rows.length - onDayPeople.length,
     },
   }
+}
+
+// ─── Collab pools (CCF-148) ──────────────────────────────────────────────────
+//
+// A Collab cluster's staffing has two halves that work differently, and these
+// helpers are where that shows:
+//
+//  - Volunteers are a UNION of the member events' rosters. The rows stay owned by
+//    the event each person signed up under, so every row carries its event and the
+//    table badges it.
+//  - Breakout groups are OWNED by the cluster. There is nothing to union — the
+//    member events' standing tables are deliberately not in play on the day.
+
+export type ClusterVolunteerRow = Awaited<
+  ReturnType<typeof getClusterVolunteerPool>
+>["volunteers"][number]
+
+/**
+ * Every confirmed-or-pending volunteer across the day's member events, plus the
+ * committees to filter by.
+ *
+ * Scoped to the events this user may see: a staff user with access to one
+ * ministry's event sees that ministry's serving team and not the partner's, which
+ * is the same narrowing `getAccessibleClusterEvents` applies everywhere else in
+ * the cluster workspace.
+ */
+export async function getClusterVolunteerPool(
+  session: Session | null,
+  clusterId: string,
+  filters?: { search?: string; status?: string; committeeId?: string }
+) {
+  const events = await getAccessibleClusterEvents(session, clusterId)
+  const eventIds = events.map((e) => e.id)
+  if (eventIds.length === 0) {
+    return { volunteers: [], committees: [], events: [] }
+  }
+
+  const status = filters?.status
+  const [volunteers, committees] = await Promise.all([
+    db.volunteer.findMany({
+      where: {
+        eventId: { in: eventIds },
+        AND: [
+          status === "Pending" || status === "Confirmed" || status === "Rejected"
+            ? { status }
+            : {},
+          filters?.committeeId ? { committeeId: filters.committeeId } : {},
+          filters?.search
+            ? {
+                member:
+                  allTokensMatch(filters.search, (token) => [
+                    { firstName: { contains: token, mode: "insensitive" as const } },
+                    { lastName: { contains: token, mode: "insensitive" as const } },
+                  ]) ?? {},
+              }
+            : {},
+        ],
+      },
+      orderBy: [{ eventId: "asc" }, { createdAt: "asc" }],
+      include: {
+        member: {
+          select: { id: true, firstName: true, lastName: true, email: true, phone: true },
+        },
+        event: { select: { id: true, name: true } },
+        committee: { select: { id: true, name: true } },
+        preferredRole: { select: { id: true, name: true } },
+        assignedRole: { select: { id: true, name: true } },
+      },
+    }),
+    db.volunteerCommittee.findMany({
+      where: { eventId: { in: eventIds } },
+      orderBy: [{ eventId: "asc" }, { name: "asc" }],
+      select: { id: true, name: true, eventId: true },
+    }),
+  ])
+
+  return { volunteers, committees, events }
+}
+
+/**
+ * The cluster's own breakout tables, the confirmed volunteers eligible to run
+ * them, and how many of the day's people are still unseated.
+ *
+ * "Unseated" is counted in PEOPLE, not registrant rows. A Collab registers each
+ * person to every member event, so counting rows would report a figure roughly N
+ * times the number of people actually waiting for a table.
+ */
+export async function getClusterBreakoutPool(session: Session | null, clusterId: string) {
+  const events = await getAccessibleClusterEvents(session, clusterId)
+  const eventIds = events.map((e) => e.id)
+
+  const owner = { clusterId }
+  const [groups, volunteers, unseatedRows, registrantCount] = await Promise.all([
+    db.breakoutGroup.findMany({ where: owner, ...breakoutGroupsInclude }),
+    eventIds.length
+      ? db.volunteer.findMany({
+          where: { eventId: { in: eventIds }, status: "Confirmed" },
+          orderBy: { createdAt: "asc" },
+          include: {
+            member: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                ledGroups: {
+                  select: {
+                    id: true,
+                    name: true,
+                    lifeStages: { select: { id: true } },
+                    genderFocus: true,
+                    language: true,
+                    ageRangeMin: true,
+                    ageRangeMax: true,
+                    meetingFormat: true,
+                    locationCity: true,
+                    scheduleDayOfWeek: true,
+                    scheduleTimeStart: true,
+                    scheduleTimeEnd: true,
+                  },
+                },
+              },
+            },
+            committee: { select: { id: true, name: true } },
+            preferredRole: { select: { id: true, name: true } },
+            assignedRole: { select: { id: true, name: true } },
+          },
+        })
+      : [],
+    eventIds.length
+      ? db.eventRegistrant.findMany({
+          where: { eventId: { in: eventIds }, ...unassignedCandidateWhere(owner) },
+          select: { id: true, memberId: true, guestId: true },
+        })
+      : [],
+    eventIds.length
+      ? db.eventRegistrant.findMany({
+          where: { eventId: { in: eventIds } },
+          select: { id: true, memberId: true, guestId: true },
+        })
+      : [],
+  ])
+
+  const unseatedPeople = new Set(unseatedRows.map(personKeyFor)).size
+  const totalPeople = new Set(registrantCount.map(personKeyFor)).size
+
+  return { groups, volunteers, unseatedPeople, totalPeople, events }
+}
+
+/** The ministries represented by a cluster's member events, for the day's chips. */
+export async function getClusterMinistries(
+  clusterId: string
+): Promise<{ id: string; name: string }[]> {
+  const rows = await db.eventMinistry.findMany({
+    where: { event: { clusterMembership: { clusterId } } },
+    select: { ministry: { select: { id: true, name: true } } },
+  })
+  const byId = new Map(rows.map((r) => [r.ministry.id, r.ministry]))
+  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name))
 }

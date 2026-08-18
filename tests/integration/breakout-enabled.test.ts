@@ -109,7 +109,7 @@ describe("setBreakoutGroupEnabled", () => {
     // dark on deploy.
     expect(group.isEnabled).toBe(true)
 
-    expect(await setBreakoutGroupEnabled(group.id, event.id, false)).toEqual({
+    expect(await setBreakoutGroupEnabled(group.id, { eventId: event.id }, false)).toEqual({
       success: true,
       data: undefined,
     })
@@ -117,7 +117,7 @@ describe("setBreakoutGroupEnabled", () => {
       (await db.breakoutGroup.findUnique({ where: { id: group.id } }))?.isEnabled
     ).toBe(false)
 
-    await setBreakoutGroupEnabled(group.id, event.id, true)
+    await setBreakoutGroupEnabled(group.id, { eventId: event.id }, true)
     expect(
       (await db.breakoutGroup.findUnique({ where: { id: group.id } }))?.isEnabled
     ).toBe(true)
@@ -130,7 +130,7 @@ describe("setBreakoutGroupEnabled", () => {
 
     // The event scope is part of the write, so passing another event's id from
     // a page you *can* write to changes nothing.
-    const result = await setBreakoutGroupEnabled(group.id, event.id, false)
+    const result = await setBreakoutGroupEnabled(group.id, { eventId: event.id }, false)
 
     expect(result).toEqual({ success: false, error: "Breakout group not found" })
     expect(
@@ -173,7 +173,7 @@ describe("matchBreakoutGroups", () => {
     await seedGroup(event.id, "Off", { isEnabled: false })
     const { registrant } = await seedRegistrant(event.id)
 
-    const results = await matchBreakoutGroups(registrant.id, event.id)
+    const results = await matchBreakoutGroups(registrant.id, { eventId: event.id })
 
     expect(results.map((r) => r.groupId)).toEqual([on.id])
   })
@@ -337,7 +337,7 @@ describe("admin placement into a disabled group", () => {
 
     // Off aims at the automatic and public routes, not at staff judgment. An
     // admin standing on this group's page has said what they want.
-    const result = await addRegistrantsToBreakout(off.id, [registrant.id], event.id)
+    const result = await addRegistrantsToBreakout(off.id, [registrant.id], { eventId: event.id })
 
     expect(result.success).toBe(true)
     expect(
@@ -358,7 +358,7 @@ describe("admin placement into a disabled group", () => {
       from.id,
       off.id,
       registrant.id,
-      event.id
+      { eventId: event.id }
     )
 
     expect(result.success).toBe(true)
@@ -375,7 +375,7 @@ describe("admin placement into a disabled group", () => {
       data: { breakoutGroupId: group.id, registrantId: registrant.id },
     })
 
-    await setBreakoutGroupEnabled(group.id, event.id, false)
+    await setBreakoutGroupEnabled(group.id, { eventId: event.id }, false)
 
     // The switch is not a delete: the roster, and everything downstream that
     // reads it, survives.

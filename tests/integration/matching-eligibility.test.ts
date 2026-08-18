@@ -752,7 +752,7 @@ describe("matchBreakoutGroups — effective gender focus", () => {
       data: { eventId: event.id, guestId: guest.id },
     })
 
-    const results = await matchBreakoutGroups(registrant.id, event.id)
+    const results = await matchBreakoutGroups(registrant.id, { eventId: event.id })
 
     // Explicit Female focus beats the male facilitator → male candidate excluded
     expect(ids(results)).toContain(control.id)
@@ -770,8 +770,8 @@ describe("matchBreakoutGroups — effective gender focus", () => {
       data: { eventId: event.id, guestId: female.id },
     })
 
-    expect(ids(await matchBreakoutGroups(maleReg.id, event.id))).not.toContain(breakout.id)
-    expect(ids(await matchBreakoutGroups(femaleReg.id, event.id))).toContain(breakout.id)
+    expect(ids(await matchBreakoutGroups(maleReg.id, { eventId: event.id }))).not.toContain(breakout.id)
+    expect(ids(await matchBreakoutGroups(femaleReg.id, { eventId: event.id }))).toContain(breakout.id)
   })
 
   it("falls back to the linked small group's focus when facilitator gender is unknown", async () => {
@@ -787,7 +787,7 @@ describe("matchBreakoutGroups — effective gender focus", () => {
       data: { eventId: event.id, guestId: guest.id },
     })
 
-    const results = await matchBreakoutGroups(registrant.id, event.id)
+    const results = await matchBreakoutGroups(registrant.id, { eventId: event.id })
     expect(ids(results)).toContain(control.id)
     expect(ids(results)).not.toContain(breakout.id)
   })
@@ -804,10 +804,10 @@ describe("matchBreakoutGroups — assignment", () => {
       data: { breakoutGroupId: breakout.id, registrantId: registrant.id },
     })
 
-    const withAssigned = await matchBreakoutGroups(registrant.id, event.id)
+    const withAssigned = await matchBreakoutGroups(registrant.id, { eventId: event.id })
     expect(ids(withAssigned)).toContain(breakout.id)
 
-    const without = await matchBreakoutGroups(registrant.id, event.id, {
+    const without = await matchBreakoutGroups(registrant.id, { eventId: event.id }, {
       excludeAssigned: true,
     })
     expect(ids(without)).not.toContain(breakout.id)
@@ -821,7 +821,7 @@ describe("matchBreakoutGroups — assignment", () => {
       data: { eventId: eventA.id, guestId: guest.id },
     })
 
-    const results = await matchBreakoutGroups(registrant.id, eventA.id)
+    const results = await matchBreakoutGroups(registrant.id, { eventId: eventA.id })
 
     expect(ids(results)).toContain(breakoutA.id)
     expect(ids(results)).not.toContain(breakoutB.id)
@@ -833,7 +833,7 @@ describe("matchBreakoutGroups — assignment", () => {
       data: { eventId: event.id, firstName: "Walk", lastName: "In" },
     })
 
-    const results = await matchBreakoutGroups(registrant.id, event.id)
+    const results = await matchBreakoutGroups(registrant.id, { eventId: event.id })
 
     expect(ids(results)).toContain(breakout.id)
   })
@@ -862,7 +862,7 @@ describe("matchBreakoutGroups — scored factors", () => {
       data: { eventId: event.id, guestId: guest.id },
     })
 
-    const results = await matchBreakoutGroups(registrant.id, event.id)
+    const results = await matchBreakoutGroups(registrant.id, { eventId: event.id })
     const scores = new Map(results.map((r) => [r.groupId, r.totalScore]))
 
     expect(scores.get(breakout.id)).toBe(scores.get(other.id))
@@ -882,7 +882,7 @@ describe("matchBreakoutGroups — scored factors", () => {
       data: { eventId: event.id, guestId: guest.id },
     })
 
-    const results = await matchBreakoutGroups(registrant.id, event.id)
+    const results = await matchBreakoutGroups(registrant.id, { eventId: event.id })
 
     expect(results[0].groupId).toBe(breakout.id)
     expect(results.find((r) => r.groupId === mismatch.id)!.totalScore).toBeLessThan(
@@ -907,7 +907,7 @@ describe("matchBreakoutGroups — scored factors", () => {
       data: { eventId: event.id, guestId: guest.id },
     })
 
-    const results = await matchBreakoutGroups(registrant.id, event.id)
+    const results = await matchBreakoutGroups(registrant.id, { eventId: event.id })
 
     expect(results[0].totalScore).toBe(results[1].totalScore)
     expect(results[0].groupId).toBe(roomier.id)
@@ -927,7 +927,7 @@ describe("matchBreakoutGroups — scored factors", () => {
       data: { eventId: event.id, guestId: guest.id },
     })
 
-    const results = await matchBreakoutGroups(registrant.id, event.id)
+    const results = await matchBreakoutGroups(registrant.id, { eventId: event.id })
 
     expect(results[0].groupId).toBe(breakout.id)
     expect(results[1].groupId).toBe(uncapped.id)

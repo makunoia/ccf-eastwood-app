@@ -1,4 +1,6 @@
 import { z } from "zod"
+import { ClusterKind } from "@/app/generated/prisma/client"
+import { MINISTRY_REQUIRED_ERROR } from "@/lib/clusters/copy"
 
 // Event Cluster (CCF-132) — validation for the cluster CRUD actions and the
 // shared-form submission.
@@ -20,6 +22,12 @@ export const eventClusterSettingsSchema = z.object({
   name: z.string().min(1, "Name is required").trim().optional(),
   description: optionalTrimmed.optional(),
   date: z.coerce.date().nullable().optional(),
+  // What shape of day this is (CCF-148). `Collab` changes three things at once —
+  // the shared form asks which ministry you're part of rather than which events
+  // you're attending, the day's volunteers read as one roster, and the breakout
+  // tables belong to the cluster — which is why it is one enum rather than three
+  // switches an admin could combine into a shape no real event has.
+  kind: z.nativeEnum(ClusterKind).optional(),
   isOpen: z.boolean().optional(),
   // The door form's own switch (CCF-133) — independent of `isOpen` above.
   walkInIsOpen: z.boolean().optional(),
@@ -124,6 +132,56 @@ export function validateClusterEventLink(
     }
   }
   return { ok: true }
+}
+
+/**
+ * Which of the day's events a submission registers for.
+ *
+ * The two cluster kinds answer this differently, and the difference is the whole
+ * point of the kind:
+ *
+ *  - **Parallel** — several events sharing a day. The person ticks the ones they
+ *    are attending, so any number from one upwards is valid.
+ *  - **Collab** — two ministries co-running one event. The person is asked which
+ *    *ministry* they are part of, not which events they are attending, and that
+ *    answer names exactly one event: theirs. So exactly one, never more.
+ *
+ * The collab form sends an event id rather than a ministry id — the ministry is
+ * only the label on the choice. That keeps everything downstream of here unaware
+ * that ministries exist, and it means this function needs no ministry lookup to
+ * validate the answer.
+ *
+ * Kept beside `validateClusterEventSelection` rather than folded into it: that
+ * function answers "are these events a legal set", which is still the right
+ * question for a Parallel day and the wrong one for a Collab.
+ */
+export function resolveClusterEventSelection(
+  kind: ClusterKind,
+  selectedEventIds: string[],
+  clusterEventIds: string[]
+): { ok: true; eventIds: string[] } | { ok: false; error: string } {
+  if (kind !== ClusterKind.Collab) {
+    return validateClusterEventSelection(selectedEventIds, clusterEventIds)
+  }
+
+  if (clusterEventIds.length === 0) {
+    return { ok: false, error: "This event day has no events yet." }
+  }
+
+  const unique = [...new Set(selectedEventIds)]
+  if (unique.length === 0) {
+    return { ok: false, error: MINISTRY_REQUIRED_ERROR }
+  }
+  // More than one can only come from a hand-built payload — the form is a
+  // single-choice control — and there is no sensible way to honour it: two
+  // ministries is not an answer to "which ministry are you part of".
+  if (unique.length > 1) {
+    return { ok: false, error: MINISTRY_REQUIRED_ERROR }
+  }
+  if (!clusterEventIds.includes(unique[0])) {
+    return { ok: false, error: "That group isn't part of this event day." }
+  }
+  return { ok: true, eventIds: unique }
 }
 
 /** ≥1 unique selected event, all of which must belong to the cluster. */

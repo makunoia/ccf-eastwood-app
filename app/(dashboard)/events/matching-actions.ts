@@ -1,8 +1,7 @@
 "use server"
 
 import { db } from "@/lib/db"
-import { auth } from "@/lib/auth"
-import { canRead, canAccessEvent } from "@/lib/permissions"
+import { requireBreakoutRead } from "@/lib/events/require-event-write"
 import {
   matchBreakoutGroups,
   scoreCandidatesForBreakout,
@@ -12,6 +11,8 @@ import { MAX_BREAKOUT_CANDIDATES } from "@/lib/breakouts/candidate-filters"
 import type { MatchResult } from "@/lib/matching/types"
 import { addRegistrantsToBreakout } from "./breakout-actions"
 import { unassignedCandidateWhere } from "@/lib/breakouts/candidate-pool"
+import { isClusterOwner, type BreakoutOwner } from "@/lib/breakouts/owner"
+import { breakoutCandidateEventIds } from "@/lib/breakouts/candidate-events"
 import { registrantName, registrantNameSelect } from "@/lib/metadata"
 import { getEffectiveFormConfigs } from "@/lib/forms/context-config-server"
 import { mergeFormConfigs } from "@/lib/forms/registration-responses"
@@ -21,21 +22,6 @@ import type { BreakoutCandidate } from "@/lib/breakouts/candidate-filters"
 type ActionResult<T> =
   | { success: true; data: T }
   | { success: false; error: string }
-
-/**
- * Read access to one event's data.
- *
- * Middleware already gates `/event/<id>` by feature + event access, but it does
- * so on the *URL's* event id. A server action carries its own argument, so a
- * user scoped to event A could otherwise pass event B's id from A's page.
- */
-async function requireEventRead(eventId: string): Promise<{ error: string } | null> {
-  const session = await auth()
-  if (!session?.user) return { error: "Not authenticated." }
-  if (!canRead(session, "Events")) return { error: "Unauthorized." }
-  if (!canAccessEvent(session, eventId)) return { error: "Unauthorized." }
-  return null
-}
 
 export type BreakoutGroupDetails = {
   id: string
@@ -55,19 +41,19 @@ export type BreakoutGroupDetails = {
 
 /**
  * Fetches one breakout group's details for the match-result drawer. Scoped by
- * `{ id, eventId }` — a groupId from another event resolves to null (404),
- * which is the authz boundary for this event-scoped entity.
+ * `{ id, ...owner }` — a groupId from outside the owner resolves to null (404),
+ * which is the authz boundary for this owner-scoped entity.
  */
 export async function getBreakoutGroupDetails(
   groupId: string,
-  eventId: string
+  owner: BreakoutOwner
 ): Promise<ActionResult<BreakoutGroupDetails>> {
-  const denied = await requireEventRead(eventId)
+  const denied = await requireBreakoutRead(owner)
   if (denied) return { success: false, error: denied.error }
 
   try {
     const g = await db.breakoutGroup.findFirst({
-      where: { id: groupId, eventId },
+      where: { id: groupId, ...owner },
       select: {
         id: true,
         name: true,
@@ -178,22 +164,32 @@ export type BreakoutCandidateList = {
  * — the raw MatchResult carries a full groupSummary, which would be N identical
  * copies.
  *
- * Scoped by `{ id: groupId, eventId }`: a group id from another event resolves
- * to null, same authz boundary as `getBreakoutGroupDetails`.
+ * Scoped by `{ id: groupId, ...owner }`: a group id from outside the owner
+ * resolves to null, same authz boundary as `getBreakoutGroupDetails`.
  */
 export async function listBreakoutCandidates(
   groupId: string,
-  eventId: string
+  owner: BreakoutOwner
 ): Promise<ActionResult<BreakoutCandidateList>> {
-  const denied = await requireEventRead(eventId)
+  const denied = await requireBreakoutRead(owner)
   if (denied) return { success: false, error: denied.error }
+
+  // Whose registrants may be seated here — this event's, or every member event's
+  // under a Collab cluster (CCF-148).
+  const candidateEventIds = await breakoutCandidateEventIds(owner)
+  // The form config the candidate columns are rendered from. A Collab's member
+  // events can differ in what they collected, so read the anchor event's config —
+  // the same one the cluster's own shared form is built from.
+  const configEventId = isClusterOwner(owner)
+    ? candidateEventIds[0] ?? ""
+    : owner.eventId
 
   try {
     // Capacity only. The group's criteria used to come back too, to prefill the
     // filters from — that button is gone, and scoring re-reads the group itself
     // in `scoreCandidatesForBreakout`.
     const group = await db.breakoutGroup.findFirst({
-      where: { id: groupId, eventId },
+      where: { id: groupId, ...owner },
       select: {
         memberLimit: true,
         _count: { select: { members: true } },
@@ -203,7 +199,10 @@ export async function listBreakoutCandidates(
 
     const [rows, totalPool, formConfigs, lifeStages, ageRangeBuckets] = await Promise.all([
       db.eventRegistrant.findMany({
-        where: { eventId, ...unassignedCandidateWhere(eventId) },
+        where: {
+          eventId: { in: candidateEventIds },
+          ...unassignedCandidateWhere(owner),
+        },
         orderBy: { createdAt: "asc" },
         take: MAX_BREAKOUT_CANDIDATES,
         select: {
@@ -223,8 +222,14 @@ export async function listBreakoutCandidates(
               // question, so one row is enough. Rejected sign-ups don't count;
               // Pending ones do — someone about to be confirmed to serve
               // shouldn't be seated at a table by accident.
+              // Serving anywhere in the day's volunteer pool counts, not just on
+              // the registrant's own event: on a collab day both ministries'
+              // rosters staff the same tables.
               volunteers: {
-                where: { eventId, status: { not: "Rejected" as const } },
+                where: {
+                  eventId: { in: candidateEventIds },
+                  status: { not: "Rejected" as const },
+                },
                 select: { id: true },
                 take: 1,
               },
@@ -242,8 +247,13 @@ export async function listBreakoutCandidates(
           },
         },
       }),
-      db.eventRegistrant.count({ where: { eventId, ...unassignedCandidateWhere(eventId) } }),
-      getEffectiveFormConfigs(eventId),
+      db.eventRegistrant.count({
+        where: {
+          eventId: { in: candidateEventIds },
+          ...unassignedCandidateWhere(owner),
+        },
+      }),
+      getEffectiveFormConfigs(configEventId),
       db.lifeStage.findMany({ orderBy: { order: "asc" }, select: { id: true, name: true } }),
       db.ageRangeBucket.findMany({
         orderBy: { order: "asc" },
@@ -256,7 +266,7 @@ export async function listBreakoutCandidates(
     // layer, and via the engine's own builder so the schedule normalization the
     // day filter sees is byte-for-byte what the scorer saw.
     const profiles = new Map(rows.map((r) => [r.id, buildCandidateFromRegistrant(r)]))
-    const matches = await scoreCandidatesForBreakout(groupId, eventId, profiles)
+    const matches = await scoreCandidatesForBreakout(groupId, owner, profiles)
     const byRegistrant = new Map(matches.map((m) => [m.registrantId, m]))
 
     const candidates: BreakoutCandidate[] = rows.map((r) => {
@@ -313,13 +323,13 @@ export async function listBreakoutCandidates(
 
 export async function findBreakoutGroupMatches(
   registrantId: string,
-  eventId: string
+  owner: BreakoutOwner
 ): Promise<ActionResult<MatchResult[]>> {
-  const denied = await requireEventRead(eventId)
+  const denied = await requireBreakoutRead(owner)
   if (denied) return { success: false, error: denied.error }
 
   try {
-    const results = await matchBreakoutGroups(registrantId, eventId, {
+    const results = await matchBreakoutGroups(registrantId, owner, {
       excludeAssigned: true,
       limit: 5,
     })
@@ -342,9 +352,9 @@ export async function findBreakoutGroupMatches(
 export async function assignRegistrantToBreakout(
   groupId: string,
   registrantId: string,
-  eventId: string
+  owner: BreakoutOwner
 ): Promise<ActionResult<void>> {
-  const result = await addRegistrantsToBreakout(groupId, [registrantId], eventId)
+  const result = await addRegistrantsToBreakout(groupId, [registrantId], owner)
   if (!result.success) return result
 
   const [failure] = result.data.failed

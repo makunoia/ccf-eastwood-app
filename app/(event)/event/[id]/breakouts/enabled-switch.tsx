@@ -5,10 +5,11 @@ import { toast } from "sonner"
 
 import { Switch } from "@/components/ui/switch"
 import { setBreakoutGroupEnabled } from "@/app/(dashboard)/events/breakout-actions"
+import type { BreakoutSurface } from "@/lib/breakouts/owner"
 
 type Props = {
   groupId: string
-  eventId: string
+  surface: BreakoutSurface
   isEnabled: boolean
   /** Named in the aria-label — an in-table switch has no visible label of its own. */
   groupName: string
@@ -31,7 +32,7 @@ type Props = {
  */
 export function BreakoutEnabledSwitch({
   groupId,
-  eventId,
+  surface,
   isEnabled,
   groupName,
   showLabel = false,
@@ -42,7 +43,7 @@ export function BreakoutEnabledSwitch({
   async function handleToggle(next: boolean) {
     setPending(true)
     setEnabled(next)
-    const result = await setBreakoutGroupEnabled(groupId, eventId, next)
+    const result = await setBreakoutGroupEnabled(groupId, surface.owner, next)
     setPending(false)
     if (result.success) {
       toast.success(

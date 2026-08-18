@@ -103,7 +103,7 @@ describe("CCF-78 — createBreakoutGroup with Timothy facilitator", () => {
 
     const lifeStage = await db.lifeStage.create({ data: { name: "Young Pro", order: 0 } })
 
-    const result = await createBreakoutGroup(event.id, {
+    const result = await createBreakoutGroup({ eventId: event.id }, {
       name: "Table 1",
       lifeStageIds: [lifeStage.id],
       facilitatorId: volunteer.id,
@@ -117,7 +117,7 @@ describe("CCF-78 — createBreakoutGroup with Timothy facilitator", () => {
     const { event, committee, role } = await seedBase()
     const { volunteer } = await seedTimothyVolunteer(event.id, committee.id, role.id)
 
-    const result = await createBreakoutGroup(event.id, {
+    const result = await createBreakoutGroup({ eventId: event.id }, {
       name: "Table 1",
       lifeStageIds: [],
       facilitatorId: volunteer.id,
@@ -135,7 +135,7 @@ describe("CCF-78 — createBreakoutGroup with Timothy facilitator", () => {
 
     const lifeStage = await db.lifeStage.create({ data: { name: "Young Pro", order: 0 } })
 
-    const result = await createBreakoutGroup(event.id, {
+    const result = await createBreakoutGroup({ eventId: event.id }, {
       name: "Table 1",
       lifeStageIds: [lifeStage.id],
       facilitatorId: volunteer.id,
@@ -152,7 +152,7 @@ describe("CCF-78 — createBreakoutGroup with Timothy facilitator", () => {
     const { event, committee, role } = await seedBase()
     const { volunteer } = await seedTimothyVolunteer(event.id, committee.id, role.id)
 
-    const result = await createBreakoutGroup(event.id, {
+    const result = await createBreakoutGroup({ eventId: event.id }, {
       name: "Table 1",
       lifeStageIds: [],
       facilitatorId: volunteer.id,
@@ -169,7 +169,7 @@ describe("CCF-78 — createBreakoutGroup with Timothy facilitator", () => {
     const { volunteer } = await seedTimothyVolunteer(event.id, committee.id, role.id)
     const lifeStage = await db.lifeStage.create({ data: { name: "Young Pro", order: 0 } })
 
-    const result = await createBreakoutGroup(event.id, {
+    const result = await createBreakoutGroup({ eventId: event.id }, {
       name: "Table 1",
       lifeStageIds: [lifeStage.id],
       facilitatorId: volunteer.id,
@@ -186,7 +186,7 @@ describe("CCF-78 — createBreakoutGroup with Timothy facilitator", () => {
     const { event, committee, role } = await seedBase()
     const { volunteer } = await seedLeaderVolunteer(event.id, committee.id, role.id)
 
-    const result = await createBreakoutGroup(event.id, {
+    const result = await createBreakoutGroup({ eventId: event.id }, {
       name: "Table 2",
       lifeStageIds: [],
       facilitatorId: volunteer.id,
@@ -199,7 +199,7 @@ describe("CCF-78 — createBreakoutGroup with Timothy facilitator", () => {
   it("allows no profile when no facilitator is assigned", async () => {
     const { event } = await seedBase()
 
-    const result = await createBreakoutGroup(event.id, {
+    const result = await createBreakoutGroup({ eventId: event.id }, {
       name: "Table 3",
       lifeStageIds: [],
       language: [],
@@ -219,7 +219,7 @@ describe("CCF-78 — updateBreakoutGroup with Timothy facilitator", () => {
       data: { name: "Table 1", eventId: event.id },
     })
 
-    const result = await updateBreakoutGroup(group.id, event.id, {
+    const result = await updateBreakoutGroup(group.id, { eventId: event.id }, {
       name: "Table 1",
       lifeStageIds: [],
       facilitatorId: volunteer.id,
@@ -240,7 +240,7 @@ describe("CCF-78 — updateBreakoutGroup with Timothy facilitator", () => {
 
     const lifeStage = await db.lifeStage.create({ data: { name: "Young Pro", order: 0 } })
 
-    const result = await updateBreakoutGroup(group.id, event.id, {
+    const result = await updateBreakoutGroup(group.id, { eventId: event.id }, {
       name: "Table 1",
       lifeStageIds: [lifeStage.id],
       facilitatorId: volunteer.id,
@@ -258,7 +258,7 @@ describe("CCF-78 — regression", () => {
     const { event, committee, role } = await seedBase()
     const { volunteer } = await seedLeaderVolunteer(event.id, committee.id, role.id)
 
-    const result = await createBreakoutGroup(event.id, {
+    const result = await createBreakoutGroup({ eventId: event.id }, {
       name: "Regression Table",
       lifeStageIds: [],
       facilitatorId: volunteer.id,
@@ -272,7 +272,7 @@ describe("CCF-78 — regression", () => {
     const { event, committee, role } = await seedBase()
     const { volunteer } = await seedTimothyVolunteer(event.id, committee.id, role.id)
 
-    const result = await createBreakoutGroup(event.id, {
+    const result = await createBreakoutGroup({ eventId: event.id }, {
       name: "Table 1",
       lifeStageIds: [],
       facilitatorId: volunteer.id,

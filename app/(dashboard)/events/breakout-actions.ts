@@ -3,12 +3,15 @@
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { db } from "@/lib/db"
-import { auth } from "@/lib/auth"
-import { canWrite, canAccessEvent } from "@/lib/permissions"
+import { requireBreakoutWrite } from "@/lib/events/require-event-write"
 import { breakoutGroupSchema } from "@/lib/validations/breakout-group"
 import type { BreakoutGroupFormValues } from "@/lib/validations/breakout-group"
 import { matchBreakoutGroups } from "@/lib/matching"
 import { unassignedCandidateWhere } from "@/lib/breakouts/candidate-pool"
+import { isClusterOwner, type BreakoutOwner } from "@/lib/breakouts/owner"
+import { breakoutCandidateEventIds } from "@/lib/breakouts/candidate-events"
+import { resolvePoolScope } from "@/lib/events/pool-scope"
+import { personKeyFor } from "@/lib/clusters/roster"
 import { MAX_BREAKOUT_BATCH } from "@/lib/breakouts/candidate-filters"
 import { registrantName, registrantNameSelect } from "@/lib/metadata"
 import type { BatchFailure } from "@/components/batch/types"
@@ -24,18 +27,60 @@ type ActionResult<T = void> =
   | { success: false; error: string }
 
 /**
- * Write access to one event's data.
+ * Every action here is scoped by a {@link BreakoutOwner} rather than a bare
+ * event id (CCF-148). A breakout group belongs either to one event — a standing
+ * table — or to a Collab cluster, whose tables are set up for the day. The owner
+ * does double duty: it authorizes the write and it scopes it, exactly as the
+ * event id used to.
  *
- * Middleware gates `/event/<id>` by feature + event access, but on the *URL's*
- * event id — a server action carries its own argument, so a user scoped to
- * event A could otherwise pass event B's id from A's page.
+ * Where a query used `{ id: groupId, eventId }` it now uses
+ * `{ id: groupId, ...owner }`, which is the same shape of guard — the point of
+ * scoping the write itself, rather than trusting a separate read, is unchanged.
  */
-async function requireEventWrite(eventId: string): Promise<{ error: string } | null> {
-  const session = await auth()
-  if (!session?.user) return { error: "Not authenticated." }
-  if (!canWrite(session, "Events")) return { error: "Unauthorized." }
-  if (!canAccessEvent(session, eventId)) return { error: "Unauthorized." }
-  return null
+
+/**
+ * Which events' volunteers may staff this owner's tables.
+ *
+ * The same list as the candidate events, but named separately because the two
+ * questions are separate and only happen to coincide: "whose registrants may sit
+ * here" and "whose volunteers may run this". Keeping them distinct is what lets
+ * the union half and the ownership half of CCF-148 be reasoned about apart.
+ */
+async function poolVolunteerEventIds(owner: BreakoutOwner): Promise<string[]> {
+  return breakoutCandidateEventIds(owner)
+}
+
+/**
+ * Revalidate the surfaces a breakout change is visible on.
+ *
+ * The two owners live at different paths, and the event owner additionally
+ * touches the public pickers. Centralised so a new action can't revalidate the
+ * event paths for a cluster-owned group and silently show stale tables.
+ */
+function revalidateBreakoutSurfaces(
+  owner: BreakoutOwner,
+  opts?: { groupId?: string; publicPickers?: boolean; sessions?: boolean }
+) {
+  if (isClusterOwner(owner)) {
+    const { clusterId } = owner
+    revalidatePath(`/cluster/${clusterId}/breakouts`)
+    if (opts?.groupId) revalidatePath(`/cluster/${clusterId}/breakouts/${opts.groupId}`)
+    revalidatePath(`/cluster/${clusterId}/dashboard`)
+    revalidatePath(`/cluster/${clusterId}/registrants`)
+    return
+  }
+  const { eventId } = owner
+  revalidatePath(`/event/${eventId}/breakouts`)
+  if (opts?.groupId) revalidatePath(`/event/${eventId}/breakouts/${opts.groupId}`)
+  revalidatePath(`/event/${eventId}/registrants`)
+  if (opts?.publicPickers) {
+    revalidatePath(`/events/${eventId}/register`)
+    revalidatePath(`/events/${eventId}/walk-in`)
+    revalidatePath(`/event/${eventId}/forms/EventRegister`)
+  }
+  // Session detail renders each group's capacity, so a roster change moves a
+  // number there too. The occurrence id isn't known here — revalidate the segment.
+  if (opts?.sessions) revalidatePath(`/event/${eventId}/sessions`, "layout")
 }
 
 // ─── Timothy profile validation ───────────────────────────────────────────────
@@ -73,10 +118,10 @@ async function validateTimothyProfile(
 // ─── Breakout Group CRUD ──────────────────────────────────────────────────────
 
 export async function createBreakoutGroup(
-  eventId: string,
+  owner: BreakoutOwner,
   data: BreakoutGroupFormValues
 ): Promise<ActionResult<{ id: string }>> {
-  const denied = await requireEventWrite(eventId)
+  const denied = await requireBreakoutWrite(owner)
   if (denied) return { success: false, error: denied.error }
 
   const parsed = breakoutGroupSchema.safeParse(data)
@@ -91,7 +136,9 @@ export async function createBreakoutGroup(
   try {
     const group = await db.breakoutGroup.create({
       data: {
-        eventId,
+        // Spreading the owner sets exactly one of the two columns, so the XOR
+        // holds by construction rather than by a check after the fact.
+        ...owner,
         name,
         facilitatorId: facilitatorId ?? null,
         coFacilitatorId: coFacilitatorId ?? null,
@@ -105,7 +152,7 @@ export async function createBreakoutGroup(
       },
       select: { id: true },
     })
-    revalidatePath(`/event/${eventId}/breakouts`)
+    revalidateBreakoutSurfaces(owner)
     return { success: true, data: { id: group.id } }
   } catch {
     return { success: false, error: "Failed to create breakout group" }
@@ -114,10 +161,10 @@ export async function createBreakoutGroup(
 
 export async function updateBreakoutGroup(
   groupId: string,
-  eventId: string,
+  owner: BreakoutOwner,
   data: BreakoutGroupFormValues
 ): Promise<ActionResult> {
-  const denied = await requireEventWrite(eventId)
+  const denied = await requireBreakoutWrite(owner)
   if (denied) return { success: false, error: denied.error }
 
   const parsed = breakoutGroupSchema.safeParse(data)
@@ -129,10 +176,10 @@ export async function updateBreakoutGroup(
   const timothyError = await validateTimothyProfile(facilitatorId, profile)
   if (timothyError) return { success: false, error: timothyError }
 
-  // Scoped by event: `requireEventWrite` checks the *argument* event, so without
-  // this an admin scoped to event A could pass event B's group id.
+  // Scoped by owner: `requireBreakoutWrite` checks the *argument* owner, so
+  // without this an admin scoped to event A could pass event B's group id.
   const existing = await db.breakoutGroup.findFirst({
-    where: { id: groupId, eventId },
+    where: { id: groupId, ...owner },
     select: { facilitatorId: true, coFacilitatorId: true },
   })
   if (!existing) return { success: false, error: "Breakout group not found" }
@@ -180,9 +227,8 @@ export async function updateBreakoutGroup(
             }),
       },
     })
-    revalidatePath(`/event/${eventId}/breakouts`)
     // The edit drawer is mounted on the detail page too.
-    revalidatePath(`/event/${eventId}/breakouts/${groupId}`)
+    revalidateBreakoutSurfaces(owner, { groupId })
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to update breakout group" }
@@ -200,28 +246,24 @@ export async function updateBreakoutGroup(
  */
 export async function setBreakoutGroupEnabled(
   groupId: string,
-  eventId: string,
+  owner: BreakoutOwner,
   isEnabled: boolean
 ): Promise<ActionResult> {
-  const denied = await requireEventWrite(eventId)
+  const denied = await requireBreakoutWrite(owner)
   if (denied) return { success: false, error: denied.error }
 
   try {
-    // updateMany so the event scope is part of the write itself rather than a
+    // updateMany so the owner scope is part of the write itself rather than a
     // separate read the next request could race past.
     const { count } = await db.breakoutGroup.updateMany({
-      where: { id: groupId, eventId },
+      where: { id: groupId, ...owner },
       data: { isEnabled },
     })
     if (count === 0) return { success: false, error: "Breakout group not found" }
 
-    revalidatePath(`/event/${eventId}/breakouts`)
-    revalidatePath(`/event/${eventId}/breakouts/${groupId}`)
     // The public surfaces that offer the picker, and the form builder whose
     // Breakout warning counts how many groups are still switched on.
-    revalidatePath(`/events/${eventId}/register`)
-    revalidatePath(`/events/${eventId}/walk-in`)
-    revalidatePath(`/event/${eventId}/forms/EventRegister`)
+    revalidateBreakoutSurfaces(owner, { groupId, publicPickers: true })
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to update breakout group" }
@@ -230,14 +272,18 @@ export async function setBreakoutGroupEnabled(
 
 export async function deleteBreakoutGroup(
   groupId: string,
-  eventId: string
+  owner: BreakoutOwner
 ): Promise<ActionResult> {
-  const denied = await requireEventWrite(eventId)
+  const denied = await requireBreakoutWrite(owner)
   if (denied) return { success: false, error: denied.error }
 
   try {
-    await db.breakoutGroup.delete({ where: { id: groupId } })
-    revalidatePath(`/event/${eventId}/breakouts`)
+    // deleteMany rather than delete so the owner scope is part of the write, the
+    // way its siblings above have it. `delete({ where: { id } })` trusted the
+    // caller's owner argument without ever checking the group belonged to it.
+    const { count } = await db.breakoutGroup.deleteMany({ where: { id: groupId, ...owner } })
+    if (count === 0) return { success: false, error: "Breakout group not found" }
+    revalidateBreakoutSurfaces(owner)
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to delete breakout group" }
@@ -248,24 +294,27 @@ export async function deleteBreakoutGroup(
 
 const breakoutBatchSchema = z.object({
   groupId: z.string().min(1, "Breakout group is required"),
-  eventId: z.string().min(1, "Event is required"),
   registrantIds: z
     .array(z.string().min(1))
     .max(MAX_BREAKOUT_BATCH, `Cannot add more than ${MAX_BREAKOUT_BATCH} registrants at once`),
 })
 
 /**
- * Every member who facilitates or co-facilitates *any* breakout group in this
- * event (CCF-87 — a facilitator can't also be a participant).
+ * Every member who facilitates or co-facilitates *any* of the breakout groups in
+ * play (CCF-87 — a facilitator can't also be a participant).
  *
- * One query for the whole event rather than a per-row lookup. Shared by the add
- * and transfer paths so the rule can't drift between them; `autoAssignRegistrantToBreakout`
- * keeps its own narrower existence check because it runs unauthenticated on the
- * public check-in path.
+ * One query for the whole set rather than a per-row lookup. Shared by the add and
+ * transfer paths so the rule can't drift between them;
+ * `autoAssignRegistrantToBreakout` keeps its own narrower existence check because
+ * it runs unauthenticated on the public check-in path.
+ *
+ * Owner-scoped, so on a collab day a facilitator of one of the day's tables is
+ * excluded from sitting at another of them — the tables are one set even though
+ * the attendees arrive through two events.
  */
-async function eventFacilitatorMemberIds(eventId: string): Promise<Set<string>> {
+async function facilitatorMemberIds(owner: BreakoutOwner): Promise<Set<string>> {
   const groups = await db.breakoutGroup.findMany({
-    where: { eventId },
+    where: owner,
     select: {
       facilitator: { select: { memberId: true } },
       coFacilitator: { select: { memberId: true } },
@@ -281,6 +330,30 @@ async function eventFacilitatorMemberIds(eventId: string): Promise<Set<string>> 
 }
 
 /**
+ * One seat per person, not per registrant row.
+ *
+ * `BreakoutGroupMember` is keyed by `registrantId`, and until Collab clusters a
+ * person had exactly one registrant row per event, so "this row is unseated"
+ * and "this person is unseated" were the same statement. Under a Collab the
+ * person holds a row on every member event, and two of those rows could be
+ * seated at two different tables on the same day.
+ *
+ * `personKeyFor` is shared with the cluster roster (`lib/clusters/roster.ts`)
+ * rather than re-derived, so the two surfaces cannot disagree about who counts
+ * as the same person.
+ */
+const personKeyOf = personKeyFor
+
+/** The person keys already holding a seat at one of the owner's tables. */
+async function seatedPersonKeys(owner: BreakoutOwner): Promise<Set<string>> {
+  const rows = await db.breakoutGroupMember.findMany({
+    where: { breakoutGroup: owner },
+    select: { registrant: { select: { id: true, memberId: true, guestId: true } } },
+  })
+  return new Set(rows.map((r) => personKeyOf(r.registrant)))
+}
+
+/**
  * Add several registrants to a breakout group in one pass.
  *
  * This is the single entry point for placing anyone into a breakout group —
@@ -293,12 +366,12 @@ async function eventFacilitatorMemberIds(eventId: string): Promise<Set<string>> 
 export async function addRegistrantsToBreakout(
   groupId: string,
   registrantIds: string[],
-  eventId: string
+  owner: BreakoutOwner
 ): Promise<ActionResult<{ added: number; failed: BatchFailure[] }>> {
-  const denied = await requireEventWrite(eventId)
+  const denied = await requireBreakoutWrite(owner)
   if (denied) return { success: false, error: denied.error }
 
-  const parsed = breakoutBatchSchema.safeParse({ groupId, registrantIds, eventId })
+  const parsed = breakoutBatchSchema.safeParse({ groupId, registrantIds })
   if (!parsed.success) {
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
   }
@@ -306,20 +379,36 @@ export async function addRegistrantsToBreakout(
   const ids = [...new Set(parsed.data.registrantIds)]
   if (ids.length === 0) return { success: true, data: { added: 0, failed: [] } }
 
+  const candidateEventIds = await breakoutCandidateEventIds(owner)
+  const spansEvents = candidateEventIds.length > 1
+
   try {
-    // Scoped to the event, so an id from another event simply isn't found.
+    // Scoped to the owner's candidate events, so an id from outside them simply
+    // isn't found.
     const registrants = await db.eventRegistrant.findMany({
-      where: { id: { in: ids }, eventId },
+      where: { id: { in: ids }, eventId: { in: candidateEventIds } },
       select: {
         id: true,
         memberId: true,
+        guestId: true,
         ...registrantNameSelect,
-        breakoutGroupMemberships: { select: { breakoutGroupId: true }, take: 1 },
+        // Scoped to the tables in play, not globally: on a collab day a person's
+        // standing placement in their ministry's own table is not a reason to
+        // refuse them a seat at the day's. See `unassignedCandidateWhere`.
+        breakoutGroupMemberships: {
+          where: { breakoutGroup: owner },
+          select: { breakoutGroupId: true },
+          take: 1,
+        },
       },
     })
     const byId = new Map(registrants.map((r) => [r.id, r]))
 
-    const facilitatorMemberIds = await eventFacilitatorMemberIds(eventId)
+    const facilitators = await facilitatorMemberIds(owner)
+    // One seat per PERSON, not per registrant row. Under a Collab cluster the
+    // same person holds a registration on every member event, so two of their
+    // rows could otherwise be added to the day's tables independently.
+    const seated = spansEvents ? await seatedPersonKeys(owner) : new Set<string>()
 
     const failed: BatchFailure[] = []
     const eligible: string[] = []
@@ -329,13 +418,22 @@ export async function addRegistrantsToBreakout(
       const name = registrantName(registrant, "Unknown")
 
       if (!registrant) {
-        failed.push({ id, name, reason: "is not a registrant of this event" })
+        failed.push({
+          id,
+          name,
+          reason: spansEvents
+            ? "is not a registrant of this event day"
+            : "is not a registrant of this event",
+        })
       } else if (registrant.breakoutGroupMemberships.length > 0) {
         failed.push({ id, name, reason: "is already in a breakout group" })
-      } else if (registrant.memberId && facilitatorMemberIds.has(registrant.memberId)) {
+      } else if (spansEvents && seated.has(personKeyOf(registrant))) {
+        failed.push({ id, name, reason: "is already in a breakout group" })
+      } else if (registrant.memberId && facilitators.has(registrant.memberId)) {
         failed.push({ id, name, reason: "is a facilitator and cannot be a member" })
       } else {
         eligible.push(id)
+        if (spansEvents) seated.add(personKeyOf(registrant))
       }
     }
 
@@ -349,13 +447,13 @@ export async function addRegistrantsToBreakout(
     // a fresh snapshot per statement).
     const accepted = await db.$transaction(async (tx) => {
       const locked = await tx.breakoutGroup.updateMany({
-        where: { id: groupId, eventId },
+        where: { id: groupId, ...owner },
         data: { updatedAt: new Date() },
       })
       if (locked.count === 0) return null
 
       const group = await tx.breakoutGroup.findFirst({
-        where: { id: groupId, eventId },
+        where: { id: groupId, ...owner },
         select: { memberLimit: true, _count: { select: { members: true } } },
       })
       if (!group) return null
@@ -392,9 +490,7 @@ export async function addRegistrantsToBreakout(
       await tryCreateSmallGroupRequestFromBreakout(groupId, id)
     }
 
-    revalidatePath(`/event/${eventId}/breakouts`)
-    revalidatePath(`/event/${eventId}/breakouts/${groupId}`)
-    revalidatePath(`/event/${eventId}/registrants`)
+    revalidateBreakoutSurfaces(owner, { groupId })
 
     return { success: true, data: { added: accepted.length, failed } }
   } catch {
@@ -405,20 +501,25 @@ export async function addRegistrantsToBreakout(
 export async function removeRegistrantFromBreakout(
   groupId: string,
   registrantId: string,
-  eventId: string
+  owner: BreakoutOwner
 ): Promise<ActionResult> {
-  const denied = await requireEventWrite(eventId)
+  const denied = await requireBreakoutWrite(owner)
   if (denied) return { success: false, error: denied.error }
 
   try {
+    // The compound-key delete doesn't scope by owner on its own, so confirm the
+    // group is one of this owner's before touching its roster.
+    const group = await db.breakoutGroup.findFirst({
+      where: { id: groupId, ...owner },
+      select: { id: true },
+    })
+    if (!group) return { success: false, error: "Breakout group not found" }
+
     await db.breakoutGroupMember.delete({
       where: { breakoutGroupId_registrantId: { breakoutGroupId: groupId, registrantId } },
     })
     await tryCancelSmallGroupRequestFromBreakout(groupId, registrantId)
-    revalidatePath(`/event/${eventId}/breakouts`)
-    // Session detail renders each group's capacity, so a removal moves a number
-    // there too. The occurrence id isn't known here — revalidate the segment.
-    revalidatePath(`/event/${eventId}/sessions`, "layout")
+    revalidateBreakoutSurfaces(owner, { sessions: true })
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to remove registrant from breakout group" }
@@ -430,7 +531,6 @@ const breakoutTransferSchema = z
     fromGroupId: z.string().min(1, "Source breakout group is required"),
     toGroupId: z.string().min(1, "Destination breakout group is required"),
     registrantId: z.string().min(1, "Registrant is required"),
-    eventId: z.string().min(1, "Event is required"),
   })
   .refine((d) => d.fromGroupId !== d.toGroupId, {
     message: "Pick a different breakout group",
@@ -454,43 +554,51 @@ export async function transferRegistrantToBreakout(
   fromGroupId: string,
   toGroupId: string,
   registrantId: string,
-  eventId: string
+  owner: BreakoutOwner
 ): Promise<ActionResult> {
-  const denied = await requireEventWrite(eventId)
+  const denied = await requireBreakoutWrite(owner)
   if (denied) return { success: false, error: denied.error }
 
   const parsed = breakoutTransferSchema.safeParse({
     fromGroupId,
     toGroupId,
     registrantId,
-    eventId,
   })
   if (!parsed.success) {
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
   }
 
+  const candidateEventIds = await breakoutCandidateEventIds(owner)
+
   try {
-    // Scoped to the event, so an id from another event simply isn't found.
+    // Scoped to the owner's candidate events, so an id from outside them simply
+    // isn't found.
     const registrant = await db.eventRegistrant.findFirst({
-      where: { id: registrantId, eventId },
+      where: { id: registrantId, eventId: { in: candidateEventIds } },
       select: { id: true, memberId: true },
     })
     if (!registrant) {
-      return { success: false, error: "Not a registrant of this event" }
+      return {
+        success: false,
+        error:
+          candidateEventIds.length > 1
+            ? "Not a registrant of this event day"
+            : "Not a registrant of this event",
+      }
     }
 
     // Re-checked rather than assumed: they passed this when first placed, but a
     // facilitator can have been appointed in the meantime.
     if (registrant.memberId) {
-      const facilitatorMemberIds = await eventFacilitatorMemberIds(eventId)
-      if (facilitatorMemberIds.has(registrant.memberId)) {
+      const facilitators = await facilitatorMemberIds(owner)
+      if (facilitators.has(registrant.memberId)) {
         return { success: false, error: "A facilitator cannot be a breakout group member" }
       }
     }
 
-    // The compound-key delete below doesn't scope by event on its own.
+    // The compound-key delete below doesn't scope by owner on its own.
     const source = await db.breakoutGroup.findFirst({
-      where: { id: fromGroupId, eventId },
+      where: { id: fromGroupId, ...owner },
       select: { id: true },
     })
     if (!source) return { success: false, error: "Breakout group not found" }
@@ -502,13 +610,13 @@ export async function transferRegistrantToBreakout(
       // limit. Updating the row first takes a FOR UPDATE lock, so the second
       // blocks until the first commits and then re-reads the true count.
       const locked = await tx.breakoutGroup.updateMany({
-        where: { id: toGroupId, eventId },
+        where: { id: toGroupId, ...owner },
         data: { updatedAt: new Date() },
       })
       if (locked.count === 0) return "missing-destination" as const
 
       const destination = await tx.breakoutGroup.findFirst({
-        where: { id: toGroupId, eventId },
+        where: { id: toGroupId, ...owner },
         select: { memberLimit: true, _count: { select: { members: true } } },
       })
       if (!destination) return "missing-destination" as const
@@ -545,14 +653,9 @@ export async function transferRegistrantToBreakout(
     // re-point the small-group request must not roll back the move.
     await tryTransferSmallGroupRequestFromBreakout(fromGroupId, toGroupId, registrantId)
 
-    revalidatePath(`/event/${eventId}/breakouts`)
-    revalidatePath(`/event/${eventId}/breakouts/${fromGroupId}`)
-    revalidatePath(`/event/${eventId}/breakouts/${toGroupId}`)
-    revalidatePath(`/event/${eventId}/registrants`)
-    revalidatePath(`/event/${eventId}/catch-mech`)
-    // Session detail renders each group's capacity, so a move shifts numbers
-    // there too. The occurrence id isn't known here — revalidate the segment.
-    revalidatePath(`/event/${eventId}/sessions`, "layout")
+    revalidateBreakoutSurfaces(owner, { groupId: fromGroupId, sessions: true })
+    revalidateBreakoutSurfaces(owner, { groupId: toGroupId })
+    if (!isClusterOwner(owner)) revalidatePath(`/event/${owner.eventId}/catch-mech`)
 
     return { success: true, data: undefined }
   } catch {
@@ -572,26 +675,52 @@ export async function transferRegistrantToBreakout(
  *
  * Deliberately unguarded: the public check-in page (`/events/[id]/checkin`)
  * calls this with no session. Same for `getRegistrantBreakoutGroupName` below.
+ * It keeps taking an event id rather than an owner for that reason — the caller
+ * is a public page that knows which event it is serving and nothing more — and
+ * resolves the owner itself.
+ *
+ * Both guards below were event-scoped and are now owner-scoped, which is a fix
+ * as much as a widening: on a collab day the tables belong to the cluster, so
+ * `breakoutGroup: { eventId }` matched nothing and the already-seated check
+ * waved through someone who was already at a table, seating them twice.
  */
 export async function autoAssignRegistrantToBreakout(
   registrantId: string,
   eventId: string
 ): Promise<void> {
   try {
+    const { breakoutOwner: owner } = await resolvePoolScope(eventId)
+
     const alreadyAssigned = await db.breakoutGroupMember.findFirst({
-      where: { registrantId, breakoutGroup: { eventId } },
+      where: { registrantId, breakoutGroup: owner },
       select: { breakoutGroupId: true },
     })
     if (alreadyAssigned) return
 
     const registrant = await db.eventRegistrant.findUnique({
       where: { id: registrantId },
-      select: { memberId: true },
+      select: { memberId: true, guestId: true },
     })
+
+    // One seat per person: under a Collab the same person holds a registration on
+    // every member event, and check-in fires this per row.
+    if (isClusterOwner(owner) && (registrant?.memberId || registrant?.guestId)) {
+      const seatedElsewhere = await db.breakoutGroupMember.findFirst({
+        where: {
+          breakoutGroup: owner,
+          registrant: registrant.memberId
+            ? { memberId: registrant.memberId }
+            : { guestId: registrant.guestId },
+        },
+        select: { breakoutGroupId: true },
+      })
+      if (seatedElsewhere) return
+    }
+
     if (registrant?.memberId) {
       const isFacilitator = await db.breakoutGroup.findFirst({
         where: {
-          eventId,
+          ...owner,
           OR: [
             { facilitator: { memberId: registrant.memberId } },
             { coFacilitator: { memberId: registrant.memberId } },
@@ -602,7 +731,7 @@ export async function autoAssignRegistrantToBreakout(
       if (isFacilitator) return
     }
 
-    const matches = await matchBreakoutGroups(registrantId, eventId, {
+    const matches = await matchBreakoutGroups(registrantId, owner, {
       excludeAssigned: true,
       limit: 1,
     })
@@ -615,24 +744,30 @@ export async function autoAssignRegistrantToBreakout(
     })
     await tryCreateSmallGroupRequestFromBreakout(topMatch.groupId, registrantId)
 
-    revalidatePath(`/event/${eventId}/breakouts`)
+    revalidateBreakoutSurfaces(owner)
   } catch {
     // Swallow — auto-assign is best-effort and must not interrupt check-in
   }
 }
 
 /**
- * Reads a registrant's current breakout group assignment for an event.
+ * Reads a registrant's current breakout group assignment for an event's day.
  * Used by the public check-in success screen to show the person which breakout
  * group they belong to. Best-effort — returns null when unassigned or on error.
+ *
+ * Owner-scoped for the same reason as `autoAssignRegistrantToBreakout`: on a
+ * collab day the person sits at one of the CLUSTER's tables, so the old
+ * `breakoutGroup: { eventId }` filter found nothing and the success screen told
+ * everyone they had no group.
  */
 export async function getRegistrantBreakoutGroupName(
   registrantId: string,
   eventId: string
 ): Promise<{ name: string } | null> {
   try {
+    const { breakoutOwner: owner } = await resolvePoolScope(eventId)
     const membership = await db.breakoutGroupMember.findFirst({
-      where: { registrantId, breakoutGroup: { eventId } },
+      where: { registrantId, breakoutGroup: owner },
       select: { breakoutGroup: { select: { name: true } } },
     })
     return membership ? { name: membership.breakoutGroup.name } : null
@@ -644,15 +779,20 @@ export async function getRegistrantBreakoutGroupName(
 // ─── Auto-assign ─────────────────────────────────────────────────────────────
 
 export async function autoAssignBreakouts(
-  eventId: string
+  owner: BreakoutOwner
 ): Promise<ActionResult<{ assigned: number; skipped: number }>> {
-  const denied = await requireEventWrite(eventId)
+  const denied = await requireBreakoutWrite(owner)
   if (denied) return { success: false, error: denied.error }
+
+  const candidateEventIds = await breakoutCandidateEventIds(owner)
 
   try {
     const unassigned = await db.eventRegistrant.findMany({
-      where: { eventId, ...unassignedCandidateWhere(eventId) },
-      select: { id: true },
+      where: {
+        eventId: { in: candidateEventIds },
+        ...unassignedCandidateWhere(owner),
+      },
+      select: { id: true, memberId: true, guestId: true },
     })
 
     if (unassigned.length === 0) {
@@ -662,8 +802,18 @@ export async function autoAssignBreakouts(
     let assigned = 0
     let skipped = 0
 
-    for (const { id: registrantId } of unassigned) {
-      const matches = await matchBreakoutGroups(registrantId, eventId, {
+    // One seat per person. A Collab candidate list holds one row per member
+    // event, so without this the same person is placed once per registration.
+    const seated = isClusterOwner(owner) ? await seatedPersonKeys(owner) : new Set<string>()
+
+    for (const registrant of unassigned) {
+      const key = personKeyOf(registrant)
+      if (seated.has(key)) {
+        skipped++
+        continue
+      }
+
+      const matches = await matchBreakoutGroups(registrant.id, owner, {
         excludeAssigned: true,
         limit: 1,
       })
@@ -674,13 +824,14 @@ export async function autoAssignBreakouts(
       }
 
       await db.breakoutGroupMember.create({
-        data: { breakoutGroupId: matches[0].groupId, registrantId },
+        data: { breakoutGroupId: matches[0].groupId, registrantId: registrant.id },
       })
-      await tryCreateSmallGroupRequestFromBreakout(matches[0].groupId, registrantId)
+      await tryCreateSmallGroupRequestFromBreakout(matches[0].groupId, registrant.id)
+      seated.add(key)
       assigned++
     }
 
-    revalidatePath(`/event/${eventId}/breakouts`)
+    revalidateBreakoutSurfaces(owner)
     return { success: true, data: { assigned, skipped } }
   } catch {
     return { success: false, error: "Failed to auto-assign registrants" }
@@ -708,23 +859,34 @@ export async function setFacilitator(
   groupId: string,
   volunteerId: string | null,
   role: "facilitator" | "coFacilitator",
-  eventId: string,
+  owner: BreakoutOwner,
   linkedSmallGroupId?: string | null
 ): Promise<ActionResult> {
-  const denied = await requireEventWrite(eventId)
+  const denied = await requireBreakoutWrite(owner)
   if (denied) return { success: false, error: denied.error }
 
   try {
     if (volunteerId !== null) {
+      // The volunteer POOL, not the group's event — this is the union half of
+      // CCF-148. On a collab day either ministry's confirmed volunteers may run
+      // any of the day's tables, and a volunteer stays owned by the event they
+      // signed up under.
+      const volunteerEventIds = await poolVolunteerEventIds(owner)
       const volunteer = await db.volunteer.findFirst({
-        where: { id: volunteerId, eventId },
+        where: { id: volunteerId, eventId: { in: volunteerEventIds } },
         select: { id: true },
       })
       if (!volunteer) {
-        return { success: false, error: "Volunteer not found for this event" }
+        return {
+          success: false,
+          error:
+            volunteerEventIds.length > 1
+              ? "Volunteer not found for this event day"
+              : "Volunteer not found for this event",
+        }
       }
-      const group = await db.breakoutGroup.findUnique({
-        where: { id: groupId },
+      const group = await db.breakoutGroup.findFirst({
+        where: { id: groupId, ...owner },
         select: { facilitatorId: true, coFacilitatorId: true },
       })
       if (!group) return { success: false, error: "Breakout group not found" }
@@ -743,6 +905,15 @@ export async function setFacilitator(
     // swap between two facilitators leaves the criteria untouched.
     const unlinked = role === "facilitator" && volunteerId === null
 
+    // findFirst + update rather than a bare update by id: clearing a slot skips
+    // the owner-scoped read above, so without this an owner argument could name
+    // a group it doesn't own.
+    const target = await db.breakoutGroup.findFirst({
+      where: { id: groupId, ...owner },
+      select: { id: true },
+    })
+    if (!target) return { success: false, error: "Breakout group not found" }
+
     await db.breakoutGroup.update({
       where: { id: groupId },
       data: role === "facilitator"
@@ -754,8 +925,7 @@ export async function setFacilitator(
             }
         : { coFacilitatorId: volunteerId },
     })
-    revalidatePath(`/event/${eventId}/breakouts/${groupId}`)
-    revalidatePath(`/event/${eventId}/breakouts`)
+    revalidateBreakoutSurfaces(owner, { groupId })
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to update facilitator" }

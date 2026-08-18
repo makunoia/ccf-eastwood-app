@@ -94,7 +94,12 @@ const WALK_IN: WalkInProp = {
 function renderForm(walkIn?: WalkInProp) {
   return render(
     <RegistrationForm
-      cluster={{ token: "tok-1", events: [{ id: "e1", name: "Sunday Service" }] }}
+      cluster={{
+        token: "tok-1",
+        kind: "Parallel",
+        name: "Event Day",
+        events: [{ id: "e1", name: "Sunday Service" }],
+      }}
       eventName="Event Day"
       walkIn={walkIn}
     />

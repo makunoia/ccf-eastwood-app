@@ -33,6 +33,7 @@ import { listBreakoutCandidates } from "@/app/(dashboard)/events/matching-action
 import type { BreakoutCandidateList } from "@/app/(dashboard)/events/matching-actions"
 import { addRegistrantsToBreakout } from "@/app/(dashboard)/events/breakout-actions"
 import { breakoutOccupancy } from "@/lib/breakouts/occupancy"
+import type { BreakoutSurface } from "@/lib/breakouts/owner"
 import {
   filterBreakoutCandidates,
   sortCandidates,
@@ -61,12 +62,12 @@ export function AddRegistrantSheet({
   open,
   onOpenChange,
   groupId,
-  eventId,
+  surface,
 }: {
   open: boolean
   onOpenChange: (v: boolean) => void
   groupId: string
-  eventId: string
+  surface: BreakoutSurface
 }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -75,7 +76,7 @@ export function AddRegistrantSheet({
             (fresh fetch, no leftover filters or selection) without an effect
             reaching back to reset state. */}
         {open && (
-          <CandidatePicker groupId={groupId} eventId={eventId} onOpenChange={onOpenChange} />
+          <CandidatePicker groupId={groupId} surface={surface} onOpenChange={onOpenChange} />
         )}
       </SheetContent>
     </Sheet>
@@ -84,11 +85,11 @@ export function AddRegistrantSheet({
 
 function CandidatePicker({
   groupId,
-  eventId,
+  surface,
   onOpenChange,
 }: {
   groupId: string
-  eventId: string
+  surface: BreakoutSurface
   onOpenChange: (v: boolean) => void
 }) {
   const [data, setData] = React.useState<BreakoutCandidateList | null>(null)
@@ -114,7 +115,7 @@ function CandidatePicker({
   // here, and a fresh read means the list reflects adds made since page load.
   React.useEffect(() => {
     let cancelled = false
-    listBreakoutCandidates(groupId, eventId).then((result) => {
+    listBreakoutCandidates(groupId, surface.owner).then((result) => {
       if (cancelled) return
       if (result.success) setData(result.data)
       else toast.error(result.error)
@@ -123,7 +124,7 @@ function CandidatePicker({
     return () => {
       cancelled = true
     }
-  }, [groupId, eventId])
+  }, [groupId, surface])
 
   const candidates = React.useMemo(() => data?.candidates ?? [], [data])
 
@@ -190,7 +191,7 @@ function CandidatePicker({
   async function handleAdd() {
     setAdding(true)
     const ids = [...selected]
-    const result = await addRegistrantsToBreakout(groupId, ids, eventId)
+    const result = await addRegistrantsToBreakout(groupId, ids, surface.owner)
     setAdding(false)
 
     if (!result.success) {

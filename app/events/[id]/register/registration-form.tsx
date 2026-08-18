@@ -90,6 +90,8 @@ import {
   type BreakoutNoticeKind,
 } from "@/lib/breakout-suggestion"
 import { breakoutOccupancy } from "@/lib/breakouts/occupancy"
+import { MINISTRY_REQUIRED_ERROR } from "@/lib/clusters/copy"
+import { MinistryAvatar } from "@/components/ministry-avatar"
 
 const DAY_NAMES = ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"]
 const MEETING_FORMAT_LABEL: Record<"Online" | "Hybrid" | "InPerson", string> = {
@@ -265,11 +267,29 @@ type WalkInConfig = {
 }
 
 // Cluster mode (CCF-132): the shared "Event Day" form. Identity + profile are
-// collected once, an Events step asks which of the day's events the person is
-// attending, and submission fans out one registration per selected event.
+// collected once and submission fans out one registration per event.
+//
+// What the middle step asks depends on the day's kind (CCF-148). Either way it is
+// exactly one step, and both send back event ids — the difference is the question:
+//  - `Parallel` — several events sharing a day. "Which are you joining?", any number.
+//  - `Collab` — two ministries co-running ONE event. "Which ministry are you part
+//    of?", exactly one. Nobody attending a collab thinks of it as two events, but
+//    they do know which ministry they belong to, and that answer is what routes the
+//    registration to that ministry's event.
+//
+// `ministry` is null when the event has no single ministry — a misconfigured day
+// the Settings guard should have caught. The step falls back to the event's own
+// name there rather than dead-ending someone at the door.
 type ClusterConfig = {
   token: string
-  events: { id: string; name: string; meta?: string | null }[]
+  kind: "Parallel" | "Collab"
+  name: string
+  events: {
+    id: string
+    name: string
+    meta?: string | null
+    ministry?: { id: string; name: string; logoUrl: string | null } | null
+  }[]
 }
 
 type Props = {
@@ -513,8 +533,14 @@ export function RegistrationForm({
   // offered after the fact, when the registrant goes back and changes gender.
   const [rawSelectedBreakoutId, setSelectedBreakoutId] = React.useState<string>("")
   const [assignedBreakout, setAssignedBreakout] = React.useState<AssignedBreakout | null>(null)
-  // Cluster mode: which of the day's events the person is attending, and the
-  // per-event outcomes shown on the success screen (partial success).
+  // Cluster mode: which of the day's events the person is attending — from the
+  // Events tickboxes on a Parallel day, or the single ministry choice on a Collab
+  // one. Plus the per-event outcomes shown on the success screen (partial success).
+  //
+  // Deliberately NOT seeded from props for a Collab. It briefly was, which made it
+  // derived data living in state: `handleReset` clears it and the lazy initializer
+  // never runs again, so any reset left the form permanently unsubmittable against
+  // a guard for a question it no longer asked. It is a real answer now.
   const [selectedEventIds, setSelectedEventIds] = React.useState<string[]>([])
   const [clusterResults, setClusterResults] = React.useState<ClusterEventRegistrationResult[] | null>(null)
   const [formStep, setFormStep] = React.useState(1)
@@ -624,7 +650,11 @@ export function RegistrationForm({
 
   const allSections: { key: string; title: string }[] = [
     { key: "personal", title: "Personal Information" },
-    ...(cluster ? [{ key: "events", title: "Events" }] : []),
+    ...(cluster
+      ? cluster.kind === "Collab"
+        ? [{ key: "ministry", title: "Your Ministry" }]
+        : [{ key: "events", title: "Events" }]
+      : []),
     ...(includeSmallGroup && !skipSmallGroup ? [{ key: "smallgroup", title: "DGroup Info" }] : []),
     ...(showBreakoutSection ? [{ key: "breakout", title: "Breakout Group" }] : []),
     ...(cfg.sectionFamily ? [{ key: "household", title: "Your Household" }] : []),
@@ -679,6 +709,11 @@ export function RegistrationForm({
   // the next move instead of throwing mid-render.
   const safeStep = clampFormStep(formStep, sections.length)
   const currentSectionKey = sections[safeStep - 1].key
+
+  /** Whether this form actually asks the cluster's question — see the submit guard. */
+  const clusterStepShown = sections.some(
+    (sec) => sec.key === "events" || sec.key === "ministry"
+  )
 
   /**
    * The current answers keyed the way the payload is, so the client can run the
@@ -853,6 +888,11 @@ export function RegistrationForm({
     setSelectedEventIds((prev) =>
       prev.includes(id) ? prev.filter((e) => e !== id) : [...prev, id]
     )
+  }
+
+  /** The Collab step is single-choice: one ministry, so one event. */
+  function selectOnlyEvent(id: string) {
+    setSelectedEventIds([id])
   }
 
   function set(field: keyof FormValues, value: string | string[]) {
@@ -1075,9 +1115,14 @@ export function RegistrationForm({
       }
     }
 
-    // Cluster mode: the day makes no sense with nothing ticked.
+    // Cluster mode: the day makes no sense with nothing chosen. Each kind's step
+    // asks a different question, so each gets its own words back.
     if (currentSectionKey === "events" && selectedEventIds.length === 0) {
       toast.error("Select at least one event to register for.")
+      return
+    }
+    if (currentSectionKey === "ministry" && selectedEventIds.length === 0) {
+      toast.error(MINISTRY_REQUIRED_ERROR)
       return
     }
 
@@ -1259,8 +1304,18 @@ export function RegistrationForm({
       return
     }
 
-    if (cluster && selectedEventIds.length === 0) {
-      toast.error("Select at least one event to register for.")
+    // Gated on the step having actually been rendered, not on `cluster` alone.
+    // A form must never block on an answer it did not ask for, and two paths reach
+    // submit without the cluster step: amending narrows `sections` to the steps
+    // holding the amend fields (`stepKeyForField` can never name a cluster step),
+    // and a collab amend deliberately doesn't re-ask the ministry. The server
+    // resolves the target from the registration being amended in both cases.
+    if (cluster && clusterStepShown && selectedEventIds.length === 0) {
+      toast.error(
+        cluster.kind === "Collab"
+          ? MINISTRY_REQUIRED_ERROR
+          : "Select at least one event to register for."
+      )
       return
     }
 
@@ -1517,6 +1572,22 @@ export function RegistrationForm({
     }
     const ok = (r: ClusterEventRegistrationResult) =>
       r.status === "registered" || r.status === "already" || r.status === "volunteer"
+
+    /**
+     * A Collab day is one event to the person in front of the screen, so the
+     * per-event breakdown is exactly the structure this feature hides — being told
+     * "Youth Night: registered / Singles Connect: registered" after never being
+     * asked about either is confusing at best.
+     *
+     * Any event taking the registration counts as success. A partial fan-out is an
+     * admin problem, and it is already visible to them: the cluster roster computes
+     * a standing per person per event, so a missing half shows up there.
+     */
+    const collapsed = cluster?.kind === "Collab"
+    const collapsedBreakout =
+      collapsed ? clusterResults.find((r) => r.breakoutGroup)?.breakoutGroup ?? null : null
+    const collapsedCheckedIn = collapsed && clusterResults.some((r) => r.checkedIn)
+
     return (
       <FormShell plain={plain}>
         <CardContent className="flex flex-col items-center gap-5 pt-10 pb-6">
@@ -1542,9 +1613,30 @@ export function RegistrationForm({
                   accurate regardless of what the admin wrote. */}
               {anyRegistered
                 ? (successMessage?.trim() ||
-                  "We're so glad you're coming — here's how each event went.")
-                : "None of the selected events could take your registration."}
+                  (collapsed
+                    ? `We're so glad you're coming to ${cluster.name}.`
+                    : "We're so glad you're coming — here's how each event went."))
+                : collapsed
+                  ? "We couldn't take your registration — please ask the team for help."
+                  : "None of the selected events could take your registration."}
             </p>
+            {collapsed ? (
+              <div className="mt-3 space-y-2 text-left">
+                {anyRegistered && (
+                  <div className="rounded-xl border bg-muted/40 px-4 py-3 space-y-0.5">
+                    <p className="text-sm font-semibold">{cluster.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {collapsedCheckedIn ? "Registered · checked in" : "Registered"}
+                    </p>
+                    {collapsedBreakout && (
+                      <p className="text-xs text-muted-foreground">
+                        Breakout group: {collapsedBreakout.name}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
             <div className="mt-3 space-y-2 text-left">
               {clusterResults.map((r) => (
                 <div key={r.eventId} className="rounded-xl border bg-muted/40 px-4 py-3 space-y-0.5">
@@ -1565,6 +1657,7 @@ export function RegistrationForm({
                 </div>
               ))}
             </div>
+            )}
           </div>
           <DoneActions walkIn={walkIn} onReset={handleReset} />
         </CardContent>
@@ -2392,6 +2485,63 @@ export function RegistrationForm({
                       )}
                     </span>
                   </label>
+                )
+              })}
+            </div>
+          )}
+
+          {/* ── Ministry (collab shared form, CCF-148) ──
+              The same list of member events, asked as a different question and
+              answered once. Radio semantics rather than tickboxes: "which ministry
+              are you part of" has one answer, and offering two would produce a
+              payload the server rejects.
+
+              Falls back to event names when a ministry is missing — a day the
+              Settings guard should have blocked, but a registrant standing in front
+              of the form is the wrong person to punish for it. */}
+          {cluster && currentSectionKey === "ministry" && (
+            <div className="space-y-3" role="radiogroup" aria-label="Your ministry">
+              <p className="text-sm text-muted-foreground">
+                {cluster.events.every((ev) => ev.ministry)
+                  ? "Which ministry are you part of?"
+                  : "Which group are you with?"}
+              </p>
+              {cluster.events.map((ev) => {
+                const checked = selectedEventIds.includes(ev.id)
+                // The ministry is the whole label — the event name is deliberately
+                // not shown alongside it. Someone at a collab is picking the group
+                // they belong to, and naming the two underlying events beside it
+                // re-exposes the split the day is meant to hide.
+                const label = ev.ministry?.name ?? ev.name
+                return (
+                  <button
+                    key={ev.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={checked}
+                    onClick={() => selectOnlyEvent(ev.id)}
+                    className={cn(
+                      "flex w-full cursor-pointer items-center gap-3 rounded-lg border p-4 text-left transition-colors hover:bg-muted/50",
+                      checked && "border-primary bg-primary/5"
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "flex size-4 shrink-0 items-center justify-center rounded-full border",
+                        checked ? "border-primary" : "border-input"
+                      )}
+                      aria-hidden="true"
+                    >
+                      {checked && <span className="size-2 rounded-full bg-primary" />}
+                    </span>
+                    {/* Only when a ministry actually names the choice. On the
+                        event-name fallback there is no ministry to show a badge
+                        for, and initials of an event name would be noise. */}
+                    {ev.ministry && (
+                      <MinistryAvatar ministry={ev.ministry} className="size-10" />
+                    )}
+                    <span className="min-w-0 text-sm font-medium">{label}</span>
+                  </button>
                 )
               })}
             </div>

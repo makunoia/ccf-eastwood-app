@@ -8,6 +8,10 @@ import {
 } from "@/lib/small-groups/resolve-member-request"
 import { clearUpwardSatelliteOnConfirm } from "@/lib/small-groups/upward-satellite"
 import {
+  BREAKOUT_OWNER_NAME_SELECT,
+  breakoutOccasionName,
+} from "@/lib/breakouts/owner"
+import {
   recordConfirmationSubmission,
   submitterName,
   tallyDecisions,
@@ -59,10 +63,14 @@ export async function submitMemberConfirmations(
     const breakoutGroups = breakoutGroupIds.length > 0
       ? await db.breakoutGroup.findMany({
           where: { id: { in: breakoutGroupIds } },
-          select: { id: true, event: { select: { name: true } } },
+          select: { id: true, ...BREAKOUT_OWNER_NAME_SELECT },
         })
       : []
-    const eventNameByBreakoutId = new Map(breakoutGroups.map((bg) => [bg.id, bg.event.name]))
+    // The collab day's name stands in for the event when a cluster owns the
+    // table (CCF-148).
+    const eventNameByBreakoutId = new Map(
+      breakoutGroups.map((bg) => [bg.id, breakoutOccasionName(bg)])
+    )
     const eventNameByRequestId = new Map(
       requestsWithBreakout.map((r) => [r.id, eventNameByBreakoutId.get(r.breakoutGroupId!) ?? null])
     )

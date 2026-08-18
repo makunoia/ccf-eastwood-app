@@ -3,18 +3,10 @@
 import { revalidatePath } from "next/cache"
 import { Prisma } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
-import { auth } from "@/lib/auth"
-import { canWrite } from "@/lib/permissions"
+import { requireEventWrite } from "@/lib/events/require-event-write"
 import { updateVolunteerSchema } from "@/lib/validations/volunteer"
 
 type ActionResult<T = void> = { success: true; data: T } | { success: false; error: string }
-
-async function requireWrite(): Promise<{ error: string } | null> {
-  const session = await auth()
-  if (!session?.user) return { error: "Not authenticated." }
-  if (!canWrite(session, "Events")) return { error: "Unauthorized." }
-  return null
-}
 
 type CreateInput = {
   eventId: string
@@ -27,7 +19,9 @@ type CreateInput = {
 export async function createEventVolunteer(
   raw: CreateInput
 ): Promise<ActionResult<{ id: string }>> {
-  const authError = await requireWrite()
+  // Checks the *argument* event, not just the Events feature — see
+  // `requireEventWrite`.
+  const authError = await requireEventWrite(raw.eventId)
   if (authError) return { success: false, error: authError.error }
 
   const { eventId, memberId, committeeId, preferredRoleId, notes } = raw
@@ -79,7 +73,7 @@ export async function updateEventVolunteer(
   eventId: string,
   raw: UpdateInput
 ): Promise<ActionResult> {
-  const authError = await requireWrite()
+  const authError = await requireEventWrite(eventId)
   if (authError) return { success: false, error: authError.error }
 
   const parsed = updateVolunteerSchema.safeParse(raw)
@@ -90,6 +84,13 @@ export async function updateEventVolunteer(
   const { memberId, committeeId, preferredRoleId, assignedRoleId, status, notes } = parsed.data
 
   try {
+    // Scoped to the event so a foreign volunteer id can't be re-pointed into it.
+    const existing = await db.volunteer.findFirst({
+      where: { id: volunteerId, eventId },
+      select: { id: true },
+    })
+    if (!existing) return { success: false, error: "Volunteer not found" }
+
     await db.volunteer.update({
       where: { id: volunteerId },
       data: {
@@ -115,11 +116,13 @@ export async function deleteEventVolunteerById(
   volunteerId: string,
   eventId: string
 ): Promise<ActionResult> {
-  const authError = await requireWrite()
+  const authError = await requireEventWrite(eventId)
   if (authError) return { success: false, error: authError.error }
 
   try {
-    await db.volunteer.delete({ where: { id: volunteerId } })
+    // deleteMany so the event scope is part of the write itself.
+    const { count } = await db.volunteer.deleteMany({ where: { id: volunteerId, eventId } })
+    if (count === 0) return { success: false, error: "Volunteer not found" }
     revalidatePath(`/event/${eventId}/volunteers`)
     revalidatePath("/volunteers")
     return { success: true, data: undefined }
