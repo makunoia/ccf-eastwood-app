@@ -685,6 +685,10 @@ model EventCluster {
   // attendance for people already registered, and a day routinely wants one
   // running without the other.
   checkInIsOpen Boolean @default(false)
+  // And the day's volunteer sign-up form. Serving teams are recruited on their
+  // own timetable — weeks before the attendee form opens, and closed once the
+  // roster is full — so it gets its own switch like the other three.
+  volunteerIsOpen Boolean @default(false)
   registrationStart DateTime?
   registrationEnd   DateTime?
   // Registration page customization — mirrors Event's public form fields
@@ -702,6 +706,9 @@ model EventCluster {
   // A Collab cluster's own breakout tables — the day's groups, as opposed to
   // either member event's standing ones. See `BreakoutGroup`'s owner comment.
   breakoutGroups BreakoutGroup[]
+  // Volunteers who signed up to serve on this day. Named rather than implicit
+  // because the rows belong to their events; this is provenance, not ownership.
+  volunteerSignUps Volunteer[] @relation("ClusterVolunteerSignUps")
 }
 
 model EventClusterEvent {
@@ -963,6 +970,14 @@ model Volunteer {
   assignedRoleId  String?
   assignedRole    CommitteeRole?     @relation("AssignedRole", fields: [assignedRoleId], references: [id])
   status               VolunteerStatus    @default(Pending)
+  // Provenance: set when this sign-up came in through an event day's shared
+  // volunteer form. The row stays owned by its event — a person volunteers under
+  // a ministry — but a Collab day tracks its own serving team, and this column is
+  // what makes "who signed up to serve on the day" answerable at all. Without it
+  // the day could only show the union of both ministries' standing rosters, which
+  // is everyone who ever volunteered rather than anyone who volunteered for this.
+  signUpClusterId      String?
+  signUpCluster        EventCluster?     @relation("ClusterVolunteerSignUps", fields: [signUpClusterId], references: [id], onDelete: SetNull)
   notes                String?
   leaderApprovalToken  String?           @unique
   leaderNotes          String?
@@ -981,6 +996,8 @@ model Volunteer {
   subFacilitatorSlots   OccurrenceSubFacilitator[]
   occurrenceAttendances OccurrenceAttendee[]
   confirmationSubmissions ConfirmationSubmission[] @relation("ConfirmationSubmissionFacilitator")
+
+  @@index([signUpClusterId])
 }
 
 model MatchingWeightConfig {

@@ -12,7 +12,10 @@ import type { MatchResult } from "@/lib/matching/types"
 import { addRegistrantsToBreakout } from "./breakout-actions"
 import { unassignedCandidateWhere } from "@/lib/breakouts/candidate-pool"
 import { isClusterOwner, type BreakoutOwner } from "@/lib/breakouts/owner"
-import { breakoutCandidateEventIds } from "@/lib/breakouts/candidate-events"
+import {
+  breakoutCandidateEventIds,
+  breakoutCandidateWhere,
+} from "@/lib/breakouts/candidate-events"
 import { registrantName, registrantNameSelect } from "@/lib/metadata"
 import { getEffectiveFormConfigs } from "@/lib/forms/context-config-server"
 import { mergeFormConfigs } from "@/lib/forms/registration-responses"
@@ -177,6 +180,10 @@ export async function listBreakoutCandidates(
   // Whose registrants may be seated here — this event's, or every member event's
   // under a Collab cluster (CCF-148).
   const candidateEventIds = await breakoutCandidateEventIds(owner)
+  // Who may be seated, as the database sees it. On a Collab day this is the
+  // day's own registrations rather than both ministries' standing rosters — the
+  // list an admin picks from has to be the people who are actually here.
+  const candidateWhere = await breakoutCandidateWhere(owner)
   // The form config the candidate columns are rendered from. A Collab's member
   // events can differ in what they collected, so read the anchor event's config —
   // the same one the cluster's own shared form is built from.
@@ -200,7 +207,7 @@ export async function listBreakoutCandidates(
     const [rows, totalPool, formConfigs, lifeStages, ageRangeBuckets] = await Promise.all([
       db.eventRegistrant.findMany({
         where: {
-          eventId: { in: candidateEventIds },
+          ...candidateWhere,
           ...unassignedCandidateWhere(owner),
         },
         orderBy: { createdAt: "asc" },
@@ -249,7 +256,7 @@ export async function listBreakoutCandidates(
       }),
       db.eventRegistrant.count({
         where: {
-          eventId: { in: candidateEventIds },
+          ...candidateWhere,
           ...unassignedCandidateWhere(owner),
         },
       }),

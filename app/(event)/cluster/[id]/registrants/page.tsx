@@ -4,9 +4,9 @@ import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import {
   getAccessibleClusterEvents,
-  getClusterRegistrantRows,
+  getClusterDayRows,
 } from "@/lib/clusters/aggregate"
-import { buildClusterRoster, standingFor } from "@/lib/clusters/roster"
+import { buildClusterRoster, personTypeFor, standingFor } from "@/lib/clusters/roster"
 import { canExport } from "@/lib/permissions"
 import { DetailPageHeader } from "@/components/detail-page-header"
 import { ClusterExportButton } from "./cluster-export-button"
@@ -26,14 +26,18 @@ export default async function ClusterRegistrantsPage({
 
   const cluster = await db.eventCluster.findUnique({
     where: { id },
-    select: { id: true, name: true, date: true },
+    select: { id: true, name: true, date: true, kind: true },
   })
   if (!cluster) notFound()
 
   const events = await getAccessibleClusterEvents(session, id)
-  const rows = await getClusterRegistrantRows(events, {
+  // The day's people, not only its registrations: someone serving holds a
+  // `Volunteer` row and never an `EventRegistrant` one, and a roster that
+  // counted only the latter left the serving team off the day's list entirely.
+  const rows = await getClusterDayRows(events, {
     clusterId: cluster.id,
     date: cluster.date,
+    kind: cluster.kind,
   })
   const roster = buildClusterRoster(events, rows)
   const registeredAtById = new Map(rows.map((r) => [r.id, r.registeredAt]))
@@ -48,6 +52,7 @@ export default async function ClusterRegistrantsPage({
         eventId: c.event.id,
         eventName: c.event.name,
         registrantId: c.cell!.registrantId,
+        kind: c.cell!.kind,
         checkedIn: c.cell!.checkedIn,
         standing: standingFor(c.cell!),
       }))
@@ -67,6 +72,7 @@ export default async function ClusterRegistrantsPage({
       lastName: person.lastName,
       phone: person.phone,
       isMember: person.isMember,
+      type: personTypeFor(person),
       events: personEvents,
       registeredAt: earliest?.toISOString() ?? null,
     }
@@ -79,6 +85,11 @@ export default async function ClusterRegistrantsPage({
     p.events.some((e) => e.standing !== "SeriesOnly")
   ).length
   const seriesOnlyPeople = people.length - dayPeople
+  // Registrations and sign-ups to serve are counted apart. Both are the day's
+  // people, but "40 registered" meaning "31 registered and 9 serving" is the
+  // kind of merged figure an admin can't plan from.
+  const registrationCount = dayRows.filter((r) => r.kind === "Registrant").length
+  const volunteerCount = dayRows.filter((r) => r.kind === "Volunteer").length
 
   const exportDate = (cluster.date ?? new Date()).toISOString().split("T")[0]
   const exportSlug =
@@ -102,9 +113,10 @@ export default async function ClusterRegistrantsPage({
         }
         subtitle={
           <p className="text-sm text-muted-foreground">
-            {dayPeople} {dayPeople === 1 ? "person" : "people"} · {dayRows.length}{" "}
-            registration{dayRows.length === 1 ? "" : "s"} across {events.length}{" "}
-            event{events.length === 1 ? "" : "s"}
+            {dayPeople} {dayPeople === 1 ? "person" : "people"} ·{" "}
+            {registrationCount} registration{registrationCount === 1 ? "" : "s"}
+            {volunteerCount > 0 && <> · {volunteerCount} serving</>} across{" "}
+            {events.length} event{events.length === 1 ? "" : "s"}
             {seriesOnlyPeople > 0 && (
               <> · {seriesOnlyPeople} more on a recurring event&apos;s series</>
             )}

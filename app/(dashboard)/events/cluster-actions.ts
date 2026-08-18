@@ -18,13 +18,14 @@ import {
 } from "@/lib/forms/registration-payload"
 import {
   completeEventRegistration,
-  findEventVolunteerConflict,
+  findEventVolunteerRecord,
   findExistingEventRegistrationRow,
   resolveAnonymousGuest,
   resolveConfirmedGuest,
   resolveConfirmedMember,
   type TouchedFields,
   stampClusterProvenance,
+  stampVolunteerClusterProvenance,
   type AssignedBreakout,
   type PersonRef,
   type ResolvedProfile,
@@ -84,6 +85,7 @@ function revalidateClusterPaths(clusterId: string) {
   revalidatePath(`/cluster/${clusterId}/registrants`)
   revalidatePath(`/cluster/${clusterId}/checkin`)
   revalidatePath(`/cluster/${clusterId}/settings`)
+  revalidatePath(`/cluster/${clusterId}/volunteers`)
 }
 
 /**
@@ -663,7 +665,19 @@ export async function registerForCluster(
           continue
         }
 
-        if ("memberId" in person && (await findEventVolunteerConflict(eventId, person.memberId))) {
+        const serving =
+          "memberId" in person
+            ? await findEventVolunteerRecord(eventId, person.memberId)
+            : null
+        if (serving) {
+          // Serving instead of attending — no registrant row to create, and there
+          // must not be one. But they DID just come through this day's form, and
+          // that is the only evidence `volunteerIsOnClusterDay` accepts for a
+          // ministry regular whose sign-up predates the day. Stamping it here is
+          // the difference between the day's screens listing them and dropping
+          // them entirely, while the form told them they were "already included".
+          // Same reasoning, same place in the flow, as the `already` branch below.
+          await stampVolunteerClusterProvenance(serving.id, cluster.id)
           results.push({ eventId, eventName: event.name, status: "volunteer" })
           continue
         }
@@ -1251,5 +1265,157 @@ export async function checkInToCluster(
     }
   } catch {
     return { success: false, error: "Failed to check in. Please try again." }
+  }
+}
+
+
+// ─── Volunteer sign-up for the day ───────────────────────────────────────────
+
+export type ClusterVolunteerSignUpInput = {
+  memberId: string
+  /** The event behind the ministry the volunteer picked — see `resolveClusterEventSelection`. */
+  eventId: string
+  committeeId: string
+  preferredRoleId: string
+  notes: string
+}
+
+/**
+ * Sign someone up to serve on a Collab day.
+ *
+ * The mirror of `registerForCluster`, and it exists for the same reason. A
+ * collab's member events are long-running ministry events, so their volunteer
+ * rosters are full of people who signed up months ago for something else —
+ * and the per-event form refuses a second sign-up outright ("You're already
+ * registered as a volunteer for this event"), so a ministry regular had no way
+ * to say they were serving *this day* and the day had no way to know. The
+ * cluster workspace could only show the union of both standing rosters, which
+ * answers "who has ever volunteered here", never "who is serving today".
+ *
+ * So the day stamps its own provenance:
+ *
+ *  - **No row yet** — create one, owned by the ministry's event (that is what a
+ *    person volunteers under), stamped with this day.
+ *  - **A row from the series** — reuse it, exactly as a registration is reused.
+ *    The stamp goes on and the preferences just given replace what was there,
+ *    because the committee and role the person picked are their answer for this
+ *    day. `status` is deliberately left alone: an admin already confirmed them
+ *    once, and silently demoting that to Pending loses a decision no one asked
+ *    to revisit.
+ *  - **Already stamped for this day** — nothing to do, and saying so is the
+ *    honest outcome.
+ *
+ * Collab-only, like the cluster's Volunteers screen itself: a Parallel day's
+ * events each keep their own serving team, and there is no shared roster for a
+ * shared form to feed.
+ */
+export async function submitClusterVolunteerSignUp(
+  publicToken: string,
+  input: ClusterVolunteerSignUpInput
+): Promise<ActionResult<{ id: string; eventName: string; reused: boolean }>> {
+  const { memberId, eventId, committeeId, preferredRoleId } = input
+  if (!memberId) return { success: false, error: "Invalid sign-up context" }
+  if (!committeeId || !preferredRoleId) {
+    return { success: false, error: "Please select a committee and role" }
+  }
+
+  try {
+    const cluster = await db.eventCluster.findUnique({
+      where: { publicToken },
+      select: {
+        id: true,
+        kind: true,
+        volunteerIsOpen: true,
+        events: {
+          orderBy: { order: "asc" },
+          select: { event: { select: { id: true, name: true } } },
+        },
+      },
+    })
+    if (!cluster) return { success: false, error: "Event day not found." }
+    if (cluster.kind !== ClusterKind.Collab) {
+      return { success: false, error: "This event day has no shared volunteer form." }
+    }
+    if (!cluster.volunteerIsOpen) {
+      return { success: false, error: "Volunteer sign-up for this event day is closed." }
+    }
+
+    const clusterEventIds = cluster.events.map((ce) => ce.event.id)
+    const selection = resolveClusterEventSelection(cluster.kind, [eventId], clusterEventIds)
+    if (!selection.ok) return { success: false, error: selection.error }
+    const targetEventId = selection.eventIds[0]
+    const eventName =
+      cluster.events.find((ce) => ce.event.id === targetEventId)?.event.name ?? ""
+
+    // The committee has to belong to the event the ministry named, and the role
+    // to that committee — otherwise a hand-built payload could file someone onto
+    // the partner ministry's team.
+    const role = await db.committeeRole.findFirst({
+      where: {
+        id: preferredRoleId,
+        committeeId,
+        committee: { eventId: targetEventId },
+      },
+      select: { id: true },
+    })
+    if (!role) {
+      return { success: false, error: "Please select a committee and role" }
+    }
+
+    const member = await db.member.findUnique({
+      where: { id: memberId },
+      select: { id: true },
+    })
+    if (!member) return { success: false, error: "We couldn't find your member record." }
+
+    const notes = input.notes.trim() || null
+    const existing = await db.volunteer.findFirst({
+      where: { memberId, eventId: targetEventId },
+      select: { id: true, signUpClusterId: true },
+    })
+
+    if (existing?.signUpClusterId === cluster.id) {
+      return {
+        success: false,
+        error: "You've already signed up to serve on this event day.",
+      }
+    }
+
+    const volunteer = existing
+      ? await db.volunteer.update({
+          where: { id: existing.id },
+          data: {
+            signUpClusterId: cluster.id,
+            committeeId,
+            preferredRoleId,
+            notes,
+          },
+          select: { id: true },
+        })
+      : await db.volunteer.create({
+          data: {
+            memberId,
+            eventId: targetEventId,
+            committeeId,
+            preferredRoleId,
+            notes,
+            signUpClusterId: cluster.id,
+            leaderApprovalToken: crypto.randomUUID(),
+            status: "Pending",
+          },
+          select: { id: true },
+        })
+
+    revalidatePath(`/event/${targetEventId}/volunteers`)
+    revalidateClusterPaths(cluster.id)
+    return {
+      success: true,
+      data: { id: volunteer.id, eventName, reused: existing !== null },
+    }
+  } catch {
+    return {
+      success: false,
+      error: "Failed to submit your application. Please try again.",
+    }
   }
 }

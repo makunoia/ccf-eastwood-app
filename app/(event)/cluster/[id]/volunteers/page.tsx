@@ -1,9 +1,11 @@
 import type { Metadata } from "next"
+import Link from "next/link"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import { canWrite } from "@/lib/permissions"
 import { ClusterKind } from "@/app/generated/prisma/client"
+import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/page-header"
 import { getClusterVolunteerPool } from "@/lib/clusters/aggregate"
 import { ClusterVolunteersTable } from "./volunteers-table"
@@ -13,17 +15,23 @@ export const metadata: Metadata = {
 }
 
 /**
- * The collab day's serving team (CCF-148).
+ * The collab day's serving team.
  *
- * A **union**, not a new pool: each volunteer still belongs to the event they
- * signed up under, and the table says which. That is the difference from
- * breakouts, where the day owns its own tables — a person's decision to serve was
- * made about a ministry, so it keeps that provenance, whereas a table on a collab
- * day belongs to the day.
+ * Two lists, and which one is the default matters. **This day** — the default —
+ * is who signed up through the day's own volunteer form, the answer to "who is
+ * serving on Saturday". **All rosters** is the union of the member events'
+ * standing teams, which is who has ever volunteered under either ministry; on a
+ * long-running ministry event that is hundreds of people who made no statement
+ * about this day, and showing it as the day's team was the reason the day's
+ * staffing could not be tracked at all.
  *
- * The practical payoff is `setFacilitator`: any confirmed volunteer on this list
- * can run any of the day's breakout tables, whichever ministry they came in
- * through.
+ * Rows stay owned by the event each person signed up under in both lists, and the
+ * table says which: a person's decision to serve was made about a *ministry*.
+ * That is the difference from breakouts, where the day owns its own tables.
+ *
+ * The union has a real use and keeps it: any confirmed volunteer of either
+ * ministry may run any of the day's breakout tables, so `setFacilitator` and the
+ * carried-over tables' facilitators still draw from it.
  */
 export default async function ClusterVolunteersPage({
   params,
@@ -37,12 +45,13 @@ export default async function ClusterVolunteersPage({
   const search = (sp.search as string) || ""
   const status = (sp.status as string) || ""
   const committeeId = (sp.committeeId as string) || ""
+  const scope = sp.scope === "all" ? "all" : "day"
 
   const [session, cluster] = await Promise.all([
     auth(),
     db.eventCluster.findUnique({
       where: { id },
-      select: { id: true, name: true, kind: true },
+      select: { id: true, name: true, kind: true, volunteerIsOpen: true },
     }),
   ])
   if (!cluster) notFound()
@@ -50,11 +59,13 @@ export default async function ClusterVolunteersPage({
   // roster to show, and pretending otherwise would imply a sharing that isn't real.
   if (cluster.kind !== ClusterKind.Collab) notFound()
 
-  const { volunteers, committees, events } = await getClusterVolunteerPool(session, id, {
-    search,
-    status,
-    committeeId,
-  })
+  const { volunteers, committees, events, dayCount, allCount } =
+    await getClusterVolunteerPool(session, id, {
+      search,
+      status,
+      committeeId,
+      scope,
+    })
 
   // Someone serving on both member events holds two Volunteer rows — there is no
   // unique on (memberId, eventId). Surfaced as a marker rather than deduplicated:
@@ -76,14 +87,44 @@ export default async function ClusterVolunteersPage({
     servingInBoth: (countByMember.get(v.member.id) ?? 0) > 1,
   }))
 
+  const base = `/cluster/${id}/volunteers`
+  const tabs = [
+    { key: "day" as const, label: "This day", href: base, count: dayCount },
+    { key: "all" as const, label: "All rosters", href: `${base}?scope=all`, count: allCount },
+  ]
+
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
-      <PageHeader title="Volunteers" />
+      <PageHeader
+        title="Volunteers"
+        description="Who signed up to serve on this day, through the day's own volunteer form"
+      />
+
+      {/* Plain links rather than a client control: the scope is a URL fact, so it
+          survives a refresh and can be sent to someone. */}
+      <div className="flex flex-wrap items-center gap-2">
+        {tabs.map((tab) => (
+          <Button
+            key={tab.key}
+            asChild
+            size="sm"
+            variant={scope === tab.key ? "secondary" : "ghost"}
+          >
+            <Link href={tab.href} aria-current={scope === tab.key ? "page" : undefined}>
+              {tab.label}
+              <span className="ml-1.5 text-xs text-muted-foreground">{tab.count}</span>
+            </Link>
+          </Button>
+        ))}
+      </div>
+
       <ClusterVolunteersTable
         rows={rows}
         committees={committees}
         events={events.map((e) => ({ id: e.id, name: e.name }))}
         canEdit={canWrite(session, "Events")}
+        scope={scope}
+        formIsOpen={cluster.volunteerIsOpen}
       />
     </div>
   )

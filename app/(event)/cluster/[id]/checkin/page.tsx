@@ -6,7 +6,7 @@ import { db } from "@/lib/db"
 import {
   getAccessibleClusterEvents,
   getClusterCheckinShortcuts,
-  getClusterRegistrantRows,
+  getClusterDayRows,
 } from "@/lib/clusters/aggregate"
 import { buildClusterRoster } from "@/lib/clusters/roster"
 import { canWrite } from "@/lib/permissions"
@@ -33,6 +33,7 @@ export default async function ClusterCheckinPage({
     select: {
       id: true,
       date: true,
+      kind: true,
       publicToken: true,
       walkInIsOpen: true,
       checkInIsOpen: true,
@@ -48,10 +49,14 @@ export default async function ClusterCheckinPage({
   const events = accessibleEvents.filter(
     (e) => e.type === "OneTime" || (e.type === "Recurring" && e.linkedOccurrenceId)
   )
-  const rows = await getClusterRegistrantRows(events, {
+  const rows = await getClusterDayRows(events, {
     clusterId: cluster.id,
     date: cluster.date,
+    kind: cluster.kind,
   })
+  // Volunteers are on the board too — the public kiosk has always been able to
+  // check one in, and a board that couldn't show them disagreed with the screen
+  // the staffer at the door was using.
   // The board is the day's arrivals list, so it stays strictly day-scoped: a
   // standing series registrant with no evidence for today is not someone this
   // screen is waiting on. They remain visible on the roster and registrants
@@ -76,6 +81,7 @@ export default async function ClusterCheckinPage({
       name: `${person.firstName} ${person.lastName}`.trim(),
       phone: person.phone,
       isMember: person.isMember,
+      isVolunteer: person.isVolunteer,
       events: cells.map((c) => ({
         eventId: c.event.id,
         eventName: c.event.name,
@@ -104,7 +110,7 @@ export default async function ClusterCheckinPage({
       <div className="flex flex-1 flex-col gap-6 p-6">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <StatCard
-            label="Registered"
+            label="Expected"
             value={people.length}
             icon={<IconUsers className="size-4" />}
           />

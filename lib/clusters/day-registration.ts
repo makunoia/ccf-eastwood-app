@@ -1,3 +1,7 @@
+import type { Prisma } from "@/app/generated/prisma/client"
+
+import { manilaDayRange, utcDayRange } from "./roster"
+
 /**
  * What a person's existing `EventRegistrant` row means when they submit a
  * cluster's shared registration form.
@@ -53,4 +57,53 @@ export function clusterDayRegistrationDisposition(
   // existing registration on one of them is exactly the thing being asked for.
   if (!isCollab) return "already"
   return existing.registrationClusterId === clusterId ? "already" : "reuse"
+}
+
+/**
+ * The same rule as a `where` clause — which `EventRegistrant` rows belong to a
+ * Collab day.
+ *
+ * {@link clusterDayRegistrationDisposition} answers it for one row at a time on
+ * the write path, and `isOnClusterDay` answers it in memory for the read
+ * surfaces. The breakout candidate pool can do neither: it has to ask the
+ * database "who is on this day" while filling the day's tables, and a query that
+ * ignored the day would offer up every regular of both ministries — the same
+ * inherited roster the day is built not to have.
+ *
+ * The branches mirror `isOnClusterDay`'s Collab arm one for one:
+ *  - stamped with this cluster (the day's own form or door), or
+ *  - checked in for the day (`attendedAt` on a OneTime member event, an
+ *    attendance row on the linked session or the day's occurrence otherwise), or
+ *  - registered on the day itself, read in Manila time.
+ *
+ * A dateless cluster has no window to test, so attendance alone stands for the
+ * day — the same "nothing to scope to" reading the in-memory rule takes.
+ */
+export function clusterDayRegistrantWhere(input: {
+  clusterId: string
+  date: Date | null
+  /** The occurrence each member event's cluster link names, where it names one. */
+  linkedOccurrenceIds: string[]
+}): Prisma.EventRegistrantWhereInput {
+  const or: Prisma.EventRegistrantWhereInput[] = [
+    { registrationClusterId: input.clusterId },
+    // OneTime member events record check-in here; on a session event it stays null.
+    { attendedAt: { not: null } },
+  ]
+  if (input.linkedOccurrenceIds.length > 0) {
+    or.push({
+      occurrenceAttendances: {
+        some: { occurrenceId: { in: input.linkedOccurrenceIds } },
+      },
+    })
+  }
+  if (input.date) {
+    or.push({
+      occurrenceAttendances: { some: { occurrence: { date: utcDayRange(input.date) } } },
+    })
+    or.push({ createdAt: manilaDayRange(input.date) })
+  } else {
+    or.push({ occurrenceAttendances: { some: {} } })
+  }
+  return { OR: or }
 }

@@ -72,6 +72,14 @@ export function clusterCheckinPath(publicToken: string): string {
 }
 
 /**
+ * The day's shared volunteer sign-up form. Collab days only — a Parallel day's
+ * events each recruit through their own event form.
+ */
+export function clusterVolunteerPath(publicToken: string): string {
+  return `${clusterRegisterPath(publicToken)}/volunteer`
+}
+
+/**
  * Where the cluster walk-in door's "Back" goes — the public kiosk, never the
  * cluster workspace.
  *

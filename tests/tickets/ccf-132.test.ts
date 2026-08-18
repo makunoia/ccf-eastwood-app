@@ -122,6 +122,7 @@ describe("unit — roster matrix builder", () => {
     { id: "e2", name: "Feast", type: "OneTime" as const },
   ]
   const base = {
+    kind: "Registrant" as const,
     eventType: "OneTime" as const,
     phone: null,
     isMember: false,
@@ -140,8 +141,8 @@ describe("unit — roster matrix builder", () => {
       { ...base, id: "r2", eventId: "e2", memberId: null, guestId: "g1", firstName: "Ana", lastName: "Reyes", checkedIn: false },
     ])
     expect(roster.rows).toHaveLength(1)
-    expect(roster.rows[0].perEvent.e1).toEqual({ registrantId: "r1", checkedIn: true, onClusterDay: true })
-    expect(roster.rows[0].perEvent.e2).toEqual({ registrantId: "r2", checkedIn: false, onClusterDay: true })
+    expect(roster.rows[0].perEvent.e1).toEqual({ kind: "Registrant" as const, registrantId: "r1", checkedIn: true, onClusterDay: true })
+    expect(roster.rows[0].perEvent.e2).toEqual({ kind: "Registrant" as const, registrantId: "r2", checkedIn: false, onClusterDay: true })
   })
 
   it("keeps different people apart and sorts by name", () => {

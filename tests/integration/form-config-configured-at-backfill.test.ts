@@ -100,14 +100,25 @@ describe("what the backfill stamps", () => {
   it("stamps every admin-intent toggle, one at a time", async () => {
     // Catches a key that is in the SQL but misspelled, which the string check
     // above cannot see.
+    //
+    // One row per key, all seeded up front, then a single backfill over the lot.
+    // It used to truncate and re-run per key — a `TRUNCATE ... CASCADE` on
+    // `Event` per iteration, which fans out across every table that references
+    // it. That cost ~1.5s locally and timed out CI's default 5s budget the first
+    // time the runner's Postgres was mid-checkpoint. Nothing is lost by letting
+    // the rows accumulate: each assertion names its own row, and a misspelled
+    // key still leaves exactly that row unstamped.
+    const rows: { key: string; id: string }[] = []
     for (const key of ADMIN_INTENT_TOGGLE_KEYS) {
-      await db.$executeRaw`TRUNCATE "Event", "EventFormConfig" RESTART IDENTITY CASCADE`
       const event = await seedEvent()
       const row = await seedUnstampedConfig(event.id, { [key]: true })
+      rows.push({ key, id: row.id })
+    }
 
-      await runBackfill()
+    await runBackfill()
 
-      expect(await stampOf(row.id), key).not.toBeNull()
+    for (const { key, id } of rows) {
+      expect(await stampOf(id), key).not.toBeNull()
     }
   })
 
