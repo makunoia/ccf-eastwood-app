@@ -56,28 +56,29 @@ async function openDay(kind: "Parallel" | "Collab", eventType: "Recurring" | "On
     data: { name: "Youth × Singles Night", date: DAY, kind, isOpen: true },
     select: { id: true, publicToken: true },
   })
-  const events = await Promise.all(
-    [
-      ["Youth", "Youth Night"],
-      ["Singles", "Singles Connect"],
-    ].map(async ([ministryName, eventName], order) => {
-      const ministry = await db.ministry.create({
-        data: { name: ministryName },
-        select: { id: true },
-      })
-      const event = await db.event.create({
-        data: { name: eventName, type: eventType, startDate: DAY, endDate: DAY },
-        select: { id: true },
-      })
-      await db.eventMinistry.create({
-        data: { eventId: event.id, ministryId: ministry.id },
-      })
-      await db.eventClusterEvent.create({
-        data: { clusterId: cluster.id, eventId: event.id, order },
-      })
-      return event.id
+  // Sequential on purpose — see the same helper in cluster-volunteer-signup.
+  const events: string[] = []
+  const config = [
+    { ministryName: "Youth", eventName: "Youth Night" },
+    { ministryName: "Singles", eventName: "Singles Connect" },
+  ]
+  for (const [order, half] of config.entries()) {
+    const ministry = await db.ministry.create({
+      data: { name: half.ministryName },
+      select: { id: true },
     })
-  )
+    const event = await db.event.create({
+      data: { name: half.eventName, type: eventType, startDate: DAY, endDate: DAY },
+      select: { id: true },
+    })
+    await db.eventMinistry.create({
+      data: { eventId: event.id, ministryId: ministry.id },
+    })
+    await db.eventClusterEvent.create({
+      data: { clusterId: cluster.id, eventId: event.id, order },
+    })
+    events.push(event.id)
+  }
   return { ...cluster, youthId: events[0], singlesId: events[1] }
 }
 

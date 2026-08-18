@@ -11,6 +11,8 @@ type Person = {
   name: string
   phone: string | null
   isMember: boolean
+  /** Serving on the day rather than attending it — see the roster's person type. */
+  isVolunteer: boolean
   events: { eventId: string; eventName: string; checkedIn: boolean }[]
   fullyCheckedIn: boolean
 }
@@ -75,9 +77,14 @@ export function ClusterCheckinClient({
               <div className="min-w-0">
                 <p className="text-sm font-medium">
                   {person.name}
-                  {person.isMember && (
-                    <Badge variant="secondary" className="ml-2">
-                      Member
+                  {/* Volunteer wins over Member: every volunteer is a member, so
+                      the badge that says less would hide why they're here. */}
+                  {(person.isVolunteer || person.isMember) && (
+                    <Badge
+                      variant={person.isVolunteer ? "default" : "secondary"}
+                      className="ml-2"
+                    >
+                      {person.isVolunteer ? "Volunteer" : "Member"}
                     </Badge>
                   )}
                 </p>

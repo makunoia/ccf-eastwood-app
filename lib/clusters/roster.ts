@@ -11,8 +11,23 @@ export type ClusterRosterEvent = {
   type: EventType
 }
 
+/**
+ * What kind of record puts this person on the day.
+ *
+ * A volunteer is not an `EventRegistrant` and never becomes one — the two are
+ * mutually exclusive by design (`findEventVolunteerConflict` refuses a
+ * registration from someone serving the event, and `OccurrenceAttendee` keys
+ * attendance to one or the other). But somebody serving IS one of the day's
+ * people, and a day roster that counts only attendees under-reports who is
+ * there. So the two are unioned at the read layer, each keeping its own record,
+ * and the surfaces say which is which.
+ */
+export type ClusterParticipantKind = "Registrant" | "Volunteer"
+
 export type ClusterRegistrantRow = {
+  /** The `EventRegistrant` id, or the `Volunteer` id when `kind` is Volunteer. */
   id: string
+  kind: ClusterParticipantKind
   eventId: string
   eventType: EventType
   memberId: string | null
@@ -102,19 +117,57 @@ export function isOnClusterDay(
   // event's pre-existing sign-ups and a dateless cluster's whole series are
   // exactly the inheritance a collab is meant not to have. See
   // `belongsOnClusterList` for what the surfaces do with the answer.
-  if (scope?.kind === "Collab") {
-    if (row.registrationClusterId === scope.clusterId) return true
-    // Attendance is already day-scoped by the caller (the linked session, or the
-    // day's occurrence), so being checked in IS evidence of this day.
-    if (row.checkedIn) return true
-    return scope.date ? registeredOnClusterDay(row.registeredAt, scope.date) : false
-  }
+  if (scope?.kind === "Collab") return hasDayEvidence(row, scope)
   if (row.eventType === "OneTime") return true
   if (!scope) return true
   if (!scope.date && !row.hasLinkedSession) return true
-  if (row.checkedIn) return true
+  return hasDayEvidence(row, scope)
+}
+
+/**
+ * The three facts that positively tie a record to the day: it was made through
+ * the day's own link, it recorded attendance for the day, or it was created on
+ * the day itself.
+ *
+ * Attendance is already day-scoped by the caller (the linked session, or the
+ * day's occurrence), so being checked in IS evidence of this day rather than of
+ * the series.
+ */
+function hasDayEvidence(
+  row: Pick<
+    ClusterRegistrantRow,
+    "checkedIn" | "registrationClusterId" | "registeredAt"
+  >,
+  scope: ClusterDayScope
+): boolean {
   if (row.registrationClusterId === scope.clusterId) return true
+  if (row.checkedIn) return true
   return scope.date ? registeredOnClusterDay(row.registeredAt, scope.date) : false
+}
+
+/**
+ * The same question for a volunteer — and it only ever has the strict answer.
+ *
+ * None of the shortcuts `isOnClusterDay` allows a registration make sense for a
+ * sign-up to serve. A `Volunteer` row is not a registration for a date: it says
+ * a person serves this ministry's event, which on a long-running event is a
+ * standing fact from months ago. Inheriting those would put every volunteer
+ * either ministry has ever had on every day the event appears in — the exact
+ * failure the day's registrant list was just fixed for, and on a Parallel day
+ * too, where nothing else is day-scoped this way.
+ *
+ * So a volunteer is on the day when they signed up through the day's own
+ * volunteer form, checked in for it, or signed up on the day itself. A null
+ * scope names no day at all, so nothing can be attributed to one.
+ */
+export function volunteerIsOnClusterDay(
+  row: Pick<
+    ClusterRegistrantRow,
+    "checkedIn" | "registrationClusterId" | "registeredAt"
+  >,
+  scope: ClusterDayScope | null
+): boolean {
+  return scope ? hasDayEvidence(row, scope) : false
 }
 
 /**
@@ -186,7 +239,9 @@ export function registeredOnClusterDay(registeredAt: Date, date: Date): boolean 
 }
 
 export type ClusterRosterCell = {
+  /** The `EventRegistrant` id, or the `Volunteer` id when `kind` is Volunteer. */
   registrantId: string
+  kind: ClusterParticipantKind
   checkedIn: boolean
   /** The registration counts toward the cluster's day. */
   onClusterDay: boolean
@@ -211,6 +266,11 @@ const STANDING_RANK: Record<ClusterStanding, number> = {
   SeriesOnly: 0,
 }
 
+/** Serving outranks attending; within a kind, the stronger standing wins. */
+function cellRank(cell: ClusterRosterCell): number {
+  return (cell.kind === "Volunteer" ? 10 : 0) + STANDING_RANK[standingFor(cell)]
+}
+
 export type ClusterRosterPerson = {
   /** Stable identity: member:<id> | guest:<id> | registrant:<id> (anonymous). */
   key: string
@@ -218,7 +278,24 @@ export type ClusterRosterPerson = {
   lastName: string
   phone: string | null
   isMember: boolean
+  /** They are serving on at least one of the day's events. */
+  isVolunteer: boolean
   perEvent: Record<string, ClusterRosterCell | undefined>
+}
+
+/**
+ * How a person is described on the day. Volunteer wins over Member because it
+ * says more: every volunteer is a member, so "Volunteer" loses no information,
+ * while "Member" would hide the one fact that changes what they are doing here.
+ */
+export type ClusterPersonType = "Volunteer" | "Member" | "Guest"
+
+export function personTypeFor(person: {
+  isVolunteer: boolean
+  isMember: boolean
+}): ClusterPersonType {
+  if (person.isVolunteer) return "Volunteer"
+  return person.isMember ? "Member" : "Guest"
 }
 
 export type ClusterRoster = {
@@ -257,20 +334,26 @@ export function buildClusterRoster(
         lastName: row.lastName,
         phone: row.phone,
         isMember: row.isMember,
+        isVolunteer: false,
         perEvent: {},
       }
       byPerson.set(key, person)
     }
+    if (row.kind === "Volunteer") person.isVolunteer = true
     const cell: ClusterRosterCell = {
       registrantId: row.id,
+      kind: row.kind,
       checkedIn: row.checkedIn,
       onClusterDay: row.onClusterDay,
     }
-    // A person can hold two registrations on the SAME event (a duplicate
-    // sign-up). Keep the one that says the most — the same rule the CSV export
-    // folds by, so the two surfaces can't disagree about where someone stood.
+    // A person can hold two records on the SAME event — a duplicate sign-up, or
+    // a registration alongside a sign-up to serve. Keep the one that says the
+    // most: serving first (it is the canonical presence record, the same
+    // precedence the check-in kiosk applies in `buildClusterCheckinPeople`), then
+    // the strongest standing — the rule the CSV export folds by, so the surfaces
+    // can't disagree about where someone stood.
     const held = person.perEvent[row.eventId]
-    if (!held || STANDING_RANK[standingFor(cell)] > STANDING_RANK[standingFor(held)]) {
+    if (!held || cellRank(cell) > cellRank(held)) {
       person.perEvent[row.eventId] = cell
     }
   }

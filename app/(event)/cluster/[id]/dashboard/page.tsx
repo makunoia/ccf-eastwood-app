@@ -5,7 +5,7 @@ import { IconCheck, IconCalendarEvent, IconForms, IconUserCheck, IconUsers } fro
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { getClusterOverview } from "@/lib/clusters/aggregate"
-import { standingFor } from "@/lib/clusters/roster"
+import { personTypeFor, standingFor } from "@/lib/clusters/roster"
 import { DetailPageHeader } from "@/components/detail-page-header"
 import { StatCard } from "@/components/session-stat-card"
 import { Badge } from "@/components/ui/badge"
@@ -78,7 +78,7 @@ export default async function ClusterDashboardPage({
             icon={<IconCalendarEvent className="size-4" />}
           />
           <StatCard
-            label="People registered"
+            label="People on the day"
             value={overview.totals.uniquePeople}
             icon={<IconUsers className="size-4" />}
           />
@@ -104,7 +104,8 @@ export default async function ClusterDashboardPage({
 
         <p className="-mt-3 text-xs text-muted-foreground">
           People counted once each, however many of the day&apos;s events they
-          registered for. <span className="font-medium">Via day link</span> is how
+          registered for — the serving team included, since somebody volunteering
+          is one of the day&apos;s people rather than a separate list. <span className="font-medium">Via day link</span> is how
           many of them signed up through this day&apos;s shared registration link
           rather than an individual event&apos;s own link.
           {hasSessionEvent && (
@@ -145,6 +146,13 @@ export default async function ClusterDashboardPage({
                     <p className="text-xs text-muted-foreground">
                       {stat.type === "OneTime" ? "Registered" : "On this date"}
                     </p>
+                  </div>
+                  {/* Kept beside registrations rather than folded into them: the
+                      two are planned for separately, and the series figure below
+                      is comparable only with registrations. */}
+                  <div>
+                    <p className="text-2xl font-semibold tabular-nums">{stat.volunteers}</p>
+                    <p className="text-xs text-muted-foreground">Serving</p>
                   </div>
                   <div>
                     <p className="text-2xl font-semibold tabular-nums">{stat.checkedIn}</p>
@@ -205,9 +213,12 @@ export default async function ClusterDashboardPage({
                         <span className="font-medium">
                           {person.firstName} {person.lastName}
                         </span>
-                        {person.isMember && (
-                          <Badge variant="secondary" className="ml-2">
-                            Member
+                        {(person.isVolunteer || person.isMember) && (
+                          <Badge
+                            variant={person.isVolunteer ? "default" : "secondary"}
+                            className="ml-2"
+                          >
+                            {personTypeFor(person)}
                           </Badge>
                         )}
                       </TableCell>
