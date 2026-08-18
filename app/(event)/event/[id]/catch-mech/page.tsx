@@ -1,10 +1,12 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import Link from "next/link"
-import { ChevronRight, ClipboardCheck, Users } from "lucide-react"
+import { AlertTriangle, ChevronRight, ClipboardCheck, UserX, Users } from "lucide-react"
 import { auth } from "@/lib/auth"
 import { canRead } from "@/lib/permissions"
 import { db } from "@/lib/db"
+import { unassignedCandidateWhere } from "@/lib/breakouts/candidate-pool"
+import { resolveCatchMechScope } from "@/lib/catch-mech/scope"
 import { PageHeader } from "@/components/page-header"
 import { CatchMechTable } from "./catch-mech-table"
 import { WeeklyConfirmationsChart } from "./weekly-confirmations-chart"
@@ -26,38 +28,51 @@ async function getCatchMechData(eventId: string) {
         where: { status: "Confirmed" },
         select: { id: true },
       },
-      breakoutGroups: {
-        orderBy: { name: "asc" },
+    },
+  })
+
+  if (!event) return null
+  if (!event.modules.some((m) => m.type === "CatchMech")) return null
+
+  // Queried separately rather than nested under the event: on a Collab day the
+  // tables in scope belong to the CLUSTER and are endorsed to this event through
+  // their facilitator, so they are not reachable as `event.breakoutGroups`.
+  const scope = await resolveCatchMechScope(eventId)
+  const breakoutGroups = await db.breakoutGroup.findMany({
+    where: scope.where,
+    orderBy: { name: "asc" },
+    select: {
+      id: true,
+      name: true,
+      facilitatorId: true,
+      // coFacilitatorId is needed only for the response tally — a co-faci gets
+      // their own session and their own form, so they are a separate responder.
+      coFacilitatorId: true,
+      facilitator: {
         select: {
-          id: true,
-          name: true,
-          facilitatorId: true,
-          // coFacilitatorId is needed only for the response tally — a co-faci gets
-          // their own session and their own form, so they are a separate responder.
-          coFacilitatorId: true,
-          facilitator: {
+          member: {
             select: {
-              member: {
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                  ledGroups: { select: { id: true, name: true }, orderBy: { name: "asc" } },
-                },
-              },
+              id: true,
+              firstName: true,
+              lastName: true,
+              ledGroups: { select: { id: true, name: true }, orderBy: { name: "asc" } },
             },
           },
-          members: {
+        },
+      },
+      coFacilitator: { select: { id: true } },
+      // Substitutes staff a table too — they answer the facilitator form, so they
+      // must not also be counted as owing a volunteer response.
+      subFacilitators: { select: { substituteId: true } },
+      members: {
+        select: {
+          registrant: {
             select: {
-              registrant: {
-                select: {
-                  id: true,
-                  memberId: true,
-                  guestId: true,
-                  member: { select: { firstName: true, lastName: true, smallGroupId: true } },
-                  guest: { select: { firstName: true, lastName: true, memberId: true } },
-                },
-              },
+              id: true,
+              memberId: true,
+              guestId: true,
+              member: { select: { firstName: true, lastName: true, smallGroupId: true } },
+              guest: { select: { firstName: true, lastName: true, memberId: true } },
             },
           },
         },
@@ -65,10 +80,7 @@ async function getCatchMechData(eventId: string) {
     },
   })
 
-  if (!event) return null
-  if (!event.modules.some((m) => m.type === "CatchMech")) return null
-
-  const breakoutGroupIds = event.breakoutGroups.map((bg) => bg.id)
+  const breakoutGroupIds = breakoutGroups.map((bg) => bg.id)
 
   // Fetch all requests for these breakout groups (single query)
   const allRequests = await db.smallGroupMemberRequest.findMany({
@@ -92,7 +104,7 @@ async function getCatchMechData(eventId: string) {
   )
 
   // Build per-group rows + aggregate stats (pure, see aggregate.ts)
-  const { groupRows, stats } = buildCatchMechGroupRows(event.breakoutGroups, allRequests)
+  const { groupRows, stats } = buildCatchMechGroupRows(breakoutGroups, allRequests)
 
   // Facilitator response rate — distinct responders over everyone expected to answer.
   // Counted from submissions, not sessions: a session exists as soon as a faci
@@ -102,7 +114,7 @@ async function getCatchMechData(eventId: string) {
     select: { facilitatorVolunteerId: true },
     distinct: ["facilitatorVolunteerId"],
   })
-  const expectedResponders = event.breakoutGroups.flatMap((bg) =>
+  const expectedResponders = breakoutGroups.flatMap((bg) =>
     [bg.facilitatorId, bg.coFacilitatorId].filter((v): v is string => v !== null)
   )
   const respondedSet = new Set(submitted.map((s) => s.facilitatorVolunteerId))
@@ -111,18 +123,46 @@ async function getCatchMechData(eventId: string) {
     expected: expectedResponders.length,
   }
 
+  // Everyone who staffs a table in any role. They answer the FACILITATOR form —
+  // the volunteer entry now redirects them there — so counting them as owing a
+  // volunteer response too would make the two cards overlap and permanently
+  // depress the volunteer rate.
+  const staffingVolunteerIds = new Set(
+    breakoutGroups.flatMap((bg) => [
+      ...[bg.facilitatorId, bg.coFacilitatorId].filter((v): v is string => v !== null),
+      ...bg.subFacilitators.map((slot) => slot.substituteId),
+    ])
+  )
+
   const volunteerSubmissions = await db.confirmationSubmission.findMany({
     where: { eventId, source: "CatchMechVolunteer", facilitatorVolunteerId: { not: null } },
     select: { facilitatorVolunteerId: true },
     distinct: ["facilitatorVolunteerId"],
   })
   const volunteerResponded = new Set(volunteerSubmissions.map((submission) => submission.facilitatorVolunteerId))
+  // A facilitator who already submitted a volunteer response keeps their row —
+  // a response given is history, and hiding it would make the ratio go backwards.
+  const expectedVolunteers = event.volunteers.filter(
+    (volunteer) => !staffingVolunteerIds.has(volunteer.id) || volunteerResponded.has(volunteer.id)
+  )
   const volunteerResponse = {
-    responded: event.volunteers.filter((volunteer) => volunteerResponded.has(volunteer.id)).length,
-    expected: event.volunteers.length,
+    responded: expectedVolunteers.filter((volunteer) => volunteerResponded.has(volunteer.id)).length,
+    expected: expectedVolunteers.length,
   }
 
-  return { groupRows, stats, weeklyBuckets, response, volunteerResponse }
+  // Everyone who attended but was never seated at a table. Catch Mech's entire
+  // cohort is breakout membership, so these people are invisible to every count
+  // above — a household registration (which deliberately skips placement), an
+  // event with auto-assign off, or a placement that hit capacity and failed.
+  // Same clause the Breakouts page counts with, so the two agree.
+  // Owner-scoped, not `{ eventId }`: on a Collab day "seated" means seated at one
+  // of the CLUSTER's tables, so an event-scoped owner would report every attendee
+  // as unseated.
+  const unseatedCount = await db.eventRegistrant.count({
+    where: { eventId, ...unassignedCandidateWhere(scope.owner) },
+  })
+
+  return { groupRows, stats, weeklyBuckets, response, volunteerResponse, unseatedCount, scope }
 }
 
 /** Whole-number percentage, guarding a zero denominator. */
@@ -261,6 +301,7 @@ function ResponseCard({
   unit,
   tone,
   href,
+  caveat,
 }: {
   label: string
   icon: React.ReactNode
@@ -268,6 +309,8 @@ function ResponseCard({
   expected: number
   unit: string
   tone: Tone
+  /** Why this ratio is not the whole story — e.g. tables nobody can answer for. */
+  caveat?: string | null
   href: string
 }) {
   const share = expected > 0 ? Math.min(1, responded / expected) : 0
@@ -305,6 +348,44 @@ function ResponseCard({
           {pct(responded, expected)}%
         </span>
       </div>
+
+      {caveat && (
+        <p className="flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-500">
+          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+          {caveat}
+        </p>
+      )}
+    </Link>
+  )
+}
+
+/**
+ * People who attended but sit at no table. They are outside every stat on this
+ * page by construction, so the count links to Breakouts — the screen where you
+ * can actually seat them.
+ */
+function UnseatedCard({ eventId, count }: { eventId: string; count: number }) {
+  return (
+    <Link
+      href={`/event/${eventId}/breakouts`}
+      className="group flex items-center justify-between gap-4 rounded-xl border border-dashed p-5 transition-all hover:border-foreground/20 hover:bg-muted/40 sm:p-6"
+    >
+      <span className="flex min-w-0 flex-col gap-1.5">
+        <span className={`flex items-center gap-2 ${EYEBROW}`}>
+          <span className="text-muted-foreground/50">
+            <UserX className="size-4" />
+          </span>
+          Not at a table
+        </span>
+        <span className="flex flex-wrap items-baseline gap-x-2">
+          <span className="text-2xl font-semibold tracking-tight">{count}</span>
+          <span className="text-sm text-muted-foreground">
+            {count === 1 ? "registrant is" : "registrants are"} outside the counts above —
+            Catch Mech only tracks people seated in a breakout group
+          </span>
+        </span>
+      </span>
+      <ChevronRight className="size-4 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-muted-foreground/70" />
     </Link>
   )
 }
@@ -318,7 +399,15 @@ export default async function CatchMechAdminPage({
   const data = await getCatchMechData(id)
   if (!data) notFound()
 
-  const { groupRows, stats, weeklyBuckets, response, volunteerResponse } = data
+  const { groupRows, stats, weeklyBuckets, response, volunteerResponse, unseatedCount, scope } =
+    data
+
+  // A table with neither facilitator nor co-faci contributes nothing to the
+  // expected denominator, so the response card would read 100% while its members
+  // stay Pending with nobody able to answer for them. Say so on the card itself.
+  const unstaffedCaveat = stats.unstaffedGroupCount > 0
+    ? `${stats.unstaffedGroupCount} ${stats.unstaffedGroupCount === 1 ? "table has" : "tables have"} no facilitator — ${stats.unstaffedPeopleCount} ${stats.unstaffedPeopleCount === 1 ? "person" : "people"} nobody can confirm`
+    : null
 
   const session = await auth()
   const canViewMember = canRead(session, "Members")
@@ -327,7 +416,11 @@ export default async function CatchMechAdminPage({
     <div className="flex flex-1 flex-col gap-6 p-6">
       <PageHeader
         title="Catch Mech"
-        description="Track DGroup confirmations from breakout groups"
+        description={
+          scope.viaCluster
+            ? `Track DGroup confirmations from this ministry's tables at ${scope.clusterName ?? "the collab"}`
+            : "Track DGroup confirmations from breakout groups"
+        }
       />
 
       {/* Confirmed/Rejected/Pending are measured against the matchable pool — the
@@ -346,6 +439,7 @@ export default async function CatchMechAdminPage({
           unit="facilitators"
           tone="violet"
           href={`/event/${id}/catch-mech/submissions`}
+          caveat={unstaffedCaveat}
         />
         <ResponseCard
           label="Volunteer Follow-up"
@@ -357,6 +451,8 @@ export default async function CatchMechAdminPage({
           href={`/event/${id}/catch-mech/volunteers`}
         />
       </div>
+
+      {unseatedCount > 0 && <UnseatedCard eventId={id} count={unseatedCount} />}
 
       <WeeklyConfirmationsChart
         buckets={weeklyBuckets}

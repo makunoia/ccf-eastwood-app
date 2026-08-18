@@ -1,11 +1,24 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest"
 import { db } from "@/lib/db"
+import type { VolunteerEntry } from "@/app/events/[id]/catch-mech/volunteers/actions"
 import {
   searchCatchMechVolunteerParticipants,
   submitCatchMechVolunteerPlacements,
   verifyCatchMechVolunteer,
 } from "@/app/events/[id]/catch-mech/volunteers/actions"
 import { getVolunteerFollowUpData } from "@/app/(event)/event/[id]/catch-mech/volunteers/data"
+
+/**
+ * Narrows the entry result to a branch that carries a session token. These tests
+ * exercise plain volunteers, who never hit the facilitator-choice branch.
+ */
+function tokenOf(entry: VolunteerEntry): string {
+  if (entry.kind === "facilitator-choice") {
+    throw new Error("expected a session token, got a facilitator group choice")
+  }
+  return entry.token
+}
+
 
 async function seed() {
   const event = await db.event.create({
@@ -85,7 +98,7 @@ describe("Catch Mech volunteer follow-up", () => {
     const verified = await verifyCatchMechVolunteer(event.id, "09171234567")
     if (!verified.success) throw new Error(verified.error)
 
-    const result = await submitCatchMechVolunteerPlacements(verified.data.token, [{
+    const result = await submitCatchMechVolunteerPlacements(tokenOf(verified.data), [{
       registrantId: registrant.id,
       smallGroupId: group.id,
     }])
@@ -109,7 +122,7 @@ describe("Catch Mech volunteer follow-up", () => {
     const result = await verifyCatchMechVolunteer(event.id, "09171234567")
     if (!result.success) throw new Error(result.error)
 
-    const submitted = await submitCatchMechVolunteerPlacements(result.data.token, [])
+    const submitted = await submitCatchMechVolunteerPlacements(tokenOf(result.data), [])
     expect(submitted).toEqual({ success: true, data: { placedCount: 0, createdGroupId: null } })
     expect(await db.confirmationSubmission.count({
       where: { source: "CatchMechVolunteer", confirmedCount: 0 },
@@ -142,7 +155,7 @@ describe("Catch Mech volunteer follow-up", () => {
       })
       const verified = await verifyCatchMechVolunteer(event.id, "09171234567")
       if (!verified.success) throw new Error(verified.error)
-      return { event, leader, volunteer, guest, registrant, token: verified.data.token }
+      return { event, leader, volunteer, guest, registrant, token: tokenOf(verified.data) }
     }
 
     it("creates the named DGroup, promotes the volunteer, and places everyone into it", async () => {
@@ -254,7 +267,7 @@ describe("Catch Mech volunteer follow-up", () => {
       const guestRegistrant = await db.eventRegistrant.create({
         data: { eventId: base.event.id, guestId: guest.id },
       })
-      return { ...base, token: verified.data.token, guest, guestRegistrant }
+      return { ...base, token: tokenOf(verified.data), guest, guestRegistrant }
     }
 
     it("finds an eligible guest by full name regardless of token order", async () => {
@@ -365,7 +378,7 @@ describe("Catch Mech volunteer follow-up", () => {
 
       const verified = await verifyCatchMechVolunteer(event.id, "09171234567")
       if (!verified.success) throw new Error(verified.error)
-      const submitted = await submitCatchMechVolunteerPlacements(verified.data.token, [
+      const submitted = await submitCatchMechVolunteerPlacements(tokenOf(verified.data), [
         { registrantId: guestRegistrant.id, smallGroupId: group.id },
         { registrantId: memberRegistrant.id, smallGroupId: group.id },
       ])
@@ -420,7 +433,7 @@ describe("Catch Mech volunteer follow-up", () => {
 
       const verified = await verifyCatchMechVolunteer(event.id, "09171234567")
       if (!verified.success) throw new Error(verified.error)
-      await submitCatchMechVolunteerPlacements(verified.data.token, [
+      await submitCatchMechVolunteerPlacements(tokenOf(verified.data), [
         { registrantId: registrants[0].id, smallGroupId: group.id },
         { registrantId: registrants[1].id, smallGroupId: second.id },
       ])
@@ -438,7 +451,7 @@ describe("Catch Mech volunteer follow-up", () => {
       const { event } = await seed()
       const verified = await verifyCatchMechVolunteer(event.id, "09171234567")
       if (!verified.success) throw new Error(verified.error)
-      await submitCatchMechVolunteerPlacements(verified.data.token, [])
+      await submitCatchMechVolunteerPlacements(tokenOf(verified.data), [])
 
       const data = await getVolunteerFollowUpData(event.id)
       expect(data!.submissions).toHaveLength(1)

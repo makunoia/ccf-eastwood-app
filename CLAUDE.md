@@ -214,9 +214,13 @@ Day-scoping never reaches identity: the mobile-number step (`lookupProfileByMobi
 
 **The collab kiosk (`/register/c/[token]/check-in`) names no events.** A registrant belongs to exactly one member event — their ministry's — so the per-event cell list would re-expose the split *and* render the partner ministry as "Not registered" beside their name. `ClusterCheckinBoard` takes the day's `kind` and collapses accordingly; the write is identical either way. The **admin** board at `/cluster/[id]/checkin` keeps its per-event Shortcuts on purpose — each member event has its own check-in `isOpen`, and those rows are how a staffer sees which one is blocking the kiosk.
 
-**Not yet supported on cluster-owned tables:** Catch Mech (`CatchMechSession.eventId` is required) and `OccurrenceSubFacilitator` (keyed by an event's occurrence). CSV import of breakout groups is event-only; carry-over is the cluster equivalent.
+**Catch Mech on a Collab day is endorsed to the facilitator's ministry event.** There is no cluster-level Catch Mech. A cluster-owned table is followed up by the member event of whoever staffs it — `Volunteer.eventId` is required, so a facilitator belongs to exactly one member event, and `CatchMechSession` keeps its required `eventId` (that ministry) while pointing at the cluster's table. A table staffed from two ministries appears on both events' Catch Mech, which needs no special handling: `resolveCatchMechTargets` gives the linked DGroup only to the lead, and `hidesPerson` already scopes decisions per facilitator. `lib/catch-mech/scope.ts` is the seam — **never scope a Catch Mech query on a bare `eventId`**; take `resolveCatchMechScope(eventId).where` and combine it with `AND` (the Collab branch is itself an `OR`). A table with no staff is endorsed to nobody and is flagged on the cluster Breakouts page.
 
-**Code:** `lib/breakouts/owner.ts` (pure owner/surface types), `lib/breakouts/candidate-events.ts`, `lib/events/pool-scope.ts` (the resolver), `lib/events/require-event-write.ts` (`requireEventWrite` / `requireClusterWrite` / `requireBreakoutWrite`), `lib/clusters/aggregate.ts` (`getClusterVolunteerPool`, `getClusterBreakoutPool`, `getClusterMinistries`).
+**Not yet supported on cluster-owned tables:** `OccurrenceSubFacilitator` (keyed by an event's occurrence). CSV import of breakout groups is event-only; carry-over is the cluster equivalent.
+
+**One seat per person, every owner.** `BreakoutGroupMember` is keyed by `registrantId`, but a person can hold several registrant rows — one per member event under a Collab, or two from a duplicate sign-up on a single event. Every seating path guards on `personKeyFor`, not on the row. `scripts/find-double-seated.ts` reports and cleans legacy duplicates.
+
+**Code:** `lib/breakouts/owner.ts` (pure owner/surface types), `lib/breakouts/candidate-events.ts`, `lib/events/pool-scope.ts` (the resolver), `lib/catch-mech/scope.ts` (Catch Mech's table scope), `lib/catch-mech/faci-session.ts` (who may answer for a table), `lib/events/require-event-write.ts` (`requireEventWrite` / `requireClusterWrite` / `requireBreakoutWrite`), `lib/clusters/aggregate.ts` (`getClusterVolunteerPool`, `getClusterBreakoutPool`, `getClusterMinistries`).
 
 ---
 
@@ -246,7 +250,13 @@ Facilitator-led confirmation flow that converts breakout group attendees into Sm
 4. Confirmed members generate `SmallGroupMemberRequest` records targeting the breakout's `linkedSmallGroupId`
 5. Admin tracks all requests in the event workspace at `/event/[id]/catch-mech` (filterable by Pending/Confirmed/Rejected status), with per-registrant matching UI
 
-`CatchMechSession { id, token (unique cuid), eventId, breakoutGroupId, facilitatorVolunteerId, createdAt }`
+**Who may answer for a table:** lead facilitator, co-facilitator, or an `OccurrenceSubFacilitator` substitute — resolved in that precedence by `staffVolunteerFor` (`lib/catch-mech/faci-session.ts`). Substitutes are not scoped to one occurrence: Catch Mech is about the table's people, not a single sitting.
+
+**One person, one form.** A facilitator who opens the volunteer follow-up form is redirected to their table's facilitator form (`verifyCatchMechVolunteer` returns a discriminated `VolunteerEntry`), and anyone staffing a table is excluded from the volunteer response denominator. Otherwise a facilitator would report only the people they personally absorbed while their table went unanswered, and sit in both response rates at once.
+
+**The cohort is breakout membership — nothing else.** Anyone who attended but was never seated is outside every Catch Mech count. The dashboard's "Not at a table" card surfaces them via `unassignedCandidateWhere`; household registrations land there by design (CCF-148).
+
+`CatchMechSession { id, token (unique cuid), eventId, breakoutGroupId, facilitatorVolunteerId, createdAt }` — under a Collab, `eventId` is the facilitator's ministry event and `breakoutGroupId` a cluster-owned table.
 
 **Event workspace routes:** `/event/[id]/catch-mech`, `/event/[id]/catch-mech/[status]`, `/event/[id]/catch-mech/[status]/[rid]`
 

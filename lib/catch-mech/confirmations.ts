@@ -95,6 +95,13 @@ export async function resolveConfirmations(
   const now = new Date()
   const suffix = `${sourceLabel}${eventName ? ` of ${eventName}` : ""}`
 
+  // Only written when there is one. The volunteer follow-up flow passes null (a
+  // volunteer has no breakout table), and a blind `breakoutGroupId: null` on an
+  // update would erase the link on a request that a breakout raised — dropping
+  // that person out of every breakout-scoped screen. New rows still take the
+  // null; there is nothing to preserve there.
+  const breakoutLink = breakoutGroupId ? { breakoutGroupId } : {}
+
   type Actionable = {
     registrant: FetchedRegistrant
     smallGroupId: string
@@ -229,7 +236,7 @@ export async function resolveConfirmations(
       data: {
         status: "Rejected",
         resolvedAt: now,
-        breakoutGroupId,
+        ...breakoutLink,
         declinedByVolunteerId: faciVolunteerId,
         declineReason: declineReason ?? null,
         notes: reason ?? null,
@@ -295,7 +302,7 @@ export async function resolveConfirmations(
           resolvedAt: now,
           memberId: newMember.id,
           guestId: null,
-          breakoutGroupId,
+          ...breakoutLink,
         },
       })
     } else {
@@ -330,7 +337,7 @@ export async function resolveConfirmations(
     if (existing.length > 0) {
       await tx.smallGroupMemberRequest.updateMany({
         where: { id: { in: existing } },
-        data: { status: "Confirmed", resolvedAt: now, breakoutGroupId },
+        data: { status: "Confirmed", resolvedAt: now, ...breakoutLink },
       })
     } else {
       // No pre-existing request — create a confirmed record so the admin page tracks it

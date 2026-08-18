@@ -130,9 +130,29 @@ export async function assignBreakoutForRegistrant(
     //
     // Scoped to the owner rather than to the event: a person's standing placement
     // in their ministry's own group is not the placement this is asking about.
+    //
+    // Matched by PERSON, not by this registrant row. A duplicate sign-up gives
+    // someone two rows on one event, and a row-scoped lookup reads the second as
+    // unplaced — seating the same human at a second table. The row that holds the
+    // seat is carried along because moving it means deleting by its own composite
+    // key, which is not necessarily this registrant's.
+    const registrant = await db.eventRegistrant.findUnique({
+      where: { id: registrantId },
+      select: { memberId: true, guestId: true },
+    })
+    const personFilter = registrant?.memberId
+      ? { memberId: registrant.memberId }
+      : registrant?.guestId
+        ? { guestId: registrant.guestId }
+        : null
     const current = await db.breakoutGroupMember.findFirst({
-      where: { registrantId, breakoutGroup: owner },
-      select: { breakoutGroupId: true },
+      where: {
+        breakoutGroup: owner,
+        // Guard both-null before branching: an anonymous registrant has neither
+        // FK, and `{ memberId: null }` would match every other anonymous row.
+        ...(personFilter ? { registrant: personFilter } : { registrantId }),
+      },
+      select: { breakoutGroupId: true, registrantId: true },
     })
 
     // Auto-assign never overrides an existing placement: nobody asked to be moved,
@@ -225,7 +245,9 @@ export async function assignBreakoutForRegistrant(
           where: {
             breakoutGroupId_registrantId: {
               breakoutGroupId: current.breakoutGroupId,
-              registrantId,
+              // The seat's own row, which under a duplicate sign-up may be a
+              // different registrant of the same person.
+              registrantId: current.registrantId,
             },
           },
         })

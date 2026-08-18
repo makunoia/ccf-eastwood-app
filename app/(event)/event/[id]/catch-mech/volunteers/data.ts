@@ -1,5 +1,6 @@
 import { db } from "@/lib/db"
 import { resolveSubmissionDecisions } from "@/lib/catch-mech/submission-detail"
+import { resolveCatchMechScope } from "@/lib/catch-mech/scope"
 import type {
   VolunteerFollowUpNonResponder,
   VolunteerFollowUpSubmission,
@@ -56,7 +57,31 @@ export async function getVolunteerFollowUpData(
 
   const decisionsBySubmission = await resolveSubmissionDecisions(submissions)
 
-  const volunteers = new Map(event.volunteers.map((volunteer) => [volunteer.id, volunteer]))
+  // Resolved by id, NOT from `event.volunteers` — that list is filtered to
+  // Confirmed, so an admin later flipping a volunteer to Pending or Rejected
+  // would make their whole submission disappear from the one page that shows it,
+  // while the people they absorbed stay in the DGroup. A response, once given,
+  // is history and outlives the status that let them give it.
+  const submitterIds = [
+    ...new Set(
+      submissions
+        .map((submission) => submission.facilitatorVolunteerId)
+        .filter((id): id is string => id !== null)
+    ),
+  ]
+  const submitters = submitterIds.length > 0
+    ? await db.volunteer.findMany({
+        where: { id: { in: submitterIds } },
+        select: {
+          id: true,
+          committee: { select: { name: true } },
+          assignedRole: { select: { name: true } },
+          preferredRole: { select: { name: true } },
+        },
+      })
+    : []
+
+  const volunteers = new Map(submitters.map((volunteer) => [volunteer.id, volunteer]))
   const responseRows: VolunteerFollowUpSubmission[] = submissions.flatMap((submission) => {
     if (!submission.facilitatorVolunteerId) return []
     const volunteer = volunteers.get(submission.facilitatorVolunteerId)
@@ -73,9 +98,30 @@ export async function getVolunteerFollowUpData(
     }]
   })
 
+  // Facilitators answer the facilitator form — the volunteer entry now redirects
+  // them there — so they are not waiting on a volunteer response and must not be
+  // chased for one.
+  const scope = await resolveCatchMechScope(eventId)
+  const staffingGroups = await db.breakoutGroup.findMany({
+    where: scope.where,
+    select: {
+      facilitatorId: true,
+      coFacilitatorId: true,
+      subFacilitators: { select: { substituteId: true } },
+    },
+  })
+  const staffingVolunteerIds = new Set(
+    staffingGroups.flatMap((group) => [
+      ...[group.facilitatorId, group.coFacilitatorId].filter((id): id is string => id !== null),
+      ...group.subFacilitators.map((slot) => slot.substituteId),
+    ])
+  )
+
   const respondedIds = new Set(responseRows.map((submission) => submission.volunteerId))
   const nonResponders: VolunteerFollowUpNonResponder[] = event.volunteers
-    .filter((volunteer) => !respondedIds.has(volunteer.id))
+    .filter(
+      (volunteer) => !respondedIds.has(volunteer.id) && !staffingVolunteerIds.has(volunteer.id)
+    )
     .map((volunteer) => ({
       id: volunteer.id,
       volunteerName: `${volunteer.member.firstName} ${volunteer.member.lastName}`,
@@ -86,6 +132,11 @@ export async function getVolunteerFollowUpData(
   return {
     submissions: responseRows,
     nonResponders,
-    committees: [...new Set(event.volunteers.map((volunteer) => volunteer.committee.name))].sort(),
+    committees: [
+      ...new Set([
+        ...event.volunteers.map((volunteer) => volunteer.committee.name),
+        ...responseRows.map((submission) => submission.committeeName),
+      ]),
+    ].sort(),
   }
 }
