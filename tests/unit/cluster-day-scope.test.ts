@@ -3,7 +3,9 @@ import {
   belongsOnClusterList,
   buildClusterRoster,
   isOnClusterDay,
+  personTypeFor,
   standingFor,
+  volunteerIsOnClusterDay,
   type ClusterDayScope,
 } from "@/lib/clusters/roster"
 import type { EventType } from "@/app/generated/prisma/client"
@@ -166,14 +168,14 @@ describe("isOnClusterDay", () => {
 
 describe("standingFor", () => {
   it("names the three states a cell can be in", () => {
-    expect(standingFor({ registrantId: "r1", checkedIn: true, onClusterDay: true })).toBe(
+    expect(standingFor({ kind: "Registrant" as const, registrantId: "r1", checkedIn: true, onClusterDay: true })).toBe(
       "CheckedIn"
     )
     expect(
-      standingFor({ registrantId: "r1", checkedIn: false, onClusterDay: true })
+      standingFor({ kind: "Registrant" as const, registrantId: "r1", checkedIn: false, onClusterDay: true })
     ).toBe("OnDay")
     expect(
-      standingFor({ registrantId: "r1", checkedIn: false, onClusterDay: false })
+      standingFor({ kind: "Registrant" as const, registrantId: "r1", checkedIn: false, onClusterDay: false })
     ).toBe("SeriesOnly")
   })
 })
@@ -181,6 +183,7 @@ describe("standingFor", () => {
 describe("buildClusterRoster — day scoping is a flag, not a filter", () => {
   const events = [{ id: "e1", name: "PAG", type: "Recurring" as const }]
   const base = {
+    kind: "Registrant" as const,
     eventId: "e1",
     eventType: "Recurring" as const,
     memberId: "m1",
@@ -203,6 +206,7 @@ describe("buildClusterRoster — day scoping is a flag, not a filter", () => {
     expect(roster.rows).toHaveLength(1)
     expect(roster.rows[0].perEvent.e1).toEqual({
       registrantId: "r1",
+      kind: "Registrant",
       checkedIn: false,
       onClusterDay: false,
     })
@@ -293,5 +297,109 @@ describe("belongsOnClusterList", () => {
   it("drops it on a Collab day — the day's list is its own", () => {
     expect(belongsOnClusterList({ onClusterDay: false }, collab)).toBe(false)
     expect(belongsOnClusterList({ onClusterDay: true }, collab)).toBe(true)
+  })
+})
+
+// ─── Volunteers are the day's people too ─────────────────────────────────────
+//
+// Somebody serving holds a `Volunteer` row and never an `EventRegistrant` one —
+// the two are mutually exclusive by design — so a day roster built from
+// registrations alone leaves the serving team out of the room it describes.
+
+describe("volunteerIsOnClusterDay", () => {
+  const collab: ClusterDayScope = { ...scope, kind: "Collab" }
+
+  function volunteer(
+    overrides: {
+      checkedIn?: boolean
+      registrationClusterId?: string | null
+      registeredAt?: Date
+    } = {}
+  ) {
+    return {
+      checkedIn: overrides.checkedIn ?? false,
+      registrationClusterId: overrides.registrationClusterId ?? null,
+      registeredAt: overrides.registeredAt ?? LONG_BEFORE,
+    }
+  }
+
+  it("counts a sign-up made through the day's volunteer form", () => {
+    expect(
+      volunteerIsOnClusterDay(volunteer({ registrationClusterId: "cluster-1" }), scope)
+    ).toBe(true)
+  })
+
+  it("counts someone who checked in for the day", () => {
+    expect(volunteerIsOnClusterDay(volunteer({ checkedIn: true }), scope)).toBe(true)
+  })
+
+  it("counts a sign-up made on the day itself", () => {
+    expect(
+      volunteerIsOnClusterDay(
+        volunteer({ registeredAt: new Date("2026-08-02T04:31:00Z") }),
+        scope
+      )
+    ).toBe(true)
+  })
+
+  it("leaves a ministry's standing serving team off the day", () => {
+    // The rule is strict on BOTH kinds of day, unlike the registrant one: a
+    // Volunteer row is not a registration for a date, so a Parallel day has no
+    // more claim on months-old sign-ups than a Collab does.
+    expect(volunteerIsOnClusterDay(volunteer(), scope)).toBe(false)
+    expect(volunteerIsOnClusterDay(volunteer(), collab)).toBe(false)
+  })
+
+  it("attributes nothing when there is no day to attribute it to", () => {
+    expect(volunteerIsOnClusterDay(volunteer({ checkedIn: true }), null)).toBe(false)
+  })
+})
+
+describe("the roster's person type", () => {
+  const events = [{ id: "e1", name: "PAG", type: "Recurring" as const }]
+  const base = {
+    eventId: "e1",
+    eventType: "Recurring" as const,
+    memberId: "m1",
+    guestId: null,
+    firstName: "Mark",
+    lastName: "Noya",
+    phone: null,
+    isMember: true,
+    hasLinkedSession: true,
+    registrationClusterId: null,
+    registeredAt: LONG_BEFORE,
+    checkedIn: false,
+    onClusterDay: true,
+  }
+
+  it("names a volunteer a Volunteer, not a Member", () => {
+    const roster = buildClusterRoster(events, [
+      { ...base, id: "v1", kind: "Volunteer" as const },
+    ])
+    expect(roster.rows[0].isVolunteer).toBe(true)
+    expect(personTypeFor(roster.rows[0])).toBe("Volunteer")
+    expect(roster.rows[0].perEvent.e1?.kind).toBe("Volunteer")
+  })
+
+  it("still names Member and Guest for everyone else", () => {
+    expect(personTypeFor({ isVolunteer: false, isMember: true })).toBe("Member")
+    expect(personTypeFor({ isVolunteer: false, isMember: false })).toBe("Guest")
+  })
+
+  it("lets serving win the cell when someone holds both records on one event", () => {
+    // The same precedence the check-in kiosk applies: serving is the canonical
+    // presence record, so the cell links to the sign-up an admin would edit.
+    const roster = buildClusterRoster(events, [
+      { ...base, id: "r1", kind: "Registrant" as const },
+      { ...base, id: "v1", kind: "Volunteer" as const },
+    ])
+    expect(roster.rows[0].perEvent.e1?.registrantId).toBe("v1")
+    // …in either arrival order.
+    const reversed = buildClusterRoster(events, [
+      { ...base, id: "v1", kind: "Volunteer" as const },
+      { ...base, id: "r1", kind: "Registrant" as const },
+    ])
+    expect(reversed.rows[0].perEvent.e1?.registrantId).toBe("v1")
   })
 })

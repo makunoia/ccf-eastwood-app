@@ -40,6 +40,7 @@ import {
   personKeyFor,
   belongsOnClusterList,
   utcDayRange,
+  volunteerIsOnClusterDay,
   type ClusterDayScope,
   type ClusterRegistrantRow,
   type ClusterRosterEvent,
@@ -217,6 +218,7 @@ export async function getClusterRegistrantRows(
     const linked = linkedByEvent.get(r.eventId) ?? null
     const row = {
       id: r.id,
+      kind: "Registrant" as const,
       eventId: r.eventId,
       eventType: r.event.type,
       memberId: r.memberId,
@@ -237,6 +239,96 @@ export async function getClusterRegistrantRows(
     return { ...row, onClusterDay: isOnClusterDay(row, scope) }
   })
   return rows.filter((row) => belongsOnClusterList(row, scope))
+}
+
+/**
+ * The day's volunteers, in the same shape as its registrants.
+ *
+ * Somebody serving is one of the day's people. They hold no `EventRegistrant`
+ * row and must not — the two records are mutually exclusive by design — so a
+ * roster built from registrations alone silently under-counts the room by the
+ * size of the serving team, and the person an admin searches for is simply
+ * absent. Unioning at the read layer is what lets the day's screens describe
+ * everyone present while each record stays what it is.
+ *
+ * Scoped by {@link volunteerIsOnClusterDay}, which is stricter than the
+ * registrant rule on purpose: a `Volunteer` row is a standing fact about a
+ * ministry's event, not a registration for a date, so only the day's own
+ * evidence puts one on the day. See that function for why no shortcut applies.
+ */
+export async function getClusterVolunteerRows(
+  events: ClusterScopedEvent[],
+  scope: ClusterDayScope | null = null
+): Promise<ClusterRegistrantRow[]> {
+  if (events.length === 0 || !scope) return []
+  const linkedByEvent = new Map(
+    events.map((e) => [e.id, e.linkedOccurrenceId ?? null])
+  )
+  const volunteers = await db.volunteer.findMany({
+    where: { eventId: { in: events.map((e) => e.id) } },
+    select: {
+      id: true,
+      eventId: true,
+      memberId: true,
+      attendedAt: true,
+      createdAt: true,
+      signUpClusterId: true,
+      member: { select: { firstName: true, lastName: true, phone: true } },
+      event: { select: { type: true } },
+      occurrenceAttendances: {
+        ...occurrenceScopeFilter(events, scope),
+        select: { occurrenceId: true },
+        take: 3,
+      },
+    },
+  })
+  return volunteers
+    .map((v) => {
+      const linked = linkedByEvent.get(v.eventId) ?? null
+      const row: ClusterRegistrantRow = {
+        id: v.id,
+        kind: "Volunteer" as const,
+        eventId: v.eventId,
+        eventType: v.event.type,
+        // A volunteer is always a Member — `Volunteer.memberId` is required.
+        memberId: v.memberId,
+        guestId: null,
+        firstName: v.member.firstName,
+        lastName: v.member.lastName,
+        phone: v.member.phone,
+        isMember: true,
+        // Symmetric to a registrant: OneTime events mark attendance on the row,
+        // session events through `OccurrenceAttendee`.
+        checkedIn:
+          v.event.type === "OneTime"
+            ? v.attendedAt !== null
+            : pickAttendance(v.occurrenceAttendances, linked).length > 0,
+        hasLinkedSession: linked !== null,
+        registrationClusterId: v.signUpClusterId,
+        registeredAt: v.createdAt,
+        onClusterDay: false,
+      }
+      return { ...row, onClusterDay: volunteerIsOnClusterDay(row, scope) }
+    })
+    .filter((row) => row.onClusterDay)
+}
+
+/**
+ * Everyone the day holds: its registrants and its volunteers, as one list.
+ *
+ * The union the day's screens read. `getClusterRegistrantRows` stays what its
+ * name says — an export or a count that means registrations specifically still
+ * asks for those alone.
+ */
+export async function getClusterDayRows(
+  events: ClusterScopedEvent[],
+  scope: ClusterDayScope | null = null
+): Promise<ClusterRegistrantRow[]> {
+  const [registrants, volunteers] = await Promise.all([
+    getClusterRegistrantRows(events, scope),
+    getClusterVolunteerRows(events, scope),
+  ])
+  return [...registrants, ...volunteers]
 }
 
 /**
@@ -499,9 +591,47 @@ export async function getClusterRegistrationExportRows(
     },
   })
 
-  const households = await getHouseholdLabels(
-    registrants.map((r) => ({ memberId: r.memberId, guestId: r.guestId }))
-  )
+  // The day's volunteers, exported alongside its registrants for the same reason
+  // they appear on the screen the export is launched from: somebody serving is
+  // one of the day's people, and a spreadsheet that omits the serving team
+  // under-counts the room. Their registration-shaped columns (dietary, payment,
+  // breakout, claimed DGroup) are empty because no such answer exists — a
+  // volunteer answers the volunteer form, not the registration one.
+  const volunteers = await db.volunteer.findMany({
+    where: { eventId: { in: events.map((e) => e.id) } },
+    select: {
+      id: true,
+      eventId: true,
+      memberId: true,
+      attendedAt: true,
+      createdAt: true,
+      signUpClusterId: true,
+      member: {
+        select: {
+          firstName: true,
+          lastName: true,
+          ...PERSON_PROFILE_SELECT,
+          schedulePreferences: {
+            select: { dayOfWeek: true, timeStart: true, timeEnd: true },
+            orderBy: { dayOfWeek: "asc" },
+            take: 1,
+          },
+        },
+      },
+      event: { select: { type: true } },
+      occurrenceAttendances: {
+        ...occurrenceScopeFilter(events, scope),
+        orderBy: { checkedInAt: "asc" },
+        select: { occurrenceId: true, checkedInAt: true },
+        take: 5,
+      },
+    },
+  })
+
+  const households = await getHouseholdLabels([
+    ...registrants.map((r) => ({ memberId: r.memberId, guestId: r.guestId })),
+    ...volunteers.map((v) => ({ memberId: v.memberId, guestId: null })),
+  ])
 
   const allRows = registrants.map((r) => {
     const linked = linkedByEvent.get(r.eventId) ?? null
@@ -584,6 +714,66 @@ export async function getClusterRegistrationExportRows(
     }
   })
 
+  const volunteerRows = volunteers
+    .map((v) => {
+      const linked = linkedByEvent.get(v.eventId) ?? null
+      const checkedInAt =
+        v.event.type === "OneTime"
+          ? v.attendedAt
+          : (pickAttendance(v.occurrenceAttendances, linked)[0]?.checkedInAt ?? null)
+      const person = v.member
+      const memberSchedule = v.member.schedulePreferences?.[0] ?? null
+      return {
+        id: v.id,
+        eventId: v.eventId,
+        eventType: v.event.type,
+        hasLinkedSession: linked !== null,
+        onClusterDay: volunteerIsOnClusterDay(
+          {
+            checkedIn: checkedInAt !== null,
+            registrationClusterId: v.signUpClusterId,
+            registeredAt: v.createdAt,
+          },
+          scope
+        ),
+        memberId: v.memberId,
+        guestId: null,
+        firstName: person.firstName,
+        lastName: person.lastName,
+        nickname: person.nickname ?? null,
+        email: person.email ?? null,
+        mobile: person.phone ?? "",
+        type: "Volunteer" as const,
+        registeredAt: v.createdAt.toISOString(),
+        registrationClusterId: v.signUpClusterId,
+        viaSharedForm: v.signUpClusterId === clusterId,
+        checkedIn: checkedInAt !== null,
+        checkedInAt: checkedInAt?.toISOString() ?? null,
+
+        lifeStage: person.lifeStage?.name ?? null,
+        birthDate: formatBirthDate(person.birthMonth ?? null, person.birthYear ?? null),
+        ageRange: person.ageRangeBucket?.label ?? null,
+        gender: person.gender ?? null,
+        language: formatLanguages(person.language),
+        meetingPreference: formatMeetingPreference(person.meetingPreference ?? null),
+        schedule: formatSchedule(
+          memberSchedule?.dayOfWeek ?? null,
+          memberSchedule?.timeStart ?? null,
+          memberSchedule?.timeEnd ?? null
+        ),
+        workCity: person.workCity ?? null,
+        // Registration-only answers. Left null rather than blank-defaulted so the
+        // column renderer treats them as unanswered, which is what they are.
+        claimedSmallGroup: null,
+        breakoutGroup: null,
+        household: households.get(`member:${v.memberId}`) || null,
+        dietary: null,
+        isPaid: false,
+        paymentReference: null,
+      }
+    })
+    .filter((row) => row.onClusterDay)
+
   // Same day scope as the roster and the dashboard — an export launched from
   // the registrants screen must describe the day that screen is showing. On a
   // Parallel day the series-only rows travel with it rather than being dropped,
@@ -591,7 +781,10 @@ export async function getClusterRegistrationExportRows(
   // "wasn't here" from "we have no record of them" the way the roster does. A
   // Collab day has no series-only rows to carry: they are not part of that day's
   // list on any surface, and an export is no place to reintroduce them.
-  const rows = allRows.filter((row) => belongsOnClusterList(row, scope))
+  const rows = [
+    ...allRows.filter((row) => belongsOnClusterList(row, scope)),
+    ...volunteerRows,
+  ]
   //
   // Fold day rows first, then in cluster order: when two registrations disagree
   // on a per-event answer (a nickname, a dietary note) the day's answer wins,
@@ -759,8 +952,11 @@ export type ClusterEventStat = {
   type: EventType
   /** Registrations belonging to the cluster's day. */
   registered: number
+  /** Volunteers serving this event on the day — counted apart from registrations. */
+  volunteers: number
   /** Every registration for the event, across all its dates. */
   seriesRegistered: number
+  /** Arrivals on the day, registrants and volunteers alike. */
   checkedIn: number
   /** The session this day is scoped to, when the link names one. */
   linkedOccurrenceDate: Date | null
@@ -772,6 +968,9 @@ export type ClusterOverview = {
   roster: ReturnType<typeof buildClusterRoster>
   totals: {
     registrations: number
+    /** Volunteer sign-ups belonging to the day, counted apart from registrations. */
+    volunteers: number
+    /** PEOPLE on the day — registrants and volunteers, each counted once. */
     uniquePeople: number
     checkedInPeople: number
     /**
@@ -804,7 +1003,7 @@ export async function getClusterOverview(
   ])
   const eventIds = events.map((e) => e.id)
   const [rows, seriesTotals] = await Promise.all([
-    getClusterRegistrantRows(
+    getClusterDayRows(
       events,
       cluster ? { clusterId, date: cluster.date, kind: cluster.kind } : null
     ),
@@ -817,12 +1016,19 @@ export async function getClusterOverview(
 
   const eventStats: ClusterEventStat[] = events.map((e) => {
     const eventRows = dayRows.filter((r) => r.eventId === e.id)
+    // `registered` stays registrations specifically — it is the figure the
+    // series total beside it is comparable with. Volunteers are counted on
+    // their own, because "how many signed up to attend" and "how many are
+    // serving" are different questions an admin asks separately.
     return {
       eventId: e.id,
       name: e.name,
       type: e.type,
-      registered: eventRows.length,
+      registered: eventRows.filter((r) => r.kind === "Registrant").length,
+      volunteers: eventRows.filter((r) => r.kind === "Volunteer").length,
       seriesRegistered: seriesTotals.get(e.id) ?? 0,
+      // Arrivals, whichever record they arrived under: a serving team member who
+      // has checked in is in the room.
       checkedIn: eventRows.filter((r) => r.checkedIn).length,
       linkedOccurrenceDate: e.linkedOccurrenceDate,
     }
@@ -843,7 +1049,8 @@ export async function getClusterOverview(
     eventStats,
     roster,
     totals: {
-      registrations: dayRows.length,
+      registrations: dayRows.filter((r) => r.kind === "Registrant").length,
+      volunteers: dayRows.filter((r) => r.kind === "Volunteer").length,
       uniquePeople: onDayPeople.length,
       checkedInPeople: roster.rows.filter((p) =>
         Object.values(p.perEvent).some((cell) => cell?.checkedIn)

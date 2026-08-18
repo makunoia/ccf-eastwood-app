@@ -3,7 +3,13 @@ import type { Session } from "next-auth"
 
 import { db } from "@/lib/db"
 import { submitClusterVolunteerSignUp } from "@/app/(dashboard)/events/cluster-actions"
-import { getClusterVolunteerPool } from "@/lib/clusters/aggregate"
+import {
+  getAccessibleClusterEvents,
+  getClusterDayRows,
+  getClusterOverview,
+  getClusterRegistrationExportRows,
+  getClusterVolunteerPool,
+} from "@/lib/clusters/aggregate"
 
 /**
  * Volunteer sign-ups for an event day.
@@ -33,6 +39,7 @@ const DAY = new Date("2026-09-05T00:00:00.000Z")
 
 beforeEach(async () => {
   await db.$executeRaw`TRUNCATE
+    "OccurrenceAttendee", "EventOccurrence",
     "Volunteer", "CommitteeRole", "VolunteerCommittee",
     "EventRegistrant", "EventFormConfig", "EventClusterEvent", "EventCluster",
     "BreakoutGroupMember", "BreakoutGroup", "EventModule", "EventMinistry",
@@ -50,34 +57,41 @@ async function openDay(kind: "Parallel" | "Collab", volunteerIsOpen = true) {
     data: { name: "Youth × Singles Night", date: DAY, kind, volunteerIsOpen },
     select: { id: true, publicToken: true },
   })
-  const halves = await Promise.all(
-    [
-      ["Youth", "Youth Night", "Youth Ushering"],
-      ["Singles", "Singles Connect", "Singles Ushering"],
-    ].map(async ([ministryName, eventName, committeeName], order) => {
-      const ministry = await db.ministry.create({
-        data: { name: ministryName },
-        select: { id: true },
-      })
-      const event = await db.event.create({
-        data: { name: eventName, type: "Recurring", startDate: DAY, endDate: DAY },
-        select: { id: true },
-      })
-      await db.eventMinistry.create({ data: { eventId: event.id, ministryId: ministry.id } })
-      await db.eventClusterEvent.create({
-        data: { clusterId: cluster.id, eventId: event.id, order },
-      })
-      const committee = await db.volunteerCommittee.create({
-        data: { name: committeeName, eventId: event.id },
-        select: { id: true },
-      })
-      const role = await db.committeeRole.create({
-        data: { name: "Greeter", committeeId: committee.id },
-        select: { id: true },
-      })
-      return { eventId: event.id, committeeId: committee.id, roleId: role.id }
+  // Seeded one half after the other rather than in parallel: these are writes to
+  // a shared test database, and two interleaved set-ups of the same day is a race
+  // the test would be blamed for.
+  const halves: { eventId: string; committeeId: string; roleId: string }[] = []
+  const config = [
+    { ministryName: "Youth", eventName: "Youth Night", committeeName: "Youth Ushering" },
+    {
+      ministryName: "Singles",
+      eventName: "Singles Connect",
+      committeeName: "Singles Ushering",
+    },
+  ]
+  for (const [order, half] of config.entries()) {
+    const ministry = await db.ministry.create({
+      data: { name: half.ministryName },
+      select: { id: true },
     })
-  )
+    const event = await db.event.create({
+      data: { name: half.eventName, type: "Recurring", startDate: DAY, endDate: DAY },
+      select: { id: true },
+    })
+    await db.eventMinistry.create({ data: { eventId: event.id, ministryId: ministry.id } })
+    await db.eventClusterEvent.create({
+      data: { clusterId: cluster.id, eventId: event.id, order },
+    })
+    const committee = await db.volunteerCommittee.create({
+      data: { name: half.committeeName, eventId: event.id },
+      select: { id: true },
+    })
+    const role = await db.committeeRole.create({
+      data: { name: "Greeter", committeeId: committee.id },
+      select: { id: true },
+    })
+    halves.push({ eventId: event.id, committeeId: committee.id, roleId: role.id })
+  }
   return { ...cluster, youth: halves[0], singles: halves[1] }
 }
 
@@ -323,5 +337,127 @@ describe("the cluster's volunteer list", () => {
       committeeId: day.singles.committeeId,
     })
     expect(byCommittee.volunteers).toHaveLength(0)
+  })
+})
+
+// ─── Volunteers count as the day's people ────────────────────────────────────
+
+describe("a volunteer on the day's registrant surfaces", () => {
+  it("appears on the day's list as a Volunteer, and counts toward it", async () => {
+    const day = await openDay("Collab")
+    const memberId = await seedMember("Maria", "+63 917 111 2222")
+
+    const before = await getClusterOverview(admin, day.id)
+    expect(before.totals.uniquePeople).toBe(0)
+
+    await submitClusterVolunteerSignUp(day.publicToken, {
+      memberId,
+      eventId: day.youth.eventId,
+      committeeId: day.youth.committeeId,
+      preferredRoleId: day.youth.roleId,
+      notes: "",
+    })
+
+    const events = await getAccessibleClusterEvents(admin, day.id)
+    const rows = await getClusterDayRows(events, {
+      clusterId: day.id,
+      date: DAY,
+      kind: "Collab",
+    })
+    expect(rows).toHaveLength(1)
+    expect(rows[0].kind).toBe("Volunteer")
+    expect(rows[0].memberId).toBe(memberId)
+    expect(rows[0].onClusterDay).toBe(true)
+
+    const after = await getClusterOverview(admin, day.id)
+    expect(after.totals.uniquePeople).toBe(1)
+    // Counted apart from registrations: both are the day's people, but an admin
+    // planning seats and an admin planning shifts need different figures.
+    expect(after.totals.volunteers).toBe(1)
+    expect(after.totals.registrations).toBe(0)
+    const youth = after.eventStats.find((e) => e.eventId === day.youth.eventId)!
+    expect(youth.volunteers).toBe(1)
+    expect(youth.registered).toBe(0)
+    expect(after.roster.rows[0].isVolunteer).toBe(true)
+  })
+
+  it("leaves a ministry's standing serving team off the day", async () => {
+    // The same rule the registrant list follows, and for the same reason: a
+    // Volunteer row from months ago says nothing about this day.
+    const day = await openDay("Collab")
+    const memberId = await seedMember("Maria", "+63 917 111 2222")
+    await db.volunteer.create({
+      data: {
+        memberId,
+        eventId: day.youth.eventId,
+        committeeId: day.youth.committeeId,
+        preferredRoleId: day.youth.roleId,
+        status: "Confirmed",
+      },
+    })
+
+    const events = await getAccessibleClusterEvents(admin, day.id)
+    expect(
+      await getClusterDayRows(events, { clusterId: day.id, date: DAY, kind: "Collab" })
+    ).toHaveLength(0)
+  })
+
+  it("counts a volunteer who checked in, however they signed up", async () => {
+    const day = await openDay("Collab")
+    const memberId = await seedMember("Maria", "+63 917 111 2222")
+    const standing = await db.volunteer.create({
+      data: {
+        memberId,
+        eventId: day.youth.eventId,
+        committeeId: day.youth.committeeId,
+        preferredRoleId: day.youth.roleId,
+        status: "Confirmed",
+      },
+      select: { id: true },
+    })
+    // Attendance on the session this day stands for.
+    const occurrence = await db.eventOccurrence.create({
+      data: { eventId: day.youth.eventId, date: DAY },
+      select: { id: true },
+    })
+    await db.eventClusterEvent.update({
+      where: { clusterId_eventId: { clusterId: day.id, eventId: day.youth.eventId } },
+      data: { occurrenceId: occurrence.id },
+    })
+    await db.occurrenceAttendee.create({
+      data: { occurrenceId: occurrence.id, volunteerId: standing.id },
+    })
+
+    const events = await getAccessibleClusterEvents(admin, day.id)
+    const rows = await getClusterDayRows(events, {
+      clusterId: day.id,
+      date: DAY,
+      kind: "Collab",
+    })
+    expect(rows).toHaveLength(1)
+    expect(rows[0].kind).toBe("Volunteer")
+    expect(rows[0].checkedIn).toBe(true)
+  })
+
+  it("exports with type Volunteer, and no registration-only answers", async () => {
+    const day = await openDay("Collab")
+    const memberId = await seedMember("Maria", "+63 917 111 2222")
+    await submitClusterVolunteerSignUp(day.publicToken, {
+      memberId,
+      eventId: day.youth.eventId,
+      committeeId: day.youth.committeeId,
+      preferredRoleId: day.youth.roleId,
+      notes: "",
+    })
+
+    const rows = await getClusterRegistrationExportRows(admin, day.id)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].type).toBe("Volunteer")
+    expect(rows[0].firstName).toBe("Maria")
+    expect(rows[0].mobile).toBe("+63 917 111 2222")
+    // They answered the volunteer form, not the registration one.
+    expect(rows[0].dietary).toBeNull()
+    expect(rows[0].breakoutGroup).toBeNull()
+    expect(rows[0].isPaid).toBe(false)
   })
 })

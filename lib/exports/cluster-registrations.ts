@@ -78,7 +78,11 @@ export type ClusterRegistrationExportRow = {
   lastName: string
   email: string | null
   mobile: string
-  type: "Member" | "Guest"
+  /**
+   * Volunteer wins over Member because it says more: every volunteer is a
+   * member, so nothing is lost, while "Member" would hide why they are here.
+   */
+  type: "Member" | "Guest" | "Volunteer"
 
   // Form-gathered answers — all display-formatted server-side, null when unanswered
   nickname: string | null
