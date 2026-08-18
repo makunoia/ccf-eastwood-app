@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { IconDoorEnter, IconForms, IconUserPlus } from "@tabler/icons-react"
+import { IconDoorEnter, IconForms, IconHeart, IconUserPlus } from "@tabler/icons-react"
 import { toast } from "sonner"
 
 import { Switch } from "@/components/ui/switch"
@@ -31,12 +31,17 @@ export function ClusterFormsList({
   initialIsOpen,
   walkInIsOpen,
   checkInIsOpen,
+  volunteerIsOpen,
+  isCollab,
   eventCount,
 }: {
   clusterId: string
   initialIsOpen: boolean
   walkInIsOpen: boolean
   checkInIsOpen: boolean
+  volunteerIsOpen: boolean
+  /** A shared volunteer form only exists on a Collab day — see its page. */
+  isCollab: boolean
   eventCount: number
 }) {
   const router = useRouter()
@@ -93,6 +98,19 @@ export function ClusterFormsList({
           </span>
         }
       />
+
+      {isCollab && (
+        <SettingCard
+          icon={IconHeart}
+          title={titleLink(`${base}/volunteer`, "Volunteer Sign-Up")}
+          description="The day's serving team signs up here — one form, routed by ministry, tracked against this day."
+          control={
+            <span className="text-sm text-muted-foreground">
+              {volunteerIsOpen ? "Open" : "Closed"}
+            </span>
+          }
+        />
+      )}
 
       <SettingCard
         icon={IconDoorEnter}

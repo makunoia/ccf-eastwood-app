@@ -57,21 +57,41 @@ export function ClusterVolunteersTable({
   committees,
   events,
   canEdit,
+  scope,
+  formIsOpen,
 }: {
   rows: ClusterVolunteerRow[]
   committees: { id: string; name: string; eventId: string }[]
   events: { id: string; name: string }[]
   canEdit: boolean
+  /** Which list this is — the day's own sign-ups, or both standing rosters. */
+  scope: "day" | "all"
+  /** Whether the day's volunteer form is currently accepting sign-ups. */
+  formIsOpen: boolean
 }) {
   const showEventColumn = events.length > 1
 
   if (rows.length === 0) {
     return (
       <div className="rounded-lg border border-dashed p-8 text-center">
-        <p className="text-sm font-medium">No volunteers yet</p>
+        <p className="text-sm font-medium">
+          {scope === "day" ? "No sign-ups for this day yet" : "No volunteers yet"}
+        </p>
         <p className="mt-1 text-sm text-muted-foreground">
-          Volunteers sign up on each ministry&apos;s own event. Everyone confirmed
-          across the day&apos;s events can run any of its breakout tables.
+          {scope === "day" ? (
+            <>
+              This list fills up as people sign up through the day&apos;s volunteer
+              form.{" "}
+              {formIsOpen
+                ? "Share the link from Forms → Volunteer Sign-Up."
+                : "Open it under Forms → Volunteer Sign-Up to start recruiting."}
+            </>
+          ) : (
+            <>
+              Nobody has volunteered on either of the day&apos;s events yet.
+              Everyone confirmed across them can run any of its breakout tables.
+            </>
+          )}
         </p>
       </div>
     )

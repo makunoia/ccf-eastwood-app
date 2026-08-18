@@ -14,15 +14,35 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { submitClusterVolunteerSignUp } from "@/app/(dashboard)/events/cluster-actions"
 import { lookupMemberByMobile, submitVolunteerSignUp } from "./sign-up-actions"
 
 type CommitteeRole = { id: string; name: string }
 type Committee = { id: string; name: string; roles: CommitteeRole[] }
 
+/**
+ * One choice on an event day's shared volunteer form. The label is the ministry
+ * the person serves under and the id behind it is that ministry's event — the
+ * same indirection the day's registration form uses, so nothing downstream has
+ * to know ministries exist.
+ */
+export type VolunteerMinistryChoice = {
+  eventId: string
+  label: string
+  committees: Committee[]
+}
+
 type Props = {
   contextName: string
-  eventId: string
-  committees: Committee[]
+  /** Single-event mode: the event (or ministry) this form signs people up for. */
+  eventId?: string
+  committees?: Committee[]
+  /**
+   * Event-day mode: one shared form for a Collab day. The ministry question
+   * comes first and picks both the event the sign-up is filed against and the
+   * committees offered under it.
+   */
+  day?: { token: string; ministries: VolunteerMinistryChoice[] }
 }
 
 type Step = "lookup" | "confirm" | "form" | "success"
@@ -34,7 +54,7 @@ type FoundMember = {
   email: string | null
 }
 
-export function VolunteerSignUpForm({ contextName, eventId, committees }: Props) {
+export function VolunteerSignUpForm({ contextName, eventId, committees, day }: Props) {
   const [step, setStep] = React.useState<Step>("lookup")
 
   // Step 1 — mobile lookup
@@ -72,27 +92,42 @@ export function VolunteerSignUpForm({ contextName, eventId, committees }: Props)
   }
 
   // Step 3 — sign-up form
+  const [ministryEventId, setMinistryEventId] = React.useState("")
   const [committeeId, setCommitteeId] = React.useState("")
   const [preferredRoleId, setPreferredRoleId] = React.useState("")
   const [notes, setNotes] = React.useState("")
   const [submitting, setSubmitting] = React.useState(false)
   const [submitError, setSubmitError] = React.useState("")
 
-  const selectedCommittee = committees.find((c) => c.id === committeeId)
+  const chosenMinistry = day?.ministries.find((m) => m.eventId === ministryEventId)
+  // On a day form the committees follow the ministry, so nothing is offered until
+  // that question is answered — picking a partner ministry's committee is not a
+  // mistake the form should make possible.
+  const availableCommittees = day ? (chosenMinistry?.committees ?? []) : (committees ?? [])
+  const selectedCommittee = availableCommittees.find((c) => c.id === committeeId)
   const committeeRoles = selectedCommittee?.roles ?? []
+  const targetEventId = day ? ministryEventId : (eventId ?? "")
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!foundMember) return
+    if (!foundMember || !targetEventId) return
     setSubmitError("")
     setSubmitting(true)
-    const result = await submitVolunteerSignUp({
-      memberId: foundMember.id,
-      eventId,
-      committeeId,
-      preferredRoleId,
-      notes,
-    })
+    const result = day
+      ? await submitClusterVolunteerSignUp(day.token, {
+          memberId: foundMember.id,
+          eventId: targetEventId,
+          committeeId,
+          preferredRoleId,
+          notes,
+        })
+      : await submitVolunteerSignUp({
+          memberId: foundMember.id,
+          eventId: targetEventId,
+          committeeId,
+          preferredRoleId,
+          notes,
+        })
     setSubmitting(false)
     if (result.success) {
       setStep("success")
@@ -182,11 +217,41 @@ export function VolunteerSignUpForm({ contextName, eventId, committees }: Props)
               </span>
             </p>
 
-            {committees.length === 0 ? (
+            {/* Which ministry are you part of? — the day form's first question,
+                and the one that decides which event the sign-up is filed under. */}
+            {day && (
+              <div className="space-y-2">
+                <Label htmlFor="ministry">
+                  Which ministry are you part of?{" "}
+                  <span className="text-destructive">*</span>
+                </Label>
+                <Select
+                  value={ministryEventId}
+                  onValueChange={(v) => {
+                    setMinistryEventId(v)
+                    setCommitteeId("")
+                    setPreferredRoleId("")
+                  }}
+                >
+                  <SelectTrigger id="ministry">
+                    <SelectValue placeholder="Select your ministry" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {day.ministries.map((m) => (
+                      <SelectItem key={m.eventId} value={m.eventId}>
+                        {m.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {day && !ministryEventId ? null : availableCommittees.length === 0 ? (
               <div className="rounded-lg border border-dashed p-6 text-center">
                 <p className="text-sm text-muted-foreground">
-                  No committees are set up for this event yet. Please check back
-                  later or contact the church office.
+                  No committees are set up for this{day ? " ministry" : " event"} yet.
+                  Please check back later or contact the church office.
                 </p>
               </div>
             ) : (
@@ -207,7 +272,7 @@ export function VolunteerSignUpForm({ contextName, eventId, committees }: Props)
                       <SelectValue placeholder="Select a committee" />
                     </SelectTrigger>
                     <SelectContent>
-                      {committees.map((c) => (
+                      {availableCommittees.map((c) => (
                         <SelectItem key={c.id} value={c.id}>
                           {c.name}
                         </SelectItem>
@@ -265,7 +330,9 @@ export function VolunteerSignUpForm({ contextName, eventId, committees }: Props)
                 <Button
                   type="submit"
                   className="w-full"
-                  disabled={submitting || !committeeId || !preferredRoleId}
+                  disabled={
+                    submitting || !targetEventId || !committeeId || !preferredRoleId
+                  }
                 >
                   {submitting ? "Submitting…" : "Submit application"}
                 </Button>

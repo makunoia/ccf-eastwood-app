@@ -255,7 +255,7 @@ describe("recording the day in one tap", () => {
       { id: oneTime.id, linkedOccurrenceId: null },
       { id: recurring.id, linkedOccurrenceId: session.id },
     ]
-    const rows = await getClusterRegistrantRows(events, { clusterId: cluster.id, date: DAY })
+    const rows = await getClusterRegistrantRows(events, { clusterId: cluster.id, date: DAY, kind: "Parallel" })
     const roster = buildClusterRoster(
       [
         { id: oneTime.id, name: oneTime.name, type: "OneTime" as const },

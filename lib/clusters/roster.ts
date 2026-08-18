@@ -39,11 +39,22 @@ export type ClusterRegistrantRow = {
   onClusterDay: boolean
 }
 
-/** The day a cluster stands for. `date: null` means the cluster has no date. */
+/**
+ * The day a cluster stands for. `date: null` means the cluster has no date.
+ *
+ * `kind` is part of the scope because the two shapes of day answer "is this
+ * registration ours?" differently — see {@link isOnClusterDay}. Spelled as the
+ * string union rather than imported as Prisma's `ClusterKind` value so this
+ * module stays importable from a client component.
+ */
 export type ClusterDayScope = {
   clusterId: string
   date: Date | null
+  kind: ClusterKindName
 }
+
+/** Prisma's `ClusterKind`, as a type only — see {@link ClusterDayScope}. */
+export type ClusterKindName = "Parallel" | "Collab"
 
 /**
  * Does this registration belong to the cluster's day?
@@ -85,6 +96,19 @@ export function isOnClusterDay(
   >,
   scope: ClusterDayScope | null
 ): boolean {
+  // A Collab day owns its registrant list outright, so nothing is inherited: the
+  // only registrations that count are the ones this day produced. Every "of
+  // course it's ours" shortcut below is therefore skipped — a OneTime member
+  // event's pre-existing sign-ups and a dateless cluster's whole series are
+  // exactly the inheritance a collab is meant not to have. See
+  // `belongsOnClusterList` for what the surfaces do with the answer.
+  if (scope?.kind === "Collab") {
+    if (row.registrationClusterId === scope.clusterId) return true
+    // Attendance is already day-scoped by the caller (the linked session, or the
+    // day's occurrence), so being checked in IS evidence of this day.
+    if (row.checkedIn) return true
+    return scope.date ? registeredOnClusterDay(row.registeredAt, scope.date) : false
+  }
   if (row.eventType === "OneTime") return true
   if (!scope) return true
   if (!scope.date && !row.hasLinkedSession) return true
@@ -93,9 +117,58 @@ export function isOnClusterDay(
   return scope.date ? registeredOnClusterDay(row.registeredAt, scope.date) : false
 }
 
+/**
+ * Should this registration appear on the cluster's surfaces at all?
+ *
+ * A **Parallel** day keeps every row and flags it: the person ticked that event,
+ * so its registration is the thing they asked about, and a row that misses the
+ * day is still theirs. Withholding it made the roster claim someone was not
+ * registered while the add-registrant screen — reading the same row — refused to
+ * add them again, so the flag exists to say "on the series" out loud.
+ *
+ * A **Collab** day drops it. The day is not a wrapper around each ministry's
+ * registration; it owns one, and an admin tracking sign-ups for the day cannot
+ * do that through a list pre-filled with both ministries' standing rosters. The
+ * trap that made dropping wrong on a Parallel day doesn't exist here: on a
+ * Collab, `clusterDayRegistrationDisposition` returns `reuse`, so the shared form
+ * and the door both take an inherited row onto the day rather than short-
+ * circuiting on it. Someone missing from the list can always be added.
+ */
+export function belongsOnClusterList(
+  row: { onClusterDay: boolean },
+  scope: ClusterDayScope | null
+): boolean {
+  return scope?.kind !== "Collab" || row.onClusterDay
+}
+
 /** Manila runs UTC+8 all year — no DST to track. */
 const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000
 const DAY_MS = 24 * 60 * 60 * 1000
+
+/**
+ * UTC day bounds for a cluster date. Cluster dates are stored as a bare day
+ * (rendered with `timeZone: "UTC"` on the dashboard), so the window has to be
+ * computed in UTC to match — a local-time window would slide by 8 hours here.
+ */
+export function utcDayRange(date: Date): { gte: Date; lt: Date } {
+  const start = new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
+  )
+  const end = new Date(start)
+  end.setUTCDate(end.getUTCDate() + 1)
+  return { gte: start, lt: end }
+}
+
+/**
+ * The same day read in Manila time — the window {@link registeredOnClusterDay}
+ * tests a registration's timestamp against, as bounds a query can use.
+ */
+export function manilaDayRange(date: Date): { gte: Date; lt: Date } {
+  const start =
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) -
+    MANILA_OFFSET_MS
+  return { gte: new Date(start), lt: new Date(start + DAY_MS) }
+}
 
 /**
  * Did this registration happen on the cluster's day, read in Manila time?
@@ -107,11 +180,9 @@ const DAY_MS = 24 * 60 * 60 * 1000
  * today's Manila date sit a UTC day ahead until 08:00.
  */
 export function registeredOnClusterDay(registeredAt: Date, date: Date): boolean {
-  const start =
-    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) -
-    MANILA_OFFSET_MS
+  const { gte, lt } = manilaDayRange(date)
   const at = registeredAt.getTime()
-  return at >= start && at < start + DAY_MS
+  return at >= gte.getTime() && at < lt.getTime()
 }
 
 export type ClusterRosterCell = {

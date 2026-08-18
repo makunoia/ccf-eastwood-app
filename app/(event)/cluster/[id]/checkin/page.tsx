@@ -33,6 +33,7 @@ export default async function ClusterCheckinPage({
     select: {
       id: true,
       date: true,
+      kind: true,
       publicToken: true,
       walkInIsOpen: true,
       checkInIsOpen: true,
@@ -51,6 +52,7 @@ export default async function ClusterCheckinPage({
   const rows = await getClusterRegistrantRows(events, {
     clusterId: cluster.id,
     date: cluster.date,
+    kind: cluster.kind,
   })
   // The board is the day's arrivals list, so it stays strictly day-scoped: a
   // standing series registrant with no evidence for today is not someone this
