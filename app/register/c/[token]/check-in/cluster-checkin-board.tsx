@@ -32,6 +32,22 @@ import {
  * The screen never creates a registration. An event the person didn't sign up
  * for shows as "Not registered" and points at the walk-in door, which is the one
  * surface allowed to register someone at the door.
+ *
+ * ## Collab days say nothing about events (CCF-148)
+ *
+ * On a `Parallel` day the per-event breakdown is the whole value: someone attending
+ * two of three events needs to see which two, and which one they're missing.
+ *
+ * On a `Collab` day it is worse than noise. The day is one event to everyone
+ * attending, and a registrant belongs to exactly one member event — their
+ * ministry's. Listing every member event beside them would re-expose the split the
+ * day exists to hide, and would do it in the most alarming way available: the
+ * partner ministry's event, which they were never meant to join, renders as "Not
+ * registered" next to their name.
+ *
+ * So a collab check-in is name → tap → confirm → welcome, and which event the
+ * attendance landed on is the system's business. Nothing about the write changes;
+ * `checkInToCluster` records the same cells either way.
  */
 
 const NAME_DEBOUNCE_MS = 300
@@ -40,12 +56,17 @@ type Step = "lookup" | "disambiguate" | "confirm" | "success" | "not-found"
 
 export function ClusterCheckinBoard({
   token,
+  kind,
   walkInHref,
 }: {
   token: string
+  /** Which shape of day this is — see the Collab note above. */
+  kind: "Parallel" | "Collab"
   /** The day's door, or null while it's closed — a link that dead-ends is worse than none. */
   walkInHref: string | null
 }) {
+  /** A collab never names the day's events; a parallel day always does. */
+  const showEvents = kind !== "Collab"
   const [step, setStep] = React.useState<Step>("lookup")
   const [query, setQuery] = React.useState("")
   const [nameQuery, setNameQuery] = React.useState("")
@@ -191,8 +212,7 @@ export function ClusterCheckinBoard({
                       )}
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      {summarise(c)}
-                      {c.contactHint ? ` · ${c.contactHint}` : ""}
+                      {subtitleFor(c, showEvents)}
                     </p>
                   </button>
                 ))}
@@ -286,8 +306,7 @@ export function ClusterCheckinBoard({
                   </p>
                 )}
                 <p className="mt-0.5 text-sm text-muted-foreground">
-                  {summarise(c)}
-                  {c.contactHint ? ` · ${c.contactHint}` : ""}
+                  {subtitleFor(c, showEvents)}
                 </p>
               </button>
             ))}
@@ -301,10 +320,18 @@ export function ClusterCheckinBoard({
   }
 
   // ── Confirm ────────────────────────────────────────────────────────────────
-  // The whole day at a glance before anything is written: what will be recorded,
-  // and why each of the rest won't be.
+  // On a parallel day, the whole day at a glance before anything is written: what
+  // will be recorded, and why each of the rest won't be. On a collab, just the
+  // name and a button.
   if (step === "confirm" && person) {
     const pending = recordableCells(person)
+    const alreadyIn = person.events.some((c) => c.alreadyCheckedIn)
+    const hasRegistration = person.events.some((c) => c.subject !== null)
+    // Already checked in still leads somewhere: the write is idempotent and the
+    // welcome screen tells them so. Only a genuine dead end — nothing registered,
+    // or their event not taking check-ins — blocks the button, and then the reason
+    // has to be said out loud, because a collab shows no cell list to infer it from.
+    const canCheckIn = pending.length > 0 || alreadyIn
     return (
       <div className="flex flex-col items-center justify-center px-6 py-8">
         <div className="w-full space-y-8">
@@ -322,7 +349,28 @@ export function ClusterCheckinBoard({
             </div>
           </div>
 
-          <EventCellList cells={person.events} walkInHref={walkInHref} />
+          {showEvents && <EventCellList cells={person.events} walkInHref={walkInHref} />}
+
+          {!showEvents && !canCheckIn && (
+            <p className="text-center text-sm text-muted-foreground">
+              {hasRegistration ? (
+                "Check-in isn't open yet — please ask a staff member for help."
+              ) : walkInHref ? (
+                <>
+                  We don&apos;t have a registration for you today.{" "}
+                  <Link
+                    href={walkInHref}
+                    className="underline decoration-dashed underline-offset-2 transition-colors hover:text-foreground"
+                  >
+                    Register now
+                  </Link>
+                  .
+                </>
+              ) : (
+                "We don't have a registration for you today — please ask a staff member for help."
+              )}
+            </p>
+          )}
 
           {error && <p className="text-center text-sm text-destructive">{error}</p>}
 
@@ -330,17 +378,21 @@ export function ClusterCheckinBoard({
             <Button
               className="w-full"
               onClick={handleConfirm}
-              disabled={loading || pending.length === 0}
+              disabled={loading || !canCheckIn}
             >
               {loading ? (
                 <>
                   <IconLoader2 className="mr-2 size-4 animate-spin" />
                   Checking in…
                 </>
-              ) : pending.length === 0 ? (
+              ) : !canCheckIn ? (
                 "Nothing to check in"
-              ) : (
+              ) : showEvents ? (
                 `Yes, check me in (${pending.length})`
+              ) : (
+                // No count: on a collab there is only ever their own event, and a
+                // number here would be a fact about the split.
+                "Check me in"
               )}
             </Button>
             <Button variant="ghost" className="w-full" onClick={reset} disabled={loading}>
@@ -365,15 +417,18 @@ export function ClusterCheckinBoard({
               Welcome, {person.nickname ?? person.name.split(" ")[0]}!
             </h2>
             <p className="text-sm text-muted-foreground">
-              {recordedCount > 0
-                ? `You're checked in for ${recordedCount} ${
-                    recordedCount === 1 ? "event" : "events"
-                  }.`
-                : "You were already checked in."}
+              {recordedCount === 0
+                ? "You were already checked in."
+                : showEvents
+                  ? `You're checked in for ${recordedCount} ${
+                      recordedCount === 1 ? "event" : "events"
+                    }.`
+                  : // The count is the split again. They checked in; that's the news.
+                    "You're all set — enjoy the day!"}
             </p>
           </div>
 
-          <EventCellList cells={person.events} walkInHref={walkInHref} />
+          {showEvents && <EventCellList cells={person.events} walkInHref={walkInHref} />}
 
           <Button className="w-full" onClick={reset}>
             Check in someone else
@@ -465,11 +520,24 @@ function EventCellList({
   )
 }
 
-/** "2 of 3 events" — enough to tell two same-name candidates apart at a glance. */
-function summarise(person: ClusterCheckinPerson): string {
+/**
+ * The line under a candidate's name, there to tell two same-name people apart.
+ *
+ * A parallel day leads with "2 of 3 events", which is the most distinguishing
+ * thing available and useful in its own right. A collab has nothing to say there
+ * — everyone is registered to exactly one member event, so the count would be
+ * identical for every candidate *and* would name the split — so the masked
+ * contact hint does the whole job.
+ */
+function subtitleFor(person: ClusterCheckinPerson, showEvents: boolean): string {
+  const hint = person.contactHint ?? ""
+  if (!showEvents) return hint
   const registered = person.events.filter((c) => c.subject !== null).length
-  if (person.events.length === 0) return "No events today"
-  return `${registered} of ${person.events.length} ${
-    person.events.length === 1 ? "event" : "events"
-  }`
+  const summary =
+    person.events.length === 0
+      ? "No events today"
+      : `${registered} of ${person.events.length} ${
+          person.events.length === 1 ? "event" : "events"
+        }`
+  return hint ? `${summary} · ${hint}` : summary
 }

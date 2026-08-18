@@ -200,10 +200,13 @@ Three independent open/close switches: `isOpen` (shared form), `walkInIsOpen` (d
 | Volunteers | Per event | **Union** of member events' rosters — rows stay event-owned; any confirmed volunteer can facilitate any of the day's tables |
 | Breakouts | Per event | **Cluster-owned and exclusive.** Empty by default; member events' standing tables are untouched and unused for the day. `carryOverBreakoutGroups` copies a member event's tables in (optionally with rosters) |
 | Cluster nav | Dashboard/Registrants/Check-in/Forms | …plus Breakouts and Volunteers |
+| Public check-in kiosk | Per-event breakdown per person, "check me in (N)" | Name → tap → **"Check me in"** → welcome. Names no events at all |
 
 The asymmetry is deliberate: someone chose to serve under a *ministry*, so volunteers keep that provenance and pool as a union; a breakout table for a collab session belongs to the *session*, so the day owns a fresh set.
 
 **A Collab requires every member event to name exactly one distinct ministry** — no ministry, several, `allMinistries`, or two events sharing one all make "which ministry are you part of?" unanswerable. Enforced on both writes (`updateEventCluster` switching to Collab, `addEventToCluster`) by `collabMinistryProblems`, and mirrored in cluster Settings so the reason shows before Save. The public form falls back to event names if a day slips through, rather than dead-ending a registrant.
+
+**The collab kiosk (`/register/c/[token]/check-in`) names no events.** A registrant belongs to exactly one member event — their ministry's — so the per-event cell list would re-expose the split *and* render the partner ministry as "Not registered" beside their name. `ClusterCheckinBoard` takes the day's `kind` and collapses accordingly; the write is identical either way. The **admin** board at `/cluster/[id]/checkin` keeps its per-event Shortcuts on purpose — each member event has its own check-in `isOpen`, and those rows are how a staffer sees which one is blocking the kiosk.
 
 **Amending a collab registration doesn't re-ask the ministry** — the step isn't in `sections`, so the submission arrives with an empty selection and `registerForCluster` resolves the target from the registration being amended. The client's submit guard is gated on the cluster step having actually rendered: a form must never block on an answer it did not ask for.
 
