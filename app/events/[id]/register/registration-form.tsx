@@ -1556,6 +1556,15 @@ export function RegistrationForm({
     const anyRegistered = clusterResults.some(
       (r) => r.status === "registered" || r.status === "already"
     )
+    /**
+     * Someone serving at the event is on the list — they simply don't register as
+     * an attendee, which is what the single-event form's own "You're already on
+     * the list" screen says. Counting only registrations here told a volunteer
+     * their submission had failed and to go ask the team, on the one outcome that
+     * needed no action at all.
+     */
+    const anyVolunteer = clusterResults.some((r) => r.status === "volunteer")
+    const anySucceeded = anyRegistered || anyVolunteer
     const statusLine = (r: ClusterEventRegistrationResult): string => {
       switch (r.status) {
         case "registered":
@@ -1594,18 +1603,20 @@ export function RegistrationForm({
           <div
             className={cn(
               "flex size-16 items-center justify-center rounded-full",
-              anyRegistered ? "bg-green-100" : "bg-muted"
+              anySucceeded ? "bg-green-100" : "bg-muted"
             )}
           >
             <IconCheck
-              className={cn("size-8", anyRegistered ? "text-green-600" : "text-muted-foreground")}
+              className={cn("size-8", anySucceeded ? "text-green-600" : "text-muted-foreground")}
             />
           </div>
           <div className="w-full text-center space-y-1.5">
             <p className="text-xl font-semibold">
               {anyRegistered
                 ? `You're all set${displayName ? `, ${displayName}` : ""}!`
-                : "Here's where things stand"}
+                : anyVolunteer
+                  ? `You're already on the list${displayName ? `, ${displayName}` : ""}!`
+                  : "Here's where things stand"}
             </p>
             <p className="text-sm text-muted-foreground leading-relaxed">
               {/* A configured message replaces the stock line, but only when
@@ -1616,17 +1627,32 @@ export function RegistrationForm({
                   (collapsed
                     ? `We're so glad you're coming to ${cluster.name}.`
                     : "We're so glad you're coming — here's how each event went."))
-                : collapsed
-                  ? "We couldn't take your registration — please ask the team for help."
-                  : "None of the selected events could take your registration."}
+                : anyVolunteer
+                  ? "You're serving as a volunteer — you're already included and don't need to register as an attendee."
+                  : collapsed
+                    ? "We couldn't take your registration — the details are below."
+                    : "None of the selected events could take your registration."}
             </p>
             {collapsed ? (
               <div className="mt-3 space-y-2 text-left">
-                {anyRegistered && (
+                {/* Collapsed to the day's name, never the member events'. The
+                    card renders whatever the outcome was — a refusal explains
+                    itself here rather than leaving "ask the team" as the only
+                    thing on screen. */}
+                {clusterResults.length > 0 && (
                   <div className="rounded-xl border bg-muted/40 px-4 py-3 space-y-0.5">
                     <p className="text-sm font-semibold">{cluster.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {collapsedCheckedIn ? "Registered · checked in" : "Registered"}
+                    <p
+                      className={cn(
+                        "text-xs",
+                        anySucceeded ? "text-muted-foreground" : "text-destructive"
+                      )}
+                    >
+                      {anyRegistered
+                        ? collapsedCheckedIn
+                          ? "Registered · checked in"
+                          : "Registered"
+                        : statusLine(clusterResults[0])}
                     </p>
                     {collapsedBreakout && (
                       <p className="text-xs text-muted-foreground">

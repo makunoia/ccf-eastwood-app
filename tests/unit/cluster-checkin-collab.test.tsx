@@ -108,7 +108,11 @@ describe("collab check-in — the welcome screen", () => {
   it("welcomes without counting events", async () => {
     vi.mocked(checkInToCluster).mockResolvedValue({
       success: true,
-      data: { person: person(), recorded: ["e-youth"] },
+      data: {
+        person: person(),
+        recorded: [{ eventId: "e-youth", eventName: "Youth Night" }],
+        skipped: [],
+      },
     })
     await searchAndSelect("Collab")
     await act(async () => {
@@ -138,7 +142,11 @@ describe("collab check-in — the welcome screen", () => {
     vi.mocked(searchClusterCheckinByName).mockResolvedValue({ success: true, data: [seated] })
     vi.mocked(checkInToCluster).mockResolvedValue({
       success: true,
-      data: { person: seated, recorded: [] },
+      data: {
+        person: seated,
+        recorded: [],
+        skipped: [{ eventId: "e-youth", eventName: "Youth Night", reason: "already" }],
+      },
     })
     await searchAndSelect("Collab")
 
