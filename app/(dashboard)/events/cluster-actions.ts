@@ -8,6 +8,7 @@ import { verifyIdentityGrant } from "@/lib/security/identity-grant"
 import { auth } from "@/lib/auth"
 import { canWrite } from "@/lib/permissions"
 import { isWithinRegistrationWindow } from "@/lib/events/registration-window"
+import { clusterDayRegistrationDisposition } from "@/lib/clusters/day-registration"
 import { getClusterFormConfig } from "@/lib/forms/context-config-server"
 import {
   askedFieldsFor,
@@ -18,7 +19,7 @@ import {
 import {
   completeEventRegistration,
   findEventVolunteerConflict,
-  findExistingEventRegistration,
+  findExistingEventRegistrationRow,
   resolveAnonymousGuest,
   resolveConfirmedGuest,
   resolveConfirmedMember,
@@ -619,20 +620,27 @@ export async function registerForCluster(
     // resolved from a record we hold, which is the same proof the amend flow itself
     // requires (see `verifyIdentityGrant`).
     if (mayResolveFromExisting) {
-      const existing = await db.eventRegistrant.findMany({
+      const held = await db.eventRegistrant.findMany({
         where: {
           eventId: { in: clusterEventIds },
           ...("memberId" in person
             ? { memberId: person.memberId }
             : { guestId: person.guestId }),
         },
-        select: { eventId: true },
+        select: { eventId: true, registrationClusterId: true },
       })
-      // Cluster display order, the same tie-break `validateClusterEventSelection`
-      // applies — someone registered to both halves is unusual but not impossible,
-      // and picking arbitrarily would amend a different registration each time.
+      // The day's own registrations first. Scanning every member event is how an
+      // amend finds the registration to re-open, but a row inherited from a
+      // ministry's series is not this day's — and preferring it would amend a
+      // months-old sign-up on the wrong half of a collab. Cluster display order
+      // breaks the remaining tie, the same tie-break
+      // `validateClusterEventSelection` applies: someone registered to both halves
+      // is unusual but not impossible, and picking arbitrarily would amend a
+      // different registration each time.
+      const onThisDay = held.filter((e) => e.registrationClusterId === cluster.id)
+      const preferred = onThisDay.length > 0 ? onThisDay : held
       const resolved = clusterEventIds.filter((id) =>
-        existing.some((e) => e.eventId === id)
+        preferred.some((e) => e.eventId === id)
       )
       if (resolved.length === 0) {
         return { success: false, error: MINISTRY_REQUIRED_ERROR }
@@ -660,8 +668,19 @@ export async function registerForCluster(
           continue
         }
 
-        const existingRegistrationId = await findExistingEventRegistration(eventId, person)
-        if (existingRegistrationId && !walkIn) {
+        const existing = await findExistingEventRegistrationRow(eventId, person)
+        /**
+         * What that row means for THIS day — see `clusterDayRegistrationDisposition`.
+         *
+         * A Collab day owns its own registrant list and its own tables, so a row
+         * made for the underlying series is not a registration for the day: it is
+         * reused (never duplicated) and the day's work runs on top of it. A
+         * Parallel day is unchanged — there, the member event's registration is
+         * precisely what the person asked for.
+         */
+        const disposition = clusterDayRegistrationDisposition(isCollab, existing, cluster.id)
+
+        if (existing && disposition === "already" && !walkIn) {
           // Already registered, so there is nothing to create — but they DID just
           // sign up for this day, and the day roll-up reads that from the
           // provenance column. Stamping it here is the whole difference between
@@ -674,12 +693,12 @@ export async function registerForCluster(
           // Only the stamp is repeated. Breakout assignment and the DGroup seeker
           // request stay on the far side: those happened when the person first
           // registered, and re-running them would double-file the same person.
-          await stampClusterProvenance(existingRegistrationId, cluster.id)
+          await stampClusterProvenance(existing.id, cluster.id)
           results.push({
             eventId,
             eventName: event.name,
             status: "already",
-            registrantId: existingRegistrationId,
+            registrantId: existing.id,
           })
           continue
         }
@@ -706,13 +725,17 @@ export async function registerForCluster(
           profile,
           clusterId: cluster.id,
           walkIn: walkInForEvent,
-          existingRegistrantId: existingRegistrationId,
+          existingRegistrantId: existing?.id ?? null,
           touchedFields: touched,
         })
         results.push({
           eventId,
           eventName: event.name,
-          status: existingRegistrationId ? "already" : "registered",
+          // A reused row on a Collab day IS this submission's registration — the
+          // day's first one for this person — so it reports as registered. Only
+          // the walk-in door, which reuses a registration by design rather than
+          // as a fresh sign-up, still says "already".
+          status: walkIn && existing ? "already" : "registered",
           registrantId: completed.id,
           breakoutGroup: completed.breakoutGroup,
           checkedIn: walkInForEvent !== null,
