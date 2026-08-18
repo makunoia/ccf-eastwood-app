@@ -287,18 +287,36 @@ export async function findEventVolunteerConflict(
   return volunteerRecord !== null
 }
 
+/**
+ * Existing registration for this person at this event, with the cluster day it
+ * was made for.
+ *
+ * The provenance column is part of the answer rather than a second lookup
+ * because "is this person registered?" and "is this person registered *for this
+ * day*?" are different questions, and a cluster has to ask the second one. An
+ * `EventRegistrant` is one row per person per event **series**, so a weekly
+ * event's regular holds a row that predates any given day — see
+ * `clusterDayRegistrationDisposition`.
+ */
+export async function findExistingEventRegistrationRow(
+  eventId: string,
+  person: PersonRef
+): Promise<{ id: string; registrationClusterId: string | null } | null> {
+  return db.eventRegistrant.findFirst({
+    where:
+      "memberId" in person
+        ? { eventId, memberId: person.memberId }
+        : { eventId, guestId: person.guestId },
+    select: { id: true, registrationClusterId: true },
+  })
+}
+
 /** Existing registration for this person at this event, if any. */
 export async function findExistingEventRegistration(
   eventId: string,
   person: PersonRef
 ): Promise<string | null> {
-  const existing = await db.eventRegistrant.findFirst({
-    where:
-      "memberId" in person
-        ? { eventId, memberId: person.memberId }
-        : { eventId, guestId: person.guestId },
-    select: { id: true },
-  })
+  const existing = await findExistingEventRegistrationRow(eventId, person)
   return existing?.id ?? null
 }
 

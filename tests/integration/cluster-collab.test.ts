@@ -730,8 +730,12 @@ describe("registerForCluster on a Collab day", () => {
       },
       select: { id: true },
     })
+    // Stamped for this day, because that is the only way an amend arises: the
+    // person registered through the day's shared form, and it is that
+    // registration they are re-opening. An *unstamped* row on a member event is a
+    // different thing entirely — see `cluster-collab-fresh-list.test.ts`.
     await db.eventRegistrant.create({
-      data: { eventId: day.singlesId, memberId: member.id },
+      data: { eventId: day.singlesId, memberId: member.id, registrationClusterId: day.id },
     })
 
     const result = await registerForCluster(
