@@ -275,16 +275,29 @@ export async function checkInWalkInRegistrant(registrantId: string, occurrenceId
   }
 }
 
+/**
+ * The member's volunteer record for this event, if they are serving at it.
+ *
+ * Returns the row rather than a yes/no because a caller that turns a
+ * registration away has to be able to act on the record it turned it away for —
+ * see `stampVolunteerClusterProvenance`.
+ */
+export async function findEventVolunteerRecord(
+  eventId: string,
+  memberId: string
+): Promise<{ id: string } | null> {
+  return db.volunteer.findFirst({
+    where: { memberId, eventId },
+    select: { id: true },
+  })
+}
+
 /** True when the member is serving as a volunteer at this event (volunteers don't register as attendees). */
 export async function findEventVolunteerConflict(
   eventId: string,
   memberId: string
 ): Promise<boolean> {
-  const volunteerRecord = await db.volunteer.findFirst({
-    where: { memberId, eventId },
-    select: { id: true },
-  })
-  return volunteerRecord !== null
+  return (await findEventVolunteerRecord(eventId, memberId)) !== null
 }
 
 /**
@@ -342,6 +355,39 @@ export async function stampClusterProvenance(
   await db.eventRegistrant.updateMany({
     where: { id: registrantId, registrationClusterId: null },
     data: { registrationClusterId: clusterId },
+  })
+}
+
+/**
+ * The same record for a volunteer, written when the day's shared form turns a
+ * registration away because the person is serving.
+ *
+ * Somebody serving is one of the day's people, and the registration form already
+ * tells them so ("You're serving as a volunteer — already included"). But a
+ * `Volunteer` row is a standing fact about a ministry's event rather than a
+ * registration for a date, so `volunteerIsOnClusterDay` puts one on the day only
+ * on the day's own evidence — this stamp, a check-in, or a sign-up made on the
+ * day itself. A ministry regular who joined the serving team weeks ago has none
+ * of those, so without this write the shared form's reassurance was false: they
+ * were dropped from the day's roster, registrants screen, check-in board and
+ * export, and the admin had no way to see they had come through the form.
+ *
+ * This is the volunteer half of {@link stampClusterProvenance}, and it exists
+ * for the same reason the registrant half runs on the `already` branch: the
+ * short-circuit is about not creating a duplicate record, never about ignoring
+ * what the person just told us.
+ *
+ * Fills a null rather than overwriting, matching the registrant rule. An event
+ * belongs to at most one cluster (`EventClusterEvent.eventId` is unique), so no
+ * second day competes for the column.
+ */
+export async function stampVolunteerClusterProvenance(
+  volunteerId: string,
+  clusterId: string
+): Promise<void> {
+  await db.volunteer.updateMany({
+    where: { id: volunteerId, signUpClusterId: null },
+    data: { signUpClusterId: clusterId },
   })
 }
 

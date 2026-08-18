@@ -18,13 +18,14 @@ import {
 } from "@/lib/forms/registration-payload"
 import {
   completeEventRegistration,
-  findEventVolunteerConflict,
+  findEventVolunteerRecord,
   findExistingEventRegistrationRow,
   resolveAnonymousGuest,
   resolveConfirmedGuest,
   resolveConfirmedMember,
   type TouchedFields,
   stampClusterProvenance,
+  stampVolunteerClusterProvenance,
   type AssignedBreakout,
   type PersonRef,
   type ResolvedProfile,
@@ -664,7 +665,19 @@ export async function registerForCluster(
           continue
         }
 
-        if ("memberId" in person && (await findEventVolunteerConflict(eventId, person.memberId))) {
+        const serving =
+          "memberId" in person
+            ? await findEventVolunteerRecord(eventId, person.memberId)
+            : null
+        if (serving) {
+          // Serving instead of attending — no registrant row to create, and there
+          // must not be one. But they DID just come through this day's form, and
+          // that is the only evidence `volunteerIsOnClusterDay` accepts for a
+          // ministry regular whose sign-up predates the day. Stamping it here is
+          // the difference between the day's screens listing them and dropping
+          // them entirely, while the form told them they were "already included".
+          // Same reasoning, same place in the flow, as the `already` branch below.
+          await stampVolunteerClusterProvenance(serving.id, cluster.id)
           results.push({ eventId, eventName: event.name, status: "volunteer" })
           continue
         }

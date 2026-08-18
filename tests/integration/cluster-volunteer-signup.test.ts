@@ -2,7 +2,10 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest"
 import type { Session } from "next-auth"
 
 import { db } from "@/lib/db"
-import { submitClusterVolunteerSignUp } from "@/app/(dashboard)/events/cluster-actions"
+import {
+  registerForCluster,
+  submitClusterVolunteerSignUp,
+} from "@/app/(dashboard)/events/cluster-actions"
 import {
   getAccessibleClusterEvents,
   getClusterDayRows,
@@ -36,6 +39,8 @@ const admin = {
 } as unknown as Session
 
 const DAY = new Date("2026-09-05T00:00:00.000Z")
+/** Months before the day: the shape of a ministry's standing serving team. */
+const LONG_BEFORE = new Date("2026-01-04T02:00:00.000Z")
 
 beforeEach(async () => {
   await db.$executeRaw`TRUNCATE
@@ -54,7 +59,10 @@ afterAll(async () => {
 /** Two ministries, each with its own event, committee and role, sharing one day. */
 async function openDay(kind: "Parallel" | "Collab", volunteerIsOpen = true) {
   const cluster = await db.eventCluster.create({
-    data: { name: "Youth × Singles Night", date: DAY, kind, volunteerIsOpen },
+    // `isOpen` governs the shared REGISTRATION form, which is a different switch
+    // from `volunteerIsOpen` — open here so the tests below can put a volunteer
+    // through it. It has no bearing on the sign-up flow above.
+    data: { name: "Youth × Singles Night", date: DAY, kind, volunteerIsOpen, isOpen: true },
     select: { id: true, publicToken: true },
   })
   // Seeded one half after the other rather than in parallel: these are writes to
@@ -459,5 +467,215 @@ describe("a volunteer on the day's registrant surfaces", () => {
     expect(rows[0].dietary).toBeNull()
     expect(rows[0].breakoutGroup).toBeNull()
     expect(rows[0].isPaid).toBe(false)
+  })
+})
+
+// ─── A volunteer coming through the day's REGISTRATION form ──────────────────
+
+/**
+ * The reported bug: a member serving one of a day's events filled in the shared
+ * registration form and never appeared on the day's registered list.
+ *
+ * Two correct rules met and left a hole between them. The fan-out refuses a
+ * registration from someone serving that event — `Volunteer` and
+ * `EventRegistrant` are mutually exclusive by design — and the form says so
+ * plainly ("You're serving as a volunteer — already included"). Meanwhile
+ * `volunteerIsOnClusterDay` puts a volunteer on the day only on the day's own
+ * evidence, because a `Volunteer` row is a standing fact about a ministry's
+ * event rather than a registration for a date. A ministry regular who joined the
+ * serving team weeks ago had neither a registrant row nor any day evidence, so
+ * the reassuring message was simply false.
+ *
+ * The refusal writes the evidence now, exactly as the `already` branch stamps
+ * `registrationClusterId` on a registration it declines to duplicate.
+ */
+async function seedStandingVolunteer(
+  half: { eventId: string; committeeId: string; roleId: string },
+  name: string,
+  phone: string
+) {
+  const memberId = await seedMember(name, phone)
+  const volunteer = await db.volunteer.create({
+    data: {
+      memberId,
+      eventId: half.eventId,
+      committeeId: half.committeeId,
+      preferredRoleId: half.roleId,
+      status: "Confirmed",
+      createdAt: LONG_BEFORE,
+    },
+    select: { id: true },
+  })
+  return { memberId, volunteerId: volunteer.id }
+}
+
+function registerOn(token: string, memberId: string, eventId: string, name: string, phone: string) {
+  return registerForCluster(
+    token,
+    { firstName: name, lastName: "Cruz", mobileNumber: phone },
+    memberId,
+    null,
+    undefined,
+    [eventId]
+  )
+}
+
+describe("a volunteer filling in the day's registration form", () => {
+  it("lands on the day's list as a Volunteer instead of vanishing", async () => {
+    const day = await openDay("Collab")
+    const { memberId, volunteerId } = await seedStandingVolunteer(
+      day.youth,
+      "Maria",
+      "+63 917 111 2222"
+    )
+
+    // Nothing yet: a standing sign-up from months ago is not this day's.
+    const events = await getAccessibleClusterEvents(admin, day.id)
+    const scope = { clusterId: day.id, date: DAY, kind: "Collab" as const }
+    expect(await getClusterDayRows(events, scope)).toHaveLength(0)
+
+    const result = await registerOn(
+      day.publicToken,
+      memberId,
+      day.youth.eventId,
+      "Maria",
+      "0917 111 2222"
+    )
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(result.data.results.map((r) => r.status)).toEqual(["volunteer"])
+
+    // Still no registrant row — the two records stay mutually exclusive.
+    expect(
+      await db.eventRegistrant.count({ where: { eventId: day.youth.eventId } })
+    ).toBe(0)
+    // …but the day now holds the evidence that they came through its form.
+    const stamped = await db.volunteer.findUnique({
+      where: { id: volunteerId },
+      select: { signUpClusterId: true, status: true },
+    })
+    expect(stamped?.signUpClusterId).toBe(day.id)
+    // Serving through the day's registration form says nothing about whether the
+    // leader has confirmed them, so the sign-up's own status is left alone.
+    expect(stamped?.status).toBe("Confirmed")
+
+    const rows = await getClusterDayRows(events, scope)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].kind).toBe("Volunteer")
+    expect(rows[0].memberId).toBe(memberId)
+    expect(rows[0].onClusterDay).toBe(true)
+
+    const overview = await getClusterOverview(admin, day.id)
+    expect(overview.totals.uniquePeople).toBe(1)
+    expect(overview.totals.volunteers).toBe(1)
+    // Counted as a shift, not a seat: they never registered as an attendee.
+    expect(overview.totals.registrations).toBe(0)
+    expect(overview.roster.rows[0].isVolunteer).toBe(true)
+  })
+
+  it("does the same on a Parallel day", async () => {
+    // Nothing about the hole was collab-specific: the volunteer rule is strict on
+    // both shapes of day, so both needed the stamp.
+    const day = await openDay("Parallel")
+    const { memberId, volunteerId } = await seedStandingVolunteer(
+      day.singles,
+      "Josh",
+      "+63 917 333 4444"
+    )
+
+    const result = await registerOn(
+      day.publicToken,
+      memberId,
+      day.singles.eventId,
+      "Josh",
+      "0917 333 4444"
+    )
+    expect(result.success).toBe(true)
+
+    expect(
+      (
+        await db.volunteer.findUnique({
+          where: { id: volunteerId },
+          select: { signUpClusterId: true },
+        })
+      )?.signUpClusterId
+    ).toBe(day.id)
+
+    const events = await getAccessibleClusterEvents(admin, day.id)
+    const rows = await getClusterDayRows(events, {
+      clusterId: day.id,
+      date: DAY,
+      kind: "Parallel",
+    })
+    expect(rows.map((r) => r.kind)).toEqual(["Volunteer"])
+  })
+
+  it("is idempotent, and leaves the sign-up's own answers untouched", async () => {
+    const day = await openDay("Collab")
+    const { memberId, volunteerId } = await seedStandingVolunteer(
+      day.youth,
+      "Maria",
+      "+63 917 111 2222"
+    )
+    await db.volunteer.update({
+      where: { id: volunteerId },
+      data: { notes: "on the sound desk" },
+    })
+
+    for (let i = 0; i < 2; i++) {
+      const result = await registerOn(
+        day.publicToken,
+        memberId,
+        day.youth.eventId,
+        "Maria",
+        "0917 111 2222"
+      )
+      expect(result.success).toBe(true)
+    }
+
+    // One row, one stamp, and the preferences they gave the volunteer form stand:
+    // a registration submission is not a re-answer of the serving questions.
+    const volunteers = await db.volunteer.findMany({
+      where: { memberId },
+      select: { signUpClusterId: true, notes: true, preferredRoleId: true },
+    })
+    expect(volunteers).toHaveLength(1)
+    expect(volunteers[0].signUpClusterId).toBe(day.id)
+    expect(volunteers[0].notes).toBe("on the sound desk")
+    expect(volunteers[0].preferredRoleId).toBe(day.youth.roleId)
+
+    const events = await getAccessibleClusterEvents(admin, day.id)
+    expect(
+      await getClusterDayRows(events, { clusterId: day.id, date: DAY, kind: "Collab" })
+    ).toHaveLength(1)
+  })
+
+  it("still registers a member who serves the day's OTHER event", async () => {
+    // The refusal is per event, not per day: someone ushering for Youth is an
+    // ordinary attendee at Singles, and the shared form must take that.
+    const day = await openDay("Collab")
+    const { memberId } = await seedStandingVolunteer(day.youth, "Maria", "+63 917 111 2222")
+
+    const result = await registerOn(
+      day.publicToken,
+      memberId,
+      day.singles.eventId,
+      "Maria",
+      "0917 111 2222"
+    )
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(result.data.results.map((r) => r.status)).toEqual(["registered"])
+
+    const events = await getAccessibleClusterEvents(admin, day.id)
+    const rows = await getClusterDayRows(events, {
+      clusterId: day.id,
+      date: DAY,
+      kind: "Collab",
+    })
+    // Their Youth sign-up is still a standing fact with no day evidence, so the
+    // day knows them only as the registrant they just became.
+    expect(rows.map((r) => r.kind)).toEqual(["Registrant"])
+    expect(rows[0].eventId).toBe(day.singles.eventId)
   })
 })
