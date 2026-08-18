@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
+import { ClusterKind } from "@/app/generated/prisma/client"
 import { getAccessibleClusterEvents } from "@/lib/clusters/aggregate"
 import { PageHeader } from "@/components/page-header"
 import { ClusterFormsList } from "./cluster-forms-list"
@@ -19,7 +20,14 @@ export default async function ClusterFormsPage({
   const { id } = await params
   const cluster = await db.eventCluster.findUnique({
     where: { id },
-    select: { id: true, isOpen: true, walkInIsOpen: true, checkInIsOpen: true },
+    select: {
+      id: true,
+      kind: true,
+      isOpen: true,
+      walkInIsOpen: true,
+      checkInIsOpen: true,
+      volunteerIsOpen: true,
+    },
   })
   if (!cluster) notFound()
 
@@ -36,6 +44,8 @@ export default async function ClusterFormsPage({
         initialIsOpen={cluster.isOpen}
         walkInIsOpen={cluster.walkInIsOpen}
         checkInIsOpen={cluster.checkInIsOpen}
+        volunteerIsOpen={cluster.volunteerIsOpen}
+        isCollab={cluster.kind === ClusterKind.Collab}
         eventCount={events.length}
       />
     </div>

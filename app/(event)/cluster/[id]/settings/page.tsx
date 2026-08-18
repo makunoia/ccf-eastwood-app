@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
-import { utcDayRange } from "@/lib/clusters/aggregate"
+import { utcDayRange } from "@/lib/clusters/roster"
 import { PageHeader } from "@/components/page-header"
 import { ClusterSettingsClient } from "./settings-client"
 

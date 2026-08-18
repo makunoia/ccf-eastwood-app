@@ -9,7 +9,10 @@ import type { BreakoutGroupFormValues } from "@/lib/validations/breakout-group"
 import { matchBreakoutGroups } from "@/lib/matching"
 import { unassignedCandidateWhere } from "@/lib/breakouts/candidate-pool"
 import { isClusterOwner, type BreakoutOwner } from "@/lib/breakouts/owner"
-import { breakoutCandidateEventIds } from "@/lib/breakouts/candidate-events"
+import {
+  breakoutCandidateEventIds,
+  breakoutCandidateWhere,
+} from "@/lib/breakouts/candidate-events"
 import { resolvePoolScope } from "@/lib/events/pool-scope"
 import { personKeyFor } from "@/lib/clusters/roster"
 import { MAX_BREAKOUT_BATCH } from "@/lib/breakouts/candidate-filters"
@@ -784,12 +787,14 @@ export async function autoAssignBreakouts(
   const denied = await requireBreakoutWrite(owner)
   if (denied) return { success: false, error: denied.error }
 
-  const candidateEventIds = await breakoutCandidateEventIds(owner)
+  // Day-scoped on a Collab: auto-assign fills the day's tables from the day's
+  // registrations, not from every regular either ministry has ever had.
+  const candidateWhere = await breakoutCandidateWhere(owner)
 
   try {
     const unassigned = await db.eventRegistrant.findMany({
       where: {
-        eventId: { in: candidateEventIds },
+        ...candidateWhere,
         ...unassignedCandidateWhere(owner),
       },
       select: { id: true, memberId: true, guestId: true },

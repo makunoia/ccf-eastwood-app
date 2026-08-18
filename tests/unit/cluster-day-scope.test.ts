@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  belongsOnClusterList,
   buildClusterRoster,
   isOnClusterDay,
   standingFor,
@@ -13,6 +14,7 @@ import type { EventType } from "@/app/generated/prisma/client"
  */
 
 const scope: ClusterDayScope = {
+  kind: "Parallel",
   clusterId: "cluster-1",
   date: new Date("2026-08-02T00:00:00Z"),
 }
@@ -67,7 +69,7 @@ describe("isOnClusterDay", () => {
   })
 
   it("counts everything when the cluster has no date to scope to", () => {
-    const dateless: ClusterDayScope = { clusterId: "cluster-1", date: null }
+    const dateless: ClusterDayScope = { clusterId: "cluster-1", date: null, kind: "Parallel" }
     expect(isOnClusterDay(row("Recurring"), dateless)).toBe(true)
     expect(isOnClusterDay(row("Recurring"), null)).toBe(true)
   })
@@ -75,7 +77,7 @@ describe("isOnClusterDay", () => {
   it("scopes by the linked session even when the cluster has no date", () => {
     // Picking a session is itself a scope: the admin said which session this day
     // is, so a standing registrant with no attendance is not part of it.
-    const dateless: ClusterDayScope = { clusterId: "cluster-1", date: null }
+    const dateless: ClusterDayScope = { clusterId: "cluster-1", date: null, kind: "Parallel" }
     expect(isOnClusterDay(row("Recurring", { hasLinkedSession: true }), dateless)).toBe(
       false
     )
@@ -135,7 +137,7 @@ describe("isOnClusterDay", () => {
 
   it("does not let the timestamp rescue a dateless cluster's linked session", () => {
     // No date means no window to test against; the linked session is the scope.
-    const dateless: ClusterDayScope = { clusterId: "cluster-1", date: null }
+    const dateless: ClusterDayScope = { clusterId: "cluster-1", date: null, kind: "Parallel" }
     expect(
       isOnClusterDay(
         row("Recurring", {
@@ -219,5 +221,77 @@ describe("buildClusterRoster — day scoping is a flag, not a filter", () => {
       { ...base, id: "r1", checkedIn: true, onClusterDay: true },
     ])
     expect(reversed.rows[0].perEvent.e1?.registrantId).toBe("r1")
+  })
+})
+
+// ─── A Collab day owns its list ──────────────────────────────────────────────
+//
+// The reported bug: a Collab cluster built from two ministries' existing events
+// opened with both of their registrant lists already in it, so the day could not
+// be used to track its own sign-ups. The day's rule is therefore stricter than a
+// Parallel day's — nothing is inherited, and every "of course it's ours"
+// shortcut is dropped.
+
+describe("isOnClusterDay on a Collab day", () => {
+  const collab: ClusterDayScope = { ...scope, kind: "Collab" }
+
+  it("excludes a OneTime member event's pre-existing registrations", () => {
+    // The Parallel reading — "a OneTime event's registrations are inherently the
+    // day's" — is exactly the inheritance a collab must not have: the event
+    // existed, with its own list, before the day was created around it.
+    expect(isOnClusterDay(row("OneTime"), collab)).toBe(false)
+    expect(isOnClusterDay(row("OneTime"), scope)).toBe(true)
+  })
+
+  it("excludes a standing series registrant of either ministry", () => {
+    expect(isOnClusterDay(row("Recurring"), collab)).toBe(false)
+  })
+
+  it("counts a sign-up made through this day's shared form", () => {
+    expect(
+      isOnClusterDay(row("Recurring", { registrationClusterId: "cluster-1" }), collab)
+    ).toBe(true)
+    expect(
+      isOnClusterDay(row("OneTime", { registrationClusterId: "cluster-1" }), collab)
+    ).toBe(true)
+  })
+
+  it("counts someone who checked in — being here is evidence of the day", () => {
+    expect(isOnClusterDay(row("Recurring", { checkedIn: true }), collab)).toBe(true)
+    expect(isOnClusterDay(row("OneTime", { checkedIn: true }), collab)).toBe(true)
+  })
+
+  it("counts a registration made on the day itself, in Manila time", () => {
+    expect(
+      isOnClusterDay(
+        row("Recurring", { registeredAt: new Date("2026-08-02T04:31:00Z") }),
+        collab
+      )
+    ).toBe(true)
+  })
+
+  it("inherits nothing when the cluster has no date", () => {
+    // A dateless Parallel day counts everything (nothing to scope to); a collab
+    // still owns its list, so only the stamp and attendance speak for it.
+    const dateless: ClusterDayScope = { clusterId: "cluster-1", date: null, kind: "Collab" }
+    expect(isOnClusterDay(row("OneTime"), dateless)).toBe(false)
+    expect(isOnClusterDay(row("Recurring"), dateless)).toBe(false)
+    expect(
+      isOnClusterDay(row("Recurring", { registrationClusterId: "cluster-1" }), dateless)
+    ).toBe(true)
+  })
+})
+
+describe("belongsOnClusterList", () => {
+  const collab: ClusterDayScope = { ...scope, kind: "Collab" }
+
+  it("keeps a Parallel day's series-only row so it can be shown as such", () => {
+    expect(belongsOnClusterList({ onClusterDay: false }, scope)).toBe(true)
+    expect(belongsOnClusterList({ onClusterDay: false }, null)).toBe(true)
+  })
+
+  it("drops it on a Collab day — the day's list is its own", () => {
+    expect(belongsOnClusterList({ onClusterDay: false }, collab)).toBe(false)
+    expect(belongsOnClusterList({ onClusterDay: true }, collab)).toBe(true)
   })
 })

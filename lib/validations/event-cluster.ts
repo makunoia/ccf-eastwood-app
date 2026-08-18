@@ -33,6 +33,10 @@ export const eventClusterSettingsSchema = z.object({
   walkInIsOpen: z.boolean().optional(),
   // The check-in kiosk's switch — independent of both.
   checkInIsOpen: z.boolean().optional(),
+  // The day's volunteer sign-up form, independent of all three: serving teams
+  // are recruited before the attendee form opens and closed once the roster is
+  // full.
+  volunteerIsOpen: z.boolean().optional(),
   registrationStart: z.coerce.date().nullable().optional(),
   registrationEnd: z.coerce.date().nullable().optional(),
   logoUrl: optionalTrimmed.optional(),

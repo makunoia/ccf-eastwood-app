@@ -188,7 +188,7 @@ Sub-groups within an event **or a Collab cluster**. Same matching fields as Smal
 
 An `EventCluster` ("Event Day") groups events that share one public registration form and one aggregated admin workspace at `/cluster/[id]/...`. Member events stay independent; the cluster is a layer on top. One cluster per event (`@@unique([eventId])` on `EventClusterEvent`), always one day, and Priced/MultiDay events can't join (`validateClusterEventLink`).
 
-Three independent open/close switches: `isOpen` (shared form), `walkInIsOpen` (door), `checkInIsOpen` (kiosk).
+Four independent open/close switches: `isOpen` (shared form), `walkInIsOpen` (door), `checkInIsOpen` (kiosk), `volunteerIsOpen` (the day's volunteer sign-up form — Collab only).
 
 ### ClusterKind — `Parallel | Collab`
 
@@ -197,15 +197,21 @@ Three independent open/close switches: `isOpen` (shared form), `walkInIsOpen` (d
 | Shape | Several events sharing a day | Two ministries co-running **one** event |
 | Registration | Events step asks which to attend (any number) | **Ministry step** asks which ministry the registrant is part of; that answer routes them to **one** event — theirs. The form sends the event id behind the ministry, so nothing downstream knows ministries exist (`resolveClusterEventSelection`) |
 | Success screen | Per-event breakdown | Collapsed to the cluster's name |
-| Volunteers | Per event | **Union** of member events' rosters — rows stay event-owned; any confirmed volunteer can facilitate any of the day's tables |
+| Volunteers | Per event | **The day's own sign-ups** (`Volunteer.signUpClusterId`), taken through the day's shared volunteer form. Rows stay event-owned — a person serves under a ministry. The union of both standing rosters is still one click away (`?scope=all`) and is still what facilitator eligibility draws on |
 | Breakouts | Per event | **Cluster-owned and exclusive.** Empty by default; member events' standing tables are untouched and unused for the day. `carryOverBreakoutGroups` copies a member event's tables in (optionally with rosters) |
 | Cluster nav | Dashboard/Registrants/Check-in/Forms | …plus Breakouts and Volunteers |
 
-The asymmetry is deliberate: someone chose to serve under a *ministry*, so volunteers keep that provenance and pool as a union; a breakout table for a collab session belongs to the *session*, so the day owns a fresh set.
+The asymmetry is deliberate: someone chose to serve under a *ministry*, so a volunteer row keeps that provenance and the day only stamps it; a breakout table for a collab session belongs to the *session*, so the day owns a fresh set.
 
 **A Collab requires every member event to name exactly one distinct ministry** — no ministry, several, `allMinistries`, or two events sharing one all make "which ministry are you part of?" unanswerable. Enforced on both writes (`updateEventCluster` switching to Collab, `addEventToCluster`) by `collabMinistryProblems`, and mirrored in cluster Settings so the reason shows before Save. The public form falls back to event names if a day slips through, rather than dead-ending a registrant.
 
 **A Collab day's registrant list starts fresh.** `EventRegistrant` is one row per person per event *series*, so every regular of either ministry already holds a row on a member event — one that predates the day. On a Collab that row is **not** a registration for the day: `clusterDayRegistrationDisposition` (`lib/clusters/day-registration.ts`) returns `reuse`, and the fan-out does the day's work on top of it (stamp `registrationClusterId`, merge the answers just given, auto-assign one of the day's cluster-owned tables, file the DGroup request) rather than short-circuiting. The row is reused, never duplicated — the member event must not gain a second registration for one person. Only a row already stamped with *this* cluster returns `already`, which is what makes a second submission idempotent. A **Parallel** day is unchanged: there the person ticked that event, so its own registration is exactly what they asked about.
+
+That fresh list is enforced on the read side too, and it has to be: the write rule alone left every inherited row on the day's screens, flagged "on the series" but present, so a day built from two existing events opened with both ministries' rosters already in it. On a Collab, `isOnClusterDay` drops every "of course it's ours" shortcut — a OneTime member event's pre-existing sign-ups and a dateless cluster's whole series included — and counts only the day's stamp, the day's check-in, or a sign-up made on the day itself; `belongsOnClusterList` (`lib/clusters/roster.ts`) then removes the rest from the roster, the registrants screen and the CSV export. A **Parallel** day still keeps them, flagged: there the row *is* the thing the person asked for, and hiding it made the roster claim someone was not registered while the add-registrant screen refused to add them twice. Dropping is safe on a Collab precisely because the disposition is `reuse` — the shared form and the door can always bring an inherited row onto the day.
+
+The same rule reaches the day's tables: `breakoutCandidateWhere` (`lib/breakouts/candidate-events.ts`) scopes who may be seated to the day's registrations via `clusterDayRegistrantWhere`, so the pickers, `autoAssignBreakouts` and the "N unassigned" figure all describe the people who are actually here rather than both ministries' entire series.
+
+**A Collab day recruits its own serving team.** `/register/c/[token]/volunteer` is the staffing counterpart of the shared registration form: it asks which ministry you're part of, offers that ministry's committees and roles, and files the sign-up against that ministry's event stamped with `signUpClusterId` (`submitClusterVolunteerSignUp`). A ministry regular who already holds a `Volunteer` row is **reused, never duplicated** — the stamp goes on and the preferences just given replace what was there, while `status` is left alone so a confirmation already given isn't silently withdrawn. This is what the per-event form could not do: it refuses a second sign-up outright, so the day had no way to hear from anyone already on a ministry's roster. Collab-only, like the Volunteers screen itself.
 
 Day-scoping never reaches identity: the mobile-number step (`lookupProfileByMobile`) still resolves people against the whole Member and Guest pool. "Fresh list" is about which *registrations* count for the day, never about who we can recognise.
 
@@ -213,7 +219,9 @@ Day-scoping never reaches identity: the mobile-number step (`lookupProfileByMobi
 
 **Not yet supported on cluster-owned tables:** Catch Mech (`CatchMechSession.eventId` is required) and `OccurrenceSubFacilitator` (keyed by an event's occurrence). CSV import of breakout groups is event-only; carry-over is the cluster equivalent.
 
-**Code:** `lib/breakouts/owner.ts` (pure owner/surface types), `lib/breakouts/candidate-events.ts`, `lib/events/pool-scope.ts` (the resolver), `lib/events/require-event-write.ts` (`requireEventWrite` / `requireClusterWrite` / `requireBreakoutWrite`), `lib/clusters/aggregate.ts` (`getClusterVolunteerPool`, `getClusterBreakoutPool`, `getClusterMinistries`).
+**Public URLs (no login):** `/register/c/[token]` (shared form), `/register/c/[token]/walk-in` (door), `/register/c/[token]/check-in` (kiosk), `/register/c/[token]/volunteer` (volunteer sign-up, Collab only) — helpers in `lib/public-routes.ts`.
+
+**Code:** `lib/breakouts/owner.ts` (pure owner/surface types), `lib/breakouts/candidate-events.ts` (`breakoutCandidateEventIds` / `breakoutCandidateWhere`), `lib/events/pool-scope.ts` (the resolver), `lib/events/require-event-write.ts` (`requireEventWrite` / `requireClusterWrite` / `requireBreakoutWrite`), `lib/clusters/aggregate.ts` (`getClusterVolunteerPool`, `getClusterBreakoutPool`, `getClusterMinistries`).
 
 ---
 

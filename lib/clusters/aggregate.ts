@@ -8,6 +8,7 @@ import { getHouseholdLabels } from "@/lib/family-links"
 import { allTokensMatch } from "@/lib/search/name-search"
 import { breakoutGroupsInclude } from "@/lib/breakouts/queries"
 import { unassignedCandidateWhere } from "@/lib/breakouts/candidate-pool"
+import { breakoutCandidateWhere } from "@/lib/breakouts/candidate-events"
 import { FORM_CONTEXTS, type EventFormConfigData } from "@/lib/forms/context-config"
 import {
   getClusterFormConfigs,
@@ -37,6 +38,8 @@ import {
   buildClusterRoster,
   isOnClusterDay,
   personKeyFor,
+  belongsOnClusterList,
+  utcDayRange,
   type ClusterDayScope,
   type ClusterRegistrantRow,
   type ClusterRosterEvent,
@@ -99,20 +102,6 @@ export async function getAccessibleClusterEvents(
 ): Promise<AccessibleClusterEvent[]> {
   const events = await getClusterEvents(clusterId)
   return events.filter((e) => canAccessEvent(session, e.id))
-}
-
-/**
- * UTC day bounds for a cluster date. Cluster dates are stored as a bare day
- * (rendered with `timeZone: "UTC"` on the dashboard), so the window has to be
- * computed in UTC to match — a local-time window would slide by 8 hours here.
- */
-export function utcDayRange(date: Date): { gte: Date; lt: Date } {
-  const start = new Date(
-    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
-  )
-  const end = new Date(start)
-  end.setUTCDate(end.getUTCDate() + 1)
-  return { gte: start, lt: end }
 }
 
 /** The per-event input the day roll-up needs: identity plus the linked session, if any. */
@@ -188,6 +177,11 @@ function pickAttendance<T extends { occurrenceId: string }>(
  *
  * A null scope (or a cluster with no date and no linked sessions) keeps the
  * unscoped behavior: there is no day to scope to.
+ *
+ * The one exception is a **Collab** day, which owns its registrant list rather
+ * than wrapping the member events' — there an inherited row is not a quieter
+ * kind of registration, it is none, and `belongsOnClusterList` drops it. Reasons
+ * in full on that function.
  */
 export async function getClusterRegistrantRows(
   events: ClusterScopedEvent[],
@@ -219,7 +213,7 @@ export async function getClusterRegistrantRows(
       },
     },
   })
-  return registrants.map((r) => {
+  const rows = registrants.map((r) => {
     const linked = linkedByEvent.get(r.eventId) ?? null
     const row = {
       id: r.id,
@@ -242,6 +236,7 @@ export async function getClusterRegistrantRows(
     }
     return { ...row, onClusterDay: isOnClusterDay(row, scope) }
   })
+  return rows.filter((row) => belongsOnClusterList(row, scope))
 }
 
 /**
@@ -433,7 +428,7 @@ export async function getClusterRegistrationExportRows(
   const [cluster, events] = await Promise.all([
     db.eventCluster.findUnique({
       where: { id: clusterId },
-      select: { date: true },
+      select: { date: true, kind: true },
     }),
     getAccessibleClusterEvents(session, clusterId),
   ])
@@ -441,7 +436,11 @@ export async function getClusterRegistrationExportRows(
 
   const eventOrder = new Map(events.map((e, i) => [e.id, i]))
   const linkedByEvent = new Map(events.map((e) => [e.id, e.linkedOccurrenceId]))
-  const scope: ClusterDayScope = { clusterId, date: cluster.date }
+  const scope: ClusterDayScope = {
+    clusterId,
+    date: cluster.date,
+    kind: cluster.kind,
+  }
 
   const registrants = await db.eventRegistrant.findMany({
     where: { eventId: { in: events.map((e) => e.id) } },
@@ -504,7 +503,7 @@ export async function getClusterRegistrationExportRows(
     registrants.map((r) => ({ memberId: r.memberId, guestId: r.guestId }))
   )
 
-  const rows = registrants.map((r) => {
+  const allRows = registrants.map((r) => {
     const linked = linkedByEvent.get(r.eventId) ?? null
     // OneTime events check in via attendedAt; session events via occurrences.
     const checkedInAt =
@@ -586,10 +585,13 @@ export async function getClusterRegistrationExportRows(
   })
 
   // Same day scope as the roster and the dashboard — an export launched from
-  // the registrants screen must describe the day that screen is showing. The
-  // series-only rows travel with it rather than being dropped, carrying their
-  // own participation value, so the spreadsheet can distinguish "wasn't here"
-  // from "we have no record of them" the way the roster now does.
+  // the registrants screen must describe the day that screen is showing. On a
+  // Parallel day the series-only rows travel with it rather than being dropped,
+  // carrying their own participation value, so the spreadsheet can distinguish
+  // "wasn't here" from "we have no record of them" the way the roster does. A
+  // Collab day has no series-only rows to carry: they are not part of that day's
+  // list on any surface, and an export is no place to reintroduce them.
+  const rows = allRows.filter((row) => belongsOnClusterList(row, scope))
   //
   // Fold day rows first, then in cluster order: when two registrations disagree
   // on a per-event answer (a nickname, a dietary note) the day's answer wins,
@@ -796,7 +798,7 @@ export async function getClusterOverview(
   const [cluster, events] = await Promise.all([
     db.eventCluster.findUnique({
       where: { id: clusterId },
-      select: { date: true },
+      select: { date: true, kind: true },
     }),
     getAccessibleClusterEvents(session, clusterId),
   ])
@@ -804,7 +806,7 @@ export async function getClusterOverview(
   const [rows, seriesTotals] = await Promise.all([
     getClusterRegistrantRows(
       events,
-      cluster ? { clusterId, date: cluster.date } : null
+      cluster ? { clusterId, date: cluster.date, kind: cluster.kind } : null
     ),
     getClusterSeriesTotals(eventIds),
   ])
@@ -868,8 +870,21 @@ export type ClusterVolunteerRow = Awaited<
 >["volunteers"][number]
 
 /**
- * Every confirmed-or-pending volunteer across the day's member events, plus the
- * committees to filter by.
+ * The day's serving team, plus the committees to filter by.
+ *
+ * Which volunteers those are is the whole question, and the answer changed once
+ * the day could recruit for itself. The member events of a collab are
+ * long-running ministry events whose rosters hold everyone who ever signed up to
+ * serve them — the day inheriting that list told an admin who has volunteered at
+ * Youth, never who is serving on Saturday. So the default is `scope: "day"`:
+ * sign-ups stamped with this cluster by its shared volunteer form. `"all"` is the
+ * old union, kept as a deliberate choice rather than the default — the standing
+ * rosters are still the pool a facilitator can be drawn from, and staff filling
+ * gaps want to see them.
+ *
+ * The rows stay owned by the event each person signed up under either way, and
+ * the table badges it: someone volunteers under a *ministry*, and a collab day
+ * doesn't erase that.
  *
  * Scoped to the events this user may see: a staff user with access to one
  * ministry's event sees that ministry's serving team and not the partner's, which
@@ -879,19 +894,27 @@ export type ClusterVolunteerRow = Awaited<
 export async function getClusterVolunteerPool(
   session: Session | null,
   clusterId: string,
-  filters?: { search?: string; status?: string; committeeId?: string }
+  filters?: {
+    search?: string
+    status?: string
+    committeeId?: string
+    /** `"day"` (default) = signed up through this day's form; `"all"` = both standing rosters. */
+    scope?: "day" | "all"
+  }
 ) {
   const events = await getAccessibleClusterEvents(session, clusterId)
   const eventIds = events.map((e) => e.id)
   if (eventIds.length === 0) {
-    return { volunteers: [], committees: [], events: [] }
+    return { volunteers: [], committees: [], events: [], dayCount: 0, allCount: 0 }
   }
 
   const status = filters?.status
-  const [volunteers, committees] = await Promise.all([
+  const dayOnly = filters?.scope !== "all"
+  const [volunteers, committees, dayCount, allCount] = await Promise.all([
     db.volunteer.findMany({
       where: {
         eventId: { in: eventIds },
+        ...(dayOnly ? { signUpClusterId: clusterId } : {}),
         AND: [
           status === "Pending" || status === "Confirmed" || status === "Rejected"
             ? { status }
@@ -924,9 +947,17 @@ export async function getClusterVolunteerPool(
       orderBy: [{ eventId: "asc" }, { name: "asc" }],
       select: { id: true, name: true, eventId: true },
     }),
+    // Both totals, unfiltered, so the screen can say what each scope holds
+    // before you switch to it — an empty day list means "nobody has signed up
+    // yet", and the other figure is what makes that readable rather than
+    // alarming.
+    db.volunteer.count({
+      where: { eventId: { in: eventIds }, signUpClusterId: clusterId },
+    }),
+    db.volunteer.count({ where: { eventId: { in: eventIds } } }),
   ])
 
-  return { volunteers, committees, events }
+  return { volunteers, committees, events, dayCount, allCount }
 }
 
 /**
@@ -942,6 +973,13 @@ export async function getClusterBreakoutPool(session: Session | null, clusterId:
   const eventIds = events.map((e) => e.id)
 
   const owner = { clusterId }
+  // "The day's people", not "everyone on either ministry's series" — the same
+  // pool the pickers and auto-assign draw from, so the header figure and the
+  // list underneath can't disagree. Narrowed to the events this user may see.
+  const candidateWhere = {
+    ...(await breakoutCandidateWhere(owner)),
+    eventId: { in: eventIds },
+  }
   const [groups, volunteers, unseatedRows, registrantCount] = await Promise.all([
     db.breakoutGroup.findMany({ where: owner, ...breakoutGroupsInclude }),
     eventIds.length
@@ -980,13 +1018,13 @@ export async function getClusterBreakoutPool(session: Session | null, clusterId:
       : [],
     eventIds.length
       ? db.eventRegistrant.findMany({
-          where: { eventId: { in: eventIds }, ...unassignedCandidateWhere(owner) },
+          where: { ...candidateWhere, ...unassignedCandidateWhere(owner) },
           select: { id: true, memberId: true, guestId: true },
         })
       : [],
     eventIds.length
       ? db.eventRegistrant.findMany({
-          where: { eventId: { in: eventIds } },
+          where: candidateWhere,
           select: { id: true, memberId: true, guestId: true },
         })
       : [],
