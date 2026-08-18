@@ -382,6 +382,15 @@ export async function addRegistrantsToBreakout(
   const ids = [...new Set(parsed.data.registrantIds)]
   if (ids.length === 0) return { success: true, data: { added: 0, failed: [] } }
 
+  // Event-scoped on purpose, not day-scoped like `breakoutCandidateWhere`.
+  //
+  // On a Collab the picker and `autoAssignBreakouts` narrow to the day's
+  // registrations, because they are *choosing* people and both ministries' whole
+  // series is the wrong list to choose from. This action is the admin acting on a
+  // choice already made, so it stays the wider check: anyone registered to one of
+  // the day's events. `carryOverBreakoutGroups` seats people on inherited series
+  // rows that hold no day registration, and a walk-in can be seated before their
+  // registration catches up — narrowing here would refuse both.
   const candidateEventIds = await breakoutCandidateEventIds(owner)
   const spansEvents = candidateEventIds.length > 1
 
@@ -575,6 +584,8 @@ export async function transferRegistrantToBreakout(
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
   }
 
+  // Event-scoped for the same reason as `addRegistrantsToBreakout`, and more
+  // plainly so: a transfer moves somebody already sitting at one of these tables.
   const candidateEventIds = await breakoutCandidateEventIds(owner)
 
   try {
