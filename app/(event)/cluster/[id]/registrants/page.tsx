@@ -7,6 +7,7 @@ import {
   getClusterDayRows,
 } from "@/lib/clusters/aggregate"
 import { buildClusterRoster, personTypeFor, standingFor } from "@/lib/clusters/roster"
+import { exportFilename } from "@/lib/exports/filename"
 import { canExport } from "@/lib/permissions"
 import { DetailPageHeader } from "@/components/detail-page-header"
 import { ClusterExportButton } from "./cluster-export-button"
@@ -91,12 +92,7 @@ export default async function ClusterRegistrantsPage({
   const registrationCount = dayRows.filter((r) => r.kind === "Registrant").length
   const volunteerCount = dayRows.filter((r) => r.kind === "Volunteer").length
 
-  const exportDate = (cluster.date ?? new Date()).toISOString().split("T")[0]
-  const exportSlug =
-    cluster.name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "") || "cluster"
+  const filename = exportFilename(cluster.name, "registrations", cluster.date)
 
   return (
     <>
@@ -106,7 +102,7 @@ export default async function ClusterRegistrantsPage({
           canExport(session, "Events") ? (
             <ClusterExportButton
               clusterId={cluster.id}
-              filename={`${exportSlug}-registrations-${exportDate}`}
+              filename={filename}
               disabled={rows.length === 0}
             />
           ) : null

@@ -1,10 +1,14 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
+import { buildSessionsSummaryTable } from "@/lib/export-entities"
 import {
+  buildSessionAttendanceColumns,
   buildSessionAttendanceTable,
-  buildSessionsSummaryTable,
-} from "@/lib/export-entities"
+  sessionAttendanceColumns,
+  type SessionAttendanceExportRow,
+} from "@/lib/exports/session-attendance"
+import { defaultSelectedColumns } from "@/lib/exports/columns"
 import { getSessionsAttendanceExport } from "@/app/(event)/event/[id]/sessions/export-actions"
 
 vi.mock("@/lib/auth", () => ({
@@ -93,19 +97,27 @@ describe("buildSessionsSummaryTable", () => {
   })
 })
 
-describe("buildSessionAttendanceTable", () => {
-  const row = {
+describe("session attendance columns", () => {
+  const row: SessionAttendanceExportRow = {
     sessionDate: "2026-03-01",
     seriesTitle: "March Run",
     firstName: "Juan",
     lastName: "Dela Cruz",
+    nickname: null,
     mobile: "+63 917 123 4567",
+    email: null,
     type: "Member" as const,
     checkedInAt: "2026-03-01T01:30:00.000Z", // 09:30 in Asia/Manila
   }
 
-  it("formats check-in time in Asia/Manila and includes the series column when recurring", () => {
-    const { headers, cells } = buildSessionAttendanceTable([row], true)
+  function allColumns(rows: SessionAttendanceExportRow[]) {
+    const columns = buildSessionAttendanceColumns(rows)
+    return { columns, selected: defaultSelectedColumns(columns) }
+  }
+
+  it("formats check-in time in Asia/Manila", () => {
+    const { selected } = allColumns([row])
+    const { headers, cells } = buildSessionAttendanceTable([row], selected)
     expect(headers).toEqual([
       "Session Date",
       "Series",
@@ -128,8 +140,11 @@ describe("buildSessionAttendanceTable", () => {
     expect(String(cell[6]).toLowerCase()).toContain("9:30")
   })
 
-  it("omits the series column when not recurring", () => {
-    const { headers, cells } = buildSessionAttendanceTable([row], false)
+  it("drops the series column when no row carries one", () => {
+    const { columns, selected } = allColumns([{ ...row, seriesTitle: null }])
+    expect(columns.map((c) => c.key)).not.toContain("seriesTitle")
+
+    const { headers, cells } = buildSessionAttendanceTable([row], selected)
     expect(headers).toEqual([
       "Session Date",
       "First Name",
@@ -139,6 +154,43 @@ describe("buildSessionAttendanceTable", () => {
       "Checked In",
     ])
     expect(cells[0]).toHaveLength(6)
+  })
+
+  it("offers nickname and email only once some row holds one", () => {
+    const bare = buildSessionAttendanceColumns([row]).map((c) => c.key)
+    expect(bare).not.toContain("nickname")
+    expect(bare).not.toContain("email")
+
+    const filled = buildSessionAttendanceColumns([
+      { ...row, nickname: "JD", email: "juan@example.com" },
+    ]).map((c) => c.key)
+    expect(filled).toContain("nickname")
+    expect(filled).toContain("email")
+  })
+
+  it("never flags an optional column as no longer asked", () => {
+    // Nothing here is form-gathered, so no column should read as switched off.
+    const columns = buildSessionAttendanceColumns([
+      { ...row, nickname: "JD", email: "juan@example.com" },
+    ])
+    expect(columns.every((c) => c.core)).toBe(true)
+  })
+
+  it("renders the ticked columns in registry order, not tick order", () => {
+    const { headers } = buildSessionAttendanceTable(
+      [row],
+      ["checkedInAt", "firstName", "sessionDate"],
+    )
+    expect(headers).toEqual(["Session Date", "First Name", "Checked In"])
+  })
+
+  it("returns headers only when there are no rows", () => {
+    const { headers, cells } = buildSessionAttendanceTable(
+      [],
+      sessionAttendanceColumns().map((c) => c.key),
+    )
+    expect(headers.length).toBeGreaterThan(0)
+    expect(cells).toEqual([])
   })
 })
 
@@ -281,9 +333,9 @@ describe("getSessionsAttendanceExport", () => {
     expect(result.success).toBe(true)
     if (!result.success) return
 
-    expect(result.data).toHaveLength(5)
+    expect(result.data.rows).toHaveLength(5)
     // Sorted by check-in time within the occurrence — volunteer checked in first
-    expect(result.data[0]).toMatchObject({
+    expect(result.data.rows[0]).toMatchObject({
       sessionDate: "2026-03-01",
       seriesTitle: "March Run",
       firstName: "Vince",
@@ -291,27 +343,27 @@ describe("getSessionsAttendanceExport", () => {
       mobile: "+63 917 777 8888",
       type: "Volunteer",
     })
-    expect(result.data[1]).toMatchObject({
+    expect(result.data.rows[1]).toMatchObject({
       firstName: "Maria",
       lastName: "Santos",
       mobile: "+63 917 111 2222",
       type: "Member",
     })
-    expect(result.data[2]).toMatchObject({
+    expect(result.data.rows[2]).toMatchObject({
       firstName: "Pedro",
       lastName: "Reyes",
       mobile: "+63 917 333 4444",
       type: "Guest",
     })
     // Walk-in falls back to the registrant's own personal fields
-    expect(result.data[3]).toMatchObject({
+    expect(result.data.rows[3]).toMatchObject({
       firstName: "Ana",
       lastName: "Lopez",
       mobile: "+63 917 555 6666",
       type: "Guest",
     })
     // Sessions are ordered by date — the second session's check-in comes last
-    expect(result.data[4]).toMatchObject({
+    expect(result.data.rows[4]).toMatchObject({
       sessionDate: "2026-03-08",
       firstName: "Maria",
       lastName: "Santos",
@@ -325,8 +377,8 @@ describe("getSessionsAttendanceExport", () => {
     expect(result.success).toBe(true)
     if (!result.success) return
 
-    expect(result.data).toHaveLength(1)
-    expect(result.data[0]).toMatchObject({
+    expect(result.data.rows).toHaveLength(1)
+    expect(result.data.rows[0]).toMatchObject({
       sessionDate: "2026-03-08",
       seriesTitle: "March Run",
       firstName: "Maria",
@@ -347,7 +399,7 @@ describe("getSessionsAttendanceExport", () => {
     })
 
     const result = await getSessionsAttendanceExport(otherEvent.id, secondOccurrence.id)
-    expect(result).toEqual({ success: true, data: [] })
+    expect(result.success && result.data.rows).toEqual([])
   })
 
   it("returns an empty list for an event with no attendance", async () => {
@@ -361,7 +413,7 @@ describe("getSessionsAttendanceExport", () => {
     })
 
     const result = await getSessionsAttendanceExport(event.id)
-    expect(result).toEqual({ success: true, data: [] })
+    expect(result.success && result.data.rows).toEqual([])
   })
 
   it("rejects unauthenticated callers", async () => {
@@ -381,6 +433,32 @@ describe("getSessionsAttendanceExport", () => {
     } as never)
 
     const result = await getSessionsAttendanceExport("any-event")
+    expect(result).toEqual({ success: false, error: "Unauthorized." })
+  })
+
+  // Regression: the Events grant said "may export", but nothing said "may export
+  // THIS event" — so a staffer scoped to one event could pull any other event's
+  // attendance sheet, names, mobiles and emails included.
+  it("rejects a staffer who may export but has no access to this event", async () => {
+    const event = await db.event.create({
+      data: {
+        name: "Scoped Out",
+        type: "Recurring",
+        startDate: new Date("2026-05-01T00:00:00Z"),
+        endDate: new Date("2026-05-01T00:00:00Z"),
+      },
+    })
+
+    vi.mocked(auth).mockResolvedValue({
+      user: {
+        ...adminSession.user,
+        role: "Staff",
+        permissions: [{ feature: "Events", actions: ["Read", "Write", "Export"] }],
+        eventAccess: ["some-other-event"],
+      },
+    } as never)
+
+    const result = await getSessionsAttendanceExport(event.id)
     expect(result).toEqual({ success: false, error: "Unauthorized." })
   })
 })

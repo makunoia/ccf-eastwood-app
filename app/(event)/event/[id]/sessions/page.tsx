@@ -12,6 +12,7 @@ async function getEventSessions(id: string) {
     where: { id },
     select: {
       id: true,
+      name: true,
       type: true,
       startDate: true,
       endDate: true,
@@ -98,6 +99,7 @@ export default async function SessionsPage({
   return (
     <SessionsClient
       eventId={event.id}
+      eventName={event.name}
       eventType={event.type}
       occurrences={occurrences}
       seriesGroups={recurringGroups?.groups ?? []}

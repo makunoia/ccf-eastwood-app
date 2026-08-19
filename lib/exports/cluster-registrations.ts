@@ -1,12 +1,22 @@
 import type { CSVCell } from "@/lib/csv-export"
-import type { EventFormConfigData, FormToggleKey } from "@/lib/forms/context-config"
+import type { EventFormConfigData } from "@/lib/forms/context-config"
+import {
+  buildExportColumns,
+  buildExportTable,
+  defaultSelectedColumns,
+  formatManilaDateTime,
+  sortByGroup,
+  yesNo,
+  type ExportColumnDef,
+  type ExportColumnState,
+} from "./columns"
 
 /**
  * Column model for the Event Cluster registrations export.
  *
- * Pure and framework-free: the server uses it to work out which columns a
- * cluster's forms actually gather, the client uses the same registry to render
- * the column picker and build the CSV. No Prisma, no Blob — importable by both.
+ * The generic column machinery lives in `./columns.ts`; this module is the
+ * cluster's registry over it — the row shape, the groups, and what "does one of
+ * the day's forms ask this?" means for a cluster.
  *
  * **One row per PERSON, not per registration.** A cluster is one day, and a
  * person on three of that day's events is one person — exporting them three
@@ -15,16 +25,9 @@ import type { EventFormConfigData, FormToggleKey } from "@/lib/forms/context-con
  * instead, one column per cluster event, mirroring the roster matrix on the
  * registrants screen the export is launched from.
  *
- * Two ideas carried over from `lib/forms/registration-responses.ts`, because an
- * export that disagrees with the registrant detail page would be worse than no
- * export at all:
- *
- * 1. **Union across forms.** We don't record which surface someone came through,
- *    so a field counts as gathered if ANY of the cluster's forms (each event's
- *    Register / Walk-in / Check-in, plus the cluster's shared form) collects it.
- * 2. **A value is never hidden.** A field whose toggle has since been switched
- *    off still exports when answers exist — it is simply flagged as no longer
- *    asked, so an admin can tell "nobody answered" from "we stopped asking".
+ * A field counts as gathered if ANY of the cluster's forms (each event's
+ * Register / Walk-in / Check-in, plus the cluster's shared form) collects it —
+ * see the rules in `./columns.ts`.
  */
 
 /** An event of the cluster, as a column in the export. */
@@ -121,34 +124,12 @@ export const CLUSTER_EXPORT_GROUPS = [
 
 export type ClusterExportGroup = (typeof CLUSTER_EXPORT_GROUPS)[number]
 
-type ColumnDef = {
-  key: string
-  label: string
-  group: ClusterExportGroup
-  /** The form toggle that gathers this, or null for the always-collected core. */
-  toggle: FormToggleKey | null
-  value: (row: ClusterRegistrationExportRow) => CSVCell
-}
+type ColumnDef = ExportColumnDef<ClusterRegistrationExportRow, ClusterExportGroup>
 
 /** Column key for one of the cluster's events. Namespaced so it can't collide. */
 export function eventColumnKey(eventId: string): string {
   return `event:${eventId}`
 }
-
-function formatManilaDateTime(iso: string | null): string {
-  if (!iso) return ""
-  const d = new Date(iso)
-  // en-CA gives yyyy-mm-dd, which sorts correctly in a spreadsheet.
-  const date = d.toLocaleDateString("en-CA", { timeZone: "Asia/Manila" })
-  const time = d.toLocaleTimeString("en-PH", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Asia/Manila",
-  })
-  return `${date} ${time}`
-}
-
-const yesNo = (v: boolean): string => (v ? "Yes" : "No")
 
 /**
  * Every column that doesn't depend on which events the cluster holds, in export
@@ -190,7 +171,10 @@ export const CLUSTER_EXPORT_COLUMNS: readonly ColumnDef[] = [
   { key: "breakoutGroup", label: "Breakout Group", group: "Breakout Group", toggle: "sectionBreakout", value: (r) => r.breakoutGroup },
   { key: "household", label: "Household", group: "Your Household", toggle: "sectionFamily", value: (r) => r.household },
   { key: "dietary", label: "Dietary Preference", group: "Dietary Preferences", toggle: "sectionDietary", value: (r) => r.dietary },
-  { key: "isPaid", label: "Paid", group: "Payment", toggle: "sectionPayment", value: (r) => yesNo(r.isPaid) },
+  // "Yes"/"No" is never blank, so the default emptiness test would call this
+  // populated for every cluster and offer a payment column to events that don't
+  // charge. Someone actually being marked paid is the real signal.
+  { key: "isPaid", label: "Paid", group: "Payment", toggle: "sectionPayment", hasData: (rows) => rows.some((r) => r.isPaid), value: (r) => yesNo(r.isPaid) },
   { key: "paymentReference", label: "Payment Reference", group: "Payment", toggle: "sectionPayment", value: (r) => r.paymentReference },
 ]
 
@@ -216,81 +200,33 @@ export function clusterExportColumns(events: ClusterExportEvent[]): ColumnDef[] 
       return participation ? PARTICIPATION_LABEL[participation] : ""
     },
   }))
-  const order = (group: ClusterExportGroup) => CLUSTER_EXPORT_GROUPS.indexOf(group)
-  return [...CLUSTER_EXPORT_COLUMNS, ...eventColumns].sort(
-    (a, b) => order(a.group) - order(b.group),
-  )
+  return sortByGroup([...CLUSTER_EXPORT_COLUMNS, ...eventColumns], CLUSTER_EXPORT_GROUPS)
 }
 
-/** A column offered in the picker, with why it is on offer. */
-export type ClusterExportColumnState = {
-  key: string
-  label: string
-  group: ClusterExportGroup
-  /** Always exportable — identity and registration metadata, not a form toggle. */
-  core: boolean
-  /** One of the cluster's forms currently asks for this. */
-  collected: boolean
-  /** At least one registration in the cluster has an answer. */
-  hasData: boolean
-}
-
-function isEmpty(cell: CSVCell): boolean {
-  return cell === null || cell === undefined || String(cell).trim() === ""
-}
+export type ClusterExportColumnState = ExportColumnState<ClusterExportGroup>
 
 /**
- * Which columns to offer for a cluster: the core, plus every form-gathered
- * column that is either still asked or already has answers. A field that was
- * never asked and holds nothing is left out entirely — an all-blank column is
- * noise, not information.
- *
- * `isPaid` needs its own data test. It renders as "Yes"/"No", never blank, so
- * the emptiness check would call it populated for every cluster and offer a
- * payment column to events that don't charge. Someone actually being marked
- * paid is the real signal.
+ * Which columns to offer for a cluster. A field counts as asked when any of the
+ * day's forms collects it — the union is computed upstream by
+ * `getClusterFormCoverage`, so all that's left here is the lookup.
  */
 export function buildClusterExportColumns(
   config: EventFormConfigData,
   rows: ClusterRegistrationExportRow[],
   events: ClusterExportEvent[] = [],
 ): ClusterExportColumnState[] {
-  return clusterExportColumns(events).flatMap((column): ClusterExportColumnState[] => {
-    const collected = column.toggle ? config[column.toggle] === true : false
-    const hasData =
-      column.key === "isPaid"
-        ? rows.some((r) => r.isPaid)
-        : rows.some((r) => !isEmpty(column.value(r)))
-    if (!column.toggle) {
-      return [{ key: column.key, label: column.label, group: column.group, core: true, collected: true, hasData }]
-    }
-    if (!collected && !hasData) return []
-    return [{ key: column.key, label: column.label, group: column.group, core: false, collected, hasData }]
-  })
+  return buildExportColumns(clusterExportColumns(events), rows, (column) =>
+    column.toggle ? config[column.toggle] === true : false,
+  )
 }
 
-/**
- * The picker's starting state: everything on offer. A column only reaches the
- * picker because it is core, still asked, or holds answers — so the honest
- * default is "export it all" and let the admin narrow.
- */
-export function defaultSelectedColumns(columns: ClusterExportColumnState[]): string[] {
-  return columns.map((c) => c.key)
-}
+export { defaultSelectedColumns }
 
-/**
- * Table for the chosen columns. Order always follows the registry, never the
- * order the admin happened to tick the boxes in.
- */
+/** Table for the chosen columns, in registry order. */
 export function buildClusterRegistrationsTable(
   rows: ClusterRegistrationExportRow[],
   selectedKeys: string[],
   events: ClusterExportEvent[] = [],
 ): { headers: string[]; cells: CSVCell[][] } {
-  const selected = new Set(selectedKeys)
-  const columns = clusterExportColumns(events).filter((c) => selected.has(c.key))
-  return {
-    headers: columns.map((c) => c.label),
-    cells: rows.map((row) => columns.map((c) => c.value(row))),
-  }
+  return buildExportTable(clusterExportColumns(events), rows, selectedKeys)
 }

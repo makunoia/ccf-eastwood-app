@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
-import { canWrite } from "@/lib/permissions"
+import { canExport, canWrite } from "@/lib/permissions"
 import { getEffectiveFormConfig } from "@/lib/forms/context-config-server"
 import { BatchSelectionProvider } from "@/components/batch/batch-selection-provider"
 import { RegistrantsClient } from "./registrants-client"
@@ -16,6 +16,7 @@ async function getEventRegistrants(id: string, search: string, typeFilter: strin
     where: { id },
     select: {
       id: true,
+      name: true,
       type: true,
       price: true,
       modules: { select: { type: true } },
@@ -111,9 +112,11 @@ export default async function RegistrantsPage({
     >
       <RegistrantsClient
         eventId={event.id}
+        eventName={event.name}
         eventType={event.type}
         isPaidEvent={isPricedEvent}
         formIncludePayment={collectsPayment}
+        canExport={canExport(session, "Events")}
         search={search}
         typeFilter={typeFilter}
         registrants={event.registrants.map((r) => ({

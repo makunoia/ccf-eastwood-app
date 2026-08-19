@@ -46,6 +46,12 @@ import {
   resolveClusterCheckinTargets,
 } from "@/lib/clusters/aggregate"
 import {
+  planClusterCheckinToggle,
+  type ClusterCheckinSkipCause,
+} from "@/lib/clusters/checkin-toggle"
+import { setFormOpen } from "@/app/(dashboard)/forms/actions"
+import { setOccurrenceCheckinOpen } from "@/app/(dashboard)/events/actions"
+import {
   buildClusterCheckinPeople,
   skipReasonFor,
   type ClusterCheckinPerson,
@@ -79,13 +85,29 @@ async function requireWrite(): Promise<{ error: string } | null> {
   return null
 }
 
-function revalidateClusterPaths(clusterId: string) {
+/**
+ * Every authenticated surface that shows a cluster's state, plus — when the caller
+ * knows the token — the public forms whose open/closed state it decides.
+ *
+ * The Forms pages and the kiosk used to be left out, which was survivable while
+ * the switches only described themselves. `setClusterCheckinOpen` now writes
+ * member-event state that both of those screens read back, so a stale render there
+ * would show a staffer the opposite of what they just did.
+ */
+function revalidateClusterPaths(clusterId: string, publicToken?: string) {
   revalidatePath("/events/clusters")
   revalidatePath(`/cluster/${clusterId}`)
   revalidatePath(`/cluster/${clusterId}/registrants`)
   revalidatePath(`/cluster/${clusterId}/checkin`)
   revalidatePath(`/cluster/${clusterId}/settings`)
   revalidatePath(`/cluster/${clusterId}/volunteers`)
+  revalidatePath(`/cluster/${clusterId}/forms`)
+  revalidatePath(`/cluster/${clusterId}/forms/check-in`)
+  if (publicToken) {
+    revalidatePath(`/register/c/${publicToken}`)
+    revalidatePath(`/register/c/${publicToken}/walk-in`)
+    revalidatePath(`/register/c/${publicToken}/check-in`)
+  }
 }
 
 /**
@@ -245,9 +267,7 @@ export async function updateEventCluster(
       Object.entries(parsed.data).filter(([, v]) => v !== undefined)
     )
     await db.eventCluster.update({ where: { id: clusterId }, data })
-    revalidateClusterPaths(clusterId)
-    revalidatePath(`/register/c/${cluster.publicToken}`)
-    revalidatePath(`/register/c/${cluster.publicToken}/walk-in`)
+    revalidateClusterPaths(clusterId, cluster.publicToken)
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to update the event cluster." }
@@ -945,6 +965,131 @@ export async function carryOverBreakoutGroups(
     return { success: true, data: { created, membersCopied, membersSkipped } }
   } catch {
     return { success: false, error: "Failed to carry over breakout groups" }
+  }
+}
+
+// ─── Opening the day's check-in ──────────────────────────────────────────────
+
+export type ClusterEventCheckinResult = {
+  eventId: string
+  eventName: string
+  status: "opened" | "closed" | "created" | "skipped" | "failed"
+  reason?: ClusterCheckinSkipCause
+}
+
+/**
+ * Open (or close) check-in for the whole day — the kiosk *and* every member event.
+ *
+ * `EventCluster.checkInIsOpen` only ever governed the day's own kiosk door. What
+ * decides whether a person standing at that kiosk can actually be checked in to an
+ * event is the event's own control: a `FormConfig("EventCheckIn")` row for OneTime,
+ * an `EventOccurrence.isOpen` for a session event. So opening a day meant flipping
+ * this switch and then walking into each member event to flip its own — and until
+ * every one was open the kiosk found the person and silently passed their events
+ * over (`skipReasonFor` → `formClosed` / `sessionClosed` / `noSession`), which on a
+ * Collab day it can't even name.
+ *
+ * This is the one switch. It reuses the per-event actions rather than writing the
+ * columns itself, so opening a session from here is indistinguishable from opening
+ * it on the event's own Sessions page — the walk-in door moves the same way, and
+ * there is no second code path to drift.
+ *
+ * A session event with no session for the day gets one created at the cluster's
+ * date and pinned to the link, which is the `noSession` case the day's Shortcuts
+ * could previously only send a staffer away to fix by hand.
+ *
+ * The cluster's own switch is all-or-nothing and goes first: the day's door must
+ * flip even if a member event then fails. Past that it is a fan-out in the shape
+ * `registerForCluster` established — per-item `try/catch`, a typed status per
+ * event, and `success: true` once the loop has run, because the caller decides
+ * what a partial result means.
+ */
+export async function setClusterCheckinOpen(
+  clusterId: string,
+  isOpen: boolean
+): Promise<ActionResult<{ results: ClusterEventCheckinResult[] }>> {
+  const authError = await requireClusterWrite(clusterId)
+  if (authError) return { success: false, error: authError.error }
+
+  try {
+    const cluster = await db.eventCluster.findUnique({
+      where: { id: clusterId },
+      select: { id: true, publicToken: true, date: true },
+    })
+    if (!cluster) return { success: false, error: "Event cluster not found." }
+
+    await db.eventCluster.update({
+      where: { id: clusterId },
+      data: { checkInIsOpen: isOpen },
+    })
+
+    const events = await getClusterEvents(clusterId)
+    const targets = await resolveClusterCheckinTargets(events, cluster.date)
+    const ops = planClusterCheckinToggle(targets, isOpen, cluster.date)
+
+    const results: ClusterEventCheckinResult[] = []
+    const done = isOpen ? "opened" : "closed"
+
+    for (const op of ops) {
+      const base = { eventId: op.eventId, eventName: op.eventName }
+      try {
+        switch (op.kind) {
+          case "skip":
+            results.push({ ...base, status: "skipped", reason: op.reason })
+            break
+
+          case "formConfig": {
+            const result = await setFormOpen("EventCheckIn", op.eventId, isOpen)
+            results.push({ ...base, status: result.success ? done : "failed" })
+            break
+          }
+
+          case "occurrence": {
+            const result = await setOccurrenceCheckinOpen(op.occurrenceId, isOpen)
+            results.push({ ...base, status: result.success ? done : "failed" })
+            break
+          }
+
+          case "createSession": {
+            // Upsert rather than create: `@@unique([eventId, date])` makes a
+            // concurrent open idempotent instead of a crash.
+            const occurrence = await db.eventOccurrence.upsert({
+              where: { eventId_date: { eventId: op.eventId, date: op.date } },
+              create: { eventId: op.eventId, date: op.date },
+              update: {},
+              select: { id: true },
+            })
+            const result = await setOccurrenceCheckinOpen(occurrence.id, true)
+            if (!result.success) {
+              results.push({ ...base, status: "failed" })
+              break
+            }
+            // Pin the link to the session we just made, so tomorrow's read
+            // resolves it by name instead of falling back to the date window.
+            // Safe by construction: it is dated to the cluster's own day, which
+            // is exactly what `validateClusterEventLink` requires.
+            await db.eventClusterEvent.update({
+              where: { clusterId_eventId: { clusterId, eventId: op.eventId } },
+              data: { occurrenceId: occurrence.id },
+            })
+            results.push({ ...base, status: "created" })
+            break
+          }
+        }
+      } catch {
+        results.push({ ...base, status: "failed" })
+      }
+    }
+
+    for (const r of results) {
+      revalidatePath(`/event/${r.eventId}/sessions`)
+      revalidatePath(`/event/${r.eventId}/forms/EventCheckIn`)
+    }
+    revalidateClusterPaths(clusterId, cluster.publicToken)
+
+    return { success: true, data: { results } }
+  } catch {
+    return { success: false, error: "Failed to update check-in for the day." }
   }
 }
 

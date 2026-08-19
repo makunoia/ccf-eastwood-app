@@ -5,6 +5,7 @@ import { canAccessEvent } from "@/lib/permissions"
 import type { Session } from "next-auth"
 import type { EventType } from "@/app/generated/prisma/client"
 import { getHouseholdLabels } from "@/lib/family-links"
+import { PERSON_PROFILE_SELECT } from "@/lib/people/profile-select"
 import { allTokensMatch } from "@/lib/search/name-search"
 import { breakoutGroupsInclude } from "@/lib/breakouts/queries"
 import { unassignedCandidateWhere } from "@/lib/breakouts/candidate-pool"
@@ -460,21 +461,6 @@ export async function getClusterSharedFormPeopleCounts(
   }
   return new Map([...byCluster].map(([id, people]) => [id, people.size]))
 }
-
-/** Personal/matching fields, selected identically for Member and Guest. */
-const PERSON_PROFILE_SELECT = {
-  nickname: true,
-  email: true,
-  phone: true,
-  gender: true,
-  birthMonth: true,
-  birthYear: true,
-  workCity: true,
-  language: true,
-  meetingPreference: true,
-  lifeStage: { select: { name: true } },
-  ageRangeBucket: { select: { label: true } },
-} as const
 
 /** First non-null wins — profile answers repeat across a person's registrations. */
 function firstOf<T>(existing: T | null, incoming: T | null): T | null {
