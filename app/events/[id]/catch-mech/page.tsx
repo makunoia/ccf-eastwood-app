@@ -7,6 +7,7 @@ import { PublicFormShell } from "@/components/public-form-shell"
 import { FormClosed } from "@/components/form-closed"
 import { getFormConfig, resolveFormTheme } from "@/lib/forms/config"
 import { resolveEventBrand } from "@/lib/forms/event-brand"
+import { resolveCatchMechScope } from "@/lib/catch-mech/scope"
 
 async function getEventData(id: string) {
   const event = await db.event.findUnique({
@@ -20,15 +21,6 @@ async function getEventData(id: string) {
       themeColorPrimary: true,
       registrationPageBannerUrl: true,
       modules: { select: { type: true } },
-      breakoutGroups: {
-        orderBy: { name: "asc" },
-        select: {
-          id: true,
-          name: true,
-          facilitatorId: true,
-          coFacilitatorId: true,
-        },
-      },
       ministries: {
         select: {
           ministry: {
@@ -45,6 +37,36 @@ async function getEventData(id: string) {
   if (!event) return null
   if (!event.modules.some((m) => m.type === "CatchMech")) return null
   return event
+}
+
+/**
+ * The tables a facilitator can pick from. Under a Collab these are the CLUSTER's
+ * tables endorsed to this event, not the event's own standing groups — see
+ * `lib/catch-mech/scope.ts`.
+ *
+ * Only tables somebody can answer for are offered: an unstaffed table has no one
+ * who could pass verification, so listing it is a dead end.
+ */
+async function getCatchMechGroups(eventId: string) {
+  const scope = await resolveCatchMechScope(eventId)
+  return db.breakoutGroup.findMany({
+    // AND, not a spread: the Collab scope is itself an OR over the staffing
+    // roles, and two OR keys in one object silently overwrite each other.
+    where: {
+      AND: [
+        scope.where,
+        {
+          OR: [
+            { facilitatorId: { not: null } },
+            { coFacilitatorId: { not: null } },
+            { subFacilitators: { some: {} } },
+          ],
+        },
+      ],
+    },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true },
+  })
 }
 
 export async function generateMetadata({
@@ -69,9 +91,7 @@ export default async function CatchMechEntryPage({
   const formConfig = await getFormConfig("CatchMech", id)
   if (!formConfig.isOpen) return <FormClosed />
 
-  const groups = event.breakoutGroups.filter(
-    (g) => g.facilitatorId || g.coFacilitatorId
-  )
+  const groups = await getCatchMechGroups(id)
 
   const brand = resolveEventBrand(event)
   const theme = resolveFormTheme(formConfig, {

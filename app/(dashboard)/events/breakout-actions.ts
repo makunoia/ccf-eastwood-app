@@ -382,6 +382,15 @@ export async function addRegistrantsToBreakout(
   const ids = [...new Set(parsed.data.registrantIds)]
   if (ids.length === 0) return { success: true, data: { added: 0, failed: [] } }
 
+  // Event-scoped on purpose, not day-scoped like `breakoutCandidateWhere`.
+  //
+  // On a Collab the picker and `autoAssignBreakouts` narrow to the day's
+  // registrations, because they are *choosing* people and both ministries' whole
+  // series is the wrong list to choose from. This action is the admin acting on a
+  // choice already made, so it stays the wider check: anyone registered to one of
+  // the day's events. `carryOverBreakoutGroups` seats people on inherited series
+  // rows that hold no day registration, and a walk-in can be seated before their
+  // registration catches up — narrowing here would refuse both.
   const candidateEventIds = await breakoutCandidateEventIds(owner)
   const spansEvents = candidateEventIds.length > 1
 
@@ -408,10 +417,12 @@ export async function addRegistrantsToBreakout(
     const byId = new Map(registrants.map((r) => [r.id, r]))
 
     const facilitators = await facilitatorMemberIds(owner)
-    // One seat per PERSON, not per registrant row. Under a Collab cluster the
-    // same person holds a registration on every member event, so two of their
-    // rows could otherwise be added to the day's tables independently.
-    const seated = spansEvents ? await seatedPersonKeys(owner) : new Set<string>()
+    // One seat per PERSON, not per registrant row — unconditionally, not just
+    // under a Collab. A duplicate sign-up gives someone two EventRegistrant rows
+    // on a single plain event, and the per-row check below is blind to that: both
+    // rows read as unseated, so the same human lands at two tables and can be
+    // decided into two different DGroups.
+    const seated = await seatedPersonKeys(owner)
 
     const failed: BatchFailure[] = []
     const eligible: string[] = []
@@ -430,13 +441,15 @@ export async function addRegistrantsToBreakout(
         })
       } else if (registrant.breakoutGroupMemberships.length > 0) {
         failed.push({ id, name, reason: "is already in a breakout group" })
-      } else if (spansEvents && seated.has(personKeyOf(registrant))) {
+      } else if (seated.has(personKeyOf(registrant))) {
         failed.push({ id, name, reason: "is already in a breakout group" })
       } else if (registrant.memberId && facilitators.has(registrant.memberId)) {
         failed.push({ id, name, reason: "is a facilitator and cannot be a member" })
       } else {
         eligible.push(id)
-        if (spansEvents) seated.add(personKeyOf(registrant))
+        // Claimed within the batch too, so one submission cannot seat the same
+        // person twice via two of their registrant rows.
+        seated.add(personKeyOf(registrant))
       }
     }
 
@@ -571,6 +584,8 @@ export async function transferRegistrantToBreakout(
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
   }
 
+  // Event-scoped for the same reason as `addRegistrantsToBreakout`, and more
+  // plainly so: a transfer moves somebody already sitting at one of these tables.
   const candidateEventIds = await breakoutCandidateEventIds(owner)
 
   try {
@@ -705,9 +720,11 @@ export async function autoAssignRegistrantToBreakout(
       select: { memberId: true, guestId: true },
     })
 
-    // One seat per person: under a Collab the same person holds a registration on
-    // every member event, and check-in fires this per row.
-    if (isClusterOwner(owner) && (registrant?.memberId || registrant?.guestId)) {
+    // One seat per person, whatever the owner. Under a Collab the same person
+    // holds a registration on every member event; on a plain event a duplicate
+    // sign-up gives them two rows. Check-in fires this per row either way, so the
+    // per-row guard above is not enough on its own.
+    if (registrant?.memberId || registrant?.guestId) {
       const seatedElsewhere = await db.breakoutGroupMember.findFirst({
         where: {
           breakoutGroup: owner,
@@ -807,9 +824,11 @@ export async function autoAssignBreakouts(
     let assigned = 0
     let skipped = 0
 
-    // One seat per person. A Collab candidate list holds one row per member
-    // event, so without this the same person is placed once per registration.
-    const seated = isClusterOwner(owner) ? await seatedPersonKeys(owner) : new Set<string>()
+    // One seat per person, whatever the owner. A Collab candidate list holds one
+    // row per member event; a plain event can still hold two rows for one person
+    // through a duplicate sign-up. Either way, without this the same person is
+    // placed once per registration row.
+    const seated = await seatedPersonKeys(owner)
 
     for (const registrant of unassigned) {
       const key = personKeyOf(registrant)

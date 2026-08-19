@@ -5,6 +5,7 @@ import { db } from "@/lib/db"
 import type { Prisma } from "@/app/generated/prisma/client"
 import { formatPhilippinePhone } from "@/lib/utils"
 import { contactHintFrom } from "@/lib/contact-hint"
+import { findStaffedTables, mintFaciSession } from "@/lib/catch-mech/faci-session"
 import { personSearchWhere } from "@/lib/search/name-search"
 import {
   prefetchRegistrantData,
@@ -45,10 +46,27 @@ export type VolunteerPlacement = {
  */
 class AlreadyLeadsGroupError extends Error {}
 
+/**
+ * Where the volunteer form sends someone once it knows who they are.
+ *
+ * A facilitator answering the volunteer form is answering the wrong one: they
+ * would report the people they personally absorbed while their table's roster —
+ * the thing Catch Mech actually tracks — went unanswered, and they would sit in
+ * both response denominators at once. So they get routed to the facilitator form
+ * rather than served a volunteer session.
+ */
+export type VolunteerEntry =
+  /** Not staffing any table — the volunteer follow-up form, as before. */
+  | { kind: "volunteer"; token: string }
+  /** Staffs exactly one table; the session is already minted. */
+  | { kind: "facilitator"; token: string; groupName: string }
+  /** Staffs several — they have to say which table they are answering for. */
+  | { kind: "facilitator-choice"; groups: { id: string; name: string }[] }
+
 export async function verifyCatchMechVolunteer(
   eventId: string,
   mobile: string
-): Promise<ActionResult<{ token: string }>> {
+): Promise<ActionResult<VolunteerEntry>> {
   const phone = formatPhilippinePhone(mobile)
   if (!phone) {
     return { success: false, error: "Mobile number is required" }
@@ -61,6 +79,24 @@ export async function verifyCatchMechVolunteer(
     })
     if (!member) {
       return { success: false, error: "No member found with that mobile number" }
+    }
+
+    // Checked before the volunteer lookup so a facilitator is routed by the role
+    // they actually hold, not by whichever form they happened to open.
+    const staffed = await findStaffedTables(eventId, member.id)
+    if (staffed.length === 1) {
+      const [table] = staffed
+      const token = await mintFaciSession(eventId, table.breakoutGroupId, table.faciVolunteerId)
+      return { success: true, data: { kind: "facilitator", token, groupName: table.name } }
+    }
+    if (staffed.length > 1) {
+      return {
+        success: true,
+        data: {
+          kind: "facilitator-choice",
+          groups: staffed.map((table) => ({ id: table.breakoutGroupId, name: table.name })),
+        },
+      }
     }
 
     const volunteer = await db.volunteer.findFirst({
@@ -85,7 +121,7 @@ export async function verifyCatchMechVolunteer(
       update: {},
       select: { token: true },
     })
-    return { success: true, data: { token: session.token } }
+    return { success: true, data: { kind: "volunteer", token: session.token } }
   } catch (err) {
     console.error("[verifyCatchMechVolunteer]", err)
     return { success: false, error: "Could not verify your volunteer record. Please try again." }

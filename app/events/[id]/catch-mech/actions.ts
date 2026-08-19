@@ -2,6 +2,12 @@
 
 import { db } from "@/lib/db"
 import { resolveCatchMechTargets } from "@/lib/catch-mech/targets"
+import { resolveCatchMechScope } from "@/lib/catch-mech/scope"
+import {
+  STAFFING_SELECT,
+  mintFaciSession,
+  staffVolunteerFor,
+} from "@/lib/catch-mech/faci-session"
 import {
   prefetchRegistrantData,
   resolveConfirmations,
@@ -57,24 +63,23 @@ export async function verifyCatchMechFaci(
       return { success: false, error: "No member found with that mobile number" }
     }
 
-    const breakoutGroup = await db.breakoutGroup.findUnique({
-      where: { id: breakoutGroupId },
-      select: {
-        facilitator: { select: { id: true, memberId: true } },
-        coFacilitator: { select: { id: true, memberId: true } },
-      },
+    // Scoped, not a bare point read: this used to accept ANY breakout group id
+    // from any event. Scoping both closes that and is what lets a Collab day's
+    // cluster-owned tables resolve here at all.
+    const scope = await resolveCatchMechScope(eventId)
+    const breakoutGroup = await db.breakoutGroup.findFirst({
+      where: { AND: [{ id: breakoutGroupId }, scope.where] },
+      // Substitutes count: Catch Mech is about the table's people, not one
+      // sitting, so whoever stood in for it can answer for it.
+      // `resolveCatchMechTargets` already sends anyone who is not the lead to
+      // their own DGroup, which is the right rule for a stand-in.
+      select: STAFFING_SELECT,
     })
     if (!breakoutGroup) {
       return { success: false, error: "Breakout group not found" }
     }
 
-    const faci =
-      breakoutGroup.facilitator?.memberId === member.id
-        ? breakoutGroup.facilitator
-        : breakoutGroup.coFacilitator?.memberId === member.id
-        ? breakoutGroup.coFacilitator
-        : null
-
+    const faci = staffVolunteerFor(breakoutGroup, member.id)
     if (!faci) {
       return {
         success: false,
@@ -82,22 +87,8 @@ export async function verifyCatchMechFaci(
       }
     }
 
-    // Upsert session — one per volunteer+breakoutGroup combination
-    const existing = await db.catchMechSession.findFirst({
-      where: { facilitatorVolunteerId: faci.id, breakoutGroupId },
-      select: { token: true },
-    })
-
-    if (existing) {
-      return { success: true, data: { token: existing.token } }
-    }
-
-    const session = await db.catchMechSession.create({
-      data: { eventId, breakoutGroupId, facilitatorVolunteerId: faci.id },
-      select: { token: true },
-    })
-
-    return { success: true, data: { token: session.token } }
+    const token = await mintFaciSession(eventId, breakoutGroupId, faci.id)
+    return { success: true, data: { token } }
   } catch (err) {
     console.error("[verifyCatchMechFaci]", err)
     return { success: false, error: "Could not verify your mobile number. Please try again." }

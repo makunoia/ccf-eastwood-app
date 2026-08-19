@@ -3,6 +3,7 @@ import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import { canRead } from "@/lib/permissions"
 import { resolveSubmissionDecisions } from "@/lib/catch-mech/submission-detail"
+import { resolveCatchMechScope } from "@/lib/catch-mech/scope"
 import { SubmissionsClient, type SubmissionRow, type NonResponder } from "./submissions-client"
 
 /**
@@ -18,26 +19,31 @@ async function getSubmissionsData(eventId: string) {
     select: {
       id: true,
       modules: { select: { type: true } },
-      breakoutGroups: {
-        orderBy: { name: "asc" },
-        select: {
-          id: true,
-          name: true,
-          // Both roles matter: a session is created for whichever faci verifies,
-          // so a co-faci who never responds must show up as a non-responder too.
-          facilitator: {
-            select: { id: true, member: { select: { firstName: true, lastName: true } } },
-          },
-          coFacilitator: {
-            select: { id: true, member: { select: { firstName: true, lastName: true } } },
-          },
-        },
-      },
     },
   })
 
   if (!event) return null
   if (!event.modules.some((m) => m.type === "CatchMech")) return null
+
+  // Under a Collab the tables this event follows up on are the cluster's, keyed
+  // to it through their facilitator — see `lib/catch-mech/scope.ts`.
+  const scope = await resolveCatchMechScope(eventId)
+  const breakoutGroups = await db.breakoutGroup.findMany({
+    where: scope.where,
+    orderBy: { name: "asc" },
+    select: {
+      id: true,
+      name: true,
+      // Both roles matter: a session is created for whichever faci verifies,
+      // so a co-faci who never responds must show up as a non-responder too.
+      facilitator: {
+        select: { id: true, member: { select: { firstName: true, lastName: true } } },
+      },
+      coFacilitator: {
+        select: { id: true, member: { select: { firstName: true, lastName: true } } },
+      },
+    },
+  })
 
   const submissions = await db.confirmationSubmission.findMany({
     where: { eventId, source: "CatchMech" },
@@ -77,7 +83,7 @@ async function getSubmissionsData(eventId: string) {
   )
 
   const expected: NonResponder[] = []
-  for (const bg of event.breakoutGroups) {
+  for (const bg of breakoutGroups) {
     for (const faci of [bg.facilitator, bg.coFacilitator]) {
       if (!faci) continue
       expected.push({
@@ -96,7 +102,7 @@ async function getSubmissionsData(eventId: string) {
     nonResponders,
     respondedCount: expected.length - nonResponders.length,
     expectedCount: expected.length,
-    breakoutGroups: event.breakoutGroups.map((bg) => ({ id: bg.id, name: bg.name })),
+    breakoutGroups: breakoutGroups.map((bg) => ({ id: bg.id, name: bg.name })),
   }
 }
 

@@ -1,4 +1,5 @@
 import type { DeclineReason } from "@/app/generated/prisma/client"
+import { personKeyFor } from "@/lib/clusters/roster"
 import type { GroupRow } from "./catch-mech-table"
 
 // Minimal shapes of the data the dashboard aggregation needs. These mirror the
@@ -16,6 +17,8 @@ export type AggBreakoutGroup = {
       ledGroups: { id: string; name: string }[]
     } | null
   } | null
+  /** Only its presence matters here — a co-faci can run the session on their own. */
+  coFacilitator: { id: string } | null
   members: {
     registrant: {
       id: string
@@ -39,6 +42,10 @@ export type AggRequest = {
 export type CatchMechStats = {
   /** Everyone tracked by catch mech: confirmed + rejected + inSmallGroup + pending. */
   totalCohort: number
+  /** Tables holding people with neither a facilitator nor a co-facilitator. */
+  unstaffedGroupCount: number
+  /** People sitting at those tables — nobody can submit for them. */
+  unstaffedPeopleCount: number
   /** The people catch mech is actually trying to place: totalCohort − inSmallGroup. */
   matchable: number
   totalConfirmed: number
@@ -61,6 +68,14 @@ export function buildCatchMechGroupRows(
   allRequests: AggRequest[]
 ): { groupRows: GroupRow[]; stats: CatchMechStats } {
   const groupRows: GroupRow[] = []
+  // One person is counted once for the whole event, not once per registrant row.
+  // A duplicate sign-up gives someone two EventRegistrant rows that can both be
+  // seated — at two tables, or twice at one — and counting both inflated every
+  // bucket and let two facilitators decide the "same" person into two groups.
+  // Groups are iterated in name order, so which table claims them is stable.
+  const countedPeople = new Set<string>()
+  let unstaffedGroupCount = 0
+  let unstaffedPeopleCount = 0
   let totalConfirmed = 0
   let totalRejected = 0
   let totalInSmallGroup = 0
@@ -81,6 +96,9 @@ export function buildCatchMechGroupRows(
     for (const m of bg.members) {
       const r = m.registrant
       if (!r.memberId && !r.guestId) continue
+
+      const personKey = personKeyFor(r)
+      if (countedPeople.has(personKey)) continue
 
       // Match to a request record first — a confirmation sets the member's
       // smallGroupId, so we must count it before applying the placement skip below.
@@ -123,6 +141,10 @@ export function buildCatchMechGroupRows(
         else { status = "Rejected"; rejected++ }
       }
 
+      // Claimed only once past the exclusions above: someone skipped here as
+      // pre-placed must stay skippable at their other table too.
+      countedPeople.add(personKey)
+
       // requestId enables the admin undo action — only present for resolved decisions
       members.push({ name, status, requestId: req?.id ?? null })
     }
@@ -131,6 +153,13 @@ export function buildCatchMechGroupRows(
     // Per-group "To Match" excludes the in-group bucket, so each row reconciles as
     // Confirmed + Rejected + Pending = To Match.
     const toMatch = confirmed + rejected + pending
+
+    // A table nobody runs is a dead end: no facilitator can verify into a session
+    // for it, so its members stay Pending forever with no way to resolve them.
+    if (!bg.facilitator && !bg.coFacilitator && members.length > 0) {
+      unstaffedGroupCount++
+      unstaffedPeopleCount += members.length
+    }
 
     totalConfirmed += confirmed
     totalRejected += rejected
@@ -159,6 +188,8 @@ export function buildCatchMechGroupRows(
     groupRows,
     stats: {
       totalCohort,
+      unstaffedGroupCount,
+      unstaffedPeopleCount,
       matchable: totalCohort - totalInSmallGroup,
       totalConfirmed,
       totalRejected,

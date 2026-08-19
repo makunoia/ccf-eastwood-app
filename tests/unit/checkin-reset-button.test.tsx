@@ -198,7 +198,7 @@ async function checkInOnClusterBoard() {
     success: true,
     data: { person: CLUSTER_PERSON, recorded: ["e1"] },
   })
-  render(<ClusterCheckinBoard token="tok-1" walkInHref={null} />)
+  render(<ClusterCheckinBoard token="tok-1" kind="Parallel" walkInHref={null} />)
 
   fireEvent.change(screen.getByLabelText("Mobile number"), {
     target: { value: "+63 917 111 2222" },

@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
+import { AlertTriangle } from "lucide-react"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import { canWrite } from "@/lib/permissions"
@@ -53,8 +54,40 @@ export default async function ClusterBreakoutsPage({
 
   const rows = groups.map((g) => ({ ...g, memberCount: g._count.members }))
 
+  // Catch Mech follows up on a cluster table through its facilitator: whoever runs
+  // it belongs to exactly one member event, and that is the ministry the table's
+  // people are endorsed to. A table with nobody on it is endorsed to nobody, so
+  // its participants appear on no event's Catch Mech and nobody can confirm them.
+  // Assigning a facilitator here is the fix, which is why the warning lives on
+  // this page rather than on an event's.
+  //
+  // Only the two standing roles are checked: `OccurrenceSubFacilitator` is keyed
+  // to an event's occurrence and cannot exist on a cluster-owned table.
+  const orphanGroups = groups.filter(
+    (g) => !g.facilitator && !g.coFacilitator && g._count.members > 0
+  )
+  const orphanPeople = orphanGroups.reduce((sum, g) => sum + g._count.members, 0)
+
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
+      {orphanGroups.length > 0 && (
+        <div className="flex items-start gap-3 rounded-lg border border-dashed p-4">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-500" />
+          <div className="space-y-0.5 text-sm">
+            <p className="font-medium">
+              {orphanGroups.length === 1
+                ? "1 table has no facilitator"
+                : `${orphanGroups.length} tables have no facilitator`}
+            </p>
+            <p className="text-muted-foreground">
+              {orphanPeople === 1 ? "1 person is" : `${orphanPeople} people are`} seated at{" "}
+              {orphanGroups.map((g) => g.name).join(", ")}. Catch Mech follows up on a
+              table through its facilitator, so until one is assigned these people
+              reach no ministry&apos;s follow-up and nobody can confirm them into a DGroup.
+            </p>
+          </div>
+        </div>
+      )}
       {canEdit && (
         <CarryOverBreakoutsCard
           clusterId={cluster.id}

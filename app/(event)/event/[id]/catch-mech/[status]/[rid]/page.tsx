@@ -6,16 +6,24 @@ import { canRead } from "@/lib/permissions"
 import { db } from "@/lib/db"
 import { registrantName, registrantNameSelect } from "@/lib/metadata"
 import { findSpouseOfPerson } from "@/lib/family-links"
+import { getVolunteerPlacementRequestIds } from "@/lib/catch-mech/volunteer-requests"
+import { resolveCatchMechScope } from "@/lib/catch-mech/scope"
 import { CatchMechDetailClient, type SpouseCardData } from "./catch-mech-detail-client"
 import type { CatchMechActivityEntry } from "./catch-mech-activity-log"
 import { SLUG_CONFIG, isCatchMechSlug } from "../../status-slug"
 
 async function getDetailData(registrantId: string, eventId: string, prismaStatus: "Confirmed" | "Rejected" | "Pending") {
+  // Scoped, not `{ eventId }`: on a Collab day this event's tables are the
+  // cluster-owned ones endorsed to it — see `lib/catch-mech/scope.ts`.
+  const scope = await resolveCatchMechScope(eventId)
   const eventBreakoutGroups = await db.breakoutGroup.findMany({
-    where: { eventId },
+    where: scope.where,
     select: { id: true },
   })
   const breakoutGroupIds = eventBreakoutGroups.map((bg) => bg.id)
+  // Volunteer follow-up placements have no breakout table; without this the
+  // detail page renders the person with no request, so no DGroup and no Undo.
+  const volunteerRequestIds = await getVolunteerPlacementRequestIds(eventId)
 
   const [registrant, request, lifeStages, smallGroupLogs] = await Promise.all([
     db.eventRegistrant.findFirst({
@@ -68,10 +76,21 @@ async function getDetailData(registrantId: string, eventId: string, prismaStatus
     db.smallGroupMemberRequest.findFirst({
       where: {
         status: prismaStatus,
-        breakoutGroupId: { in: breakoutGroupIds },
-        OR: [
-          { guest: { eventRegistrations: { some: { id: registrantId } } } },
-          { member: { eventRegistrations: { some: { id: registrantId } } } },
+        AND: [
+          {
+            OR: [
+              { breakoutGroupId: { in: breakoutGroupIds } },
+              ...(volunteerRequestIds.size > 0
+                ? [{ id: { in: [...volunteerRequestIds] } }]
+                : []),
+            ],
+          },
+          {
+            OR: [
+              { guest: { eventRegistrations: { some: { id: registrantId } } } },
+              { member: { eventRegistrations: { some: { id: registrantId } } } },
+            ],
+          },
         ],
       },
       select: {

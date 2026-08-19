@@ -28,6 +28,7 @@ describe("catch-mech dashboard count — pure aggregation", () => {
         facilitator: {
           member: { id: "lead", firstName: "Lead", lastName: "Er", ledGroups: [{ id: "sg1", name: "G" }] },
         },
+        coFacilitator: null,
         members: [
           {
             registrant: {
@@ -59,6 +60,7 @@ describe("catch-mech dashboard count — pure aggregation", () => {
         id: "bg1",
         name: "Table 1",
         facilitator: { member: { id: "lead", firstName: "L", lastName: "E", ledGroups: [{ id: "sg1", name: "G" }] } },
+        coFacilitator: null,
         members: [
           {
             registrant: {
@@ -90,6 +92,7 @@ function groupWith(count: number): AggBreakoutGroup[] {
       facilitator: {
         member: { id: "lead", firstName: "L", lastName: "E", ledGroups: [{ id: "sg1", name: "G" }] },
       },
+      coFacilitator: null,
       members: Array.from({ length: count }, (_, i) => ({
         registrant: {
           id: `r${i + 1}`,
@@ -205,6 +208,7 @@ function groupWithGuest(guest: {
       facilitator: {
         member: { id: "lead", firstName: "L", lastName: "E", ledGroups: [{ id: "sg1", name: "G" }] },
       },
+      coFacilitator: null,
       members: [
         {
           registrant: {
@@ -322,6 +326,7 @@ describe("catch-mech dashboard count — integration", () => {
                 },
               },
             },
+            coFacilitator: { select: { id: true } },
             members: {
               select: {
                 registrant: {
@@ -348,5 +353,68 @@ describe("catch-mech dashboard count — integration", () => {
     const { stats } = buildCatchMechGroupRows(fresh!.breakoutGroups, allRequests)
     expect(stats.totalConfirmed).toBe(1)
     expect(stats.totalPending).toBe(0)
+  })
+})
+
+/**
+ * Cohort integrity: one person is one row, and a table nobody runs is visible.
+ */
+describe("catch-mech cohort integrity", () => {
+  const faci = {
+    member: { id: "lead", firstName: "L", lastName: "E", ledGroups: [{ id: "sg1", name: "G" }] },
+  }
+  const seated = (registrantId: string, memberId: string) => ({
+    registrant: {
+      id: registrantId,
+      memberId,
+      guestId: null,
+      member: { firstName: "Dee", lastName: "Dupe", smallGroupId: null },
+      guest: null,
+    },
+  })
+
+  it("counts a person once even when two registrant rows are seated", () => {
+    const breakoutGroups: AggBreakoutGroup[] = [
+      { id: "bg1", name: "Table 1", facilitator: faci, coFacilitator: null, members: [seated("r1", "m1")] },
+      { id: "bg2", name: "Table 2", facilitator: faci, coFacilitator: null, members: [seated("r2", "m1")] },
+    ]
+
+    const { stats, groupRows } = buildCatchMechGroupRows(breakoutGroups, [])
+
+    // A duplicate sign-up used to inflate the cohort and let two facilitators
+    // decide the same human into two different DGroups.
+    expect(stats.totalCohort).toBe(1)
+    expect(stats.totalPending).toBe(1)
+    // Name order decides which table claims them, so this is stable.
+    expect(groupRows[0].members).toHaveLength(1)
+    expect(groupRows[1].members).toHaveLength(0)
+  })
+
+  it("does not collapse two different people", () => {
+    const breakoutGroups: AggBreakoutGroup[] = [
+      {
+        id: "bg1",
+        name: "Table 1",
+        facilitator: faci,
+        coFacilitator: null,
+        members: [seated("r1", "m1"), seated("r2", "m2")],
+      },
+    ]
+    expect(buildCatchMechGroupRows(breakoutGroups, []).stats.totalCohort).toBe(2)
+  })
+
+  it("flags a table with no facilitator and no co-facilitator", () => {
+    const breakoutGroups: AggBreakoutGroup[] = [
+      { id: "bg1", name: "Table 1", facilitator: null, coFacilitator: null, members: [seated("r1", "m1")] },
+      { id: "bg2", name: "Table 2", facilitator: null, coFacilitator: { id: "v9" }, members: [seated("r2", "m2")] },
+      { id: "bg3", name: "Table 3", facilitator: null, coFacilitator: null, members: [] },
+    ]
+
+    const { stats } = buildCatchMechGroupRows(breakoutGroups, [])
+
+    // Only Table 1: a co-faci can run a session on their own, and an empty table
+    // strands nobody.
+    expect(stats.unstaffedGroupCount).toBe(1)
+    expect(stats.unstaffedPeopleCount).toBe(1)
   })
 })

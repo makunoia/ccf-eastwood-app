@@ -10,6 +10,7 @@ import {
   promoteGuestRecord,
   type PromotableGuest,
 } from "@/lib/people/promote-guest"
+import { resolveCatchMechScope } from "@/lib/catch-mech/scope"
 import { matchSmallGroups } from "@/lib/matching"
 import { scoreGroup } from "@/lib/matching/engine"
 import { scoreGender, scoreLifeStage, scoreSchedule } from "@/lib/matching/scorers"
@@ -333,9 +334,11 @@ export async function assignCatchMechRegistrantToGroup(
     })
     if (!registrant) return { success: false, error: "Registrant not found" }
 
-    // Find the event's breakout group IDs to scope the lookup
+    // Find the event's breakout group IDs to scope the lookup. Under a Collab
+    // these are the cluster's tables endorsed to this event, not its own.
+    const scope = await resolveCatchMechScope(eventId)
     const eventBreakoutGroups = await db.breakoutGroup.findMany({
-      where: { eventId },
+      where: scope.where,
       select: { id: true },
     })
     const breakoutGroupIds = eventBreakoutGroups.map((bg) => bg.id)

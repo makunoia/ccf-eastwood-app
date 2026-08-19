@@ -19,6 +19,9 @@ import { ClusterCheckinBoard } from "./cluster-checkin-board"
  * No session picker and no event picker. `EventClusterEvent` already records
  * which session of a recurring event each cluster day stands for, and the point
  * of this screen is that the person doesn't have to choose.
+ *
+ * On a Collab day the screen goes further and says nothing about events at all —
+ * see `ClusterCheckinBoard`.
  */
 
 export async function generateMetadata({
@@ -47,6 +50,7 @@ export default async function ClusterCheckinPage({
     select: {
       name: true,
       date: true,
+      kind: true,
       checkInIsOpen: true,
       walkInIsOpen: true,
       logoUrl: true,
@@ -76,6 +80,7 @@ export default async function ClusterCheckinPage({
       <div className="overflow-hidden rounded-lg border bg-card">
         <ClusterCheckinBoard
           token={token}
+          kind={cluster.kind}
           // Only offered while the door is actually open, so someone who can't
           // find themselves is never sent to a page that just tells them no.
           walkInHref={cluster.walkInIsOpen ? clusterWalkInPath(token) : null}
