@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { type ColumnDef } from "@tanstack/react-table"
 import Link from "next/link"
 import {
   IconBus,
@@ -10,6 +11,7 @@ import {
 import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
+import { DataTable } from "@/components/ui/data-table"
 import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/page-header"
 import {
@@ -97,6 +99,75 @@ type Props = {
   volunteers: Volunteer[]
 }
 
+function passengerName(p: BusPassenger): string {
+  if (p.registrant) {
+    if (p.registrant.member) {
+      return `${p.registrant.member.firstName} ${p.registrant.member.lastName}`
+    }
+    if (p.registrant.guest) {
+      return `${p.registrant.guest.firstName} ${p.registrant.guest.lastName}`
+    }
+    return `${p.registrant.firstName ?? ""} ${p.registrant.lastName ?? ""}`.trim()
+  }
+  if (p.volunteer) return `${p.volunteer.member.firstName} ${p.volunteer.member.lastName}`
+  return "—"
+}
+
+/**
+ * One manifest per bus, so these tables carry no `tableKey`: a column picker
+ * repeated on every bus card would be noise, and there is nothing here to hide.
+ * They still go through DataTable so the columns line up with the rest of the
+ * app rather than sizing themselves to whichever names happen to be aboard.
+ */
+function buildPassengerColumns({
+  unassigning,
+  onUnassign,
+}: {
+  unassigning: string | null
+  onUnassign: (passengerId: string) => void
+}): ColumnDef<BusPassenger>[] {
+  return [
+    {
+      id: "name",
+      accessorFn: passengerName,
+      header: "Name",
+      meta: { label: "Name", width: "name", locked: true },
+      cell: ({ row }) => <span className="font-medium">{passengerName(row.original)}</span>,
+    },
+    {
+      id: "type",
+      accessorFn: (row) =>
+        row.volunteerId ? "Volunteer" : row.registrant?.memberId ? "Member" : "Guest",
+      header: "Type",
+      meta: { label: "Type", width: "narrow" },
+      cell: ({ row }) =>
+        row.original.volunteerId ? (
+          <Badge variant="outline">Volunteer</Badge>
+        ) : row.original.registrant?.memberId ? (
+          <Badge variant="secondary">Member</Badge>
+        ) : (
+          <Badge variant="outline">Guest</Badge>
+        ),
+    },
+    {
+      id: "actions",
+      meta: { width: "actions", locked: true },
+      cell: ({ row }) => (
+        <Button
+          size="icon"
+          variant="ghost"
+          className="size-7 text-destructive hover:text-destructive"
+          onClick={() => onUnassign(row.original.id)}
+          disabled={unassigning === row.original.id}
+        >
+          <span className="sr-only">Remove {passengerName(row.original)} from this bus</span>
+          <IconTrash className="size-3.5" />
+        </Button>
+      ),
+    },
+  ]
+}
+
 export function EmbarkationClient({ eventId, buses, registrants, volunteers }: Props) {
   const [assignDialogOpen, setAssignDialogOpen] = React.useState(false)
   const [selectedBusId, setSelectedBusId] = React.useState<string | null>(null)
@@ -136,12 +207,20 @@ export function EmbarkationClient({ eventId, buses, registrants, volunteers }: P
     }
   }
 
-  async function handleUnassign(passengerId: string) {
-    setUnassigning(passengerId)
-    const result = await unassignFromBus(passengerId, eventId)
-    setUnassigning(null)
-    if (!result.success) toast.error(result.error)
-  }
+  const handleUnassign = React.useCallback(
+    async (passengerId: string) => {
+      setUnassigning(passengerId)
+      const result = await unassignFromBus(passengerId, eventId)
+      setUnassigning(null)
+      if (!result.success) toast.error(result.error)
+    },
+    [eventId],
+  )
+
+  const passengerColumns = React.useMemo(
+    () => buildPassengerColumns({ unassigning, onUnassign: handleUnassign }),
+    [unassigning, handleUnassign],
+  )
 
   if (buses.length === 0) {
     return (
@@ -212,54 +291,7 @@ export function EmbarkationClient({ eventId, buses, registrants, volunteers }: P
                 No passengers assigned yet
               </p>
             ) : (
-              <div className="overflow-x-auto rounded-lg border">
-                <table className="w-full text-sm">
-                  <thead className="border-b bg-muted/50">
-                    <tr>
-                      <th className="px-4 py-3 text-left font-medium">Name</th>
-                      <th className="px-4 py-3 text-left font-medium">Type</th>
-                      <th className="px-4 py-3" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {bus.passengers.map((p) => {
-                      const name = p.registrant
-                        ? (p.registrant.member
-                            ? `${p.registrant.member.firstName} ${p.registrant.member.lastName}`
-                            : p.registrant.guest
-                              ? `${p.registrant.guest.firstName} ${p.registrant.guest.lastName}`
-                              : `${p.registrant.firstName ?? ""} ${p.registrant.lastName ?? ""}`.trim())
-                        : p.volunteer
-                          ? `${p.volunteer.member.firstName} ${p.volunteer.member.lastName}`
-                          : "—"
-                      return (
-                        <tr key={p.id} className="border-b last:border-0">
-                          <td className="px-4 py-3 font-medium">{name}</td>
-                          <td className="px-4 py-3">
-                            {p.volunteerId
-                              ? <Badge variant="outline">Volunteer</Badge>
-                              : p.registrant?.memberId
-                                ? <Badge variant="secondary">Member</Badge>
-                                : <Badge variant="outline">Guest</Badge>
-                            }
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="size-7 text-destructive hover:text-destructive"
-                              onClick={() => handleUnassign(p.id)}
-                              disabled={unassigning === p.id}
-                            >
-                              <IconTrash className="size-3.5" />
-                            </Button>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <DataTable columns={passengerColumns} data={bus.passengers} hidePagination />
             )}
           </div>
         ))}

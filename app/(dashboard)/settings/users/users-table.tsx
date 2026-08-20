@@ -20,6 +20,8 @@ export function UsersTable({ users, events }: { users: UserRow[]; events: EventO
   return (
     <>
       <DataTable
+          tableKey="settings.users"
+          rowLabel={{ one: "user", many: "users" }}
         columns={columns}
         data={users}
         emptyState={

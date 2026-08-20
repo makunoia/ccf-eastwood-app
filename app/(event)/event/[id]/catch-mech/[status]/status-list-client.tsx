@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { type ColumnDef } from "@tanstack/react-table"
 import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
 import { FilterBar, FilterField } from "@/components/filter-bar"
@@ -12,14 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { DataTable } from "@/components/ui/data-table"
 import { CatchMechUndoButton } from "../catch-mech-undo-button"
 import { SLUG_CONFIG, type CatchMechSlug } from "../status-slug"
 
@@ -41,6 +35,88 @@ type Props = {
   breakoutGroups: { id: string; name: string }[]
 }
 
+function buildColumns({
+  eventId,
+  status,
+  isDeclined,
+  canUndo,
+}: {
+  eventId: string
+  status: string
+  isDeclined: boolean
+  canUndo: boolean
+}): ColumnDef<StatusListRow>[] {
+  const blank = <span className="text-muted-foreground">—</span>
+  return [
+    {
+      accessorKey: "name",
+      header: "Name",
+      meta: { label: "Name", width: "name", locked: true },
+      cell: ({ row }) => (
+        <Link
+          href={`/event/${eventId}/catch-mech/${status}/${row.original.registrantId}`}
+          className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+        >
+          {row.original.name}
+        </Link>
+      ),
+    },
+    {
+      accessorKey: "type",
+      header: "Type",
+      meta: { label: "Type", width: "narrow" },
+      cell: ({ row }) => (
+        <Badge variant={row.original.type === "Member" ? "secondary" : "outline"}>
+          {row.original.type}
+        </Badge>
+      ),
+    },
+    {
+      accessorKey: "breakoutGroupName",
+      header: "Breakout Group",
+      meta: { label: "Breakout Group", width: "name" },
+    },
+    isDeclined
+      ? {
+          accessorKey: "declineReason",
+          header: "Reason",
+          meta: { label: "Reason", width: "wide" },
+          cell: ({ row }) => row.original.declineReason ?? blank,
+        }
+      : {
+          accessorKey: "smallGroupName",
+          header: "DGroup",
+          meta: { label: "DGroup", width: "name" },
+          cell: ({ row }) => row.original.smallGroupName ?? blank,
+        },
+    ...(isDeclined
+      ? [
+          {
+            accessorKey: "rejectedByName",
+            header: "Declined by",
+            meta: { label: "Declined by", width: "name" },
+            cell: ({ row }) => row.original.rejectedByName ?? blank,
+          } satisfies ColumnDef<StatusListRow>,
+        ]
+      : []),
+    ...(canUndo
+      ? [
+          {
+            id: "actions",
+            meta: { width: "actions", locked: true },
+            cell: ({ row }) => (
+              <CatchMechUndoButton
+                requestId={row.original.requestId}
+                eventId={eventId}
+                decision={status === "confirmed" ? "Confirmed" : "Rejected"}
+              />
+            ),
+          } satisfies ColumnDef<StatusListRow>,
+        ]
+      : []),
+  ]
+}
+
 export function StatusListClient({ rows, status, eventId, breakoutGroups }: Props) {
   const [filterGroup, setFilterGroup] = React.useState("all")
 
@@ -54,16 +130,11 @@ export function StatusListClient({ rows, status, eventId, breakoutGroups }: Prop
   const isDeclined = status === "rejected" || status === "in-small-group"
   const canUndo = status !== "pending"
 
-  // Derived from the rendered columns rather than hand-counted: the old `4 + …` form
-  // baked in "exactly one of Small Group / Reason renders", which the 4th slug breaks.
-  const colCount = [
-    true,        // Name
-    true,        // Type
-    true,        // Breakout Group
-    true,        // Small Group | Reason
-    isDeclined,  // Declined by
-    canUndo,     // Undo
-  ].filter(Boolean).length
+  // The empty-state colspan this used to compute is now DataTable's problem.
+  const columns = React.useMemo(
+    () => buildColumns({ eventId, status, isDeclined, canUndo }),
+    [eventId, status, isDeclined, canUndo],
+  )
 
   return (
     <div className="space-y-6">
@@ -108,73 +179,19 @@ export function StatusListClient({ rows, status, eventId, breakoutGroups }: Prop
       />
 
       {/* Table */}
-      <div className="rounded-lg border overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Breakout Group</TableHead>
-              {isDeclined ? <TableHead>Reason</TableHead> : <TableHead>DGroup</TableHead>}
-              {isDeclined && <TableHead>Declined by</TableHead>}
-              {canUndo && <TableHead className="w-10" />}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filtered.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={colCount} className="py-6 text-center text-muted-foreground">
-                  {status === "in-small-group"
-                    ? "No registrants were declined as already in a DGroup."
-                    : `No ${label.toLowerCase()} registrants.`}
-                </TableCell>
-              </TableRow>
-            ) : (
-              filtered.map((row) => (
-                <TableRow key={row.requestId}>
-                  <TableCell>
-                    <Link
-                      href={`/event/${eventId}/catch-mech/${status}/${row.registrantId}`}
-                      className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-                    >
-                      {row.name}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={row.type === "Member" ? "secondary" : "outline"}>
-                      {row.type}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{row.breakoutGroupName}</TableCell>
-                  {isDeclined ? (
-                    <TableCell>
-                      {row.declineReason ?? <span className="text-muted-foreground">—</span>}
-                    </TableCell>
-                  ) : (
-                    <TableCell>
-                      {row.smallGroupName ?? <span className="text-muted-foreground">—</span>}
-                    </TableCell>
-                  )}
-                  {isDeclined && (
-                    <TableCell>
-                      {row.rejectedByName ?? <span className="text-muted-foreground">—</span>}
-                    </TableCell>
-                  )}
-                  {canUndo && (
-                    <TableCell>
-                      <CatchMechUndoButton
-                        requestId={row.requestId}
-                        eventId={eventId}
-                        decision={status === "confirmed" ? "Confirmed" : "Rejected"}
-                      />
-                    </TableCell>
-                  )}
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+      <DataTable
+        tableKey={`event.catch-mech.${status}`}
+        rowLabel={{ one: "registrant", many: "registrants" }}
+        columns={columns}
+        data={filtered}
+        emptyState={
+          <p className="text-sm">
+            {status === "in-small-group"
+              ? "No registrants were declined as already in a DGroup."
+              : `No ${label.toLowerCase()} registrants.`}
+          </p>
+        }
+      />
     </div>
   )
 }

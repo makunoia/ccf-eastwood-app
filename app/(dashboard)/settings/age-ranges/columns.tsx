@@ -106,15 +106,18 @@ export const columns: ColumnDef<AgeRangeRow>[] = [
   {
     accessorKey: "order",
     header: "Order",
+    meta: { label: "Order", width: "narrow" },
   },
   {
     accessorKey: "label",
     header: "Label",
+    meta: { label: "Label", width: "name", locked: true },
     cell: ({ row }) => <span className="font-medium">{row.original.label}</span>,
   },
   {
     id: "range",
     header: "Ages",
+    meta: { label: "Ages", width: "text" },
     cell: ({ row }) => (
       <span className="text-muted-foreground">
         {formatAgeRange(row.original.minAge, row.original.maxAge)}
@@ -123,6 +126,7 @@ export const columns: ColumnDef<AgeRangeRow>[] = [
   },
   {
     id: "actions",
+    meta: { width: "actions", locked: true },
     cell: ({ row }) => <RowActions row={row.original} />,
   },
 ]

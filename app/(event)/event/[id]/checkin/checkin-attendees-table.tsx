@@ -1,16 +1,10 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import { type ColumnDef } from "@tanstack/react-table"
 import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { DataTable } from "@/components/ui/data-table"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import type { CheckinAttendeeRow } from "@/lib/checkin-stats"
 
@@ -37,6 +31,46 @@ function TypeBadge({ a }: { a: CheckinAttendeeRow }) {
   return <Badge variant="outline">Guest</Badge>
 }
 
+function buildColumns(eventId: string): ColumnDef<CheckinAttendeeRow>[] {
+  return [
+    {
+      accessorKey: "name",
+      header: "Name",
+      meta: { label: "Name", width: "name", locked: true },
+      cell: ({ row }) => (
+        <Link href={attendeeHref(eventId, row.original)} className={linkClassName}>
+          {row.original.name ?? (
+            <span className="text-muted-foreground italic">No name</span>
+          )}
+        </Link>
+      ),
+    },
+    {
+      id: "status",
+      accessorFn: (row) => (row.isReturner ? "Returning" : "New"),
+      header: "Status",
+      meta: { label: "Status", width: "narrow" },
+      cell: ({ row }) =>
+        row.original.isReturner ? <Badge variant="secondary">Returning</Badge> : <Badge>New</Badge>,
+    },
+    {
+      id: "type",
+      accessorFn: (row) => (row.isVolunteer ? "Volunteer" : row.isMember ? "Member" : "Guest"),
+      header: "Type",
+      meta: { label: "Type", width: "status" },
+      cell: ({ row }) => <TypeBadge a={row.original} />,
+    },
+    {
+      accessorKey: "checkedInAtFormatted",
+      header: "Checked in at",
+      meta: { label: "Checked in at", width: "date" },
+      cell: ({ row }) => (
+        <span className="text-muted-foreground">{row.original.checkedInAtFormatted}</span>
+      ),
+    },
+  ]
+}
+
 export function CheckinAttendeesTable({
   eventId,
   attendees,
@@ -45,6 +79,7 @@ export function CheckinAttendeesTable({
   attendees: CheckinAttendeeRow[]
 }) {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all")
+  const columns = useMemo(() => buildColumns(eventId), [eventId])
 
   const filtered = useMemo(
     () =>
@@ -115,43 +150,14 @@ export function CheckinAttendeesTable({
             ))}
           </div>
           {/* Desktop table */}
-          <div className="hidden overflow-x-auto rounded-lg border sm:block">
-            <Table>
-              <TableHeader className="bg-muted/50">
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Checked in at</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.map((a) => (
-                  <TableRow key={a.id}>
-                    <TableCell>
-                      <Link href={attendeeHref(eventId, a)} className={linkClassName}>
-                        {a.name ?? <span className="text-muted-foreground italic">No name</span>}
-                      </Link>
-                    </TableCell>
-                    <TableCell>
-                      {a.isReturner ? (
-                        <Badge variant="secondary">Returning</Badge>
-                      ) : (
-                        <Badge>New</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        <TypeBadge a={a} />
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {a.checkedInAtFormatted}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+          <div className="hidden sm:flex sm:flex-1 sm:flex-col">
+            <DataTable
+              tableKey="event.checkin-attendees"
+              rowLabel={{ one: "attendee", many: "attendees" }}
+              columns={columns}
+              data={filtered}
+              hidePagination
+            />
           </div>
         </>
       )}

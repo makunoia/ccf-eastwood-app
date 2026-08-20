@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { type ColumnDef } from "@tanstack/react-table"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
@@ -20,6 +21,7 @@ import {
 import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
+import { DataTable } from "@/components/ui/data-table"
 import { Button } from "@/components/ui/button"
 import {
   formatAttendanceCount,
@@ -368,6 +370,82 @@ function OccurrenceCard({
   )
 }
 
+function buildOccurrenceColumns({
+  eventId,
+  isRecurring,
+  showGroupingStatus,
+  togglingId,
+  deletingId,
+  onToggleOpen,
+  onManage,
+  onDelete,
+}: {
+  eventId: string
+  isRecurring: boolean
+  showGroupingStatus: boolean
+  togglingId: string | null
+  deletingId: string | null
+  onToggleOpen: (occurrenceId: string, currentlyOpen: boolean) => void
+  onManage: (occurrence: OccurrenceRow) => void
+  onDelete: (occurrence: OccurrenceRow) => void
+}): ColumnDef<OccurrenceRow>[] {
+  return [
+    {
+      id: "date",
+      accessorFn: (row) => row.date,
+      header: isRecurring ? "Date" : "Day",
+      meta: {
+        label: isRecurring ? "Date" : "Day",
+        width: "wide",
+        locked: true,
+        noTruncate: true,
+      },
+      cell: ({ row }) => (
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <Link
+            href={`/event/${eventId}/sessions/${row.original.id}`}
+            className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+          >
+            {formatOccurrenceDate(row.original.date)}
+          </Link>
+          {row.original.isOpen && (
+            <Badge variant="default" className="text-xs">
+              Check-in open
+            </Badge>
+          )}
+          {showGroupingStatus ? groupingBadge(row.original) : null}
+        </div>
+      ),
+    },
+    {
+      accessorKey: "attendeeCount",
+      header: "Attendance",
+      meta: { label: "Attendance", width: "status" },
+      cell: ({ row }) => (
+        <Badge variant="secondary">{row.original.attendeeCount} attended</Badge>
+      ),
+    },
+    {
+      id: "actions",
+      meta: { width: "actions", locked: true },
+      cell: ({ row }) => (
+        <div className="flex justify-end">
+          <OccurrenceActions
+            eventId={eventId}
+            isRecurring={isRecurring}
+            occurrence={row.original}
+            togglingId={togglingId}
+            deletingId={deletingId}
+            onToggleOpen={onToggleOpen}
+            onManage={onManage}
+            onDelete={onDelete}
+          />
+        </div>
+      ),
+    },
+  ]
+}
+
 function OccurrenceList({
   eventId,
   isRecurring,
@@ -389,6 +467,30 @@ function OccurrenceList({
   onManage: (occurrence: OccurrenceRow) => void
   onDelete: (occurrence: OccurrenceRow) => void
 }) {
+  const columns = React.useMemo(
+    () =>
+      buildOccurrenceColumns({
+        eventId,
+        isRecurring,
+        showGroupingStatus,
+        togglingId,
+        deletingId,
+        onToggleOpen,
+        onManage,
+        onDelete,
+      }),
+    [
+      eventId,
+      isRecurring,
+      showGroupingStatus,
+      togglingId,
+      deletingId,
+      onToggleOpen,
+      onManage,
+      onDelete,
+    ],
+  )
+
   return (
     <TooltipProvider>
       <div className="flex flex-col gap-2 lg:hidden">
@@ -408,57 +510,8 @@ function OccurrenceList({
         ))}
       </div>
 
-      <div className="hidden overflow-x-auto rounded-lg border lg:block">
-        <table className="w-full text-sm">
-          <thead className="border-b bg-muted/50">
-            <tr>
-              <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">
-                {isRecurring ? "Date" : "Day"}
-              </th>
-              <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">Attendance</th>
-              <th className="px-4 py-2.5" />
-            </tr>
-          </thead>
-          <tbody>
-            {occurrences.map((occurrence) => (
-              <tr key={occurrence.id} className="border-b last:border-0">
-                <td className="px-4 py-2 whitespace-nowrap">
-                  <div className="flex items-center gap-2">
-                    <Link
-                      href={`/event/${eventId}/sessions/${occurrence.id}`}
-                      className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-                    >
-                      {formatOccurrenceDate(occurrence.date)}
-                    </Link>
-                    {occurrence.isOpen && (
-                      <Badge variant="default" className="text-xs">
-                        Check-in open
-                      </Badge>
-                    )}
-                    {showGroupingStatus ? groupingBadge(occurrence) : null}
-                  </div>
-                </td>
-                <td className="px-4 py-2 whitespace-nowrap">
-                  <Badge variant="secondary">{occurrence.attendeeCount} attended</Badge>
-                </td>
-                <td className="px-4 py-2">
-                  <div className="flex justify-end">
-                    <OccurrenceActions
-                      eventId={eventId}
-                      isRecurring={isRecurring}
-                      occurrence={occurrence}
-                      togglingId={togglingId}
-                      deletingId={deletingId}
-                      onToggleOpen={onToggleOpen}
-                      onManage={onManage}
-                      onDelete={onDelete}
-                    />
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="hidden lg:flex lg:flex-1 lg:flex-col">
+        <DataTable tableKey="event.sessions" rowLabel={{ one: "session", many: "sessions" }} columns={columns} data={occurrences} />
       </div>
     </TooltipProvider>
   )

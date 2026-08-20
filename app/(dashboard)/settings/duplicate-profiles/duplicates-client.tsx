@@ -30,6 +30,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { dominantIndex, isEmptyActivity, type RecordActivity } from "@/lib/people/duplicate-activity"
+import { plural } from "@/lib/format/plural"
 import {
   resolveDuplicateGroups,
   type BatchMergeItemResult,
@@ -86,10 +87,6 @@ function isInvalidSelection(g: DuplicateGroup, keeperId: string): string | null 
 const MERGE_CHUNK_SIZE = 5
 
 // ─── Activity preview ─────────────────────────────────────────────────────────
-
-function plural(n: number, word: string): string {
-  return `${n} ${word}${n === 1 ? "" : "s"}`
-}
 
 /** "Aug 2026". Month granularity is enough to tell a live record from a dormant one. */
 function monthYear(iso: string): string {

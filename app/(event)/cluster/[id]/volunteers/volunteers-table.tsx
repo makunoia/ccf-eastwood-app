@@ -1,17 +1,12 @@
 "use client"
 
 import * as React from "react"
+import { type ColumnDef } from "@tanstack/react-table"
 import Link from "next/link"
 
 import { Badge } from "@/components/ui/badge"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { DataTable } from "@/components/ui/data-table"
+import { emailColumn, phoneColumn } from "@/lib/tables/columns/contact"
 import type { VolunteerStatus } from "@/app/generated/prisma/client"
 
 export type ClusterVolunteerRow = {
@@ -52,6 +47,99 @@ const STATUS_VARIANT: Record<VolunteerStatus, "default" | "secondary" | "destruc
  * that event's workspace. Linking there keeps one owner for those writes instead of
  * a second set of controls that would have to stay in step.
  */
+function buildColumns({
+  canEdit,
+  showEventColumn,
+}: {
+  canEdit: boolean
+  showEventColumn: boolean
+}): ColumnDef<ClusterVolunteerRow>[] {
+  return [
+    {
+      id: "name",
+      accessorFn: (row) => `${row.member.firstName} ${row.member.lastName}`,
+      header: "Name",
+      meta: { label: "Name", width: "name", locked: true, noTruncate: true },
+      cell: ({ row }) => {
+        const v = row.original
+        return (
+          <div className="flex min-w-0 items-center gap-2">
+            {canEdit ? (
+              <Link
+                href={`/event/${v.event.id}/volunteers/${v.id}`}
+                className="truncate font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+              >
+                {v.member.firstName} {v.member.lastName}
+              </Link>
+            ) : (
+              <span className="truncate font-medium">
+                {v.member.firstName} {v.member.lastName}
+              </span>
+            )}
+            {v.servingInBoth && (
+              <Badge variant="outline" className="shrink-0 text-xs font-normal">
+                Serving in both
+              </Badge>
+            )}
+          </div>
+        )
+      },
+    },
+    // Previously a grey subtitle under the name; a column of its own so it can
+    // be copied, and switched off by anyone who doesn't need it.
+    phoneColumn<ClusterVolunteerRow>((row) => row.member.phone),
+    // The Event column only earns its place when the day has more than one.
+    ...(showEventColumn
+      ? [
+          {
+            id: "event",
+            accessorFn: (row: ClusterVolunteerRow) => row.event.name,
+            header: "Signed up under",
+            meta: { label: "Signed up under", width: "name" },
+            cell: ({ row }) => (
+              <span className="text-sm text-muted-foreground">{row.original.event.name}</span>
+            ),
+          } satisfies ColumnDef<ClusterVolunteerRow>,
+        ]
+      : []),
+    {
+      id: "committee",
+      accessorFn: (row) => row.committee.name,
+      header: "Committee",
+      meta: { label: "Committee", width: "text" },
+      cell: ({ row }) => <span className="text-sm">{row.original.committee.name}</span>,
+    },
+    {
+      id: "role",
+      accessorFn: (row) => row.assignedRole?.name ?? row.preferredRole.name,
+      header: "Role",
+      meta: { label: "Role", width: "text" },
+      cell: ({ row }) =>
+        row.original.assignedRole?.name ?? (
+          <span className="text-muted-foreground">
+            {row.original.preferredRole.name} <span className="text-xs">(preferred)</span>
+          </span>
+        ),
+    },
+    {
+      accessorKey: "status",
+      header: "Status",
+      meta: { label: "Status", width: "narrow" },
+      cell: ({ row }) => (
+        <Badge variant={STATUS_VARIANT[row.original.status]}>{row.original.status}</Badge>
+      ),
+    },
+    emailColumn<ClusterVolunteerRow>((row) => row.member.email, { optIn: true }),
+    {
+      accessorKey: "notes",
+      header: "Notes",
+      meta: { label: "Notes", width: "wide", optIn: true },
+      cell: ({ row }) =>
+        row.original.notes ?? <span className="text-muted-foreground">—</span>,
+    },
+  ]
+}
+
 export function ClusterVolunteersTable({
   rows,
   committees,
@@ -70,6 +158,10 @@ export function ClusterVolunteersTable({
   formIsOpen: boolean
 }) {
   const showEventColumn = events.length > 1
+  const columns = React.useMemo(
+    () => buildColumns({ canEdit, showEventColumn }),
+    [canEdit, showEventColumn],
+  )
 
   if (rows.length === 0) {
     return (
@@ -98,66 +190,13 @@ export function ClusterVolunteersTable({
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border">
-      <div className="overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              {showEventColumn && <TableHead>Signed up under</TableHead>}
-              <TableHead>Committee</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead>Status</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((v) => (
-              <TableRow key={v.id}>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    {canEdit ? (
-                      <Link
-                        href={`/event/${v.event.id}/volunteers/${v.id}`}
-                        className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-                      >
-                        {v.member.firstName} {v.member.lastName}
-                      </Link>
-                    ) : (
-                      <span className="font-medium">
-                        {v.member.firstName} {v.member.lastName}
-                      </span>
-                    )}
-                    {v.servingInBoth && (
-                      <Badge variant="outline" className="text-xs font-normal">
-                        Serving in both
-                      </Badge>
-                    )}
-                  </div>
-                  {v.member.phone && (
-                    <p className="text-xs text-muted-foreground">{v.member.phone}</p>
-                  )}
-                </TableCell>
-                {showEventColumn && (
-                  <TableCell className="text-sm text-muted-foreground">
-                    {v.event.name}
-                  </TableCell>
-                )}
-                <TableCell className="text-sm">{v.committee.name}</TableCell>
-                <TableCell className="text-sm">
-                  {v.assignedRole?.name ?? (
-                    <span className="text-muted-foreground">
-                      {v.preferredRole.name} <span className="text-xs">(preferred)</span>
-                    </span>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <Badge variant={STATUS_VARIANT[v.status]}>{v.status}</Badge>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+    <div className="flex flex-col overflow-hidden rounded-lg border">
+      <DataTable
+        tableKey="cluster.volunteers"
+        rowLabel={{ one: "volunteer", many: "volunteers" }}
+        columns={columns}
+        data={rows}
+      />
       {committees.length === 0 && (
         <p className="border-t p-4 text-sm text-muted-foreground">
           No committees are set up on the day&apos;s events yet.

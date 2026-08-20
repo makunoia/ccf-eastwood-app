@@ -19,6 +19,9 @@ export function buildSelectionColumn<TData>(
     id: "select",
     enableSorting: false,
     enableHiding: false,
+    // Structural, so the column picker never offers to hide it: without the
+    // checkbox there is no way to reach the batch actions at all.
+    meta: { width: "micro", locked: true, stopRowClick: true },
     header: function SelectAllHeader() {
       const selection = useBatchSelection()
       if (!selection) return null

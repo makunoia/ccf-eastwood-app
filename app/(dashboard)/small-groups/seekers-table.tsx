@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { type ColumnDef } from "@tanstack/react-table"
 import Link from "next/link"
 import { IconUserSearch } from "@tabler/icons-react"
 import { toast } from "sonner"
@@ -15,14 +16,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { DataTable } from "@/components/ui/data-table"
+import { emailColumn, phoneColumn } from "@/lib/tables/columns/contact"
 import { dismissSeekerRequest } from "./actions"
 
 /**
@@ -67,6 +62,91 @@ function profileHref(row: SeekerRow) {
   return row.personType === "Member" ? `/members/${row.personId}` : `/guests/${row.personId}`
 }
 
+function buildColumns({
+  canWrite,
+  onDismiss,
+}: {
+  canWrite: boolean
+  onDismiss: (row: SeekerRow) => void
+}): ColumnDef<SeekerRow>[] {
+  return [
+    {
+      id: "person",
+      accessorFn: (row) => row.personName,
+      header: "Person",
+      meta: { label: "Person", width: "name", locked: true, noTruncate: true },
+      cell: ({ row }) => (
+        <div className="flex min-w-0 items-center gap-2">
+          <Link href={profileHref(row.original)} className={`truncate ${LINK_CLASS}`}>
+            {row.original.personName}
+          </Link>
+          <span
+            className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium ${PERSON_BADGE[row.original.personType]}`}
+          >
+            {row.original.personType}
+          </span>
+        </div>
+      ),
+    },
+    // Was one "Contact" cell showing `phone ?? email`, which silently hid
+    // whichever one it didn't pick. Two columns, either of which can be
+    // switched off, says the same thing without losing the other.
+    phoneColumn<SeekerRow>((row) => row.personPhone),
+    emailColumn<SeekerRow>((row) => row.personEmail, { optIn: true }),
+    {
+      id: "sourceEvent",
+      accessorFn: (row) => row.sourceEventName ?? "",
+      header: "Asked at",
+      meta: { label: "Asked at", width: "name" },
+      cell: ({ row }) =>
+        row.original.sourceEventId && row.original.sourceEventName ? (
+          <Link href={`/event/${row.original.sourceEventId}/dashboard`} className={LINK_CLASS}>
+            {row.original.sourceEventName}
+          </Link>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    },
+    {
+      id: "currentGroup",
+      accessorFn: (row) => row.currentGroupName ?? "",
+      header: "Current DGroup",
+      meta: { label: "Current DGroup", width: "name" },
+      cell: ({ row }) =>
+        row.original.currentGroupId && row.original.currentGroupName ? (
+          <Link href={`/small-groups/${row.original.currentGroupId}`} className={LINK_CLASS}>
+            {row.original.currentGroupName}
+          </Link>
+        ) : (
+          <span className="text-muted-foreground">None</span>
+        ),
+    },
+    {
+      accessorKey: "createdAt",
+      header: "Asked",
+      meta: { label: "Asked", width: "date" },
+      cell: ({ row }) => (
+        <span className="text-muted-foreground">{formatDate(row.original.createdAt)}</span>
+      ),
+    },
+    ...(canWrite
+      ? [
+          {
+            id: "actions",
+            // Wider than the usual icon-only actions column: this one holds a
+            // text button.
+            meta: { width: "narrow", locked: true },
+            cell: ({ row }) => (
+              <Button variant="ghost" size="sm" onClick={() => onDismiss(row.original)}>
+                Dismiss
+              </Button>
+            ),
+          } satisfies ColumnDef<SeekerRow>,
+        ]
+      : []),
+  ]
+}
+
 export function SeekersTable({
   seekers,
   canWrite,
@@ -75,6 +155,10 @@ export function SeekersTable({
   canWrite: boolean
 }) {
   const [dismissing, setDismissing] = React.useState<SeekerRow | null>(null)
+  const columns = React.useMemo(
+    () => buildColumns({ canWrite, onDismiss: setDismissing }),
+    [canWrite],
+  )
   const [pending, setPending] = React.useState(false)
 
   async function handleDismiss() {
@@ -148,68 +232,8 @@ export function SeekersTable({
       </div>
 
       {/* Desktop table */}
-      <div className="hidden md:block rounded-lg border overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Person</TableHead>
-              <TableHead>Contact</TableHead>
-              <TableHead>Asked at</TableHead>
-              <TableHead>Current DGroup</TableHead>
-              <TableHead>Asked</TableHead>
-              {canWrite && <TableHead className="w-0" />}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {seekers.map((s) => (
-              <TableRow key={s.id}>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    <Link href={profileHref(s)} className={LINK_CLASS}>
-                      {s.personName}
-                    </Link>
-                    <span
-                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${PERSON_BADGE[s.personType]}`}
-                    >
-                      {s.personType}
-                    </span>
-                  </div>
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {s.personPhone ?? s.personEmail ?? "—"}
-                </TableCell>
-                <TableCell>
-                  {s.sourceEventId && s.sourceEventName ? (
-                    <Link href={`/event/${s.sourceEventId}/dashboard`} className={LINK_CLASS}>
-                      {s.sourceEventName}
-                    </Link>
-                  ) : (
-                    <span className="text-muted-foreground">—</span>
-                  )}
-                </TableCell>
-                <TableCell>
-                  {s.currentGroupId && s.currentGroupName ? (
-                    <Link href={`/small-groups/${s.currentGroupId}`} className={LINK_CLASS}>
-                      {s.currentGroupName}
-                    </Link>
-                  ) : (
-                    <span className="text-muted-foreground">None</span>
-                  )}
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {formatDate(s.createdAt)}
-                </TableCell>
-                {canWrite && (
-                  <TableCell>
-                    <Button variant="ghost" size="sm" onClick={() => setDismissing(s)}>
-                      Dismiss
-                    </Button>
-                  </TableCell>
-                )}
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+      <div className="hidden md:flex md:flex-1 md:flex-col">
+        <DataTable tableKey="small-groups.seekers" rowLabel={{ one: "seeker", many: "seekers" }} columns={columns} data={seekers} />
       </div>
 
       <AlertDialog

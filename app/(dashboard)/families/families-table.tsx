@@ -67,6 +67,8 @@ export function FamiliesTable({
       {/* Desktop table */}
       <div className="hidden md:flex md:flex-1 md:flex-col">
         <DataTable
+          tableKey="families"
+          rowLabel={{ one: "family", many: "families" }}
           columns={columns}
           data={families}
           emptyState={

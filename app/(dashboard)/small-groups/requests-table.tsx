@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { type ColumnDef } from "@tanstack/react-table"
 import Link from "next/link"
 import { IconCheck, IconDots, IconUsersGroup, IconX } from "@tabler/icons-react"
 import { Button } from "@/components/ui/button"
@@ -21,14 +22,9 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { DataTable } from "@/components/ui/data-table"
+import { buildSelectionColumn } from "@/components/batch/selection-column"
+import { emailColumn, phoneColumn } from "@/lib/tables/columns/contact"
 import { useBatchSelection } from "@/components/batch/batch-selection-provider"
 import { RequestDecisionDialog } from "./request-decision-dialog"
 import { type RequestDecision } from "./actions"
@@ -265,6 +261,97 @@ function RequestRowActions({
 
 // ─── Requests table ─────────────────────────────────────────────────────────────
 
+function buildColumns({
+  selectable,
+  canWrite,
+  onDecide,
+}: {
+  selectable: boolean
+  canWrite: boolean
+  onDecide: (request: RequestRow, decision: RequestDecision) => void
+}): ColumnDef<RequestRow>[] {
+  return [
+    ...(selectable ? [buildSelectionColumn<RequestRow>()] : []),
+    {
+      id: "person",
+      accessorFn: (row) => row.personName,
+      header: "Person",
+      meta: { label: "Person", width: "name", locked: true, noTruncate: true },
+      cell: ({ row }) => (
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate font-medium">{row.original.personName}</span>
+          <span
+            className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium ${PERSON_BADGE[row.original.personType]}`}
+          >
+            {row.original.personType}
+          </span>
+        </div>
+      ),
+    },
+    {
+      id: "requestType",
+      accessorFn: (row) => (row.isTransfer ? `Transfer from ${row.fromGroupName}` : "Join"),
+      header: "Request Type",
+      meta: { label: "Request Type", width: "text" },
+      cell: ({ row }) =>
+        row.original.isTransfer ? (
+          <span className="text-sm">
+            Transfer from <span className="font-medium">{row.original.fromGroupName}</span>
+          </span>
+        ) : (
+          <span className="text-sm text-muted-foreground">Join</span>
+        ),
+    },
+    {
+      accessorKey: "targetGroupName",
+      header: "Target Group",
+      meta: { label: "Target Group", width: "name" },
+      cell: ({ row }) => <span className="font-medium">{row.original.targetGroupName}</span>,
+    },
+    {
+      id: "leader",
+      accessorFn: (row) => row.leaderName ?? "",
+      header: "Leader",
+      meta: { label: "Leader", width: "name" },
+      cell: ({ row }) =>
+        row.original.leaderName ?? <span className="text-muted-foreground">No leader</span>,
+    },
+    // Was a grey subtitle under the leader's name; its own copyable column now,
+    // which is what an admin chasing a pending request actually wants.
+    phoneColumn<RequestRow>((row) => row.leaderPhone, {
+      id: "leaderPhone",
+      header: "Leader Mobile",
+    }),
+    {
+      accessorKey: "createdAt",
+      header: "Requested",
+      meta: { label: "Requested", width: "date" },
+      cell: ({ row }) => (
+        <span className="text-sm text-muted-foreground">{formatDate(row.original.createdAt)}</span>
+      ),
+    },
+    phoneColumn<RequestRow>((row) => row.personPhone, {
+      id: "personPhone",
+      header: "Person Mobile",
+      optIn: true,
+    }),
+    emailColumn<RequestRow>((row) => row.personEmail, {
+      id: "personEmail",
+      header: "Person Email",
+      optIn: true,
+    }),
+    ...(canWrite
+      ? [
+          {
+            id: "actions",
+            meta: { width: "actions", locked: true, stopRowClick: true },
+            cell: ({ row }) => <RequestRowActions request={row.original} onDecide={onDecide} />,
+          } satisfies ColumnDef<RequestRow>,
+        ]
+      : []),
+  ]
+}
+
 export function RequestsTable({
   requests,
   canWrite = false,
@@ -291,10 +378,15 @@ export function RequestsTable({
     setSheetOpen(true)
   }
 
-  function decide(request: RequestRow, decision: RequestDecision) {
+  const decide = React.useCallback((request: RequestRow, decision: RequestDecision) => {
     setSheetOpen(false)
     setDeciding({ request, decision })
-  }
+  }, [])
+
+  const columns = React.useMemo(
+    () => buildColumns({ selectable, canWrite, onDecide: decide }),
+    [selectable, canWrite, decide],
+  )
 
   if (requests.length === 0) {
     return (
@@ -391,93 +483,14 @@ export function RequestsTable({
       </div>
 
       {/* Desktop table */}
-      <div className="hidden md:block rounded-lg border overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              {selectable && (
-                <TableHead className="w-0">
-                  <Checkbox
-                    checked={
-                      selection?.allSelected
-                        ? true
-                        : selection?.someSelected
-                          ? "indeterminate"
-                          : false
-                    }
-                    onCheckedChange={() => selection?.toggleAll()}
-                    aria-label="Select all requests"
-                  />
-                </TableHead>
-              )}
-              <TableHead>Person</TableHead>
-              <TableHead>Request Type</TableHead>
-              <TableHead>Target Group</TableHead>
-              <TableHead>Leader</TableHead>
-              <TableHead>Requested</TableHead>
-              {canWrite && <TableHead className="w-0" />}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {requests.map((r) => (
-              <TableRow
-                key={r.id}
-                className="cursor-pointer"
-                data-state={selection?.isSelected(r.id) ? "selected" : undefined}
-                onClick={() => openSheet(r)}
-              >
-                {selectable && (
-                  <TableCell onClick={(e) => e.stopPropagation()}>
-                    <Checkbox
-                      checked={selection?.isSelected(r.id) ?? false}
-                      onCheckedChange={() => selection?.toggle(r.id)}
-                      aria-label={`Select ${r.personName}'s request`}
-                    />
-                  </TableCell>
-                )}
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium">{r.personName}</span>
-                    <span
-                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${PERSON_BADGE[r.personType]}`}
-                    >
-                      {r.personType}
-                    </span>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  {r.isTransfer ? (
-                    <span className="text-sm">
-                      Transfer from{" "}
-                      <span className="font-medium">{r.fromGroupName}</span>
-                    </span>
-                  ) : (
-                    <span className="text-sm text-muted-foreground">Join</span>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <span className="font-medium">{r.targetGroupName}</span>
-                </TableCell>
-                <TableCell>
-                  <p className="text-sm">{r.leaderName ?? <span className="text-muted-foreground">No leader</span>}</p>
-                  {r.leaderPhone && (
-                    <p className="text-xs text-muted-foreground">
-                      {r.leaderPhone}
-                    </p>
-                  )}
-                </TableCell>
-                <TableCell className="text-sm text-muted-foreground">
-                  {formatDate(r.createdAt)}
-                </TableCell>
-                {canWrite && (
-                  <TableCell onClick={(e) => e.stopPropagation()}>
-                    <RequestRowActions request={r} onDecide={decide} />
-                  </TableCell>
-                )}
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+      <div className="hidden md:flex md:flex-1 md:flex-col">
+        <DataTable
+          tableKey="small-groups.requests"
+          rowLabel={{ one: "request", many: "requests" }}
+          columns={columns}
+          data={requests}
+          onRowClick={openSheet}
+        />
       </div>
 
       <RequestDetailSheet

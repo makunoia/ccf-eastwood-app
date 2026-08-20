@@ -128,6 +128,7 @@ export function buildColumns(): ColumnDef<MinistryRow>[] {
     {
       accessorKey: "name",
       header: "Name",
+      meta: { label: "Name", width: "name", locked: true },
       cell: ({ row }) => (
         <Link
           href={`/ministries/${row.original.id}`}
@@ -140,6 +141,7 @@ export function buildColumns(): ColumnDef<MinistryRow>[] {
     {
       accessorKey: "lifeStage",
       header: "Life Stage",
+      meta: { label: "Life Stage", width: "status" },
       cell: ({ row }) =>
         row.original.lifeStage ?? (
           <span className="text-muted-foreground">—</span>
@@ -148,6 +150,7 @@ export function buildColumns(): ColumnDef<MinistryRow>[] {
     {
       accessorKey: "description",
       header: "Description",
+      meta: { label: "Description", width: "wide" },
       cell: ({ row }) =>
         row.original.description ?? (
           <span className="text-muted-foreground">—</span>
@@ -156,9 +159,11 @@ export function buildColumns(): ColumnDef<MinistryRow>[] {
     {
       accessorKey: "eventCount",
       header: "Events",
+      meta: { label: "Events", width: "narrow" },
     },
     {
       id: "actions",
+      meta: { width: "actions", locked: true },
       cell: ({ row }) => <RowActions row={row.original} />,
     },
   ]

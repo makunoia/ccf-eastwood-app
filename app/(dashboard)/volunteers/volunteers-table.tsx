@@ -1,12 +1,14 @@
 "use client"
 
 import * as React from "react"
+import { type ColumnDef } from "@tanstack/react-table"
 import Link from "next/link"
 import { IconChevronDown, IconChevronRight, IconHeart } from "@tabler/icons-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { DataTable } from "@/components/ui/data-table"
 import { RowActions, type MemberVolunteerRow, type VolunteerRecord } from "./columns"
 
 const STATUS_VARIANT = {
@@ -22,62 +24,60 @@ function SubTable({
   records: VolunteerRecord[]
   memberName: string
 }) {
+  // No <tr>/<td> wrapper: DataTable's `renderSubRow` already places this inside
+  // a full-width cell spanning the visible columns.
   return (
-    <tr>
-      <td colSpan={4} className="p-0">
-        <div className="border-b bg-muted/30">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b">
-                <th className="py-2 pl-12 pr-4 text-left font-medium text-muted-foreground">
-                  Event
-                </th>
-                <th className="px-4 py-2 text-left font-medium text-muted-foreground">
-                  Committee
-                </th>
-                <th className="px-4 py-2 text-left font-medium text-muted-foreground">
-                  Preferred Role
-                </th>
-                <th className="px-4 py-2 text-left font-medium text-muted-foreground">
-                  Assigned Role
-                </th>
-                <th className="px-4 py-2 text-left font-medium text-muted-foreground">
-                  Status
-                </th>
-                <th className="px-4 py-2" />
-              </tr>
-            </thead>
-            <tbody>
-              {records.map((r) => (
-                <tr key={r.id} className="border-b last:border-0">
-                  <td className="py-2 pl-12 pr-4">
-                    <Link
-                      href={`/event/${r.eventId}/registrants`}
-                      className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-                    >
-                      {r.eventName}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-2">{r.committee}</td>
-                  <td className="px-4 py-2">{r.preferredRole}</td>
-                  <td className="px-4 py-2">
-                    {r.assignedRole ?? (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2">
-                    <Badge variant={STATUS_VARIANT[r.status]}>{r.status}</Badge>
-                  </td>
-                  <td className="px-4 py-2">
-                    <RowActions volunteerId={r.id} memberName={memberName} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </td>
-    </tr>
+    <div className="border-b bg-muted/30">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b">
+            <th className="py-2 pl-12 pr-4 text-left font-medium text-muted-foreground">
+              Event
+            </th>
+            <th className="px-4 py-2 text-left font-medium text-muted-foreground">
+              Committee
+            </th>
+            <th className="px-4 py-2 text-left font-medium text-muted-foreground">
+              Preferred Role
+            </th>
+            <th className="px-4 py-2 text-left font-medium text-muted-foreground">
+              Assigned Role
+            </th>
+            <th className="px-4 py-2 text-left font-medium text-muted-foreground">
+              Status
+            </th>
+            <th className="px-4 py-2" />
+          </tr>
+        </thead>
+        <tbody>
+          {records.map((r) => (
+            <tr key={r.id} className="border-b last:border-0">
+              <td className="py-2 pl-12 pr-4">
+                <Link
+                  href={`/event/${r.eventId}/registrants`}
+                  className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+                >
+                  {r.eventName}
+                </Link>
+              </td>
+              <td className="px-4 py-2">{r.committee}</td>
+              <td className="px-4 py-2">{r.preferredRole}</td>
+              <td className="px-4 py-2">
+                {r.assignedRole ?? (
+                  <span className="text-muted-foreground">—</span>
+                )}
+              </td>
+              <td className="px-4 py-2">
+                <Badge variant={STATUS_VARIANT[r.status]}>{r.status}</Badge>
+              </td>
+              <td className="px-4 py-2">
+                <RowActions volunteerId={r.id} memberName={memberName} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
@@ -147,17 +147,70 @@ function MemberCard({ member }: { member: MemberVolunteerRow }) {
   )
 }
 
+function buildColumns(expanded: Set<string>): ColumnDef<MemberVolunteerRow>[] {
+  return [
+    {
+      id: "member",
+      accessorFn: (row) => row.memberName,
+      header: "Member",
+      meta: { label: "Member", width: "name", locked: true, noTruncate: true },
+      cell: ({ row }) => (
+        <div className="flex min-w-0 items-center gap-2 font-medium">
+          <Button variant="ghost" size="icon" className="size-6 shrink-0" tabIndex={-1}>
+            {expanded.has(row.original.memberId) ? (
+              <IconChevronDown className="size-3" />
+            ) : (
+              <IconChevronRight className="size-3" />
+            )}
+            <span className="sr-only">
+              {expanded.has(row.original.memberId) ? "Collapse" : "Expand"}{" "}
+              {row.original.memberName}
+            </span>
+          </Button>
+          <Link
+            href={`/members/${row.original.memberId}`}
+            className="truncate font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {row.original.memberName}
+          </Link>
+        </div>
+      ),
+    },
+    {
+      accessorKey: "totalEvents",
+      header: "Events Volunteered",
+      meta: { label: "Events Volunteered", width: "narrow", align: "right" },
+      cell: ({ row }) => <span className="tabular-nums">{row.original.totalEvents}</span>,
+    },
+    {
+      accessorKey: "aggregatedStatus",
+      header: "Status",
+      meta: { label: "Status", width: "status" },
+      cell: ({ row }) => (
+        <Badge variant={STATUS_VARIANT[row.original.aggregatedStatus]}>
+          {row.original.aggregatedStatus}
+        </Badge>
+      ),
+    },
+  ]
+}
+
 export function VolunteersTable({ members }: { members: MemberVolunteerRow[] }) {
   const [expanded, setExpanded] = React.useState<Set<string>>(new Set())
 
-  function toggle(memberId: string) {
+  const toggle = React.useCallback((memberId: string) => {
     setExpanded((prev) => {
       const next = new Set(prev)
       if (next.has(memberId)) next.delete(memberId)
       else next.add(memberId)
       return next
     })
-  }
+  }, [])
+
+  // Rebuilt when the expanded set changes so the chevron in the Member cell
+  // points the right way.
+  const columns = React.useMemo(() => buildColumns(expanded), [expanded])
 
   const empty = (
     <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
@@ -178,61 +231,19 @@ export function VolunteersTable({ members }: { members: MemberVolunteerRow[] }) 
       </div>
 
       {/* Desktop */}
-      <div className="hidden overflow-x-auto rounded-lg border md:block">
-        <table className="w-full text-sm">
-          <thead className="border-b bg-muted/50">
-            <tr>
-              <th className="px-4 py-3 text-left font-medium">Member</th>
-              <th className="px-4 py-3 text-left font-medium">Events Volunteered</th>
-              <th className="px-4 py-3 text-left font-medium">Status</th>
-              <th className="px-4 py-3" />
-            </tr>
-          </thead>
-          <tbody>
-            {members.map((m) => (
-              <React.Fragment key={m.memberId}>
-                <tr
-                  className="cursor-pointer border-b hover:bg-muted/50 transition-colors"
-                  onClick={() => toggle(m.memberId)}
-                >
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2 font-medium">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-6 shrink-0"
-                        tabIndex={-1}
-                      >
-                        {expanded.has(m.memberId) ? (
-                          <IconChevronDown className="size-3" />
-                        ) : (
-                          <IconChevronRight className="size-3" />
-                        )}
-                      </Button>
-                      <Link
-                        href={`/members/${m.memberId}`}
-                        className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {m.memberName}
-                      </Link>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">{m.totalEvents}</td>
-                  <td className="px-4 py-3">
-                    <Badge variant={STATUS_VARIANT[m.aggregatedStatus]}>
-                      {m.aggregatedStatus}
-                    </Badge>
-                  </td>
-                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()} />
-                </tr>
-                {expanded.has(m.memberId) && (
-                  <SubTable records={m.records} memberName={m.memberName} />
-                )}
-              </React.Fragment>
-            ))}
-          </tbody>
-        </table>
+      <div className="hidden md:flex md:flex-1 md:flex-col">
+        <DataTable
+          tableKey="volunteers"
+          rowLabel={{ one: "volunteer", many: "volunteers" }}
+          columns={columns}
+          data={members}
+          onRowClick={(m) => toggle(m.memberId)}
+          renderSubRow={(m) =>
+            expanded.has(m.memberId) ? (
+              <SubTable records={m.records} memberName={m.memberName} />
+            ) : null
+          }
+        />
       </div>
     </>
   )

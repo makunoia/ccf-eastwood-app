@@ -112,6 +112,7 @@ export function buildColumns(canWrite: boolean): ColumnDef<FamilyRow>[] {
     {
       accessorKey: "name",
       header: "Family",
+      meta: { label: "Family", width: "name", locked: true },
       cell: ({ row }) => (
         <Link
           href={`/families/${row.original.id}`}
@@ -124,21 +125,25 @@ export function buildColumns(canWrite: boolean): ColumnDef<FamilyRow>[] {
     {
       accessorKey: "parents",
       header: "Parents",
+      meta: { label: "Parents", width: "name" },
       cell: ({ row }) =>
         row.original.parents || <span className="text-muted-foreground">—</span>,
     },
     {
       accessorKey: "childCount",
       header: "Children",
+      meta: { label: "Children", width: "narrow", align: "right" },
     },
     {
       accessorKey: "memberCount",
       header: "Total",
+      meta: { label: "Total", width: "narrow", align: "right" },
     },
   ]
   if (canWrite) {
     columns.push({
       id: "actions",
+      meta: { width: "actions", locked: true },
       cell: ({ row }) => <RowActions row={row.original} />,
     })
   }

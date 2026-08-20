@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { type ColumnDef } from "@tanstack/react-table"
 import Link from "next/link"
 import { IconCheck } from "@tabler/icons-react"
 
@@ -13,14 +14,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { DataTable } from "@/components/ui/data-table"
+import { phoneColumn } from "@/lib/tables/columns/contact"
 import { cn } from "@/lib/utils"
 
 type PersonEvent = {
@@ -76,6 +71,87 @@ type Person = {
   events: PersonEvent[]
   registeredAt: string | null
 }
+
+const columns: ColumnDef<Person>[] = [
+  {
+    id: "name",
+    accessorFn: (row) => `${row.firstName} ${row.lastName}`,
+    header: "Name",
+    meta: { label: "Name", width: "name", locked: true },
+    cell: ({ row }) => (
+      <Link
+        href={personEventHref(row.original.events[0])}
+        className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+      >
+        {row.original.firstName} {row.original.lastName}
+      </Link>
+    ),
+  },
+  {
+    id: "events",
+    accessorFn: (row) => row.events.map((e) => e.eventName).join(", "),
+    header: "Events",
+    // A wrapping row of badges lays itself out; truncating would clip the
+    // second chip rather than shortening any text.
+    meta: { label: "Events", width: "wide", noTruncate: true },
+    cell: ({ row }) => (
+      <div className="flex flex-wrap gap-1.5">
+        {row.original.events.map((e) => (
+          <Link
+            key={e.eventId}
+            href={personEventHref(e)}
+            title={`${e.eventName} — ${
+              e.kind === "Volunteer"
+                ? VOLUNTEER_STANDING_TITLE[e.standing]
+                : STANDING_TITLE[e.standing]
+            }`}
+          >
+            <Badge
+              variant={e.checkedIn ? "default" : "outline"}
+              className={cn(
+                "font-normal transition-colors",
+                e.checkedIn ? "hover:bg-primary/85" : "hover:bg-muted",
+                // Registered, but nothing ties it to this day. Dimmed rather
+                // than hidden — the registration is real, and dropping the chip
+                // was what made these people look unregistered while the event
+                // screen refused to add them again.
+                e.standing === "SeriesOnly" && "border-dashed text-muted-foreground",
+              )}
+            >
+              {e.checkedIn && <IconCheck className="size-3" />}
+              {e.eventName}
+            </Badge>
+          </Link>
+        ))}
+      </div>
+    ),
+  },
+  {
+    accessorKey: "type",
+    header: "Type",
+    meta: { label: "Type", width: "status" },
+    cell: ({ row }) => <Badge variant={TYPE_VARIANT[row.original.type]}>{row.original.type}</Badge>,
+  },
+  {
+    accessorKey: "registeredAt",
+    header: "Registered",
+    meta: { label: "Registered", width: "date" },
+    cell: ({ row }) => (
+      <span className="text-muted-foreground">
+        {row.original.registeredAt
+          ? new Date(row.original.registeredAt).toLocaleDateString("en-PH", {
+              month: "short",
+              day: "numeric",
+              hour: "numeric",
+              minute: "2-digit",
+            })
+          : "—"}
+      </span>
+    ),
+  },
+  // Carried on the row for the search box but never shown until now.
+  phoneColumn<Person>((row) => row.phone, { optIn: true }),
+]
 
 export function ClusterRegistrantsClient({
   people,
@@ -157,80 +233,12 @@ export function ClusterRegistrantsClient({
           No registrants{search || eventId || type ? " match the current filters" : " yet"}.
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Events</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Registered</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.map((p) => (
-                <TableRow key={p.key}>
-                  <TableCell className="whitespace-nowrap align-top">
-                    <Link
-                      href={personEventHref(p.events[0])}
-                      className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-                    >
-                      {p.firstName} {p.lastName}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap gap-1.5">
-                      {p.events.map((e) => (
-                        <Link
-                          key={e.eventId}
-                          href={personEventHref(e)}
-                          title={`${e.eventName} — ${
-                            e.kind === "Volunteer"
-                              ? VOLUNTEER_STANDING_TITLE[e.standing]
-                              : STANDING_TITLE[e.standing]
-                          }`}
-                        >
-                          <Badge
-                            variant={e.checkedIn ? "default" : "outline"}
-                            className={cn(
-                              "font-normal transition-colors",
-                              e.checkedIn
-                                ? "hover:bg-primary/85"
-                                : "hover:bg-muted",
-                              // Registered, but nothing ties it to this day.
-                              // Dimmed rather than hidden — the registration is
-                              // real, and dropping the chip was what made these
-                              // people look unregistered while the event screen
-                              // refused to add them again.
-                              e.standing === "SeriesOnly" &&
-                                "border-dashed text-muted-foreground"
-                            )}
-                          >
-                            {e.checkedIn && <IconCheck className="size-3" />}
-                            {e.eventName}
-                          </Badge>
-                        </Link>
-                      ))}
-                    </div>
-                  </TableCell>
-                  <TableCell className="align-top">
-                    <Badge variant={TYPE_VARIANT[p.type]}>{p.type}</Badge>
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap align-top text-muted-foreground">
-                    {p.registeredAt
-                      ? new Date(p.registeredAt).toLocaleDateString("en-PH", {
-                          month: "short",
-                          day: "numeric",
-                          hour: "numeric",
-                          minute: "2-digit",
-                        })
-                      : "—"}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <DataTable
+          tableKey="cluster.registrants"
+          rowLabel={{ one: "person", many: "people" }}
+          columns={columns}
+          data={filtered}
+        />
       )}
     </>
   )

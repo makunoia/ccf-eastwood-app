@@ -73,6 +73,8 @@ export function EventsTable({ events }: { events: EventRow[] }) {
       {/* Desktop table */}
       <div className="hidden md:flex md:flex-1 md:flex-col">
         <DataTable
+          tableKey="events"
+          rowLabel={{ one: "event", many: "events" }}
           columns={columns}
           data={events}
           emptyState={

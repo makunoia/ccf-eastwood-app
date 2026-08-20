@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { buildSelectionColumn } from "@/components/batch/selection-column"
+import { emailColumn, phoneColumn } from "@/lib/tables/columns/contact"
 import { PromoteGuestDialog } from "./promote-guest-dialog"
 
 export type GuestRow = {
@@ -85,6 +86,7 @@ export function buildColumns({
       accessorFn: (row) => `${row.nickname?.trim() || row.firstName} ${row.lastName}`,
       id: "name",
       header: "Name",
+      meta: { label: "Name", width: "name", locked: true },
       cell: ({ row, table }) => {
         const ids = table.getRowModel().rows.map((r) => (r.original as GuestRow).id)
         const preferredFirstName = row.original.nickname?.trim() || row.original.firstName
@@ -99,37 +101,23 @@ export function buildColumns({
         )
       },
     },
-    {
-      accessorKey: "email",
-      header: "Email",
-      cell: ({ row }) =>
-        row.original.email ?? (
-          <span className="text-muted-foreground">—</span>
-        ),
-    },
-    {
-      accessorKey: "phone",
-      header: "Mobile",
-      cell: ({ row }) =>
-        row.original.phone ?? (
-          <span className="text-muted-foreground">—</span>
-        ),
-    },
+    emailColumn<GuestRow>((row) => row.email),
+    phoneColumn<GuestRow>((row) => row.phone),
     {
       accessorKey: "eventCount",
       header: "Events",
+      meta: { label: "Events", width: "narrow", align: "right" },
     },
     {
       accessorKey: "lifeStage",
       header: "Life Stage",
-      cell: ({ row }) =>
-        row.original.lifeStage ?? (
-          <span className="text-muted-foreground">—</span>
-        ),
+      meta: { label: "Life Stage", width: "status" },
+      cell: ({ row }) => row.original.lifeStage ?? <GuestBlank />,
     },
     {
       accessorKey: "dateAdded",
       header: "Date Added",
+      meta: { label: "Date Added", width: "date" },
       cell: ({ row }) =>
         new Date(row.original.dateAdded).toLocaleDateString("en-PH", {
           year: "numeric",
@@ -138,13 +126,65 @@ export function buildColumns({
           timeZone: "UTC",
         }),
     },
+
+    // Already carried on the row for the CSV export; now offered on screen too,
+    // off by default, under the picker's "More columns".
+    {
+      accessorKey: "gender",
+      header: "Gender",
+      meta: { label: "Gender", width: "narrow", optIn: true },
+      cell: ({ row }) => row.original.gender ?? <GuestBlank />,
+    },
+    {
+      id: "language",
+      accessorFn: (row) => row.language.join(", "),
+      header: "Language",
+      meta: { label: "Language", width: "text", optIn: true },
+      cell: ({ row }) =>
+        row.original.language.length > 0 ? row.original.language.join(", ") : <GuestBlank />,
+    },
+    {
+      accessorKey: "workCity",
+      header: "Work City",
+      meta: { label: "Work City", width: "text", optIn: true },
+      cell: ({ row }) => row.original.workCity ?? <GuestBlank />,
+    },
+    {
+      accessorKey: "workIndustry",
+      header: "Industry",
+      meta: { label: "Industry", width: "text", optIn: true },
+      cell: ({ row }) => row.original.workIndustry ?? <GuestBlank />,
+    },
+    {
+      accessorKey: "meetingPreference",
+      header: "Meets",
+      meta: { label: "Meeting Preference", width: "status", optIn: true },
+      cell: ({ row }) => row.original.meetingPreference ?? <GuestBlank />,
+    },
+    {
+      accessorKey: "birthYear",
+      header: "Birth Year",
+      meta: { label: "Birth Year", width: "narrow", optIn: true },
+      cell: ({ row }) => row.original.birthYear ?? <GuestBlank />,
+    },
+    {
+      accessorKey: "notes",
+      header: "Notes",
+      meta: { label: "Notes", width: "wide", optIn: true },
+      cell: ({ row }) => row.original.notes ?? <GuestBlank />,
+    },
     ...(canWrite
       ? [
           {
             id: "actions",
+            meta: { width: "actions", locked: true },
             cell: ({ row }) => <RowActions row={row.original} />,
           } satisfies ColumnDef<GuestRow>,
         ]
       : []),
   ]
+}
+
+function GuestBlank() {
+  return <span className="text-muted-foreground">—</span>
 }

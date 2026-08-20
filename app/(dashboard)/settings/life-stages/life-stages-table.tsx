@@ -7,6 +7,8 @@ import { columns, type LifeStageRow } from "./columns"
 export function LifeStagesTable({ lifeStages }: { lifeStages: LifeStageRow[] }) {
   return (
     <DataTable
+          tableKey="settings.life-stages"
+          rowLabel={{ one: "life stage", many: "life stages" }}
       columns={columns}
       data={lifeStages}
       emptyState={

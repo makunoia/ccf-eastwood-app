@@ -10,6 +10,8 @@ import { canAccessEvent, isSuperAdmin } from "@/lib/permissions"
 import { resolveLandingPath } from "@/lib/landing"
 import { AssistantPanel } from "@/components/assistant/assistant-panel"
 import { BreadcrumbProvider, BreadcrumbOverride } from "@/components/breadcrumb-context"
+import { TablePreferencesProvider } from "@/components/tables/table-preferences-provider"
+import { getTablePreferences } from "@/lib/tables/preferences-server"
 
 async function getEventMeta(id: string) {
   return db.event.findUnique({
@@ -112,6 +114,7 @@ export default async function EventLayout({
     redirect("/dashboard")
   }
 
+  const tablePreferences = await getTablePreferences()
   const modules = event.modules.map((m) => m.type)
   const showBackLink = isSuperAdmin(session)
 
@@ -152,14 +155,16 @@ export default async function EventLayout({
         logoUrl={logoUrl}
       />
       <SidebarInset className="overflow-hidden">
-        <BreadcrumbProvider>
-          <BreadcrumbOverride href={`/event/${id}`} label={event.name} />
-          <EventHeader eventId={event.id} eventType={event.type} />
-          <div className="flex flex-1 flex-col overflow-y-auto min-h-0">
-            {children}
-          </div>
-        </BreadcrumbProvider>
-        {isSuperAdmin(session) && <AssistantPanel />}
+        <TablePreferencesProvider initial={tablePreferences}>
+          <BreadcrumbProvider>
+            <BreadcrumbOverride href={`/event/${id}`} label={event.name} />
+            <EventHeader eventId={event.id} eventType={event.type} />
+            <div className="flex flex-1 flex-col overflow-y-auto min-h-0">
+              {children}
+            </div>
+          </BreadcrumbProvider>
+          {isSuperAdmin(session) && <AssistantPanel />}
+        </TablePreferencesProvider>
       </SidebarInset>
     </SidebarProvider>
   )

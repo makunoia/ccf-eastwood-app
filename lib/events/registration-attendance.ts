@@ -14,6 +14,8 @@
  * applies the same OneTime-vs-occurrence split on the dashboard.
  */
 
+import { plural } from "@/lib/format/plural"
+
 export type RegistrationAttendanceTone = "attended" | "absent" | "pending"
 
 export type RegistrationAttendance = {
@@ -42,10 +44,6 @@ const DAY_MS = 24 * 60 * 60 * 1000
  */
 function hasConcluded(endDate: Date, now: Date): boolean {
   return now.getTime() >= endDate.getTime() + DAY_MS
-}
-
-function plural(n: number, word: string): string {
-  return `${n} ${word}${n === 1 ? "" : "s"}`
 }
 
 export function resolveRegistrationAttendance(

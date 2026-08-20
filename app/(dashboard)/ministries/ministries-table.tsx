@@ -65,6 +65,8 @@ export function MinistriesTable({ ministries }: { ministries: MinistryRow[] }) {
       {/* Desktop table */}
       <div className="hidden md:flex md:flex-1 md:flex-col">
         <DataTable
+          tableKey="ministries"
+          rowLabel={{ one: "ministry", many: "ministries" }}
           columns={columns}
           data={ministries}
           emptyState={
