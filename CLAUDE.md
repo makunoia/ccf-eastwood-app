@@ -410,7 +410,7 @@ Every list table renders through `DataTable` (`components/ui/data-table.tsx`), w
 | `width` | Semantic width token. Defaults to `text`. **The trailing `⋯` column takes `actions`, never `micro`** — `micro` is 44px for a checkbox or an expand chevron, and a 32px icon trigger inside it (after the cell's `px-4`) overflows its own cell, gets clipped by `truncate`, and loses the right edge of its hit area against the card border. `actions` is 52px and `DataTable` swaps the cell's `px-4` for `px-2 text-right`, which lands the glyph 16px in — the same optical gutter as the first column's text. |
 | `locked` | Never hideable or movable. Goes on the selection column, the identifier `<Link>` column, and `id: "actions"`. Hiding the identifier would leave rows with no route to their detail page. |
 | `optIn` | A real column that is **off by default** — a field the record holds that most days nobody needs (gender, work city, notes). Appears under "More columns" in the picker. |
-| `align` | `"right"` for counts. |
+| `align` | `"right"` for counts. It sets the cell's `text-align`, so it reaches **inline** content only — a cell that lays itself out (a flex row, a block) ignores it and stays left. That is how a right-aligned "Members" header came to sit a column-width away from its own values. |
 | `noTruncate` | For cells that lay out their own contents (a name plus a badge, a wrapping row of chips). |
 | `stopRowClick` | On a table with `onRowClick`, keep this cell's clicks to itself. |
 

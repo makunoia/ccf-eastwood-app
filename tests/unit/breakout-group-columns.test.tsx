@@ -63,7 +63,7 @@ const columns = () =>
 
 function columnMeta(id: string) {
   const col = columns().find((c) => c.id === id || (c as { accessorKey?: string }).accessorKey === id)
-  return col?.meta as { label?: string; optIn?: boolean } | undefined
+  return col?.meta as { label?: string; optIn?: boolean; align?: string } | undefined
 }
 
 describe("breakout groups columns", () => {
@@ -78,6 +78,29 @@ describe("breakout groups columns", () => {
     expect(columnMeta("genderFocus")).toMatchObject({ label: "Gender Focus", optIn: true })
     expect(columnMeta("language")).toMatchObject({ label: "Language", optIn: true })
     expect(columnMeta("ageRange")).toMatchObject({ label: "Age Range", optIn: true })
+  })
+
+  it("leaves the Members column aligned with the values under it", () => {
+    // `align: "right"` only reaches inline content: `DataTable` sets the cell's
+    // `text-align`, and the occupancy cell is a flex row, which is a
+    // block-level box that lays its children out from the left regardless. The
+    // column shipped declaring right and rendering left, so "3 / 8" sat a whole
+    // column-width away from the "Members" header above it.
+    expect(columnMeta("members")?.align).toBeUndefined()
+
+    render(
+      <TablePreferencesProvider initial={{}}>
+        <DataTable tableKey="event.breakout-members" columns={columns()} data={[makeRow()]} />
+      </TablePreferencesProvider>,
+    )
+
+    const header = screen.getByRole("columnheader", { name: "Members" })
+    const cell = screen.getByText("3 / 12").closest("td")
+    expect(cell).toBeTruthy()
+    // Whatever the header does, the cell does — that is the whole claim.
+    expect(header.className.includes("text-right")).toBe(
+      cell!.className.includes("text-right"),
+    )
   })
 
   it("keeps the profile columns out of the table until they are switched on", () => {

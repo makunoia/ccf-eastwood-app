@@ -482,7 +482,16 @@ export function buildColumns(
     {
       id: "members",
       header: "Members",
-      meta: { label: "Members", width: "narrow", align: "right" },
+      // Left, though `align: "right"` is the rule for counts, because this cell
+      // is not a bare count: it is an occupancy plus an optional "Full" badge,
+      // laid out in a flex row. Right-aligning it would have cost twice over —
+      // a block-level box lays its children out from the left whatever the
+      // cell's `text-align` says, which is why "3 / 8" sat a column-width to
+      // the left of its own "Members" header; and had it followed, every row
+      // carrying a badge would push its number left, so the figures would stop
+      // lining up with each other, which is the only reason to right-align a
+      // number in the first place.
+      meta: { label: "Members", width: "narrow" },
       accessorFn: (row) => row.memberCount,
       cell: ({ row }) => {
         const occupancy = breakoutOccupancy(row.original)
