@@ -3,6 +3,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { type ColumnDef } from "@tanstack/react-table"
 
+import { COLUMN_WIDTHS } from "@/lib/tables/column-sizing"
 import { DataTable } from "@/components/ui/data-table"
 import { TablePreferencesProvider } from "@/components/tables/table-preferences-provider"
 import { emailColumn, phoneColumn } from "@/lib/tables/columns/contact"
@@ -110,18 +111,20 @@ describe("DataTable — default rendering", () => {
     const widths = Array.from(container.querySelectorAll("colgroup col")).map(
       (c) => (c as HTMLElement).style.width,
     )
-
-    // Proportional, not literal pixels — handing the browser fixed pixel widths
-    // under `table-fixed` makes the table exactly as wide as their sum, which is
-    // what used to push a seven-column table off the side of a 1400px screen.
     expect(widths).toHaveLength(3)
-    for (const width of widths) expect(width).toContain("calc(")
 
-    // The floors are the vocabulary's, not the data's: name 140, email 150,
-    // phone 140 (see lib/tables/column-sizing.ts).
-    expect(widths[0]).toContain("140px")
-    expect(widths[1]).toContain("150px")
-    expect(widths[2]).toContain("140px")
+    // jsdom has no layout and no ResizeObserver, so this is the unmeasured
+    // form: each column's share of `size` as a bare percentage. Bare is
+    // load-bearing — Chrome drops a `<col>` width built with `calc()` or
+    // `max()` under `table-fixed` and gives every column the same auto width.
+    for (const width of widths) expect(width).toMatch(/^\d+(\.\d+)?%$/)
+
+    // The declared ratio — read from the vocabulary rather than restated here,
+    // so retuning a token is not a test failure.
+    const [name, email, phone] = widths.map(Number.parseFloat)
+    expect(name + email + phone).toBeCloseTo(100, 2)
+    expect(email / name).toBeCloseTo(COLUMN_WIDTHS.email.size / COLUMN_WIDTHS.name.size, 3)
+    expect(phone / name).toBeCloseTo(COLUMN_WIDTHS.phone.size / COLUMN_WIDTHS.name.size, 3)
   })
 
   it("gives two columns sharing a width token the identical style", () => {

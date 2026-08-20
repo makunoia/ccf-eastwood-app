@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import {
   COLUMN_WIDTHS,
   columnStyles,
+  resolveColumnWidths,
   columnWidth,
   tableMinWidth,
 } from "@/lib/tables/column-sizing"
@@ -247,14 +248,103 @@ describe("column width vocabulary", () => {
     }
   })
 
-  it("gives every flexible column a proportional width and a pixel floor", () => {
+  it("gives every flexible column its share of the table as a percentage", () => {
     const styles = columnStyles(["micro", "name", "email"])
     // The checkbox never flexes.
     expect(styles[0].width).toBe("44px")
-    // The rest split what's left, and never drop below their floor.
-    expect(styles[1].width).toContain("140px")
-    expect(styles[1].width).toContain("calc((100% - 44px)")
-    expect(styles[2].width).toContain("150px")
+    // The rest split what's left in proportion to their `size`.
+    const flexTotal = COLUMN_WIDTHS.name.size + COLUMN_WIDTHS.email.size
+    expect(styles[1].width).toBe(
+      `${((COLUMN_WIDTHS.name.size / flexTotal) * 100).toFixed(4)}%`,
+    )
+    expect(styles[2].width).toBe(
+      `${((COLUMN_WIDTHS.email.size / flexTotal) * 100).toFixed(4)}%`,
+    )
+    // …and those shares add up to the whole of what the fixed columns leave.
+    const total = styles
+      .slice(1)
+      .reduce((sum, style) => sum + Number.parseFloat(style.width), 0)
+    expect(total).toBeCloseTo(100, 3)
+  })
+
+  it("emits only bare lengths and percentages — never calc() or max()", () => {
+    // The regression this pins: `max(140px, calc((100% - 44px) * 0.478))` is a
+    // value Chrome will not accept for a `<col>` under `table-layout: fixed`.
+    // It drops the declaration, treats the column as `auto`, and fixed layout
+    // then splits the leftover space *equally* — so every flexible column came
+    // out the same width and the vocabulary had no effect on screen.
+    const styles = columnStyles([
+      "micro",
+      "name",
+      "email",
+      "phone",
+      "status",
+      "date",
+      "actions",
+    ])
+    for (const { width } of styles) {
+      expect(width).toMatch(/^(\d+px|\d+(\.\d+)?%)$/)
+    }
+    // And the proportions actually differ, which is the point of the tokens.
+    const flexible = styles.slice(1, -1).map((s) => s.width)
+    expect(new Set(flexible).size).toBe(flexible.length)
+  })
+
+  it("fills the available width in the declared proportions once measured", () => {
+    const widths = resolveColumnWidths(["micro", "name", "email", "actions"], 800)
+    expect(widths[0]).toBe(44)
+    expect(widths[3]).toBe(52)
+    // 800 - 96 of fixed columns, split 220:240.
+    expect(widths[1] + widths[2]).toBe(704)
+    expect(widths[2] / widths[1]).toBeCloseTo(240 / 220, 2)
+  })
+
+  it("holds a floored column at its floor and re-splits the rest", () => {
+    // `phone` claims 15% of a Members table, which at this width is under the
+    // 140px a "+63 917 555 1234" needs. It takes its floor, and the columns
+    // still flexing divide what is left — rather than everyone shrinking
+    // proportionally and the phone number losing its last two digits.
+    const tokens = ["micro", "name", "email", "phone", "status", "date", "actions"] as const
+    const widths = resolveColumnWidths([...tokens], 800)
+
+    expect(widths[3]).toBe(COLUMN_WIDTHS.phone.min)
+    expect(widths[5]).toBe(COLUMN_WIDTHS.date.min)
+    // Nothing is under its floor, and the row still fills the table exactly.
+    tokens.forEach((token, index) => {
+      expect(widths[index], token).toBeGreaterThanOrEqual(COLUMN_WIDTHS[token].min)
+    })
+    expect(widths.reduce((total, w) => total + w, 0)).toBe(800)
+    // The columns that never hit a floor keep their ratio to each other.
+    expect(widths[2] / widths[1]).toBeCloseTo(
+      COLUMN_WIDTHS.email.size / COLUMN_WIDTHS.name.size,
+      1,
+    )
+  })
+
+  it("fills the table exactly, whatever the arithmetic rounds to", () => {
+    // Rounded per column, eight columns each gaining half a pixel came to a
+    // table one pixel wider than its container — a horizontal scrollbar on a
+    // list that fits.
+    for (const available of [777, 934, 1001, 1439]) {
+      const widths = resolveColumnWidths(
+        ["micro", "name", "email", "text", "status", "date", "actions"],
+        available,
+      )
+      const total = widths.reduce((sum, w) => sum + w, 0)
+      expect(total, `at ${available}px`).toBe(
+        Math.max(available, tableMinWidth(["micro", "name", "email", "text", "status", "date", "actions"])),
+      )
+      for (const width of widths) expect(Number.isInteger(width)).toBe(true)
+    }
+  })
+
+  it("puts every column on its floor when even the floors do not fit", () => {
+    const tokens = ["micro", "name", "email", "phone"] as const
+    const widths = resolveColumnWidths([...tokens], 200)
+    expect(widths).toEqual(tokens.map((t) => COLUMN_WIDTHS[t].min))
+    // Which comes to the table's min-width — wider than the container, so it
+    // scrolls instead of crushing.
+    expect(widths.reduce((total, w) => total + w, 0)).toBe(tableMinWidth([...tokens]))
   })
 
   it("gives the same token the same width wherever it appears", () => {
@@ -282,9 +372,9 @@ describe("column width vocabulary", () => {
 
     const styles = columnStyles(["name", "actions"])
     expect(styles[1].width).toBe("52px")
-    // Fixed, so it comes out of the flexible columns' budget rather than
-    // flexing itself.
-    expect(styles[0].width).toContain("calc((100% - 52px)")
+    // Fixed, so it takes its pixels off the top and the one flexible column
+    // claims all of what's left.
+    expect(styles[0].width).toBe("100.0000%")
     expect(tableMinWidth(["name", "actions"])).toBe(
       COLUMN_WIDTHS.name.min + COLUMN_WIDTHS.actions.min,
     )

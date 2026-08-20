@@ -121,6 +121,11 @@ export function DataTable<TData, TValue>({
   const [sorting, setSorting] = React.useState<SortingState>([])
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
   const [pagination, setPagination] = React.useState({ pageIndex: 0, pageSize: initialPageSize })
+  // The space the table has to fill. Column floors can only be honoured against
+  // a real number, and `table-layout: fixed` will not take a `calc()` — see
+  // `columnStyles`. Null until measured, which is what the server renders with.
+  const frame = React.useRef<HTMLDivElement>(null)
+  const available = useAvailableWidth(frame)
 
   const { preference, setPreference, resetPreference } = useTablePreference(tableKey ?? "")
 
@@ -178,7 +183,7 @@ export function DataTable<TData, TValue>({
   const visibleColumns = table.getVisibleLeafColumns()
   const widths = visibleColumns.map((c) => c.columnDef.meta?.width)
   const minWidth = tableMinWidth(widths)
-  const styles = columnStyles(widths)
+  const styles = columnStyles(widths, available)
   const rows = table.getRowModel().rows
   const compact = layout.density === "Compact"
   // What's actually on screen, not what was handed in: on a tree table this is
@@ -213,7 +218,7 @@ export function DataTable<TData, TValue>({
         </div>
       )}
 
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div ref={frame} className="flex min-h-0 flex-1 flex-col">
         <Table
           data-density={layout.density}
           containerClassName="min-h-0 flex-1"
@@ -392,6 +397,34 @@ export function DataTable<TData, TValue>({
  * stylesheet order.
  */
 const ACTIONS_CELL_CLASS = "px-2 text-right"
+
+/**
+ * The measured inner width of an element, and `null` before it has one.
+ *
+ * `null` rather than a guessed number on purpose: it is what tells
+ * `columnStyles` to fall back to percentages, which is the right answer on the
+ * server and for the first paint. A guess would put the columns at the wrong
+ * pixels and then move them.
+ *
+ * Layout effect, so the measurement lands in the same frame the table first
+ * paints in. `ResizeObserver` is absent in jsdom, where there is no layout to
+ * measure anyway — the percentage form stands.
+ */
+function useAvailableWidth(ref: React.RefObject<HTMLElement | null>): number | null {
+  const [width, setWidth] = React.useState<number | null>(null)
+
+  React.useLayoutEffect(() => {
+    const node = ref.current
+    if (!node || typeof ResizeObserver === "undefined") return
+    const observer = new ResizeObserver(([entry]) => {
+      setWidth(Math.round(entry.contentRect.width))
+    })
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [ref])
+
+  return width
+}
 
 /** TanStack derives an id from `id`, then `accessorKey`; mirror that here. */
 function columnId<TData, TValue>(column: ColumnDef<TData, TValue>): string | null {

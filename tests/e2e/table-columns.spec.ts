@@ -94,6 +94,98 @@ test.describe("Table chrome", () => {
     await expect(page.getByText(new RegExp(`^${rows} members?$`))).toBeVisible()
   })
 
+  test("a column is as wide as its token says, not as wide as its neighbours", async ({
+    adminPage: page,
+  }) => {
+    await page.goto("/members")
+
+    const table = page.locator("table").first()
+    await expect(table).toBeVisible()
+
+    // Widths are proportions until the table has measured its container, then
+    // pixels with the floors resolved. Wait for the settled state — that is the
+    // one the admin looks at.
+    await expect
+      .poll(async () =>
+        table.evaluate((node) =>
+          Array.from(node.querySelectorAll("col")).every((col) =>
+            (col as HTMLElement).style.width.endsWith("px"),
+          ),
+        ),
+      )
+      .toBe(true)
+
+    const widths = await table.evaluate((node) => {
+      const byLabel: Record<string, number> = {}
+      for (const head of Array.from(node.querySelectorAll("thead th"))) {
+        const label = (head.textContent ?? "").trim()
+        if (label) byLabel[label] = head.getBoundingClientRect().width
+      }
+      return byLabel
+    })
+
+    // The defect this pins: `columnStyles` emitted `max(…, calc(…))`, which
+    // Chrome refuses for a `<col>` under `table-layout: fixed`. It fell back to
+    // `auto`, fixed layout split the leftover space equally, and every one of
+    // these came out at exactly the same width — so an Email column was as
+    // narrow as a Life Stage badge on every screen in the app.
+    expect(new Set(Object.values(widths)).size).toBeGreaterThan(1)
+    expect(widths.Email).toBeGreaterThan(widths.Name)
+    expect(widths.Name).toBeGreaterThan(widths["Life Stage"])
+
+    // Columns that aren't up against a floor keep the declared ratio, 240 : 220.
+    expect(widths.Email / widths.Name).toBeCloseTo(240 / 220, 1)
+
+    // And the two values that are worthless when clipped are not clipped: a
+    // date column at its bare proportion renders "Aug 20, 20…", and a phone
+    // number missing its last digits looks like one you could dial. Asserted as
+    // "does this cell fit its contents" rather than against the floors' current
+    // numbers, since that is what the floors are *for*.
+    // Text metrics decide this one, so wait for the real face — measured
+    // against the fallback font it can pass or fail for the wrong reason.
+    await page.evaluate(() => document.fonts.ready)
+
+    const clipped = await table.evaluate((node) => {
+      const heads = Array.from(node.querySelectorAll("thead th")).map((th) =>
+        (th.textContent ?? "").trim(),
+      )
+      const cells = Array.from(node.querySelectorAll("tbody tr")[0]?.querySelectorAll("td") ?? [])
+      return cells
+        .filter((_, index) => ["Mobile", "Date Joined"].includes(heads[index]))
+        .filter((cell) => {
+          // Whatever is actually doing the truncating — the cell, or the span
+          // inside the copy button, which sits next to an icon the column has
+          // to leave room for.
+          const boxes = [cell, ...Array.from(cell.querySelectorAll("*"))]
+          return boxes.some((box) => box.scrollWidth > box.clientWidth + 1)
+        })
+        .map((cell) => (cell.textContent ?? "").trim())
+    })
+    expect(clipped).toEqual([])
+  })
+
+  test("every value sits under its own header", async ({ adminPage: page }) => {
+    await page.goto("/members")
+
+    const table = page.locator("table").first()
+    await expect(table).toBeVisible()
+
+    const offsets = await table.evaluate((node) => {
+      const box = (el: Element) => {
+        const rect = el.getBoundingClientRect()
+        return { x: Math.round(rect.x), width: Math.round(rect.width) }
+      }
+      const row = node.querySelector("tbody tr")
+      return {
+        heads: Array.from(node.querySelectorAll("thead th")).map(box),
+        cells: Array.from(row?.querySelectorAll("td") ?? []).map(box),
+      }
+    })
+
+    expect(offsets.cells).toHaveLength(offsets.heads.length)
+    expect(offsets.cells).toEqual(offsets.heads)
+  })
+
   test("the row-actions trigger clears the table's right edge and stays clickable", async ({
     adminPage: page,
   }) => {
