@@ -4,7 +4,10 @@ import { notFound } from "next/navigation"
 import { IconArrowLeft } from "@tabler/icons-react"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
-import { getAccessibleClusterEvents } from "@/lib/clusters/aggregate"
+import {
+  getAccessibleClusterEvents,
+  getClusterCheckinShortcuts,
+} from "@/lib/clusters/aggregate"
 import { clusterCheckinPath } from "@/lib/public-routes"
 import { PageHeader } from "@/components/page-header"
 import { CheckinFormsCard, type ClusterCheckinFormRow } from "../checkin-forms-card"
@@ -23,43 +26,19 @@ export default async function ClusterCheckinFormsPage({
   const { id } = await params
   const cluster = await db.eventCluster.findUnique({
     where: { id },
-    select: { id: true, publicToken: true, checkInIsOpen: true },
+    select: { id: true, publicToken: true, date: true, checkInIsOpen: true },
   })
   if (!cluster) notFound()
 
-  // Each member event's check-in form, with live open-session state for
-  // MultiDay/Recurring events (their check-in opens per session).
+  // Each member event's check-in verdict, from the same resolver the kiosk and the
+  // day's Shortcuts use. This page used to compute its own — matching *any* open
+  // occurrence of the event, with no linked-session check and no date gate — so it
+  // could badge "Session open" for an event the kiosk would skip as `noSession`.
   const events = await getAccessibleClusterEvents(session, id)
-  const sessionEventIds = events.filter((e) => e.type !== "OneTime").map((e) => e.id)
-  const openOccurrences =
-    sessionEventIds.length > 0
-      ? await db.eventOccurrence.findMany({
-          where: { eventId: { in: sessionEventIds }, isOpen: true },
-          select: { eventId: true },
-        })
-      : []
-  const openByEvent = new Set(openOccurrences.map((o) => o.eventId))
-
-  // The Public access switch, which only OneTime events have — session-based
-  // check-in is governed per occurrence instead. A missing row means open, so
-  // only explicit `isOpen: false` rows count as closed.
-  const oneTimeEventIds = events.filter((e) => e.type === "OneTime").map((e) => e.id)
-  const closedConfigs =
-    oneTimeEventIds.length > 0
-      ? await db.formConfig.findMany({
-          where: { key: "EventCheckIn", eventId: { in: oneTimeEventIds }, isOpen: false },
-          select: { eventId: true },
-        })
-      : []
-  const closedEventIds = new Set(closedConfigs.map((c) => c.eventId))
-
-  const rows: ClusterCheckinFormRow[] = events.map((e) => ({
-    eventId: e.id,
-    eventName: e.name,
-    type: e.type,
-    hasOpenSession: openByEvent.has(e.id),
-    isFormOpen: !closedEventIds.has(e.id),
-  }))
+  const rows: ClusterCheckinFormRow[] = await getClusterCheckinShortcuts(
+    events,
+    cluster.date
+  )
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">
@@ -84,8 +63,8 @@ export default async function ClusterCheckinFormsPage({
       />
 
       {/* The per-event kiosks still exist and the board's Shortcuts still point
-          at them — an event that hasn't opened its own form is skipped by the
-          day's kiosk, and this is where that gets fixed. */}
+          at them. The switch above now opens all of these at once, so this is a
+          read-out of what it did — and the escape hatch for opening just one. */}
       <div className="flex flex-col gap-2">
         <h2 className="text-sm font-medium">Each event&apos;s own check-in form</h2>
         <CheckinFormsCard rows={rows} />

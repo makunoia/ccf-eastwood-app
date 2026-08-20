@@ -6,6 +6,19 @@ import {
   type ClusterExportEvent,
   type ClusterRegistrationExportRow,
 } from "./exports/cluster-registrations"
+import {
+  buildEventRegistrationsTable,
+  type EventRegistrationExportRow,
+} from "./exports/event-registrations"
+import {
+  buildSessionAttendanceTable,
+  type SessionAttendanceExportRow,
+} from "./exports/session-attendance"
+import {
+  buildEventVolunteersTable,
+  type EventVolunteerExportRow,
+} from "./exports/event-volunteers"
+import type { EventType } from "@/app/generated/prisma/client"
 
 // Row shapes — kept minimal and aligned to import field labels so a round-trip
 // (export → re-import) auto-maps without manual column matching.
@@ -188,6 +201,20 @@ export function exportVolunteersCSV(rows: VolunteerExportRow[]): void {
   )
 }
 
+/**
+ * The event workspace's column-picker version. The fixed-header form above still
+ * serves the dashboard-level volunteers list, which spans events and so has no
+ * single event's modules to gate a column on.
+ */
+export function exportEventVolunteersCSV(
+  filename: string,
+  rows: EventVolunteerExportRow[],
+  selectedColumns: string[],
+): void {
+  const { headers, cells } = buildEventVolunteersTable(rows, selectedColumns)
+  downloadCSV(filename, headers, cells)
+}
+
 // ── Event Sessions ────────────────────────────────────────────────────────────
 
 export type SessionSummaryExportRow = {
@@ -228,55 +255,16 @@ export function exportSessionsSummaryCSV(
   downloadCSV(filename, headers, cells)
 }
 
-export type SessionAttendanceExportRow = {
-  sessionDate: string // ISO yyyy-mm-dd
-  seriesTitle: string | null
-  firstName: string
-  lastName: string
-  mobile: string
-  type: "Member" | "Guest" | "Volunteer"
-  checkedInAt: string // ISO datetime
-}
-
-function formatCheckInTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString("en-PH", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Asia/Manila",
-  })
-}
-
-export function buildSessionAttendanceTable(
-  rows: SessionAttendanceExportRow[],
-  includeSeries: boolean,
-): { headers: string[]; cells: CSVCell[][] } {
-  const headers = [
-    "Session Date",
-    ...(includeSeries ? ["Series"] : []),
-    "First Name",
-    "Last Name",
-    "Mobile",
-    "Type",
-    "Checked In",
-  ]
-  const cells = rows.map((r) => [
-    r.sessionDate,
-    ...(includeSeries ? [r.seriesTitle] : []),
-    r.firstName,
-    r.lastName,
-    r.mobile,
-    r.type,
-    formatCheckInTime(r.checkedInAt),
-  ])
-  return { headers, cells }
-}
+// The attendance row shape, column registry and table builder live in
+// `lib/exports/session-attendance.ts` — the server action needs them to compute
+// the column offer, so they can't sit in this client-only module.
 
 export function exportSessionAttendanceCSV(
   filename: string,
   rows: SessionAttendanceExportRow[],
-  includeSeries: boolean,
+  selectedColumns: string[],
 ): void {
-  const { headers, cells } = buildSessionAttendanceTable(rows, includeSeries)
+  const { headers, cells } = buildSessionAttendanceTable(rows, selectedColumns)
   downloadCSV(filename, headers, cells)
 }
 
@@ -292,5 +280,17 @@ export function exportClusterRegistrationsCSV(
   events: ClusterExportEvent[],
 ): void {
   const { headers, cells } = buildClusterRegistrationsTable(rows, selectedColumns, events)
+  downloadCSV(filename, headers, cells)
+}
+
+// ── Single-event registrations ────────────────────────────────────────────────
+
+export function exportEventRegistrationsCSV(
+  filename: string,
+  rows: EventRegistrationExportRow[],
+  selectedColumns: string[],
+  eventType: EventType,
+): void {
+  const { headers, cells } = buildEventRegistrationsTable(rows, selectedColumns, eventType)
   downloadCSV(filename, headers, cells)
 }

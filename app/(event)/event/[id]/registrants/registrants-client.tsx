@@ -43,7 +43,17 @@ import { OptionalPhonePHInput } from "@/components/ui/optional-phone-ph-input"
 import { FilterBar, FilterField } from "@/components/filter-bar"
 import { PageActions, PageHeader, type PageAction } from "@/components/page-header"
 import { ImportWizard } from "@/components/import/import-wizard"
+import { useExportColumnsDialog } from "@/components/exports/export-columns-dialog"
 import { getEventRegistrantFields } from "@/lib/import/field-definitions"
+import { exportEventRegistrationsCSV } from "@/lib/export-entities"
+import { exportFilename } from "@/lib/exports/filename"
+import {
+  EVENT_EXPORT_GROUPS,
+  type EventExportGroup,
+  type EventRegistrationExportRow,
+} from "@/lib/exports/event-registrations"
+import type { EventType } from "@/app/generated/prisma/client"
+import { getEventRegistrationsExport } from "./export-actions"
 import {
   markRegistrantAttended,
   markRegistrantPaid,
@@ -96,62 +106,6 @@ function displayEmail(r: Registrant) {
   return r.email
 }
 
-// ─── CSV export ───────────────────────────────────────────────────────────────
-
-function exportRegistrantsCSV(
-  registrants: Registrant[],
-  eventType: string,
-  isPaidEvent: boolean,
-  eventId: string,
-) {
-  const isRecurringOrMultiDay = eventType === "Recurring" || eventType === "MultiDay"
-
-  const headers = [
-    "First Name",
-    "Last Name",
-    "Nickname",
-    "Mobile",
-    "Email",
-    "Type",
-    ...(isPaidEvent && !isRecurringOrMultiDay ? ["Paid", "Payment Reference"] : []),
-    isRecurringOrMultiDay ? "Registered" : "Attended",
-  ]
-
-  const rows = registrants.map((r) => {
-    const firstName = r.member?.firstName ?? r.guest?.firstName ?? r.firstName ?? ""
-    const lastName  = r.member?.lastName  ?? r.guest?.lastName  ?? r.lastName  ?? ""
-
-    const dateStr = isRecurringOrMultiDay
-      ? new Date(r.createdAt).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })
-      : r.attendedAt
-        ? new Date(r.attendedAt).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })
-        : ""
-
-    const row = [
-      firstName,
-      lastName,
-      r.nickname ?? "",
-      displayMobile(r) ?? "",
-      displayEmail(r) ?? "",
-      r.memberId ? "Member" : "Guest",
-      ...(isPaidEvent && !isRecurringOrMultiDay ? [r.isPaid ? "Yes" : "No", r.paymentReference ?? ""] : []),
-      dateStr,
-    ]
-    return row
-  })
-
-  const csv = [headers, ...rows]
-    .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
-    .join("\n")
-
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement("a")
-  a.href = url
-  a.download = `registrants-${eventId}.csv`
-  a.click()
-  URL.revokeObjectURL(url)
-}
 
 // ─── Payment dialog ───────────────────────────────────────────────────────────
 
@@ -570,16 +524,19 @@ function RegistrantsFilters({
 
 type Props = {
   eventId: string
-  eventType: string
+  eventName: string
+  eventType: EventType
   isPaidEvent: boolean
   formIncludePayment: boolean
+  canExport: boolean
   search: string
   typeFilter: string
   registrants: Registrant[]
 }
 
 export function RegistrantsClient({
-  eventId, eventType, isPaidEvent, formIncludePayment, search, typeFilter, registrants,
+  eventId, eventName, eventType, isPaidEvent, formIncludePayment, canExport,
+  search, typeFilter, registrants,
 }: Props) {
   const [paymentDialogOpen, setPaymentDialogOpen] = React.useState(false)
   const [addDialogOpen, setAddDialogOpen]         = React.useState(false)
@@ -621,6 +578,29 @@ export function RegistrantsClient({
     />
   )
 
+  // The dialog fetches the full registrant list itself: the export describes the
+  // event, not whatever the search box currently narrows it to.
+  const { open: openExport, dialog: exportDialog } = useExportColumnsDialog<
+    EventRegistrationExportRow,
+    EventExportGroup
+  >({
+    title: "Export registrants",
+    description:
+      "Everything this event's registration forms collected, plus its check-in record. One row per registration.",
+    groups: EVENT_EXPORT_GROUPS,
+    unit: ["registrant", "registrants"],
+    emptyMessage: "No registrants to export yet.",
+    loadingMessage: "Gathering registrants…",
+    load: () => getEventRegistrationsExport(eventId),
+    download: (rows, selected) =>
+      exportEventRegistrationsCSV(
+        exportFilename(eventName, "registrants"),
+        rows,
+        selected,
+        eventType,
+      ),
+  })
+
   const toolbarActions: PageAction[] = [
     {
       label: "Import",
@@ -628,13 +608,16 @@ export function RegistrantsClient({
       onSelect: () => setImportOpen(true),
       overflow: true,
     },
-    {
-      label: "Export",
-      icon: <IconDownload className="size-4" />,
-      onSelect: () => exportRegistrantsCSV(registrants, eventType, isPaidEvent, eventId),
-      disabled: registrants.length === 0,
-      overflow: true,
-    },
+    ...(canExport
+      ? [
+          {
+            label: "Export",
+            icon: <IconDownload className="size-4" />,
+            onSelect: openExport,
+            overflow: true,
+          } satisfies PageAction,
+        ]
+      : []),
     {
       label: "Registration page",
       icon: <IconExternalLink className="size-4" />,
@@ -824,6 +807,7 @@ export function RegistrantsClient({
       />
 
       {importWizard}
+      {exportDialog}
     </div>
   )
 }

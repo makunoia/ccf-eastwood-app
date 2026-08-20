@@ -72,6 +72,13 @@ import {
   exportSessionAttendanceCSV,
   exportSessionsSummaryCSV,
 } from "@/lib/export-entities"
+import { useExportColumnsDialog } from "@/components/exports/export-columns-dialog"
+import { exportFilename } from "@/lib/exports/filename"
+import {
+  SESSION_ATTENDANCE_GROUPS,
+  type SessionAttendanceExportRow,
+  type SessionAttendanceGroup,
+} from "@/lib/exports/session-attendance"
 import { getSessionsAttendanceExport } from "./export-actions"
 
 export type OccurrenceRow = {
@@ -105,6 +112,7 @@ export type OccurrenceSeriesOption = {
 
 type Props = {
   eventId: string
+  eventName: string
   eventType: string
   occurrences: OccurrenceRow[]
   seriesGroups: OccurrenceSeriesGroup[]
@@ -458,6 +466,7 @@ function OccurrenceList({
 
 export function SessionsClient({
   eventId,
+  eventName,
   eventType,
   occurrences,
   seriesGroups,
@@ -496,7 +505,6 @@ export function SessionsClient({
   const [manageSeriesMode, setManageSeriesMode] = React.useState("auto")
   const [savingManage, setSavingManage] = React.useState(false)
 
-  const [exportingAttendance, setExportingAttendance] = React.useState(false)
 
   const availableSeriesForNewSession = React.useMemo(
     () => getSeriesOptionsForDate(sessionDate, seriesOptions),
@@ -669,21 +677,22 @@ export function SessionsClient({
     )
   }
 
-  async function handleExportAttendance() {
-    setExportingAttendance(true)
-    const result = await getSessionsAttendanceExport(eventId)
-    setExportingAttendance(false)
-
-    if (!result.success) {
-      toast.error(result.error)
-      return
-    }
-    if (result.data.length === 0) {
-      toast.info("No attendance to export yet.")
-      return
-    }
-    exportSessionAttendanceCSV(`session-attendance-${eventId}`, result.data, isRecurring)
-  }
+  const { open: openAttendanceExport, dialog: attendanceExportDialog } =
+    useExportColumnsDialog<SessionAttendanceExportRow, SessionAttendanceGroup>({
+      title: "Export attendance",
+      description: `Everyone who checked in across all ${title.toLowerCase()} — registrants and volunteers alike, one row per check-in.`,
+      groups: SESSION_ATTENDANCE_GROUPS,
+      unit: ["check-in", "check-ins"],
+      emptyMessage: "No attendance to export yet.",
+      loadingMessage: "Gathering check-ins…",
+      load: () => getSessionsAttendanceExport(eventId),
+      download: (rows, selected) =>
+        exportSessionAttendanceCSV(
+          exportFilename(eventName, "session-attendance"),
+          rows,
+          selected,
+        ),
+    })
 
   async function handleDeleteSeries() {
     if (!seriesToDelete) return
@@ -712,8 +721,8 @@ export function SessionsClient({
         {
           label: "Export attendance",
           icon: <IconDownload className="size-4" />,
-          onSelect: handleExportAttendance,
-          disabled: allOccurrences.length === 0 || exportingAttendance,
+          onSelect: openAttendanceExport,
+          disabled: allOccurrences.length === 0,
           overflow: true,
         },
       ]
@@ -1151,6 +1160,8 @@ export function SessionsClient({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {attendanceExportDialog}
     </div>
   )
 }

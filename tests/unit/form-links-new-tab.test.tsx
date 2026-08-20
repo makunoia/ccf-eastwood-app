@@ -71,20 +71,24 @@ describe("form config editor — View public form", () => {
 })
 
 describe("cluster Forms — the day's check-in links", () => {
+  // A row is now exactly a resolved shortcut, so the card can't disagree with the
+  // kiosk about whether a link is live.
   const rows = [
     {
       eventId: "e1",
       eventName: "Sunday Service",
-      type: "Recurring" as const,
-      hasOpenSession: true,
-      isFormOpen: true,
+      eventType: "Recurring" as const,
+      href: "/events/e1/checkin/o1",
+      sessionDate: new Date("2026-08-19T00:00:00.000Z"),
+      status: "open" as const,
+      manageHref: "/event/e1/sessions",
     },
   ]
 
   it("opens each event's check-in form in a new tab", () => {
     render(<CheckinFormsCard rows={rows} />)
     const link = screen.getByRole("link", { name: /^View check-in form/ })
-    expect(link.getAttribute("href")).toBe("/events/e1/checkin")
+    expect(link.getAttribute("href")).toBe("/events/e1/checkin/o1")
     expect(link.getAttribute("target")).toBe("_blank")
     expect(link.getAttribute("rel")).toContain("noopener")
     expect(link.textContent).toContain("opens in a new tab")
@@ -95,7 +99,32 @@ describe("cluster Forms — the day's check-in links", () => {
   it("keeps the Configure link in the same tab", () => {
     render(<CheckinFormsCard rows={rows} />)
     const link = screen.getByRole("link", { name: "Configure" })
-    expect(link.getAttribute("href")).toBe("/event/e1/forms/EventCheckIn")
+    expect(link.getAttribute("href")).toBe("/event/e1/sessions")
     expect(link.getAttribute("target")).toBeNull()
+  })
+
+  // Regression: the card used to compute its own status by matching ANY open
+  // occurrence of the event — so an event with a session open on some other date
+  // was badged "Session open" here while the kiosk skipped it as `noSession`. The
+  // row is the resolved shortcut now, so the two can't disagree.
+  it("offers no link for an event the kiosk would skip", () => {
+    render(
+      <CheckinFormsCard
+        rows={[
+          {
+            eventId: "e2",
+            eventName: "Camp",
+            eventType: "Recurring",
+            href: null,
+            sessionDate: null,
+            status: "noSession",
+            manageHref: "/event/e2/sessions",
+          },
+        ]}
+      />
+    )
+    expect(screen.queryByRole("link", { name: /^View check-in form/ })).toBeNull()
+    expect(screen.getByText(/No session on this day/)).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Open a session" })).toBeTruthy()
   })
 })

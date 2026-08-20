@@ -20,9 +20,10 @@ import {
  * really disappears, that the grid spans land on the DOM, and that the default
  * layout still puts every card on the page in the order the fixed layout did.
  *
- * Recharts needs a sized container, which jsdom doesn't give it, so the chart
- * bodies come out empty. That's fine and deliberate: every assertion here is on
- * card headers, KPI labels and wrapper classes, all of which render regardless.
+ * Recharts needs a sized container, which jsdom can't give it, so the chart
+ * bodies come out empty — `blankCharts` makes that explicit rather than letting
+ * recharts warn its way there. That's fine and deliberate: every assertion here
+ * is on card headers, KPI labels and wrapper classes, which render regardless.
  */
 
 vi.mock("next/navigation", () => ({
@@ -37,6 +38,12 @@ vi.mock("@/app/(dashboard)/events/dashboard-layout-actions", () => ({
 }))
 
 const ALL_MODULES: EventModuleType[] = ["Volunteers", "Breakout", "Priced"]
+
+// Imported inside the factory: vi.mock is hoisted above the imports.
+vi.mock("recharts", async (importOriginal) => {
+  const { blankCharts } = await import("../stubs/recharts")
+  return blankCharts(await importOriginal<typeof import("recharts")>())
+})
 
 beforeAll(() => {
   // Radix + recharts both probe for these in jsdom.

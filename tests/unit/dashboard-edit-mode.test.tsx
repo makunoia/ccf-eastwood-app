@@ -40,6 +40,13 @@ vi.mock("@/app/(dashboard)/events/dashboard-layout-actions", () => ({
 
 const ALL_MODULES: EventModuleType[] = ["Volunteers", "Breakout", "Priced"]
 
+// jsdom can't size a chart, so recharts renders none and warns per card instead.
+// The stub is imported inside the factory: vi.mock is hoisted above the imports.
+vi.mock("recharts", async (importOriginal) => {
+  const { blankCharts } = await import("../stubs/recharts")
+  return blankCharts(await importOriginal<typeof import("recharts")>())
+})
+
 beforeAll(() => {
   window.ResizeObserver ??= class {
     observe() {}

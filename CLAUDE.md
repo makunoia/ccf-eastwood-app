@@ -190,6 +190,8 @@ An `EventCluster` ("Event Day") groups events that share one public registration
 
 Four independent open/close switches: `isOpen` (shared form), `walkInIsOpen` (door), `checkInIsOpen` (kiosk), `volunteerIsOpen` (the day's volunteer sign-up form — Collab only).
 
+**The kiosk switch opens the whole day.** `checkInIsOpen` only ever governed the kiosk's own door; what decides whether a person standing at it can actually be checked in is each member event's own control — a `FormConfig("EventCheckIn")` row for OneTime, an `EventOccurrence.isOpen` for a session event. Until every one was open the kiosk found the person and silently skipped their events (`skipReasonFor`), which on a Collab day it can't even name. `setClusterCheckinOpen` is the one switch: `planClusterCheckinToggle` (`lib/clusters/checkin-toggle.ts`) turns the read side's own `resolveClusterCheckinTargets` output into a per-event op, and the action replays it through the **existing per-event actions** (`setFormOpen` / `setOccurrenceCheckinOpen`) so opening from the day is indistinguishable from opening on the event's own screen — the walk-in door moves the same way, and there is no second code path to drift. A session event with no session for the day gets one created at the cluster's date and pinned to the link. Closing never creates a session, and neither does opening a dateless cluster. It is a fan-out in the `registerForCluster` shape: per-item `try/catch`, a typed status per event, `success: true` once the loop has run.
+
 ### ClusterKind — `Parallel | Collab`
 
 | | **Parallel** (default) | **Collab** |
@@ -394,6 +396,25 @@ END $$;
   - **Utility actions** (Import, Export, and similar) must set `overflow: true` on their `PageAction` so they always live inside the `⋯` menu rather than inline.
   - **On mobile** (`<sm`) the primary renders **icon-only** and all secondary actions collapse into the single `⋯` menu (still far right). Always give every `PageAction` an `icon` so the icon-only/overflow states read clearly.
 - **Filter controls:** List screens filter via the `FilterBar` drawer (`components/filter-bar.tsx`) with `FilterField`-wrapped controls — never an ad-hoc inline filter row.
+
+### CSV Exports
+
+Every person-list export offers a **column picker**, never a fixed header row. Four layers, and a new surface writes only the first:
+
+| Layer | Where |
+|---|---|
+| Column registry (pure — server *and* client import it) | `lib/exports/<surface>.ts` over `lib/exports/columns.ts` |
+| Row query + column offer | `lib/exports/<surface>-server.ts`, or the action for small ones |
+| Server action (`auth` → `canExport` → `canAccessEvent`) | `.../export-actions.ts` |
+| Dialog + download | `useExportColumnsDialog` + a shim in `lib/export-entities.ts` |
+
+`ExportColumnDef.value` is the single definition of a cell, so the picker and the CSV can never disagree. Three rules the shared builder enforces:
+
+- **A value is never hidden.** A `toggle`- or `module`-gated column whose gate is now off still exports when answers exist, flagged *No longer asked*. A gate that is off with nothing behind it is dropped — an all-blank column is noise.
+- **`optional: true`** is for facts nobody was ever *asked* (a session's series title, a profile nickname): offered when populated, never flagged.
+- **Booleans need `hasData`.** "Yes"/"No" is never blank, so the default emptiness test would offer a Paid column to every free event.
+
+Column offers come from `mergeFormConfigs(await getEffectiveFormConfigs(eventId))` (a cluster unions its member events via `getClusterFormCoverage`): the surface someone registered through isn't recorded, so a field counts as asked if *any* context asks it. Never hand-roll CSV text — `lib/csv-export.ts` owns escaping, CRLF, and the Excel BOM. Export is a utility `PageAction` with `overflow: true`, so the dialog is trigger-less and the screen calls `open()` from `onSelect`. Exports describe the whole list, never the active filter.
 
 ### Error Handling
 - `try/catch` in all server actions

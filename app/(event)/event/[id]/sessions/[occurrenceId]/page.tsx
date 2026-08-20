@@ -428,7 +428,6 @@ export default async function OccurrenceDetailPage({
                 eventId={id}
                 occurrenceId={occurrenceId}
                 sessionDate={occurrence.date.toISOString().split("T")[0]}
-                includeSeries={occurrence.event.type === "Recurring"}
                 disabled={totalCount === 0}
               />
             )}

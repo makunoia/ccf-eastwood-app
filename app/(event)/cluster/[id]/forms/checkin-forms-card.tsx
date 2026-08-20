@@ -1,28 +1,38 @@
 import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
 import { SettingCard } from "@/components/ui/setting-card"
+import {
+  clusterCheckinClosedHint,
+  clusterCheckinManageLabel,
+  type ClusterCheckinShortcut,
+} from "@/lib/clusters/checkin-shortcuts"
 
 /**
  * Surfaces every member event's check-in form on the cluster Forms page —
  * attendance itself stays per event (each form is the event's own
  * /events/[id]/checkin), this is the one place to grab all the day's links.
+ *
+ * Read-only: the Public access switch above opens all of these at once, so a
+ * second control per row would be a competing one. Each row still deep-links to
+ * whichever screen owns it, for the one-off case.
+ *
+ * A row is exactly a `ClusterCheckinShortcut`, so what this card says about an
+ * event is by construction what the kiosk will do with it.
  */
 
-export type ClusterCheckinFormRow = {
-  eventId: string
-  eventName: string
-  type: "OneTime" | "MultiDay" | "Recurring"
-  /** Sessions events only: whether a session is currently accepting check-ins. */
-  hasOpenSession: boolean
-  /** OneTime only: the Public access switch. Always true for session events. */
-  isFormOpen: boolean
-}
+export type ClusterCheckinFormRow = ClusterCheckinShortcut
 
-const TYPE_LABEL: Record<ClusterCheckinFormRow["type"], string> = {
+const TYPE_LABEL: Record<ClusterCheckinFormRow["eventType"], string> = {
   OneTime: "One-time",
   MultiDay: "Multi-day",
   Recurring: "Recurring",
 }
+
+const DATE_FORMAT = new Intl.DateTimeFormat("en-PH", {
+  month: "short",
+  day: "numeric",
+  timeZone: "UTC",
+})
 
 export function CheckinFormsCard({ rows }: { rows: ClusterCheckinFormRow[] }) {
   return (
@@ -38,7 +48,9 @@ export function CheckinFormsCard({ rows }: { rows: ClusterCheckinFormRow[] }) {
       ) : (
         <div className="space-y-2">
           {rows.map((row) => {
-            const checkinPath = `/events/${row.eventId}/checkin`
+            // Narrowed once, so the closed-only helpers below typecheck against
+            // the status union rather than a boolean TS can't see through.
+            const closed = row.status === "open" ? null : row.status
             return (
               <div
                 key={row.eventId}
@@ -47,41 +59,36 @@ export function CheckinFormsCard({ rows }: { rows: ClusterCheckinFormRow[] }) {
                 <div className="min-w-0">
                   <p className="flex items-center gap-2 text-sm font-medium">
                     <span className="truncate">{row.eventName}</span>
-                    {/* Closed outranks the session badge — showing "Session open"
-                        next to a link nobody can use would read as a promise. */}
-                    {!row.isFormOpen ? (
-                      <Badge variant="outline">Closed</Badge>
-                    ) : (
-                      row.type !== "OneTime" && (
-                        <Badge variant={row.hasOpenSession ? "default" : "outline"}>
-                          {row.hasOpenSession ? "Session open" : "No open session"}
-                        </Badge>
-                      )
-                    )}
+                    <Badge variant={closed ? "outline" : "default"}>
+                      {closed ? "Closed" : "Open"}
+                    </Badge>
                   </p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
-                    {TYPE_LABEL[row.type]}
-                    {!row.isFormOpen
-                      ? " · check-in is closed for this event"
-                      : row.type !== "OneTime" &&
-                        " · opens per session from the event's Sessions page"}
+                    {TYPE_LABEL[row.eventType]}
+                    {row.sessionDate && ` · ${DATE_FORMAT.format(row.sessionDate)}`}
+                    {closed && ` · ${clusterCheckinClosedHint(closed)}`}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
-                  <a
-                    href={checkinPath}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-                  >
-                    View check-in form
-                    <span className="sr-only"> (opens in a new tab)</span>
-                  </a>
+                  {row.href && (
+                    <a
+                      href={row.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+                    >
+                      View check-in form
+                      <span className="sr-only"> (opens in a new tab)</span>
+                    </a>
+                  )}
+                  {/* Where the control for THIS event actually lives — Sessions
+                      for a session event, Forms for a OneTime — rather than a
+                      page that only points at it again. */}
                   <Link
-                    href={`/event/${row.eventId}/forms/EventCheckIn`}
+                    href={row.manageHref}
                     className="text-sm text-muted-foreground hover:text-foreground transition-colors"
                   >
-                    Configure
+                    {closed ? clusterCheckinManageLabel(closed) : "Configure"}
                   </Link>
                 </div>
               </div>
