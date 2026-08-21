@@ -20,6 +20,18 @@ env:
   # NextAuth requires this to exist. CI never serves a real session, so a fixed
   # throwaway is correct here — it must never be a real secret.
   AUTH_SECRET: ci-not-a-real-secret-do-not-use-anywhere
+  # Auth.js refuses to trust the Host header of a production build unless one of
+  # AUTH_URL / AUTH_TRUST_HOST / VERCEL is set, and throws `UntrustedHost` on
+  # every `auth()` call instead. On Vercel that variable is supplied by the
+  # platform; here the job is the platform, and it serves the app to itself over
+  # http://localhost:3100, so the host is trusted by construction.
+  #
+  # Without it the e2e run fails in a way that looks nothing like its cause: the
+  # login form answers "Invalid username or password", every dashboard route
+  # redirects back to /login, and each authenticated spec reports a missing
+  # table. It passed on a laptop only because `next start` there loads a
+  # gitignored `.env.production` that Vercel CLI had filled with VERCEL=1.
+  AUTH_TRUST_HOST: "true"
 
 jobs:
   check:
@@ -174,9 +186,21 @@ jobs:
       - name: Run Playwright
         run: pnpm test:e2e
 
+      # The app's own stderr, which is where a server-side failure actually
+      # explains itself. It was `UntrustedHost`, repeated once per request, in a
+      # file no step ever read — so three red runs said only "element not found".
+      - name: Server log
+        if: failure()
+        run: cat /tmp/next-server.log
+
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
           name: playwright-report
-          path: playwright-report/
+          # Both: the HTML report, and `test-results/`, which is where the traces
+          # and per-failure page snapshots land. Uploading only the first meant
+          # every failed run uploaded nothing at all.
+          path: |
+            playwright-report/
+            test-results/
           retention-days: 7
