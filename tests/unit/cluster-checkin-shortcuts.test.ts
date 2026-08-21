@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import {
   clusterCheckinClosedHint,
   clusterCheckinManageLabel,
+  clusterOffersPerEventCheckin,
   resolveClusterCheckinShortcut,
 } from "@/lib/clusters/checkin-shortcuts"
 
@@ -126,5 +127,25 @@ describe("closed-state copy", () => {
     expect(clusterCheckinManageLabel("sessionClosed")).toBe("Open a session")
     expect(clusterCheckinManageLabel("noSession")).toBe("Open a session")
     expect(clusterCheckinClosedHint("noSession")).toBe("No session on this day")
+  })
+})
+
+/**
+ * Which kind of day gets per-event check-in doors at all.
+ *
+ * A Collab is one event wearing two ministries' names: the public kiosk names no
+ * events, and a registrant belongs to exactly one member event — so a per-event
+ * door on the admin board points at half the room. The rows' remaining job,
+ * showing which member event was blocking the kiosk, moved to the day's own
+ * switch (`setClusterCheckinOpen` opens every member event) and to Forms →
+ * Check-in, which keeps the per-event read-out.
+ */
+describe("clusterOffersPerEventCheckin", () => {
+  it("keeps the per-event doors on a Parallel day", () => {
+    expect(clusterOffersPerEventCheckin("Parallel")).toBe(true)
+  })
+
+  it("drops them on a Collab day", () => {
+    expect(clusterOffersPerEventCheckin("Collab")).toBe(false)
   })
 })

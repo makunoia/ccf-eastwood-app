@@ -18,9 +18,18 @@ import { Button } from "@/components/ui/button"
  * The day's links, gathered on the board a staffer is already holding.
  *
  * The check-in page monitors arrivals but records none — attendance happens on
- * each event's own public form. Offering walk-in registration alone made it read
- * as though walk-in were the only door, so every event's check-in link (and the
- * session it opens) sits here beside it.
+ * the day's kiosk, or on each event's own public form. Offering walk-in
+ * registration alone made it read as though walk-in were the only door, so the
+ * kiosk and (on a Parallel day) every event's check-in link sit here beside it.
+ *
+ * **Two zones, and they are ordered by scope, not by fallback.** The day-wide
+ * doors — kiosk, then walk-in — come first as a pair, because they are what a
+ * staffer reaches for; the per-event links are a second group below, for the one
+ * event the kiosk can't cover. They used to be interleaved (kiosk, events,
+ * walk-in), which put the day's two doors at opposite ends of a stack of rows
+ * belonging to something else. Every row is a fixed-height cell in the same
+ * two-up grid, so the whole section is one band above the arrivals list instead
+ * of a column of full-width boxes pushing it off the screen.
  *
  * The public form links open in a new tab, the one place in the app that does so
  * besides the bus manifest. This board is a live monitor a staffer keeps up for
@@ -53,6 +62,11 @@ export function ClusterCheckinShortcuts({
   walkInSettingsHref,
   canConfigure,
 }: {
+  /**
+   * Per-event check-in links. Empty on a Collab day, where the caller drops them:
+   * the day is one event wearing two ministries' names, so there is nothing for a
+   * per-event door to mean.
+   */
   shortcuts: ClusterCheckinShortcut[]
   /** The day's own kiosk — null without write access, or while it's closed. */
   checkInHref: string | null
@@ -75,14 +89,13 @@ export function ClusterCheckinShortcuts({
   return (
     <div className="space-y-2">
       <h3 className="type-label text-muted-foreground">Shortcuts</h3>
-      <div className="space-y-2">
+      <div className="grid gap-2 sm:grid-cols-2">
         {/* The day's kiosk leads: it finds a person once and records every event
             they're registered for, so it is what a staffer reaches for first.
-            The per-event links below remain the fallback for an event it can't
-            cover, and walk-in the exception for someone not registered at all. */}
+            Walk-in is its pair — the same day-wide scope, for someone who isn't
+            registered at all. */}
         <DoorRow
           title="Day check-in"
-          description="Finds someone once and checks them in across the day's events"
           closedDescription="Nobody can check in at the day's kiosk until it's opened"
           icon={<IconUsersGroup className="size-4" />}
           href={checkInHref}
@@ -90,23 +103,58 @@ export function ClusterCheckinShortcuts({
           settingsLabel="Open it on the Check-in form"
         />
 
-        {shortcuts.map((shortcut) => (
-          <ShortcutRow key={shortcut.eventId} shortcut={shortcut} canConfigure={canConfigure} />
-        ))}
-
-        {/* Walk-in covers the whole day in one pass, so it sits after the
-            per-event links rather than standing in for them. */}
         <DoorRow
           title="Walk-in registration"
-          description="Registers and checks someone in across the day's events at once"
           closedDescription="Nobody can register at the door until it's opened"
           icon={<IconUserPlus className="size-4" />}
           href={walkInHref}
           settingsHref={walkInSettingsHref}
           settingsLabel="Open it on the Walk-in form"
         />
+
+        {shortcuts.map((shortcut) => (
+          <ShortcutRow key={shortcut.eventId} shortcut={shortcut} canConfigure={canConfigure} />
+        ))}
       </div>
     </div>
+  )
+}
+
+/**
+ * The shell every row shares, so a door and an event cell line up in the grid:
+ * the label on the left, one control on the right, `h-full` so a closed cell
+ * carrying a reason doesn't leave its neighbour short.
+ */
+function ShortcutShell({
+  closed,
+  label,
+  control,
+}: {
+  closed: boolean
+  label: React.ReactNode
+  control: React.ReactNode
+}) {
+  return (
+    <div
+      className={`flex h-full items-center justify-between gap-3 rounded-lg border px-3 py-2 ${
+        closed ? "border-dashed" : ""
+      }`}
+    >
+      <div className="min-w-0">{label}</div>
+      {control}
+    </div>
+  )
+}
+
+/** Same underlined treatment the app uses for an in-workspace fix-it link. */
+function ManageLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <Link
+      href={href}
+      className="shrink-0 text-sm font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 transition-colors hover:decoration-foreground"
+    >
+      {children}
+    </Link>
   )
 }
 
@@ -114,10 +162,15 @@ export function ClusterCheckinShortcuts({
  * A day-wide public door: the link when it's open, the switch when it isn't, and
  * nothing at all for staff who may not act on either. Never both, so the row can
  * never dead-end.
+ *
+ * An open door carries no description. "Day check-in" and "Walk-in registration"
+ * say what they are to the staffer running the day, and a line of onboarding copy
+ * under each one is read once and then occupies the top of the screen forever. A
+ * *closed* door still explains itself: there the sentence is the reason, not a
+ * description, and it's what sends the staffer to the right switch.
  */
 function DoorRow({
   title,
-  description,
   closedDescription,
   icon,
   href,
@@ -125,7 +178,6 @@ function DoorRow({
   settingsLabel,
 }: {
   title: string
-  description: string
   closedDescription: string
   icon: React.ReactNode
   href: string | null
@@ -134,48 +186,52 @@ function DoorRow({
 }) {
   if (href) {
     return (
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border px-4 py-3">
-        <div className="min-w-0">
-          <p className="text-sm font-medium">{title}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
-        </div>
-        <Button asChild variant="outline" size="sm" className="shrink-0">
-          {/* Both day-wide doors show a button reading "Open", so the name is
-              spelled out here rather than assembled from sr-only spans: naming
-              which door keeps them apart for anyone who hears the link instead
-              of seeing the row it sits in. */}
-          <Link
-            href={href}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label={`Open ${title} (opens in a new tab)`}
-          >
-            {icon}
-            Open
-          </Link>
-        </Button>
-      </div>
+      <ShortcutShell
+        closed={false}
+        label={
+          <p className="flex items-center gap-2 text-sm font-medium">
+            <span aria-hidden className="text-muted-foreground">
+              {icon}
+            </span>
+            <span className="truncate">{title}</span>
+          </p>
+        }
+        control={
+          <Button asChild variant="outline" size="sm" className="h-7 shrink-0">
+            {/* Both day-wide doors show a button reading "Open", so the name is
+                spelled out here rather than assembled from sr-only spans: naming
+                which door keeps them apart for anyone who hears the link instead
+                of seeing the row it sits in. */}
+            <Link
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`Open ${title} (opens in a new tab)`}
+            >
+              Open
+            </Link>
+          </Button>
+        }
+      />
     )
   }
 
   if (!settingsHref) return null
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed px-4 py-3">
-      <div className="min-w-0">
-        <p className="flex items-center gap-2 text-sm font-medium">
-          {title}
-          <Badge variant="outline">Closed</Badge>
-        </p>
-        <p className="mt-0.5 text-xs text-muted-foreground">{closedDescription}</p>
-      </div>
-      <Link
-        href={settingsHref}
-        className="shrink-0 text-sm font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 transition-colors hover:decoration-foreground"
-      >
-        {settingsLabel}
-      </Link>
-    </div>
+    <ShortcutShell
+      closed
+      label={
+        <>
+          <p className="flex items-center gap-2 text-sm font-medium">
+            <span className="truncate">{title}</span>
+            <Badge variant="outline">Closed</Badge>
+          </p>
+          <p className="mt-0.5 text-xs text-muted-foreground">{closedDescription}</p>
+        </>
+      }
+      control={<ManageLink href={settingsHref}>{settingsLabel}</ManageLink>}
+    />
   )
 }
 
@@ -193,42 +249,40 @@ function ShortcutRow({
   const closed = status === "open" ? null : status
 
   return (
-    <div
-      className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border px-4 py-3 ${
-        closed ? "border-dashed" : ""
-      }`}
-    >
-      <div className="min-w-0">
-        <p className="flex items-center gap-2 text-sm font-medium">
-          <span className="truncate">{shortcut.eventName}</span>
-          {closed && <Badge variant="outline">Closed</Badge>}
-        </p>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          {[
-            TYPE_LABEL[shortcut.eventType],
-            sessionLabel,
-            closed && clusterCheckinClosedHint(closed),
-          ]
-            .filter(Boolean)
-            .join(" · ")}
-        </p>
-      </div>
-      {shortcut.href ? (
-        <Button asChild variant="outline" size="sm" className="shrink-0">
-          <Link href={shortcut.href} target="_blank" rel="noopener noreferrer">
-            <IconDeviceMobileCheck className="size-4" />
-            Check-in
-            <NewTabHint />
-          </Link>
-        </Button>
-      ) : closed && canConfigure ? (
-        <Link
-          href={shortcut.manageHref}
-          className="shrink-0 text-sm font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 transition-colors hover:decoration-foreground"
-        >
-          {clusterCheckinManageLabel(closed)}
-        </Link>
-      ) : null}
-    </div>
+    <ShortcutShell
+      closed={Boolean(closed)}
+      label={
+        <>
+          <p className="flex items-center gap-2 text-sm font-medium">
+            <span className="truncate">{shortcut.eventName}</span>
+            {closed && <Badge variant="outline">Closed</Badge>}
+          </p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {[
+              TYPE_LABEL[shortcut.eventType],
+              sessionLabel,
+              closed && clusterCheckinClosedHint(closed),
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </p>
+        </>
+      }
+      control={
+        shortcut.href ? (
+          <Button asChild variant="outline" size="sm" className="h-7 shrink-0">
+            <Link href={shortcut.href} target="_blank" rel="noopener noreferrer">
+              <IconDeviceMobileCheck className="size-4" />
+              Check-in
+              <NewTabHint />
+            </Link>
+          </Button>
+        ) : closed && canConfigure ? (
+          <ManageLink href={shortcut.manageHref}>
+            {clusterCheckinManageLabel(closed)}
+          </ManageLink>
+        ) : null
+      }
+    />
   )
 }
