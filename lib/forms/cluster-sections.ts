@@ -1,5 +1,5 @@
 import type { ClusterKind } from "@/app/generated/prisma/client"
-import type { FormToggleKey } from "./context-config"
+import { FORM_TOGGLE_KEYS, type FormToggleKey } from "./context-config"
 
 /**
  * Which of the form builder's sections a cluster's shared form can't offer.
@@ -29,4 +29,28 @@ export function clusterNotApplicableToggles(kind: ClusterKind): FormToggleKey[] 
 /** Whether the shared form offers a breakout step at all on this kind of day. */
 export function clusterOffersBreakoutStep(kind: ClusterKind): boolean {
   return kind === "Collab"
+}
+
+/**
+ * The same question for the day's **check-in kiosk**, whose answer is much
+ * narrower than the shared form's.
+ *
+ * `ClusterCheckinBoard` is a deliberately lean sibling of the per-event board: it
+ * is name → tap → check me in, with no DGroup prompt, no profile form and no
+ * household step. Every toggle those would drive is therefore inapplicable here —
+ * not "off by default" but *unhonoured*, which is worse to offer than to hide,
+ * because ticking it would change nothing and say otherwise.
+ *
+ * That leaves `sectionBreakout` as the only toggle the kiosk can act on, and only
+ * on a Collab: a Parallel day owns no tables of its own, exactly as
+ * {@link clusterOffersBreakoutStep} says.
+ *
+ * Derived from `FORM_TOGGLE_KEYS` by subtraction rather than listed, so a toggle
+ * added later is inapplicable here until someone deliberately teaches the kiosk
+ * about it.
+ */
+export function clusterCheckInNotApplicableToggles(kind: ClusterKind): FormToggleKey[] {
+  const applicable: FormToggleKey[] =
+    kind === "Collab" ? ["sectionBreakout"] : []
+  return FORM_TOGGLE_KEYS.filter((key) => !applicable.includes(key))
 }

@@ -112,6 +112,7 @@ describe("collab check-in — the welcome screen", () => {
         person: person(),
         recorded: [{ eventId: "e-youth", eventName: "Youth Night" }],
         skipped: [],
+        breakoutSubject: null,
       },
     })
     await searchAndSelect("Collab")
@@ -146,6 +147,7 @@ describe("collab check-in — the welcome screen", () => {
         person: seated,
         recorded: [],
         skipped: [{ eventId: "e-youth", eventName: "Youth Night", reason: "already" }],
+        breakoutSubject: null,
       },
     })
     await searchAndSelect("Collab")

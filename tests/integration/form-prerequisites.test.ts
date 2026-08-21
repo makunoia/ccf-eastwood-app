@@ -67,7 +67,7 @@ describe("eventFormPrerequisites — breakout warnings", () => {
     expect(result.sectionBreakout?.contexts).toBeUndefined()
   })
 
-  it("warns Walk-in only when groups exist but none has a facilitator", async () => {
+  it("warns the day-of surfaces when groups exist but none has a facilitator", async () => {
     const event = await seedEvent()
     await db.breakoutGroup.create({ data: { name: "One", eventId: event.id } })
     await db.breakoutGroup.create({ data: { name: "Two", eventId: event.id } })
@@ -75,8 +75,10 @@ describe("eventFormPrerequisites — breakout warnings", () => {
     const result = await eventFormPrerequisites(event.id, false)
 
     expect(result.sectionBreakout?.message).toContain("2 breakout groups have a facilitator")
-    // The public form offers unstaffed groups, so this one is scoped.
-    expect(result.sectionBreakout?.contexts).toEqual(["WalkIn"])
+    // Scoped, because the public registration form is filled in days ahead and
+    // offers unstaffed groups regardless. Check-in joined the door here (CCF-149):
+    // the kiosk now offers the step too, over the same gated pool.
+    expect(result.sectionBreakout?.contexts).toEqual(["WalkIn", "CheckIn"])
   })
 
   it("uses singular phrasing for a single unstaffed group", async () => {
@@ -237,13 +239,14 @@ describe("clusterFormPrerequisites — Collab breakout warnings", () => {
     expect(result.sectionBreakout?.message).toContain("still wins")
   })
 
-  it("warns about the unstaffed door only, once the rest is in order", async () => {
+  it("warns about the unstaffed day-of surfaces only, once the rest is in order", async () => {
     const { cluster } = await seedCollab()
     await db.breakoutGroup.create({ data: { clusterId: cluster.id, name: "Table 1" } })
 
     const result = await clusterFormPrerequisites(cluster.id, "Collab")
     expect(result.sectionBreakout?.message).toContain("facilitator has checked in")
-    expect(result.sectionBreakout?.contexts).toEqual(["WalkIn"])
+    // The door and the day's kiosk, not the shared form — see the event-side twin.
+    expect(result.sectionBreakout?.contexts).toEqual(["WalkIn", "CheckIn"])
   })
 
   it("stays quiet once a table is enabled and staffed", async () => {

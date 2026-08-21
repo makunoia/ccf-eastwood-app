@@ -4,6 +4,8 @@ import { db } from "@/lib/db"
 import { PublicFormShell } from "@/components/public-form-shell"
 import { FormClosed } from "@/components/form-closed"
 import { clusterWalkInPath } from "@/lib/public-routes"
+import { clusterOffersBreakoutStep } from "@/lib/forms/cluster-sections"
+import { getClusterFormConfig } from "@/lib/forms/context-config-server"
 import type { FormTheme } from "@/lib/forms/config"
 import { formatDate } from "../cluster-register-view"
 import { ClusterCheckinBoard } from "./cluster-checkin-board"
@@ -48,6 +50,7 @@ export default async function ClusterCheckinPage({
   const cluster = await db.eventCluster.findUnique({
     where: { publicToken: token },
     select: {
+      id: true,
       name: true,
       date: true,
       kind: true,
@@ -63,6 +66,12 @@ export default async function ClusterCheckinPage({
   if (!cluster.checkInIsOpen) {
     return <FormClosed title="Check-in is currently unavailable" />
   }
+
+  // Collab only: a Parallel day owns no tables of its own, which is the same rule
+  // `clusterOffersBreakoutStep` draws for the shared registration form.
+  const offerBreakout =
+    clusterOffersBreakoutStep(cluster.kind) &&
+    (await getClusterFormConfig(cluster.id, "CheckIn")).sectionBreakout
 
   const theme: FormTheme = {
     title: `${cluster.name} Check-in`,
@@ -84,6 +93,7 @@ export default async function ClusterCheckinPage({
           // Only offered while the door is actually open, so someone who can't
           // find themselves is never sent to a page that just tells them no.
           walkInHref={cluster.walkInIsOpen ? clusterWalkInPath(token) : null}
+          offerBreakout={offerBreakout}
         />
       </div>
     </PublicFormShell>

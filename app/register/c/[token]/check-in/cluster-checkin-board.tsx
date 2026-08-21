@@ -11,7 +11,14 @@ import {
   checkInToCluster,
   lookupClusterCheckin,
   searchClusterCheckinByName,
+  type ClusterCheckinOutcome,
 } from "@/app/(dashboard)/events/cluster-actions"
+import {
+  getCheckinBreakoutChoices,
+  pickCheckinBreakout,
+} from "@/app/(dashboard)/events/breakout-actions"
+import { BreakoutPicker } from "@/components/breakouts/breakout-picker"
+import type { CheckinBreakoutChoices } from "@/lib/breakouts/checkin-choices"
 import {
   clusterCheckinCellNote,
   recordableCells,
@@ -52,18 +59,30 @@ import {
 
 const NAME_DEBOUNCE_MS = 300
 
-type Step = "lookup" | "disambiguate" | "confirm" | "success" | "not-found"
+type Step = "lookup" | "disambiguate" | "confirm" | "breakout" | "success" | "not-found"
 
 export function ClusterCheckinBoard({
   token,
   kind,
   walkInHref,
+  offerBreakout = false,
 }: {
   token: string
   /** Which shape of day this is — see the Collab note above. */
   kind: "Parallel" | "Collab"
   /** The day's door, or null while it's closed — a link that dead-ends is worse than none. */
   walkInHref: string | null
+  /**
+   * Whether the day's check-in form offers the breakout step (Collab only — a
+   * Parallel day owns no tables). Resolved on the server from the cluster's
+   * `CheckIn` form config, so the switch is an admin's, not a shape the board
+   * infers.
+   *
+   * The step itself says nothing about events. A cluster-owned table belongs to
+   * the *day*, so naming the member event behind the seat would re-expose exactly
+   * the split this board exists to hide.
+   */
+  offerBreakout?: boolean
 }) {
   /** A collab never names the day's events; a parallel day always does. */
   const showEvents = kind !== "Collab"
@@ -77,6 +96,11 @@ export function ClusterCheckinBoard({
   const [recordedCount, setRecordedCount] = React.useState(0)
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  const [breakoutSubject, setBreakoutSubject] =
+    React.useState<ClusterCheckinOutcome["breakoutSubject"]>(null)
+  const [breakoutChoices, setBreakoutChoices] =
+    React.useState<CheckinBreakoutChoices | null>(null)
+  const [rawSelectedBreakoutId, setSelectedBreakoutId] = React.useState("")
 
   const inputRef = React.useRef<HTMLInputElement>(null)
   const nameDebounceTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -91,6 +115,9 @@ export function ClusterCheckinBoard({
     setCandidates([])
     setPerson(null)
     setRecordedCount(0)
+    setBreakoutSubject(null)
+    setBreakoutChoices(null)
+    setSelectedBreakoutId("")
     setLoading(false)
     setError(null)
     setTimeout(() => inputRef.current?.focus(), 50)
@@ -166,6 +193,56 @@ export function ClusterCheckinBoard({
     }
     setPerson(result.data.person)
     setRecordedCount(result.data.recorded.length)
+
+    // The attendance is written either way — the breakout step is an extra
+    // question on the way out, never a condition of being checked in. Any failure
+    // to load it falls straight through to the welcome screen.
+    const subject = result.data.breakoutSubject
+    if (offerBreakout && subject) {
+      setLoading(true)
+      const choices = await getCheckinBreakoutChoices(
+        subject.registrantId,
+        subject.eventId,
+        subject.occurrenceId
+      )
+      setLoading(false)
+      if (choices.success && choices.data && !choices.data.seatedGroupName) {
+        setBreakoutSubject(subject)
+        setBreakoutChoices(choices.data)
+        setSelectedBreakoutId("")
+        setStep("breakout")
+        return
+      }
+    }
+
+    setStep("success")
+  }
+
+  // Fixed for the life of the step — the profile behind the ranking was resolved
+  // server-side and nothing here can change it. Derived rather than reset in an
+  // effect, so a stale id is never live.
+  const selectedBreakoutId = breakoutChoices?.options.some((g) => g.id === rawSelectedBreakoutId)
+    ? rawSelectedBreakoutId
+    : ""
+
+  /** Skip and Continue-with-nothing-picked are the same act: leave them unseated. */
+  async function handleBreakoutContinue() {
+    if (!breakoutSubject || !selectedBreakoutId) {
+      setStep("success")
+      return
+    }
+    setLoading(true)
+    const result = await pickCheckinBreakout(
+      breakoutSubject.registrantId,
+      breakoutSubject.eventId,
+      breakoutSubject.occurrenceId,
+      selectedBreakoutId
+    )
+    setLoading(false)
+    if (!result.success) {
+      setError(result.error)
+      return
+    }
     setStep("success")
   }
 
@@ -397,6 +474,62 @@ export function ClusterCheckinBoard({
             </Button>
             <Button variant="ghost" className="w-full" onClick={reset} disabled={loading}>
               That&apos;s not me
+            </Button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Breakout Group ─────────────────────────────────────────────────────────
+  // Collab only, and it names no events for the same reason nothing else here
+  // does: the table belongs to the day, not to whichever ministry's event holds
+  // the registration behind it.
+  if (step === "breakout" && person && breakoutChoices) {
+    return (
+      <div className="flex flex-col items-center justify-center px-6 py-8">
+        <div className="w-full space-y-6">
+          <div className="space-y-1 text-center">
+            <h2 className="text-2xl font-semibold tracking-tight">
+              You&apos;re checked in
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              One last thing — which group would you like to join?
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            <BreakoutPicker
+              suggested={breakoutChoices.suggested}
+              options={breakoutChoices.options}
+              hasCandidates={breakoutChoices.hasCandidates}
+              notice={breakoutChoices.notice}
+              value={selectedBreakoutId}
+              onChange={setSelectedBreakoutId}
+              intro="Pick a group for today — optional."
+              noticeReassurance="You're already checked in — a staff member will place you in a group."
+            />
+          </div>
+
+          {error && <p className="text-center text-sm text-destructive">{error}</p>}
+
+          <div className="flex flex-col gap-3">
+            <Button className="w-full" onClick={handleBreakoutContinue} disabled={loading}>
+              {loading ? (
+                <IconLoader2 className="size-4 animate-spin" />
+              ) : selectedBreakoutId ? (
+                "Join this group"
+              ) : (
+                "Continue"
+              )}
+            </Button>
+            <Button
+              variant="ghost"
+              className="w-full"
+              onClick={() => setStep("success")}
+              disabled={loading}
+            >
+              Skip for now
             </Button>
           </div>
         </div>

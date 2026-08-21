@@ -89,7 +89,7 @@ import {
   type BreakoutCandidate,
   type BreakoutNoticeKind,
 } from "@/lib/breakout-suggestion"
-import { breakoutOccupancy } from "@/lib/breakouts/occupancy"
+import { BreakoutPicker } from "@/components/breakouts/breakout-picker"
 import { MINISTRY_REQUIRED_ERROR } from "@/lib/clusters/copy"
 import { MinistryAvatar } from "@/components/ministry-avatar"
 
@@ -106,13 +106,6 @@ function formatTime(time: string): string {
   const period = h >= 12 ? "PM" : "AM"
   const display = h % 12 || 12
   return `${display}:${m.toString().padStart(2, "0")} ${period}`
-}
-
-const BREAKOUT_NOTICE_COPY: Record<BreakoutNoticeKind, { title: string; body: string }> = {
-  "awaiting-facilitator": {
-    title: "No breakout groups are open yet",
-    body: "Groups appear here once their facilitator has checked in. Go ahead and finish registering — a staff member will place you in a group.",
-  },
 }
 
 /**
@@ -601,16 +594,8 @@ export function RegistrationForm({
 
   // Occupancy travels only to staffed surfaces, so its presence — not the
   // `walkIn` prop — is what decides whether headcounts render and whether a full
-  // group can be chosen anyway. The page that fetched the data made that call.
-  const suggestedOccupancy = React.useMemo(
-    () => (suggestedBreakout?.occupancy ? breakoutOccupancy(suggestedBreakout.occupancy) : null),
-    [suggestedBreakout]
-  )
-
-  const selectedOccupancy = React.useMemo(
-    () => browsableCandidates.find((g) => g.id === selectedBreakoutId)?.occupancyView ?? null,
-    [browsableCandidates, selectedBreakoutId]
-  )
+  // group can be chosen anyway. The page that fetched the data made that call,
+  // and `BreakoutPicker` reads it off the candidates rather than being told.
 
   React.useEffect(() => {
     return () => {
@@ -2838,136 +2823,14 @@ export function RegistrationForm({
 
           {/* ── Breakout Group ── */}
           {showBreakoutSection && currentSectionKey === "breakout" && (
-            <>
-              <p className="text-sm text-muted-foreground">
-                Pick a group for the event — optional.
-              </p>
-
-              {!hasBreakoutChoices && breakoutNotice && (
-                <div className="rounded-lg border border-dashed bg-muted/40 p-4">
-                  <p className="text-sm font-medium">
-                    {BREAKOUT_NOTICE_COPY[breakoutNotice].title}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {BREAKOUT_NOTICE_COPY[breakoutNotice].body}
-                  </p>
-                </div>
-              )}
-
-              {suggestedBreakout && (() => {
-                const isSelected = selectedBreakoutId === suggestedBreakout.id
-                return (
-                  <button
-                    type="button"
-                    role="checkbox"
-                    aria-checked={isSelected}
-                    aria-label={`Suggested group: ${suggestedBreakout.name}`}
-                    onClick={() =>
-                      setSelectedBreakoutId(isSelected ? "" : suggestedBreakout.id)
-                    }
-                    className={cn(
-                      "flex w-full items-center gap-3 rounded-lg border p-4 text-left transition-colors cursor-pointer",
-                      isSelected
-                        ? "border-primary bg-primary/5"
-                        : "border-border bg-background hover:bg-muted/50"
-                    )}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                        Suggested for you
-                      </p>
-                      <p className="mt-1 text-sm font-medium truncate">{suggestedBreakout.name}</p>
-                      {suggestedOccupancy && (
-                        <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">
-                          {suggestedOccupancy.label} members
-                          {suggestedOccupancy.remaining !== null &&
-                            ` · ${suggestedOccupancy.remaining} left`}
-                        </p>
-                      )}
-                    </div>
-                    <div
-                      aria-hidden="true"
-                      className={cn(
-                        "flex size-6 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
-                        isSelected
-                          ? "border-primary bg-primary text-primary-foreground"
-                          : "border-muted-foreground/30 bg-background"
-                      )}
-                    >
-                      {isSelected && <IconCheck className="size-3.5" />}
-                    </div>
-                  </button>
-                )
-              })()}
-
-              {/* Gender can rule every group out. Saying so beats an empty
-                  dropdown, which reads as a broken step. */}
-              {hasBreakoutChoices && browsableCandidates.length === 0 && (
-                <div className="rounded-lg border border-dashed bg-muted/40 p-4">
-                  <p className="text-sm font-medium">No groups match your details</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Every breakout group for this event is for a different gender. You can
-                    continue — the team will place you on the day.
-                  </p>
-                </div>
-              )}
-
-              <div className={cn("space-y-2", browsableCandidates.length === 0 && "hidden")}>
-                <Label>Or browse groups</Label>
-                <Select
-                  value={selectedBreakoutId || "_none"}
-                  onValueChange={(v) => setSelectedBreakoutId(v === "_none" ? "" : v)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choose a group" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="_none">No selection</SelectItem>
-                    {browsableCandidates.map((g) => (
-                      // A full group is unselectable on the public form but
-                      // selectable at the door: a staff member placing someone
-                      // may have a reason to go over, a self-serve registrant
-                      // does not.
-                      <SelectItem key={g.id} value={g.id} disabled={!g.occupancyView && g.isFull}>
-                        <span className="flex w-full items-center justify-between gap-3">
-                          <span className="truncate">{g.name}</span>
-                          {g.occupancyView ? (
-                            <span
-                              className={cn(
-                                "shrink-0 text-xs tabular-nums",
-                                g.occupancyView.isFull
-                                  ? "text-destructive"
-                                  : "text-muted-foreground"
-                              )}
-                            >
-                              {g.occupancyView.label}
-                              {g.occupancyView.isFull && " · full"}
-                            </span>
-                          ) : (
-                            g.isFull && (
-                              <span className="shrink-0 text-xs text-muted-foreground">(full)</span>
-                            )
-                          )}
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                {/* The warning half of "selectable with a warning". A SelectItem
-                    can't host this, so it sits under the trigger and speaks to
-                    whatever is currently chosen. */}
-                {selectedOccupancy?.isFull && (
-                  <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
-                    <p className="text-sm font-medium">This group is already at capacity</p>
-                    <p className="mt-1 text-xs text-muted-foreground tabular-nums">
-                      {selectedOccupancy.label} members. You can still place them here — the group
-                      will go over its limit.
-                    </p>
-                  </div>
-                )}
-              </div>
-            </>
+            <BreakoutPicker
+              suggested={suggestedBreakout}
+              options={browsableCandidates}
+              hasCandidates={hasBreakoutChoices}
+              notice={breakoutNotice}
+              value={selectedBreakoutId}
+              onChange={setSelectedBreakoutId}
+            />
           )}
 
           {/* ── Household ── */}

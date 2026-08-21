@@ -9,6 +9,14 @@ import {
   getClusterCheckinShortcuts,
 } from "@/lib/clusters/aggregate"
 import { clusterCheckinPath } from "@/lib/public-routes"
+import {
+  getClusterFormConfigs,
+  getClusterFormSuccessMessages,
+} from "@/lib/forms/context-config-server"
+import { clusterFormPrerequisites } from "@/lib/forms/form-prerequisites-server"
+import { clusterCheckInNotApplicableToggles } from "@/lib/forms/cluster-sections"
+import { FORM_TOGGLE_KEYS } from "@/lib/forms/context-config"
+import { EventFormBuilder } from "@/components/forms/event-form-builder"
 import { PageHeader } from "@/components/page-header"
 import { CheckinFormsCard, type ClusterCheckinFormRow } from "../checkin-forms-card"
 import { ClusterCheckInAccess } from "./check-in-access"
@@ -26,9 +34,25 @@ export default async function ClusterCheckinFormsPage({
   const { id } = await params
   const cluster = await db.eventCluster.findUnique({
     where: { id },
-    select: { id: true, publicToken: true, date: true, checkInIsOpen: true },
+    select: {
+      id: true,
+      name: true,
+      kind: true,
+      publicToken: true,
+      date: true,
+      checkInIsOpen: true,
+    },
   })
   if (!cluster) notFound()
+
+  const notApplicable = clusterCheckInNotApplicableToggles(cluster.kind)
+  const applicableToggles = FORM_TOGGLE_KEYS.filter((k) => !notApplicable.includes(k))
+
+  const [configs, successMessages, prerequisites] = await Promise.all([
+    getClusterFormConfigs(id),
+    getClusterFormSuccessMessages(id),
+    clusterFormPrerequisites(id, cluster.kind),
+  ])
 
   // Each member event's check-in verdict, from the same resolver the kiosk and the
   // day's Shortcuts use. This page used to compute its own — matching *any* open
@@ -61,6 +85,25 @@ export default async function ClusterCheckinFormsPage({
         publicPath={clusterCheckinPath(cluster.publicToken)}
         initialIsOpen={cluster.checkInIsOpen}
       />
+
+      {/* The day's kiosk is a deliberately lean board — no DGroup prompt, no
+          profile form, no household step — so `clusterCheckInNotApplicableToggles`
+          leaves it with exactly one toggle to offer, and none at all on a Parallel
+          day, which owns no tables. A builder with nothing applicable in it says
+          less than no builder, so it isn't rendered. */}
+      {applicableToggles.length > 0 && (
+        <EventFormBuilder
+          clusterId={cluster.id}
+          initial={configs}
+          contexts={["CheckIn"]}
+          heading="Check-in form"
+          blurb="What the day's kiosk asks after someone is checked in. It records attendance across the whole day, so there is nothing else to collect here."
+          notApplicable={notApplicable}
+          prerequisites={prerequisites}
+          successMessages={successMessages}
+          eventName={cluster.name}
+        />
+      )}
 
       {/* The per-event kiosks still exist and the board's Shortcuts still point
           at them. The switch above now opens all of these at once, so this is a

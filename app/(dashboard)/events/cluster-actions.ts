@@ -1382,6 +1382,23 @@ export type ClusterCheckinOutcome = {
     eventName: string
     reason: ClusterCheckinSkipReason
   }[]
+  /**
+   * The registration a Collab day's breakout step would seat, or null.
+   *
+   * Resolved here rather than by the board because it needs the day's session map
+   * (`ctx.occurrenceByEvent`), which no client has. Null for someone the day only
+   * knows as a **volunteer** — they are serving, not attending, and a volunteer
+   * holds no `EventRegistrant` row to seat. That falls out of the cell precedence
+   * `buildClusterCheckinPeople` already applies rather than needing a rule here.
+   *
+   * A registrant belongs to exactly one member event — their ministry's — so there
+   * is never more than one to choose between.
+   */
+  breakoutSubject: {
+    registrantId: string
+    eventId: string
+    occurrenceId: string | null
+  } | null
 }
 
 /**
@@ -1438,6 +1455,15 @@ export async function checkInToCluster(
 
     revalidateClusterPaths(ctx.cluster.id)
 
+    // Only over the cells we actually recorded: a registration on an event the
+    // day skipped isn't present, so seating them at the day's table would place
+    // someone the room has no record of.
+    const seatable = person.events.find(
+      (cell) =>
+        cell.subject?.kind === "registrant" &&
+        recorded.some((r) => r.eventId === cell.eventId)
+    )
+
     // Re-read so the caller's screen shows what is now true, not what was true
     // before the writes.
     return {
@@ -1453,6 +1479,13 @@ export async function checkInToCluster(
         },
         recorded,
         skipped,
+        breakoutSubject: seatable?.subject
+          ? {
+              registrantId: seatable.subject.id,
+              eventId: seatable.eventId,
+              occurrenceId: ctx.occurrenceByEvent.get(seatable.eventId) ?? null,
+            }
+          : null,
       },
     }
   } catch {

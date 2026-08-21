@@ -111,12 +111,14 @@ export async function clusterFormPrerequisites(
       } people into a breakout group on submit. A choice made here still wins, but anyone who skips the step is placed for them.`,
     }
   } else if (staffedGroups === 0) {
-    // Walk-in only — the shared form offers every enabled group regardless of staffing.
+    // The two surfaces that run on the day. Both gate on the facilitator being in
+    // the room; the shared registration form offers every enabled group regardless
+    // of staffing, because it is filled in ahead of time.
     prerequisites.sectionBreakout = {
-      message: `Walk-ins only see groups whose facilitator has checked in, and none of the ${enabledGroups} breakout group${
+      message: `On the day, people only see groups whose facilitator has checked in, and none of the ${enabledGroups} breakout group${
         enabledGroups === 1 ? " has" : "s have"
-      } a facilitator assigned — so this step won't appear at the door. Assign facilitators in Breakouts.`,
-      contexts: ["WalkIn"],
+      } a facilitator assigned — so this step won't appear. Assign facilitators in Breakouts.`,
+      contexts: ["WalkIn", "CheckIn"],
     }
   }
 
@@ -198,12 +200,14 @@ export async function eventFormPrerequisites(
       } switched off, so there is nothing to offer and the step won't appear. Switch one on in Breakouts.`,
     }
   } else if (staffedGroups === 0) {
-    // Walk-in only — the public form offers every enabled group regardless of staffing.
+    // The two surfaces that run on the day. Both gate on the facilitator being in
+    // the room; the public registration form offers every enabled group regardless
+    // of staffing, because it is filled in days ahead.
     prerequisites.sectionBreakout = {
-      message: `Walk-ins only see groups whose facilitator has checked in, and none of the ${enabledGroups} breakout group${
+      message: `On the day, people only see groups whose facilitator has checked in, and none of the ${enabledGroups} breakout group${
         enabledGroups === 1 ? " has" : "s have"
-      } a facilitator assigned — so this step won't appear at the door. Assign facilitators in Breakouts.`,
-      contexts: ["WalkIn"],
+      } a facilitator assigned — so this step won't appear. Assign facilitators in Breakouts.`,
+      contexts: ["WalkIn", "CheckIn"],
     }
   }
 

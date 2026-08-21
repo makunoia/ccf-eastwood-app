@@ -118,15 +118,19 @@ const TOGGLE_ICONS: Record<FormToggleKey | "personal", Icon> = {
 
 /**
  * Toggles that make no sense in a context. Check-in is an attendance surface — it
- * never takes payment and never lets someone re-pick their breakout group (it
- * shows the group they were already assigned), and its profile step has no birth
- * date, nickname, mobile or email input — it identifies someone who already
- * exists rather than collecting their details from scratch.
+ * never takes payment — and its profile step has no birth date, nickname, mobile
+ * or email input, because it identifies someone who already exists rather than
+ * collecting their details from scratch.
+ *
+ * `sectionBreakout` used to be on this list, on the reasoning that check-in only
+ * ever *shows* the group someone was already assigned. That left the people the
+ * step exists for with nowhere to go: someone who arrives unseated on an event
+ * with auto-assign off is placed by nobody, and the kiosk is the last moment
+ * anyone asks. It is a real toggle now, off by default — see `CHECKIN_LAYOUT`.
  */
 const NOT_APPLICABLE: Partial<Record<FormContext, FormToggleKey[]>> = {
   CheckIn: [
     "sectionPayment",
-    "sectionBreakout",
     "fieldBirthDate",
     "fieldNickname",
     "fieldMobile",
