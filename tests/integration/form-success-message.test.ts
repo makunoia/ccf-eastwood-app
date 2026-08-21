@@ -195,7 +195,11 @@ describe("registration success message — storage", () => {
       expect(await getClusterFormSuccessMessage(cluster.id, "Register")).toBe(CUSTOM)
     })
 
-    it("rejects Check-in — clusters have no check-in surface", async () => {
+    // A cluster *does* have a check-in surface — the day's kiosk, whose form
+    // config is written like any other. What it has no room for is a success
+    // message: the board confirms attendance in place and never shows a screen
+    // that could carry one.
+    it("rejects Check-in — the day's kiosk has no success screen", async () => {
       const cluster = await db.eventCluster.create({
         data: { name: "Sunday Service", date: new Date("2026-08-02") },
       })
