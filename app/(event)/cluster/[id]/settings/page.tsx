@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
+import { clusterEventMinistry } from "@/lib/clusters/ministry-label"
 import { utcDayRange } from "@/lib/clusters/roster"
 import { PageHeader } from "@/components/page-header"
 import { ClusterSettingsClient } from "./settings-client"
@@ -110,10 +111,7 @@ export default async function ClusterSettingsPage({
           type: e.event.type,
           startDate: e.event.startDate.toISOString(),
           occurrenceId: e.occurrenceId,
-          ministryName:
-            !e.event.allMinistries && e.event.ministries.length === 1
-              ? e.event.ministries[0].ministry.name
-              : null,
+          ministryName: clusterEventMinistry(e.event)?.name ?? null,
           ministryCount: e.event.allMinistries ? -1 : e.event.ministries.length,
         }))}
         candidates={candidates.map((e) => ({

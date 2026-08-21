@@ -3,12 +3,14 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
-import { canWrite } from "@/lib/permissions"
+import { canExport, canWrite } from "@/lib/permissions"
 import { ClusterKind } from "@/app/generated/prisma/client"
 import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/page-header"
 import { getClusterVolunteerPool } from "@/lib/clusters/aggregate"
 import { ClusterVolunteersTable } from "./volunteers-table"
+import { ClusterVolunteersToolbar } from "./volunteers-toolbar"
+import { ClusterVolunteersFilters } from "./volunteers-filters"
 
 export const metadata: Metadata = {
   title: "Volunteers",
@@ -87,10 +89,22 @@ export default async function ClusterVolunteersPage({
     servingInBoth: (countByMember.get(v.member.id) ?? 0) > 1,
   }))
 
+  // Switching lists keeps whatever you were searching for. Committees span both
+  // scopes, so every filter is still meaningful on the other side; dropping them
+  // would silently widen the list at the moment you looked away from it.
   const base = `/cluster/${id}/volunteers`
+  const scopeHref = (next: "day" | "all") => {
+    const params = new URLSearchParams()
+    if (next === "all") params.set("scope", "all")
+    if (search) params.set("search", search)
+    if (status) params.set("status", status)
+    if (committeeId) params.set("committeeId", committeeId)
+    const qs = params.toString()
+    return qs ? `${base}?${qs}` : base
+  }
   const tabs = [
-    { key: "day" as const, label: "This day", href: base, count: dayCount },
-    { key: "all" as const, label: "All rosters", href: `${base}?scope=all`, count: allCount },
+    { key: "day" as const, label: "This day", href: scopeHref("day"), count: dayCount },
+    { key: "all" as const, label: "All rosters", href: scopeHref("all"), count: allCount },
   ]
 
   return (
@@ -98,6 +112,15 @@ export default async function ClusterVolunteersPage({
       <PageHeader
         title="Volunteers"
         description="Who signed up to serve on this day, through the day's own volunteer form"
+        actions={
+          <ClusterVolunteersToolbar
+            clusterId={cluster.id}
+            clusterName={cluster.name}
+            canEdit={canWrite(session, "Events")}
+            canExport={canExport(session, "Events")}
+            scope={scope}
+          />
+        }
       />
 
       {/* Plain links rather than a client control: the scope is a URL fact, so it
@@ -118,8 +141,19 @@ export default async function ClusterVolunteersPage({
         ))}
       </div>
 
+      <ClusterVolunteersFilters
+        committees={committees}
+        events={events.map((e) => ({ id: e.id, name: e.name }))}
+        search={search}
+        status={status}
+        committeeId={committeeId}
+        scope={scope}
+      />
+
       <ClusterVolunteersTable
+        clusterId={cluster.id}
         rows={rows}
+        filtered={Boolean(search || status || committeeId)}
         committees={committees}
         events={events.map((e) => ({ id: e.id, name: e.name }))}
         canEdit={canWrite(session, "Events")}

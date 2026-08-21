@@ -4,6 +4,7 @@ import { db } from "@/lib/db"
 import { ClusterKind } from "@/app/generated/prisma/client"
 import { FormClosed } from "@/components/form-closed"
 import { VolunteerSignUpForm } from "@/app/volunteers/volunteer-sign-up-form"
+import { clusterEventMinistryLabel } from "@/lib/clusters/ministry-label"
 import { formatDate } from "../cluster-register-view"
 
 /**
@@ -85,15 +86,9 @@ export default async function ClusterVolunteerSignUpPage({
   if (!cluster || cluster.kind !== ClusterKind.Collab) notFound()
   if (!cluster.volunteerIsOpen) return <FormClosed />
 
-  // Same fallback as the registration form: a day that slipped through the
-  // collab ministry check still has to be fillable, so an event with no single
-  // ministry is labelled by its own name rather than dead-ending the volunteer.
   const ministries = cluster.events.map((ce) => ({
     eventId: ce.event.id,
-    label:
-      !ce.event.allMinistries && ce.event.ministries.length === 1
-        ? ce.event.ministries[0].ministry.name
-        : ce.event.name,
+    label: clusterEventMinistryLabel(ce.event),
     committees: ce.event.committees,
   }))
 

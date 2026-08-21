@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
+import { clusterEventMinistry } from "@/lib/clusters/ministry-label"
 import { RegistrationForm } from "@/app/events/[id]/register/registration-form"
 import { PublicFormShell } from "@/components/public-form-shell"
 import { FormClosed } from "@/components/form-closed"
@@ -208,10 +209,7 @@ export async function ClusterRegisterView({
             id: ce.event.id,
             name: ce.event.name,
             meta: eventMeta(ce.event),
-            ministry:
-              !ce.event.allMinistries && ce.event.ministries.length === 1
-                ? ce.event.ministries[0].ministry
-                : null,
+            ministry: clusterEventMinistry(ce.event),
           })),
         }}
         eventName={cluster.name}

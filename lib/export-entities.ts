@@ -18,6 +18,10 @@ import {
   buildEventVolunteersTable,
   type EventVolunteerExportRow,
 } from "./exports/event-volunteers"
+import {
+  buildClusterVolunteersTable,
+  type ClusterVolunteerExportRow,
+} from "./exports/cluster-volunteers"
 import type { EventType } from "@/app/generated/prisma/client"
 
 // Row shapes — kept minimal and aligned to import field labels so a round-trip
@@ -212,6 +216,16 @@ export function exportEventVolunteersCSV(
   selectedColumns: string[],
 ): void {
   const { headers, cells } = buildEventVolunteersTable(rows, selectedColumns)
+  downloadCSV(filename, headers, cells)
+}
+
+/** The cluster workspace's version — the event columns plus the ministry. */
+export function exportClusterVolunteersCSV(
+  filename: string,
+  rows: ClusterVolunteerExportRow[],
+  selectedColumns: string[],
+): void {
+  const { headers, cells } = buildClusterVolunteersTable(rows, selectedColumns)
   downloadCSV(filename, headers, cells)
 }
 
