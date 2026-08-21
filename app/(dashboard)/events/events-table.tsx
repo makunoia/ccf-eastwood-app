@@ -5,7 +5,7 @@ import { IconCalendar } from "@tabler/icons-react"
 
 import { DataTable } from "@/components/ui/data-table"
 import { Card, CardContent } from "@/components/ui/card"
-import { buildColumns, type EventRow, RowActions } from "./columns"
+import { buildColumns, EVENT_TYPE_LABEL, type EventRow, RowActions } from "./columns"
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-PH", {
@@ -34,6 +34,8 @@ function EventCard({ event }: { event: EventRow }) {
         <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
           <span className="text-muted-foreground">Ministry</span>
           <span>{event.ministries.length > 0 ? event.ministries.map((m) => m.name).join(", ") : "—"}</span>
+          <span className="text-muted-foreground">Type</span>
+          <span>{EVENT_TYPE_LABEL[event.type] ?? event.type}</span>
           <span className="text-muted-foreground">Date</span>
           <span>
             {formatDate(event.startDate)}
