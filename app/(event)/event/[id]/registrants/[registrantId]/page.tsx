@@ -6,7 +6,6 @@ import { auth } from "@/lib/auth"
 import { canRead } from "@/lib/permissions"
 import { db } from "@/lib/db"
 import { registrantName, registrantNameSelect } from "@/lib/metadata"
-import { deriveEffectiveGenderFocus } from "@/lib/matching"
 import { getHouseholdLabel } from "@/lib/family-links"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -32,7 +31,7 @@ import { BreakoutSection } from "./breakout-match-section"
 import { RegistrantGuestDetail } from "./registrant-guest-detail"
 import { RegistrantNavHeader } from "./registrant-nav-header"
 import { DeleteRegistrantSection } from "./delete-registrant-section"
-import { eventSurface } from "@/lib/breakouts/owner"
+import { getRegistrantPlacement } from "@/lib/breakouts/registrant-placement"
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -111,62 +110,8 @@ async function getRegistrant(registrantId: string, eventId: string) {
           claimedSatellite: true,
         },
       },
-      breakoutGroupMemberships: {
-        select: {
-          breakoutGroup: { select: { id: true, name: true } },
-        },
-      },
     },
   })
-}
-
-/** Returns the breakout group this member facilitates or co-facilitates in this event, if any. */
-async function getFacilitatedGroup(memberId: string, eventId: string) {
-  return db.breakoutGroup.findFirst({
-    where: {
-      eventId,
-      OR: [
-        { facilitator: { memberId, eventId } },
-        { coFacilitator: { memberId, eventId } },
-      ],
-    },
-    select: { id: true, name: true },
-  })
-}
-
-async function getAllEventGroups(
-  eventId: string,
-  excludeIds: string[],
-  registrantGender: "Male" | "Female" | null
-) {
-  const groups = await db.breakoutGroup.findMany({
-    where: { eventId },
-    select: {
-      id: true,
-      name: true,
-      genderFocus: true,
-      memberLimit: true,
-      _count: { select: { members: true } },
-      facilitator: { select: { member: { select: { gender: true } } } },
-      coFacilitator: { select: { member: { select: { gender: true } } } },
-      linkedSmallGroup: { select: { genderFocus: true } },
-    },
-    orderBy: { name: "asc" },
-  })
-  return groups
-    .filter((g) => {
-      if (excludeIds.includes(g.id)) return false
-      if (!registrantGender) return true
-      const effectiveFocus = deriveEffectiveGenderFocus(
-        g.genderFocus,
-        g.facilitator?.member.gender ?? null,
-        g.coFacilitator?.member.gender ?? null,
-        g.linkedSmallGroup?.genderFocus
-      )
-      if (!effectiveFocus || effectiveFocus === "Mixed") return true
-      return effectiveFocus === registrantGender
-    })
-    .map((g) => ({ id: g.id, name: g.name, memberLimit: g.memberLimit, currentCount: g._count.members }))
 }
 
 function resolveDisplayName(r: NonNullable<Awaited<ReturnType<typeof getRegistrant>>>) {
@@ -197,14 +142,16 @@ export default async function RegistrantDetailPage({
   const registrant = await getRegistrant(registrantId, eventId)
   if (!registrant) notFound()
 
-  const assignedGroupIds = registrant.breakoutGroupMemberships.map((m) => m.breakoutGroup.id)
-  const isAssigned = assignedGroupIds.length > 0
-  const registrantGender = registrant.member?.gender ?? registrant.guest?.gender ?? null
-
-  const [facilitatedGroup, allEventGroups] = await Promise.all([
-    registrant.memberId ? getFacilitatedGroup(registrant.memberId, eventId) : null,
-    getAllEventGroups(eventId, assignedGroupIds, registrantGender),
-  ])
+  // Resolved against the day rather than the event: under a Collab the tables in
+  // play belong to the cluster, and a seat there links into the cluster
+  // workspace. See lib/breakouts/registrant-placement.ts.
+  const placement = await getRegistrantPlacement({
+    id: registrant.id,
+    eventId,
+    memberId: registrant.memberId,
+    gender: registrant.member?.gender ?? registrant.guest?.gender ?? null,
+  })
+  const isAssigned = placement.seats.length > 0
 
   const name = resolveDisplayName(registrant)
 
@@ -280,13 +227,13 @@ export default async function RegistrantDetailPage({
         <div className="space-y-3">
           <h3 className="type-label text-muted-foreground">Breakout Group</h3>
           <div className="rounded-lg border p-3">
-            {registrant.breakoutGroupMemberships.map((m) => (
+            {placement.seats.map((seat) => (
               <Link
-                key={m.breakoutGroup.id}
-                href={`/event/${eventId}/breakouts/${m.breakoutGroup.id}`}
+                key={seat.id}
+                href={seat.href}
                 className="text-sm font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
               >
-                {m.breakoutGroup.name}
+                {seat.name}
               </Link>
             ))}
           </div>
@@ -294,9 +241,9 @@ export default async function RegistrantDetailPage({
       ) : (
         <BreakoutSection
           registrantId={registrantId}
-          surface={eventSurface(eventId)}
-          facilitatedGroup={facilitatedGroup ?? null}
-          allEventGroups={allEventGroups}
+          surface={placement.surface}
+          facilitatedGroup={placement.facilitatedGroup}
+          allEventGroups={placement.availableGroups}
         />
       )}
     </section>
