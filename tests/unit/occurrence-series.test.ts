@@ -110,3 +110,40 @@ describe("groupOccurrencesBySeries", () => {
     expect(groups[0].heldSessionCount).toBe(1)
   })
 })
+
+// The turnout numerator rides through grouping alongside `attendeeCount`. The two
+// differ whenever volunteers checked in, and the Sessions list renders both — so
+// losing one arm of the emit would silently make a row's ratio agree with the
+// wrong count.
+describe("groupOccurrencesBySeries — participantCount", () => {
+  it("carries participantCount through a grouped series", () => {
+    const { groups } = groupOccurrencesBySeries(
+      [RANGE],
+      [{ ...occurrence("2026-08-09", 30), participantCount: 24 }],
+      NOW,
+    )
+
+    expect(groups[0].occurrences[0]).toMatchObject({
+      attendeeCount: 30,
+      participantCount: 24,
+    })
+  })
+
+  it("carries participantCount through an ungrouped session too", () => {
+    const { ungrouped } = groupOccurrencesBySeries(
+      [],
+      [{ ...occurrence("2026-08-09", 30), participantCount: 24, seriesId: null }],
+      NOW,
+    )
+
+    expect(ungrouped[0]).toMatchObject({ attendeeCount: 30, participantCount: 24 })
+  })
+
+  // Callers whose count is already participant-only (or who predate the field)
+  // shouldn't have to restate it.
+  it("falls back to the attendee count when a caller omits it", () => {
+    const { groups } = groupOccurrencesBySeries([RANGE], [occurrence("2026-08-09", 30)], NOW)
+
+    expect(groups[0].occurrences[0].participantCount).toBe(30)
+  })
+})

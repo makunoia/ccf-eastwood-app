@@ -105,7 +105,11 @@ describe("breakout occupancy reflects real membership", () => {
 
     const open = await occupancyOf(event.id, "Open")
     expect(open?.isFull).toBe(false)
-    expect(open?.roomRatio).toBeNull()
+    // `fillLevel` replaced `roomRatio`, which was null for exactly this group —
+    // uncapped — and so gave the picker nothing to order an uncapped day by. It
+    // is a real number here; being the only group, it is by definition the
+    // fullest in its own set. What must never happen is `isFull`, above.
+    expect(open?.fillLevel).toBeTypeOf("number")
     expect(open?.occupancy).toEqual({ memberCount: 3, memberLimit: null })
   })
 })

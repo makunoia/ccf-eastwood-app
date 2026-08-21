@@ -13,6 +13,14 @@ type OccurrenceWithAttendance = {
   attendeeCount: number
   seriesId: string | null
   /**
+   * Check-ins by people holding a registration — the turnout numerator. Carried
+   * alongside `attendeeCount` rather than replacing it because the two answer
+   * different questions: `attendeeCount` is every check-in, volunteers included,
+   * while a turnout ratio divides by the registered roster, which volunteers are
+   * absent from. See `lib/events/session-turnout.ts`.
+   */
+  participantCount?: number
+  /**
    * Whether this session has *any* check-in row, volunteers included. Defaults to
    * `attendeeCount > 0`, which is right for callers whose count already covers
    * every check-in; a caller counting participants only must pass it explicitly,
@@ -32,14 +40,34 @@ export type GroupedOccurrenceSeries = {
   heldSessionCount: number
   totalAttendance: number
   averageAttendance: number
-  occurrences: Array<{
-    id: string
-    date: string
-    isOpen: boolean
-    attendeeCount: number
-    isStandalone: boolean
-    seriesId: string | null
-  }>
+  occurrences: EmittedOccurrence[]
+}
+
+export type EmittedOccurrence = {
+  id: string
+  date: string
+  isOpen: boolean
+  attendeeCount: number
+  /** Registered check-ins only — see {@link OccurrenceWithAttendance.participantCount}. */
+  participantCount: number
+  isStandalone: boolean
+  seriesId: string | null
+}
+
+/**
+ * The wire shape one occurrence goes out in. Shared by the grouped and ungrouped
+ * arms so a field added to one can't go missing from the other.
+ */
+function emitOccurrence(occurrence: OccurrenceWithAttendance): EmittedOccurrence {
+  return {
+    id: occurrence.id,
+    date: occurrence.date.toISOString(),
+    isOpen: occurrence.isOpen,
+    attendeeCount: occurrence.attendeeCount,
+    participantCount: occurrence.participantCount ?? occurrence.attendeeCount,
+    isStandalone: occurrence.isStandalone,
+    seriesId: occurrence.seriesId,
+  }
 }
 
 export function normalizeUtcDate(date: Date | string): Date {
@@ -133,14 +161,7 @@ export function groupOccurrencesBySeries(
       heldSessionCount,
       totalAttendance,
       averageAttendance: heldSessionCount > 0 ? totalAttendance / heldSessionCount : 0,
-      occurrences: groupOccurrences.map((occurrence) => ({
-        id: occurrence.id,
-        date: occurrence.date.toISOString(),
-        isOpen: occurrence.isOpen,
-        attendeeCount: occurrence.attendeeCount,
-        isStandalone: occurrence.isStandalone,
-        seriesId: occurrence.seriesId,
-      })),
+      occurrences: groupOccurrences.map(emitOccurrence),
     }
   })
 
@@ -150,13 +171,6 @@ export function groupOccurrencesBySeries(
 
   return {
     groups,
-    ungrouped: sortedUngrouped.map((occurrence) => ({
-      id: occurrence.id,
-      date: occurrence.date.toISOString(),
-      isOpen: occurrence.isOpen,
-      attendeeCount: occurrence.attendeeCount,
-      isStandalone: occurrence.isStandalone,
-      seriesId: occurrence.seriesId,
-    })),
+    ungrouped: sortedUngrouped.map(emitOccurrence),
   }
 }

@@ -1,4 +1,4 @@
-import type { EventType } from "@/app/generated/prisma/client"
+import type { ClusterKind, EventType } from "@/app/generated/prisma/client"
 
 /**
  * The day's check-in links, resolved per cluster event.
@@ -125,6 +125,28 @@ export function clusterCheckinClosedHint(
     case "noSession":
       return "No session on this day"
   }
+}
+
+/**
+ * Whether the day's check-in board offers each member event's own check-in door
+ * beside the day's kiosk — and, for the same reason, whether its arrivals list
+ * names the event each person is on.
+ *
+ * **A Collab day gets neither.** It is two ministries co-running one event: a
+ * registrant belongs to exactly one member event, the public kiosk deliberately
+ * names none, and a per-event door on the admin board is a link to half the room
+ * that whoever is standing at it cannot be expected to choose between. The one
+ * job those rows still had — showing which member event's closed form was
+ * blocking the kiosk — belongs to the day's own switch now: `setClusterCheckinOpen`
+ * opens every member event at once, and Forms → Check-in keeps the per-event
+ * read-out for diagnosis and for opening just one.
+ *
+ * A **Parallel** day keeps them. There the events genuinely are separate, someone
+ * may be registered for any subset, and a MultiDay event's own check-in link has
+ * no substitute on the board at all.
+ */
+export function clusterOffersPerEventCheckin(kind: ClusterKind): boolean {
+  return kind !== "Collab"
 }
 
 /** Where to fix it — paired with the hint above. */

@@ -5,13 +5,19 @@ import { useListNavigation } from "@/lib/hooks/use-list-navigation"
 
 type Props = {
   groupId: string
-  eventId: string
+  /**
+   * The workspace this group is being viewed in — `/event/<id>` or
+   * `/cluster/<id>`. Taken from the surface rather than built from an event id,
+   * because a Collab day's tables are owned by the cluster and have no event
+   * (CCF-148); prev/next must stay inside whichever list the reader came from.
+   */
+  basePath: string
   title: string
   subtitle?: React.ReactNode
   action?: React.ReactNode
 }
 
-export function BreakoutNavHeader({ groupId, eventId, title, subtitle, action }: Props) {
+export function BreakoutNavHeader({ groupId, basePath, title, subtitle, action }: Props) {
   const { prev, next } = useListNavigation(groupId, "breakoutListIds")
 
   return (
@@ -19,8 +25,8 @@ export function BreakoutNavHeader({ groupId, eventId, title, subtitle, action }:
       title={title}
       subtitle={subtitle}
       action={action}
-      prevHref={prev ? `/event/${eventId}/breakouts/${prev}` : null}
-      nextHref={next ? `/event/${eventId}/breakouts/${next}` : null}
+      prevHref={prev ? `${basePath}/breakouts/${prev}` : null}
+      nextHref={next ? `${basePath}/breakouts/${next}` : null}
     />
   )
 }

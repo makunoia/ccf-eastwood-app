@@ -269,6 +269,7 @@ describe("breakoutPickerReadiness — what the form builder warns on", () => {
       totalGroups: 3,
       enabledGroups: 3,
       staffedGroups: 1,
+      genderedGroups: 0,
     })
   })
 
@@ -283,6 +284,7 @@ describe("breakoutPickerReadiness — what the form builder warns on", () => {
       totalGroups: 1,
       enabledGroups: 1,
       staffedGroups: 1,
+      genderedGroups: 0,
     })
   })
 
@@ -295,6 +297,7 @@ describe("breakoutPickerReadiness — what the form builder warns on", () => {
       totalGroups: 2,
       enabledGroups: 2,
       staffedGroups: 0,
+      genderedGroups: 0,
     })
   })
 
@@ -310,6 +313,7 @@ describe("breakoutPickerReadiness — what the form builder warns on", () => {
       totalGroups: 1,
       enabledGroups: 1,
       staffedGroups: 0,
+      genderedGroups: 0,
     })
   })
 })

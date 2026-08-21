@@ -54,6 +54,17 @@ export function clusterSurface(clusterId: string): BreakoutSurface {
   return { owner: { clusterId }, basePath: `/cluster/${clusterId}` }
 }
 
+/**
+ * The surface for an owner already in hand — what a caller that resolved a
+ * `PoolScope` wants, rather than re-deciding which of the two constructors to
+ * call and getting the route base wrong for a cluster-owned table.
+ */
+export function surfaceFor(owner: BreakoutOwner): BreakoutSurface {
+  return isClusterOwner(owner)
+    ? clusterSurface(owner.clusterId)
+    : eventSurface(owner.eventId)
+}
+
 export function isClusterOwner(
   owner: BreakoutOwner
 ): owner is { clusterId: string } {

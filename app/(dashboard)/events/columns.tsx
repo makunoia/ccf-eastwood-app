@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation"
 import { type ColumnDef } from "@tanstack/react-table"
 import { IconDots, IconEye } from "@tabler/icons-react"
 
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -14,6 +15,13 @@ import {
 import Link from "next/link"
 
 import { formatDate, formatDateRange } from "@/lib/format/date-range"
+
+/** The three event types, in the words the create/edit form uses for them. */
+export const EVENT_TYPE_LABEL: Record<EventRow["type"], string> = {
+  OneTime: "One-time",
+  MultiDay: "Multi-day",
+  Recurring: "Recurring",
+}
 
 export type EventRow = {
   id: string
@@ -79,6 +87,14 @@ export function buildColumns(): ColumnDef<EventRow>[] {
         if (ministries.length === 0) return <span className="text-muted-foreground">—</span>
         return ministries.map((m) => m.name).join(", ")
       },
+    },
+    {
+      accessorKey: "type",
+      header: "Type",
+      meta: { label: "Type", width: "status" },
+      cell: ({ row }) => (
+        <Badge variant="outline">{EVENT_TYPE_LABEL[row.original.type] ?? row.original.type}</Badge>
+      ),
     },
     {
       id: "date",

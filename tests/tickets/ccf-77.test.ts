@@ -191,7 +191,6 @@ describe("CCF-77 — removeSubFacilitator", () => {
       occurrence.id,
       breakoutGroup.id,
       FacilitatorRole.Facilitator,
-      event.id,
     )
 
     expect(result.success).toBe(true)
@@ -202,13 +201,12 @@ describe("CCF-77 — removeSubFacilitator", () => {
   })
 
   it("is a no-op (success) when no sub exists for that role", async () => {
-    const { event, occurrence, breakoutGroup } = await seedBase()
+    const { occurrence, breakoutGroup } = await seedBase()
 
     const result = await removeSubFacilitator(
       occurrence.id,
       breakoutGroup.id,
       FacilitatorRole.Facilitator,
-      event.id,
     )
 
     expect(result.success).toBe(true)
@@ -222,7 +220,7 @@ describe("CCF-77 — removeSubFacilitator", () => {
     await assignSubFacilitator(occurrence.id, breakoutGroup.id, FacilitatorRole.Facilitator, sub1.id)
     await assignSubFacilitator(occurrence.id, breakoutGroup.id, FacilitatorRole.CoFacilitator, sub2.id)
 
-    await removeSubFacilitator(occurrence.id, breakoutGroup.id, FacilitatorRole.Facilitator, event.id)
+    await removeSubFacilitator(occurrence.id, breakoutGroup.id, FacilitatorRole.Facilitator)
 
     const remaining = await db.occurrenceSubFacilitator.findMany({
       where: { occurrenceId: occurrence.id, breakoutGroupId: breakoutGroup.id },

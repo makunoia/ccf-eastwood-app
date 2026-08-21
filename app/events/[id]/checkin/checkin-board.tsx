@@ -44,7 +44,11 @@ import {
 import {
   autoAssignRegistrantToBreakout,
   getRegistrantBreakoutGroupName,
+  getCheckinBreakoutChoices,
+  pickCheckinBreakout,
 } from "@/app/(dashboard)/events/breakout-actions"
+import { BreakoutPicker } from "@/components/breakouts/breakout-picker"
+import type { CheckinBreakoutChoices } from "@/lib/breakouts/checkin-choices"
 import { searchMembersForLeaderLookup } from "@/app/(dashboard)/guests/actions"
 import type { MatchingProfileInput } from "@/lib/validations/matching-profile"
 import { LANGUAGE_OPTIONS, CITY_OPTIONS } from "@/lib/constants/group-options"
@@ -82,6 +86,11 @@ type Step =
   | "sg-profile"
   | "sg-leader-search"
   | "household"
+  // Last before success, and deliberately after the DGroup steps: `sg-profile` is
+  // where someone can supply gender and life stage for the first time, and those
+  // are the two answers the suggestion turns on. Ranking before it would rank
+  // against a profile we are about to improve.
+  | "breakout"
 
 type CheckinSubjectKind = "registrant" | "volunteer"
 
@@ -144,6 +153,9 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
   const [nameSearchLoading, setNameSearchLoading] = React.useState(false)
   const [household, setHousehold] = React.useState<HouseholdCheckin | null>(null)
   const [householdSelection, setHouseholdSelection] = React.useState<Set<string>>(new Set())
+  const [breakoutChoices, setBreakoutChoices] =
+    React.useState<CheckinBreakoutChoices | null>(null)
+  const [rawSelectedBreakoutId, setSelectedBreakoutId] = React.useState("")
   const [addingMember, setAddingMember] = React.useState(false)
   const [newMember, setNewMember] = React.useState({
     firstName: "",
@@ -171,6 +183,8 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
     setNameQuery("")
     setHousehold(null)
     setHouseholdSelection(new Set())
+    setBreakoutChoices(null)
+    setSelectedBreakoutId("")
     setAddingMember(false)
     setNewMember({ firstName: "", lastName: "", role: "Child" })
     setLoading(false)
@@ -324,12 +338,45 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
     if (cfg.sectionSmallGroup && matched.smallGroupPrompt !== null) {
       setStep("sg-prompt")
     } else {
-      setStep("success")
+      void goToSuccess()
     }
   }
 
-  function goToSuccess() {
-    setStep("success")
+  /**
+   * Auto-assign *suppresses* the picker rather than sitting beside it — the same
+   * rule the registration and walk-in forms apply. A table the picker would hide
+   * must not be one auto-assign quietly drops the same person into, and offering
+   * both would let a person choose a group that was already chosen for them a
+   * moment earlier in `handleConfirm`.
+   */
+  const offerBreakoutPicker = cfg.sectionBreakout && !autoAssignBreakout
+
+  /**
+   * The one way out to the success screen, from every branch above it.
+   *
+   * The breakout step lives here rather than at each of the five call sites
+   * because "who gets asked" is one rule: someone checking in as a registrant
+   * (never a volunteer — they're serving, not attending), on a form that offers
+   * the step, who isn't already sitting somewhere. Anything else goes straight
+   * through, including any failure to load the choices: a kiosk that can't reach
+   * the breakout data must still tell the person they're checked in.
+   */
+  async function goToSuccess() {
+    if (!offerBreakoutPicker || !matched || matched.kind !== "registrant") {
+      setStep("success")
+      return
+    }
+    setLoading(true)
+    const result = await getCheckinBreakoutChoices(matched.subjectId, eventId, occurrenceId)
+    setLoading(false)
+    if (!result.success || result.data === null || result.data.seatedGroupName) {
+      setStep("success")
+      return
+    }
+    setBreakoutChoices(result.data)
+    setSelectedBreakoutId("")
+    setError(null)
+    setStep("breakout")
   }
 
   /** Leaves the household step for whatever would have come next. */
@@ -338,7 +385,41 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
       setStep("sg-prompt")
       return
     }
-    goToSuccess()
+    void goToSuccess()
+  }
+
+  // The options are fixed for the life of the step — the profile behind them was
+  // resolved server-side and nothing on this screen can change it — so this guard
+  // can only fire if the choices are swapped underneath a selection. Derived
+  // rather than reset in an effect, so there is never a render where a stale id is
+  // live and submittable.
+  const selectedBreakoutId = breakoutChoices?.options.some((g) => g.id === rawSelectedBreakoutId)
+    ? rawSelectedBreakoutId
+    : ""
+
+  /** Skip and Continue-with-nothing-picked are the same act: leave them unseated. */
+  async function handleBreakoutContinue() {
+    if (!matched || !selectedBreakoutId) {
+      setStep("success")
+      return
+    }
+    setLoading(true)
+    const result = await pickCheckinBreakout(
+      matched.subjectId,
+      eventId,
+      occurrenceId,
+      selectedBreakoutId
+    )
+    setLoading(false)
+    if (!result.success) {
+      setError(result.error)
+      return
+    }
+    // Names the table on the success screen through the card that was already
+    // there for the auto-assign path.
+    const name = result.data?.name ?? null
+    setMatched((prev) => (prev ? { ...prev, breakoutGroupName: name } : prev))
+    setStep("success")
   }
 
   async function handleAddMember() {
@@ -895,6 +976,63 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
         onSave={goToSuccess}
         onBack={() => setStep("sg-prompt")}
       />
+    )
+  }
+
+  // ── Breakout Group ───────────────────────────────────────────────────────
+  if (step === "breakout" && matched && breakoutChoices) {
+    return (
+      <div className="flex flex-col items-center justify-center px-6 py-8">
+        <div className="w-full space-y-6">
+          <div className="space-y-1 text-center">
+            <h2 className="text-2xl font-semibold tracking-tight">
+              You&apos;re checked in
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              One last thing — which group would you like to join?
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            <BreakoutPicker
+              suggested={breakoutChoices.suggested}
+              options={breakoutChoices.options}
+              hasCandidates={breakoutChoices.hasCandidates}
+              notice={breakoutChoices.notice}
+              value={selectedBreakoutId}
+              onChange={setSelectedBreakoutId}
+              intro="Pick a group for today — optional."
+              noticeReassurance="You're already checked in — a staff member will place you in a group."
+            />
+          </div>
+
+          {error && <p className="text-sm text-destructive text-center">{error}</p>}
+
+          <div className="flex flex-col gap-3">
+            <Button
+              className="w-full"
+              onClick={handleBreakoutContinue}
+              disabled={loading}
+            >
+              {loading ? (
+                <IconLoader2 className="size-4 animate-spin" />
+              ) : selectedBreakoutId ? (
+                "Join this group"
+              ) : (
+                "Continue"
+              )}
+            </Button>
+            <Button
+              variant="ghost"
+              className="w-full"
+              onClick={() => setStep("success")}
+              disabled={loading}
+            >
+              Skip for now
+            </Button>
+          </div>
+        </div>
+      </div>
     )
   }
 

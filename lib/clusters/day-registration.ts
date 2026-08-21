@@ -107,3 +107,47 @@ export function clusterDayRegistrantWhere(input: {
   }
   return { OR: or }
 }
+
+/**
+ * When this registrant was checked in **for the cluster's day**, or null.
+ *
+ * The day's breakout detail screen has one attendance column, because a Collab
+ * day is a single sitting — but the people at a cluster-owned table come from
+ * either ministry's event, and those events record check-in in two different
+ * places: `attendedAt` on a OneTime, an `OccurrenceAttendee` row on a session
+ * event. Reading the second one unscoped would mark anyone who ever attended a
+ * past session as present today, which is the same seam
+ * {@link clusterDayRegistrantWhere} closes on the query side.
+ *
+ * Scoping mirrors `occurrenceScopeFilter` in `lib/clusters/aggregate.ts`: the
+ * session the cluster link names, else the cluster date's occurrence, else — for
+ * a dateless cluster — any attendance, since there is no day to window by.
+ */
+export function clusterDayAttendedAt(
+  registrant: {
+    attendedAt: Date | null
+    occurrenceAttendances: { occurrenceId: string; checkedInAt: Date; occurrence: { date: Date } }[]
+  },
+  scope: { date: Date | null; linkedOccurrenceId: string | null }
+): Date | null {
+  if (registrant.attendedAt) return registrant.attendedAt
+
+  const relevant = scope.linkedOccurrenceId
+    ? registrant.occurrenceAttendances.filter(
+        (a) => a.occurrenceId === scope.linkedOccurrenceId
+      )
+    : scope.date
+      ? (() => {
+          const { gte, lt } = utcDayRange(scope.date)
+          return registrant.occurrenceAttendances.filter(
+            (a) => a.occurrence.date >= gte && a.occurrence.date < lt
+          )
+        })()
+      : registrant.occurrenceAttendances
+
+  if (relevant.length === 0) return null
+  return relevant.reduce(
+    (earliest, a) => (a.checkedInAt < earliest ? a.checkedInAt : earliest),
+    relevant[0].checkedInAt
+  )
+}

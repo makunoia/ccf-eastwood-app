@@ -145,6 +145,7 @@ export default async function BreakoutGroupDetailPage({
 
   if (!group || !eventData) notFound()
 
+  const surface = eventSurface(eventId)
   const confirmedVolunteers = [...eventData.volunteers]
 
   return (
@@ -155,7 +156,7 @@ export default async function BreakoutGroupDetailPage({
       />
       <BreakoutNavHeader
         groupId={groupId}
-        eventId={eventId}
+        basePath={surface.basePath}
         title={group.name}
         subtitle={
           <p className="text-sm text-muted-foreground">
@@ -178,7 +179,7 @@ export default async function BreakoutGroupDetailPage({
               ageRangeMin: group.ageRangeMin,
               ageRangeMax: group.ageRangeMax,
             }}
-            surface={eventSurface(eventId)}
+            surface={surface}
             lifeStages={lifeStages}
             volunteers={confirmedVolunteers}
             isEnabled={group.isEnabled}
@@ -188,7 +189,7 @@ export default async function BreakoutGroupDetailPage({
 
       <div className="flex flex-1 flex-col gap-6 p-6">
       <BreakoutDetail
-        surface={eventSurface(eventId)}
+        surface={surface}
         group={{
           id: group.id,
           eventId,

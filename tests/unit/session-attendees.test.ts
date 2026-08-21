@@ -136,24 +136,25 @@ describe("buildSessionAttendeeStats", () => {
   ]
 
   it("counts total, new, participants and volunteers", () => {
-    expect(buildSessionAttendeeStats(roster)).toEqual({
+    expect(buildSessionAttendeeStats(roster, 10)).toEqual({
       totalCount: 4,
       newCount: 2,
       participantCount: 3,
       volunteersPresent: 1,
       menCount: 2,
       womenCount: 1,
+      turnout: { preRegistered: 10, checkedIn: 3, noShows: 7, rate: 0.3 },
     })
   })
 
   it("excludes attendees with no recorded gender from the gender bar", () => {
-    const { menCount, womenCount, totalCount } = buildSessionAttendeeStats(roster)
+    const { menCount, womenCount, totalCount } = buildSessionAttendeeStats(roster, 10)
     expect(menCount + womenCount).toBeLessThan(totalCount)
   })
 
   it("drops a removed row out of every figure", () => {
     const afterRemoval = roster.filter((_, i) => i !== 0)
-    expect(buildSessionAttendeeStats(afterRemoval)).toMatchObject({
+    expect(buildSessionAttendeeStats(afterRemoval, 10)).toMatchObject({
       totalCount: 3,
       newCount: 1,
       participantCount: 2,
@@ -163,18 +164,76 @@ describe("buildSessionAttendeeStats", () => {
 
   it("moves the New count when a badge is toggled to Returning", () => {
     const toggled = roster.map((a, i) => (i === 0 ? { ...a, isReturner: true } : a))
-    expect(buildSessionAttendeeStats(toggled).newCount).toBe(1)
+    expect(buildSessionAttendeeStats(toggled, 10).newCount).toBe(1)
   })
 
   it("returns zeroes for an empty session", () => {
-    expect(buildSessionAttendeeStats([])).toEqual({
+    expect(buildSessionAttendeeStats([], 0)).toEqual({
       totalCount: 0,
       newCount: 0,
       participantCount: 0,
       volunteersPresent: 0,
       menCount: 0,
       womenCount: 0,
+      turnout: { preRegistered: 0, checkedIn: 0, noShows: 0, rate: null },
     })
+  })
+})
+
+// Turnout divides this session's check-ins by the event's registered roster.
+// Volunteers hold no `EventRegistrant` row, so counting them in the numerator
+// would compare against a denominator they are absent from.
+describe("buildSessionAttendeeStats — turnout", () => {
+  function attendees(total: number, volunteers: number) {
+    return Array.from({ length: total }, (_, i) => ({
+      isReturner: true,
+      isVolunteer: i < volunteers,
+      gender: null,
+    }))
+  }
+
+  // Regression: the numerator is `participantCount`, never `totalCount`. Five
+  // people in the room over ten registered is 30%, not 50%, because two of the
+  // five are serving rather than registered.
+  it("counts participants only — volunteers stay out of the numerator", () => {
+    const { turnout } = buildSessionAttendeeStats(attendees(5, 2), 10)
+
+    expect(turnout.checkedIn).toBe(3)
+    expect(turnout.rate).toBe(0.3)
+    expect(turnout.noShows).toBe(7)
+  })
+
+  // The failure this guards is the visible one: a rate above 100% on a session
+  // whose volunteers outnumber the roster.
+  it("never exceeds 100% on a volunteer-heavy session", () => {
+    const { turnout } = buildSessionAttendeeStats(attendees(20, 18), 2)
+
+    expect(turnout.checkedIn).toBe(2)
+    expect(turnout.rate).toBe(1)
+  })
+
+  it("has no rate at all when nobody registered", () => {
+    expect(buildSessionAttendeeStats(attendees(3, 0), 0).turnout.rate).toBeNull()
+  })
+
+  it("reports full turnout when every registrant came", () => {
+    expect(buildSessionAttendeeStats(attendees(8, 0), 8).turnout).toEqual({
+      preRegistered: 8,
+      checkedIn: 8,
+      noShows: 0,
+      rate: 1,
+    })
+  })
+
+  // The tiles paint optimistically, so the rate has to move with a removal
+  // rather than hold the server's figure until the next render.
+  it("moves with an optimistic removal", () => {
+    const before = buildSessionAttendeeStats(attendees(4, 0), 10).turnout
+    const after = buildSessionAttendeeStats(attendees(3, 0), 10).turnout
+
+    expect(before.rate).toBe(0.4)
+    expect(after.rate).toBe(0.3)
+    expect(after.noShows).toBe(7)
   })
 })
 

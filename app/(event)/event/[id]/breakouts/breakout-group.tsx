@@ -480,6 +480,22 @@ export function buildColumns(
         ),
     },
     {
+      id: "coFacilitator",
+      header: "Co-Facilitator",
+      // Off by default: the slot is empty on most tables, and a column of
+      // "Unassigned" earns nothing. It is offered because a co-facilitator is a
+      // real staffing fact — they may answer for the table in Catch Mech, and a
+      // day staffed in pairs wants to see both names without opening each group.
+      meta: { label: "Co-Facilitator", width: "name", optIn: true },
+      accessorFn: (row) => (row.coFacilitator ? volunteerName(row.coFacilitator) : ""),
+      cell: ({ row }) =>
+        row.original.coFacilitator ? (
+          <span>{volunteerName(row.original.coFacilitator)}</span>
+        ) : (
+          <span className="text-muted-foreground">Unassigned</span>
+        ),
+    },
+    {
       id: "members",
       header: "Members",
       // Left, though `align: "right"` is the rule for counts, because this cell

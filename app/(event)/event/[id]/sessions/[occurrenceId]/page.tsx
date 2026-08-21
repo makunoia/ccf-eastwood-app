@@ -6,6 +6,7 @@ import { canExport, canImport, canWrite } from "@/lib/permissions"
 import { isEstablishedAttendee, resolveAttendeeStatus } from "@/lib/session-stats"
 import { ministryLabel } from "@/lib/events/ministry-label"
 import { breakoutOccupancy } from "@/lib/breakouts/occupancy"
+import { resolvePoolScope } from "@/lib/events/pool-scope"
 import { BreadcrumbOverride } from "@/components/breadcrumb-context"
 import { DetailPageHeader } from "@/components/detail-page-header"
 import { SessionAttendeesTable } from "./session-attendees-table"
@@ -68,6 +69,11 @@ async function getOccurrenceDetail(occurrenceId: string) {
 
   if (!occurrence) return null
 
+  // Which tables this session runs, and whose volunteers may staff them. Under a
+  // Collab the tables belong to the day rather than to this event, and either
+  // ministry's roster can supply a substitute — see lib/events/pool-scope.ts.
+  const scope = await resolvePoolScope(occurrence.event.id)
+
   const [
     volunteers,
     breakoutGroups,
@@ -76,7 +82,7 @@ async function getOccurrenceDetail(occurrenceId: string) {
     siblingOccurrences,
   ] = await Promise.all([
     db.volunteer.findMany({
-      where: { eventId: occurrence.event.id },
+      where: { eventId: { in: scope.volunteerEventIds } },
       select: {
         id: true,
         memberId: true,
@@ -84,7 +90,7 @@ async function getOccurrenceDetail(occurrenceId: string) {
       },
     }),
     db.breakoutGroup.findMany({
-      where: { eventId: occurrence.event.id },
+      where: { ...scope.breakoutOwner },
       orderBy: { name: "asc" },
       include: {
         facilitator: {
@@ -96,7 +102,7 @@ async function getOccurrenceDetail(occurrenceId: string) {
                 firstName: true,
                 lastName: true,
                 eventRegistrations: {
-                  where: { eventId: occurrence.event.id },
+                  where: { eventId: { in: scope.candidateEventIds } },
                   select: {
                     occurrenceAttendances: {
                       where: { occurrenceId },
@@ -116,7 +122,7 @@ async function getOccurrenceDetail(occurrenceId: string) {
                 firstName: true,
                 lastName: true,
                 eventRegistrations: {
-                  where: { eventId: occurrence.event.id },
+                  where: { eventId: { in: scope.candidateEventIds } },
                   select: {
                     occurrenceAttendances: {
                       where: { occurrenceId },
@@ -156,6 +162,9 @@ async function getOccurrenceDetail(occurrenceId: string) {
         substitute: { include: { member: { select: { firstName: true, lastName: true } } } },
       },
     }),
+    // The turnout denominator — the whole series roster, matching the dashboard's
+    // Turnout KPI. The numerator is derived client-side from the attendee rows so
+    // it tracks optimistic edits; see `buildSessionAttendeeStats`.
     db.eventRegistrant.count({ where: { eventId: occurrence.event.id } }),
     // Chronological neighbours for the ← / → header nav. Sessions read in date
     // order regardless of how the list screen groups them into series.
@@ -220,7 +229,14 @@ export default async function OccurrenceDetailPage({
   const data = await getOccurrenceDetail(occurrenceId)
   if (!data || data.occurrence.event.id !== id) notFound()
 
-  const { occurrence, volunteers, breakoutGroups, subFacilitators, siblingOccurrences } = data
+  const {
+    occurrence,
+    volunteers,
+    breakoutGroups,
+    subFacilitators,
+    totalRegistrants,
+    siblingOccurrences,
+  } = data
   const canEdit = canWrite(session, "Events")
 
   const currentIndex = siblingOccurrences.findIndex((o) => o.id === occurrenceId)
@@ -443,6 +459,7 @@ export default async function OccurrenceDetailPage({
           breakoutGroups={breakoutGroupOptions}
           breakoutStats={breakoutStats}
           volunteerOptions={volunteerOptions}
+          totalRegistrants={totalRegistrants}
           canEdit={canEdit}
         />
       </div>

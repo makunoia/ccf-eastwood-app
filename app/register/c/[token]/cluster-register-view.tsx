@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
+import { clusterEventMinistry } from "@/lib/clusters/ministry-label"
 import { RegistrationForm } from "@/app/events/[id]/register/registration-form"
 import { PublicFormShell } from "@/components/public-form-shell"
 import { FormClosed } from "@/components/form-closed"
@@ -9,6 +10,10 @@ import {
 } from "@/lib/forms/context-config-server"
 import { isWithinRegistrationWindow } from "@/lib/events/registration-window"
 import { clusterWalkInBackPath } from "@/lib/public-routes"
+import { clusterOffersBreakoutStep } from "@/lib/forms/cluster-sections"
+import { fetchClusterBreakoutAvailability } from "@/lib/breakout-suggestion-server"
+import { resolveBreakoutNotice, withoutOccupancy } from "@/lib/breakout-suggestion"
+import { isEventStaffViewer } from "@/lib/events/staff-viewer"
 import type { FormTheme } from "@/lib/forms/config"
 
 /**
@@ -42,6 +47,9 @@ export async function getCluster(token: string) {
       events: {
         orderBy: { order: "asc" },
         select: {
+          // Which session of this member event the day stands for. The door's
+          // facilitator gate is keyed to it — see `facilitatorGateForOccurrences`.
+          occurrenceId: true,
           event: {
             select: {
               id: true,
@@ -126,15 +134,43 @@ export async function ClusterRegisterView({
     getClusterFormConfig(cluster.id, formContext),
     getClusterFormSuccessMessage(cluster.id, formContext),
   ])
-  // Payment and the manual breakout picker are explicitly out of scope for the
-  // shared cluster form; household capture doesn't fan out. Per-event
-  // auto-assign breakouts still run on submit.
+  // Payment is out of scope for the shared form and household capture doesn't fan
+  // out. Breakout picking follows where cluster-owned tables exist — a Collab day
+  // owns its own, a Parallel day's events each run their own standing set and a
+  // registrant may tick several, so there is no one set to offer. Per-event
+  // auto-assign still runs on submit either way.
+  const offersBreakout = clusterOffersBreakoutStep(cluster.kind)
   const config = {
     ...formFields,
     sectionPayment: false,
-    sectionBreakout: false,
+    sectionBreakout: offersBreakout && formFields.sectionBreakout,
     sectionFamily: false,
   }
+
+  // The door is the stricter surface, exactly as it is on a single event: it
+  // offers only tables whose facilitator is in the room, and it keeps the
+  // headcounts for a signed-in staff member. The shared form offers every enabled
+  // table and never ships an occupancy figure to a registrant's browser.
+  const { candidates: rawBreakoutCandidates, totalGroups: breakoutTotalGroups } =
+    !config.sectionBreakout
+      ? { candidates: [], totalGroups: 0 }
+      : await fetchClusterBreakoutAvailability(cluster.id, {
+          occurrenceIds: door ? cluster.events.map((ce) => ce.occurrenceId) : [],
+          requireCheckedIn: door,
+        })
+
+  const breakoutCandidates =
+    door && (await isEventStaffViewer())
+      ? rawBreakoutCandidates
+      : withoutOccupancy(rawBreakoutCandidates)
+
+  // An empty list is worth explaining when tables exist and the gate is holding
+  // all of them back — otherwise the step would just vanish at the door.
+  const breakoutNotice = resolveBreakoutNotice({
+    offerPicker: config.sectionBreakout,
+    candidateCount: breakoutCandidates.length,
+    totalGroups: breakoutTotalGroups,
+  })
 
   const lifeStages = config.fieldLifeStage
     ? await db.lifeStage.findMany({
@@ -173,10 +209,7 @@ export async function ClusterRegisterView({
             id: ce.event.id,
             name: ce.event.name,
             meta: eventMeta(ce.event),
-            ministry:
-              !ce.event.allMinistries && ce.event.ministries.length === 1
-                ? ce.event.ministries[0].ministry
-                : null,
+            ministry: clusterEventMinistry(ce.event),
           })),
         }}
         eventName={cluster.name}
@@ -184,6 +217,8 @@ export async function ClusterRegisterView({
         successMessage={successMessage}
         lifeStages={lifeStages}
         ageRanges={ageRanges}
+        breakoutCandidates={breakoutCandidates}
+        breakoutNotice={breakoutNotice}
         walkIn={walkIn}
       />
     </PublicFormShell>

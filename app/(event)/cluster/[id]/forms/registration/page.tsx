@@ -11,6 +11,10 @@ import { clusterRegisterPath } from "@/lib/public-routes"
 import { PageHeader } from "@/components/page-header"
 import { EventFormBuilder } from "@/components/forms/event-form-builder"
 import { clusterFormPrerequisites } from "@/lib/forms/form-prerequisites-server"
+import {
+  clusterNotApplicableToggles,
+  clusterOffersBreakoutStep,
+} from "@/lib/forms/cluster-sections"
 import { ClusterFormSettings } from "../cluster-form-settings"
 
 export const metadata: Metadata = {
@@ -28,6 +32,7 @@ export default async function ClusterRegistrationFormPage({
     select: {
       id: true,
       name: true,
+      kind: true,
       publicToken: true,
       isOpen: true,
       registrationStart: true,
@@ -44,8 +49,10 @@ export default async function ClusterRegistrationFormPage({
   const [configs, successMessages, prerequisites] = await Promise.all([
     getClusterFormConfigs(id),
     getClusterFormSuccessMessages(id),
-    clusterFormPrerequisites(),
+    clusterFormPrerequisites(id, cluster.kind),
   ])
+
+  const offersBreakout = clusterOffersBreakoutStep(cluster.kind)
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">
@@ -84,8 +91,12 @@ export default async function ClusterRegistrationFormPage({
         initial={configs}
         contexts={["Register"]}
         heading="Registration form"
-        blurb="What the public form asks for. Name, mobile number, and email are always collected; payment, breakout picking, and household capture aren't available on the shared form."
-        notApplicable={["sectionPayment", "sectionBreakout", "sectionFamily", "familySpouseOnly"]}
+        blurb={
+          offersBreakout
+            ? "What the public form asks for. Name, mobile number, and email are always collected. Breakout picking offers this day's own tables; payment and household capture aren't available on the shared form."
+            : "What the public form asks for. Name, mobile number, and email are always collected; payment, breakout picking, and household capture aren't available on the shared form."
+        }
+        notApplicable={clusterNotApplicableToggles(cluster.kind)}
         prerequisites={prerequisites}
         successMessages={successMessages}
         eventName={cluster.name}

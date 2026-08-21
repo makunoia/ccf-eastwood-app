@@ -14,6 +14,17 @@ import {
   breakoutCandidateWhere,
 } from "@/lib/breakouts/candidate-events"
 import { resolvePoolScope } from "@/lib/events/pool-scope"
+import { isEventStaffViewer } from "@/lib/events/staff-viewer"
+import { assignBreakoutForRegistrant } from "@/lib/events/registration-core"
+import { fetchBreakoutAvailability } from "@/lib/breakout-suggestion-server"
+import {
+  breakoutPickerOptions,
+  resolveBreakoutNotice,
+  suggestBreakoutGroup,
+  withoutOccupancy,
+} from "@/lib/breakout-suggestion"
+import type { CheckinBreakoutChoices } from "@/lib/breakouts/checkin-choices"
+import type { Gender } from "@/app/generated/prisma/client"
 import { personKeyFor } from "@/lib/clusters/roster"
 import { MAX_BREAKOUT_BATCH } from "@/lib/breakouts/candidate-filters"
 import { registrantName, registrantNameSelect } from "@/lib/metadata"
@@ -793,6 +804,265 @@ export async function getRegistrantBreakoutGroupName(
     return membership ? { name: membership.breakoutGroup.name } : null
   } catch {
     return null
+  }
+}
+
+// ─── Picking a group at check-in (CCF-149) ───────────────────────────────────
+
+/**
+ * The profile the suggester ranks on, read off whichever person record the
+ * registrant is linked to.
+ *
+ * An anonymous registrant — neither FK set, personal fields only — has none of
+ * these, and that is a legitimate answer rather than a failure: unknown gender
+ * and life stage never rule a group *out* of the browse list, they only stop a
+ * suggestion being made. See `isEligible` / `breakoutPickerOptions`.
+ */
+async function checkinRegistrantProfile(registrantId: string): Promise<{
+  gender: Gender | null
+  birthYear: number | null
+  lifeStageId: string | null
+}> {
+  const row = await db.eventRegistrant.findUnique({
+    where: { id: registrantId },
+    select: {
+      member: { select: { gender: true, birthYear: true, lifeStageId: true } },
+      guest: { select: { gender: true, birthYear: true, lifeStageId: true } },
+    },
+  })
+  const person = row?.member ?? row?.guest ?? null
+  return {
+    gender: person?.gender ?? null,
+    birthYear: person?.birthYear ?? null,
+    lifeStageId: person?.lifeStageId ?? null,
+  }
+}
+
+/**
+ * Whether this person already holds a seat under this owner, and where.
+ *
+ * Matched by PERSON rather than by the registrant row, because one human holds a
+ * row per member event under a Collab and can hold two on a single event from a
+ * duplicate sign-up. This is the same lookup `assignBreakoutForRegistrant` runs
+ * before it writes; doing it here as well is what stops the kiosk *offering* a
+ * step whose only possible outcome is "you're already seated".
+ */
+async function seatedGroupFor(
+  registrantId: string,
+  owner: BreakoutOwner
+): Promise<{ name: string } | null> {
+  const registrant = await db.eventRegistrant.findUnique({
+    where: { id: registrantId },
+    select: { memberId: true, guestId: true },
+  })
+  // Guard both-null before branching: an anonymous registrant has neither FK, and
+  // `{ memberId: null }` would match every other anonymous row.
+  const personFilter = registrant?.memberId
+    ? { memberId: registrant.memberId }
+    : registrant?.guestId
+      ? { guestId: registrant.guestId }
+      : null
+  const seat = await db.breakoutGroupMember.findFirst({
+    where: {
+      breakoutGroup: owner,
+      ...(personFilter ? { registrant: personFilter } : { registrantId }),
+    },
+    select: { breakoutGroup: { select: { name: true } } },
+  })
+  return seat ? { name: seat.breakoutGroup.name } : null
+}
+
+/**
+ * Has this person's attendance actually been recorded for this event/session?
+ *
+ * The one guard `assignBreakoutForRegistrant` cannot supply, and the reason this
+ * wrapper exists at all. `pickCheckinBreakout` is reachable without a session —
+ * the check-in kiosk is a public route — and it takes a caller-supplied group id
+ * and registrant id. Without this, it is an open endpoint for seating any
+ * registrant at any table of any event.
+ *
+ * Free on the real path: the step runs *after* the check-in write, so anyone who
+ * can see it has already passed.
+ */
+async function isCheckedInFor(
+  registrantId: string,
+  occurrenceId: string | null
+): Promise<boolean> {
+  if (occurrenceId !== null) {
+    const attendance = await db.occurrenceAttendee.findUnique({
+      where: { occurrenceId_registrantId: { occurrenceId, registrantId } },
+      select: { id: true },
+    })
+    return attendance !== null
+  }
+  const registrant = await db.eventRegistrant.findUnique({
+    where: { id: registrantId },
+    select: { attendedAt: true },
+  })
+  return registrant?.attendedAt != null
+}
+
+/** Does this person run one of the owner's tables? They attend as staff, not as a guest. */
+async function facilitatesAnyGroup(
+  registrantId: string,
+  owner: BreakoutOwner
+): Promise<boolean> {
+  const registrant = await db.eventRegistrant.findUnique({
+    where: { id: registrantId },
+    select: { memberId: true },
+  })
+  if (!registrant?.memberId) return false
+  const group = await db.breakoutGroup.findFirst({
+    where: {
+      ...owner,
+      OR: [
+        { facilitator: { memberId: registrant.memberId } },
+        { coFacilitator: { memberId: registrant.memberId } },
+      ],
+    },
+    select: { id: true },
+  })
+  return group !== null
+}
+
+/**
+ * The breakout groups to offer someone who has just checked in, ranked.
+ *
+ * Deliberately unguarded, like `autoAssignRegistrantToBreakout` and
+ * `getRegistrantBreakoutGroupName` above: the public check-in kiosks call it. It
+ * keeps taking an event id for the same reason — the caller is a public page that
+ * knows which event it is serving and nothing more — and resolves the owner
+ * itself, so a Collab day offers the CLUSTER's tables rather than the member
+ * event's standing ones.
+ *
+ * Returns `null` when there is nothing to say and the step should simply not
+ * appear: no enabled groups at all, or the person is staff at one of them. A
+ * *gated* empty list is different and comes back as a `notice` — dropping the step
+ * silently in that case is what made an enabled Breakout toggle look like it did
+ * nothing on the walk-in form.
+ *
+ * The facilitator gate is on, matching the door. Same rule at the same physical
+ * moment: a table with nobody running it is not somewhere to send an arrival.
+ * Facilitators check in through this very kiosk, on the volunteer lane, so the
+ * gate opens on its own as the team arrives.
+ */
+export async function getCheckinBreakoutChoices(
+  registrantId: string,
+  eventId: string,
+  occurrenceId: string | null
+): Promise<ActionResult<CheckinBreakoutChoices | null>> {
+  try {
+    const registrant = await db.eventRegistrant.findUnique({
+      where: { id: registrantId },
+      select: { eventId: true },
+    })
+    if (!registrant || registrant.eventId !== eventId) {
+      return { success: false, error: "Registration not found" }
+    }
+
+    const { breakoutOwner: owner } = await resolvePoolScope(eventId)
+
+    if (await facilitatesAnyGroup(registrantId, owner)) {
+      return { success: true, data: null }
+    }
+
+    const seated = await seatedGroupFor(registrantId, owner)
+    if (seated) {
+      return {
+        success: true,
+        data: {
+          suggested: null,
+          options: [],
+          hasCandidates: false,
+          notice: null,
+          seatedGroupName: seated.name,
+        },
+      }
+    }
+
+    const { candidates, totalGroups } = await fetchBreakoutAvailability(
+      eventId,
+      occurrenceId,
+      true
+    )
+    if (totalGroups === 0) return { success: true, data: null }
+
+    // Occupancy is an admin-facing operational number. A person at the kiosk has
+    // no business knowing how many are at each table, and until it is stripped the
+    // counts sit in the action's payload — unrendered, but there for anyone who
+    // looks. A signed-in staffer running the kiosk keeps them, exactly as at the
+    // door.
+    const visible = (await isEventStaffViewer())
+      ? candidates
+      : withoutOccupancy(candidates)
+
+    const profile = await checkinRegistrantProfile(registrantId)
+
+    return {
+      success: true,
+      data: {
+        suggested: suggestBreakoutGroup(visible, profile),
+        options: breakoutPickerOptions(visible, profile),
+        hasCandidates: visible.length > 0,
+        notice: resolveBreakoutNotice({
+          offerPicker: true,
+          candidateCount: visible.length,
+          totalGroups,
+        }),
+        seatedGroupName: null,
+      },
+    }
+  } catch {
+    return { success: false, error: "Could not load breakout groups" }
+  }
+}
+
+/**
+ * Seat someone at the table they picked at check-in.
+ *
+ * A thin wrapper over `assignBreakoutForRegistrant`, which is a lib function
+ * rather than an action and so cannot be called from a client component. It is
+ * where every rule that matters already lives: the Breakout module on the
+ * registrant's OWN event (which is what makes this correct on a Collab, where the
+ * table belongs to the cluster and the module switch does not), `pickedIsInPlay`
+ * as an owner comparison, `isEnabled`, capacity, one seat per person, and the
+ * move-not-duplicate transaction.
+ *
+ * What this wrapper adds is {@link isCheckedInFor} — see there for why a public
+ * route taking a caller-supplied group id needs it.
+ */
+export async function pickCheckinBreakout(
+  registrantId: string,
+  eventId: string,
+  occurrenceId: string | null,
+  groupId: string
+): Promise<ActionResult<{ name: string } | null>> {
+  try {
+    if (!(await isCheckedInFor(registrantId, occurrenceId))) {
+      return { success: false, error: "Check in first, then pick a group" }
+    }
+
+    const profile = await checkinRegistrantProfile(registrantId)
+    const assigned = await assignBreakoutForRegistrant(
+      registrantId,
+      eventId,
+      groupId,
+      profile,
+      // A staffer running the kiosk may have a reason to go over a table's limit;
+      // a self-serve arrival does not. The same line the door draws.
+      await isEventStaffViewer(),
+      { occurrenceId }
+    )
+    // A refused pick (full, switched off, another day's table) comes back as the
+    // placement they already had, or null. Either way the caller reports what is
+    // true rather than what was asked for.
+    if (!assigned) return { success: false, error: "That group is no longer available" }
+
+    const { breakoutOwner } = await resolvePoolScope(eventId)
+    revalidateBreakoutSurfaces(breakoutOwner)
+    return { success: true, data: { name: assigned.name } }
+  } catch {
+    return { success: false, error: "Could not save your group" }
   }
 }
 

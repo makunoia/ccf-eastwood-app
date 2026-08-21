@@ -6,17 +6,25 @@ import { db } from "@/lib/db"
 import { ProfileCollisionError } from "@/lib/events/profile-merge"
 import { verifyIdentityGrant } from "@/lib/security/identity-grant"
 import { auth } from "@/lib/auth"
-import { canWrite } from "@/lib/permissions"
+import { canAccessEvent, canWrite } from "@/lib/permissions"
 import { isWithinRegistrationWindow } from "@/lib/events/registration-window"
 import { clusterDayRegistrationDisposition } from "@/lib/clusters/day-registration"
+import {
+  fileClusterVolunteerSignUp,
+  type ClusterVolunteerFilingFailure,
+} from "@/lib/clusters/volunteer-signup"
+import { clusterEventMinistryLabel } from "@/lib/clusters/ministry-label"
 import { getClusterFormConfig } from "@/lib/forms/context-config-server"
 import {
   askedFieldsFor,
   missingRequiredFields,
   requiredFieldsMessage,
+  resolveBreakoutSelection,
   sanitizeRegistrantPayload,
 } from "@/lib/forms/registration-payload"
+import { isEventStaffViewer } from "@/lib/events/staff-viewer"
 import {
+  assignBreakoutForRegistrant,
   completeEventRegistration,
   findEventVolunteerRecord,
   findExistingEventRegistrationRow,
@@ -506,7 +514,13 @@ export async function registerForCluster(
   /** Review-screen edits (CCF-147) — these overwrite the stored profile. */
   touchedFields?: TouchedFields,
   /** Proof of record ownership; without it `touchedFields` is ignored. */
-  grant?: string | null
+  grant?: string | null,
+  /**
+   * The breakout table the person picked, on a Collab day whose shared form
+   * offers the step. Honoured only there — a Parallel day's tables belong to its
+   * member events individually, so it has no picker to honour.
+   */
+  selectedBreakoutGroupId?: string | null
 ): Promise<ActionResult<{ results: ClusterEventRegistrationResult[] }>> {
   const parsed = registrantSchema.safeParse(raw)
   if (!parsed.success) {
@@ -599,6 +613,19 @@ export async function registerForCluster(
       return { success: false, error: requiredFieldsMessage(missing) }
     }
 
+    // A submitted pick counts only where the picker was offered — the same
+    // crafted-POST defense the per-event action applies, against the CLUSTER's
+    // config. Auto-assign is unaffected: it runs off a null selection.
+    const breakoutPick = isCollab
+      ? resolveBreakoutSelection(formConfig, selectedBreakoutGroupId)
+      : null
+
+    // Going over a group's member limit is a staff decision taken at the door
+    // (CCF-141), and `walkIn` alone can't authorise it: the cluster walk-in route
+    // is public, so that flag is self-asserted by the request. Same pairing as
+    // `createRegistrant`.
+    const allowOverCapacity = !!walkIn && (await isEventStaffViewer())
+
     // ── Resolve the person ONCE ─────────────────────────────────────────────
     // Overwriting a stored profile field takes proof that the caller owns the
     // record — see `grantedTouchedFields` in ./actions.ts. The grant is scoped to
@@ -615,6 +642,7 @@ export async function registerForCluster(
       profile = {
         gender: (parsed.data.gender ?? stored.gender) as Gender | null,
         birthYear: parsed.data.birthYear ?? stored.birthYear,
+        lifeStageId: parsed.data.lifeStageId ?? stored.lifeStageId,
       }
     } else if (confirmedGuestId) {
       touched = verifyIdentityGrant(grant, { recordId: confirmedGuestId, recordType: "guest" })
@@ -625,13 +653,15 @@ export async function registerForCluster(
       profile = {
         gender: (parsed.data.gender ?? stored.gender) as Gender | null,
         birthYear: parsed.data.birthYear ?? stored.birthYear,
+        lifeStageId: parsed.data.lifeStageId ?? stored.lifeStageId,
       }
     } else {
-      const { guestId } = await resolveAnonymousGuest(parsed.data, skipDeduplication)
+      const { guestId, ...stored } = await resolveAnonymousGuest(parsed.data, skipDeduplication)
       person = { guestId, nickname: parsed.data.nickname ?? null }
       profile = {
-        gender: (parsed.data.gender ?? null) as Gender | null,
-        birthYear: parsed.data.birthYear ?? null,
+        gender: (parsed.data.gender ?? stored.gender) as Gender | null,
+        birthYear: parsed.data.birthYear ?? stored.birthYear,
+        lifeStageId: parsed.data.lifeStageId ?? stored.lifeStageId,
       }
     }
 
@@ -728,11 +758,30 @@ export async function registerForCluster(
           // request stay on the far side: those happened when the person first
           // registered, and re-running them would double-file the same person.
           await stampClusterProvenance(existing.id, cluster.id)
+          // An explicit breakout pick is the one other thing that repeats here,
+          // and for the mirror-image reason. The rest of this branch's work is
+          // skipped because it *already happened* — but a table chosen on this
+          // submission is a decision taken just now, and it reaches this branch
+          // by the supported route: amending re-opens a registration the day
+          // already holds. Dropping it would show the person a step, take their
+          // answer and keep the old table. `assignBreakoutForRegistrant` moves
+          // rather than double-seats, so repeating it is safe; automatic
+          // placement stays on the far side, where nobody chose anything.
+          const rePicked = breakoutPick
+            ? await assignBreakoutForRegistrant(
+                existing.id,
+                eventId,
+                breakoutPick,
+                profile,
+                allowOverCapacity
+              )
+            : null
           results.push({
             eventId,
             eventName: event.name,
             status: "already",
             registrantId: existing.id,
+            breakoutGroup: rePicked ?? undefined,
           })
           continue
         }
@@ -755,7 +804,10 @@ export async function registerForCluster(
           eventId,
           person,
           data: parsed.data,
-          breakoutPick: null, // manual picker is omitted on the cluster form; auto-assign still runs
+          // Null on a Parallel day, where the shared form has no picker — and
+          // auto-assign still runs there exactly as it did.
+          breakoutPick,
+          allowOverCapacity,
           profile,
           clusterId: cluster.id,
           walkIn: walkInForEvent,
@@ -1335,6 +1387,23 @@ export type ClusterCheckinOutcome = {
     eventName: string
     reason: ClusterCheckinSkipReason
   }[]
+  /**
+   * The registration a Collab day's breakout step would seat, or null.
+   *
+   * Resolved here rather than by the board because it needs the day's session map
+   * (`ctx.occurrenceByEvent`), which no client has. Null for someone the day only
+   * knows as a **volunteer** — they are serving, not attending, and a volunteer
+   * holds no `EventRegistrant` row to seat. That falls out of the cell precedence
+   * `buildClusterCheckinPeople` already applies rather than needing a rule here.
+   *
+   * A registrant belongs to exactly one member event — their ministry's — so there
+   * is never more than one to choose between.
+   */
+  breakoutSubject: {
+    registrantId: string
+    eventId: string
+    occurrenceId: string | null
+  } | null
 }
 
 /**
@@ -1391,6 +1460,15 @@ export async function checkInToCluster(
 
     revalidateClusterPaths(ctx.cluster.id)
 
+    // Only over the cells we actually recorded: a registration on an event the
+    // day skipped isn't present, so seating them at the day's table would place
+    // someone the room has no record of.
+    const seatable = person.events.find(
+      (cell) =>
+        cell.subject?.kind === "registrant" &&
+        recorded.some((r) => r.eventId === cell.eventId)
+    )
+
     // Re-read so the caller's screen shows what is now true, not what was true
     // before the writes.
     return {
@@ -1406,6 +1484,13 @@ export async function checkInToCluster(
         },
         recorded,
         skipped,
+        breakoutSubject: seatable?.subject
+          ? {
+              registrantId: seatable.subject.id,
+              eventId: seatable.eventId,
+              occurrenceId: ctx.occurrenceByEvent.get(seatable.eventId) ?? null,
+            }
+          : null,
       },
     }
   } catch {
@@ -1454,6 +1539,13 @@ export type ClusterVolunteerSignUpInput = {
  * events each keep their own serving team, and there is no shared roster for a
  * shared form to feed.
  */
+/** The public form's wording for each refusal — it is talking to the volunteer. */
+const SIGN_UP_REFUSALS: Record<ClusterVolunteerFilingFailure, string> = {
+  role: "Please select a committee and role",
+  member: "We couldn't find your member record.",
+  already: "You've already signed up to serve on this event day.",
+}
+
 export async function submitClusterVolunteerSignUp(
   publicToken: string,
   input: ClusterVolunteerSignUpInput
@@ -1492,70 +1584,23 @@ export async function submitClusterVolunteerSignUp(
     const eventName =
       cluster.events.find((ce) => ce.event.id === targetEventId)?.event.name ?? ""
 
-    // The committee has to belong to the event the ministry named, and the role
-    // to that committee — otherwise a hand-built payload could file someone onto
-    // the partner ministry's team.
-    const role = await db.committeeRole.findFirst({
-      where: {
-        id: preferredRoleId,
-        committeeId,
-        committee: { eventId: targetEventId },
-      },
-      select: { id: true },
+    const filed = await fileClusterVolunteerSignUp({
+      clusterId: cluster.id,
+      eventId: targetEventId,
+      memberId,
+      committeeId,
+      preferredRoleId,
+      notes: input.notes.trim() || null,
     })
-    if (!role) {
-      return { success: false, error: "Please select a committee and role" }
+    if (!filed.ok) {
+      return { success: false, error: SIGN_UP_REFUSALS[filed.reason] }
     }
-
-    const member = await db.member.findUnique({
-      where: { id: memberId },
-      select: { id: true },
-    })
-    if (!member) return { success: false, error: "We couldn't find your member record." }
-
-    const notes = input.notes.trim() || null
-    const existing = await db.volunteer.findFirst({
-      where: { memberId, eventId: targetEventId },
-      select: { id: true, signUpClusterId: true },
-    })
-
-    if (existing?.signUpClusterId === cluster.id) {
-      return {
-        success: false,
-        error: "You've already signed up to serve on this event day.",
-      }
-    }
-
-    const volunteer = existing
-      ? await db.volunteer.update({
-          where: { id: existing.id },
-          data: {
-            signUpClusterId: cluster.id,
-            committeeId,
-            preferredRoleId,
-            notes,
-          },
-          select: { id: true },
-        })
-      : await db.volunteer.create({
-          data: {
-            memberId,
-            eventId: targetEventId,
-            committeeId,
-            preferredRoleId,
-            notes,
-            signUpClusterId: cluster.id,
-            leaderApprovalToken: crypto.randomUUID(),
-            status: "Pending",
-          },
-          select: { id: true },
-        })
 
     revalidatePath(`/event/${targetEventId}/volunteers`)
     revalidateClusterPaths(cluster.id)
     return {
       success: true,
-      data: { id: volunteer.id, eventName, reused: existing !== null },
+      data: { id: filed.id, eventName, reused: filed.reused },
     }
   } catch {
     return {
@@ -1563,4 +1608,171 @@ export async function submitClusterVolunteerSignUp(
       error: "Failed to submit your application. Please try again.",
     }
   }
+}
+
+/**
+ * Add someone to a Collab day's serving team from the day's own Volunteers
+ * screen — the admin counterpart of the shared volunteer form.
+ *
+ * It exists because the day's roster is now `signUpClusterId`-scoped, and until
+ * this action the *only* way to write that stamp was the public form. A staffer
+ * filling a gap on the morning of had to open the ministry's event workspace,
+ * add the volunteer there, and then watch them not appear on the day — the row
+ * lands on the standing roster unstamped, which is exactly the state
+ * `volunteerIsOnClusterDay` refuses. Sending an admin to the public form instead
+ * would mean knowing the person's mobile number and reopening a form the day may
+ * have deliberately closed.
+ *
+ * The ministry answer is `eventId` here rather than a ministry id, the same
+ * indirection the public form uses: nothing downstream knows ministries exist,
+ * and the admin picks a *label* that happens to be one.
+ *
+ * `volunteerIsOpen` is deliberately not consulted. That switch is the public
+ * door; a closed door has never stopped an admin adding a registrant by hand,
+ * and staffing gaps get filled after sign-ups close, not before.
+ */
+export async function createClusterVolunteer(
+  clusterId: string,
+  input: {
+    eventId: string
+    memberId: string
+    committeeId: string
+    preferredRoleId: string
+    notes: string
+  }
+): Promise<ActionResult<{ id: string; eventName: string; reused: boolean }>> {
+  const authError = await requireClusterWrite(clusterId)
+  if (authError) return { success: false, error: authError.error }
+
+  const { memberId, eventId, committeeId, preferredRoleId } = input
+  if (!memberId) return { success: false, error: "Please choose a member." }
+  if (!committeeId || !preferredRoleId) {
+    return { success: false, error: "Please select a committee and role." }
+  }
+
+  try {
+    const cluster = await db.eventCluster.findUnique({
+      where: { id: clusterId },
+      select: {
+        id: true,
+        kind: true,
+        events: {
+          orderBy: { order: "asc" },
+          select: {
+            event: {
+              select: {
+                id: true,
+                name: true,
+                allMinistries: true,
+                ministries: { select: { ministry: { select: { name: true } } } },
+              },
+            },
+          },
+        },
+      },
+    })
+    if (!cluster) return { success: false, error: "Event day not found." }
+    if (cluster.kind !== ClusterKind.Collab) {
+      return { success: false, error: "This event day has no shared serving team." }
+    }
+
+    // Same resolver the public form uses, so an event id that isn't on this day
+    // is refused identically whether it came from a form post or a stale tab.
+    const clusterEventIds = cluster.events.map((ce) => ce.event.id)
+    const selection = resolveClusterEventSelection(cluster.kind, [eventId], clusterEventIds)
+    if (!selection.ok) return { success: false, error: selection.error }
+    const targetEventId = selection.eventIds[0]
+
+    // A staff user scoped to one ministry's event must not file someone onto the
+    // partner's team — `requireClusterWrite` only established they may see the
+    // day at all.
+    const session = await auth()
+    if (!canAccessEvent(session, targetEventId)) {
+      return { success: false, error: "Unauthorized." }
+    }
+
+    const target = cluster.events.find((ce) => ce.event.id === targetEventId)!.event
+    const eventName = clusterEventMinistryLabel(target)
+
+    const filed = await fileClusterVolunteerSignUp({
+      clusterId: cluster.id,
+      eventId: targetEventId,
+      memberId,
+      committeeId,
+      preferredRoleId,
+      notes: input.notes.trim() || null,
+    })
+    if (!filed.ok) {
+      return { success: false, error: ADMIN_ADD_REFUSALS[filed.reason] }
+    }
+
+    revalidatePath(`/event/${targetEventId}/volunteers`)
+    revalidateClusterPaths(cluster.id)
+    return {
+      success: true,
+      data: { id: filed.id, eventName, reused: filed.reused },
+    }
+  } catch {
+    return { success: false, error: "Failed to add volunteer." }
+  }
+}
+
+/**
+ * Take someone off a Collab day's serving team without touching their standing
+ * roster entry — clear the stamp, keep the row.
+ *
+ * The undo for `createClusterVolunteer`, and the reason it can't be "delete the
+ * volunteer": on a Collab the day's list and the ministry's roster are the same
+ * rows seen through `signUpClusterId`, so deleting a mis-added regular would
+ * erase a sign-up that predates the day, along with their confirmed status and
+ * their `leaderApprovalToken`. Until this existed the only correction available
+ * was exactly that destructive one, taken in the event workspace.
+ *
+ * Committee, role and status are left as they are. They may well have been
+ * answered for this day, but they are also what the ministry's roster shows, and
+ * guessing which of the two a value belonged to would be inventing history.
+ * Removing someone from a date is not a statement about how they serve.
+ */
+export async function removeClusterVolunteerFromDay(
+  clusterId: string,
+  volunteerId: string
+): Promise<ActionResult<void>> {
+  const authError = await requireClusterWrite(clusterId)
+  if (authError) return { success: false, error: authError.error }
+
+  try {
+    // Scoped to the stamp, so a volunteer id from another day — or from a
+    // ministry's roster that was never on this one — matches nothing rather than
+    // being silently cleared.
+    const volunteer = await db.volunteer.findFirst({
+      where: { id: volunteerId, signUpClusterId: clusterId },
+      select: { id: true, eventId: true },
+    })
+    if (!volunteer) {
+      return { success: false, error: "They're not on this day's serving team." }
+    }
+
+    const session = await auth()
+    if (!canAccessEvent(session, volunteer.eventId)) {
+      return { success: false, error: "Unauthorized." }
+    }
+
+    await db.volunteer.update({
+      where: { id: volunteer.id },
+      data: { signUpClusterId: null },
+    })
+
+    revalidatePath(`/event/${volunteer.eventId}/volunteers`)
+    revalidateClusterPaths(clusterId)
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to remove volunteer from this day." }
+  }
+}
+
+/** The admin screen's wording — it is talking *about* the volunteer, not to them. */
+const ADMIN_ADD_REFUSALS: Record<ClusterVolunteerFilingFailure, string> = {
+  role: "Please select a committee and role.",
+  member: "That member no longer exists.",
+  already: "They're already on this day's serving team.",
 }

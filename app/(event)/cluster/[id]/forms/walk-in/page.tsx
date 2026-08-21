@@ -11,6 +11,10 @@ import { PageHeader } from "@/components/page-header"
 import { EventFormBuilder } from "@/components/forms/event-form-builder"
 import { ClusterWalkInAccess } from "./walk-in-access"
 import { clusterFormPrerequisites } from "@/lib/forms/form-prerequisites-server"
+import {
+  clusterNotApplicableToggles,
+  clusterOffersBreakoutStep,
+} from "@/lib/forms/cluster-sections"
 import { clusterWalkInPath } from "@/lib/public-routes"
 
 export const metadata: Metadata = {
@@ -25,15 +29,17 @@ export default async function ClusterWalkInFormPage({
   const { id } = await params
   const cluster = await db.eventCluster.findUnique({
     where: { id },
-    select: { id: true, name: true, publicToken: true, walkInIsOpen: true },
+    select: { id: true, name: true, kind: true, publicToken: true, walkInIsOpen: true },
   })
   if (!cluster) notFound()
 
   const [configs, successMessages, prerequisites] = await Promise.all([
     getClusterFormConfigs(id),
     getClusterFormSuccessMessages(id),
-    clusterFormPrerequisites(),
+    clusterFormPrerequisites(id, cluster.kind),
   ])
+
+  const offersBreakout = clusterOffersBreakoutStep(cluster.kind)
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">
@@ -62,8 +68,12 @@ export default async function ClusterWalkInFormPage({
         initial={configs}
         contexts={["WalkIn"]}
         heading="Walk-in form"
-        blurb="What someone registering at the door is asked for — configured separately from the public form, so the door version can ask less."
-        notApplicable={["sectionPayment", "sectionBreakout", "sectionFamily", "familySpouseOnly"]}
+        blurb={
+          offersBreakout
+            ? "What someone registering at the door is asked for — configured separately from the public form, so the door version can ask less. Breakout picking here only offers tables whose facilitator has checked in."
+            : "What someone registering at the door is asked for — configured separately from the public form, so the door version can ask less."
+        }
+        notApplicable={clusterNotApplicableToggles(cluster.kind)}
         prerequisites={prerequisites}
         successMessages={successMessages}
         eventName={cluster.name}

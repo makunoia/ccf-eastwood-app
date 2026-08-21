@@ -7,6 +7,7 @@ import { getEffectiveFormConfig } from "@/lib/forms/context-config-server"
 import { getFormConfig } from "@/lib/forms/config"
 import { resolveWalkInAccess } from "@/lib/events/walk-in-access"
 import { resolveWalkInSession } from "@/lib/events/walk-in-session"
+import { isCheckinLive, utcToday } from "@/lib/events/checkin-link"
 
 async function getOccurrenceWithEvent(occurrenceId: string) {
   return db.eventOccurrence.findUnique({
@@ -181,11 +182,10 @@ export default async function OccurrenceCheckinPage({
 
   const subtitle = `${ministryNames}${ministryNames ? " · " : ""}${dateLabel}`
 
-  // Date gate: only allow check-in on the occurrence's date
-  const today = new Date().toISOString().split("T")[0]
-  const occurrenceDate = occurrence.date.toISOString().split("T")[0]
-
-  if (today !== occurrenceDate && !occurrence.isOpen) {
+  // Date gate: only allow check-in on the occurrence's date. `isCheckinLive` is
+  // shared with the Sessions list, which offers the link to this page only when
+  // this branch will let someone through.
+  if (!isCheckinLive({ isOpen: occurrence.isOpen, date: occurrence.date, today: utcToday() })) {
     return (
       <div className="relative min-h-svh bg-muted">
         {bannerUrl && (

@@ -458,8 +458,8 @@ const REGISTER_LAYOUT: readonly FormLayoutSection[] = [
 
 /**
  * Check-in has its own shape: the profile step asks every matching field directly,
- * with no DGroup dependency, and it never asks for birth date. Payment and
- * breakout selection don't apply at all (see `NOT_APPLICABLE` in the builder).
+ * with no DGroup dependency, and it never asks for birth date. Payment doesn't
+ * apply at all (see `NOT_APPLICABLE` in the builder).
  */
 const CHECKIN_LAYOUT: readonly FormLayoutSection[] = [
   {
@@ -485,6 +485,14 @@ const CHECKIN_LAYOUT: readonly FormLayoutSection[] = [
     fields: [],
     options: [],
     note: "Asked of anyone checking in who has no DGroup yet — guests, members and volunteers alike. Naming the group they're already in is guest-only. No extra fields.",
+  },
+  {
+    key: "sectionBreakout",
+    title: "Breakout Group",
+    description: FORM_SECTION_META.sectionBreakout.description,
+    fields: [],
+    options: [],
+    note: "Adds a step after the DGroup prompt for picking a breakout group, ranked from the profile we already hold. Only offered to someone who isn't already seated — volunteers never see it — and, like the door, only over tables whose facilitator has checked in. Always skippable. Turned off automatically while auto-assign is on.",
   },
   {
     key: "sectionFamily",

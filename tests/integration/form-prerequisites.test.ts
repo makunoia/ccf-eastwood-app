@@ -11,7 +11,7 @@ import {
  */
 
 beforeEach(async () => {
-  await db.$executeRaw`TRUNCATE "BreakoutGroupMember", "BreakoutGroup", "Volunteer", "CommitteeRole", "VolunteerCommittee", "EventRegistrant", "EventOccurrence", "Event", "Member", "Guest", "LifeStage", "AgeRangeBucket" RESTART IDENTITY CASCADE`
+  await db.$executeRaw`TRUNCATE "BreakoutGroupMember", "BreakoutGroup", "Volunteer", "CommitteeRole", "VolunteerCommittee", "EventRegistrant", "EventOccurrence", "EventModule", "EventClusterEvent", "EventCluster", "Event", "Member", "Guest", "LifeStage", "AgeRangeBucket" RESTART IDENTITY CASCADE`
 })
 
 afterAll(async () => {
@@ -22,6 +22,10 @@ async function seedEvent() {
   return db.event.create({
     data: { name: "Retreat", type: "OneTime", startDate: new Date(), endDate: new Date() },
   })
+}
+
+async function seedCluster(kind: "Parallel" | "Collab") {
+  return db.eventCluster.create({ data: { name: "Event Day", kind } })
 }
 
 async function seedFacilitatorVolunteer(eventId: string) {
@@ -63,7 +67,7 @@ describe("eventFormPrerequisites — breakout warnings", () => {
     expect(result.sectionBreakout?.contexts).toBeUndefined()
   })
 
-  it("warns Walk-in only when groups exist but none has a facilitator", async () => {
+  it("warns the day-of surfaces when groups exist but none has a facilitator", async () => {
     const event = await seedEvent()
     await db.breakoutGroup.create({ data: { name: "One", eventId: event.id } })
     await db.breakoutGroup.create({ data: { name: "Two", eventId: event.id } })
@@ -71,8 +75,10 @@ describe("eventFormPrerequisites — breakout warnings", () => {
     const result = await eventFormPrerequisites(event.id, false)
 
     expect(result.sectionBreakout?.message).toContain("2 breakout groups have a facilitator")
-    // The public form offers unstaffed groups, so this one is scoped.
-    expect(result.sectionBreakout?.contexts).toEqual(["WalkIn"])
+    // Scoped, because the public registration form is filled in days ahead and
+    // offers unstaffed groups regardless. Check-in joined the door here (CCF-149):
+    // the kiosk now offers the step too, over the same gated pool.
+    expect(result.sectionBreakout?.contexts).toEqual(["WalkIn", "CheckIn"])
   })
 
   it("uses singular phrasing for a single unstaffed group", async () => {
@@ -157,11 +163,215 @@ describe("global field warnings", () => {
   it("reaches the cluster form too, which also collects both fields", async () => {
     // Regression: the cluster builder shipped without these warnings even though
     // its form renders the same Life Stage / Age Range inputs.
-    const result = await clusterFormPrerequisites()
+    const cluster = await seedCluster("Parallel")
+    const result = await clusterFormPrerequisites(cluster.id, "Parallel")
 
     expect(result.fieldLifeStage?.message).toContain("Settings → Life Stages")
     expect(result.fieldAgeRange?.message).toContain("Settings → Age Ranges")
-    // The cluster form has no breakout picker of its own to warn about.
+    // A Parallel day has no tables of its own, so there is no picker to warn about.
     expect(result.sectionBreakout).toBeUndefined()
+  })
+})
+
+describe("clusterFormPrerequisites — Collab breakout warnings", () => {
+  /** A Collab day with one member event that can actually receive a placement. */
+  async function seedCollab(
+    opts: { autoAssign?: boolean; withModule?: boolean } = {}
+  ) {
+    const cluster = await seedCluster("Collab")
+    const event = await db.event.create({
+      data: {
+        name: "Youth",
+        type: "OneTime",
+        startDate: new Date(),
+        endDate: new Date(),
+        autoAssignBreakout: opts.autoAssign ?? false,
+      },
+    })
+    await db.eventClusterEvent.create({
+      data: { clusterId: cluster.id, eventId: event.id },
+    })
+    if (opts.withModule ?? true) {
+      await db.eventModule.create({ data: { eventId: event.id, type: "Breakout" } })
+    }
+    return { cluster, event }
+  }
+
+  it("warns that the day has no tables yet", async () => {
+    const { cluster } = await seedCollab()
+    const result = await clusterFormPrerequisites(cluster.id, "Collab")
+
+    expect(result.sectionBreakout?.message).toContain("no breakout groups yet")
+    expect(result.sectionBreakout?.contexts).toBeUndefined()
+  })
+
+  it("distinguishes 'all switched off' from 'none exist'", async () => {
+    const { cluster } = await seedCollab()
+    await db.breakoutGroup.create({
+      data: { clusterId: cluster.id, name: "Table 1", isEnabled: false },
+    })
+
+    const result = await clusterFormPrerequisites(cluster.id, "Collab")
+    expect(result.sectionBreakout?.message).toContain("switched off")
+    expect(result.sectionBreakout?.message).not.toContain("no breakout groups yet")
+  })
+
+  it("names a member event missing the Breakout module — the pick would be dropped", async () => {
+    // The quietest failure: the form accepts the choice and
+    // `assignBreakoutForRegistrant` throws it away, because placement is gated on
+    // the registrant's own event holding the module.
+    const { cluster } = await seedCollab({ withModule: false })
+    await db.breakoutGroup.create({ data: { clusterId: cluster.id, name: "Table 1" } })
+
+    const result = await clusterFormPrerequisites(cluster.id, "Collab")
+    expect(result.sectionBreakout?.message).toContain("Youth")
+    expect(result.sectionBreakout?.message).toContain("Settings → Modules")
+    expect(result.sectionBreakout?.contexts).toBeUndefined()
+  })
+
+  it("mentions auto-assign without claiming the step is pointless", async () => {
+    const { cluster } = await seedCollab({ autoAssign: true })
+    await db.breakoutGroup.create({ data: { clusterId: cluster.id, name: "Table 1" } })
+
+    const result = await clusterFormPrerequisites(cluster.id, "Collab")
+    // Unlike a single event — where auto-assign SUPPRESSES the picker — a pick
+    // made on the shared form still wins, so the copy must not say nobody sees it.
+    expect(result.sectionBreakout?.message).toContain("still wins")
+  })
+
+  it("warns about the unstaffed day-of surfaces only, once the rest is in order", async () => {
+    const { cluster } = await seedCollab()
+    await db.breakoutGroup.create({ data: { clusterId: cluster.id, name: "Table 1" } })
+
+    const result = await clusterFormPrerequisites(cluster.id, "Collab")
+    expect(result.sectionBreakout?.message).toContain("facilitator has checked in")
+    // The door and the day's kiosk, not the shared form — see the event-side twin.
+    expect(result.sectionBreakout?.contexts).toEqual(["WalkIn", "CheckIn"])
+  })
+
+  it("stays quiet once a table is enabled and staffed", async () => {
+    const { cluster, event } = await seedCollab()
+    const faci = await seedFacilitatorVolunteer(event.id)
+    await db.breakoutGroup.create({
+      data: { clusterId: cluster.id, name: "Table 1", facilitatorId: faci.id },
+    })
+
+    const result = await clusterFormPrerequisites(cluster.id, "Collab")
+    expect(result.sectionBreakout).toBeUndefined()
+  })
+})
+
+/**
+ * The one warning that fires while its own switch is *off*.
+ *
+ * A gendered table is never suggested to someone whose gender we don't hold, so
+ * switching Gender off quietly removes those tables from play and leaves life
+ * stage to decide. That is a survivable fallback rather than a broken form —
+ * but it has to be said out loud, because nothing on the screen showed it.
+ *
+ * The focus is usually *implied* by who runs the table rather than set on it,
+ * which is why counting the `genderFocus` column alone would have reported zero
+ * for most affected events.
+ */
+describe("gender field warning", () => {
+  async function seedGenderedGroup(
+    eventId: string,
+    opts: { facilitatorGender?: "Male" | "Female"; focus?: "Male" | "Female" | "Mixed" } = {}
+  ) {
+    const committee = await db.volunteerCommittee.create({
+      data: { name: "Facilitators", eventId },
+    })
+    const role = await db.committeeRole.create({
+      data: { name: "Facilitator", committeeId: committee.id },
+    })
+    const member = await db.member.create({
+      data: {
+        firstName: "Ana",
+        lastName: "Faci",
+        dateJoined: new Date(),
+        language: [],
+        gender: opts.facilitatorGender ?? null,
+      },
+    })
+    const volunteer = await db.volunteer.create({
+      data: {
+        memberId: member.id,
+        eventId,
+        committeeId: committee.id,
+        preferredRoleId: role.id,
+        status: "Confirmed",
+      },
+    })
+    return db.breakoutGroup.create({
+      data: {
+        eventId,
+        name: "Table 1",
+        genderFocus: opts.focus ?? null,
+        facilitatorId: volunteer.id,
+      },
+    })
+  }
+
+  it("raises the warning off a facilitator-implied focus, not just an explicit one", async () => {
+    const event = await seedEvent()
+    await seedGenderedGroup(event.id, { facilitatorGender: "Male" })
+
+    const result = await eventFormPrerequisites(event.id, false)
+    expect(result.fieldGender?.whenOff).toBe(true)
+    expect(result.fieldGender?.message).toContain("for one gender")
+    expect(result.fieldGender?.message).toContain("life stage")
+    // Nothing about the step failing to appear — it appears fine.
+    expect(result.fieldGender?.contexts).toBeUndefined()
+  })
+
+  it("says nobody can be placed at all when auto-assign is on", async () => {
+    const event = await seedEvent()
+    await seedGenderedGroup(event.id, { facilitatorGender: "Female" })
+
+    const result = await eventFormPrerequisites(event.id, true)
+    expect(result.fieldGender?.message).toContain("nobody can be placed")
+    // The sectionBreakout chain still answers its own question independently.
+    expect(result.sectionBreakout?.message).toContain("Auto-assign is on")
+  })
+
+  it("stays quiet for an explicitly Mixed table", async () => {
+    const event = await seedEvent()
+    await seedGenderedGroup(event.id, { facilitatorGender: "Male", focus: "Mixed" })
+
+    const result = await eventFormPrerequisites(event.id, false)
+    expect(result.fieldGender).toBeUndefined()
+  })
+
+  it("stays quiet when no table is gendered at all", async () => {
+    const event = await seedEvent()
+    await seedGenderedGroup(event.id)
+
+    const result = await eventFormPrerequisites(event.id, false)
+    expect(result.fieldGender).toBeUndefined()
+  })
+
+  it("ignores a switched-off table, which is never offered anyway", async () => {
+    const event = await seedEvent()
+    const group = await seedGenderedGroup(event.id, { facilitatorGender: "Male" })
+    await db.breakoutGroup.update({ where: { id: group.id }, data: { isEnabled: false } })
+
+    const result = await eventFormPrerequisites(event.id, false)
+    expect(result.fieldGender).toBeUndefined()
+  })
+
+  it("counts a Collab day's own tables", async () => {
+    const cluster = await seedCluster("Collab")
+    const event = await db.event.create({
+      data: { name: "Youth", type: "OneTime", startDate: new Date(), endDate: new Date() },
+    })
+    await db.eventClusterEvent.create({ data: { clusterId: cluster.id, eventId: event.id } })
+    await db.eventModule.create({ data: { eventId: event.id, type: "Breakout" } })
+    await db.breakoutGroup.create({
+      data: { clusterId: cluster.id, name: "Men's Table", genderFocus: "Male" },
+    })
+
+    const result = await clusterFormPrerequisites(cluster.id, "Collab")
+    expect(result.fieldGender?.whenOff).toBe(true)
+    expect(result.fieldGender?.message).toContain("for one gender")
   })
 })

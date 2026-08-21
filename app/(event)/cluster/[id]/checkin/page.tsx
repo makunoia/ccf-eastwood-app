@@ -1,6 +1,5 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
-import { IconUserCheck, IconUsers } from "@tabler/icons-react"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import {
@@ -8,11 +7,11 @@ import {
   getClusterCheckinShortcuts,
   getClusterDayRows,
 } from "@/lib/clusters/aggregate"
+import { clusterOffersPerEventCheckin } from "@/lib/clusters/checkin-shortcuts"
 import { buildClusterRoster } from "@/lib/clusters/roster"
 import { canWrite } from "@/lib/permissions"
 import { clusterCheckinPath, clusterWalkInPath } from "@/lib/public-routes"
 import { DetailPageHeader } from "@/components/detail-page-header"
-import { StatCard } from "@/components/session-stat-card"
 import { ClusterCheckinClient } from "./checkin-client"
 import { ClusterCheckinShortcuts } from "./checkin-shortcuts"
 
@@ -66,10 +65,15 @@ export default async function ClusterCheckinPage({
     rows.filter((r) => r.onClusterDay)
   )
 
-  // Shortcuts cover every accessible event, not just the ones the board can
-  // monitor: a MultiDay event still has a check-in link a staffer needs, even
-  // though its arrivals are tracked on its own sessions page.
-  const shortcuts = await getClusterCheckinShortcuts(accessibleEvents, cluster.date)
+  // Per-event check-in doors — a Parallel day's, and nobody else's; see
+  // `clusterOffersPerEventCheckin` for why a Collab day gets none. They cover
+  // every accessible event, not just the ones the board can monitor: a MultiDay
+  // event still has a check-in link a staffer needs, even though its arrivals
+  // are tracked on its own sessions page.
+  const perEventDoors = clusterOffersPerEventCheckin(cluster.kind)
+  const shortcuts = perEventDoors
+    ? await getClusterCheckinShortcuts(accessibleEvents, cluster.date)
+    : []
   const writable = canWrite(session, "Events")
 
   const people = roster.rows.map((person) => {
@@ -97,34 +101,32 @@ export default async function ClusterCheckinPage({
 
   return (
     <>
+      {/* The two figures live in the subtitle and nowhere else. A pair of stat
+          tiles under this header restated "N of M checked in" word for word —
+          two rows of chrome saying what the line above them already said, and
+          the arrivals list (the only thing on this page that changes) started
+          below the fold because of it. */}
       <DetailPageHeader
         title="Check-in"
         subtitle={
           <p className="text-sm text-muted-foreground">
-            Live status across the day&apos;s events — attendance is recorded on
-            the kiosk below · {checkedInCount} of {people.length} checked in
+            {perEventDoors
+              ? "Live status across the day\u2019s events"
+              : "Live status for the day"}{" "}
+            — attendance is recorded on the kiosk below ·{" "}
+            <span className="font-medium text-foreground tabular-nums">
+              {checkedInCount} of {people.length}
+            </span>{" "}
+            checked in
           </p>
         }
       />
 
       <div className="flex flex-1 flex-col gap-6 p-6">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <StatCard
-            label="Expected"
-            value={people.length}
-            icon={<IconUsers className="size-4" />}
-          />
-          <StatCard
-            label="Checked in"
-            value={checkedInCount}
-            icon={<IconUserCheck className="size-4" />}
-          />
-        </div>
-
         <ClusterCheckinShortcuts
           shortcuts={shortcuts}
           canConfigure={writable}
-          // The day's kiosk. Same treatment as the door below it: hidden from
+          // The day's kiosk. Same treatment as the door beside it: hidden from
           // read-only staff because it writes attendance, and swapped for the
           // switch link while closed so the row never dead-ends.
           checkInHref={
@@ -153,7 +155,15 @@ export default async function ClusterCheckinPage({
           }
         />
 
-        <ClusterCheckinClient people={people} hasCheckinEvents={events.length > 0} />
+        <ClusterCheckinClient
+          people={people}
+          hasCheckinEvents={events.length > 0}
+          // A Collab registrant holds exactly one of the day's events, so the
+          // per-event badge column is the same word on every row — and the one
+          // it isn't is the partner ministry's, which this day is built to stop
+          // showing. Collapsed, an arrival is one line.
+          showEventBreakdown={perEventDoors}
+        />
       </div>
     </>
   )

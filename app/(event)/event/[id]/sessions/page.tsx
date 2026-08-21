@@ -6,6 +6,8 @@ import { canExport } from "@/lib/permissions"
 import { SessionsClient } from "./sessions-client"
 import { ensureMultiDayOccurrences } from "@/app/(dashboard)/events/actions"
 import { groupOccurrencesBySeries } from "@/lib/events/occurrence-series"
+import { loadSessionTurnout } from "@/lib/events/session-turnout"
+import { utcToday } from "@/lib/events/checkin-link"
 
 async function getEventSessions(id: string) {
   return db.event.findUnique({
@@ -69,6 +71,12 @@ export default async function SessionsPage({
     if (!event) notFound()
   }
 
+  // The turnout ratio each row shows. `_count.attendees` above can't serve as its
+  // numerator — it counts volunteer check-ins too, and volunteers hold no
+  // registration to divide by. Loaded after the MultiDay top-up so a day created
+  // just now is present in the map.
+  const { totalRegistrants, participantsByOccurrence } = await loadSessionTurnout(db, id)
+
   const recurringGroups =
     event.type === "Recurring"
       ? groupOccurrencesBySeries(
@@ -79,6 +87,7 @@ export default async function SessionsPage({
             isOpen: occurrence.isOpen,
             isStandalone: occurrence.isStandalone,
             attendeeCount: occurrence._count.attendees,
+            participantCount: participantsByOccurrence.get(occurrence.id) ?? 0,
             seriesId: occurrence.seriesId,
           })),
         )
@@ -92,6 +101,7 @@ export default async function SessionsPage({
           date: o.date.toISOString(),
           isOpen: o.isOpen,
           attendeeCount: o._count.attendees,
+          participantCount: participantsByOccurrence.get(o.id) ?? 0,
           isStandalone: o.isStandalone,
           seriesId: o.seriesId,
         }))
@@ -111,6 +121,8 @@ export default async function SessionsPage({
         endDate: series.endDate.toISOString(),
       }))}
       canExport={canExport(session, "Events")}
+      totalRegistrants={totalRegistrants}
+      today={utcToday()}
     />
   )
 }

@@ -15,6 +15,11 @@ import {
   type EventFormConfigData,
   type FormPersistedKey,
 } from "@/lib/forms/context-config"
+import {
+  clusterCheckinPath,
+  clusterRegisterPath,
+  clusterWalkInPath,
+} from "@/lib/public-routes"
 import type { FormContext } from "@/app/generated/prisma/client"
 
 type ActionResult<T = void> =
@@ -350,7 +355,16 @@ export async function saveEventFormSuccessMessage(
   }
 }
 
-/** Cluster shared form equivalent of {@link saveEventFormSuccessMessage}. */
+/**
+ * Cluster shared form equivalent of {@link saveEventFormSuccessMessage}.
+ *
+ * Narrower than {@link CLUSTER_FORM_CONTEXTS} on purpose: a success message is a
+ * screen shown *after* a submission, and the day's kiosk has none — it confirms
+ * attendance in place, which is why the builder renders no editor for `CheckIn`
+ * either. So the contexts that can hold a message are the two that end in one.
+ */
+const CLUSTER_SUCCESS_MESSAGE_CONTEXTS = ["Register", "WalkIn"] as const
+
 export async function saveClusterFormSuccessMessage(
   clusterId: string,
   context: FormContext,
@@ -359,7 +373,8 @@ export async function saveClusterFormSuccessMessage(
   const authError = await requireWrite()
   if (authError) return { success: false, error: authError.error }
 
-  if (!CLUSTER_FORM_CONTEXTS.includes(context as (typeof CLUSTER_FORM_CONTEXTS)[number])) {
+  const validContexts = CLUSTER_SUCCESS_MESSAGE_CONTEXTS as readonly string[]
+  if (!validContexts.includes(context)) {
     return { success: false, error: "Unknown form context." }
   }
   const parsed = successMessageSchema.safeParse(raw ?? "")
@@ -388,18 +403,42 @@ export async function saveClusterFormSuccessMessage(
 
 // ─── Cluster shared form (CCF-132) ───────────────────────────────────────────
 // Same builder, same toggles — the config row hangs off a cluster instead of an
-// event. Clusters only have Register and Walk-in surfaces (no CheckIn context).
+// event.
 
-const CLUSTER_FORM_CONTEXTS = ["Register", "WalkIn"] as const
+/**
+ * The contexts a cluster's form config can be written for.
+ *
+ * `CheckIn` is here because the day's kiosk does have one honourable toggle on a
+ * Collab — the breakout step over the day's own tables (CCF-148) — and
+ * `/cluster/[id]/forms/check-in` renders the builder for it. This list said
+ * "Register and Walk-in only" from before that shipped, so every switch on that
+ * page came back "Unknown form context." while the read side
+ * (`getClusterFormConfigs`, and the kiosk's own `getClusterFormConfig(id,
+ * "CheckIn")`) had always spoken all three.
+ *
+ * Which *toggles* a context can honour is a separate question, and not this
+ * list's — `clusterCheckInNotApplicableToggles` answers it, and the builder is
+ * what applies it.
+ */
+const CLUSTER_FORM_CONTEXTS = ["Register", "WalkIn", "CheckIn"] as const
 
 async function revalidateClusterFormSurfaces(clusterId: string) {
+  // The builder pages are children of /forms, and revalidatePath's default
+  // "page" mode doesn't reach them from the parent — name each one.
   revalidatePath(`/cluster/${clusterId}/forms`)
+  revalidatePath(`/cluster/${clusterId}/forms/registration`)
+  revalidatePath(`/cluster/${clusterId}/forms/walk-in`)
+  revalidatePath(`/cluster/${clusterId}/forms/check-in`)
   revalidatePath(`/cluster/${clusterId}/settings`)
   const cluster = await db.eventCluster.findUnique({
     where: { id: clusterId },
     select: { publicToken: true },
   })
-  if (cluster) revalidatePath(`/register/c/${cluster.publicToken}`)
+  if (!cluster) return
+  // Same for the three public surfaces the config drives.
+  revalidatePath(clusterRegisterPath(cluster.publicToken))
+  revalidatePath(clusterWalkInPath(cluster.publicToken))
+  revalidatePath(clusterCheckinPath(cluster.publicToken))
 }
 
 /** Upsert one context's configuration for a cluster's shared form. */

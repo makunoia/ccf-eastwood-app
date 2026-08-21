@@ -20,7 +20,10 @@ export default defineConfig({
   timeout: 30_000,
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
-  reporter: process.env.CI ? "github" : "list",
+  // `github` annotates the failing lines in the PR diff; `html` is what the
+  // workflow uploads. Only the first was configured, so a failed CI run
+  // annotated the code and then uploaded an empty artifact.
+  reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : "list",
 
   use: {
     baseURL,

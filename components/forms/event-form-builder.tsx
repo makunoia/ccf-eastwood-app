@@ -118,15 +118,19 @@ const TOGGLE_ICONS: Record<FormToggleKey | "personal", Icon> = {
 
 /**
  * Toggles that make no sense in a context. Check-in is an attendance surface — it
- * never takes payment and never lets someone re-pick their breakout group (it
- * shows the group they were already assigned), and its profile step has no birth
- * date, nickname, mobile or email input — it identifies someone who already
- * exists rather than collecting their details from scratch.
+ * never takes payment — and its profile step has no birth date, nickname, mobile
+ * or email input, because it identifies someone who already exists rather than
+ * collecting their details from scratch.
+ *
+ * `sectionBreakout` used to be on this list, on the reasoning that check-in only
+ * ever *shows* the group someone was already assigned. That left the people the
+ * step exists for with nowhere to go: someone who arrives unseated on an event
+ * with auto-assign off is placed by nobody, and the kiosk is the last moment
+ * anyone asks. It is a real toggle now, off by default — see `CHECKIN_LAYOUT`.
  */
 const NOT_APPLICABLE: Partial<Record<FormContext, FormToggleKey[]>> = {
   CheckIn: [
     "sectionPayment",
-    "sectionBreakout",
     "fieldBirthDate",
     "fieldNickname",
     "fieldMobile",
@@ -548,9 +552,10 @@ function SectionItem({
   const total = fields.length + options.length
 
   // Only worth saying when the section is on — an off section isn't expected to
-  // render, so there is no surprise to explain.
+  // render, so there is no surprise to explain. `prerequisiteFor` owns that rule
+  // now, so `enabled` is handed over rather than tested here.
   const warning =
-    sectionKey !== null && enabled ? prerequisiteFor(prerequisites, sectionKey, context) : null
+    sectionKey !== null ? prerequisiteFor(prerequisites, sectionKey, context, enabled) : null
 
   return (
     <AccordionItem value={section.key} className="px-4">
@@ -647,7 +652,7 @@ function SectionItem({
                     pending={pending}
                     onToggle={onToggle}
                     warning={
-                      enabled && config[key] ? prerequisiteFor(prerequisites, key, context) : null
+                      enabled ? prerequisiteFor(prerequisites, key, context, config[key]) : null
                     }
                   />
                 ))}
@@ -683,7 +688,11 @@ function SectionItem({
                       required={{ key: requiredKeyFor(key), value: config[requiredKeyFor(key)] }}
                       lockedReason={identityLockReason(key, config)}
                       warning={
-                        enabled && config[key] ? prerequisiteFor(prerequisites, key, context) : null
+                        // Still gated on the *section* being on — a warning inside
+                        // a switched-off section has nothing to act on — but no
+                        // longer on the field itself, so a `whenOff` prerequisite
+                        // (Gender) can speak while its own switch is off.
+                        enabled ? prerequisiteFor(prerequisites, key, context, config[key]) : null
                       }
                     />
                   ))}
