@@ -190,14 +190,17 @@ describe("default layout", () => {
     ])
   })
 
-  it("renders the five default KPI tiles and none of the opt-in ones", () => {
+  // Four, not five: Turnout is not offered on a Recurring event — there is no
+  // event-wide roster to divide by on a standing series. It lives on the session
+  // detail page instead.
+  it("renders the four default KPI tiles and none of the opt-in ones", () => {
     renderDashboard()
 
     expect(screen.getByText("Average Attendance")).toBeDefined()
     expect(screen.getByText("Unique Attendees")).toBeDefined()
-    expect(screen.getByText("Turnout")).toBeDefined()
     expect(screen.getByText("Not In DGroup Yet")).toBeDefined()
     expect(screen.getByText("Confirmed Volunteers")).toBeDefined()
+    expect(screen.queryByText("Turnout")).toBeNull()
 
     expect(screen.queryByText("Total Registered")).toBeNull()
     expect(screen.queryByText("Paid")).toBeNull()
@@ -221,7 +224,7 @@ describe("default layout", () => {
 
   it("gives the KPI lane one column per tile", () => {
     const { container } = renderDashboard()
-    expect(container.querySelector(".xl\\:grid-cols-5")).not.toBeNull()
+    expect(container.querySelector(".xl\\:grid-cols-4")).not.toBeNull()
   })
 
   // jsdom has no layout, so this asserts the class chain rather than measured
@@ -242,7 +245,7 @@ describe("default layout", () => {
     }
 
     // The KPI tile itself — the bordered box whose ragged edges started this.
-    const tile = screen.getByText("Turnout").closest("[data-widget] > div > div")
+    const tile = screen.getByText("Unique Attendees").closest("[data-widget] > div > div")
     expect(tile?.className).toContain("h-full")
   })
 
@@ -266,8 +269,8 @@ describe("module gating", () => {
 
     expect(cardTitles(container)).not.toContain("Volunteer Status")
     expect(screen.queryByText("Confirmed Volunteers")).toBeNull()
-    // Four tiles left, so the KPI lane drops to four columns.
-    expect(container.querySelector(".xl\\:grid-cols-4")).not.toBeNull()
+    // Three tiles left, so the KPI lane drops to three columns.
+    expect(container.querySelector(".xl\\:grid-cols-3")).not.toBeNull()
   })
 
   it("regression: the row closes up instead of leaving the old three-column hole", () => {

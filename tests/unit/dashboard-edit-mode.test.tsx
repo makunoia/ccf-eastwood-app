@@ -176,9 +176,11 @@ describe("entering and leaving", () => {
   it("lets KPI tiles be moved and hidden but never resized", () => {
     enterEditMode()
 
-    expect(screen.getByRole("button", { name: /move turnout/i })).toBeDefined()
-    expect(screen.getByRole("button", { name: /hide turnout/i })).toBeDefined()
-    expect(screen.queryByRole("slider", { name: /^turnout width/i })).toBeNull()
+    // Unique Attendees rather than Turnout: the latter is not offered on a
+    // Recurring event, which is what this suite renders.
+    expect(screen.getByRole("button", { name: /move unique attendees/i })).toBeDefined()
+    expect(screen.getByRole("button", { name: /hide unique attendees/i })).toBeDefined()
+    expect(screen.queryByRole("slider", { name: /^unique attendees width/i })).toBeNull()
   })
 
   it("keeps rendering the real widgets, not placeholders", () => {

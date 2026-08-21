@@ -131,6 +131,14 @@ export const DASHBOARD_WIDGETS: Record<DashboardWidgetKey, DashboardWidgetMeta> 
     defaultOrder: 2,
     defaultWidth: 4,
     widths: [],
+    // Not on a Recurring event. Turnout divides check-ins by everyone holding a
+    // registration, which on a weekly service is a roster that only grows — so
+    // the event-wide figure decays toward zero no matter how well any given
+    // Sunday went, and moves retroactively as new people register. There is no
+    // event-wide "expected" for a standing series to divide by. The question is
+    // still worth asking of a *single sitting*, so the figure lives on the
+    // session detail page, where the denominator is stated beside it.
+    eventTypes: ["OneTime", "MultiDay"],
   },
   kpiUnassigned: {
     key: "kpiUnassigned",
@@ -438,9 +446,15 @@ export function visibleLayout(layout: DashboardLayout): DashboardLayout {
  *
  * The trade-off, deliberately accepted: once anything is dropped, intentional
  * gaps elsewhere on the page close up too.
+ *
+ * Only **card-lane** drops count. Packing closes holes in the 12-column card
+ * grid, and a missing KPI leaves no hole there — that lane sizes itself from its
+ * own tile count (`kpiGridClass`). Counting KPI drops here meant gating a single
+ * tile on event type silently re-packed every card row on that type, which is
+ * nothing the admin asked for and unrelated to the tile that went.
  */
 export function shouldPackRows(layout: DashboardLayout): boolean {
-  return layout.droppedKeys.length > 0
+  return layout.droppedKeys.some((key) => DASHBOARD_WIDGETS[key].lane === "card")
 }
 
 /** Every visible key across both lanes — for gating server-side data loading. */

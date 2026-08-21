@@ -80,18 +80,43 @@ describe("saveEventDashboardLayout", () => {
   })
 
   it("round-trips through the resolver in the saved order", async () => {
-    const event = await makeEvent()
+    // MultiDay, because Turnout is not offered on a Recurring event — the save
+    // path validates against the event's own type, so a Recurring event would
+    // reject the row this test stores.
+    const event = await makeEvent("MultiDay")
     await saveEventDashboardLayout(event.id, [
       { key: "kpiTurnout", visible: true, width: 4 },
       { key: "kpiAttendance", visible: false, width: 4 },
     ])
 
-    const layout = await getEventDashboardLayout(event.id, "Recurring", ["Volunteers"])
+    // MultiDay: Turnout is not offered on a Recurring event, and a stored row for
+    // an unavailable widget is dropped rather than resolved.
+    const layout = await getEventDashboardLayout(event.id, "MultiDay", ["Volunteers"])
     const keys = layout.kpis.map((w) => w.key)
     expect(keys.indexOf("kpiTurnout")).toBeLessThan(keys.indexOf("kpiAttendance"))
     expect(layout.kpis.find((w) => w.key === "kpiAttendance")?.visible).toBe(false)
     // Widgets with no stored row keep their defaults rather than disappearing.
     expect(layout.kpis.find((w) => w.key === "kpiUniqueAttendees")?.visible).toBe(true)
+  })
+
+  // Turnout divides check-ins by everyone holding a registration, which on a
+  // standing series is a roster that only grows — so the event-wide figure
+  // decays no matter how well a given session went. The question belongs to a
+  // single sitting, and lives on the session detail page.
+  it("does not offer Turnout on a Recurring event", async () => {
+    const event = await makeEvent("Recurring")
+    const layout = await getEventDashboardLayout(event.id, "Recurring", ["Volunteers"])
+
+    expect(layout.kpis.map((w) => w.key)).not.toContain("kpiTurnout")
+    expect(layout.droppedKeys).toContain("kpiTurnout")
+  })
+
+  it("still offers Turnout on OneTime and MultiDay", async () => {
+    for (const type of ["OneTime", "MultiDay"] as const) {
+      const event = await makeEvent(type)
+      const layout = await getEventDashboardLayout(event.id, type, ["Volunteers"])
+      expect(layout.kpis.map((w) => w.key)).toContain("kpiTurnout")
+    }
   })
 
   it("rejects a duplicated widget", async () => {

@@ -10,6 +10,7 @@ import {
   XCircle,
   ArrowLeftRight,
   SearchIcon,
+  Target,
   UserCheck,
   UserPlus,
   Users,
@@ -58,6 +59,7 @@ import {
   type AttendeeStatusChoice,
   type BreakoutStatSortMode,
 } from "@/lib/session-attendees"
+import { formatTurnoutRate, formatTurnoutRatio } from "@/lib/events/turnout"
 import type { BreakoutOccupancy } from "@/lib/breakouts/occupancy"
 import { cn } from "@/lib/utils"
 import type { PersonComboboxOption } from "@/components/ui/person-combobox"
@@ -471,6 +473,7 @@ export function SessionAttendeesTable({
   breakoutGroups,
   breakoutStats,
   volunteerOptions,
+  totalRegistrants,
   canEdit,
 }: {
   eventId: string
@@ -479,6 +482,8 @@ export function SessionAttendeesTable({
   breakoutGroups: BreakoutGroupOption[]
   breakoutStats: BreakoutStatRow[]
   volunteerOptions: PersonComboboxOption[]
+  /** The event's registered roster — the Turnout tile's denominator. */
+  totalRegistrants: number
   canEdit: boolean
 }) {
   const router = useRouter()
@@ -559,7 +564,10 @@ export function SessionAttendeesTable({
     router.refresh()
   }
 
-  const stats = useMemo(() => buildSessionAttendeeStats(rows), [rows])
+  const stats = useMemo(
+    () => buildSessionAttendeeStats(rows, totalRegistrants),
+    [rows, totalRegistrants],
+  )
 
   const filtered = useMemo(
     () =>
@@ -604,8 +612,9 @@ export function SessionAttendeesTable({
           optimistic edit instead of trailing a server round-trip behind it. */}
       {/* Two-up until `lg`: the event workspace sidebar is still expanded at tablet
           widths, and four tiles in the ~512px that leaves squeezes the uppercase
-          labels into two lines each. */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          labels into two lines each. Three-up is the middle step — five tiles only
+          lay out in one row once the viewport is wide enough to afford them. */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-5">
         <StatCard
           label="Total"
           value={stats.totalCount}
@@ -622,6 +631,20 @@ export function SessionAttendeesTable({
           label="Volunteers"
           value={stats.volunteersPresent}
           icon={<UserCheck className="size-4" />}
+        />
+        {/* Participants over the event's registered roster — volunteers are excluded
+            from the numerator because they hold no registration to be counted against.
+            The caption spells the ratio out: the denominator is the whole series, so a
+            bare percentage would leave the reader guessing what it divides by. */}
+        <StatCard
+          label="Turnout"
+          value={formatTurnoutRate(stats.turnout.rate)}
+          icon={<Target className="size-4" />}
+          caption={
+            stats.turnout.preRegistered === 0
+              ? "No registrations yet"
+              : `${formatTurnoutRatio(stats.turnout)} checked in · ${stats.turnout.noShows.toLocaleString()} no-show${stats.turnout.noShows === 1 ? "" : "s"}`
+          }
         />
       </div>
 

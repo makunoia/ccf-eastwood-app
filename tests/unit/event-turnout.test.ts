@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { buildTurnout, formatTurnoutRate } from "@/lib/events/turnout"
+import { buildTurnout, formatTurnoutRate, formatTurnoutRatio } from "@/lib/events/turnout"
 
 /**
  * CCF-91 — pre-registered vs actual check-in ratio on the event dashboard.
@@ -58,5 +58,25 @@ describe("formatTurnoutRate", () => {
 
   it("renders an em dash when there is no rate", () => {
     expect(formatTurnoutRate(null)).toBe("—")
+  })
+})
+
+// Every surface showing a percentage pairs it with this: the denominator is the
+// whole series roster, so a bare "31%" leaves the reader guessing what it
+// divides by — and on the Sessions list it sits beside a volunteer-inclusive
+// check-in count with a different denominator entirely.
+describe("formatTurnoutRatio", () => {
+  it("spells out both sides of the ratio and names the denominator", () => {
+    expect(formatTurnoutRatio(buildTurnout(230, 71))).toBe("71 of 230 registered")
+  })
+
+  it("holds up at the boundaries", () => {
+    expect(formatTurnoutRatio(buildTurnout(1, 1))).toBe("1 of 1 registered")
+    expect(formatTurnoutRatio(buildTurnout(12, 0))).toBe("0 of 12 registered")
+    expect(formatTurnoutRatio(buildTurnout(0, 0))).toBe("0 of 0 registered")
+  })
+
+  it("groups thousands so a large roster stays readable", () => {
+    expect(formatTurnoutRatio(buildTurnout(1200, 1050))).toBe("1,050 of 1,200 registered")
   })
 })

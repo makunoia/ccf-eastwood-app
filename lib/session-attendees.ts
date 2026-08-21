@@ -1,4 +1,5 @@
 import { compareByRoom, type BreakoutOccupancy } from "@/lib/breakouts/occupancy"
+import { buildTurnout, type EventTurnout } from "@/lib/events/turnout"
 
 export type SessionAttendeeView = {
   name: string | null
@@ -62,27 +63,40 @@ export type SessionAttendeeStats = {
   volunteersPresent: number
   menCount: number
   womenCount: number
+  /** This session's check-ins against the event's registered roster. */
+  turnout: EventTurnout
 }
 
 /**
  * The session header figures, derived purely from the attendee rows.
  *
  * Pure and row-driven on purpose: the table paints edits optimistically, and these
- * counters have to move with it rather than wait on the next server render.
+ * counters have to move with it rather than wait on the next server render. Turnout
+ * is derived here for exactly that reason — removing an attendee has to move the
+ * rate with the count, not leave a stale percentage until the next server render.
+ *
+ * The turnout numerator is `participantCount`, never `totalCount`: volunteers have
+ * no `EventRegistrant` row, so counting them would push the rate past 100% on a
+ * well-staffed session. See `lib/events/session-turnout.ts`.
+ *
+ * @param totalRegistrants The event's whole registered roster — the denominator.
  */
 export function buildSessionAttendeeStats(
   attendees: SessionAttendeeStatsSubject[],
+  totalRegistrants: number,
 ): SessionAttendeeStats {
   const totalCount = attendees.length
   const volunteersPresent = attendees.filter((a) => a.isVolunteer).length
+  const participantCount = totalCount - volunteersPresent
 
   return {
     totalCount,
     newCount: attendees.filter((a) => !a.isReturner).length,
-    participantCount: totalCount - volunteersPresent,
+    participantCount,
     volunteersPresent,
     menCount: attendees.filter((a) => a.gender === "Male").length,
     womenCount: attendees.filter((a) => a.gender === "Female").length,
+    turnout: buildTurnout(totalRegistrants, participantCount),
   }
 }
 

@@ -49,13 +49,15 @@ function rowTotals(cards: ResolvedWidget[]): number[] {
 }
 
 describe("defaultDashboardLayout", () => {
+  // Turnout is absent here on purpose: a Recurring event has no event-wide
+  // roster to divide by — see the `eventTypes` note on `kpiTurnout`. It lives on
+  // the session detail page instead.
   it("reproduces the pre-customization layout for a Recurring event", () => {
     const layout = visibleLayout(defaultDashboardLayout("Recurring", ALL))
 
     expect(keysOf(layout.kpis)).toEqual([
       "kpiAttendance",
       "kpiUniqueAttendees",
-      "kpiTurnout",
       "kpiUnassigned",
       "kpiVolunteers",
     ])
@@ -148,7 +150,8 @@ describe("resolveDashboardLayout", () => {
   it("keeps a widget with no stored row at its default position and visibility", () => {
     // Only one row stored — everything else falls back.
     const stored: StoredWidget[] = [{ key: "kpiTurnout", visible: false, order: 99, width: 4 }]
-    const layout = resolveDashboardLayout(stored, "Recurring", ALL)
+    // MultiDay, because Turnout is not offered on a Recurring event.
+    const layout = resolveDashboardLayout(stored, "MultiDay", ALL)
 
     expect(layout.kpis.find((w) => w.key === "kpiTurnout")?.visible).toBe(false)
     expect(layout.kpis.find((w) => w.key === "kpiAttendance")?.visible).toBe(true)
@@ -174,7 +177,7 @@ describe("resolveDashboardLayout", () => {
       // KPI tiles take no width at all, so any stored value is ignored.
       { key: "kpiTurnout", visible: true, order: 2, width: 8 },
     ]
-    const layout = resolveDashboardLayout(stored, "Recurring", ALL)
+    const layout = resolveDashboardLayout(stored, "MultiDay", ALL)
     expect(layout.cards.find((c) => c.key === "chartPlacement")?.width).toBe(4)
     expect(layout.cards.find((c) => c.key === "chartPipeline")?.width).toBe(4)
     expect(layout.kpis.find((w) => w.key === "kpiTurnout")?.width).toBe(4)
@@ -268,9 +271,18 @@ describe("snapWidth", () => {
 })
 
 describe("shouldPackRows", () => {
-  it("is false when the event can have every widget — the admin owns the gaps", () => {
+  it("is false when the event can have every card — the admin owns the gaps", () => {
     const layout = resolveDashboardLayout([], "Recurring", ALL)
-    expect(layout.droppedKeys).toEqual([])
+    expect(layout.droppedKeys.filter((k) => DASHBOARD_WIDGETS[k].lane === "card")).toEqual([])
+    expect(shouldPackRows(layout)).toBe(false)
+  })
+
+  // A KPI leaving takes no space out of the card grid — that lane sizes itself
+  // from its own tile count — so the card rows keep the shape the admin gave
+  // them. Gating one tile on event type must not silently re-pack the page.
+  it("is false when only a KPI was dropped", () => {
+    const layout = resolveDashboardLayout([], "Recurring", ALL)
+    expect(layout.droppedKeys).toEqual(["kpiTurnout"])
     expect(shouldPackRows(layout)).toBe(false)
   })
 
@@ -421,7 +433,7 @@ describe("grid classes", () => {
   it("a default Recurring dashboard emits the classes the fixed layout did", () => {
     const layout = visibleLayout(defaultDashboardLayout("Recurring", ALL))
 
-    expect(kpiGridClass(layout.kpis.length)).toBe("xl:grid-cols-5")
+    expect(kpiGridClass(layout.kpis.length)).toBe("xl:grid-cols-4")
     expect(packCardRow(layout.cards).map((c) => WIDTH_CLASS[c.width])).toEqual([
       "md:col-span-2 xl:col-span-8", // Attendance by Session
       "md:col-span-1 xl:col-span-4", // Registration Growth
@@ -433,9 +445,9 @@ describe("grid classes", () => {
     ])
   })
 
-  it("drops to four KPI columns without the Volunteers module, as before", () => {
+  it("drops a KPI column without the Volunteers module, as before", () => {
     const layout = visibleLayout(defaultDashboardLayout("Recurring", []))
-    expect(kpiGridClass(layout.kpis.length)).toBe("xl:grid-cols-4")
+    expect(kpiGridClass(layout.kpis.length)).toBe("xl:grid-cols-3")
   })
 
   it("a default OneTime dashboard gives Registration Growth the full row", () => {

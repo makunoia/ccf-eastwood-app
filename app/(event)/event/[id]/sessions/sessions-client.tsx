@@ -1,14 +1,11 @@
 "use client"
 
 import * as React from "react"
-import { type ColumnDef } from "@tanstack/react-table"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
   IconCalendarPlus,
   IconCalendarRepeat,
-  IconDoorEnter,
-  IconDoorExit,
   IconDotsVertical,
   IconDownload,
   IconExternalLink,
@@ -21,7 +18,6 @@ import {
 import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
-import { DataTable } from "@/components/ui/data-table"
 import { Button } from "@/components/ui/button"
 import {
   formatAttendanceCount,
@@ -29,8 +25,10 @@ import {
   formatOccurrenceDate,
   formatSessionCount,
 } from "@/lib/format/occurrence"
+import { plural } from "@/lib/format/plural"
+import { isCheckinLive } from "@/lib/events/checkin-link"
 import { PageActions, PageHeader, type PageAction } from "@/components/page-header"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -56,12 +54,6 @@ import {
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
-import {
   createOccurrence,
   createOccurrenceSeries,
   deleteOccurrence,
@@ -76,6 +68,7 @@ import {
 } from "@/lib/export-entities"
 import { useExportColumnsDialog } from "@/components/exports/export-columns-dialog"
 import { exportFilename } from "@/lib/exports/filename"
+import { buildTurnout, formatTurnoutRate, formatTurnoutRatio } from "@/lib/events/turnout"
 import {
   SESSION_ATTENDANCE_GROUPS,
   type SessionAttendanceExportRow,
@@ -86,8 +79,11 @@ import { getSessionsAttendanceExport } from "./export-actions"
 export type OccurrenceRow = {
   id: string
   date: string
-  isOpen: boolean
+  /** Every check-in, volunteers included — what "N people checked in" reports. */
   attendeeCount: number
+  isOpen: boolean
+  /** Check-ins by registered people only — the turnout numerator. */
+  participantCount: number
   isStandalone: boolean
   seriesId: string | null
 }
@@ -121,6 +117,19 @@ type Props = {
   ungroupedOccurrences: OccurrenceRow[]
   seriesOptions: OccurrenceSeriesOption[]
   canExport: boolean
+  /**
+   * The event's registered roster — the denominator every row's turnout divides
+   * by. One figure for the whole list: registration is per event series, not per
+   * session, so every row shares it.
+   */
+  totalRegistrants: number
+  /**
+   * Today as a UTC day key, resolved on the server. The kiosk's date gate is on
+   * UTC days (occurrence dates are stored at UTC midnight), and reading the
+   * clock in the browser instead would let the two sides of hydration disagree
+   * about which row is today.
+   */
+  today: string
 }
 
 type SeriesFormState = {
@@ -168,114 +177,34 @@ function groupingBadge(occurrence: OccurrenceRow) {
   return null
 }
 
-function OccurrenceActions({
-  eventId,
-  isRecurring,
-  occurrence,
-  togglingId,
-  deletingId,
-  onToggleOpen,
-  onManage,
-  onDelete,
-}: {
-  eventId: string
-  isRecurring: boolean
-  occurrence: OccurrenceRow
-  togglingId: string | null
-  deletingId: string | null
-  onToggleOpen: (occurrenceId: string, currentlyOpen: boolean) => void
-  onManage: (occurrence: OccurrenceRow) => void
-  onDelete: (occurrence: OccurrenceRow) => void
-}) {
-  return (
-    <div className="flex items-center gap-0.5">
-      {isRecurring && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => onManage(occurrence)}
-            >
-              <IconPencil className="size-4" />
-              <span className="sr-only">Manage session</span>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Manage</TooltipContent>
-        </Tooltip>
-      )}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className={occurrence.isOpen ? "text-primary" : undefined}
-            onClick={() => onToggleOpen(occurrence.id, occurrence.isOpen)}
-            disabled={togglingId === occurrence.id}
-          >
-            {occurrence.isOpen ? (
-              <IconDoorExit className="size-4" />
-            ) : (
-              <IconDoorEnter className="size-4" />
-            )}
-            <span className="sr-only">
-              {occurrence.isOpen ? "Close check-in" : "Open check-in"}
-            </span>
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>
-          {occurrence.isOpen ? "Close check-in" : "Open check-in"}
-        </TooltipContent>
-      </Tooltip>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button variant="ghost" size="icon-sm" asChild>
-            <a
-              href={`/events/${eventId}/checkin/${occurrence.id}`}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <IconExternalLink className="size-4" />
-              <span className="sr-only">Open check-in page (opens in a new tab)</span>
-            </a>
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>Check-in page</TooltipContent>
-      </Tooltip>
-      {isRecurring && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="text-muted-foreground hover:text-destructive"
-              onClick={() => onDelete(occurrence)}
-              disabled={deletingId === occurrence.id}
-            >
-              <IconTrash className="size-4" />
-              <span className="sr-only">Delete session</span>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Delete</TooltipContent>
-        </Tooltip>
-      )}
-    </div>
-  )
-}
-
 /**
- * Card layout for the sessions list below `lg`.
+ * One session.
  *
- * This is the tablet/phone surface, where hover tooltips never fire — so every
- * action carries a visible text label instead of a bare icon: the check-in
- * toggle reads its own state next to a switch, the kiosk link is a labelled
- * button, and the destructive/structural actions live behind a named menu.
+ * Two zones with a rule between them: what this session *is* on top — the date,
+ * the turnout, the trailing menu — and what you *do* with it below. That split
+ * is why the card stays calm no matter how wide the screen: each zone holds two
+ * things at opposite edges, and nothing has to be crowded into a cluster.
+ *
+ * It is the same card at every width. The desktop table it replaced put the date
+ * at the far left and its controls eight hundred pixels away at the far right,
+ * which is its own kind of crowding — the eye crossing the whole page to connect
+ * a session to the switch that runs it. Binding them into one object of readable
+ * width fixes that, so there are no breakpoint variants here at all.
+ *
+ * The switch names its own state, so the state needs no second badge. Manage and
+ * Delete are structural and rare, so they sit in the `⋯` with their names on.
+ * "Check-in page" appears only when the kiosk would admit someone
+ * (`isCheckinLive`) — on a past session that link led to "Check-in not
+ * available", and an action that does nothing is the most crowding thing on a
+ * card this size.
  */
-function OccurrenceCard({
+function SessionCard({
   eventId,
   isRecurring,
   occurrence,
   showGroupingStatus,
+  today,
+  totalRegistrants,
   togglingId,
   deletingId,
   onToggleOpen,
@@ -286,6 +215,8 @@ function OccurrenceCard({
   isRecurring: boolean
   occurrence: OccurrenceRow
   showGroupingStatus: boolean
+  today: string
+  totalRegistrants: number
   togglingId: string | null
   deletingId: string | null
   onToggleOpen: (occurrenceId: string, currentlyOpen: boolean) => void
@@ -295,10 +226,24 @@ function OccurrenceCard({
   const toggling = togglingId === occurrence.id
   const deleting = deletingId === occurrence.id
   const switchId = `checkin-${occurrence.id}`
+  const kioskReachable = isCheckinLive({
+    isOpen: occurrence.isOpen,
+    date: occurrence.date,
+    today,
+  })
+  // An event nobody registered for has no ratio to divide, and "— / 0 of 0
+  // registered" is two lines of nothing. Nor is a ratio shown before anyone has
+  // checked in: that is every future-dated row on the list, and "0%" beside "No
+  // one checked in yet" reads as a session that failed rather than one that has
+  // not happened. The block is simply absent in both cases.
+  const turnout =
+    totalRegistrants > 0 && occurrence.attendeeCount > 0
+      ? buildTurnout(totalRegistrants, occurrence.participantCount)
+      : null
 
   return (
     <Card className="gap-0 py-0">
-      <CardContent className="flex flex-col gap-3 p-3">
+      <CardContent className="flex flex-col gap-3 p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 space-y-1">
             <Link
@@ -309,18 +254,34 @@ function OccurrenceCard({
             </Link>
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                <IconUsers className="size-3.5" />
+                <IconUsers className="size-3.5 shrink-0" />
                 {formatAttendanceCount(occurrence.attendeeCount)}
               </span>
               {showGroupingStatus ? groupingBadge(occurrence) : null}
             </div>
           </div>
-          {isRecurring ? (
+          <div className="flex shrink-0 items-start gap-3">
+            {turnout ? (
+              // The percentage never travels without its denominator: this one
+              // divides by the whole series roster, while the check-in count to
+              // its left includes volunteers. Two populations, so each says so.
+              <div className="text-right leading-tight">
+                <p className="text-sm font-medium tabular-nums">
+                  {formatTurnoutRate(turnout.rate)}
+                </p>
+                <p className="text-xs text-muted-foreground tabular-nums">
+                  {formatTurnoutRatio(turnout)}
+                </p>
+              </div>
+            ) : null}
+            {isRecurring ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon-sm" className="-mr-1 shrink-0">
                   <IconDotsVertical className="size-4" />
-                  <span className="sr-only">Session actions</span>
+                  <span className="sr-only">
+                    More actions for {formatOccurrenceDate(occurrence.date)}
+                  </span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
@@ -338,7 +299,8 @@ function OccurrenceCard({
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          ) : null}
+            ) : null}
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 border-t pt-3">
@@ -353,104 +315,33 @@ function OccurrenceCard({
               {occurrence.isOpen ? "Check-in open" : "Check-in closed"}
             </Label>
           </div>
-          <Button variant="outline" size="sm" asChild>
-            <a
-              href={`/events/${eventId}/checkin/${occurrence.id}`}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <IconExternalLink className="size-4" />
-              Check-in page
-              <span className="sr-only"> (opens in a new tab)</span>
-            </a>
-          </Button>
+          {kioskReachable ? (
+            <Button variant="outline" size="sm" asChild>
+              <a
+                href={`/events/${eventId}/checkin/${occurrence.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <IconExternalLink className="size-4" />
+                Check-in page
+                <span className="sr-only"> (opens in a new tab)</span>
+              </a>
+            </Button>
+          ) : null}
         </div>
       </CardContent>
     </Card>
   )
 }
 
-function buildOccurrenceColumns({
-  eventId,
-  isRecurring,
-  showGroupingStatus,
-  togglingId,
-  deletingId,
-  onToggleOpen,
-  onManage,
-  onDelete,
-}: {
-  eventId: string
-  isRecurring: boolean
-  showGroupingStatus: boolean
-  togglingId: string | null
-  deletingId: string | null
-  onToggleOpen: (occurrenceId: string, currentlyOpen: boolean) => void
-  onManage: (occurrence: OccurrenceRow) => void
-  onDelete: (occurrence: OccurrenceRow) => void
-}): ColumnDef<OccurrenceRow>[] {
-  return [
-    {
-      id: "date",
-      accessorFn: (row) => row.date,
-      header: isRecurring ? "Date" : "Day",
-      meta: {
-        label: isRecurring ? "Date" : "Day",
-        width: "wide",
-        locked: true,
-        noTruncate: true,
-      },
-      cell: ({ row }) => (
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <Link
-            href={`/event/${eventId}/sessions/${row.original.id}`}
-            className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-          >
-            {formatOccurrenceDate(row.original.date)}
-          </Link>
-          {row.original.isOpen && (
-            <Badge variant="default" className="text-xs">
-              Check-in open
-            </Badge>
-          )}
-          {showGroupingStatus ? groupingBadge(row.original) : null}
-        </div>
-      ),
-    },
-    {
-      accessorKey: "attendeeCount",
-      header: "Attendance",
-      meta: { label: "Attendance", width: "status" },
-      cell: ({ row }) => (
-        <Badge variant="secondary">{row.original.attendeeCount} attended</Badge>
-      ),
-    },
-    {
-      id: "actions",
-      meta: { width: "actions", locked: true },
-      cell: ({ row }) => (
-        <div className="flex justify-end">
-          <OccurrenceActions
-            eventId={eventId}
-            isRecurring={isRecurring}
-            occurrence={row.original}
-            togglingId={togglingId}
-            deletingId={deletingId}
-            onToggleOpen={onToggleOpen}
-            onManage={onManage}
-            onDelete={onDelete}
-          />
-        </div>
-      ),
-    },
-  ]
-}
-
+/** A column of session cards. One composition, every width, every context. */
 function OccurrenceList({
   eventId,
   isRecurring,
   occurrences,
   showGroupingStatus,
+  today,
+  totalRegistrants,
   togglingId,
   deletingId,
   onToggleOpen,
@@ -461,60 +352,45 @@ function OccurrenceList({
   isRecurring: boolean
   occurrences: OccurrenceRow[]
   showGroupingStatus: boolean
+  today: string
+  totalRegistrants: number
   togglingId: string | null
   deletingId: string | null
   onToggleOpen: (occurrenceId: string, currentlyOpen: boolean) => void
   onManage: (occurrence: OccurrenceRow) => void
   onDelete: (occurrence: OccurrenceRow) => void
 }) {
-  const columns = React.useMemo(
-    () =>
-      buildOccurrenceColumns({
-        eventId,
-        isRecurring,
-        showGroupingStatus,
-        togglingId,
-        deletingId,
-        onToggleOpen,
-        onManage,
-        onDelete,
-      }),
-    [
-      eventId,
-      isRecurring,
-      showGroupingStatus,
-      togglingId,
-      deletingId,
-      onToggleOpen,
-      onManage,
-      onDelete,
-    ],
-  )
-
   return (
-    <TooltipProvider>
-      <div className="flex flex-col gap-2 lg:hidden">
-        {occurrences.map((occurrence) => (
-          <OccurrenceCard
-            key={occurrence.id}
-            eventId={eventId}
-            isRecurring={isRecurring}
-            occurrence={occurrence}
-            showGroupingStatus={showGroupingStatus}
-            togglingId={togglingId}
-            deletingId={deletingId}
-            onToggleOpen={onToggleOpen}
-            onManage={onManage}
-            onDelete={onDelete}
-          />
-        ))}
-      </div>
-
-      <div className="hidden lg:flex lg:flex-1 lg:flex-col">
-        <DataTable tableKey="event.sessions" rowLabel={{ one: "session", many: "sessions" }} columns={columns} data={occurrences} />
-      </div>
-    </TooltipProvider>
+    <div className="flex flex-col gap-2">
+      {occurrences.map((occurrence) => (
+        <SessionCard
+          key={occurrence.id}
+          eventId={eventId}
+          isRecurring={isRecurring}
+          occurrence={occurrence}
+          showGroupingStatus={showGroupingStatus}
+          today={today}
+          totalRegistrants={totalRegistrants}
+          togglingId={togglingId}
+          deletingId={deletingId}
+          onToggleOpen={onToggleOpen}
+          onManage={onManage}
+          onDelete={onDelete}
+        />
+      ))}
+    </div>
   )
+}
+
+function openCountOf(occurrences: OccurrenceRow[]): number {
+  return occurrences.filter((occurrence) => occurrence.isOpen).length
+}
+
+/** `4 sessions` / `4 sessions · 1 open` — the count, and whether anything is live. */
+function listSummary(occurrences: OccurrenceRow[], noun: string): string {
+  const openCount = openCountOf(occurrences)
+  const count = plural(occurrences.length, noun)
+  return openCount > 0 ? `${count} · ${openCount} open` : count
 }
 
 export function SessionsClient({
@@ -526,6 +402,8 @@ export function SessionsClient({
   ungroupedOccurrences,
   seriesOptions,
   canExport,
+  totalRegistrants,
+  today,
 }: Props) {
   const router = useRouter()
   const isRecurring = eventType === "Recurring"
@@ -830,106 +708,124 @@ export function SessionsClient({
       ) : null}
 
       {!isRecurring && occurrences.length > 0 ? (
-        <OccurrenceList
-          eventId={eventId}
-          isRecurring={false}
-          occurrences={occurrences}
-          showGroupingStatus={false}
-          togglingId={togglingId}
-          deletingId={deletingId}
-          onToggleOpen={handleToggleOpen}
-          onManage={() => undefined}
-          onDelete={setOccurrenceToDelete}
-        />
+        <div className="w-full max-w-3xl space-y-2">
+          <p className="text-sm text-muted-foreground">{listSummary(occurrences, "day")}</p>
+          <OccurrenceList
+            eventId={eventId}
+            isRecurring={false}
+            occurrences={occurrences}
+            showGroupingStatus={false}
+            today={today}
+            totalRegistrants={totalRegistrants}
+            togglingId={togglingId}
+            deletingId={deletingId}
+            onToggleOpen={handleToggleOpen}
+            onManage={() => undefined}
+            onDelete={setOccurrenceToDelete}
+          />
+        </div>
       ) : null}
 
       {isRecurring ? (
-        <div className="space-y-4">
+        /* Sections, not cards. Each session is a card now, and a card holding
+           cards is a border inside a border — the nesting DESIGN.md rules out.
+           A heading with generous space above it groups just as well and takes a
+           whole layer of chrome off the page. */
+        <div className="w-full max-w-3xl space-y-10">
           {seriesGroups.map((series) => (
-            <Card key={series.id}>
-              <CardHeader className="gap-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="space-y-1">
-                    <CardTitle>{series.title}</CardTitle>
-                    <CardDescription>{formatDateRange(series.startDate, series.endDate)}</CardDescription>
-                  </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon-sm" className="-mr-1 shrink-0">
-                        <IconDotsVertical className="size-4" />
-                        <span className="sr-only">Series actions</span>
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onSelect={() => openEditSeriesDialog(series)}>
-                        <IconPencil className="size-4" />
-                        Edit series
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        variant="destructive"
-                        onSelect={() => setSeriesToDelete(series)}
-                      >
-                        <IconTrash className="size-4" />
-                        Delete series
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+            <section key={series.id} className="space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-1">
+                  <h2 className="font-semibold">{series.title}</h2>
+                  <p className="text-sm text-muted-foreground">
+                    {formatDateRange(series.startDate, series.endDate)}
+                  </p>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="secondary">{formatSessionCount(series.sessionCount)}</Badge>
-                  {/* The average divides by held sessions only, so a series with
-                      sessions still to come has to say which count it used. */}
-                  {series.heldSessionCount < series.sessionCount && (
-                    <Badge variant="secondary">{series.heldSessionCount} held</Badge>
-                  )}
-                  <Badge variant="secondary">{series.totalAttendance} total attendance</Badge>
-                  <Badge variant="secondary">
-                    {formatAverageAttendance(series.averageAttendance)}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {series.occurrences.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No sessions assigned to this series yet.</p>
-                ) : (
-                  <OccurrenceList
-                    eventId={eventId}
-                    isRecurring
-                    occurrences={series.occurrences}
-                    showGroupingStatus={false}
-                    togglingId={togglingId}
-                    deletingId={deletingId}
-                    onToggleOpen={handleToggleOpen}
-                    onManage={openManageDialog}
-                    onDelete={setOccurrenceToDelete}
-                  />
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon-sm" className="-mr-1 shrink-0">
+                      <IconDotsVertical className="size-4" />
+                      <span className="sr-only">More actions for {series.title}</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onSelect={() => openEditSeriesDialog(series)}>
+                      <IconPencil className="size-4" />
+                      Edit series
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      variant="destructive"
+                      onSelect={() => setSeriesToDelete(series)}
+                    >
+                      <IconTrash className="size-4" />
+                      Delete series
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="secondary">{formatSessionCount(series.sessionCount)}</Badge>
+                {/* The average divides by held sessions only, so a series with
+                    sessions still to come has to say which count it used. */}
+                {series.heldSessionCount < series.sessionCount && (
+                  <Badge variant="secondary">{series.heldSessionCount} held</Badge>
                 )}
-              </CardContent>
-            </Card>
-          ))}
-
-          {ungroupedOccurrences.length > 0 ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>Ungrouped Sessions</CardTitle>
-                <CardDescription>
-                  Includes special stand-alone sessions and recurring dates not yet assigned to a series.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
+                <Badge variant="secondary">{series.totalAttendance} total attendance</Badge>
+                <Badge variant="secondary">
+                  {formatAverageAttendance(series.averageAttendance)}
+                </Badge>
+                {openCountOf(series.occurrences) > 0 && (
+                  <Badge>{openCountOf(series.occurrences)} open</Badge>
+                )}
+              </div>
+              {series.occurrences.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No sessions assigned to this series yet.
+                </p>
+              ) : (
                 <OccurrenceList
                   eventId={eventId}
                   isRecurring
-                  occurrences={ungroupedOccurrences}
-                  showGroupingStatus
+                  occurrences={series.occurrences}
+                  showGroupingStatus={false}
+                  today={today}
+                  totalRegistrants={totalRegistrants}
                   togglingId={togglingId}
                   deletingId={deletingId}
                   onToggleOpen={handleToggleOpen}
                   onManage={openManageDialog}
                   onDelete={setOccurrenceToDelete}
                 />
-              </CardContent>
-            </Card>
+              )}
+            </section>
+          ))}
+
+          {ungroupedOccurrences.length > 0 ? (
+            <section className="space-y-3">
+              <div className="space-y-1">
+                <h2 className="font-semibold">Ungrouped Sessions</h2>
+                <p className="text-sm text-muted-foreground">
+                  Includes special stand-alone sessions and recurring dates not yet
+                  assigned to a series.
+                </p>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {listSummary(ungroupedOccurrences, "session")}
+              </p>
+              <OccurrenceList
+                eventId={eventId}
+                isRecurring
+                occurrences={ungroupedOccurrences}
+                showGroupingStatus
+                today={today}
+                totalRegistrants={totalRegistrants}
+                togglingId={togglingId}
+                deletingId={deletingId}
+                onToggleOpen={handleToggleOpen}
+                onManage={openManageDialog}
+                onDelete={setOccurrenceToDelete}
+              />
+            </section>
           ) : null}
         </div>
       ) : null}

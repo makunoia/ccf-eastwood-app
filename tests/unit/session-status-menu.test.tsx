@@ -75,7 +75,7 @@ function makeRow(overrides: Partial<AttendeeRow> = {}): AttendeeRow {
   }
 }
 
-function renderTable(rows: AttendeeRow[], canEdit = true) {
+function renderTable(rows: AttendeeRow[], canEdit = true, totalRegistrants = rows.length) {
   // The app mounts the provider in the event-workspace layout; the table only consumes it.
   return render(
     <TooltipProvider>
@@ -86,6 +86,7 @@ function renderTable(rows: AttendeeRow[], canEdit = true) {
         breakoutGroups={[]}
         breakoutStats={[]}
         volunteerOptions={[]}
+        totalRegistrants={totalRegistrants}
         canEdit={canEdit}
       />
     </TooltipProvider>,
@@ -178,5 +179,45 @@ describe("session attendee status menu", () => {
     expect(
       screen.queryByRole("button", { name: /^Status: .* Change status\.$/ }),
     ).toBeNull()
+  })
+})
+
+/**
+ * The Turnout tile.
+ *
+ * This is where the registrants-versus-attendance question lives: a session is
+ * one sitting, so "of the people on our list, how many came *today*" has an
+ * answer. The tile is derived from the same rows the table renders, so it moves
+ * with an optimistic edit instead of trailing a server round-trip.
+ */
+describe("session turnout tile", () => {
+  function makeAttendee(isVolunteer: boolean, i: number) {
+    return makeRow({ id: `a-${i}`, name: `Person ${i}`, isVolunteer, isMember: true })
+  }
+
+  it("states the rate with its denominator spelled out", () => {
+    renderTable([makeAttendee(false, 1), makeAttendee(false, 2)], true, 8)
+
+    expect(screen.getByText("25%")).toBeDefined()
+    expect(screen.getByText(/2 of 8 registered checked in/)).toBeDefined()
+  })
+
+  // Regression: the numerator is participants, not everyone in the room.
+  // Volunteers hold no registration, so counting them could exceed 100%.
+  it("leaves volunteers out of the numerator", () => {
+    renderTable([makeAttendee(false, 1), makeAttendee(true, 2), makeAttendee(true, 3)], true, 4)
+
+    expect(screen.getByText("25%")).toBeDefined()
+    expect(screen.getByText(/1 of 4 registered checked in/)).toBeDefined()
+  })
+
+  it("says so plainly when nobody registered, rather than showing a rate", () => {
+    renderTable([makeAttendee(false, 1)], true, 0)
+    expect(screen.getByText("No registrations yet")).toBeDefined()
+  })
+
+  it("names the no-shows in the singular when there is one", () => {
+    renderTable([makeAttendee(false, 1)], true, 2)
+    expect(screen.getByText(/1 no-show$/)).toBeDefined()
   })
 })

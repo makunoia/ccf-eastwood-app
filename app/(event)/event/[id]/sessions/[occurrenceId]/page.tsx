@@ -156,6 +156,9 @@ async function getOccurrenceDetail(occurrenceId: string) {
         substitute: { include: { member: { select: { firstName: true, lastName: true } } } },
       },
     }),
+    // The turnout denominator — the whole series roster, matching the dashboard's
+    // Turnout KPI. The numerator is derived client-side from the attendee rows so
+    // it tracks optimistic edits; see `buildSessionAttendeeStats`.
     db.eventRegistrant.count({ where: { eventId: occurrence.event.id } }),
     // Chronological neighbours for the ← / → header nav. Sessions read in date
     // order regardless of how the list screen groups them into series.
@@ -220,7 +223,14 @@ export default async function OccurrenceDetailPage({
   const data = await getOccurrenceDetail(occurrenceId)
   if (!data || data.occurrence.event.id !== id) notFound()
 
-  const { occurrence, volunteers, breakoutGroups, subFacilitators, siblingOccurrences } = data
+  const {
+    occurrence,
+    volunteers,
+    breakoutGroups,
+    subFacilitators,
+    totalRegistrants,
+    siblingOccurrences,
+  } = data
   const canEdit = canWrite(session, "Events")
 
   const currentIndex = siblingOccurrences.findIndex((o) => o.id === occurrenceId)
@@ -443,6 +453,7 @@ export default async function OccurrenceDetailPage({
           breakoutGroups={breakoutGroupOptions}
           breakoutStats={breakoutStats}
           volunteerOptions={volunteerOptions}
+          totalRegistrants={totalRegistrants}
           canEdit={canEdit}
         />
       </div>
