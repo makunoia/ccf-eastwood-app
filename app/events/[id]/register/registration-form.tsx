@@ -573,18 +573,22 @@ export function RegistrationForm({
     return suggestBreakoutGroup(breakoutCandidates, {
       gender: (form.gender || null) as "Male" | "Female" | null,
       birthYear: form.birthYear ? parseInt(form.birthYear, 10) : null,
+      lifeStageId: form.lifeStageId || null,
     })
-  }, [breakoutCandidates, form.gender, form.birthYear, hasBreakoutChoices])
+  }, [breakoutCandidates, form.gender, form.birthYear, form.lifeStageId, hasBreakoutChoices])
 
-  // Filtered by gender once it's known — a men's group is not something a woman
-  // can join, so listing it is a dead end. With gender blank (or not asked at
-  // all) every group is browsable; see `breakoutPickerOptions`.
+  // Filtered by gender and life stage once they're known — a men's group is not
+  // something a woman can join, so listing it is a dead end. With either blank
+  // (or not asked at all) that criterion filters nothing; see
+  // `breakoutPickerOptions`. Ordered emptiest-first by the same rule that picks
+  // the suggestion above, so the two can't disagree about which group has room.
   const browsableCandidates = React.useMemo(
     () =>
       breakoutPickerOptions(breakoutCandidates, {
         gender: (form.gender || null) as "Male" | "Female" | null,
+        lifeStageId: form.lifeStageId || null,
       }),
-    [breakoutCandidates, form.gender]
+    [breakoutCandidates, form.gender, form.lifeStageId]
   )
 
   // Going back and changing gender must not leave a now-hidden group selected —
@@ -1450,7 +1454,8 @@ export function RegistrationForm({
         selectedEventIds,
         walkIn ? true : undefined,
         touchedFields,
-        identityGrant
+        identityGrant,
+        selectedBreakoutId || null
       )
       setSubmitting(false)
       if (result.success) {

@@ -548,9 +548,10 @@ function SectionItem({
   const total = fields.length + options.length
 
   // Only worth saying when the section is on — an off section isn't expected to
-  // render, so there is no surprise to explain.
+  // render, so there is no surprise to explain. `prerequisiteFor` owns that rule
+  // now, so `enabled` is handed over rather than tested here.
   const warning =
-    sectionKey !== null && enabled ? prerequisiteFor(prerequisites, sectionKey, context) : null
+    sectionKey !== null ? prerequisiteFor(prerequisites, sectionKey, context, enabled) : null
 
   return (
     <AccordionItem value={section.key} className="px-4">
@@ -647,7 +648,7 @@ function SectionItem({
                     pending={pending}
                     onToggle={onToggle}
                     warning={
-                      enabled && config[key] ? prerequisiteFor(prerequisites, key, context) : null
+                      enabled ? prerequisiteFor(prerequisites, key, context, config[key]) : null
                     }
                   />
                 ))}
@@ -683,7 +684,11 @@ function SectionItem({
                       required={{ key: requiredKeyFor(key), value: config[requiredKeyFor(key)] }}
                       lockedReason={identityLockReason(key, config)}
                       warning={
-                        enabled && config[key] ? prerequisiteFor(prerequisites, key, context) : null
+                        // Still gated on the *section* being on — a warning inside
+                        // a switched-off section has nothing to act on — but no
+                        // longer on the field itself, so a `whenOff` prerequisite
+                        // (Gender) can speak while its own switch is off.
+                        enabled ? prerequisiteFor(prerequisites, key, context, config[key]) : null
                       }
                     />
                   ))}

@@ -832,6 +832,7 @@ export async function createRegistrant(
         profile: {
           gender: (parsed.data.gender ?? stored.gender) as Gender | null,
           birthYear: parsed.data.birthYear ?? stored.birthYear,
+          lifeStageId: parsed.data.lifeStageId ?? stored.lifeStageId,
         },
         walkIn,
         allowOverCapacity,
@@ -858,6 +859,7 @@ export async function createRegistrant(
         profile: {
           gender: (parsed.data.gender ?? stored.gender) as Gender | null,
           birthYear: parsed.data.birthYear ?? stored.birthYear,
+          lifeStageId: parsed.data.lifeStageId ?? stored.lifeStageId,
         },
         walkIn,
         allowOverCapacity,
@@ -868,7 +870,7 @@ export async function createRegistrant(
     } else {
       // Non-member — find or create Guest (dedup ladder: phone → email →
       // last name + birthday), then link via guestId
-      const { guestId } = await resolveAnonymousGuest(parsed.data, skipDeduplication)
+      const { guestId, ...stored } = await resolveAnonymousGuest(parsed.data, skipDeduplication)
 
       // Duplicate check — guest already registered for this event (walk-in reuses it)
       // No confirmed record means nothing was proven, so there is no amend here —
@@ -884,8 +886,9 @@ export async function createRegistrant(
         data: parsed.data,
         breakoutPick,
         profile: {
-          gender: (parsed.data.gender ?? null) as Gender | null,
-          birthYear: parsed.data.birthYear ?? null,
+          gender: (parsed.data.gender ?? stored.gender) as Gender | null,
+          birthYear: parsed.data.birthYear ?? stored.birthYear,
+          lifeStageId: parsed.data.lifeStageId ?? stored.lifeStageId,
         },
         walkIn,
         allowOverCapacity,

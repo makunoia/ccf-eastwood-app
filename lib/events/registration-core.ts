@@ -43,6 +43,14 @@ export type PersonRef = { memberId: string } | { guestId: string; nickname?: str
 export type ResolvedProfile = {
   gender: Gender | null
   birthYear: number | null
+  /**
+   * Carried so automatic placement applies the same life-stage rule the picker
+   * does. Without it the two disagreed about which tables suit a person: the
+   * selection screen hid a table run for another life stage, and auto-assign —
+   * which runs on the very same form when the picker is switched off — would
+   * happily place them in it.
+   */
+  lifeStageId: string | null
 }
 
 async function fetchAssignedBreakoutDetails(groupId: string): Promise<AssignedBreakout> {
@@ -78,9 +86,12 @@ async function fetchAssignedBreakoutDetails(groupId: string): Promise<AssignedBr
  *    groups, so dropping the pick here would silently contradict the UI. Every
  *    anonymous submission — including one to the public walk-in route — stays
  *    capacity-gated.
- *  - else autoAssignBreakout on the event — runs the simple Gender/Age/Capacity
- *    matcher, over the door's staffed-only pool when `atDoor` says this is a
- *    walk-in, and over every enabled group otherwise.
+ *  - else autoAssignBreakout on the event — runs the same Gender/LifeStage/Age/
+ *    Capacity matcher the selection screen ranks with, over the door's
+ *    staffed-only pool when `atDoor` says this is a walk-in, and over every
+ *    enabled group otherwise. Sharing the matcher is the point: auto-assign
+ *    replaces the picker on a given form rather than sitting beside it, so the
+ *    two disagreeing about which table suits someone would be a bug nobody sees.
  *  - else nothing
  * Best-effort: failures are swallowed and return null.
  *
@@ -94,7 +105,12 @@ export async function assignBreakoutForRegistrant(
   registrantId: string,
   eventId: string,
   selectedBreakoutGroupId: string | null,
-  profile: { gender: Gender | null; birthYear: number | null },
+  /**
+   * `lifeStageId` is optional so a caller that genuinely has no profile — a bare
+   * test fixture, a path that never asked — can still pass one. Absent reads as
+   * unknown, which never rules a group out.
+   */
+  profile: { gender: Gender | null; birthYear: number | null; lifeStageId?: string | null },
   allowOverCapacity = false,
   /**
    * Set when this placement is happening at the door, carrying the session the
@@ -217,7 +233,11 @@ export async function assignBreakoutForRegistrant(
       const candidates = atDoor
         ? await fetchBreakoutCandidates(eventId, atDoor.occurrenceId, true)
         : await fetchBreakoutCandidates(eventId, null, false)
-      const best = suggestBreakoutGroup(candidates, profile)
+      const best = suggestBreakoutGroup(candidates, {
+        gender: profile.gender,
+        birthYear: profile.birthYear,
+        lifeStageId: profile.lifeStageId ?? null,
+      })
       if (best) chosenGroupId = best.id
     }
 
@@ -593,7 +613,11 @@ export async function resolveConfirmedMember(
     )
   }
 
-  return { gender: existing.gender, birthYear: existing.birthYear }
+  return {
+    gender: existing.gender,
+    birthYear: existing.birthYear,
+    lifeStageId: existing.lifeStageId,
+  }
 }
 
 /**
@@ -672,7 +696,11 @@ export async function resolveConfirmedGuest(
   if (Object.keys(guestUpdates).length > 0) {
     await db.guest.update({ where: { id: guestId }, data: guestUpdates })
   }
-  return { gender: existing.gender, birthYear: existing.birthYear }
+  return {
+    gender: existing.gender,
+    birthYear: existing.birthYear,
+    lifeStageId: existing.lifeStageId,
+  }
 }
 
 /**
@@ -685,11 +713,18 @@ export async function resolveConfirmedGuest(
  * to live only on the registrant row, so a guest who gave a nickname still showed
  * a blank one in the Guests module and couldn't be found by it at their next
  * event — the per-event value is an override, not the only place it belongs.
+ *
+ * Returns the matched guest's stored profile alongside the id, symmetric with
+ * `resolveConfirmedMember` / `resolveConfirmedGuest` — the caller combines it
+ * form-first the same way. Without it the dedup ladder's whole point was thrown
+ * away for matching: landing on a guest who has a gender on file and then
+ * placing them as though we had never met is what sent a known man to the
+ * ungendered tables, and it happened whether or not the form asked.
  */
 export async function resolveAnonymousGuest(
   data: RegistrantData,
   skipDeduplication?: boolean
-): Promise<{ guestId: string }> {
+): Promise<{ guestId: string } & ResolvedProfile> {
   const matchingProfile = {
     lifeStageId: data.lifeStageId ?? null,
     gender: data.gender ?? null,
@@ -704,19 +739,34 @@ export async function resolveAnonymousGuest(
     claimedSatellite: data.claimedSatellite ?? null,
   }
 
-  // Nickname rides along so the update below can fill it only when empty.
-  let existingGuest: { id: string; nickname: string | null } | null = null
+  // Nickname rides along so the update below can fill it only when empty; the
+  // three matching fields ride along because a matched guest's stored profile is
+  // half of what this function returns.
+  const guestSelect = {
+    id: true,
+    nickname: true,
+    gender: true,
+    birthYear: true,
+    lifeStageId: true,
+  } as const
+  let existingGuest: {
+    id: string
+    nickname: string | null
+    gender: Gender | null
+    birthYear: number | null
+    lifeStageId: string | null
+  } | null = null
   if (!skipDeduplication) {
     if (data.mobileNumber) {
       existingGuest = await db.guest.findFirst({
         where: { phone: data.mobileNumber },
-        select: { id: true, nickname: true },
+        select: guestSelect,
       })
     }
     if (!existingGuest && data.email) {
       existingGuest = await db.guest.findFirst({
         where: { email: data.email },
-        select: { id: true, nickname: true },
+        select: guestSelect,
       })
     }
     if (
@@ -731,7 +781,7 @@ export async function resolveAnonymousGuest(
           birthMonth: data.birthMonth,
           birthYear: data.birthYear,
         },
-        select: { id: true, nickname: true },
+        select: guestSelect,
       })
     }
   }
@@ -770,7 +820,14 @@ export async function resolveAnonymousGuest(
         }),
       },
     })
-    return { guestId: existingGuest.id }
+    // The stored values, not the merged ones — the caller applies the same
+    // form-answer-wins rule it applies to the two confirmed branches.
+    return {
+      guestId: existingGuest.id,
+      gender: existingGuest.gender,
+      birthYear: existingGuest.birthYear,
+      lifeStageId: existingGuest.lifeStageId,
+    }
   }
 
   const newGuest = await db.guest.create({
@@ -800,7 +857,13 @@ export async function resolveAnonymousGuest(
     },
     select: { id: true },
   })
-  return { guestId: newGuest.id }
+  // Nothing was on file, so the profile is exactly what was just written.
+  return {
+    guestId: newGuest.id,
+    gender: matchingProfile.gender,
+    birthYear: data.birthYear ?? null,
+    lifeStageId: matchingProfile.lifeStageId,
+  }
 }
 
 /**

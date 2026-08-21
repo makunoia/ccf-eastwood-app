@@ -14,9 +14,12 @@ import {
   askedFieldsFor,
   missingRequiredFields,
   requiredFieldsMessage,
+  resolveBreakoutSelection,
   sanitizeRegistrantPayload,
 } from "@/lib/forms/registration-payload"
+import { isEventStaffViewer } from "@/lib/events/staff-viewer"
 import {
+  assignBreakoutForRegistrant,
   completeEventRegistration,
   findEventVolunteerRecord,
   findExistingEventRegistrationRow,
@@ -506,7 +509,13 @@ export async function registerForCluster(
   /** Review-screen edits (CCF-147) — these overwrite the stored profile. */
   touchedFields?: TouchedFields,
   /** Proof of record ownership; without it `touchedFields` is ignored. */
-  grant?: string | null
+  grant?: string | null,
+  /**
+   * The breakout table the person picked, on a Collab day whose shared form
+   * offers the step. Honoured only there — a Parallel day's tables belong to its
+   * member events individually, so it has no picker to honour.
+   */
+  selectedBreakoutGroupId?: string | null
 ): Promise<ActionResult<{ results: ClusterEventRegistrationResult[] }>> {
   const parsed = registrantSchema.safeParse(raw)
   if (!parsed.success) {
@@ -599,6 +608,19 @@ export async function registerForCluster(
       return { success: false, error: requiredFieldsMessage(missing) }
     }
 
+    // A submitted pick counts only where the picker was offered — the same
+    // crafted-POST defense the per-event action applies, against the CLUSTER's
+    // config. Auto-assign is unaffected: it runs off a null selection.
+    const breakoutPick = isCollab
+      ? resolveBreakoutSelection(formConfig, selectedBreakoutGroupId)
+      : null
+
+    // Going over a group's member limit is a staff decision taken at the door
+    // (CCF-141), and `walkIn` alone can't authorise it: the cluster walk-in route
+    // is public, so that flag is self-asserted by the request. Same pairing as
+    // `createRegistrant`.
+    const allowOverCapacity = !!walkIn && (await isEventStaffViewer())
+
     // ── Resolve the person ONCE ─────────────────────────────────────────────
     // Overwriting a stored profile field takes proof that the caller owns the
     // record — see `grantedTouchedFields` in ./actions.ts. The grant is scoped to
@@ -615,6 +637,7 @@ export async function registerForCluster(
       profile = {
         gender: (parsed.data.gender ?? stored.gender) as Gender | null,
         birthYear: parsed.data.birthYear ?? stored.birthYear,
+        lifeStageId: parsed.data.lifeStageId ?? stored.lifeStageId,
       }
     } else if (confirmedGuestId) {
       touched = verifyIdentityGrant(grant, { recordId: confirmedGuestId, recordType: "guest" })
@@ -625,13 +648,15 @@ export async function registerForCluster(
       profile = {
         gender: (parsed.data.gender ?? stored.gender) as Gender | null,
         birthYear: parsed.data.birthYear ?? stored.birthYear,
+        lifeStageId: parsed.data.lifeStageId ?? stored.lifeStageId,
       }
     } else {
-      const { guestId } = await resolveAnonymousGuest(parsed.data, skipDeduplication)
+      const { guestId, ...stored } = await resolveAnonymousGuest(parsed.data, skipDeduplication)
       person = { guestId, nickname: parsed.data.nickname ?? null }
       profile = {
-        gender: (parsed.data.gender ?? null) as Gender | null,
-        birthYear: parsed.data.birthYear ?? null,
+        gender: (parsed.data.gender ?? stored.gender) as Gender | null,
+        birthYear: parsed.data.birthYear ?? stored.birthYear,
+        lifeStageId: parsed.data.lifeStageId ?? stored.lifeStageId,
       }
     }
 
@@ -728,11 +753,30 @@ export async function registerForCluster(
           // request stay on the far side: those happened when the person first
           // registered, and re-running them would double-file the same person.
           await stampClusterProvenance(existing.id, cluster.id)
+          // An explicit breakout pick is the one other thing that repeats here,
+          // and for the mirror-image reason. The rest of this branch's work is
+          // skipped because it *already happened* — but a table chosen on this
+          // submission is a decision taken just now, and it reaches this branch
+          // by the supported route: amending re-opens a registration the day
+          // already holds. Dropping it would show the person a step, take their
+          // answer and keep the old table. `assignBreakoutForRegistrant` moves
+          // rather than double-seats, so repeating it is safe; automatic
+          // placement stays on the far side, where nobody chose anything.
+          const rePicked = breakoutPick
+            ? await assignBreakoutForRegistrant(
+                existing.id,
+                eventId,
+                breakoutPick,
+                profile,
+                allowOverCapacity
+              )
+            : null
           results.push({
             eventId,
             eventName: event.name,
             status: "already",
             registrantId: existing.id,
+            breakoutGroup: rePicked ?? undefined,
           })
           continue
         }
@@ -755,7 +799,10 @@ export async function registerForCluster(
           eventId,
           person,
           data: parsed.data,
-          breakoutPick: null, // manual picker is omitted on the cluster form; auto-assign still runs
+          // Null on a Parallel day, where the shared form has no picker — and
+          // auto-assign still runs there exactly as it did.
+          breakoutPick,
+          allowOverCapacity,
           profile,
           clusterId: cluster.id,
           walkIn: walkInForEvent,

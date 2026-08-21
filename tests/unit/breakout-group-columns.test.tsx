@@ -80,6 +80,59 @@ describe("breakout groups columns", () => {
     expect(columnMeta("ageRange")).toMatchObject({ label: "Age Range", optIn: true })
   })
 
+  it("offers the co-facilitator as an opt-in column beside the facilitator", () => {
+    // Both staffing slots are real facts about a table — either person may
+    // answer for it in Catch Mech — but the second one is empty on most
+    // groups, so it is offered rather than shown.
+    expect(columnMeta("facilitator")).toMatchObject({ label: "Facilitator" })
+    expect(columnMeta("facilitator")?.optIn).toBeFalsy()
+    expect(columnMeta("coFacilitator")).toMatchObject({ label: "Co-Facilitator", optIn: true })
+
+    const ids = columns().map((c) => c.id ?? (c as { accessorKey?: string }).accessorKey)
+    expect(ids.indexOf("coFacilitator")).toBe(ids.indexOf("facilitator") + 1)
+  })
+
+  it("shows the co-facilitator's name once switched on, 'Unassigned' when the slot is empty", () => {
+    const volunteer = (id: string, firstName: string, lastName: string) => ({
+      id,
+      member: { id: `m-${id}`, firstName, lastName, ledGroups: [] },
+    })
+
+    render(
+      <TablePreferencesProvider
+        initial={{
+          "event.breakout-members": {
+            hidden: [],
+            shown: ["coFacilitator"],
+            order: [],
+            density: "Comfortable",
+          },
+        }}
+      >
+        <DataTable
+          tableKey="event.breakout-members"
+          columns={columns()}
+          data={[
+            makeRow({
+              facilitatorId: "v1",
+              facilitator: volunteer("v1", "Ana", "Cruz"),
+              coFacilitatorId: "v2",
+              coFacilitator: volunteer("v2", "Ben", "Diaz"),
+            }),
+            makeRow({ id: "g2", name: "Table 2" }),
+          ]}
+        />
+      </TablePreferencesProvider>,
+    )
+
+    expect(screen.getByRole("columnheader", { name: "Co-Facilitator" })).toBeTruthy()
+    const rows = screen.getAllByRole("row")
+    expect(within(rows[1]).getByText("Ana Cruz")).toBeTruthy()
+    expect(within(rows[1]).getByText("Ben Diaz")).toBeTruthy()
+    // Facilitator and co-facilitator both empty on the second table.
+    expect(within(rows[2]).getAllByText("Unassigned")).toHaveLength(2)
+  })
+
   it("leaves the Members column aligned with the values under it", () => {
     // `align: "right"` only reaches inline content: `DataTable` sets the cell's
     // `text-align`, and the occupancy cell is a flex row, which is a
