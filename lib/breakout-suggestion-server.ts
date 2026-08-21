@@ -158,7 +158,16 @@ async function loadCandidates(
 ): Promise<BreakoutCandidate[]> {
   const groups = await db.breakoutGroup.findMany({
     where,
-    orderBy: { createdAt: "asc" },
+    // `id` breaks the tie, and the tie is common: `createdAt` is a
+    // `TIMESTAMP(3)`, so tables created in one go — a carry-over, an import, an
+    // admin adding three in a row — routinely share a millisecond. Without a
+    // second key Postgres returns those in whatever order it likes, and the
+    // ranking rests on this: fill level and specificity decide most of the list,
+    // but everything still level after that falls through to declaration order,
+    // which is exactly the case on a day whose tables are all empty and all
+    // alike. The suggestion would then differ between two identical requests.
+    // cuid is monotonic within a process, so `id` asc *is* declaration order.
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     select: {
       id: true,
       name: true,

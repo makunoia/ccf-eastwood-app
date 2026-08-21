@@ -12,7 +12,11 @@ import "server-only"
  */
 export const breakoutGroupsInclude = {
 
-  orderBy: { createdAt: "asc" } as const,
+  // Same tie as the picker's own ordering: `createdAt` is a `TIMESTAMP(3)`, and
+  // tables made in one go share a millisecond, so a list keyed on it alone
+  // reshuffles those rows between page loads. `id` asc settles it in creation
+  // order.
+  orderBy: [{ createdAt: "asc" as const }, { id: "asc" as const }],
   include: {
     facilitator: {
       include: {

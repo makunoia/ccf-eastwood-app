@@ -48,13 +48,14 @@ function seedLifeStage(name: string, order: number) {
 function seedGroup(
   eventId: string,
   name: string,
-  opts: { memberLimit?: number | null; lifeStageIds?: string[] } = {}
+  opts: { memberLimit?: number | null; lifeStageIds?: string[]; createdAt?: Date } = {}
 ) {
   return db.breakoutGroup.create({
     data: {
       eventId,
       name,
       memberLimit: opts.memberLimit ?? null,
+      ...(opts.createdAt ? { createdAt: opts.createdAt } : {}),
       ...(opts.lifeStageIds?.length
         ? { lifeStages: { connect: opts.lifeStageIds.map((id) => ({ id })) } }
         : {}),
@@ -160,6 +161,41 @@ describe("uncapped tables spread instead of stacking", () => {
     await fill(event.id, beta.id, 2)
     candidates = await fetchBreakoutCandidates(event.id, null, false)
     expect(suggestBreakoutGroup(candidates, anyone)?.name).toBe("Alpha")
+  })
+
+  /**
+   * Regression: the tie above used to be settled by luck.
+   *
+   * `BreakoutGroup.createdAt` is a `TIMESTAMP(3)`, and two `create` calls in a
+   * row land in the same millisecond about a third of the time — so ordering on
+   * `createdAt` alone left Postgres free to return the pair either way round,
+   * and "the tie falls to declaration order" held only when the clock happened
+   * to tick between the two inserts. The test above passed alone and failed in
+   * the full suite for exactly that reason.
+   *
+   * Seeding an identical `createdAt` makes the tie certain rather than likely,
+   * so this fails every run without the `id` tiebreak instead of one in three.
+   */
+  it("orders tables that share a createdAt millisecond by creation order", async () => {
+    const event = await seedEvent()
+    const sameInstant = new Date("2026-03-01T09:00:00.000Z")
+    const alpha = await seedGroup(event.id, "Alpha", { createdAt: sameInstant })
+    await seedGroup(event.id, "Beta", { createdAt: sameInstant })
+    await seedGroup(event.id, "Gamma", { createdAt: sameInstant })
+
+    // Nothing separates the three: same instant, no caps, nobody placed. Only
+    // the tiebreak decides, so the order is the order they were declared in.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const candidates = await fetchBreakoutCandidates(event.id, null, false)
+      expect(candidates.map((c) => c.name)).toEqual(["Alpha", "Beta", "Gamma"])
+      expect(suggestBreakoutGroup(candidates, anyone)?.name).toBe("Alpha")
+    }
+
+    // And the rotation still runs on top of it: fill level outranks the
+    // tiebreak, so the tie only decides what's left genuinely level.
+    await fill(event.id, alpha.id, 1)
+    const after = await fetchBreakoutCandidates(event.id, null, false)
+    expect(suggestBreakoutGroup(after, anyone)?.name).toBe("Beta")
   })
 
   it("measures a capped table by its cap and an uncapped one against the mean", async () => {
