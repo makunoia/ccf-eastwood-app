@@ -6,6 +6,7 @@ import { canExport, canImport, canWrite } from "@/lib/permissions"
 import { isEstablishedAttendee, resolveAttendeeStatus } from "@/lib/session-stats"
 import { ministryLabel } from "@/lib/events/ministry-label"
 import { breakoutOccupancy } from "@/lib/breakouts/occupancy"
+import { resolvePoolScope } from "@/lib/events/pool-scope"
 import { BreadcrumbOverride } from "@/components/breadcrumb-context"
 import { DetailPageHeader } from "@/components/detail-page-header"
 import { SessionAttendeesTable } from "./session-attendees-table"
@@ -68,6 +69,11 @@ async function getOccurrenceDetail(occurrenceId: string) {
 
   if (!occurrence) return null
 
+  // Which tables this session runs, and whose volunteers may staff them. Under a
+  // Collab the tables belong to the day rather than to this event, and either
+  // ministry's roster can supply a substitute — see lib/events/pool-scope.ts.
+  const scope = await resolvePoolScope(occurrence.event.id)
+
   const [
     volunteers,
     breakoutGroups,
@@ -76,7 +82,7 @@ async function getOccurrenceDetail(occurrenceId: string) {
     siblingOccurrences,
   ] = await Promise.all([
     db.volunteer.findMany({
-      where: { eventId: occurrence.event.id },
+      where: { eventId: { in: scope.volunteerEventIds } },
       select: {
         id: true,
         memberId: true,
@@ -84,7 +90,7 @@ async function getOccurrenceDetail(occurrenceId: string) {
       },
     }),
     db.breakoutGroup.findMany({
-      where: { eventId: occurrence.event.id },
+      where: { ...scope.breakoutOwner },
       orderBy: { name: "asc" },
       include: {
         facilitator: {
@@ -96,7 +102,7 @@ async function getOccurrenceDetail(occurrenceId: string) {
                 firstName: true,
                 lastName: true,
                 eventRegistrations: {
-                  where: { eventId: occurrence.event.id },
+                  where: { eventId: { in: scope.candidateEventIds } },
                   select: {
                     occurrenceAttendances: {
                       where: { occurrenceId },
@@ -116,7 +122,7 @@ async function getOccurrenceDetail(occurrenceId: string) {
                 firstName: true,
                 lastName: true,
                 eventRegistrations: {
-                  where: { eventId: occurrence.event.id },
+                  where: { eventId: { in: scope.candidateEventIds } },
                   select: {
                     occurrenceAttendances: {
                       where: { occurrenceId },

@@ -403,7 +403,6 @@ function buildBreakoutStatColumns({
         <FacilitatorCell
           occurrenceId={occurrenceId}
           breakoutGroupId={row.original.id}
-          eventId={eventId}
           role={FacilitatorRole.Facilitator}
           name={row.original.facilitatorName}
           present={row.original.facilitatorPresent}
@@ -422,7 +421,6 @@ function buildBreakoutStatColumns({
         <FacilitatorCell
           occurrenceId={occurrenceId}
           breakoutGroupId={row.original.id}
-          eventId={eventId}
           role={FacilitatorRole.CoFacilitator}
           name={row.original.coFacilitatorName}
           present={row.original.coFacilitatorPresent}
@@ -827,7 +825,6 @@ export function SessionAttendeesTable({
                         <FacilitatorCell
                           occurrenceId={occurrenceId}
                           breakoutGroupId={bg.id}
-                          eventId={eventId}
                           role={FacilitatorRole.Facilitator}
                           name={bg.facilitatorName}
                           present={bg.facilitatorPresent}
@@ -841,7 +838,6 @@ export function SessionAttendeesTable({
                         <FacilitatorCell
                           occurrenceId={occurrenceId}
                           breakoutGroupId={bg.id}
-                          eventId={eventId}
                           role={FacilitatorRole.CoFacilitator}
                           name={bg.coFacilitatorName}
                           present={bg.coFacilitatorPresent}
@@ -954,7 +950,6 @@ function PresenceCell({ name, present }: { name: string | null; present: boolean
 function FacilitatorCell({
   occurrenceId,
   breakoutGroupId,
-  eventId,
   role,
   name,
   present,
@@ -964,7 +959,6 @@ function FacilitatorCell({
 }: {
   occurrenceId: string
   breakoutGroupId: string
-  eventId: string
   role: FacilitatorRole
   name: string | null
   present: boolean
@@ -1004,7 +998,7 @@ function FacilitatorCell({
 
   async function handleRemove() {
     setLoading(true)
-    const result = await removeSubFacilitator(occurrenceId, breakoutGroupId, role, eventId)
+    const result = await removeSubFacilitator(occurrenceId, breakoutGroupId, role)
     setLoading(false)
     if (!result.success) {
       toast.error(result.error)
