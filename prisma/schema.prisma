@@ -245,8 +245,40 @@ model User {
   groupRequests     SmallGroupMemberRequest[]
   smallGroupLogs    SmallGroupLog[]
   catchMechComments CatchMechComment[]
+  tablePreferences  UserTablePreference[]
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
+}
+
+enum TableDensity {
+  Compact
+  Comfortable
+}
+
+/// One admin's saved layout for one *kind* of table.
+///
+/// `tableKey` names the screen, never the record ("event.registrants", not
+/// "event.<id>.registrants") — someone who has arranged the registrant columns
+/// to their liking wants that arrangement on the next event too.
+///
+/// `hidden` and `shown` are deliberately separate rather than one `visible`
+/// list: anything absent from `hidden` is on, so a column added later appears
+/// for everyone, while anything absent from `shown` is off, so an opt-in column
+/// added later stays out of the way. See lib/tables/preferences.ts.
+model UserTablePreference {
+  id        String       @id @default(cuid())
+  userId    String
+  tableKey  String
+  hidden    String[]
+  shown     String[]
+  order     String[]
+  density   TableDensity @default(Comfortable)
+  pageSize  Int?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tableKey])
 }
 
 model UserPermission {

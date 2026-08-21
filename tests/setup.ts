@@ -33,3 +33,20 @@ vi.mock("next/cache", () => ({
   // Pass through to original fn — caching is a no-op in tests
   unstable_cache: vi.fn(<T extends (...args: unknown[]) => unknown>(fn: T) => fn),
 }))
+
+// jsdom implements no media queries, so anything reaching `useIsMobile` — which
+// now includes every table, via the column picker's responsive Drawer — throws
+// before it renders. Defined here rather than per test file so a component test
+// doesn't have to know which of its descendants happens to ask.
+if (typeof window !== "undefined" && !window.matchMedia) {
+  window.matchMedia = ((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  })) as unknown as typeof window.matchMedia
+}

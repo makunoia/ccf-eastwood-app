@@ -1,21 +1,12 @@
 import type { Metadata } from "next"
-import Link from "next/link"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { canAccessEvent, isSuperAdmin } from "@/lib/permissions"
 import { getClusterSharedFormPeopleCounts } from "@/lib/clusters/aggregate"
 import { PageHeader } from "@/components/page-header"
 import { LinkTabs } from "@/components/link-tabs"
-import { Badge } from "@/components/ui/badge"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { ClustersToolbar } from "./create-cluster-dialog"
+import { ClustersTable } from "./clusters-table"
 
 export const metadata: Metadata = {
   title: "Event Clusters",
@@ -70,56 +61,16 @@ export default async function EventClustersPage() {
           No event clusters yet. Create one to run several events as a single day.
         </div>
       ) : (
-        <div className="rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Events</TableHead>
-                <TableHead className="text-right">People registered</TableHead>
-                <TableHead>Form</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {visible.map((cluster) => (
-                <TableRow key={cluster.id}>
-                  <TableCell>
-                    <Link
-                      href={`/cluster/${cluster.id}`}
-                      className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-                    >
-                      {cluster.name}
-                    </Link>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {cluster.date
-                      ? cluster.date.toLocaleDateString("en-PH", {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric",
-                          timeZone: "UTC",
-                        })
-                      : "—"}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {cluster.events.length === 0
-                      ? "No events"
-                      : cluster.events.map((e) => e.event.name).join(" · ")}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {peopleCounts.get(cluster.id) ?? 0}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={cluster.isOpen ? "default" : "outline"}>
-                      {cluster.isOpen ? "Open" : "Closed"}
-                    </Badge>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <ClustersTable
+          clusters={visible.map((cluster) => ({
+            id: cluster.id,
+            name: cluster.name,
+            date: cluster.date?.toISOString() ?? null,
+            isOpen: cluster.isOpen,
+            eventNames: cluster.events.map((e) => e.event.name),
+            peopleCount: peopleCounts.get(cluster.id) ?? 0,
+          }))}
+        />
       )}
     </div>
   )

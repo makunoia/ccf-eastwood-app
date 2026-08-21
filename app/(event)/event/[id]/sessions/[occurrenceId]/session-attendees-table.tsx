@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useRef, useMemo } from "react"
+import { type ColumnDef } from "@tanstack/react-table"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
@@ -17,6 +18,7 @@ import {
 import { Popover as PopoverPrimitive } from "radix-ui"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
+import { DataTable } from "@/components/ui/data-table"
 import { Button } from "@/components/ui/button"
 import { StatCard } from "@/components/session-stat-card"
 import {
@@ -42,14 +44,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
@@ -276,6 +270,200 @@ function CapacityCell({ occupancy }: { occupancy: BreakoutOccupancy }) {
 type TypeFilter = "all" | "member" | "guest" | "volunteer"
 type SessionTab = "attendees" | "breakouts"
 
+function buildAttendeeColumns({
+  eventId,
+  canEdit,
+  statusSortDirection,
+  onToggleStatusSort,
+  onSetStatus,
+  onRemove,
+}: {
+  eventId: string
+  canEdit: boolean
+  statusSortDirection: AttendeeSortDirection
+  onToggleStatusSort: () => void
+  onSetStatus: (attendee: AttendeeRow, choice: AttendeeStatusChoice) => Promise<void>
+  onRemove: (attendee: AttendeeRow) => void
+}): ColumnDef<AttendeeRow>[] {
+  return [
+    {
+      accessorKey: "name",
+      header: "Name",
+      meta: { label: "Name", width: "name", locked: true },
+      cell: ({ row }) => (
+        <Link
+          href={attendeeHref(eventId, row.original)}
+          className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+        >
+          {row.original.name ?? (
+            <span className="text-muted-foreground italic">No name</span>
+          )}
+        </Link>
+      ),
+    },
+    {
+      id: "status",
+      // The sort is the caller's (it reorders `sortedAttendees`), so the header
+      // stays a custom control rather than TanStack's own sorting.
+      meta: { label: "Status", width: "status" },
+      header: () => (
+        <button
+          type="button"
+          onClick={onToggleStatusSort}
+          aria-label={`Sort status ${statusSortDirection === "asc" ? "descending" : "ascending"}`}
+          className={cn(
+            "inline-flex items-center gap-1 rounded-sm font-medium text-muted-foreground transition-colors hover:text-foreground",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+          )}
+        >
+          <span>Status</span>
+          <span className="text-xs">{statusSortDirection === "asc" ? "\u2191" : "\u2193"}</span>
+        </button>
+      ),
+      cell: ({ row }) => (
+        <StatusBadge
+          attendee={row.original}
+          editable={canEdit && isAttendeeStatusEditable(row.original)}
+          onSelect={(choice) => onSetStatus(row.original, choice)}
+        />
+      ),
+    },
+    {
+      id: "type",
+      header: "Type",
+      meta: { label: "Type", width: "status" },
+      cell: ({ row }) => <TypeBadge attendee={row.original} />,
+    },
+    {
+      id: "breakoutGroup",
+      accessorFn: (row) => row.breakoutGroupNames.join(", "),
+      header: "Breakout Group",
+      meta: { label: "Breakout Group", width: "name" },
+      cell: ({ row }) => (
+        <span className="text-muted-foreground">
+          {row.original.breakoutGroupNames.length > 0 ? (
+            row.original.breakoutGroupNames.join(", ")
+          ) : (
+            <span className="italic">Unassigned</span>
+          )}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "checkedInAtFormatted",
+      header: "Checked in at",
+      meta: { label: "Checked in at", width: "date" },
+      cell: ({ row }) => (
+        <span className="text-muted-foreground">{row.original.checkedInAtFormatted}</span>
+      ),
+    },
+    ...(canEdit
+      ? [
+          {
+            id: "actions",
+            meta: { width: "actions", locked: true },
+            cell: ({ row }) => <RemoveAttendeeButton onSelect={() => onRemove(row.original)} />,
+          } satisfies ColumnDef<AttendeeRow>,
+        ]
+      : []),
+  ]
+}
+
+function buildBreakoutStatColumns({
+  eventId,
+  occurrenceId,
+  volunteerOptions,
+}: {
+  eventId: string
+  occurrenceId: string
+  volunteerOptions: PersonComboboxOption[]
+}): ColumnDef<BreakoutStatRow>[] {
+  return [
+    {
+      accessorKey: "name",
+      header: "Group",
+      meta: { label: "Group", width: "name", locked: true },
+      cell: ({ row }) => (
+        <Link
+          href={`/event/${eventId}/breakouts/${row.original.id}`}
+          className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 transition-colors hover:decoration-foreground"
+        >
+          {row.original.name}
+        </Link>
+      ),
+    },
+    {
+      id: "facilitator",
+      accessorFn: (row) => row.facilitatorName ?? "",
+      header: "Facilitator",
+      meta: { label: "Facilitator", width: "name", noTruncate: true },
+      cell: ({ row }) => (
+        <FacilitatorCell
+          occurrenceId={occurrenceId}
+          breakoutGroupId={row.original.id}
+          eventId={eventId}
+          role={FacilitatorRole.Facilitator}
+          name={row.original.facilitatorName}
+          present={row.original.facilitatorPresent}
+          subId={row.original.subFacilitatorId}
+          subName={row.original.subFacilitatorName}
+          volunteerOptions={volunteerOptions}
+        />
+      ),
+    },
+    {
+      id: "coFacilitator",
+      accessorFn: (row) => row.coFacilitatorName ?? "",
+      header: "Co-Facilitator",
+      meta: { label: "Co-Facilitator", width: "name", noTruncate: true },
+      cell: ({ row }) => (
+        <FacilitatorCell
+          occurrenceId={occurrenceId}
+          breakoutGroupId={row.original.id}
+          eventId={eventId}
+          role={FacilitatorRole.CoFacilitator}
+          name={row.original.coFacilitatorName}
+          present={row.original.coFacilitatorPresent}
+          subId={row.original.subCoFacilitatorId}
+          subName={row.original.subCoFacilitatorName}
+          volunteerOptions={volunteerOptions}
+        />
+      ),
+    },
+    // These three are today's turnout; Capacity is the roster. Labelling them
+    // apart is the whole point — an admin reading "6" next to "8 / 12" must not
+    // take them for the same number.
+    //
+    // They used to carry four different hand-picked widths (w-14/w-20/w-24/w-40)
+    // in this one header row. All three counts are the same kind of value, so
+    // they now say so.
+    {
+      accessorKey: "newCount",
+      header: "New",
+      meta: { label: "New", width: "narrow", align: "right" },
+      cell: ({ row }) => <span className="tabular-nums">{row.original.newCount}</span>,
+    },
+    {
+      accessorKey: "returneeCount",
+      header: "Returnees",
+      meta: { label: "Returnees", width: "narrow", align: "right" },
+      cell: ({ row }) => <span className="tabular-nums">{row.original.returneeCount}</span>,
+    },
+    {
+      accessorKey: "totalCheckedIn",
+      header: "Here today",
+      meta: { label: "Here today", width: "narrow", align: "right" },
+      cell: ({ row }) => <span className="tabular-nums">{row.original.totalCheckedIn}</span>,
+    },
+    {
+      id: "capacity",
+      header: "Capacity",
+      meta: { label: "Capacity", width: "status", noTruncate: true },
+      cell: ({ row }) => <CapacityCell occupancy={row.original.occupancy} />,
+    },
+  ]
+}
+
 export function SessionAttendeesTable({
   eventId,
   occurrenceId,
@@ -388,6 +576,26 @@ export function SessionAttendeesTable({
   const sortedAttendees = useMemo(
     () => sortSessionAttendees(filtered, statusSortDirection),
     [filtered, statusSortDirection],
+  )
+
+  const breakoutColumns = useMemo(
+    () => buildBreakoutStatColumns({ eventId, occurrenceId, volunteerOptions }),
+    [eventId, occurrenceId, volunteerOptions],
+  )
+
+  const attendeeColumns = useMemo(
+    () =>
+      buildAttendeeColumns({
+        eventId,
+        canEdit,
+        statusSortDirection,
+        onToggleStatusSort: () =>
+          setStatusSortDirection((current) => (current === "asc" ? "desc" : "asc")),
+        onSetStatus: handleSetStatus,
+        onRemove: setAttendeeToRemove,
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [eventId, canEdit, statusSortDirection],
   )
 
   return (
@@ -541,77 +749,13 @@ export function SessionAttendeesTable({
                 ))}
               </div>
               {/* Desktop table — six columns need the width a sidebar-less viewport gives. */}
-              <div className="hidden overflow-x-auto rounded-lg border xl:block">
-                <Table>
-                  <TableHeader className="bg-muted/50">
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setStatusSortDirection((current) =>
-                              current === "asc" ? "desc" : "asc",
-                            )
-                          }
-                          aria-label={`Sort status ${statusSortDirection === "asc" ? "descending" : "ascending"}`}
-                          className={cn(
-                            "inline-flex items-center gap-1 rounded-sm font-medium text-muted-foreground transition-colors hover:text-foreground",
-                            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                          )}
-                        >
-                          <span>Status</span>
-                          <span className="text-xs">
-                            {statusSortDirection === "asc" ? "\u2191" : "\u2193"}
-                          </span>
-                        </button>
-                      </TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Breakout Group</TableHead>
-                      <TableHead>Checked in at</TableHead>
-                      {canEdit && <TableHead className="w-10" />}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {sortedAttendees.map((a) => (
-                      <TableRow key={a.id}>
-                        <TableCell>
-                          <Link
-                            href={attendeeHref(eventId, a)}
-                            className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-                          >
-                            {a.name ?? <span className="text-muted-foreground italic">No name</span>}
-                          </Link>
-                        </TableCell>
-                        <TableCell>
-                          <StatusBadge
-                            attendee={a}
-                            editable={canEdit && isAttendeeStatusEditable(a)}
-                            onSelect={(choice) => handleSetStatus(a, choice)}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <TypeBadge attendee={a} />
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {a.breakoutGroupNames.length > 0 ? (
-                            a.breakoutGroupNames.join(", ")
-                          ) : (
-                            <span className="italic">Unassigned</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {a.checkedInAtFormatted}
-                        </TableCell>
-                        {canEdit && (
-                          <TableCell className="w-10 text-right">
-                            <RemoveAttendeeButton onSelect={() => setAttendeeToRemove(a)} />
-                          </TableCell>
-                        )}
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+              <div className="hidden xl:flex xl:flex-1 xl:flex-col">
+                <DataTable
+                  tableKey="event.session-attendees"
+                  rowLabel={{ one: "attendee", many: "attendees" }}
+                  columns={attendeeColumns}
+                  data={sortedAttendees}
+                />
               </div>
             </>
           )}
@@ -720,77 +864,14 @@ export function SessionAttendeesTable({
                 ))}
               </div>
               {/* Desktop table */}
-              <div className="hidden overflow-x-auto rounded-lg border xl:block">
-                <Table>
-                  <TableHeader className="bg-muted/50">
-                    <TableRow>
-                      <TableHead>Group</TableHead>
-                      <TableHead>Facilitator</TableHead>
-                      <TableHead>Co-Facilitator</TableHead>
-                      {/* These three are today's turnout; Capacity is the roster.
-                          Labelling them apart is the whole point — an admin
-                          reading "6" next to "8 / 12" must not take them for the
-                          same number. */}
-                      {/* Pinned narrow — two-digit counts don't need the room, and
-                          leaving it to the facilitator columns keeps names off a
-                          second line at the 1280px this table starts at. */}
-                      <TableHead className="w-14 text-right">New</TableHead>
-                      <TableHead className="w-20 text-right">Returnees</TableHead>
-                      <TableHead className="w-24 text-right">Here today</TableHead>
-                      <TableHead className="w-40">Capacity</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {sortedBreakoutStats.map((bg) => (
-                      <TableRow key={bg.id}>
-                        <TableCell>
-                          <Link
-                            href={`/event/${eventId}/breakouts/${bg.id}`}
-                            className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 transition-colors hover:decoration-foreground"
-                          >
-                            {bg.name}
-                          </Link>
-                        </TableCell>
-                        <TableCell>
-                          <FacilitatorCell
-                            occurrenceId={occurrenceId}
-                            breakoutGroupId={bg.id}
-                            eventId={eventId}
-                            role={FacilitatorRole.Facilitator}
-                            name={bg.facilitatorName}
-                            present={bg.facilitatorPresent}
-                            subId={bg.subFacilitatorId}
-                            subName={bg.subFacilitatorName}
-                            volunteerOptions={volunteerOptions}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <FacilitatorCell
-                            occurrenceId={occurrenceId}
-                            breakoutGroupId={bg.id}
-                            eventId={eventId}
-                            role={FacilitatorRole.CoFacilitator}
-                            name={bg.coFacilitatorName}
-                            present={bg.coFacilitatorPresent}
-                            subId={bg.subCoFacilitatorId}
-                            subName={bg.subCoFacilitatorName}
-                            volunteerOptions={volunteerOptions}
-                          />
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">{bg.newCount}</TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {bg.returneeCount}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {bg.totalCheckedIn}
-                        </TableCell>
-                        <TableCell>
-                          <CapacityCell occupancy={bg.occupancy} />
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+              <div className="hidden xl:flex xl:flex-1 xl:flex-col">
+                <DataTable
+                  tableKey="event.session-breakouts"
+                  rowLabel={{ one: "group", many: "groups" }}
+                  columns={breakoutColumns}
+                  data={sortedBreakoutStats}
+                  hidePagination
+                />
               </div>
             </>
           )}

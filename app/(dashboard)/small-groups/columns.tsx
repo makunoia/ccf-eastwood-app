@@ -139,6 +139,7 @@ export function buildColumns(selectable = false): ColumnDef<SmallGroupRow>[] {
     {
       accessorKey: "name",
       header: "Name",
+      meta: { label: "Name", width: "name", locked: true },
       cell: ({ row, table }) => (
         <div className="flex items-center gap-2">
           <Link
@@ -170,6 +171,7 @@ export function buildColumns(selectable = false): ColumnDef<SmallGroupRow>[] {
     {
       accessorKey: "leaderName",
       header: "Leader",
+      meta: { label: "Leader", width: "name" },
       cell: ({ row }) =>
         row.original.leaderName ?? (
           <span className="text-muted-foreground">No leader</span>
@@ -181,6 +183,7 @@ export function buildColumns(selectable = false): ColumnDef<SmallGroupRow>[] {
       // column falls back to the satellite name rather than showing an empty cell.
       accessorFn: (row) => row.parentGroupName ?? row.parentSatellite ?? "",
       header: "Parent Group",
+      meta: { label: "Parent Group", width: "name" },
       cell: ({ row }) =>
         row.original.parentGroupName ??
         (row.original.parentSatellite ? (
@@ -194,11 +197,13 @@ export function buildColumns(selectable = false): ColumnDef<SmallGroupRow>[] {
     {
       accessorKey: "memberCount",
       header: "Members",
+      meta: { label: "Members", width: "narrow" },
     },
     {
       id: "lifeStage",
       accessorFn: (row) => row.lifeStages.map((ls) => ls.name).join(", "),
       header: "Life Stage",
+      meta: { label: "Life Stage", width: "status" },
       cell: ({ row }) =>
         row.original.lifeStages.length > 0 ? (
           row.original.lifeStages.map((ls) => ls.name).join(", ")
@@ -209,6 +214,7 @@ export function buildColumns(selectable = false): ColumnDef<SmallGroupRow>[] {
     {
       accessorKey: "tempMemberCount",
       header: "Temp Members",
+      meta: { label: "Temp Members", width: "narrow" },
       cell: ({ row }) =>
         row.original.tempMemberCount > 0 ? (
           row.original.tempMemberCount
@@ -218,6 +224,7 @@ export function buildColumns(selectable = false): ColumnDef<SmallGroupRow>[] {
     },
     {
       id: "actions",
+      meta: { width: "actions", locked: true },
       cell: ({ row }) => <RowActions row={row.original} />,
     },
   ]

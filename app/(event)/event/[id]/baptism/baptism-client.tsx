@@ -1,11 +1,14 @@
 "use client"
 
 import * as React from "react"
+import { type ColumnDef } from "@tanstack/react-table"
 import { IconCheck } from "@tabler/icons-react"
 import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { DataTable } from "@/components/ui/data-table"
+import { phoneColumn } from "@/lib/tables/columns/contact"
 import { PageHeader } from "@/components/page-header"
 import { addBaptismOptIn, removeBaptismOptIn } from "@/app/(dashboard)/events/module-actions"
 
@@ -44,20 +47,82 @@ type Props = {
   registrants: Registrant[]
 }
 
+function buildColumns({
+  toggling,
+  onToggle,
+}: {
+  toggling: string | null
+  onToggle: (r: Registrant) => void
+}): ColumnDef<Registrant>[] {
+  return [
+    {
+      id: "name",
+      accessorFn: displayName,
+      header: "Name",
+      meta: { label: "Name", width: "name", locked: true },
+      cell: ({ row }) => <span className="font-medium">{displayName(row.original)}</span>,
+    },
+    phoneColumn<Registrant>(displayMobile),
+    {
+      id: "type",
+      accessorFn: (row) => (row.memberId ? "Member" : "Guest"),
+      header: "Type",
+      meta: { label: "Type", width: "narrow" },
+      cell: ({ row }) =>
+        row.original.memberId ? (
+          <Badge variant="secondary">Member</Badge>
+        ) : (
+          <Badge variant="outline">Guest</Badge>
+        ),
+    },
+    {
+      id: "baptism",
+      accessorFn: (row) => (row.baptismOptIn ? 1 : 0),
+      header: "Baptism",
+      meta: { label: "Baptism", width: "status", locked: true },
+      cell: ({ row }) => (
+        <Button
+          size="sm"
+          variant={row.original.baptismOptIn ? "default" : "outline"}
+          onClick={() => onToggle(row.original)}
+          disabled={toggling === row.original.id}
+        >
+          {row.original.baptismOptIn ? (
+            <>
+              <IconCheck className="mr-1 size-3.5" />
+              Opted in
+            </>
+          ) : (
+            "Add"
+          )}
+        </Button>
+      ),
+    },
+  ]
+}
+
 export function BaptismClient({ eventId, registrants }: Props) {
   const [toggling, setToggling] = React.useState<string | null>(null)
 
   const attended = registrants.filter((r) => r.attendedAt)
   const optedIn = registrants.filter((r) => r.baptismOptIn)
 
-  async function toggle(r: Registrant) {
-    setToggling(r.id)
-    const result = r.baptismOptIn
-      ? await removeBaptismOptIn(eventId, r.id)
-      : await addBaptismOptIn(eventId, r.id)
-    setToggling(null)
-    if (!result.success) toast.error(result.error)
-  }
+  const toggle = React.useCallback(
+    async (r: Registrant) => {
+      setToggling(r.id)
+      const result = r.baptismOptIn
+        ? await removeBaptismOptIn(eventId, r.id)
+        : await addBaptismOptIn(eventId, r.id)
+      setToggling(null)
+      if (!result.success) toast.error(result.error)
+    },
+    [eventId],
+  )
+
+  const columns = React.useMemo(
+    () => buildColumns({ toggling, onToggle: toggle }),
+    [toggling, toggle],
+  )
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
@@ -72,43 +137,7 @@ export function BaptismClient({ eventId, registrants }: Props) {
           <p className="text-xs">Mark attendance first — only attended registrants are shown here.</p>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-lg border">
-          <table className="w-full text-sm">
-            <thead className="border-b bg-muted/50">
-              <tr>
-                <th className="px-4 py-3 text-left font-medium">Name</th>
-                <th className="px-4 py-3 text-left font-medium">Contact</th>
-                <th className="px-4 py-3 text-left font-medium">Type</th>
-                <th className="px-4 py-3 text-left font-medium">Baptism</th>
-              </tr>
-            </thead>
-            <tbody>
-              {attended.map((r) => (
-                <tr key={r.id} className="border-b last:border-0">
-                  <td className="px-4 py-3 font-medium">{displayName(r)}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{displayMobile(r) ?? "—"}</td>
-                  <td className="px-4 py-3">
-                    {r.memberId
-                      ? <Badge variant="secondary">Member</Badge>
-                      : <Badge variant="outline">Guest</Badge>}
-                  </td>
-                  <td className="px-4 py-3">
-                    <Button
-                      size="sm"
-                      variant={r.baptismOptIn ? "default" : "outline"}
-                      onClick={() => toggle(r)}
-                      disabled={toggling === r.id}
-                    >
-                      {r.baptismOptIn
-                        ? <><IconCheck className="mr-1 size-3.5" />Opted in</>
-                        : "Add"}
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable tableKey="event.baptism" rowLabel={{ one: "registrant", many: "registrants" }} columns={columns} data={attended} />
       )}
     </div>
   )

@@ -5,6 +5,8 @@ import { SiteHeader } from "@/components/site-header"
 import { BreadcrumbProvider } from "@/components/breadcrumb-context"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { AssistantPanel } from "@/components/assistant/assistant-panel"
+import { TablePreferencesProvider } from "@/components/tables/table-preferences-provider"
+import { getTablePreferences } from "@/lib/tables/preferences-server"
 import { isSuperAdmin } from "@/lib/permissions"
 
 export default async function DashboardLayout({
@@ -14,6 +16,10 @@ export default async function DashboardLayout({
 }) {
   const session = await auth()
   if (!session) redirect("/login")
+
+  // Read once here rather than per list page, so every table below has its
+  // saved layout on the first render instead of flashing default columns.
+  const tablePreferences = await getTablePreferences()
 
   return (
     <SidebarProvider
@@ -36,13 +42,15 @@ export default async function DashboardLayout({
         permissions={session.user.permissions?.map((p) => p.feature) ?? []}
       />
       <SidebarInset className="overflow-hidden">
-        <BreadcrumbProvider>
-          <SiteHeader />
-          <div className="flex flex-1 flex-col overflow-y-auto min-h-0">
-            {children}
-          </div>
-        </BreadcrumbProvider>
-        {isSuperAdmin(session) && <AssistantPanel />}
+        <TablePreferencesProvider initial={tablePreferences}>
+          <BreadcrumbProvider>
+            <SiteHeader />
+            <div className="flex flex-1 flex-col overflow-y-auto min-h-0">
+              {children}
+            </div>
+          </BreadcrumbProvider>
+          {isSuperAdmin(session) && <AssistantPanel />}
+        </TablePreferencesProvider>
       </SidebarInset>
     </SidebarProvider>
   )

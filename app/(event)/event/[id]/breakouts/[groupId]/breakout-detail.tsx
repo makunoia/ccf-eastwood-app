@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { type ColumnDef } from "@tanstack/react-table"
 import Link from "next/link"
 import {
   IconAlertTriangle,
@@ -33,14 +34,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { DataTable } from "@/components/ui/data-table"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -420,6 +414,143 @@ function MembersTable({
     }
   }
 
+function buildMemberColumns({
+  eventType,
+  totalOccurrences,
+  attendanceHeader,
+  siblingGroupCount,
+  pendingId,
+  onTransfer,
+  onRemove,
+}: {
+  eventType: string
+  totalOccurrences: number
+  attendanceHeader: string
+  siblingGroupCount: number
+  pendingId: string | null
+  onTransfer: (row: BreakoutMemberRow) => void
+  onRemove: (row: BreakoutMemberRow) => void
+}): ColumnDef<BreakoutMemberRow>[] {
+  const blank = <span className="text-muted-foreground">—</span>
+  return [
+    {
+      id: "name",
+      accessorFn: (row) => registrantDisplayName(row.registrant),
+      header: "Name",
+      meta: { label: "Name", width: "name", locked: true },
+      cell: ({ row }) => {
+        const r = row.original.registrant
+        return (
+          <Link
+            href={`/event/${r.eventId}/registrants/${r.id}`}
+            className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+          >
+            {registrantDisplayName(r)}
+          </Link>
+        )
+      },
+    },
+    {
+      id: "type",
+      accessorFn: (row) => (row.registrant.memberId ? "Member" : "Guest"),
+      header: "Type",
+      meta: { label: "Type", width: "narrow" },
+      cell: ({ row }) => (
+        <Badge variant="outline" className="text-xs">
+          {row.original.registrant.memberId ? "Member" : "Guest"}
+        </Badge>
+      ),
+    },
+    {
+      id: "attendance",
+      header: attendanceHeader,
+      meta: { label: attendanceHeader, width: "status", noTruncate: true },
+      cell: ({ row }) => {
+        const r = row.original.registrant
+        if (eventType === "OneTime") {
+          return r.attendedAt ? (
+            <span className="flex items-center gap-1 text-sm text-green-600">
+              <IconCheck className="size-4" />
+              Attended
+            </span>
+          ) : (
+            <span className="text-sm text-muted-foreground">—</span>
+          )
+        }
+        return (
+          <OccurrenceAttendanceCell
+            attendances={r.occurrenceAttendances}
+            total={totalOccurrences}
+            eventType={eventType}
+          />
+        )
+      },
+    },
+    {
+      id: "smallGroup",
+      accessorFn: (row) => row.registrant.member?.smallGroup?.name ?? "",
+      header: "DGroup",
+      meta: { label: "DGroup", width: "name" },
+      cell: ({ row }) =>
+        row.original.registrant.member?.smallGroup ? (
+          <span className="text-sm">{row.original.registrant.member.smallGroup.name}</span>
+        ) : (
+          blank
+        ),
+    },
+    {
+      id: "groupStatus",
+      accessorFn: (row) => row.registrant.member?.groupStatus ?? "",
+      header: "SG Status",
+      meta: { label: "SG Status", width: "narrow" },
+      cell: ({ row }) =>
+        row.original.registrant.member?.groupStatus ? (
+          <Badge variant="secondary" className="text-xs">
+            {row.original.registrant.member.groupStatus}
+          </Badge>
+        ) : (
+          blank
+        ),
+    },
+    {
+      id: "actions",
+      meta: { width: "actions", locked: true },
+      cell: ({ row }) => (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              disabled={pendingId === row.original.registrantId}
+            >
+              <span className="sr-only">Open menu</span>
+              <IconDots className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              onSelect={() => onTransfer(row.original)}
+              disabled={siblingGroupCount === 0}
+            >
+              <IconArrowsExchange className="mr-2 size-4" />
+              Transfer to another breakout group…
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={() => onRemove(row.original)}
+              className="text-destructive focus:text-destructive"
+            >
+              <IconTrash className="mr-2 size-4" />
+              Remove from group
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ),
+    },
+  ]
+}
+
   async function handleTransfer(row: BreakoutMemberRow, target: SiblingGroup) {
     setPendingId(row.registrantId)
     const result = await transferRegistrantToBreakout(
@@ -464,6 +595,20 @@ function MembersTable({
 
   const attendanceHeader =
     eventType === "OneTime" ? "Attended" : eventType === "MultiDay" ? "Days Attended" : "Sessions Attended"
+
+  const columns = React.useMemo(
+    () =>
+      buildMemberColumns({
+        eventType,
+        totalOccurrences,
+        attendanceHeader,
+        siblingGroupCount: siblingGroups.length,
+        pendingId,
+        onTransfer: setTransferRow,
+        onRemove: setConfirmRemove,
+      }),
+    [eventType, totalOccurrences, attendanceHeader, siblingGroups.length, pendingId],
+  )
 
   return (
     <div className="space-y-3">
@@ -531,121 +676,19 @@ function MembersTable({
         </FilterField>
       </FilterBar>
 
-      <div className="rounded-lg border overflow-hidden">
-        <Table>
-          <TableHeader className="bg-muted">
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>{attendanceHeader}</TableHead>
-              <TableHead>DGroup</TableHead>
-              <TableHead>SG Status</TableHead>
-              <TableHead className="w-10">
-                <span className="sr-only">Actions</span>
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredMembers.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground text-sm">
-                  {members.length === 0 ? "No members assigned yet." : "No members match current filters."}
-                </TableCell>
-              </TableRow>
-            ) : (
-              filteredMembers.map((m) => {
-                const r = m.registrant
-                const isMember = !!r.memberId
-                const name = registrantDisplayName(r)
-
-                return (
-                  <TableRow key={m.registrantId}>
-                    <TableCell>
-                      <Link
-                        href={`/event/${r.eventId}/registrants/${r.id}`}
-                        className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-                      >
-                        {name}
-                      </Link>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="text-xs">
-                        {isMember ? "Member" : "Guest"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {eventType === "OneTime" ? (
-                        r.attendedAt ? (
-                          <span className="flex items-center gap-1 text-sm text-green-600">
-                            <IconCheck className="size-4" />
-                            Attended
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground text-sm">—</span>
-                        )
-                      ) : (
-                        <OccurrenceAttendanceCell
-                          attendances={r.occurrenceAttendances}
-                          total={totalOccurrences}
-                          eventType={eventType}
-                        />
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {r.member?.smallGroup ? (
-                        <span className="text-sm">{r.member.smallGroup.name}</span>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {r.member?.groupStatus ? (
-                        <Badge variant="secondary" className="text-xs">
-                          {r.member.groupStatus}
-                        </Badge>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="size-8"
-                            disabled={pendingId === m.registrantId}
-                          >
-                            <span className="sr-only">Open menu</span>
-                            <IconDots className="size-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            onSelect={() => setTransferRow(m)}
-                            disabled={siblingGroups.length === 0}
-                          >
-                            <IconArrowsExchange className="mr-2 size-4" />
-                            Transfer to another breakout group…
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            onSelect={() => setConfirmRemove(m)}
-                            className="text-destructive focus:text-destructive"
-                          >
-                            <IconTrash className="mr-2 size-4" />
-                            Remove from group
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                )
-              })
-            )}
-          </TableBody>
-        </Table>
-      </div>
+      <DataTable
+        tableKey="event.breakout-detail"
+        rowLabel={{ one: "member", many: "members" }}
+        columns={columns}
+        data={filteredMembers}
+        emptyState={
+          <p className="text-sm">
+            {members.length === 0
+              ? "No members assigned yet."
+              : "No members match current filters."}
+          </p>
+        }
+      />
 
       <AddRegistrantSheet
         open={addOpen}

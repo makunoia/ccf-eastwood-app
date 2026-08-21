@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import Link from "next/link"
 import { buildSelectionColumn } from "@/components/batch/selection-column"
+import { emailColumn, phoneColumn } from "@/lib/tables/columns/contact"
 import { deleteMember } from "./actions"
 
 export type MemberRow = {
@@ -136,6 +137,8 @@ export function buildColumns(selectable = false): ColumnDef<MemberRow>[] {
       accessorFn: (row) => `${row.nickname?.trim() || row.firstName} ${row.lastName}`,
       id: "name",
       header: "Name",
+      // Locked: the name cell is the only way into a member's detail page.
+      meta: { label: "Name", width: "name", locked: true },
       cell: ({ row, table }) => {
         const ids = table.getRowModel().rows.map((r) => (r.original as MemberRow).id)
         const preferredFirstName = row.original.nickname?.trim() || row.original.firstName
@@ -150,52 +153,96 @@ export function buildColumns(selectable = false): ColumnDef<MemberRow>[] {
         )
       },
     },
-    {
-      accessorKey: "email",
-      header: "Email",
-      cell: ({ row }) =>
-        row.original.email ?? (
-          <span className="text-muted-foreground">—</span>
-        ),
-    },
-    {
-      accessorKey: "phone",
-      header: "Mobile",
-      cell: ({ row }) =>
-        row.original.phone ?? (
-          <span className="text-muted-foreground">—</span>
-        ),
-    },
+    emailColumn<MemberRow>((row) => row.email),
+    phoneColumn<MemberRow>((row) => row.phone),
     {
       accessorKey: "smallGroupName",
       header: "DGroup",
-      cell: ({ row }) =>
-        row.original.smallGroupName ?? (
-          <span className="text-muted-foreground">—</span>
-        ),
+      meta: { label: "DGroup", width: "name" },
+      cell: ({ row }) => row.original.smallGroupName ?? <Blank />,
     },
     {
       accessorKey: "lifeStage",
       header: "Life Stage",
-      cell: ({ row }) =>
-        row.original.lifeStage ?? (
-          <span className="text-muted-foreground">—</span>
-        ),
+      meta: { label: "Life Stage", width: "status" },
+      cell: ({ row }) => row.original.lifeStage ?? <Blank />,
     },
     {
       accessorKey: "dateJoined",
       header: "Date Joined",
+      meta: { label: "Date Joined", width: "date" },
+      cell: ({ row }) => formatDate(row.original.dateJoined),
+    },
+
+    // Facts the record already holds that most days nobody needs on screen.
+    // Offered in the column picker under "More columns", off by default.
+    {
+      accessorKey: "gender",
+      header: "Gender",
+      meta: { label: "Gender", width: "narrow", optIn: true },
+      cell: ({ row }) => row.original.gender ?? <Blank />,
+    },
+    {
+      id: "language",
+      accessorFn: (row) => row.language.join(", "),
+      header: "Language",
+      meta: { label: "Language", width: "text", optIn: true },
       cell: ({ row }) =>
-        new Date(row.original.dateJoined).toLocaleDateString("en-PH", {
-          year: "numeric",
-          month: "short",
-          day: "numeric",
-          timeZone: "UTC",
-        }),
+        row.original.language.length > 0 ? row.original.language.join(", ") : <Blank />,
+    },
+    {
+      accessorKey: "workCity",
+      header: "Work City",
+      meta: { label: "Work City", width: "text", optIn: true },
+      cell: ({ row }) => row.original.workCity ?? <Blank />,
+    },
+    {
+      accessorKey: "workIndustry",
+      header: "Industry",
+      meta: { label: "Industry", width: "text", optIn: true },
+      cell: ({ row }) => row.original.workIndustry ?? <Blank />,
+    },
+    {
+      accessorKey: "meetingPreference",
+      header: "Meets",
+      meta: { label: "Meeting Preference", width: "status", optIn: true },
+      cell: ({ row }) => row.original.meetingPreference ?? <Blank />,
+    },
+    {
+      accessorKey: "birthYear",
+      header: "Birth Year",
+      meta: { label: "Birth Year", width: "narrow", optIn: true },
+      cell: ({ row }) => row.original.birthYear ?? <Blank />,
+    },
+    {
+      accessorKey: "address",
+      header: "Address",
+      meta: { label: "Address", width: "wide", optIn: true },
+      cell: ({ row }) => row.original.address ?? <Blank />,
+    },
+    {
+      accessorKey: "notes",
+      header: "Notes",
+      meta: { label: "Notes", width: "wide", optIn: true },
+      cell: ({ row }) => row.original.notes ?? <Blank />,
     },
     {
       id: "actions",
+      meta: { width: "actions", locked: true },
       cell: ({ row }) => <RowActions row={row.original} />,
     },
   ]
+}
+
+function Blank() {
+  return <span className="text-muted-foreground">—</span>
+}
+
+function formatDate(value: string) {
+  return new Date(value).toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  })
 }

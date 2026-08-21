@@ -7,6 +7,8 @@ import { columns, type AgeRangeRow } from "./columns"
 export function AgeRangesTable({ buckets }: { buckets: AgeRangeRow[] }) {
   return (
     <DataTable
+          tableKey="settings.age-ranges"
+          rowLabel={{ one: "age range", many: "age ranges" }}
       columns={columns}
       data={buckets}
       emptyState={

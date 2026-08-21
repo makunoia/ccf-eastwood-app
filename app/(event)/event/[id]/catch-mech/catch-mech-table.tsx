@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { type ColumnDef } from "@tanstack/react-table"
 import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
@@ -11,14 +12,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { DataTable } from "@/components/ui/data-table"
 import { CatchMechUndoButton } from "./catch-mech-undo-button"
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -222,6 +216,84 @@ function FacilitatorDetailSheet({
 
 // ─── Main table ─────────────────────────────────────────────────────────────────
 
+function buildColumns({
+  onOpenGroup,
+  onOpenFaci,
+}: {
+  onOpenGroup: (row: GroupRow) => void
+  onOpenFaci: (row: GroupRow) => void
+}): ColumnDef<GroupRow>[] {
+  return [
+    {
+      accessorKey: "name",
+      header: "Group",
+      meta: { label: "Group", width: "name", locked: true },
+      cell: ({ row }) => (
+        <button
+          onClick={() => onOpenGroup(row.original)}
+          className="block w-full truncate text-left font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+        >
+          {row.original.name}
+        </button>
+      ),
+    },
+    {
+      id: "facilitator",
+      accessorFn: (row) => row.faciName ?? "",
+      header: "Facilitator",
+      meta: { label: "Facilitator", width: "name", noTruncate: true },
+      cell: ({ row }) =>
+        row.original.faciName ? (
+          <div className="flex min-w-0 items-center gap-2">
+            <button
+              onClick={() => onOpenFaci(row.original)}
+              className="truncate text-left font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+            >
+              {row.original.faciName}
+            </button>
+            <Badge
+              variant="secondary"
+              className={`shrink-0 text-xs ${row.original.isTimothy ? FACI_BADGE_CLASS.Timothy : FACI_BADGE_CLASS.Leader}`}
+            >
+              {row.original.isTimothy ? "Timothy" : "Leader"}
+            </Badge>
+          </div>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    },
+    // To Match, not Members: excludes the in-small-group bucket so each row
+    // reconciles as Confirmed + Rejected + Pending = To Match.
+    {
+      accessorKey: "toMatchCount",
+      header: "To Match",
+      meta: { label: "To Match", width: "narrow", align: "right" },
+    },
+    {
+      accessorKey: "confirmedCount",
+      header: "Confirmed",
+      meta: { label: "Confirmed", width: "narrow", align: "right" },
+      cell: ({ row }) => (
+        <span className="font-medium text-green-600">{row.original.confirmedCount}</span>
+      ),
+    },
+    {
+      accessorKey: "rejectedCount",
+      header: "Rejected",
+      meta: { label: "Rejected", width: "narrow", align: "right" },
+      cell: ({ row }) => (
+        <span className="font-medium text-red-600">{row.original.rejectedCount}</span>
+      ),
+    },
+    {
+      accessorKey: "pendingCount",
+      header: "Pending",
+      meta: { label: "Pending", width: "narrow", align: "right" },
+      cell: ({ row }) => <span className="text-amber-600">{row.original.pendingCount}</span>,
+    },
+  ]
+}
+
 export function CatchMechTable({
   groupRows,
   canViewMember,
@@ -233,73 +305,20 @@ export function CatchMechTable({
 }) {
   const [groupSheet, setGroupSheet] = React.useState<GroupRow | null>(null)
   const [faciSheet, setFaciSheet] = React.useState<GroupRow | null>(null)
+  const columns = React.useMemo(
+    () => buildColumns({ onOpenGroup: setGroupSheet, onOpenFaci: setFaciSheet }),
+    [],
+  )
 
   return (
     <>
-      <div className="rounded-lg border overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Group</TableHead>
-              <TableHead>Facilitator</TableHead>
-              {/* To Match, not Members: excludes the in-small-group bucket so each
-                  row reconciles as Confirmed + Rejected + Pending = To Match. */}
-              <TableHead className="text-right">To Match</TableHead>
-              <TableHead className="text-right">Confirmed</TableHead>
-              <TableHead className="text-right">Rejected</TableHead>
-              <TableHead className="text-right">Pending</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {groupRows.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="py-6 text-center text-muted-foreground">
-                  No breakout groups yet.
-                </TableCell>
-              </TableRow>
-            ) : (
-              groupRows.map((row) => (
-                <TableRow key={row.id}>
-                  <TableCell>
-                    <button
-                      onClick={() => setGroupSheet(row)}
-                      className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors text-left"
-                    >
-                      {row.name}
-                    </button>
-                  </TableCell>
-
-                  <TableCell>
-                    {row.faciName ? (
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => setFaciSheet(row)}
-                          className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors text-left"
-                        >
-                          {row.faciName}
-                        </button>
-                        <Badge
-                          variant="secondary"
-                          className={`text-xs ${row.isTimothy ? FACI_BADGE_CLASS.Timothy : FACI_BADGE_CLASS.Leader}`}
-                        >
-                          {row.isTimothy ? "Timothy" : "Leader"}
-                        </Badge>
-                      </div>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-
-                  <TableCell className="text-right">{row.toMatchCount}</TableCell>
-                  <TableCell className="text-right font-medium text-green-600">{row.confirmedCount}</TableCell>
-                  <TableCell className="text-right font-medium text-red-600">{row.rejectedCount}</TableCell>
-                  <TableCell className="text-right text-amber-600">{row.pendingCount}</TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+      <DataTable
+        tableKey="event.catch-mech"
+        rowLabel={{ one: "group", many: "groups" }}
+        columns={columns}
+        data={groupRows}
+        emptyState={<p className="text-sm">No breakout groups yet.</p>}
+      />
 
       <GroupDetailSheet
         group={groupSheet}

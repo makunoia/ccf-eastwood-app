@@ -60,6 +60,7 @@ export function buildColumns(): ColumnDef<EventRow>[] {
     {
       accessorKey: "name",
       header: "Name",
+      meta: { label: "Name", width: "name", locked: true },
       cell: ({ row }) => (
         <Link
           href={`/event/${row.original.id}/dashboard`}
@@ -72,6 +73,7 @@ export function buildColumns(): ColumnDef<EventRow>[] {
     {
       id: "ministry",
       header: "Ministry",
+      meta: { label: "Ministry", width: "name" },
       cell: ({ row }) => {
         const { ministries } = row.original
         if (ministries.length === 0) return <span className="text-muted-foreground">—</span>
@@ -81,6 +83,7 @@ export function buildColumns(): ColumnDef<EventRow>[] {
     {
       id: "date",
       header: "Date",
+      meta: { label: "Date", width: "date" },
       cell: ({ row }) => {
         const { type, startDate, endDate } = row.original
         // A OneTime event happens on a single day — never show it as a range,
@@ -92,6 +95,7 @@ export function buildColumns(): ColumnDef<EventRow>[] {
     {
       id: "registration",
       header: "Registration",
+      meta: { label: "Registration", width: "text" },
       cell: ({ row }) => {
         const { registrationStart, registrationEnd } = row.original
         if (!registrationStart || !registrationEnd)
@@ -102,6 +106,7 @@ export function buildColumns(): ColumnDef<EventRow>[] {
     {
       accessorKey: "price",
       header: "Price",
+      meta: { label: "Price", width: "text" },
       cell: ({ row }) =>
         row.original.price != null
           ? `₱${(row.original.price / 100).toLocaleString("en-PH", { minimumFractionDigits: 2 })}`
@@ -110,9 +115,11 @@ export function buildColumns(): ColumnDef<EventRow>[] {
     {
       accessorKey: "registrantCount",
       header: "Registrants",
+      meta: { label: "Registrants", width: "text" },
     },
     {
       id: "actions",
+      meta: { width: "actions", locked: true },
       cell: ({ row }) => <RowActions row={row.original} />,
     },
   ]

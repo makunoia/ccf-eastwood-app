@@ -58,6 +58,7 @@ import { LANGUAGE_OPTIONS } from "@/lib/constants/group-options"
 import {
   CLEARED_PROFILE_FORM,
   GENDER_FOCUS_LABELS,
+  formatAgeRange,
   missingTimothyFields,
 } from "@/lib/breakouts/profile"
 import { FacilitatorLeadership } from "@/components/breakouts/facilitator-leadership"
@@ -436,7 +437,7 @@ function RowActions({
 
 // ─── Columns ────────────────────────────────────────────────────────────────────
 
-function buildColumns(
+export function buildColumns(
   surface: BreakoutSurface,
   onEdit: (group: BreakoutGroupRow) => void,
   onDelete: (group: BreakoutGroupRow) => void,
@@ -446,6 +447,7 @@ function buildColumns(
     {
       accessorKey: "name",
       header: "Name",
+      meta: { label: "Name", width: "name", locked: true },
       // The badge, not just the switch: a row you are scanning past should say
       // it is out of play without your eye having to reach the last column.
       cell: ({ row }) => (
@@ -468,6 +470,7 @@ function buildColumns(
     {
       id: "facilitator",
       header: "Facilitator",
+      meta: { label: "Facilitator", width: "name" },
       accessorFn: (row) => row.facilitator ? volunteerName(row.facilitator) : "",
       cell: ({ row }) =>
         row.original.facilitator ? (
@@ -477,19 +480,18 @@ function buildColumns(
         ),
     },
     {
-      id: "linkedSmallGroup",
-      header: "Linked DGroup",
-      accessorFn: (row) => row.linkedSmallGroup?.name ?? "",
-      cell: ({ row }) =>
-        row.original.linkedSmallGroup ? (
-          <span>{row.original.linkedSmallGroup.name}</span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        ),
-    },
-    {
       id: "members",
       header: "Members",
+      // Left, though `align: "right"` is the rule for counts, because this cell
+      // is not a bare count: it is an occupancy plus an optional "Full" badge,
+      // laid out in a flex row. Right-aligning it would have cost twice over —
+      // a block-level box lays its children out from the left whatever the
+      // cell's `text-align` says, which is why "3 / 8" sat a column-width to
+      // the left of its own "Members" header; and had it followed, every row
+      // carrying a badge would push its number left, so the figures would stop
+      // lining up with each other, which is the only reason to right-align a
+      // number in the first place.
+      meta: { label: "Members", width: "narrow" },
       accessorFn: (row) => row.memberCount,
       cell: ({ row }) => {
         const occupancy = breakoutOccupancy(row.original)
@@ -503,20 +505,70 @@ function buildColumns(
         )
       },
     },
+    // The matching profile, one column per factor and in the same order the
+    // detail card lists them (`profileRows`). Unset reads "Any", not "—": on a
+    // breakout group an empty factor means "matches everyone", and a dash would
+    // have an admin scanning the column read it as "nobody filled this in".
+    // Life Stage is the one that earns its place by default — the other three
+    // are opt-in, because most days a table's name already implies them.
     {
       id: "lifeStage",
       header: "Life Stage",
+      meta: { label: "Life Stage", width: "status" },
       accessorFn: (row) => row.lifeStages.map((ls) => ls.name).join(", "),
       cell: ({ row }) =>
         row.original.lifeStages.length > 0 ? (
           <span>{row.original.lifeStages.map((ls) => ls.name).join(", ")}</span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">Any</span>
         ),
+    },
+    {
+      id: "genderFocus",
+      header: "Gender Focus",
+      meta: { label: "Gender Focus", width: "status", optIn: true },
+      accessorFn: (row) =>
+        row.genderFocus ? (GENDER_FOCUS_LABELS[row.genderFocus] ?? row.genderFocus) : "",
+      cell: ({ row }) =>
+        row.original.genderFocus ? (
+          <span>{GENDER_FOCUS_LABELS[row.original.genderFocus] ?? row.original.genderFocus}</span>
+        ) : (
+          <span className="text-muted-foreground">Any</span>
+        ),
+    },
+    {
+      id: "language",
+      header: "Language",
+      meta: { label: "Language", width: "text", optIn: true },
+      accessorFn: (row) => row.language.join(", "),
+      cell: ({ row }) =>
+        row.original.language.length > 0 ? (
+          <span>{row.original.language.join(", ")}</span>
+        ) : (
+          <span className="text-muted-foreground">Any</span>
+        ),
+    },
+    {
+      id: "ageRange",
+      header: "Age Range",
+      // Sorts on the lower bound, so an open-ended range still lands where an
+      // admin expects; "Any" (both bounds unset) sorts last rather than as 0.
+      meta: { label: "Age Range", width: "narrow", optIn: true },
+      accessorFn: (row) =>
+        row.ageRangeMin ?? row.ageRangeMax ?? Number.POSITIVE_INFINITY,
+      cell: ({ row }) => {
+        const value = formatAgeRange(row.original.ageRangeMin, row.original.ageRangeMax)
+        return value === "Any" ? (
+          <span className="text-muted-foreground">Any</span>
+        ) : (
+          <span className="tabular-nums">{value}</span>
+        )
+      },
     },
     {
       id: "enabled",
       header: "Enabled",
+      meta: { label: "Enabled", width: "narrow" },
       accessorFn: (row) => (row.isEnabled ? 1 : 0),
       cell: ({ row }) => (
         <BreakoutEnabledSwitch
@@ -530,6 +582,7 @@ function buildColumns(
     },
     {
       id: "actions",
+      meta: { width: "actions", locked: true },
       cell: ({ row }) => (
         <RowActions
           row={row.original}
@@ -552,6 +605,12 @@ type Props = {
   lifeStages: { id: string; name: string }[]
   defaultLifeStageIds?: string[]
   canImport?: boolean
+  /**
+   * Surface-specific header actions (e.g. a cluster day's "Carry over breakouts").
+   * They join the "⋯" menu beside New Group rather than each surface growing its
+   * own button row above the table.
+   */
+  extraActions?: PageAction[]
 }
 
 export function BreakoutGroupsTable({
@@ -563,6 +622,7 @@ export function BreakoutGroupsTable({
   lifeStages,
   defaultLifeStageIds = [],
   canImport = false,
+  extraActions = [],
 }: Props) {
   const [search, setSearch] = React.useState("")
   const [lifeStageFilter, setLifeStageFilter] = React.useState("_all")
@@ -580,8 +640,7 @@ export function BreakoutGroupsTable({
       rows = rows.filter(
         (g) =>
           g.name.toLowerCase().includes(q) ||
-          (g.facilitator && volunteerName(g.facilitator).toLowerCase().includes(q)) ||
-          (g.linkedSmallGroup?.name.toLowerCase().includes(q))
+          (g.facilitator && volunteerName(g.facilitator).toLowerCase().includes(q))
       )
     }
     if (lifeStageFilter !== "_all") {
@@ -639,6 +698,7 @@ export function BreakoutGroupsTable({
     //       disabled: autoAssigning,
     //     }]
     //   : []),
+    ...extraActions,
     ...(canImport
       ? [{
           label: "Import",
@@ -716,6 +776,8 @@ export function BreakoutGroupsTable({
       {/* Table */}
       <div className="hidden md:flex md:flex-1 md:flex-col">
         <DataTable
+          tableKey="event.breakout-members"
+          rowLabel={{ one: "member", many: "members" }}
           columns={columns}
           data={filtered}
           emptyState={
@@ -766,8 +828,6 @@ export function BreakoutGroupsTable({
                 </div>
                 <span className="text-muted-foreground">Facilitator</span>
                 <span>{group.facilitator ? volunteerName(group.facilitator) : <span className="text-muted-foreground">Unassigned</span>}</span>
-                <span className="text-muted-foreground">DGroup</span>
-                <span>{group.linkedSmallGroup?.name ?? <span className="text-muted-foreground">—</span>}</span>
                 <span className="text-muted-foreground">Members</span>
                 <span className="flex items-center gap-1.5">
                   <span className="tabular-nums">{breakoutOccupancy(group).label}</span>

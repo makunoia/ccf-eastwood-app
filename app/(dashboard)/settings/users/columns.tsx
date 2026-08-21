@@ -160,6 +160,7 @@ export function buildColumns(
     {
       accessorKey: "name",
       header: "Name",
+      meta: { label: "Name", width: "name", locked: true },
       cell: ({ row }) => (
         <div>
           <button
@@ -175,6 +176,7 @@ export function buildColumns(
     {
       accessorKey: "role",
       header: "Role",
+      meta: { label: "Role", width: "status" },
       cell: ({ row }) =>
         row.original.role === "SuperAdmin" ? (
           <div className="flex items-center gap-1.5 text-sm">
@@ -191,6 +193,7 @@ export function buildColumns(
     {
       id: "access",
       header: "Feature access",
+      meta: { label: "Feature access", width: "text" },
       cell: ({ row }) => {
         if (row.original.role === "SuperAdmin") {
           return <span className="text-sm text-muted-foreground">All features</span>
@@ -215,10 +218,12 @@ export function buildColumns(
     {
       id: "status",
       header: "Status",
+      meta: { label: "Status", width: "status" },
       cell: ({ row }) => <StatusBadge user={row.original} />,
     },
     {
       id: "actions",
+      meta: { width: "actions", locked: true },
       cell: ({ row }) => <RowActions row={row.original} events={events} />,
     },
   ]

@@ -107,6 +107,8 @@ export function SmallGroupsTable({
       {/* Desktop table */}
       <div className="hidden md:flex md:flex-1 md:flex-col">
         <DataTable
+          tableKey="small-groups"
+          rowLabel={{ one: "small group", many: "small groups" }}
           columns={columns}
           data={groups}
           emptyState={

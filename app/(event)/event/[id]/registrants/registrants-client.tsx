@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import {
   IconCheck,
@@ -18,6 +17,14 @@ import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { DataTable } from "@/components/ui/data-table"
+import {
+  buildRegistrantColumns,
+  type RegistrantRow,
+  registrantEmail,
+  registrantMobile,
+  registrantName,
+} from "./columns"
 import { Checkbox } from "@/components/ui/checkbox"
 import { useBatchSelection } from "@/components/batch/batch-selection-provider"
 import { RegistrantsBatchBar } from "./registrants-batch-bar"
@@ -69,42 +76,16 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Registrant = {
-  id: string
-  memberId: string | null
-  guestId: string | null
-  firstName: string | null
-  lastName: string | null
-  nickname: string | null
-  email: string | null
-  mobileNumber: string | null
-  isPaid: boolean
-  paymentReference: string | null
-  attendedAt: string | null
-  createdAt: string
-  member: { id: string; firstName: string; lastName: string; phone: string | null; email: string | null } | null
-  guest: { id: string; firstName: string; lastName: string; phone: string | null; email: string | null } | null
-}
+// The row shape lives with the columns that render it.
+type Registrant = RegistrantRow
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function displayName(r: Registrant) {
-  if (r.member) return `${r.member.firstName} ${r.member.lastName}`
-  if (r.guest)  return `${r.guest.firstName} ${r.guest.lastName}`
-  return `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim() || null
-}
-
-function displayMobile(r: Registrant) {
-  if (r.member) return r.member.phone
-  if (r.guest)  return r.guest.phone
-  return r.mobileNumber
-}
-
-function displayEmail(r: Registrant) {
-  if (r.member) return r.member.email
-  if (r.guest)  return r.guest.email
-  return r.email
-}
+// The card view below and the table columns must agree on how a registrant's
+// name and contact details are resolved; both read these.
+const displayName = registrantName
+const displayMobile = registrantMobile
+const displayEmail = registrantEmail
 
 
 // ─── Payment dialog ───────────────────────────────────────────────────────────
@@ -549,9 +530,11 @@ export function RegistrantsClient({
 
   const isRecurringOrMultiDay = eventType === "Recurring" || eventType === "MultiDay"
 
-  function saveRegistrantIds() {
+  // Memoised because the column set depends on it; without this the columns
+  // would be rebuilt on every render and the table would lose its state.
+  const saveRegistrantIds = React.useCallback(() => {
     sessionStorage.setItem("registrantListIds", JSON.stringify(registrants.map((r) => r.id)))
-  }
+  }, [registrants])
 
   async function toggleAttendance(r: Registrant) {
     setTogglingAttendance(r.id)
@@ -600,6 +583,22 @@ export function RegistrantsClient({
         eventType,
       ),
   })
+
+  const columns = React.useMemo(
+    () =>
+      buildRegistrantColumns({
+        eventId,
+        selectable,
+        isRecurringOrMultiDay,
+        isPaidEvent,
+        onSaveIds: saveRegistrantIds,
+        onMarkPaid: (id) => {
+          setSelectedId(id)
+          setPaymentDialogOpen(true)
+        },
+      }),
+    [eventId, selectable, isRecurringOrMultiDay, isPaidEvent, saveRegistrantIds],
+  )
 
   const toolbarActions: PageAction[] = [
     {
@@ -674,121 +673,21 @@ export function RegistrantsClient({
       </div>
 
       {/* Desktop table */}
-      <div className="hidden md:block">
-        {registrants.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
-            <IconClock className="size-8" />
-            <p className="text-sm">{search || typeFilter ? "No registrants match your search" : "No registrants yet"}</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto rounded-lg border">
-            <table className="min-w-full text-sm">
-              <thead className="border-b bg-muted/50">
-                <tr>
-                  {selectable && (
-                    <th className="w-10 px-4 py-3">
-                      <Checkbox
-                        checked={
-                          selection!.allSelected
-                            ? true
-                            : selection!.someSelected
-                              ? "indeterminate"
-                              : false
-                        }
-                        onCheckedChange={() => selection!.toggleAll()}
-                        aria-label="Select all rows"
-                      />
-                    </th>
-                  )}
-                  <th className="px-4 py-3 text-left font-medium whitespace-nowrap">Name</th>
-                  <th className="px-4 py-3 text-left font-medium whitespace-nowrap">Contact</th>
-                  <th className="px-4 py-3 text-left font-medium whitespace-nowrap">Type</th>
-                  {!isRecurringOrMultiDay && isPaidEvent && (
-                    <th className="px-4 py-3 text-left font-medium whitespace-nowrap">Payment</th>
-                  )}
-                  {isRecurringOrMultiDay ? (
-                    <th className="px-4 py-3 text-left font-medium whitespace-nowrap">Registered</th>
-                  ) : (
-                    <th className="px-4 py-3 text-left font-medium whitespace-nowrap">Attended</th>
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {registrants.map((r) => (
-                  <tr
-                    key={r.id}
-                    className="border-b last:border-0 hover:bg-muted/30 data-[selected=true]:bg-muted/40"
-                    data-selected={selectable && selection!.isSelected(r.id)}
-                  >
-                    {selectable && (
-                      <td className="px-4 py-3">
-                        <Checkbox
-                          checked={selection!.isSelected(r.id)}
-                          onCheckedChange={() => selection!.toggle(r.id)}
-                          aria-label={`Select ${displayName(r) ?? "registrant"}`}
-                        />
-                      </td>
-                    )}
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <Link
-                        href={`/event/${eventId}/registrants/${r.id}`}
-                        onClick={saveRegistrantIds}
-                        className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-                      >
-                        {displayName(r) ?? <span className="text-muted-foreground italic">No name</span>}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground text-sm whitespace-nowrap">
-                      {displayMobile(r) ?? displayEmail(r) ?? "—"}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      {r.memberId
-                        ? <Badge variant="secondary">Member</Badge>
-                        : <Badge variant="outline">Guest</Badge>}
-                    </td>
-                    {!isRecurringOrMultiDay && isPaidEvent && (
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        {r.isPaid ? (
-                          <div className="flex items-center gap-1.5">
-                            <IconCheck className="size-4 text-green-600" />
-                            <span className="text-xs text-muted-foreground">{r.paymentReference}</span>
-                          </div>
-                        ) : (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => { setSelectedId(r.id); setPaymentDialogOpen(true) }}
-                          >
-                            Mark paid
-                          </Button>
-                        )}
-                      </td>
-                    )}
-                    {isRecurringOrMultiDay ? (
-                      <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
-                        {new Date(r.createdAt).toLocaleDateString("en-PH", {
-                          month: "short", day: "numeric", year: "numeric", timeZone: "UTC",
-                        })}
-                      </td>
-                    ) : (
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        {r.attendedAt ? (
-                          <Badge className="border-transparent bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400">
-                            <IconCheck className="mr-1 size-3.5" />Attended
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="text-muted-foreground">
-                            <IconX className="mr-1 size-3.5" />Absent
-                          </Badge>
-                        )}
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+      <div className="hidden md:flex md:flex-1 md:flex-col">
+        <DataTable
+          tableKey="event.registrants"
+          rowLabel={{ one: "registrant", many: "registrants" }}
+          columns={columns}
+          data={registrants}
+          emptyState={
+            <>
+              <IconClock className="size-8" />
+              <p className="text-sm">
+                {search || typeFilter ? "No registrants match your search" : "No registrants yet"}
+              </p>
+            </>
+          }
+        />
       </div>
 
       {selectedId && (

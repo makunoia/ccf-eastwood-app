@@ -8,6 +8,8 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { canAccessEvent, isSuperAdmin } from "@/lib/permissions"
 import { AssistantPanel } from "@/components/assistant/assistant-panel"
 import { BreadcrumbProvider, BreadcrumbOverride } from "@/components/breadcrumb-context"
+import { TablePreferencesProvider } from "@/components/tables/table-preferences-provider"
+import { getTablePreferences } from "@/lib/tables/preferences-server"
 
 async function getClusterMeta(id: string) {
   return db.eventCluster.findUnique({
@@ -59,6 +61,8 @@ export default async function ClusterLayout({
     cluster.events.some((e) => canAccessEvent(session, e.eventId))
   if (!canView) redirect("/dashboard")
 
+  const tablePreferences = await getTablePreferences()
+
   return (
     <SidebarProvider
       className="min-h-dvh"
@@ -79,14 +83,16 @@ export default async function ClusterLayout({
         isCollab={cluster.kind === "Collab"}
       />
       <SidebarInset className="overflow-hidden">
-        <BreadcrumbProvider>
-          <BreadcrumbOverride href={`/cluster/${id}`} label={cluster.name} />
-          <EventHeader />
-          <div className="flex flex-1 flex-col overflow-y-auto min-h-0">
-            {children}
-          </div>
-        </BreadcrumbProvider>
-        {isSuperAdmin(session) && <AssistantPanel />}
+        <TablePreferencesProvider initial={tablePreferences}>
+          <BreadcrumbProvider>
+            <BreadcrumbOverride href={`/cluster/${id}`} label={cluster.name} />
+            <EventHeader />
+            <div className="flex flex-1 flex-col overflow-y-auto min-h-0">
+              {children}
+            </div>
+          </BreadcrumbProvider>
+          {isSuperAdmin(session) && <AssistantPanel />}
+        </TablePreferencesProvider>
       </SidebarInset>
     </SidebarProvider>
   )

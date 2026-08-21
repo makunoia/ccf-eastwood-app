@@ -114,13 +114,16 @@ export const columns: ColumnDef<LifeStageRow>[] = [
   {
     accessorKey: "order",
     header: "Order",
+    meta: { label: "Order", width: "narrow" },
   },
   {
     accessorKey: "name",
     header: "Name",
+    meta: { label: "Name", width: "name", locked: true },
   },
   {
     id: "actions",
+    meta: { width: "actions", locked: true },
     cell: ({ row }) => <RowActions row={row.original} />,
   },
 ]

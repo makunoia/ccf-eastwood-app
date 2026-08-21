@@ -7,8 +7,7 @@ import { canWrite } from "@/lib/permissions"
 import { ClusterKind } from "@/app/generated/prisma/client"
 import { clusterSurface } from "@/lib/breakouts/owner"
 import { getClusterBreakoutPool } from "@/lib/clusters/aggregate"
-import { BreakoutGroupsTable } from "@/app/(event)/event/[id]/breakouts/breakout-group"
-import { CarryOverBreakoutsCard } from "./carry-over-card"
+import { ClusterBreakouts } from "./cluster-breakouts"
 
 export const metadata: Metadata = {
   title: "Breakouts",
@@ -88,20 +87,16 @@ export default async function ClusterBreakoutsPage({
           </div>
         </div>
       )}
-      {canEdit && (
-        <CarryOverBreakoutsCard
-          clusterId={cluster.id}
-          events={events.map((e) => ({ id: e.id, name: e.name }))}
-          hasGroups={groups.length > 0}
-        />
-      )}
-      <BreakoutGroupsTable
+      <ClusterBreakouts
+        clusterId={cluster.id}
         surface={clusterSurface(cluster.id)}
         breakoutGroups={rows}
         registrantCount={totalPeople}
         unassignedCount={unseatedPeople}
         volunteers={volunteers}
         lifeStages={lifeStages}
+        events={events.map((e) => ({ id: e.id, name: e.name }))}
+        canEdit={canEdit}
       />
     </div>
   )

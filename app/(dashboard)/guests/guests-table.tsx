@@ -97,6 +97,8 @@ export function GuestsTable({
       {/* Desktop table */}
       <div className="hidden md:flex md:flex-1 md:flex-col">
         <DataTable
+          tableKey="guests"
+          rowLabel={{ one: "guest", many: "guests" }}
           columns={columns}
           data={guests}
           emptyState={

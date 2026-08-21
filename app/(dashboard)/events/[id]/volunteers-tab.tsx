@@ -1,12 +1,15 @@
 "use client"
 
 import * as React from "react"
+import { type ColumnDef } from "@tanstack/react-table"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { IconDots, IconHeart, IconPencil, IconTrash } from "@tabler/icons-react"
 import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
+import { DataTable } from "@/components/ui/data-table"
+import { buildSelectionColumn } from "@/components/batch/selection-column"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -188,6 +191,72 @@ function VolunteerCard({
   )
 }
 
+function buildColumns({
+  selectable,
+  eventId,
+  onNavigate,
+}: {
+  selectable: boolean
+  eventId: string
+  onNavigate: () => void
+}): ColumnDef<EventVolunteer>[] {
+  return [
+    ...(selectable ? [buildSelectionColumn<EventVolunteer>()] : []),
+    {
+      id: "member",
+      accessorFn: (row) => `${row.member.firstName} ${row.member.lastName}`,
+      header: "Member",
+      meta: { label: "Member", width: "name", locked: true },
+      cell: ({ row }) => (
+        <Link
+          href={`/event/${eventId}/volunteers/${row.original.id}`}
+          onClick={onNavigate}
+          className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+        >
+          {row.original.member.firstName} {row.original.member.lastName}
+        </Link>
+      ),
+    },
+    {
+      id: "committee",
+      accessorFn: (row) => row.committee.name,
+      header: "Committee",
+      meta: { label: "Committee", width: "text" },
+    },
+    {
+      id: "preferredRole",
+      accessorFn: (row) => row.preferredRole.name,
+      header: "Preferred Role",
+      meta: { label: "Preferred Role", width: "text" },
+    },
+    {
+      id: "assignedRole",
+      accessorFn: (row) => row.assignedRole?.name ?? "",
+      header: "Assigned Role",
+      meta: { label: "Assigned Role", width: "text" },
+      cell: ({ row }) =>
+        row.original.assignedRole?.name ?? <span className="text-muted-foreground">—</span>,
+    },
+    {
+      accessorKey: "status",
+      header: "Status",
+      meta: { label: "Status", width: "narrow" },
+      cell: ({ row }) => (
+        <Badge variant={STATUS_VARIANT[row.original.status] ?? "secondary"}>
+          {row.original.status}
+        </Badge>
+      ),
+    },
+    {
+      id: "actions",
+      meta: { width: "actions", locked: true },
+      cell: ({ row }) => (
+        <VolunteerRowActions volunteer={row.original} eventId={eventId} onNavigate={onNavigate} />
+      ),
+    },
+  ]
+}
+
 function VolunteersDesktopTable({
   volunteers,
   eventId,
@@ -200,80 +269,14 @@ function VolunteersDesktopTable({
   const selection = useBatchSelection()
   const selectable = selection?.enabled ?? false
 
+  const columns = React.useMemo(
+    () => buildColumns({ selectable, eventId, onNavigate }),
+    [selectable, eventId, onNavigate],
+  )
+
   return (
-    <div className="overflow-x-auto rounded-lg border">
-      <table className="w-full text-sm">
-        <thead className="border-b bg-muted/50">
-          <tr>
-            {selectable && (
-              <th className="w-10 px-4 py-3">
-                <Checkbox
-                  checked={
-                    selection!.allSelected
-                      ? true
-                      : selection!.someSelected
-                        ? "indeterminate"
-                        : false
-                  }
-                  onCheckedChange={() => selection!.toggleAll()}
-                  aria-label="Select all rows"
-                />
-              </th>
-            )}
-            <th className="px-4 py-3 text-left font-medium">Member</th>
-            <th className="px-4 py-3 text-left font-medium">Committee</th>
-            <th className="px-4 py-3 text-left font-medium">Preferred Role</th>
-            <th className="px-4 py-3 text-left font-medium">Assigned Role</th>
-            <th className="px-4 py-3 text-left font-medium">Status</th>
-            <th className="px-4 py-3" />
-          </tr>
-        </thead>
-        <tbody>
-          {volunteers.map((v) => {
-            const memberName = `${v.member.firstName} ${v.member.lastName}`
-            const statusVariant = STATUS_VARIANT[v.status] ?? "secondary"
-            return (
-              <tr
-                key={v.id}
-                className="border-b last:border-0 data-[selected=true]:bg-muted/40"
-                data-selected={selectable && selection!.isSelected(v.id)}
-              >
-                {selectable && (
-                  <td className="px-4 py-3">
-                    <Checkbox
-                      checked={selection!.isSelected(v.id)}
-                      onCheckedChange={() => selection!.toggle(v.id)}
-                      aria-label={`Select ${memberName}`}
-                    />
-                  </td>
-                )}
-                <td className="px-4 py-3">
-                  <Link
-                    href={`/event/${eventId}/volunteers/${v.id}`}
-                    onClick={onNavigate}
-                    className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-                  >
-                    {memberName}
-                  </Link>
-                </td>
-                <td className="px-4 py-3">{v.committee.name}</td>
-                <td className="px-4 py-3">{v.preferredRole.name}</td>
-                <td className="px-4 py-3">
-                  {v.assignedRole?.name ?? (
-                    <span className="text-muted-foreground">—</span>
-                  )}
-                </td>
-                <td className="px-4 py-3">
-                  <Badge variant={statusVariant}>{v.status}</Badge>
-                </td>
-                <td className="px-4 py-3">
-                  <VolunteerRowActions volunteer={v} eventId={eventId} onNavigate={onNavigate} />
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
+    <div className="flex flex-1 flex-col">
+      <DataTable tableKey="event.volunteers-tab" rowLabel={{ one: "volunteer", many: "volunteers" }} columns={columns} data={volunteers} />
     </div>
   )
 }
