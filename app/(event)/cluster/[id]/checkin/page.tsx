@@ -235,6 +235,8 @@ export default async function ClusterCheckinPage({
         />
 
         <ClusterCheckinClient
+          clusterId={cluster.id}
+          canEdit={writable}
           people={people}
           events={perEventDoors ? events.map((e) => ({ id: e.id, name: e.name })) : []}
           hasCheckinEvents={events.length > 0}

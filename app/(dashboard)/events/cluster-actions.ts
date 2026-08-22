@@ -42,6 +42,7 @@ import {
   buildNameMatcher,
   findEventRegistrantsForLookup,
   findEventVolunteersForLookup,
+  clearCheckinAttendance,
   matchesContactQuery,
   recordCheckinAttendance,
   registrantContact,
@@ -50,6 +51,8 @@ import {
 } from "@/lib/events/checkin-lookup"
 import { contactHintFrom } from "@/lib/contact-hint"
 import {
+  getAccessibleClusterEvents,
+  getClusterDayRows,
   getClusterEvents,
   resolveClusterCheckinTargets,
 } from "@/lib/clusters/aggregate"
@@ -57,6 +60,10 @@ import {
   planClusterCheckinToggle,
   type ClusterCheckinSkipCause,
 } from "@/lib/clusters/checkin-toggle"
+import {
+  planClusterCheckinRemoval,
+  type ClusterCheckinRemovalSkipCause,
+} from "@/lib/clusters/checkin-removal"
 import { setFormOpen } from "@/app/(dashboard)/forms/actions"
 import { setOccurrenceCheckinOpen } from "@/app/(dashboard)/events/actions"
 import {
@@ -1142,6 +1149,110 @@ export async function setClusterCheckinOpen(
     return { success: true, data: { results } }
   } catch {
     return { success: false, error: "Failed to update check-in for the day." }
+  }
+}
+
+export type ClusterCheckinRemovalOutcome = {
+  /** The events an arrival was actually undone on. */
+  removed: { eventId: string; eventName: string }[]
+  skipped: {
+    eventId: string
+    eventName: string
+    reason: ClusterCheckinRemovalSkipCause
+  }[]
+}
+
+/**
+ * Undo a person's arrival across the day — the admin board's answer to the
+ * session screen's "Remove from session".
+ *
+ * The inverse of `checkInToCluster`, and it takes the same shape of argument for
+ * the same reason: a **person key**, never a registrant or volunteer id. Every
+ * row is re-resolved from the cluster's own events, so a forged or stale key
+ * simply finds nobody, and a Staff user with partial event access can only clear
+ * the events they can already see (`getAccessibleClusterEvents`, the board's own
+ * read).
+ *
+ * Person-level rather than per-event because that is the grain of both the board
+ * and the kiosk that created the record: one row is one person, and one tap
+ * checked them into every event of the day that would take it. On a **Parallel**
+ * day that can mean several arrivals behind one click, which is why the outcome
+ * names each one back — the confirm dialog says what it is about to clear, and
+ * the toast says what it did.
+ *
+ * Attendance only. The registration or volunteer row itself is untouched: the
+ * person is still expected on the day, they are simply no longer marked as
+ * having arrived.
+ */
+export async function removeClusterCheckin(
+  clusterId: string,
+  personKey: string
+): Promise<ActionResult<ClusterCheckinRemovalOutcome>> {
+  const authError = await requireClusterWrite(clusterId)
+  if (authError) return { success: false, error: authError.error }
+
+  if (!personKey.trim()) return { success: false, error: "No one selected." }
+
+  try {
+    const session = await auth()
+    const cluster = await db.eventCluster.findUnique({
+      where: { id: clusterId },
+      select: { id: true, publicToken: true, date: true, kind: true },
+    })
+    if (!cluster) return { success: false, error: "Event cluster not found." }
+
+    // The same slice of the day the board monitors — a MultiDay event, or a
+    // Recurring one whose link names no session, tracks its arrivals on its own
+    // sessions page and is not this screen's to undo.
+    const events = (await getAccessibleClusterEvents(session, clusterId)).filter(
+      (e) => e.type === "OneTime" || (e.type === "Recurring" && e.linkedOccurrenceId)
+    )
+    if (events.length === 0) {
+      return { success: false, error: "This day has no events to undo." }
+    }
+
+    const rows = await getClusterDayRows(events, {
+      clusterId: cluster.id,
+      date: cluster.date,
+      kind: cluster.kind,
+    })
+    // `onClusterDay` matches the board exactly: a standing series row with no
+    // evidence for today is not on this screen, so it is not this screen's to
+    // clear either.
+    const mine = rows.filter((r) => r.onClusterDay && personKeyFor(r) === personKey)
+    if (mine.length === 0) {
+      return { success: false, error: "We couldn't find that person on this day." }
+    }
+
+    const targets = await resolveClusterCheckinTargets(events, cluster.date)
+    const ops = planClusterCheckinRemoval(targets, mine)
+
+    const removed: ClusterCheckinRemovalOutcome["removed"] = []
+    const skipped: ClusterCheckinRemovalOutcome["skipped"] = []
+
+    for (const op of ops) {
+      const base = { eventId: op.eventId, eventName: op.eventName }
+      if (op.kind === "skip") {
+        skipped.push({ ...base, reason: op.reason })
+        continue
+      }
+      await clearCheckinAttendance(
+        op.subject,
+        op.kind === "occurrence" ? op.occurrenceId : null
+      )
+      if (!removed.some((r) => r.eventId === op.eventId)) removed.push(base)
+      revalidatePath(`/event/${op.eventId}/checkin`)
+      revalidatePath(`/event/${op.eventId}/dashboard`)
+      if (op.kind === "occurrence") {
+        revalidatePath(`/event/${op.eventId}/sessions`)
+        revalidatePath(`/event/${op.eventId}/sessions/${op.occurrenceId}`)
+      }
+    }
+
+    revalidateClusterPaths(clusterId, cluster.publicToken)
+    return { success: true, data: { removed, skipped } }
+  } catch {
+    return { success: false, error: "Failed to undo the check-in." }
   }
 }
 

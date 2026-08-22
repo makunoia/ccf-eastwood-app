@@ -1,11 +1,27 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { render, screen } from "@testing-library/react"
 
+import { TooltipProvider } from "@/components/ui/tooltip"
 import { ClusterCheckinClient } from "@/app/(event)/cluster/[id]/checkin/checkin-client"
 import { ClusterCheckinShortcuts } from "@/app/(event)/cluster/[id]/checkin/checkin-shortcuts"
 import type { ClusterCheckinShortcut } from "@/lib/clusters/checkin-shortcuts"
 import type { ClusterCheckinPerson } from "@/lib/clusters/checkin-board"
+
+// The board is a client component that refreshes after an undo, and reaches the
+// server action to do it. Neither exists in jsdom.
+const { removeClusterCheckin } = vi.hoisted(() => ({
+  removeClusterCheckin: vi.fn(async () => ({
+    success: true as const,
+    data: { removed: [{ eventId: "e-youth", eventName: "Youth Night" }], skipped: [] },
+  })),
+}))
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }),
+}))
+
+vi.mock("@/app/(dashboard)/events/cluster-actions", () => ({ removeClusterCheckin }))
 
 /**
  * The ADMIN check-in board on a Collab day.
@@ -75,15 +91,92 @@ const person = (
  * board's rules instead of its breakpoints.
  */
 function renderBoard(props: Partial<React.ComponentProps<typeof ClusterCheckinClient>> = {}) {
+  // `app/layout.tsx` mounts the provider for the whole app, so the board uses a
+  // bare `Tooltip` the way every other screen does; the test supplies what the
+  // layout would.
   return render(
-    <ClusterCheckinClient
-      people={[person()]}
-      events={[{ id: "e-youth", name: "Youth Night" }]}
-      hasCheckinEvents
-      {...props}
-    />
+    <TooltipProvider>
+      <ClusterCheckinClient
+        clusterId="c1"
+        people={[person()]}
+        events={[{ id: "e-youth", name: "Youth Night" }]}
+        hasCheckinEvents
+        {...props}
+      />
+    </TooltipProvider>
   )
 }
+
+/**
+ * Undoing an arrival — the board's answer to the session screen's "Remove from
+ * session". The write itself is pinned in the integration test; what matters
+ * here is who is offered the control at all.
+ */
+describe("collab admin board — undoing a check-in", () => {
+  const arrived = person({
+    events: [
+      {
+        eventId: "e-youth",
+        eventName: "Youth Night",
+        registrantId: "r1",
+        kind: "Registrant",
+        checkedIn: true,
+      },
+    ],
+    checkedInAtFormatted: "09:14 AM",
+  })
+
+  it("offers it on an arrival when the staffer may write", () => {
+    renderBoard({ people: [arrived], canEdit: true })
+    expect(screen.getAllByRole("button", { name: "Undo check-in" }).length).toBeGreaterThan(0)
+  })
+
+  // Read-only staff monitor the day; they don't correct it.
+  it("withholds it without write access", () => {
+    renderBoard({ people: [arrived] })
+    expect(screen.queryByRole("button", { name: "Undo check-in" })).toBeNull()
+  })
+
+  // Hidden, not disabled: a column of dead controls down every un-arrived row
+  // is noise on the list the board exists to show, and there is no arrival to
+  // explain away.
+  it("withholds it from someone who never arrived", () => {
+    renderBoard({ people: [person()], canEdit: true })
+    expect(screen.queryByRole("button", { name: "Undo check-in" })).toBeNull()
+  })
+
+  // A Parallel registrant part-way through the day still has something to undo.
+  it("offers it on a partial arrival", () => {
+    renderBoard({
+      canEdit: true,
+      events: [
+        { id: "e-youth", name: "Youth Night" },
+        { id: "e-kids", name: "Kids Church" },
+      ],
+      people: [
+        person({
+          events: [
+            {
+              eventId: "e-youth",
+              eventName: "Youth Night",
+              registrantId: "r1",
+              kind: "Registrant",
+              checkedIn: true,
+            },
+            {
+              eventId: "e-kids",
+              eventName: "Kids Church",
+              registrantId: "r2",
+              kind: "Registrant",
+              checkedIn: false,
+            },
+          ],
+        }),
+      ],
+    })
+    expect(screen.getAllByRole("button", { name: "Undo check-in" }).length).toBeGreaterThan(0)
+  })
+})
 
 describe("collab admin board — Shortcuts", () => {
   // The page passes `shortcuts={[]}` on a Collab day; the section must still be

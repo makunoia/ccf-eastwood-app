@@ -2,11 +2,23 @@
 
 import * as React from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { type ColumnDef } from "@tanstack/react-table"
 import { IconCheck } from "@tabler/icons-react"
+import { XIcon } from "lucide-react"
+import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/ui/data-table"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import {
   Select,
@@ -16,6 +28,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { removeClusterCheckin } from "@/app/(dashboard)/events/cluster-actions"
 import { phoneColumn } from "@/lib/tables/columns/contact"
 import {
   clusterCheckinPersonHref,
@@ -28,6 +42,7 @@ import {
   type ClusterCheckinStatusFilter,
   type ClusterCheckinTypeFilter,
 } from "@/lib/clusters/checkin-board"
+import { clusterCheckinRemovalSkipHint } from "@/lib/clusters/checkin-removal"
 import { cn } from "@/lib/utils"
 
 /**
@@ -134,14 +149,48 @@ function PersonName({ person }: { person: ClusterCheckinPerson }) {
   )
 }
 
+/**
+ * Undo an arrival — the board's answer to the session screen's "Remove from
+ * session", and deliberately the same control in the same place, because it is
+ * the same correction: someone was tapped in by mistake, or tapped in twice on
+ * two devices, and the room's count is now wrong.
+ *
+ * Hidden rather than disabled for a person who hasn't arrived. A disabled button
+ * on every un-arrived row is a column of dead controls down the list the board
+ * exists to show, and there is nothing here to explain — the arrival it would
+ * undo does not exist.
+ */
+function RemoveCheckinButton({ onSelect }: { onSelect: () => void }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="text-muted-foreground hover:text-destructive"
+          onClick={onSelect}
+        >
+          <XIcon className="size-4" />
+          <span className="sr-only">Undo check-in</span>
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>Undo check-in</TooltipContent>
+    </Tooltip>
+  )
+}
+
 function buildColumns({
   showEventBreakdown,
   statusSortDirection,
   onToggleStatusSort,
+  canEdit,
+  onRemove,
 }: {
   showEventBreakdown: boolean
   statusSortDirection: ClusterCheckinSortDirection
   onToggleStatusSort: () => void
+  canEdit: boolean
+  onRemove: (person: ClusterCheckinPerson) => void
 }): ColumnDef<ClusterCheckinPerson>[] {
   return [
     {
@@ -204,37 +253,123 @@ function buildColumns({
     },
     // Carried on the row for the search box; shown only when an admin asks.
     phoneColumn<ClusterCheckinPerson>((row) => row.phone, { optIn: true }),
+    ...(canEdit
+      ? [
+          {
+            id: "actions",
+            // `actions` (52px), never `micro`: a 32px icon trigger inside a
+            // 44px cell overflows its own cell and loses the right edge of its
+            // hit area against the card border.
+            meta: { width: "actions", locked: true },
+            cell: ({ row }: { row: { original: ClusterCheckinPerson } }) =>
+              clusterCheckinStatusFor(row.original) === "NotIn" ? null : (
+                <RemoveCheckinButton onSelect={() => onRemove(row.original)} />
+              ),
+          } satisfies ColumnDef<ClusterCheckinPerson>,
+        ]
+      : []),
   ]
 }
 
 export function ClusterCheckinClient({
+  clusterId,
   people,
   events,
   hasCheckinEvents,
   showEventBreakdown = true,
+  canEdit = false,
 }: {
+  clusterId: string
   people: ClusterCheckinPerson[]
   /** The day's events, for the event filter. Empty on a Collab day. */
   events: { id: string; name: string }[]
   hasCheckinEvents: boolean
   showEventBreakdown?: boolean
+  /** Write access to the day — the undo control is hidden without it. */
+  canEdit?: boolean
 }) {
+  const router = useRouter()
   const [search, setSearch] = React.useState("")
   const [typeFilter, setTypeFilter] = React.useState<ClusterCheckinTypeFilter>("all")
   const [statusFilter, setStatusFilter] = React.useState<ClusterCheckinStatusFilter>("all")
   const [eventFilter, setEventFilter] = React.useState("all")
   const [statusSortDirection, setStatusSortDirection] =
     React.useState<ClusterCheckinSortDirection>("asc")
+  const [personToClear, setPersonToClear] = React.useState<ClusterCheckinPerson | null>(
+    null,
+  )
+  const [clearing, setClearing] = React.useState(false)
+
+  /**
+   * The row is cleared on screen before the server answers and put back if the
+   * write fails — the same optimistic shape the session screen's remove uses,
+   * and for the same reason: this is run at a desk with a queue in front of it.
+   *
+   * Local rather than a bare `router.refresh()` so the tiles above (which the
+   * page owns) and the row below don't disagree for a round trip. The refresh
+   * still follows, to catch up everything this component doesn't own.
+   */
+  const [cleared, setCleared] = React.useState<Record<string, true>>({})
+
+  async function handleRemoveCheckin() {
+    const target = personToClear
+    if (!target) return
+
+    setClearing(true)
+    const result = await removeClusterCheckin(clusterId, target.key)
+    setClearing(false)
+    setPersonToClear(null)
+
+    if (!result.success) {
+      toast.error(result.error)
+      return
+    }
+    const { removed, skipped } = result.data
+    if (removed.length === 0) {
+      // Every event refused. Say which and why rather than a bare success — the
+      // row is about to come back checked in on the refresh.
+      toast.error(
+        skipped.length > 0
+          ? `Nothing to undo — ${skipped[0].eventName} ${clusterCheckinRemovalSkipHint(skipped[0].reason)}.`
+          : "Nothing to undo.",
+      )
+      router.refresh()
+      return
+    }
+    setCleared((current) => ({ ...current, [target.key]: true }))
+    toast.success(
+      removed.length === 1
+        ? `Check-in undone for ${removed[0].eventName}`
+        : `Check-in undone across ${removed.length} events`,
+    )
+    router.refresh()
+  }
+
+  // Applied before every filter and count, so the status filter, the sort and
+  // the row the admin just cleared all agree within the same render.
+  const visible = React.useMemo(
+    () =>
+      people.map((person) =>
+        cleared[person.key]
+          ? {
+              ...person,
+              events: person.events.map((e) => ({ ...e, checkedIn: false })),
+              checkedInAtFormatted: null,
+            }
+          : person,
+      ),
+    [people, cleared],
+  )
 
   const filtered = React.useMemo(
     () =>
-      filterClusterCheckinPeople(people, {
+      filterClusterCheckinPeople(visible, {
         type: typeFilter,
         status: statusFilter,
         eventId: showEventBreakdown ? eventFilter : "all",
         search,
       }),
-    [people, typeFilter, statusFilter, eventFilter, search, showEventBreakdown],
+    [visible, typeFilter, statusFilter, eventFilter, search, showEventBreakdown],
   )
 
   const sorted = React.useMemo(
@@ -249,8 +384,10 @@ export function ClusterCheckinClient({
         statusSortDirection,
         onToggleStatusSort: () =>
           setStatusSortDirection((current) => (current === "asc" ? "desc" : "asc")),
+        canEdit,
+        onRemove: setPersonToClear,
       }),
-    [showEventBreakdown, statusSortDirection],
+    [showEventBreakdown, statusSortDirection, canEdit],
   )
 
   if (!hasCheckinEvents) {
@@ -366,9 +503,15 @@ export function ClusterCheckinClient({
                   <span className="block min-w-0 flex-1 truncate text-sm">
                     <PersonName person={person} />
                   </span>
-                  <span className="shrink-0">
+                  {/* Status and undo sit on the name's baseline row rather than
+                      in their own stacked column, so they stay aligned with each
+                      other however the meta line below wraps. */}
+                  <div className="flex shrink-0 items-center gap-1">
                     <StatusBadge person={person} />
-                  </span>
+                    {canEdit && clusterCheckinStatusFor(person) !== "NotIn" && (
+                      <RemoveCheckinButton onSelect={() => setPersonToClear(person)} />
+                    )}
+                  </div>
                 </div>
                 {/* One meta line, so every card is exactly two lines and the
                     arrival times line up down the right edge like a column.
@@ -418,6 +561,61 @@ export function ClusterCheckinClient({
           </div>
         </>
       )}
+
+      <Dialog
+        open={personToClear !== null}
+        onOpenChange={(open) => {
+          if (!open && !clearing) setPersonToClear(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Undo check-in</DialogTitle>
+            <DialogDescription>
+              {personToClear ? (
+                <>
+                  Mark{" "}
+                  <span className="font-medium">
+                    {personToClear.name || "this person"}
+                  </span>{" "}
+                  as not yet arrived
+                  {/* A Parallel day can hold several arrivals behind one row, so
+                      the dialog names them rather than letting one click clear
+                      an unstated number of events. A Collab person holds exactly
+                      one, and naming it there would be noise. */}
+                  {showEventBreakdown && personToClear.events.length > 1 ? (
+                    <>
+                      {" "}
+                      on{" "}
+                      <span className="font-medium">
+                        {personToClear.events
+                          .filter((e) => e.checkedIn)
+                          .map((e) => e.eventName)
+                          .join(", ")}
+                      </span>
+                    </>
+                  ) : null}
+                  ? Their registration is untouched and they can be checked in
+                  again at the kiosk — though a series registrant whose only tie
+                  to this day was the arrival will drop off the board with it.
+                </>
+              ) : null}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={clearing}
+              onClick={() => setPersonToClear(null)}
+            >
+              Cancel
+            </Button>
+            <Button variant="destructive" disabled={clearing} onClick={handleRemoveCheckin}>
+              {clearing ? "Undoing…" : "Undo check-in"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
