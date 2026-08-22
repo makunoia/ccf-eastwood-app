@@ -1,21 +1,34 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
+import { type ColumnDef } from "@tanstack/react-table"
 import { IconCheck } from "@tabler/icons-react"
 
 import { Badge } from "@/components/ui/badge"
+import { DataTable } from "@/components/ui/data-table"
 import { Input } from "@/components/ui/input"
-
-type Person = {
-  key: string
-  name: string
-  phone: string | null
-  isMember: boolean
-  /** Serving on the day rather than attending it — see the roster's person type. */
-  isVolunteer: boolean
-  events: { eventId: string; eventName: string; checkedIn: boolean }[]
-  fullyCheckedIn: boolean
-}
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { phoneColumn } from "@/lib/tables/columns/contact"
+import {
+  clusterCheckinPersonHref,
+  clusterCheckinStatusFor,
+  filterClusterCheckinPeople,
+  sortClusterCheckinPeople,
+  type ClusterCheckinPerson,
+  type ClusterCheckinSortDirection,
+  type ClusterCheckinStatus,
+  type ClusterCheckinStatusFilter,
+  type ClusterCheckinTypeFilter,
+} from "@/lib/clusters/checkin-board"
+import { cn } from "@/lib/utils"
 
 /**
  * Monitoring board — live check-in status for the day's events: one-time events,
@@ -23,32 +36,222 @@ type Person = {
  * itself happens on the links in the Shortcuts section above (and on the Forms
  * page); this list just shows who's arrived.
  *
+ * Built the way the session detail screen is, because it answers the same
+ * question about the same kind of gathering: stat tiles (owned by the page, so
+ * they sit above Shortcuts), a filter strip, then cards below `xl` and a
+ * `DataTable` above it. The hand-rolled row list this replaced could not be
+ * filtered, sorted, searched by anything but name, or given a column an admin
+ * chose — and it dead-ended, offering no route from a name on the board to the
+ * record behind it.
+ *
  * `showEventBreakdown` is off on a Collab day. There a person holds exactly one
- * of the day's events — their ministry's — so the badge row under every name is
- * one badge repeating the same word down the whole list, and the day is built to
- * stop naming the split in the first place. Collapsed, an arrival is a single
- * line: who they are on the left, whether they're in on the right. The state has
- * to be said in words there, because the badges that used to carry it are gone.
+ * of the day's events — their ministry's — so the badge column is one badge
+ * repeating the same word down the whole list, and the day is built to stop
+ * naming the split in the first place. The event filter goes with it: a filter
+ * whose every option selects everyone is a control with nothing to do.
  */
+
+const STATUS_LABEL: Record<ClusterCheckinStatus, string> = {
+  CheckedIn: "Checked in",
+  Partial: "Partly in",
+  NotIn: "Not in yet",
+}
+
+/**
+ * The state in words, always — never colour alone, and never only an icon. The
+ * board is read across a room at a registration desk, and "is this row green"
+ * is not a question a glance answers reliably.
+ */
+function StatusBadge({ person }: { person: ClusterCheckinPerson }) {
+  const status = clusterCheckinStatusFor(person)
+  if (status === "NotIn") {
+    return (
+      <Badge variant="outline" className="font-normal text-muted-foreground">
+        {STATUS_LABEL.NotIn}
+      </Badge>
+    )
+  }
+  return (
+    <Badge variant={status === "CheckedIn" ? "default" : "secondary"}>
+      {status === "CheckedIn" && <IconCheck className="size-3" />}
+      {STATUS_LABEL[status]}
+    </Badge>
+  )
+}
+
+/** Member / Guest / Volunteer — one badge, same three cases in the card and the table. */
+function TypeBadge({ person }: { person: ClusterCheckinPerson }) {
+  if (person.isVolunteer) {
+    return (
+      <Badge variant="outline" className="border-amber-400 text-amber-600">
+        Volunteer
+      </Badge>
+    )
+  }
+  if (person.isMember) return <Badge variant="secondary">Member</Badge>
+  return <Badge variant="outline">Guest</Badge>
+}
+
+function EventBadges({ person }: { person: ClusterCheckinPerson }) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {person.events.map((e) => (
+        <Link key={e.eventId} href={clusterCheckinPersonHref(e)}>
+          <Badge
+            variant={e.checkedIn ? "default" : "outline"}
+            className={cn(
+              "font-normal transition-colors",
+              e.checkedIn ? "hover:bg-primary/85" : "hover:bg-muted",
+            )}
+          >
+            {e.checkedIn && <IconCheck className="size-3" />}
+            {e.eventName}
+          </Badge>
+        </Link>
+      ))}
+    </div>
+  )
+}
+
+function personHref(person: ClusterCheckinPerson): string | null {
+  const first = person.events[0]
+  return first ? clusterCheckinPersonHref(first) : null
+}
+
+function PersonName({ person }: { person: ClusterCheckinPerson }) {
+  const href = personHref(person)
+  const label = person.name || (
+    <span className="text-muted-foreground italic">No name</span>
+  )
+  if (!href) return <span className="font-medium">{label}</span>
+  return (
+    <Link
+      href={href}
+      className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+    >
+      {label}
+    </Link>
+  )
+}
+
+function buildColumns({
+  showEventBreakdown,
+  statusSortDirection,
+  onToggleStatusSort,
+}: {
+  showEventBreakdown: boolean
+  statusSortDirection: ClusterCheckinSortDirection
+  onToggleStatusSort: () => void
+}): ColumnDef<ClusterCheckinPerson>[] {
+  return [
+    {
+      accessorKey: "name",
+      header: "Name",
+      meta: { label: "Name", width: "name", locked: true },
+      cell: ({ row }) => <PersonName person={row.original} />,
+    },
+    {
+      id: "status",
+      // The sort is the caller's (it reorders the row set), so the header stays
+      // a custom control rather than TanStack's own sorting — same arrangement
+      // as the session attendees table.
+      meta: { label: "Status", width: "status" },
+      header: () => (
+        <button
+          type="button"
+          onClick={onToggleStatusSort}
+          aria-label={`Sort status ${statusSortDirection === "asc" ? "descending" : "ascending"}`}
+          className={cn(
+            "inline-flex items-center gap-1 rounded-sm font-medium text-muted-foreground transition-colors hover:text-foreground",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+          )}
+        >
+          <span>Status</span>
+          <span className="text-xs">{statusSortDirection === "asc" ? "↑" : "↓"}</span>
+        </button>
+      ),
+      cell: ({ row }) => <StatusBadge person={row.original} />,
+    },
+    {
+      id: "type",
+      header: "Type",
+      meta: { label: "Type", width: "status" },
+      cell: ({ row }) => <TypeBadge person={row.original} />,
+    },
+    ...(showEventBreakdown
+      ? [
+          {
+            id: "events",
+            accessorFn: (row: ClusterCheckinPerson) =>
+              row.events.map((e) => e.eventName).join(", "),
+            header: "Events",
+            // A wrapping row of badges lays itself out; truncating would clip
+            // the second chip rather than shortening any text.
+            meta: { label: "Events", width: "wide", noTruncate: true },
+            cell: ({ row }) => <EventBadges person={row.original} />,
+          } satisfies ColumnDef<ClusterCheckinPerson>,
+        ]
+      : []),
+    {
+      accessorKey: "checkedInAtFormatted",
+      header: "Checked in at",
+      meta: { label: "Checked in at", width: "date" },
+      cell: ({ row }) => (
+        <span className="text-muted-foreground tabular-nums">
+          {row.original.checkedInAtFormatted ?? "—"}
+        </span>
+      ),
+    },
+    // Carried on the row for the search box; shown only when an admin asks.
+    phoneColumn<ClusterCheckinPerson>((row) => row.phone, { optIn: true }),
+  ]
+}
+
 export function ClusterCheckinClient({
   people,
+  events,
   hasCheckinEvents,
   showEventBreakdown = true,
 }: {
-  people: Person[]
+  people: ClusterCheckinPerson[]
+  /** The day's events, for the event filter. Empty on a Collab day. */
+  events: { id: string; name: string }[]
   hasCheckinEvents: boolean
   showEventBreakdown?: boolean
 }) {
   const [search, setSearch] = React.useState("")
+  const [typeFilter, setTypeFilter] = React.useState<ClusterCheckinTypeFilter>("all")
+  const [statusFilter, setStatusFilter] = React.useState<ClusterCheckinStatusFilter>("all")
+  const [eventFilter, setEventFilter] = React.useState("all")
+  const [statusSortDirection, setStatusSortDirection] =
+    React.useState<ClusterCheckinSortDirection>("asc")
 
-  const filtered = search
-    ? people.filter((p) => {
-        const q = search.toLowerCase()
-        return (
-          p.name.toLowerCase().includes(q) || (p.phone ?? "").includes(search)
-        )
-      })
-    : people
+  const filtered = React.useMemo(
+    () =>
+      filterClusterCheckinPeople(people, {
+        type: typeFilter,
+        status: statusFilter,
+        eventId: showEventBreakdown ? eventFilter : "all",
+        search,
+      }),
+    [people, typeFilter, statusFilter, eventFilter, search, showEventBreakdown],
+  )
+
+  const sorted = React.useMemo(
+    () => sortClusterCheckinPeople(filtered, statusSortDirection),
+    [filtered, statusSortDirection],
+  )
+
+  const columns = React.useMemo(
+    () =>
+      buildColumns({
+        showEventBreakdown,
+        statusSortDirection,
+        onToggleStatusSort: () =>
+          setStatusSortDirection((current) => (current === "asc" ? "desc" : "asc")),
+      }),
+    [showEventBreakdown, statusSortDirection],
+  )
 
   if (!hasCheckinEvents) {
     return (
@@ -62,74 +265,158 @@ export function ClusterCheckinClient({
     )
   }
 
-  return (
-    <div className="space-y-4">
-      <h3 className="type-label text-muted-foreground">Arrivals</h3>
-      <Input
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Search name or mobile…"
-        className="sm:max-w-xs"
-      />
+  const isFiltered =
+    search !== "" || typeFilter !== "all" || statusFilter !== "all" || eventFilter !== "all"
 
-      {filtered.length === 0 ? (
+  return (
+    <div className="space-y-3">
+      <h3 className="type-label text-muted-foreground">Arrivals</h3>
+
+      {/* Wraps rather than scrolls sideways: a filter you have to swipe to
+          discover is a filter nobody uses. Controls are finger-sized below `xl`
+          and only shrink to the compact desktop height above it — this board is
+          run from a tablet at a registration desk. Inline rather than in the
+          FilterBar drawer for the same reason: mid-event, "show me who isn't
+          here yet" has to be one tap, not two plus a drawer. */}
+      <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 px-3 py-2">
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search name or mobile…"
+          className="h-9 w-full text-xs sm:w-52 xl:h-7"
+        />
+
+        <ToggleGroup
+          type="single"
+          value={statusFilter}
+          onValueChange={(v) => setStatusFilter((v || "all") as ClusterCheckinStatusFilter)}
+          className="flex-wrap gap-1"
+        >
+          <ToggleGroupItem value="all" className="h-9 px-3 text-xs xl:h-7">
+            Everyone
+          </ToggleGroupItem>
+          <ToggleGroupItem value="in" className="h-9 px-3 text-xs xl:h-7">
+            Checked in
+          </ToggleGroupItem>
+          <ToggleGroupItem value="out" className="h-9 px-3 text-xs xl:h-7">
+            Not in yet
+          </ToggleGroupItem>
+        </ToggleGroup>
+
+        <ToggleGroup
+          type="single"
+          value={typeFilter}
+          onValueChange={(v) => setTypeFilter((v || "all") as ClusterCheckinTypeFilter)}
+          className="flex-wrap gap-1"
+        >
+          <ToggleGroupItem value="all" className="h-9 px-3 text-xs xl:h-7">
+            All
+          </ToggleGroupItem>
+          <ToggleGroupItem value="member" className="h-9 px-3 text-xs xl:h-7">
+            Members
+          </ToggleGroupItem>
+          <ToggleGroupItem value="guest" className="h-9 px-3 text-xs xl:h-7">
+            Guests
+          </ToggleGroupItem>
+          <ToggleGroupItem value="volunteer" className="h-9 px-3 text-xs xl:h-7">
+            Volunteers
+          </ToggleGroupItem>
+        </ToggleGroup>
+
+        {/* A Collab day's people hold exactly one event each, so every option
+            here would select the whole list. */}
+        {showEventBreakdown && events.length > 1 && (
+          <Select value={eventFilter} onValueChange={setEventFilter}>
+            <SelectTrigger className="h-9 w-full text-xs sm:w-44 xl:h-7 xl:w-40">
+              <SelectValue placeholder="Event" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All events</SelectItem>
+              {events.map((e) => (
+                <SelectItem key={e.id} value={e.id}>
+                  {e.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      </div>
+
+      {people.length === 0 ? (
         <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
-          {search ? "No one matches that search." : "No registrants yet."}
+          No one is on this day yet.
+        </div>
+      ) : sorted.length === 0 ? (
+        <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
+          {isFiltered ? "No one matches the current filters." : "No one is on this day yet."}
         </div>
       ) : (
-        <div className="space-y-2">
-          {filtered.map((person) => (
-            <div
-              key={person.key}
-              className="flex items-center justify-between gap-3 rounded-lg border px-4 py-3"
-            >
-              <div className="min-w-0">
-                <p className="text-sm font-medium">
-                  {person.name}
-                  {/* Volunteer wins over Member: every volunteer is a member, so
-                      the badge that says less would hide why they're here. */}
-                  {(person.isVolunteer || person.isMember) && (
-                    <Badge
-                      variant={person.isVolunteer ? "default" : "secondary"}
-                      className="ml-2"
-                    >
-                      {person.isVolunteer ? "Volunteer" : "Member"}
-                    </Badge>
-                  )}
-                </p>
-                {showEventBreakdown && (
-                  <div className="mt-1 flex flex-wrap gap-1.5">
-                    {person.events.map((e) => (
-                      <Badge
-                        key={e.eventId}
-                        variant={e.checkedIn ? "default" : "outline"}
-                        className="font-normal"
-                      >
-                        {e.checkedIn && <IconCheck className="size-3" />}
-                        {e.eventName}
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-              </div>
-              {person.fullyCheckedIn ? (
-                <span className="inline-flex shrink-0 items-center gap-1 text-sm font-medium text-green-600">
-                  <IconCheck className="size-4" />
-                  Checked in
-                </span>
-              ) : (
-                // Only with the breakdown hidden: with it on, the outline badges
-                // already say who hasn't arrived, and a second "Not in yet"
-                // beside them would be the page saying one thing twice.
-                !showEventBreakdown && (
-                  <span className="shrink-0 text-sm text-muted-foreground">
-                    Not in yet
+        <>
+          {/* Phone + tablet card list. `auto-fill` rather than a viewport
+              breakpoint: the workspace sidebar is expanded at tablet widths, so
+              a `sm:grid-cols-2` would split a ~460px column into two 200px cards
+              and truncate every name. */}
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(20rem,1fr))] gap-2 xl:hidden">
+            {sorted.map((person) => (
+              <div key={person.key} className="rounded-lg border px-3 py-2.5">
+                <div className="flex items-start gap-2">
+                  {/* `block` is load-bearing: `truncate` sets overflow, which an
+                      inline anchor ignores — a long name would push the status
+                      badge off the card instead of clipping. */}
+                  <span className="block min-w-0 flex-1 truncate text-sm">
+                    <PersonName person={person} />
                   </span>
-                )
-              )}
-            </div>
-          ))}
-        </div>
+                  <span className="shrink-0">
+                    <StatusBadge person={person} />
+                  </span>
+                </div>
+                {/* One meta line, so every card is exactly two lines and the
+                    arrival times line up down the right edge like a column.
+                    The events are text here rather than the table's badges: a
+                    wrapping row of chips inside a truncating cell clips the
+                    second chip instead of shortening anything, and a card that
+                    grows a line per event stops the times lining up at all. */}
+                <div className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
+                  <TypeBadge person={person} />
+                  <span className="min-w-0 flex-1 truncate">
+                    {showEventBreakdown
+                      ? person.events.map((e, i) => (
+                          <span key={e.eventId} className={cn(!e.checkedIn && "opacity-60")}>
+                            {i > 0 && " · "}
+                            {e.checkedIn && (
+                              <>
+                                <IconCheck className="inline size-3" />
+                                <span className="sr-only">Checked in for </span>
+                              </>
+                            )}
+                            {e.eventName}
+                          </span>
+                        ))
+                      : (person.phone ?? "")}
+                  </span>
+                  <span className="shrink-0 tabular-nums">
+                    {person.checkedInAtFormatted && (
+                      <>
+                        <span className="sr-only">Checked in at </span>
+                        {person.checkedInAtFormatted}
+                      </>
+                    )}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+          {/* Desktop table — the column set needs the width a sidebar-less
+              viewport gives. */}
+          <div className="hidden xl:flex xl:flex-1 xl:flex-col">
+            <DataTable
+              tableKey="cluster.checkin"
+              rowLabel={{ one: "person", many: "people" }}
+              columns={columns}
+              data={sorted}
+            />
+          </div>
+        </>
       )}
     </div>
   )

@@ -5,7 +5,7 @@ import {
   lookupClusterCheckin,
   searchClusterCheckinByName,
 } from "@/app/(dashboard)/events/cluster-actions"
-import { getClusterRegistrantRows } from "@/lib/clusters/aggregate"
+import { getClusterDayRows, getClusterRegistrantRows } from "@/lib/clusters/aggregate"
 import { buildClusterRoster } from "@/lib/clusters/roster"
 
 /**
@@ -405,5 +405,101 @@ describe("what the kiosk refuses to do", () => {
       success: true,
       data: null,
     })
+  })
+})
+
+/**
+ * The admin board renders the way the session detail screen does now — stat
+ * tiles over a filtered list — and two of its columns are facts the day rows
+ * never carried: the arrival's own time, and the gender behind the tile's
+ * split bar. Both are read from the linked Member or Guest, on the same
+ * day-scoped attendance the `checkedIn` flag beside them already used.
+ */
+describe("what the day's rows carry for the admin board", () => {
+  it("reads gender from the member or the guest behind each row", async () => {
+    const { cluster, oneTime, recurring, session } = await seedDay()
+    const member = await db.member.create({
+      data: {
+        firstName: "Juan",
+        lastName: "Dela Cruz",
+        phone: PHONE,
+        gender: "Male",
+        dateJoined: new Date(),
+        language: [],
+      },
+    })
+    const guest = await db.guest.create({
+      data: { firstName: "Ana", lastName: "Bautista", gender: "Female", language: [] },
+    })
+    await register(oneTime.id, { memberId: member.id })
+    await register(oneTime.id, { guestId: guest.id })
+
+    const rows = await getClusterDayRows(
+      [
+        { id: oneTime.id, linkedOccurrenceId: null },
+        { id: recurring.id, linkedOccurrenceId: session.id },
+      ],
+      { clusterId: cluster.id, date: DAY, kind: "Parallel" }
+    )
+
+    expect(rows.find((r) => r.memberId === member.id)?.gender).toBe("Male")
+    expect(rows.find((r) => r.guestId === guest.id)?.gender).toBe("Female")
+  })
+
+  it("times the arrival on both kinds of event, and leaves it null before one", async () => {
+    const { cluster, oneTime, recurring, session } = await seedDay()
+    const member = await seedMember()
+    const absentee = await seedMember("Pedro", "+63 917 000 1111")
+    await register(oneTime.id, { memberId: member.id })
+    await register(recurring.id, { memberId: member.id })
+    await register(oneTime.id, { memberId: absentee.id })
+
+    const events = [
+      { id: oneTime.id, linkedOccurrenceId: null },
+      { id: recurring.id, linkedOccurrenceId: session.id },
+    ]
+    const before = await getClusterDayRows(events, {
+      clusterId: cluster.id,
+      date: DAY,
+      kind: "Parallel",
+    })
+    expect(before.every((r) => r.checkedInAt === null)).toBe(true)
+
+    await checkInToCluster(cluster.publicToken, `member:${member.id}`)
+
+    const after = await getClusterDayRows(events, {
+      clusterId: cluster.id,
+      date: DAY,
+      kind: "Parallel",
+    })
+    // OneTime records on `attendedAt`, a session through OccurrenceAttendee —
+    // the board reads one column either way.
+    for (const row of after.filter((r) => r.memberId === member.id)) {
+      expect(row.checkedIn).toBe(true)
+      expect(row.checkedInAt).toBeInstanceOf(Date)
+    }
+    // Nobody's absence borrows someone else's timestamp.
+    const missing = after.find((r) => r.memberId === absentee.id)
+    expect(missing?.checkedIn).toBe(false)
+    expect(missing?.checkedInAt).toBeNull()
+  })
+
+  it("times a volunteer's arrival the same way", async () => {
+    const { cluster, oneTime, recurring, session } = await seedDay()
+    const member = await seedMember()
+    await seedVolunteer(oneTime.id, member.id)
+
+    await checkInToCluster(cluster.publicToken, `member:${member.id}`)
+
+    const rows = await getClusterDayRows(
+      [
+        { id: oneTime.id, linkedOccurrenceId: null },
+        { id: recurring.id, linkedOccurrenceId: session.id },
+      ],
+      { clusterId: cluster.id, date: DAY, kind: "Parallel" }
+    )
+    const serving = rows.find((r) => r.kind === "Volunteer")
+    expect(serving?.checkedIn).toBe(true)
+    expect(serving?.checkedInAt).toBeInstanceOf(Date)
   })
 })
