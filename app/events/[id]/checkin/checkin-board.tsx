@@ -263,6 +263,25 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
     handleCandidateSelect(checkinResult)
   }
 
+  /**
+   * Whether this kiosk asks the person which table they want.
+   *
+   * The Check-in form's own toggle decides it, and nothing else does. It used to
+   * also require auto-assign to be off, on the "replaces rather than sits beside"
+   * rule the registration and walk-in forms apply — but at the kiosk that rule
+   * points the other way. An event with auto-assign on had *no* way to ask,
+   * however plainly the Check-in form said to: `handleConfirm` placed the person
+   * a moment earlier, `getCheckinBreakoutChoices` then reported them already
+   * seated, and the step was skipped. Turning the section on looked like it did
+   * nothing.
+   *
+   * So at the door of the room the config wins and auto-assign is what steps
+   * aside — see `handleConfirm`. This is the last moment anyone can ask, and the
+   * person is standing right there; a silent placement is the weaker answer.
+   * Registration and walk-in are unchanged, where nobody is waiting.
+   */
+  const offerBreakoutPicker = cfg.sectionBreakout
+
   async function handleConfirm() {
     if (!matched) return
     setLoading(true)
@@ -282,10 +301,15 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
     // Resolve the registrant's breakout group so the success screen can show it.
     // Volunteers are not breakout participants, so they are never assigned or shown.
     if (matched.kind === "registrant") {
-      // Auto-assign to the best breakout group first — only when the event opts in.
-      // Otherwise the registrant either picked a group at registration or stays
-      // unassigned by choice. We await so the assignment exists before we read it.
-      if (occurrenceId !== null && autoAssignBreakout) {
+      // Auto-assign to the best breakout group first — only when the event opts in
+      // AND this kiosk isn't about to ask. Otherwise the registrant either picked a
+      // group at registration or stays unassigned by choice. We await so the
+      // assignment exists before we read it.
+      //
+      // The `!offerBreakoutPicker` half is what keeps the two from racing: placing
+      // someone here and then asking them would be offering a choice already made,
+      // and the step would in fact never render — it skips anyone already seated.
+      if (occurrenceId !== null && autoAssignBreakout && !offerBreakoutPicker) {
         await autoAssignRegistrantToBreakout(matched.subjectId, eventId)
       }
       const breakout = await getRegistrantBreakoutGroupName(matched.subjectId, eventId)
@@ -341,15 +365,6 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
       void goToSuccess()
     }
   }
-
-  /**
-   * Auto-assign *suppresses* the picker rather than sitting beside it — the same
-   * rule the registration and walk-in forms apply. A table the picker would hide
-   * must not be one auto-assign quietly drops the same person into, and offering
-   * both would let a person choose a group that was already chosen for them a
-   * moment earlier in `handleConfirm`.
-   */
-  const offerBreakoutPicker = cfg.sectionBreakout && !autoAssignBreakout
 
   /**
    * The one way out to the success screen, from every branch above it.

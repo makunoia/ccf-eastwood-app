@@ -941,10 +941,27 @@ async function facilitatesAnyGroup(
  * silently in that case is what made an enabled Breakout toggle look like it did
  * nothing on the walk-in form.
  *
- * The facilitator gate is on, matching the door. Same rule at the same physical
- * moment: a table with nobody running it is not somewhere to send an arrival.
- * Facilitators check in through this very kiosk, on the volunteer lane, so the
- * gate opens on its own as the team arrives.
+ * The candidate set matches the REGISTRATION form's, not the door's: every
+ * enabled table, ungated. It read the other way round for a while, on the
+ * reasoning that a kiosk and a door are the same physical moment, and that was
+ * wrong twice over.
+ *
+ * It hid the step. Every branch of `facilitatorGate` requires a facilitator
+ * relation to exist, so a table with nobody assigned to it can never pass — and
+ * a table whose host simply hasn't arrived yet is the ordinary state of the
+ * first half hour. Both left the person looking at an "awaiting-facilitator"
+ * notice instead of a suggestion, which is the whole reason the step exists.
+ *
+ * Worse, it distorted the ranking. `resolveFillLevels` reduces the whole
+ * candidate set at once, so `fillLevel` is relative to whatever was loaded, and
+ * "the emptiest table" only means "the emptiest of all of them" when the set IS
+ * all of them. A gated subset is at its worst in the window where exactly one
+ * facilitator has checked in: the set collapses to that single table and every
+ * arrival stacks into it — precisely the opposite of the spread the suggestion
+ * is for.
+ *
+ * The door keeps the gate. There a staffer is doing the placing and handing
+ * someone to a table with nobody running it is a real handover to nobody.
  */
 export async function getCheckinBreakoutChoices(
   registrantId: string,
@@ -983,7 +1000,7 @@ export async function getCheckinBreakoutChoices(
     const { candidates, totalGroups } = await fetchBreakoutAvailability(
       eventId,
       occurrenceId,
-      true
+      false
     )
     if (totalGroups === 0) return { success: true, data: null }
 

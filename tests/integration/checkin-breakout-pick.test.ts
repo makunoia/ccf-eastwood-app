@@ -271,12 +271,13 @@ describe("getCheckinBreakoutChoices — who gets offered the step", () => {
     expect(result).toEqual({ success: true, data: null })
   })
 
-  it("explains an empty list when the team hasn't arrived yet", async () => {
+  it("suggests a table whose facilitator hasn't arrived yet", async () => {
     const { event, committee, role } = await seedEvent()
     const member = await db.member.create({
       data: { firstName: "Ana", lastName: "Faci", dateJoined: new Date(), language: [] },
     })
-    // Assigned but NOT checked in — the gate holds the table back.
+    // Assigned but NOT checked in. The door would hold this table back; the kiosk
+    // does not.
     const volunteer = await db.volunteer.create({
       data: {
         memberId: member.id,
@@ -286,18 +287,19 @@ describe("getCheckinBreakoutChoices — who gets offered the step", () => {
         status: "Confirmed",
       },
     })
-    await db.breakoutGroup.create({
+    const group = await db.breakoutGroup.create({
       data: { name: "Table 1", eventId: event.id, facilitatorId: volunteer.id },
     })
     const { registrant } = await seedCheckedInGuest(event.id, "Nora")
 
     const result = await getCheckinBreakoutChoices(registrant.id, event.id, null)
-    if (!result.success || !result.data) throw new Error("expected a notice")
-    // Saying so beats dropping the step, which is what made an enabled Breakout
-    // toggle look like it did nothing on the walk-in form.
-    expect(result.data.notice).toBe("awaiting-facilitator")
-    expect(result.data.options).toHaveLength(0)
-    expect(result.data.hasCandidates).toBe(false)
+    if (!result.success || !result.data) throw new Error("expected choices")
+    // The first arrivals of the morning come before the team does. Gating them
+    // meant the suggestion — the entire reason the step exists — never appeared.
+    expect(result.data.suggested?.id).toBe(group.id)
+    expect(result.data.options.map((o) => o.id)).toEqual([group.id])
+    expect(result.data.hasCandidates).toBe(true)
+    expect(result.data.notice).toBeNull()
   })
 
   it("refuses a registrant that belongs to a different event", async () => {
