@@ -59,7 +59,9 @@ export async function getClusterVolunteersExport(
       db.volunteer.findMany({
         where: {
           eventId: { in: eventIds },
-          ...(scope === "day" ? { signUpClusterId: clusterId } : {}),
+          ...(scope === "day"
+            ? { clusterParticipations: { some: { clusterId } } }
+            : {}),
         },
         orderBy: [{ member: { lastName: "asc" } }, { member: { firstName: "asc" } }],
         select: {

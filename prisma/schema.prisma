@@ -677,7 +677,7 @@ model Event {
   formConfigs       FormConfig[]
   eventFormConfigs  EventFormConfig[]
   dashboardWidgets  EventDashboardWidget[]
-  clusterMembership EventClusterEvent?
+  clusterMemberships EventClusterEvent[]
   // DGroup requests raised by someone ticking "I want to join a DGroup" on this
   // event's registration form (CCF-101).
   smallGroupRequests SmallGroupMemberRequest[] @relation("SmallGroupRequestSource")
@@ -743,6 +743,8 @@ model EventCluster {
   // Volunteers who signed up to serve on this day. Named rather than implicit
   // because the rows belong to their events; this is provenance, not ownership.
   volunteerSignUps Volunteer[] @relation("ClusterVolunteerSignUps")
+  registrantParticipations EventRegistrantClusterParticipation[]
+  volunteerParticipations VolunteerClusterParticipation[]
 }
 
 model EventClusterEvent {
@@ -760,8 +762,8 @@ model EventClusterEvent {
   createdAt DateTime     @default(now())
 
   @@id([clusterId, eventId])
-  @@unique([eventId]) // one cluster per event
   @@index([occurrenceId])
+  @@index([eventId])
 }
 
 model EventOccurrenceSeries {
@@ -887,6 +889,18 @@ model EventRegistrant {
   baptismOptIn             BaptismOptIn?
   busPassengers            BusPassenger[]
   occurrenceAttendances    OccurrenceAttendee[]
+  clusterParticipations    EventRegistrantClusterParticipation[]
+}
+
+model EventRegistrantClusterParticipation {
+  eventRegistrantId String
+  clusterId         String
+  eventRegistrant   EventRegistrant @relation(fields: [eventRegistrantId], references: [id], onDelete: Cascade)
+  cluster           EventCluster    @relation(fields: [clusterId], references: [id], onDelete: Cascade)
+  createdAt         DateTime        @default(now())
+
+  @@id([eventRegistrantId, clusterId])
+  @@index([clusterId])
 }
 
 model BreakoutGroup {
@@ -1038,6 +1052,7 @@ model Volunteer {
   coFacilitatedGroups   BreakoutGroup[] @relation("CoFacilitatedGroups")
   busPassengers         BusPassenger[]
   catchMechSessions     CatchMechSession[]
+  clusterParticipations VolunteerClusterParticipation[]
   catchMechVolunteerSessions CatchMechVolunteerSession[]
   declinedRequests      SmallGroupMemberRequest[] @relation("DeclinedRequests")
   subFacilitatorSlots   OccurrenceSubFacilitator[]
@@ -1045,6 +1060,17 @@ model Volunteer {
   confirmationSubmissions ConfirmationSubmission[] @relation("ConfirmationSubmissionFacilitator")
 
   @@index([signUpClusterId])
+}
+
+model VolunteerClusterParticipation {
+  volunteerId String
+  clusterId   String
+  volunteer   Volunteer    @relation(fields: [volunteerId], references: [id], onDelete: Cascade)
+  cluster     EventCluster @relation(fields: [clusterId], references: [id], onDelete: Cascade)
+  createdAt   DateTime     @default(now())
+
+  @@id([volunteerId, clusterId])
+  @@index([clusterId])
 }
 
 model MatchingWeightConfig {

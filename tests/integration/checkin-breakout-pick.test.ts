@@ -560,7 +560,13 @@ describe("on a Collab day the tables belong to the cluster", () => {
     if (!atEvent.success || !atEvent.data) throw new Error("expected choices")
     expect(atEvent.data.options.map((o) => o.id)).toEqual([standing.id])
 
-    const atDay = await getCheckinBreakoutChoices(registrant.id, event.id, null, "cluster")
+    const atDay = await getCheckinBreakoutChoices(
+      registrant.id,
+      event.id,
+      null,
+      "cluster",
+      cluster.id
+    )
     if (!atDay.success || !atDay.data) throw new Error("expected choices")
     expect(atDay.data.options.map((o) => o.id)).toEqual([dayTable.id])
   })
@@ -577,7 +583,8 @@ describe("on a Collab day the tables belong to the cluster", () => {
       event.id,
       null,
       dayTable.id,
-      "cluster"
+      "cluster",
+      cluster.id
     )
     expect(result).toEqual({ success: true, data: { name: "Day Table" } })
 
@@ -606,7 +613,13 @@ describe("on a Collab day the tables belong to the cluster", () => {
       data: { breakoutGroupId: standing.id, registrantId: registrant.id },
     })
 
-    const atDay = await getCheckinBreakoutChoices(registrant.id, event.id, null, "cluster")
+    const atDay = await getCheckinBreakoutChoices(
+      registrant.id,
+      event.id,
+      null,
+      "cluster",
+      cluster.id
+    )
     if (!atDay.success || !atDay.data) throw new Error("expected choices")
     expect(atDay.data.seatedGroupName).toBeNull()
     expect(atDay.data.options.map((o) => o.name)).toEqual(["Day Table"])
@@ -625,7 +638,13 @@ describe("on a Collab day the tables belong to the cluster", () => {
       data: { breakoutGroupId: dayTable.id, registrantId: registrant.id },
     })
 
-    const atDay = await getCheckinBreakoutChoices(registrant.id, event.id, null, "cluster")
+    const atDay = await getCheckinBreakoutChoices(
+      registrant.id,
+      event.id,
+      null,
+      "cluster",
+      cluster.id
+    )
     if (!atDay.success || !atDay.data) throw new Error("expected choices")
     expect(atDay.data.seatedGroupName).toBe("Day Table")
     expect(atDay.data.options).toEqual([])

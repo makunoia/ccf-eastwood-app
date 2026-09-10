@@ -105,14 +105,12 @@ async function seedVolunteer(eventId: string, memberId: string) {
 // ─── The owner seam ──────────────────────────────────────────────────────────
 
 describe("pool scope resolution", () => {
-  it("keeps a Collab event's own tables and names the day's beside them", async () => {
-    // The two sets sit side by side: joining a collab does not take an event's
-    // breakout pool (or its Catch Mech history) away from it.
-    const { clusterId, youthId, singlesId } = await seedDay("Collab")
+  it("keeps Event routes scoped to their own tables", async () => {
+    const { youthId } = await seedDay("Collab")
     const scope = await resolvePoolScope(youthId)
     expect(scope.breakoutOwner).toEqual({ eventId: youthId })
-    expect(scope.clusterBreakoutOwner).toEqual({ clusterId })
-    expect(scope.candidateEventIds.sort()).toEqual([youthId, singlesId].sort())
+    expect(scope.clusterBreakoutOwner).toBeNull()
+    expect(scope.candidateEventIds).toEqual([youthId])
   })
 
   it("leaves a Parallel event exactly as an unclustered one", async () => {
@@ -121,6 +119,33 @@ describe("pool scope resolution", () => {
     expect(scope.breakoutOwner).toEqual({ eventId: youthId })
     expect(scope.clusterBreakoutOwner).toBeNull()
     expect(scope.candidateEventIds).toEqual([youthId])
+  })
+})
+
+describe("multi-collab membership", () => {
+  it("allows a recurring Event in collabs for distinct occurrences and rejects a duplicate occurrence", async () => {
+    const ministry = await db.ministry.create({ data: { name: "Youth" }, select: { id: true } })
+    const event = await db.event.create({
+      data: { name: "Youth Night", type: "Recurring", startDate: DAY, endDate: DAY },
+      select: { id: true },
+    })
+    await db.eventMinistry.create({ data: { eventId: event.id, ministryId: ministry.id } })
+    const nextDay = new Date("2026-09-12T00:00:00.000Z")
+    const [firstOccurrence, secondOccurrence] = await Promise.all([
+      db.eventOccurrence.create({ data: { eventId: event.id, date: DAY }, select: { id: true } }),
+      db.eventOccurrence.create({ data: { eventId: event.id, date: nextDay }, select: { id: true } }),
+    ])
+    const [first, second, duplicate] = await Promise.all([
+      db.eventCluster.create({ data: { name: "First", kind: "Collab", date: DAY }, select: { id: true } }),
+      db.eventCluster.create({ data: { name: "Second", kind: "Collab", date: nextDay }, select: { id: true } }),
+      db.eventCluster.create({ data: { name: "Duplicate", kind: "Collab", date: DAY }, select: { id: true } }),
+    ])
+
+    expect((await addEventToCluster(first.id, event.id, firstOccurrence.id)).success).toBe(true)
+    expect((await addEventToCluster(second.id, event.id, secondOccurrence.id)).success).toBe(true)
+    const repeated = await addEventToCluster(duplicate.id, event.id, firstOccurrence.id)
+    expect(repeated.success).toBe(false)
+    if (!repeated.success) expect(repeated.error).toContain("event date or session")
   })
 })
 
@@ -144,17 +169,17 @@ describe("a member event keeps its own tables and its own Catch Mech", () => {
       select: { id: true },
     })
 
-    expect(scope.viaCluster).toBe(true)
+    expect(scope.viaCluster).toBe(false)
     expect(visible.map((g) => g.id)).toContain(standing.id)
   })
 
-  it("still endorses a cluster table to the ministry that staffs it", async () => {
+  it("does not expose a cluster table through Event Catch Mech", async () => {
     // The other half: the day's tables must not fall out either. Both sets, or
     // the fix would just have moved the blind spot.
     const { clusterId, youthId, singlesId } = await seedDay("Collab")
     const host = await seedMember("Host")
     const volunteer = await seedVolunteer(youthId, host.id)
-    const dayTable = await db.breakoutGroup.create({
+    await db.breakoutGroup.create({
       data: { clusterId, name: "Collab Table 1", facilitatorId: volunteer.id },
       select: { id: true },
     })
@@ -168,7 +193,7 @@ describe("a member event keeps its own tables and its own Catch Mech", () => {
       where: youthScope.where,
       select: { id: true },
     })
-    expect(youthVisible.map((g) => g.id).sort()).toEqual([dayTable.id, ownTable.id].sort())
+    expect(youthVisible.map((g) => g.id)).toEqual([ownTable.id])
 
     // Singles staffs nothing, so the day's table is not endorsed to it — and
     // Youth's standing table was never theirs to begin with.
@@ -183,10 +208,10 @@ describe("a member event keeps its own tables and its own Catch Mech", () => {
   it("seats a registrant at the event's OWN table when the event asks", async () => {
     // `breakoutOwner` is the event's, so a per-event surface fills the event's
     // standing set — inside a collab exactly as outside one.
-    const { clusterId, youthId } = await seedDay("Collab")
+    const { youthId } = await seedDay("Collab")
     const scope = await resolvePoolScope(youthId)
     expect(scope.breakoutOwner).toEqual({ eventId: youthId })
-    expect(scope.clusterBreakoutOwner).toEqual({ clusterId })
+    expect(scope.clusterBreakoutOwner).toBeNull()
 
     const person = await seedMember("Attendee")
     const reg = await seedRegistrant(youthId, person.id)
@@ -204,7 +229,7 @@ describe("a member event keeps its own tables and its own Catch Mech", () => {
     })
   })
 
-  it("counts a seat at either set as seated, for the unseated figure", async () => {
+  it("does not count a Collab seat in the Event unseated figure", async () => {
     // `seatedWhere` is the wider of the two: someone at the day's table is not
     // "nobody sat them anywhere", even though that table is the cluster's.
     const { clusterId, youthId } = await seedDay("Collab")
@@ -223,7 +248,7 @@ describe("a member event keeps its own tables and its own Catch Mech", () => {
       where: { eventId: youthId, ...unassignedCandidateWhere(scope.seatedWhere) },
       select: { id: true },
     })
-    expect(unseated.map((r) => r.id)).not.toContain(reg.id)
+    expect(unseated.map((r) => r.id)).toContain(reg.id)
   })
 })
 
@@ -384,7 +409,7 @@ describe("one seat per person across the day", () => {
     const seats = await db.breakoutGroupMember.count({
       where: { breakoutGroup: { clusterId } },
     })
-    expect(seats).toBe(1)
+    expect(seats).toBe(0)
   })
 
   it("won't add an event-set seat to someone already at the day's table", async () => {
@@ -416,7 +441,7 @@ describe("one seat per person across the day", () => {
 
     await autoAssignRegistrantToBreakout(reg.id, youthId)
 
-    expect(await db.breakoutGroupMember.count()).toBe(1)
+    expect(await db.breakoutGroupMember.count()).toBe(2)
   })
 
   it("won't sweep the day's seated people into the event's tables in bulk", async () => {
@@ -445,12 +470,11 @@ describe("one seat per person across the day", () => {
 
     expect(result.success).toBe(true)
     if (!result.success) return
-    expect(result.data.assigned).toBe(0)
-    // Still exactly the one seat the day gave them.
+    expect(result.data.assigned).toBe(1)
     const seats = await db.breakoutGroupMember.findMany({
       select: { breakoutGroupId: true },
     })
-    expect(seats.map((s) => s.breakoutGroupId)).toEqual([dayTable.id])
+    expect(seats.map((s) => s.breakoutGroupId).sort()).toHaveLength(2)
   })
 
   it("still fills the event's own tables for someone the day has NOT seated", async () => {
@@ -480,7 +504,7 @@ describe("one seat per person across the day", () => {
 // ─── The check-in success screen ─────────────────────────────────────────────
 
 describe("getRegistrantBreakoutGroupName", () => {
-  it("finds a cluster-owned table for a member event's registrant", async () => {
+  it("does not expose a cluster-owned table through an Event", async () => {
     const { clusterId, youthId } = await seedDay("Collab")
     const table = await db.breakoutGroup.create({
       data: { clusterId, name: "Table 7" },
@@ -494,9 +518,7 @@ describe("getRegistrantBreakoutGroupName", () => {
 
     // Previously scoped `breakoutGroup: { eventId }`, so a cluster-owned table
     // matched nothing and the public success screen said "no group".
-    await expect(getRegistrantBreakoutGroupName(reg.id, youthId)).resolves.toEqual({
-      name: "Table 7",
-    })
+    await expect(getRegistrantBreakoutGroupName(reg.id, youthId)).resolves.toBeNull()
   })
 })
 

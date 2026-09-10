@@ -503,18 +503,30 @@ describe("integration — cluster membership guards", () => {
     expect(stored?.price).toBe(250000)
   })
 
-  it("enforces one cluster per event", async () => {
-    const [a] = await Promise.all([seedEvent("Service")])
-    await seedCluster([a.id])
+  it("allows one Event in multiple Collabs", async () => {
+    const a = await db.event.create({
+      data: {
+        name: "Service",
+        type: "Recurring",
+        startDate: new Date("2026-01-01T00:00:00.000Z"),
+        endDate: new Date("2026-12-31T00:00:00.000Z"),
+        recurrenceDayOfWeek: 0,
+        recurrenceFrequency: "Weekly",
+      },
+      select: { id: true },
+    })
+    await seedCluster([a.id], { date: new Date("2026-09-05T00:00:00.000Z") })
     const other = await db.eventCluster.create({
-      data: { name: "Another day" },
+      data: { name: "Another day", date: new Date("2026-09-12T00:00:00.000Z") },
+      select: { id: true },
+    })
+    const occurrence = await db.eventOccurrence.create({
+      data: { eventId: a.id, date: new Date("2026-09-12T00:00:00.000Z") },
       select: { id: true },
     })
 
-    const result = await addEventToCluster(other.id, a.id)
-    expect(result.success).toBe(false)
-    if (result.success) return
-    expect(result.error).toContain("another cluster")
+    const result = await addEventToCluster(other.id, a.id, occurrence.id)
+    expect(result.success).toBe(true)
   })
 })
 

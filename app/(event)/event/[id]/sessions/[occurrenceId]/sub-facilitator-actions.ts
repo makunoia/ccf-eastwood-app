@@ -2,9 +2,8 @@
 
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
-import { resolvePoolScope, type PoolScope } from "@/lib/events/pool-scope"
 import { requireBreakoutWrite } from "@/lib/events/require-event-write"
-import { anyOwner, isClusterOwner, ownerOf, type BreakoutOwner } from "@/lib/breakouts/owner"
+import type { BreakoutOwner } from "@/lib/breakouts/owner"
 import { FacilitatorRole } from "@/app/generated/prisma/client"
 
 type ActionResult = { success: true } | { success: false; error: string }
@@ -33,27 +32,14 @@ type ActionResult = { success: true } | { success: false; error: string }
  * its own comment; this file simply never followed it.
  */
 
-/** The occurrence, the day's table owner, and who may staff those tables. */
+/** The occurrence and its event-owned breakout table scope. */
 async function resolveSessionScope(occurrenceId: string) {
   const occurrence = await db.eventOccurrence.findUnique({
     where: { id: occurrenceId },
     select: { id: true, eventId: true },
   })
   if (!occurrence) return null
-  const scope = await resolvePoolScope(occurrence.eventId)
-  return { occurrence, scope }
-}
-
-/** The only two fields of a `PoolScope` the helpers below need. */
-type SessionScope = Pick<PoolScope, "breakoutOwner" | "clusterBreakoutOwner">
-
-/** Both sets of tables a sitting of this event may run. */
-function tablesInPlay(scope: SessionScope) {
-  return anyOwner(
-    scope.clusterBreakoutOwner
-      ? [scope.breakoutOwner, scope.clusterBreakoutOwner]
-      : [scope.breakoutOwner]
-  )
+  return { occurrence, owner: { eventId: occurrence.eventId } as BreakoutOwner }
 }
 
 /**
@@ -68,13 +54,13 @@ function tablesInPlay(scope: SessionScope) {
  */
 async function resolveTableOwner(
   breakoutGroupId: string,
-  scope: SessionScope,
+  owner: BreakoutOwner,
 ): Promise<BreakoutOwner | null> {
   const group = await db.breakoutGroup.findFirst({
-    where: { id: breakoutGroupId, ...tablesInPlay(scope) },
+    where: { id: breakoutGroupId, ...owner },
     select: { eventId: true, clusterId: true },
   })
-  return group ? ownerOf(group) : null
+  return group ? owner : null
 }
 
 /**
@@ -86,19 +72,14 @@ async function resolveTableOwner(
  */
 async function authorizeTable(
   breakoutGroupId: string,
-  scope: SessionScope,
+  owner: BreakoutOwner,
 ): Promise<{ owner: BreakoutOwner } | { error: string }> {
-  const denied = await requireBreakoutWrite(scope.breakoutOwner)
+  const denied = await requireBreakoutWrite(owner)
   if (denied) return { error: denied.error }
 
-  const owner = await resolveTableOwner(breakoutGroupId, scope)
-  if (!owner) return { error: "That breakout group isn't part of this session." }
-
-  if (isClusterOwner(owner)) {
-    const clusterDenied = await requireBreakoutWrite(owner)
-    if (clusterDenied) return { error: clusterDenied.error }
-  }
-  return { owner }
+  const tableOwner = await resolveTableOwner(breakoutGroupId, owner)
+  if (!tableOwner) return { error: "That breakout group isn't part of this event." }
+  return { owner: tableOwner }
 }
 
 export async function assignSubFacilitator(
@@ -110,17 +91,16 @@ export async function assignSubFacilitator(
   try {
     const resolved = await resolveSessionScope(occurrenceId)
     if (!resolved) return { success: false, error: "Occurrence not found." }
-    const { occurrence, scope } = resolved
+    const { occurrence, owner } = resolved
 
-    const authorized = await authorizeTable(breakoutGroupId, scope)
+    const authorized = await authorizeTable(breakoutGroupId, owner)
     if ("error" in authorized) return { success: false, error: authorized.error }
-    const tableOwner = authorized.owner
 
     // A substitute comes from the roster that staffs these tables — one event's
     // under an ordinary event, either ministry's under a Collab, since a
     // cluster-owned table can be staffed from either.
     const substitute = await db.volunteer.findFirst({
-      where: { id: substituteId, eventId: { in: scope.volunteerEventIds } },
+      where: { id: substituteId, eventId: occurrence.eventId },
       select: { id: true },
     })
     if (!substitute) {
@@ -133,7 +113,7 @@ export async function assignSubFacilitator(
       update: { substituteId },
     })
 
-    revalidateSessionSurfaces(occurrence.eventId, occurrenceId, tableOwner)
+    revalidateSessionSurfaces(occurrence.eventId, occurrenceId)
     return { success: true }
   } catch {
     return { success: false, error: "Failed to assign sub-facilitator." }
@@ -153,17 +133,16 @@ export async function removeSubFacilitator(
   try {
     const resolved = await resolveSessionScope(occurrenceId)
     if (!resolved) return { success: false, error: "Occurrence not found." }
-    const { occurrence, scope } = resolved
+    const { occurrence, owner } = resolved
 
-    const authorized = await authorizeTable(breakoutGroupId, scope)
+    const authorized = await authorizeTable(breakoutGroupId, owner)
     if ("error" in authorized) return { success: false, error: authorized.error }
-    const tableOwner = authorized.owner
 
     await db.occurrenceSubFacilitator.deleteMany({
       where: { occurrenceId, breakoutGroupId, role },
     })
 
-    revalidateSessionSurfaces(occurrence.eventId, occurrenceId, tableOwner)
+    revalidateSessionSurfaces(occurrence.eventId, occurrenceId)
     return { success: true }
   } catch {
     return { success: false, error: "Failed to remove sub-facilitator." }
@@ -171,17 +150,12 @@ export async function removeSubFacilitator(
 }
 
 /**
- * The session screen is where the change shows, but a cluster-owned table is
- * also listed on the day's own Breakouts page — and Catch Mech reads
- * `subFacilitators` to decide who may answer for a table.
+ * Revalidate the Event-local session and breakout surfaces after a change.
  */
 function revalidateSessionSurfaces(
   eventId: string,
   occurrenceId: string,
-  owner: BreakoutOwner,
 ) {
   revalidatePath(`/event/${eventId}/sessions/${occurrenceId}`)
-  revalidatePath(`/event/${eventId}/catch-mech`)
-  if (isClusterOwner(owner)) revalidatePath(`/cluster/${owner.clusterId}/breakouts`)
-  else revalidatePath(`/event/${eventId}/breakouts`)
+  revalidatePath(`/event/${eventId}/breakouts`)
 }

@@ -167,7 +167,7 @@ describe("security — the actions carry their own arguments, so they check them
       volunteer.id
     )
 
-    expect(errorOf(result)).toBe("That breakout group isn't part of this session.")
+    expect(errorOf(result)).toBe("That breakout group isn't part of this event.")
     expect(await db.occurrenceSubFacilitator.count()).toBe(0)
   })
 
@@ -192,7 +192,7 @@ describe("security — the actions carry their own arguments, so they check them
       volunteer.id
     )
 
-    expect(errorOf(result)).toBe("That breakout group isn't part of this session.")
+    expect(errorOf(result)).toBe("That breakout group isn't part of this event.")
   })
 
   it("refuses a volunteer who serves neither of the day's events", async () => {
@@ -230,8 +230,8 @@ describe("security — the actions carry their own arguments, so they check them
 
 // ─── Integration: a Collab day ───────────────────────────────────────────────
 
-describe("integration — a Collab day's cluster-owned table", () => {
-  it("can be staffed by a substitute", async () => {
+describe("regression — Event Sessions exclude Collab tables", () => {
+  it("refuses a Collab-owned table", async () => {
     const event = await seedEvent()
     const cluster = await seedCollab([event.id])
     const occurrence = await seedOccurrence(event.id)
@@ -248,20 +248,10 @@ describe("integration — a Collab day's cluster-owned table", () => {
       volunteer.id
     )
 
-    expect(result.success).toBe(true)
-    const row = await db.occurrenceSubFacilitator.findUnique({
-      where: {
-        occurrenceId_breakoutGroupId_role: {
-          occurrenceId: occurrence.id,
-          breakoutGroupId: dayTable.id,
-          role: FacilitatorRole.Facilitator,
-        },
-      },
-    })
-    expect(row?.substituteId).toBe(volunteer.id)
+    expect(errorOf(result)).toBe("That breakout group isn't part of this event.")
   })
 
-  it("accepts a substitute from the partner ministry's roster", async () => {
+  it("does not accept a partner ministry substitute for an Event Session", async () => {
     const mine = await seedEvent("Youth Night")
     const partner = await seedEvent("Young Pro Night")
     const cluster = await seedCollab([mine.id, partner.id])
@@ -281,7 +271,7 @@ describe("integration — a Collab day's cluster-owned table", () => {
       volunteer.id
     )
 
-    expect(result.success).toBe(true)
+    expect(errorOf(result)).toBe("That breakout group isn't part of this event.")
   })
 
   it("accepts the member event's own standing table too — both sets are in play", async () => {
@@ -332,7 +322,7 @@ describe("integration — a Collab day's cluster-owned table", () => {
       volunteer.id
     )
 
-    expect(errorOf(result)).toBe("That breakout group isn't part of this session.")
+    expect(errorOf(result)).toBe("That breakout group isn't part of this event.")
   })
 
   it("removes one again", async () => {
@@ -344,20 +334,21 @@ describe("integration — a Collab day's cluster-owned table", () => {
       select: { id: true },
     })
     const volunteer = await seedVolunteer(event.id)
-    await assignSubFacilitator(
+    const assigned = await assignSubFacilitator(
       occurrence.id,
       dayTable.id,
       FacilitatorRole.Facilitator,
       volunteer.id
     )
 
+    expect(errorOf(assigned)).toBe("That breakout group isn't part of this event.")
     const result = await removeSubFacilitator(
       occurrence.id,
       dayTable.id,
       FacilitatorRole.Facilitator
     )
 
-    expect(result.success).toBe(true)
+    expect(errorOf(result)).toBe("That breakout group isn't part of this event.")
     expect(await db.occurrenceSubFacilitator.count()).toBe(0)
   })
 })
@@ -401,6 +392,6 @@ describe("regression — a Parallel day keeps its events independent", () => {
     )
 
     expect(accepted.success).toBe(true)
-    expect(errorOf(refused)).toBe("That breakout group isn't part of this session.")
+    expect(errorOf(refused)).toBe("That breakout group isn't part of this event.")
   })
 })

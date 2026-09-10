@@ -198,6 +198,10 @@ async function tapCheckin(token: string, key: string) {
   if (!outcome.success) throw new Error(outcome.error)
   const subject = outcome.data.breakoutSubject
   if (!subject) return { subject: null, choices: null }
+  const cluster = await db.eventCluster.findUniqueOrThrow({
+    where: { publicToken: token },
+    select: { id: true },
+  })
   const choices = await getCheckinBreakoutChoices(
     subject.registrantId,
     subject.eventId,
@@ -205,7 +209,8 @@ async function tapCheckin(token: string, key: string) {
     // The day's kiosk fills the day's set. `ClusterCheckinBoard` passes the same
     // literal; a member event keeps its own tables and fills them from its own
     // kiosk.
-    "cluster"
+    "cluster",
+    cluster.id
   )
   expect(choices.success).toBe(true)
   return { subject, choices: choices.success ? choices.data : null }
@@ -232,7 +237,8 @@ describe("integration — registering through the day's form, then checking in",
       subject!.eventId,
       subject!.occurrenceId,
       tables[1].id,
-      "cluster"
+      "cluster",
+      cluster.id
     )
     expect(picked.success).toBe(true)
     expect(await seatOf(subject!.registrantId)).toBe("Table 2")
@@ -294,7 +300,8 @@ describe("regression — auto-assign waits only where someone else will ask", ()
       second.subject!.eventId,
       second.subject!.occurrenceId,
       tables[0].id,
-      "cluster"
+      "cluster",
+      cluster.id
     )
     expect(picked.success).toBe(true)
     expect(await seatOf(second.subject!.registrantId)).toBe("Table 1")
@@ -348,7 +355,8 @@ describe("regression — auto-assign waits only where someone else will ask", ()
       subject!.eventId,
       subject!.occurrenceId,
       tables[0].id,
-      "cluster"
+      "cluster",
+      cluster.id
     )
     expect(picked.success).toBe(true)
 
@@ -361,7 +369,7 @@ describe("regression — auto-assign waits only where someone else will ask", ()
     )
   })
 
-  it("names the day's table on the welcome screen, never the standing one", async () => {
+  it("keeps the Event welcome lookup scoped to the Event's own table", async () => {
     // A person holding a seat in each set is ordinary (see above), so a single
     // `findFirst` over the union named whichever row Postgres reached first.
     // This is a check-in confirmation: the only useful answer is the table being
@@ -380,7 +388,7 @@ describe("regression — auto-assign waits only where someone else will ask", ()
     })
 
     expect(await getRegistrantBreakoutGroupName(outcome.registrantId!, event.id)).toEqual({
-      name: "Table 1",
+      name: "Standing Table",
     })
   })
 })

@@ -232,4 +232,36 @@ describe("cluster day provenance — registering again through the day link", ()
     expect(rows).toHaveLength(1)
     expect(rows[0].registrationClusterId).toBe(cluster.id)
   })
+
+  it("keeps provenance for each distinct Collab day on the same recurring event", async () => {
+    const event = await seedRecurringEvent()
+    const firstDay = await seedCluster([event.id], { date: CLUSTER_DATE })
+    const secondDay = await db.eventCluster.create({
+      data: {
+        name: "Super Sunday — next week",
+        date: new Date("2026-08-16T00:00:00.000Z"),
+        isOpen: true,
+        kind: "Collab",
+        events: { create: { eventId: event.id, order: 0 } },
+      },
+      select: { id: true, publicToken: true },
+    })
+
+    expect(
+      await registerForCluster(firstDay.publicToken, payload(), null, null, undefined, [event.id])
+    ).toMatchObject({ success: true })
+    expect(
+      await registerForCluster(secondDay.publicToken, payload(), null, null, undefined, [event.id])
+    ).toMatchObject({ success: true })
+
+    const registrant = await db.eventRegistrant.findFirstOrThrow({
+      where: { eventId: event.id },
+      select: { clusterParticipations: { select: { clusterId: true } } },
+    })
+    expect(registrant.clusterParticipations.map((p) => p.clusterId).sort()).toEqual(
+      [firstDay.id, secondDay.id].sort()
+    )
+    expect(await rosterCell(firstDay.id, event.id)).toMatchObject({ onClusterDay: true })
+    expect(await rosterCell(secondDay.id, event.id)).toMatchObject({ onClusterDay: true })
+  })
 })

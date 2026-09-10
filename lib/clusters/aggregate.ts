@@ -219,6 +219,10 @@ export async function getClusterRegistrantRows(
       attendedAt: true,
       createdAt: true,
       registrationClusterId: true,
+      clusterParticipations: {
+        where: scope ? { clusterId: scope.clusterId } : undefined,
+        select: { clusterId: true },
+      },
       member: {
         select: { firstName: true, lastName: true, phone: true, gender: true },
       },
@@ -257,7 +261,7 @@ export async function getClusterRegistrantRows(
       checkedInAt:
         r.event.type === "OneTime" ? r.attendedAt : earliestCheckIn(attendance),
       hasLinkedSession: linked !== null,
-      registrationClusterId: r.registrationClusterId,
+      registrationClusterId: r.clusterParticipations[0]?.clusterId ?? r.registrationClusterId,
       registeredAt: r.createdAt,
     }
     return { ...row, onClusterDay: isOnClusterDay(row, scope) }
@@ -297,6 +301,10 @@ export async function getClusterVolunteerRows(
       attendedAt: true,
       createdAt: true,
       signUpClusterId: true,
+      clusterParticipations: {
+        where: { clusterId: scope.clusterId },
+        select: { clusterId: true },
+      },
       member: {
         select: { firstName: true, lastName: true, phone: true, gender: true },
       },
@@ -332,7 +340,7 @@ export async function getClusterVolunteerRows(
         checkedInAt:
           v.event.type === "OneTime" ? v.attendedAt : earliestCheckIn(attendance),
         hasLinkedSession: linked !== null,
-        registrationClusterId: v.signUpClusterId,
+        registrationClusterId: v.clusterParticipations[0]?.clusterId ?? v.signUpClusterId,
         registeredAt: v.createdAt,
         onClusterDay: false,
       }
@@ -472,19 +480,37 @@ export async function getClusterSharedFormPeopleCounts(
 ): Promise<Map<string, number>> {
   if (clusterIds.length === 0) return new Map()
   const rows = await db.eventRegistrant.findMany({
-    where: { registrationClusterId: { in: clusterIds } },
-    select: { id: true, memberId: true, guestId: true, registrationClusterId: true },
+    where: {
+      OR: [
+        { clusterParticipations: { some: { clusterId: { in: clusterIds } } } },
+        { registrationClusterId: { in: clusterIds } },
+      ],
+    },
+    select: {
+      id: true,
+      memberId: true,
+      guestId: true,
+      registrationClusterId: true,
+      clusterParticipations: {
+        where: { clusterId: { in: clusterIds } },
+        select: { clusterId: true },
+      },
+    },
   })
   const byCluster = new Map<string, Set<string>>()
   for (const row of rows) {
-    const clusterId = row.registrationClusterId
-    if (!clusterId) continue
-    let people = byCluster.get(clusterId)
-    if (!people) {
-      people = new Set()
-      byCluster.set(clusterId, people)
+    const memberships = row.clusterParticipations.map((p) => p.clusterId)
+    if (memberships.length === 0 && row.registrationClusterId) {
+      memberships.push(row.registrationClusterId)
     }
-    people.add(personKeyFor(row))
+    for (const clusterId of memberships) {
+      let people = byCluster.get(clusterId)
+      if (!people) {
+        people = new Set()
+        byCluster.set(clusterId, people)
+      }
+      people.add(personKeyFor(row))
+    }
   }
   return new Map([...byCluster].map(([id, people]) => [id, people.size]))
 }
@@ -566,6 +592,7 @@ export async function getClusterRegistrationExportRows(
       attendedAt: true,
       createdAt: true,
       registrationClusterId: true,
+      clusterParticipations: { where: { clusterId }, select: { clusterId: true } },
       member: {
         select: {
           firstName: true,
@@ -619,6 +646,7 @@ export async function getClusterRegistrationExportRows(
       attendedAt: true,
       createdAt: true,
       signUpClusterId: true,
+      clusterParticipations: { where: { clusterId }, select: { clusterId: true } },
       member: {
         select: {
           firstName: true,
@@ -660,7 +688,7 @@ export async function getClusterRegistrationExportRows(
         eventType: r.event.type,
         checkedIn: checkedInAt !== null,
         hasLinkedSession: linked !== null,
-        registrationClusterId: r.registrationClusterId,
+        registrationClusterId: r.clusterParticipations[0]?.clusterId ?? r.registrationClusterId,
         registeredAt: r.createdAt,
       },
       scope
@@ -690,8 +718,8 @@ export async function getClusterRegistrationExportRows(
       mobile: person?.phone ?? r.mobileNumber ?? "",
       type: (r.memberId ? "Member" : "Guest") as "Member" | "Guest",
       registeredAt: r.createdAt.toISOString(),
-      registrationClusterId: r.registrationClusterId,
-      viaSharedForm: r.registrationClusterId === clusterId,
+      registrationClusterId: r.clusterParticipations[0]?.clusterId ?? r.registrationClusterId,
+      viaSharedForm: r.clusterParticipations.length > 0 || r.registrationClusterId === clusterId,
       checkedIn: checkedInAt !== null,
       checkedInAt: checkedInAt?.toISOString() ?? null,
 
@@ -744,7 +772,7 @@ export async function getClusterRegistrationExportRows(
         onClusterDay: volunteerIsOnClusterDay(
           {
             checkedIn: checkedInAt !== null,
-            registrationClusterId: v.signUpClusterId,
+            registrationClusterId: v.clusterParticipations[0]?.clusterId ?? v.signUpClusterId,
             registeredAt: v.createdAt,
           },
           scope
@@ -758,8 +786,8 @@ export async function getClusterRegistrationExportRows(
         mobile: person.phone ?? "",
         type: "Volunteer" as const,
         registeredAt: v.createdAt.toISOString(),
-        registrationClusterId: v.signUpClusterId,
-        viaSharedForm: v.signUpClusterId === clusterId,
+        registrationClusterId: v.clusterParticipations[0]?.clusterId ?? v.signUpClusterId,
+        viaSharedForm: v.clusterParticipations.length > 0 || v.signUpClusterId === clusterId,
         checkedIn: checkedInAt !== null,
         checkedInAt: checkedInAt?.toISOString() ?? null,
 
@@ -1134,7 +1162,14 @@ export async function getClusterVolunteerPool(
     db.volunteer.findMany({
       where: {
         eventId: { in: eventIds },
-        ...(dayOnly ? { signUpClusterId: clusterId } : {}),
+        ...(dayOnly
+          ? {
+              OR: [
+                { clusterParticipations: { some: { clusterId } } },
+                { signUpClusterId: clusterId },
+              ],
+            }
+          : {}),
         AND: [
           status === "Pending" || status === "Confirmed" || status === "Rejected"
             ? { status }
@@ -1172,7 +1207,13 @@ export async function getClusterVolunteerPool(
     // yet", and the other figure is what makes that readable rather than
     // alarming.
     db.volunteer.count({
-      where: { eventId: { in: eventIds }, signUpClusterId: clusterId },
+      where: {
+        eventId: { in: eventIds },
+        OR: [
+          { clusterParticipations: { some: { clusterId } } },
+          { signUpClusterId: clusterId },
+        ],
+      },
     }),
     db.volunteer.count({ where: { eventId: { in: eventIds } } }),
   ])
@@ -1261,7 +1302,7 @@ export async function getClusterMinistries(
   clusterId: string
 ): Promise<{ id: string; name: string }[]> {
   const rows = await db.eventMinistry.findMany({
-    where: { event: { clusterMembership: { clusterId } } },
+    where: { event: { clusterMemberships: { some: { clusterId } } } },
     select: { ministry: { select: { id: true, name: true } } },
   })
   const byId = new Map(rows.map((r) => [r.ministry.id, r.ministry]))

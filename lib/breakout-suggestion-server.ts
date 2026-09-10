@@ -231,14 +231,15 @@ export async function fetchBreakoutCandidates(
   eventId: string,
   occurrenceId: string | null,
   requireCheckedIn = true,
-  breakoutSet: BreakoutSet = "event"
+  breakoutSet: BreakoutSet = "event",
+  clusterId?: string
 ): Promise<BreakoutCandidate[]> {
   // Keeps taking an event id: every caller is a public or per-event surface that
   // knows which event it is serving. On a Collab day that event has two sets in
   // play, so the surface names which — its own by default, the day's when a
   // cluster form or kiosk is asking.
   const { candidateEventIds } = await resolvePoolScope(eventId)
-  const owner = await resolveSurfaceBreakoutOwner(eventId, breakoutSet)
+  const owner = await resolveSurfaceBreakoutOwner(eventId, breakoutSet, clusterId)
 
   return loadCandidates({
     ...owner,
@@ -275,11 +276,12 @@ export async function fetchBreakoutAvailability(
   eventId: string,
   occurrenceId: string | null,
   requireCheckedIn = true,
-  breakoutSet: BreakoutSet = "event"
+  breakoutSet: BreakoutSet = "event",
+  clusterId?: string
 ): Promise<BreakoutAvailability> {
-  const owner = await resolveSurfaceBreakoutOwner(eventId, breakoutSet)
+  const owner = await resolveSurfaceBreakoutOwner(eventId, breakoutSet, clusterId)
   const [candidates, totalGroups] = await Promise.all([
-    fetchBreakoutCandidates(eventId, occurrenceId, requireCheckedIn, breakoutSet),
+    fetchBreakoutCandidates(eventId, occurrenceId, requireCheckedIn, breakoutSet, clusterId),
     db.breakoutGroup.count({ where: { ...owner, ...ENABLED_BREAKOUT_WHERE } }),
   ])
   return { candidates, totalGroups }

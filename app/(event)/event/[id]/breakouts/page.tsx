@@ -5,9 +5,8 @@ import { requireEventModule } from "@/lib/events/require-module"
 import { unassignedCandidateWhere } from "@/lib/breakouts/candidate-pool"
 import { eventSurface } from "@/lib/breakouts/owner"
 import { breakoutGroupsInclude } from "@/lib/breakouts/queries"
-import { resolvePoolScope, resolveSeatedScope } from "@/lib/events/pool-scope"
+import { resolveSeatedScope } from "@/lib/events/pool-scope"
 import type { Prisma } from "@/app/generated/prisma/client"
-import { ClusterBreakoutsNotice } from "@/components/breakouts/cluster-breakouts-notice"
 import { auth } from "@/lib/auth"
 import { canImport } from "@/lib/permissions"
 import { BreakoutGroupsTable } from "./breakout-group"
@@ -82,21 +81,13 @@ export default async function BreakoutsPage({
 }) {
   const { id } = await params
   await requireEventModule(id, "Breakout")
-  const scope = await resolvePoolScope(id)
-  const seatedScope = await resolveSeatedScope(scope.breakoutOwner)
+  const seatedScope = await resolveSeatedScope(eventSurface(id).owner)
   const [session, event, lifeStages] = await Promise.all([
     auth(),
     getEventBreakouts(id, seatedScope),
     db.lifeStage.findMany({ orderBy: { order: "asc" }, select: { id: true, name: true } }),
   ])
   if (!event) notFound()
-
-  // Under a Collab the day's tables live on the cluster, so say so rather than
-  // letting an admin set these up expecting them to be in play.
-  const collabCluster =
-    scope.kind === "Collab" && scope.clusterId && scope.clusterName
-      ? { id: scope.clusterId, name: scope.clusterName }
-      : null
 
   const defaultLifeStageIds =
     event.ministries.length === 1 && event.ministries[0].ministry.lifeStageId
@@ -112,12 +103,6 @@ export default async function BreakoutsPage({
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-6">
-      {collabCluster && (
-        <ClusterBreakoutsNotice
-          clusterId={collabCluster.id}
-          clusterName={collabCluster.name}
-        />
-      )}
       <BreakoutGroupsTable
         surface={eventSurface(event.id)}
         breakoutGroups={breakoutGroupRows}

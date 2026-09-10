@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest"
 import { db } from "@/lib/db"
-import { verifyCatchMechFaci, submitCatchMechConfirmations } from "@/app/events/[id]/catch-mech/actions"
+import { verifyCatchMechFaci } from "@/app/events/[id]/catch-mech/actions"
 import { resolveCatchMechScope } from "@/lib/catch-mech/scope"
 
 /**
@@ -109,8 +109,8 @@ describe("Catch Mech on a Collab cluster", () => {
     await db.$disconnect()
   })
 
-  it("endorses a cluster table to both ministries that staff it", async () => {
-    const { eventA, eventB, outsider, sharedTable, standingTable } = await seed()
+  it("keeps cluster tables out of Event Catch Mech", async () => {
+    const { eventA, eventB, outsider, standingTable } = await seed()
 
     const inA = await db.breakoutGroup.findMany({
       where: (await resolveCatchMechScope(eventA.id)).where,
@@ -125,15 +125,8 @@ describe("Catch Mech on a Collab cluster", () => {
       select: { id: true },
     })
 
-    // The lead's ministry and the co-faci's ministry both see the shared table...
-    expect(inA.map((g) => g.id)).toContain(sharedTable.id)
-    expect(inB.map((g) => g.id)).toEqual([sharedTable.id])
-    // ...and A keeps its OWN standing table in scope alongside it. The scope is a
-    // union: an event's follow-up history is keyed to the tables it was recorded
-    // against, and joining a collab must not put it out of reach.
-    expect(inA.map((g) => g.id).sort()).toEqual([sharedTable.id, standingTable.id].sort())
-    // B never had a standing table of its own, so it sees only the shared one.
-    // An event outside the cluster is unaffected and sees only its own.
+    expect(inA.map((g) => g.id)).toEqual([standingTable.id])
+    expect(inB).toEqual([])
     expect(inOutsider).toEqual([])
   })
 
@@ -155,27 +148,15 @@ describe("Catch Mech on a Collab cluster", () => {
     expect(inB.map((g) => g.id)).not.toContain(orphanTable.id)
   })
 
-  it("mints a session against the facilitator's own ministry event", async () => {
-    const { eventA, eventB, sharedTable, faciA, faciB } = await seed()
+  it("refuses a Collab table when minting an Event Catch Mech session", async () => {
+    const { eventA, eventB, sharedTable } = await seed()
 
     const leadEntry = await verifyCatchMechFaci(eventA.id, sharedTable.id, "09171111111")
     const coEntry = await verifyCatchMechFaci(eventB.id, sharedTable.id, "09172222222")
 
-    expect(leadEntry.success).toBe(true)
-    expect(coEntry.success).toBe(true)
-
-    const leadSession = await db.catchMechSession.findFirstOrThrow({
-      where: { facilitatorVolunteerId: faciA.volunteer.id },
-    })
-    const coSession = await db.catchMechSession.findFirstOrThrow({
-      where: { facilitatorVolunteerId: faciB.volunteer.id },
-    })
-
-    // One cluster-owned table, two sessions, each keyed to its own ministry.
-    expect(leadSession.breakoutGroupId).toBe(sharedTable.id)
-    expect(leadSession.eventId).toBe(eventA.id)
-    expect(coSession.breakoutGroupId).toBe(sharedTable.id)
-    expect(coSession.eventId).toBe(eventB.id)
+    expect(leadEntry.success).toBe(false)
+    expect(coEntry.success).toBe(false)
+    expect(await db.catchMechSession.count()).toBe(0)
   })
 
   it("refuses a table the event does not staff", async () => {
@@ -188,8 +169,8 @@ describe("Catch Mech on a Collab cluster", () => {
     expect(await db.catchMechSession.count()).toBe(0)
   })
 
-  it("confirms a cluster table's participant into the facilitator's DGroup", async () => {
-    const { eventA, sharedTable, faciA } = await seed()
+  it("cannot confirm a Collab table's participant through Event Catch Mech", async () => {
+    const { eventA, sharedTable } = await seed()
     const guest = await db.guest.create({
       data: { firstName: "Mia", lastName: "Guest", language: [] },
     })
@@ -201,22 +182,7 @@ describe("Catch Mech on a Collab cluster", () => {
     })
 
     const entry = await verifyCatchMechFaci(eventA.id, sharedTable.id, "09171111111")
-    if (!entry.success) throw new Error(entry.error)
-
-    const result = await submitCatchMechConfirmations(entry.data.token, [
-      { registrantId: registrant.id, status: "confirmed", targetGroupId: faciA.group.id },
-    ])
-    expect(result.success).toBe(true)
-
-    const promoted = await db.guest.findUniqueOrThrow({ where: { id: guest.id } })
-    expect(promoted.memberId).toBeTruthy()
-    const member = await db.member.findUniqueOrThrow({ where: { id: promoted.memberId! } })
-    expect(member.smallGroupId).toBe(faciA.group.id)
-
-    // The request hangs off the CLUSTER-owned table, which is what makes it
-    // visible on this ministry's Catch Mech lists.
-    const request = await db.smallGroupMemberRequest.findFirstOrThrow()
-    expect(request.breakoutGroupId).toBe(sharedTable.id)
-    expect(request.status).toBe("Confirmed")
+    expect(entry.success).toBe(false)
+    expect(await db.smallGroupMemberRequest.count()).toBe(0)
   })
 })

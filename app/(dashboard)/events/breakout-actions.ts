@@ -797,9 +797,10 @@ export async function transferRegistrantToBreakout(
  */
 async function surfaceBreakoutSet(
   eventId: string,
-  breakoutSet: BreakoutSet
+  breakoutSet: BreakoutSet,
+  clusterId?: string
 ): Promise<Prisma.BreakoutGroupWhereInput> {
-  return resolveSeatedScope(await resolveSurfaceBreakoutOwner(eventId, breakoutSet))
+  return resolveSeatedScope(await resolveSurfaceBreakoutOwner(eventId, breakoutSet, clusterId))
 }
 
 /**
@@ -1108,7 +1109,8 @@ export async function getCheckinBreakoutChoices(
   registrantId: string,
   eventId: string,
   occurrenceId: string | null,
-  breakoutSet: BreakoutSet = "event"
+  breakoutSet: BreakoutSet = "event",
+  clusterId?: string
 ): Promise<ActionResult<CheckinBreakoutChoices | null>> {
   try {
     const registrant = await db.eventRegistrant.findUnique({
@@ -1124,7 +1126,7 @@ export async function getCheckinBreakoutChoices(
     // skip its own step for every regular who already held a standing seat. The
     // set this kiosk actually FILLS is `breakoutSet`, resolved further down by
     // `fetchBreakoutAvailability`.
-    const thisSet = await surfaceBreakoutSet(eventId, breakoutSet)
+    const thisSet = await surfaceBreakoutSet(eventId, breakoutSet, clusterId)
 
     if (await facilitatesAnyGroup(registrantId, thisSet)) {
       return { success: true, data: null }
@@ -1148,7 +1150,8 @@ export async function getCheckinBreakoutChoices(
       eventId,
       occurrenceId,
       false,
-      breakoutSet
+      breakoutSet,
+      clusterId
     )
     if (totalGroups === 0) return { success: true, data: null }
 
@@ -1201,7 +1204,8 @@ export async function pickCheckinBreakout(
   eventId: string,
   occurrenceId: string | null,
   groupId: string,
-  breakoutSet: BreakoutSet = "event"
+  breakoutSet: BreakoutSet = "event",
+  clusterId?: string
 ): Promise<ActionResult<{ name: string } | null>> {
   try {
     if (!(await isCheckedInFor(registrantId, occurrenceId))) {
@@ -1219,14 +1223,15 @@ export async function pickCheckinBreakout(
       await isEventStaffViewer(),
       { occurrenceId },
       false,
-      breakoutSet
+      breakoutSet,
+      clusterId
     )
     // A refused pick (full, switched off, another day's table) comes back as the
     // placement they already had, or null. Either way the caller reports what is
     // true rather than what was asked for.
     if (!assigned) return { success: false, error: "That group is no longer available" }
 
-    revalidateBreakoutSurfaces(await resolveSurfaceBreakoutOwner(eventId, breakoutSet))
+    revalidateBreakoutSurfaces(await resolveSurfaceBreakoutOwner(eventId, breakoutSet, clusterId))
     return { success: true, data: { name: assigned.name } }
   } catch {
     return { success: false, error: "Could not save your group" }

@@ -66,11 +66,13 @@ type Step = "lookup" | "disambiguate" | "confirm" | "breakout" | "success" | "no
 
 export function ClusterCheckinBoard({
   token,
+  clusterId,
   kind,
   walkInHref,
   offerBreakout = false,
 }: {
   token: string
+  clusterId?: string
   /** Which shape of day this is — see the Collab note above. */
   kind: "Parallel" | "Collab"
   /** The day's door, or null while it's closed — a link that dead-ends is worse than none. */
@@ -216,7 +218,8 @@ export function ClusterCheckinBoard({
         subject.occurrenceId,
         // The day's tables, not the member event's standing set. Both are in play
         // for this person; the kiosk they are standing at is what decides.
-        "cluster"
+        "cluster",
+        clusterId
       )
       setLoading(false)
       if (choices.success && choices.data && !choices.data.seatedGroupName) {
@@ -250,7 +253,8 @@ export function ClusterCheckinBoard({
       breakoutSubject.eventId,
       breakoutSubject.occurrenceId,
       selectedBreakoutId,
-      "cluster"
+      "cluster",
+      clusterId
     )
     setLoading(false)
     if (!result.success) {
