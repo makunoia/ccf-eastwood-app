@@ -30,6 +30,15 @@ export function isAllowedMcpClient(clientId: string, redirectUri: string) {
   }) ?? false
   if (configuredMatch) return true
   if (clientId === "https://chatgpt.com/oauth/client.json" && redirectUri === "https://chatgpt.com/connector_platform_oauth_redirect") return true
+  if (clientId === "https://chatgpt.com/oauth/codex/client.json") {
+    try {
+      const redirect = new URL(redirectUri)
+      const isLoopback = ["localhost", "127.0.0.1", "[::1]"].includes(redirect.hostname)
+      if (redirect.protocol === "http:" && isLoopback && Boolean(redirect.port) && redirect.pathname === "/callback" && !redirect.username && !redirect.password) return true
+    } catch {
+      return false
+    }
+  }
   const client = clientId.match(/^https:\/\/chatgpt\.com\/oauth\/([A-Za-z0-9_-]+)\/client\.json$/)
   const redirect = redirectUri.match(/^https:\/\/chatgpt\.com\/connector\/oauth\/([A-Za-z0-9_-]+)$/)
   if (client && redirect && client[1] === redirect[1]) return true

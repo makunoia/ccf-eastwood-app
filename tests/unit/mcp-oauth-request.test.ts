@@ -19,12 +19,22 @@ describe("MCP OAuth authorization request", () => {
     expect(result).toEqual({ ok: false, error: "The OAuth resource does not match the Churchie MCP endpoint." })
   })
 
-  it("accepts native-app HTTP loopback redirects at the transport validation layer", () => {
+  it("accepts the Codex native-app client with a dynamic HTTP loopback callback", () => {
     vi.stubEnv("NODE_ENV", "production")
     vi.stubEnv("MCP_OAUTH_CLIENTS", "")
     const url = requestUrl("&scope=churchie%3Amembers%3Aread")
-    url.searchParams.set("redirect_uri", "http://127.0.0.1:49152/oauth/callback")
+    url.searchParams.set("client_id", "https://chatgpt.com/oauth/codex/client.json")
+    url.searchParams.set("redirect_uri", "http://127.0.0.1:49152/callback")
     const result = validateAuthorizationRequest(url)
-    expect(result).toEqual({ ok: false, error: "The OAuth client or callback is not approved for Churchie." })
+    expect(result.ok, JSON.stringify(result)).toBe(true)
+  })
+
+  it("rejects non-loopback callbacks for the Codex native-app client", () => {
+    vi.stubEnv("NODE_ENV", "production")
+    vi.stubEnv("MCP_OAUTH_CLIENTS", "")
+    const url = requestUrl("&scope=churchie%3Amembers%3Aread")
+    url.searchParams.set("client_id", "https://chatgpt.com/oauth/codex/client.json")
+    url.searchParams.set("redirect_uri", "http://attacker.example/callback")
+    expect(validateAuthorizationRequest(url)).toEqual({ ok: false, error: "redirect_uri must use HTTPS or an HTTP loopback address." })
   })
 })
