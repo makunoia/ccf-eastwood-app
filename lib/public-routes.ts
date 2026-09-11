@@ -10,6 +10,9 @@
 export const PUBLIC_PREFIXES = [
   "/login",
   "/api/auth",
+  "/api/mcp",
+  "/oauth",
+  "/.well-known/oauth-",
   "/_next",
   "/favicon",
   "/manifest",

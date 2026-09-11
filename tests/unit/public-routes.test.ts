@@ -13,6 +13,14 @@ import {
  * every public surface gets pinned here.
  */
 describe("isPublicPath", () => {
+  it("allows MCP discovery, transport, and OAuth endpoints through the auth proxy", () => {
+    expect(isPublicPath("/api/mcp")).toBe(true)
+    expect(isPublicPath("/api/mcp/imports/batch/upload")).toBe(true)
+    expect(isPublicPath("/.well-known/oauth-protected-resource")).toBe(true)
+    expect(isPublicPath("/.well-known/oauth-authorization-server")).toBe(true)
+    expect(isPublicPath("/oauth/authorize")).toBe(true)
+    expect(isPublicPath("/oauth/token")).toBe(true)
+  })
   describe("cluster shared registration form (regression)", () => {
     // Regression: /register/c/[token] was missing from the allowlist, so the
     // public Event Cluster registration form redirected everyone to /login.
