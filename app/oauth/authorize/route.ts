@@ -2,21 +2,28 @@ import { cookies } from "next/headers"
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { createAuthorizationCode, isAllowedMcpClient } from "@/lib/mcp/auth"
-import { sanitizeRequestedScopes } from "@/lib/mcp/scopes"
+import { MCP_SCOPES, sanitizeRequestedScopes } from "@/lib/mcp/scopes"
 
 const CONSENT_COOKIE = "churchie_mcp_consent"
 function invalid(message: string) { return NextResponse.json({ error: "invalid_request", error_description: message }, { status: 400 }) }
 function escapeHtml(value: string) { return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!) }
 
-function validated(url: URL) {
+type Validation = { ok: true; value: { clientId: string; redirectUri: string; scope: (typeof MCP_SCOPES)[number][]; challenge: string; state: string | null; resource: string } } | { ok: false; error: string }
+export function validateAuthorizationRequest(url: URL): Validation {
   const clientId = url.searchParams.get("client_id"), redirectUri = url.searchParams.get("redirect_uri")
-  const responseType = url.searchParams.get("response_type"), scope = sanitizeRequestedScopes(url.searchParams.get("scope"))
+  const responseType = url.searchParams.get("response_type"), requestedScope = url.searchParams.get("scope")
+  const scope = requestedScope?.trim() ? sanitizeRequestedScopes(requestedScope) : null
   const challenge = url.searchParams.get("code_challenge"), method = url.searchParams.get("code_challenge_method")
   const state = url.searchParams.get("state"), resource = url.searchParams.get("resource")
-  if (!clientId || !redirectUri || responseType !== "code" || !scope || !challenge || !/^[A-Za-z0-9_-]{43,128}$/.test(challenge) || method !== "S256" || resource !== `${url.origin}/api/mcp`) return null
-  try { const redirect = new URL(redirectUri); if (redirect.protocol !== "https:" && process.env.NODE_ENV === "production") return null } catch { return null }
-  if (!isAllowedMcpClient(clientId, redirectUri)) return null
-  return { clientId, redirectUri, scope, challenge, state, resource }
+  if (!clientId) return { ok: false, error: "client_id is required." }
+  if (!redirectUri) return { ok: false, error: "redirect_uri is required." }
+  if (responseType !== "code") return { ok: false, error: "response_type must be code." }
+  if (!scope) return { ok: false, error: requestedScope === null ? "scope is required." : "The requested scope is not supported." }
+  if (!challenge || !/^[A-Za-z0-9_-]{43,128}$/.test(challenge) || method !== "S256") return { ok: false, error: "A valid S256 PKCE challenge is required." }
+  if (resource !== `${url.origin}/api/mcp`) return { ok: false, error: "The OAuth resource does not match the Churchie MCP endpoint." }
+  try { const redirect = new URL(redirectUri); if (redirect.protocol !== "https:" && process.env.NODE_ENV === "production") return { ok: false, error: "redirect_uri must use HTTPS." } } catch { return { ok: false, error: "redirect_uri is invalid." } }
+  if (!isAllowedMcpClient(clientId, redirectUri)) return { ok: false, error: "The OAuth client or callback is not approved for Churchie." }
+  return { ok: true, value: { clientId, redirectUri, scope, challenge, state, resource } }
 }
 
 async function signedIn(request: Request) {
@@ -27,8 +34,9 @@ async function signedIn(request: Request) {
 }
 
 export async function GET(request: Request) {
-  const url = new URL(request.url), params = validated(url)
-  if (!params) return invalid("A valid PKCE authorization-code request for the Churchie MCP resource is required.")
+  const url = new URL(request.url), validation = validateAuthorizationRequest(url)
+  if (!validation.ok) { console.warn(JSON.stringify({ level: "warning", route: "/oauth/authorize", validationError: validation.error })); return invalid(validation.error) }
+  const params = validation.value
   const user = await signedIn(request); if (user instanceof NextResponse) return user
   const nonce = crypto.randomUUID(), jar = await cookies()
   jar.set(CONSENT_COOKIE, nonce, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", maxAge: 600, path: "/oauth/authorize" })
@@ -41,7 +49,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const url = new URL(request.url), form = await request.formData()
   for (const [key, value] of form.entries()) if (key !== "decision" && key !== "consent_nonce" && typeof value === "string") url.searchParams.append(key, value)
-  const params = validated(url); if (!params) return invalid("The authorization request is invalid or expired.")
+  const validation = validateAuthorizationRequest(url); if (!validation.ok) return invalid(validation.error)
+  const params = validation.value
   const user = await signedIn(request); if (user instanceof NextResponse) return user
   const jar = await cookies(), suppliedNonce = form.get("consent_nonce"), expectedNonce = jar.get(CONSENT_COOKIE)?.value
   jar.delete(CONSENT_COOKIE)
