@@ -7,7 +7,7 @@ import { requireEventModule } from "@/lib/events/require-module"
 import { EventVolunteerDetail } from "./volunteer-detail"
 
 async function getData(volunteerId: string, eventId: string) {
-  const [volunteer, committees] = await Promise.all([
+  const [volunteer, committees, lifeStages] = await Promise.all([
     db.volunteer.findFirst({
       where: { id: volunteerId, eventId },
       include: {
@@ -26,8 +26,12 @@ async function getData(volunteerId: string, eventId: string) {
         },
       },
     }),
+    db.lifeStage.findMany({
+      orderBy: { order: "asc" },
+      select: { id: true, name: true },
+    }),
   ])
-  return { volunteer, committees }
+  return { volunteer, committees, lifeStages }
 }
 
 export async function generateMetadata({
@@ -51,7 +55,7 @@ export default async function EventVolunteerDetailPage({
 }) {
   const { id: eventId, volunteerId } = await params
   await requireEventModule(eventId, "Volunteers")
-  const { volunteer, committees } = await getData(volunteerId, eventId)
+  const { volunteer, committees, lifeStages } = await getData(volunteerId, eventId)
   if (!volunteer) notFound()
 
   const memberName = `${volunteer.member.firstName} ${volunteer.member.lastName}`
@@ -71,11 +75,14 @@ export default async function EventVolunteerDetailPage({
         committeeId: volunteer.committeeId,
         preferredRoleId: volunteer.preferredRoleId,
         assignedRoleId: volunteer.assignedRoleId,
+        ageGroup: volunteer.ageGroup,
+        lifeStageId: volunteer.lifeStageId,
         status: volunteer.status as "Pending" | "Confirmed" | "Rejected",
         notes: volunteer.notes,
         leaderApprovalToken: volunteer.leaderApprovalToken,
         leaderNotes: volunteer.leaderNotes,
         committees,
+        lifeStages,
       }}
     />
   )

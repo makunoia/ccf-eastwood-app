@@ -31,6 +31,7 @@ export type EventVolunteerExportRow = {
   nickname: string | null
   email: string | null
   phone: string | null
+  ageGroup?: string | null
   lifeStage: string | null
   gender: string | null
   birthDate: string | null
@@ -67,6 +68,7 @@ const COLUMNS: readonly ColumnDef[] = [
   { key: "email", label: "Email", group: "Personal Information", toggle: null, value: (r) => r.email },
   { key: "phone", label: "Phone", group: "Personal Information", toggle: null, value: (r) => r.phone },
   { key: "nickname", label: "Nickname", group: "Personal Information", toggle: null, optional: true, value: (r) => r.nickname },
+  { key: "ageGroup", label: "Age Group", group: "Personal Information", toggle: null, optional: true, value: (r) => r.ageGroup ?? null },
   { key: "lifeStage", label: "Life Stage", group: "Personal Information", toggle: null, optional: true, value: (r) => r.lifeStage },
   { key: "gender", label: "Gender", group: "Personal Information", toggle: null, optional: true, value: (r) => r.gender },
   { key: "birthDate", label: "Birth Month + Year", group: "Personal Information", toggle: null, optional: true, value: (r) => r.birthDate },

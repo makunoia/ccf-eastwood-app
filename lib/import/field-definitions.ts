@@ -48,6 +48,8 @@ export const VOLUNTEER_FIELDS: FieldDefinition[] = [
   { key: "lastName",       label: "Last Name",      required: true,  hint: "For new Member creation if no match" },
   { key: "committeeName",  label: "Committee Name", required: true,  hint: "Must match an existing committee" },
   { key: "roleName",       label: "Role Name",      required: true,  hint: "Must match a role in that committee" },
+  { key: "ageGroup",       label: "Age Group",      required: false, hint: "Under 18, 18–24, 25–34, 35–49, 50–64, or 65+" },
+  { key: "lifeStage",      label: "Life Stage",     required: false, hint: "Must match an existing life stage name" },
   { key: "status",         label: "Status",         required: false, hint: "Pending, Confirmed, or Rejected" },
   { key: "notes",          label: "Notes",          required: false },
 ]

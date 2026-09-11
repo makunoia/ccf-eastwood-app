@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 }
 
 async function getData(eventId: string) {
-  const [event, members] = await Promise.all([
+  const [event, members, lifeStages] = await Promise.all([
     db.event.findUnique({
       where: { id: eventId },
       select: {
@@ -31,8 +31,12 @@ async function getData(eventId: string) {
       orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
       select: { id: true, firstName: true, lastName: true },
     }),
+    db.lifeStage.findMany({
+      orderBy: { order: "asc" },
+      select: { id: true, name: true },
+    }),
   ])
-  return { event, members }
+  return { event, members, lifeStages }
 }
 
 export default async function NewEventVolunteerPage({
@@ -42,7 +46,7 @@ export default async function NewEventVolunteerPage({
 }) {
   const { id } = await params
   await requireEventModule(id, "Volunteers")
-  const { event, members } = await getData(id)
+  const { event, members, lifeStages } = await getData(id)
   if (!event) notFound()
 
   return (
@@ -50,6 +54,7 @@ export default async function NewEventVolunteerPage({
       eventId={event.id}
       members={members}
       committees={event.committees}
+      lifeStages={lifeStages}
     />
   )
 }

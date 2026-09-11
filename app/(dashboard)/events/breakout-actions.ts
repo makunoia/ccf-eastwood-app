@@ -1346,7 +1346,7 @@ export async function setFacilitator(
       // signed up under.
       const volunteerEventIds = await poolVolunteerEventIds(owner)
       const volunteer = await db.volunteer.findFirst({
-        where: { id: volunteerId, eventId: { in: volunteerEventIds } },
+        where: { id: volunteerId, eventId: { in: volunteerEventIds }, status: "Confirmed" },
         select: { id: true },
       })
       if (!volunteer) {

@@ -5,7 +5,7 @@ import { personTitle } from "@/lib/metadata"
 import { VolunteerForm } from "../volunteer-form"
 
 async function getData(id: string) {
-  const [volunteer, members, events] = await Promise.all([
+  const [volunteer, members, events, lifeStages] = await Promise.all([
     db.volunteer.findUnique({
       where: { id },
       include: {
@@ -38,8 +38,9 @@ async function getData(id: string) {
         },
       },
     }),
+    db.lifeStage.findMany({ orderBy: { order: "asc" }, select: { id: true, name: true } }),
   ])
-  return { volunteer, members, events }
+  return { volunteer, members, events, lifeStages }
 }
 
 export async function generateMetadata({
@@ -61,7 +62,7 @@ export default async function EditVolunteerPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const { volunteer, members, events } = await getData(id)
+  const { volunteer, members, events, lifeStages } = await getData(id)
 
   if (!volunteer) notFound()
 
@@ -78,10 +79,12 @@ export default async function EditVolunteerPage({
     committeeId: volunteer.committeeId,
     preferredRoleId: volunteer.preferredRoleId,
     assignedRoleId: volunteer.assignedRoleId,
+    ageGroup: volunteer.ageGroup,
+    lifeStageId: volunteer.lifeStageId,
     notes: volunteer.notes,
     leaderApprovalToken: volunteer.leaderApprovalToken,
     leaderNotes: volunteer.leaderNotes,
   }
 
-  return <VolunteerForm members={members} events={events} volunteer={volunteerProp} />
+  return <VolunteerForm members={members} events={events} lifeStages={lifeStages} volunteer={volunteerProp} />
 }

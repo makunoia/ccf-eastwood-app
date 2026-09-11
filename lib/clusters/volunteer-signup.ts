@@ -1,4 +1,5 @@
 import { db } from "@/lib/db"
+import { ageGroupForBirthDate } from "@/lib/volunteers/age-groups"
 
 /**
  * Filing one volunteer sign-up against a Collab day.
@@ -59,7 +60,7 @@ export async function fileClusterVolunteerSignUp(
 
   const member = await db.member.findUnique({
     where: { id: memberId },
-    select: { id: true },
+    select: { id: true, birthMonth: true, birthYear: true, lifeStageId: true },
   })
   if (!member) return { ok: false, reason: "member" }
 
@@ -68,6 +69,8 @@ export async function fileClusterVolunteerSignUp(
     select: {
       id: true,
       signUpClusterId: true,
+      ageGroup: true,
+      lifeStageId: true,
       clusterParticipations: { select: { clusterId: true } },
     },
   })
@@ -95,6 +98,8 @@ export async function fileClusterVolunteerSignUp(
           committeeId,
           preferredRoleId,
           notes,
+          ageGroup: existing.ageGroup ?? ageGroupForBirthDate(member.birthYear, member.birthMonth),
+          lifeStageId: existing.lifeStageId ?? member.lifeStageId,
           clusterParticipations: { create: { clusterId } },
         },
         select: { id: true },
@@ -106,6 +111,8 @@ export async function fileClusterVolunteerSignUp(
           committeeId,
           preferredRoleId,
           notes,
+          ageGroup: ageGroupForBirthDate(member.birthYear, member.birthMonth),
+          lifeStageId: member.lifeStageId,
           signUpClusterId: clusterId,
           clusterParticipations: { create: { clusterId } },
           leaderApprovalToken: crypto.randomUUID(),

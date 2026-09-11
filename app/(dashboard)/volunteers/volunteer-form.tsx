@@ -35,6 +35,7 @@ import {
 } from "@/lib/validations/volunteer"
 import { createVolunteer, updateVolunteer, deleteVolunteer } from "./actions"
 import { MobileFormActions } from "@/components/mobile-form-actions"
+import { VOLUNTEER_AGE_GROUPS } from "@/lib/volunteers/age-groups"
 
 type CommitteeRole = { id: string; name: string }
 type Committee = { id: string; name: string; roles: CommitteeRole[] }
@@ -53,6 +54,8 @@ type VolunteerDetail = {
   committeeId: string
   preferredRoleId: string
   assignedRoleId: string | null
+  ageGroup: string | null
+  lifeStageId: string | null
   notes: string | null
   leaderApprovalToken: string | null
   leaderNotes: string | null
@@ -61,6 +64,7 @@ type VolunteerDetail = {
 type Props = {
   members: { id: string; firstName: string; lastName: string }[]
   events: Event[]
+  lifeStages: { id: string; name: string }[]
   volunteer?: VolunteerDetail
 }
 
@@ -77,12 +81,14 @@ function toFormValues(v: VolunteerDetail): VolunteerFormValues {
     committeeId: v.committeeId,
     preferredRoleId: v.preferredRoleId,
     assignedRoleId: v.assignedRoleId ?? "",
+    ageGroup: v.ageGroup ?? "",
+    lifeStageId: v.lifeStageId ?? "",
     status: v.status,
     notes: v.notes ?? "",
   }
 }
 
-export function VolunteerForm({ members, events, volunteer }: Props) {
+export function VolunteerForm({ members, events, lifeStages, volunteer }: Props) {
   const router = useRouter()
   const isEdit = !!volunteer
   const [form, setForm] = React.useState<VolunteerFormValues>(
@@ -300,6 +306,29 @@ export function VolunteerForm({ members, events, volunteer }: Props) {
             </Select>
           </div>
         )}
+
+        <div className="grid gap-6 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="ageGroup">Age Group</Label>
+            <Select value={form.ageGroup || "none"} onValueChange={(v) => set("ageGroup", v === "none" ? "" : v)}>
+              <SelectTrigger id="ageGroup"><SelectValue placeholder="Not specified" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Not specified</SelectItem>
+                {VOLUNTEER_AGE_GROUPS.map((ageGroup) => <SelectItem key={ageGroup} value={ageGroup}>{ageGroup}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="lifeStage">Life Stage</Label>
+            <Select value={form.lifeStageId || "none"} onValueChange={(v) => set("lifeStageId", v === "none" ? "" : v)}>
+              <SelectTrigger id="lifeStage"><SelectValue placeholder="Not specified" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Not specified</SelectItem>
+                {lifeStages.map((stage) => <SelectItem key={stage.id} value={stage.id}>{stage.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
 
         {/* Status (edit mode only) */}
         {isEdit && (

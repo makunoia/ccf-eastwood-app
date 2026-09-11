@@ -26,6 +26,7 @@ function row(over: Partial<ClusterVolunteerExportRow> = {}): ClusterVolunteerExp
     nickname: null,
     email: null,
     phone: "+63 917 111 2222",
+    ageGroup: null,
     lifeStage: null,
     gender: null,
     birthDate: null,

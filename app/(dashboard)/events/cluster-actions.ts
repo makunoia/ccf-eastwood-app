@@ -116,6 +116,8 @@ function revalidateClusterPaths(clusterId: string, publicToken?: string) {
   revalidatePath(`/cluster/${clusterId}/checkin`)
   revalidatePath(`/cluster/${clusterId}/settings`)
   revalidatePath(`/cluster/${clusterId}/volunteers`)
+  revalidatePath(`/cluster/${clusterId}/breakouts`)
+  revalidatePath("/cluster/[id]/breakouts/[groupId]", "page")
   revalidatePath(`/cluster/${clusterId}/forms`)
   revalidatePath(`/cluster/${clusterId}/forms/check-in`)
   if (publicToken) {

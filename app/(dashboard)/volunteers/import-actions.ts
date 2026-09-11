@@ -5,6 +5,7 @@ import { db } from "@/lib/db"
 import type { DuplicateMatch, ImportResult, RowResolution } from "@/lib/import/types"
 import { Gender, MeetingPreference, VolunteerStatus, Prisma } from "@/app/generated/prisma/client"
 import { toTitleCase, formatPhilippinePhone } from "@/lib/utils"
+import { ageGroupForBirthDate, VOLUNTEER_AGE_GROUPS } from "@/lib/volunteers/age-groups"
 
 type ActionResult<T = void> =
   | { success: true; data: T }
@@ -109,6 +110,8 @@ export async function importVolunteers(
   })
 
   const committeeByName = new Map(committees.map((c) => [c.name.toLowerCase(), c]))
+  const lifeStages = await db.lifeStage.findMany({ select: { id: true, name: true } })
+  const lifeStageByName = new Map(lifeStages.map((stage) => [stage.name.toLowerCase(), stage]))
 
   for (let i = 0; i < rows.length; i++) {
     const { mapped, resolution, existingId } = rows[i]
@@ -149,6 +152,22 @@ export async function importVolunteers(
           row: i,
           message: `Role not found: "${roleName}" in committee "${committeeName}"`,
         })
+        result.skipped++
+        continue
+      }
+
+      const requestedAgeGroup = mapped.ageGroup?.trim() || null
+      if (requestedAgeGroup && !VOLUNTEER_AGE_GROUPS.includes(requestedAgeGroup as typeof VOLUNTEER_AGE_GROUPS[number])) {
+        result.errors.push({ row: i, message: `Invalid age group: "${requestedAgeGroup}"` })
+        result.skipped++
+        continue
+      }
+      const requestedLifeStageName = mapped.lifeStage?.trim()
+      const requestedLifeStage = requestedLifeStageName
+        ? lifeStageByName.get(requestedLifeStageName.toLowerCase())
+        : null
+      if (requestedLifeStageName && !requestedLifeStage) {
+        result.errors.push({ row: i, message: `Life stage not found: "${requestedLifeStageName}"` })
         result.skipped++
         continue
       }
@@ -195,10 +214,20 @@ export async function importVolunteers(
       }
 
       const alreadyVolunteer = await db.volunteer.findFirst({
-        where: { memberId, committeeId: committee.id },
+        where: { memberId, eventId: context.eventId },
         select: { id: true },
       })
       if (alreadyVolunteer) {
+        result.skipped++
+        continue
+      }
+
+      const memberProfile = await db.member.findUnique({
+        where: { id: memberId },
+        select: { birthMonth: true, birthYear: true, lifeStageId: true },
+      })
+      if (!memberProfile) {
+        result.errors.push({ row: i, message: "Member not found" })
         result.skipped++
         continue
       }
@@ -209,6 +238,8 @@ export async function importVolunteers(
           eventId: context.eventId,
           committeeId: committee.id,
           preferredRoleId: role.id,
+          ageGroup: requestedAgeGroup ?? ageGroupForBirthDate(memberProfile.birthYear, memberProfile.birthMonth),
+          lifeStageId: requestedLifeStage?.id ?? memberProfile.lifeStageId,
           status: mapped.status ? parseVolunteerStatus(mapped.status) : VolunteerStatus.Pending,
           notes: mapped.notes?.trim() || null,
         },
@@ -228,6 +259,8 @@ export async function importVolunteers(
   }
 
   revalidatePath(`/event/${context.eventId}/volunteers`)
+  revalidatePath(`/event/${context.eventId}/breakouts`, "layout")
+  revalidatePath("/cluster/[id]/breakouts/[groupId]", "page")
   revalidatePath("/volunteers")
 
   return { success: true, data: result }

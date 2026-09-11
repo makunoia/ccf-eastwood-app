@@ -98,25 +98,30 @@ describe("getEventVolunteersExport", () => {
 
   it("resolves the profile columns and offers them once populated", async () => {
     const lifeStage = await db.lifeStage.create({ data: { name: "Young Pro", order: 1 } })
-    const { event, member } = await seedVolunteer({
+    const { event, member, volunteer } = await seedVolunteer({
       memberData: { nickname: "Mars", birthMonth: 3, birthYear: 1994, lifeStageId: lifeStage.id },
     })
     const group = await db.smallGroup.create({
       data: { name: "Team Ignite", leaderId: member.id, language: [] },
     })
     await db.member.update({ where: { id: member.id }, data: { smallGroupId: group.id } })
+    await db.volunteer.update({
+      where: { id: volunteer.id },
+      data: { ageGroup: "25–34", lifeStageId: lifeStage.id },
+    })
 
     const result = await getEventVolunteersExport(event.id)
     if (!result.success) throw new Error(result.error)
 
     expect(result.data.rows[0]).toMatchObject({
       nickname: "Mars",
+      ageGroup: "25–34",
       lifeStage: "Young Pro",
       birthDate: "March 1994",
       smallGroup: "Team Ignite",
     })
     const keys = result.data.columns.map((c) => c.key)
-    expect(keys).toEqual(expect.arrayContaining(["nickname", "lifeStage", "birthDate", "smallGroup"]))
+    expect(keys).toEqual(expect.arrayContaining(["nickname", "ageGroup", "lifeStage", "birthDate", "smallGroup"]))
     // Never collected on this roster, so never offered.
     expect(keys).not.toContain("gender")
   })

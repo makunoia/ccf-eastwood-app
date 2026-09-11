@@ -101,6 +101,27 @@ test.describe("Table column picker", () => {
  * two defects it fixes were visible.
  */
 test.describe("Table chrome", () => {
+  test("the AI launcher reserves the lower-right work area on mobile and tablet", async ({
+    adminPage: page,
+  }) => {
+    for (const viewport of [
+      { width: 390, height: 844 },
+      { width: 768, height: 1024 },
+    ]) {
+      await page.setViewportSize(viewport)
+      await page.goto("/members")
+
+      const launcher = page.getByRole("button", { name: "Open AI Assistant" })
+      await expect(launcher).toBeVisible()
+
+      const launcherBox = await launcher.boundingBox()
+
+      expect(launcherBox).not.toBeNull()
+      expect(launcherBox!.x).toBe(24)
+      expect(launcherBox!.x + launcherBox!.width).toBeLessThan(viewport.width / 2)
+    }
+  })
+
   test("the toolbar states how many rows are on screen", async ({ adminPage: page }) => {
     await page.goto("/members")
 

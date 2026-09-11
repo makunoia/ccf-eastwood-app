@@ -28,6 +28,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { VOLUNTEER_AGE_GROUPS } from "@/lib/volunteers/age-groups"
 import { MobileFormActions } from "@/components/mobile-form-actions"
 import { updateEventVolunteer, deleteEventVolunteerById } from "./actions"
 
@@ -43,11 +44,14 @@ type VolunteerData = {
   committeeId: string
   preferredRoleId: string
   assignedRoleId: string | null
+  ageGroup: string | null
+  lifeStageId: string | null
   status: "Pending" | "Confirmed" | "Rejected"
   notes: string | null
   leaderApprovalToken: string | null
   leaderNotes: string | null
   committees: Committee[]
+  lifeStages: { id: string; name: string }[]
 }
 
 const STATUS_VARIANT = {
@@ -60,6 +64,8 @@ type FormState = {
   committeeId: string
   preferredRoleId: string
   assignedRoleId: string
+  ageGroup: string
+  lifeStageId: string
   status: "Pending" | "Confirmed" | "Rejected"
   notes: string
 }
@@ -77,6 +83,8 @@ export function EventVolunteerDetail({
     committeeId: volunteer.committeeId,
     preferredRoleId: volunteer.preferredRoleId,
     assignedRoleId: volunteer.assignedRoleId ?? "",
+    ageGroup: volunteer.ageGroup ?? "",
+    lifeStageId: volunteer.lifeStageId ?? "",
     status: volunteer.status,
     notes: volunteer.notes ?? "",
   })
@@ -93,6 +101,8 @@ export function EventVolunteerDetail({
       committeeId: volunteer.committeeId,
       preferredRoleId: volunteer.preferredRoleId,
       assignedRoleId: volunteer.assignedRoleId ?? "",
+      ageGroup: volunteer.ageGroup ?? "",
+      lifeStageId: volunteer.lifeStageId ?? "",
       status: volunteer.status,
       notes: volunteer.notes ?? "",
     })
@@ -110,6 +120,8 @@ export function EventVolunteerDetail({
       committeeId: form.committeeId,
       preferredRoleId: form.preferredRoleId,
       assignedRoleId: form.assignedRoleId,
+      ageGroup: form.ageGroup,
+      lifeStageId: form.lifeStageId,
       status: form.status,
       notes: form.notes,
     })
@@ -228,6 +240,29 @@ export function EventVolunteerDetail({
               </Select>
             </div>
           )}
+
+          <div className="grid gap-6 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="ageGroup">Age Group</Label>
+              <Select value={form.ageGroup || "none"} onValueChange={(v) => set("ageGroup", v === "none" ? "" : v)}>
+                <SelectTrigger id="ageGroup"><SelectValue placeholder="Not specified" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Not specified</SelectItem>
+                  {VOLUNTEER_AGE_GROUPS.map((ageGroup) => <SelectItem key={ageGroup} value={ageGroup}>{ageGroup}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="lifeStage">Life Stage</Label>
+              <Select value={form.lifeStageId || "none"} onValueChange={(v) => set("lifeStageId", v === "none" ? "" : v)}>
+                <SelectTrigger id="lifeStage"><SelectValue placeholder="Not specified" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Not specified</SelectItem>
+                  {volunteer.lifeStages.map((stage) => <SelectItem key={stage.id} value={stage.id}>{stage.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
 
           {/* Assigned role */}
           {form.committeeId && (

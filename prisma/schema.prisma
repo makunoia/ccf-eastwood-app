@@ -370,6 +370,7 @@ model LifeStage {
   ministries     Ministry[]
   smallGroups    SmallGroup[]    @relation("SmallGroupLifeStages")
   breakoutGroups BreakoutGroup[] @relation("BreakoutGroupLifeStages")
+  volunteerProfiles Volunteer[]
 }
 
 model Member {
@@ -1030,6 +1031,11 @@ model Volunteer {
   preferredRole   CommitteeRole      @relation("PreferredRole", fields: [preferredRoleId], references: [id])
   assignedRoleId  String?
   assignedRole    CommitteeRole?     @relation("AssignedRole", fields: [assignedRoleId], references: [id])
+  // Assignment profile, scoped to this volunteer record. These answers make the
+  // facilitator pool practical to narrow without changing the member's record.
+  ageGroup        String?
+  lifeStageId     String?
+  lifeStage       LifeStage?         @relation(fields: [lifeStageId], references: [id], onDelete: SetNull)
   status               VolunteerStatus    @default(Pending)
   // Provenance: set when this sign-up came in through an event day's shared
   // volunteer form. The row stays owned by its event — a person volunteers under
@@ -1060,6 +1066,8 @@ model Volunteer {
   confirmationSubmissions ConfirmationSubmission[] @relation("ConfirmationSubmissionFacilitator")
 
   @@index([signUpClusterId])
+  @@index([lifeStageId])
+  @@unique([memberId, eventId])
 }
 
 model VolunteerClusterParticipation {

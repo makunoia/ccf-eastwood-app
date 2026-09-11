@@ -45,6 +45,8 @@ import { FacilitatorLeadership } from "@/components/breakouts/facilitator-leader
 import { CatchMechGroupField } from "@/components/breakouts/catch-mech-group-field"
 import { BreakoutEnabledSwitch } from "../enabled-switch"
 import type { BreakoutSurface } from "@/lib/breakouts/owner"
+import { filterVolunteerAssignmentPool } from "@/lib/volunteers/assignment-profile"
+import { VOLUNTEER_AGE_GROUPS } from "@/lib/volunteers/age-groups"
 
 /** Shown, not inherited — a breakout group's criteria are its own. */
 type LedGroup = {
@@ -54,6 +56,8 @@ type LedGroup = {
 
 type Volunteer = {
   id: string
+  ageGroup: string | null
+  lifeStageId: string | null
   member: { id: string; firstName: string; lastName: string; ledGroups: LedGroup[] }
 }
 
@@ -98,11 +102,15 @@ function EditDialog({
   })
   const [sourceGroupId, setSourceGroupId] = React.useState("")
   const [saving, setSaving] = React.useState(false)
+  const [ageGroupFilter, setAgeGroupFilter] = React.useState("")
+  const [lifeStageFilter, setLifeStageFilter] = React.useState("")
 
   React.useEffect(() => {
     if (open) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setSourceGroupId(group.linkedSmallGroupId ?? "")
+      setAgeGroupFilter("")
+      setLifeStageFilter("")
       setForm({
         name: group.name,
         memberLimit: group.memberLimit?.toString() ?? "",
@@ -135,6 +143,13 @@ function EditDialog({
   }
 
   const selectedVol = volunteers.find((v) => v.id === form.facilitatorId) ?? null
+  const filteredVolunteers = filterVolunteerAssignmentPool(volunteers, {
+    ageGroup: ageGroupFilter,
+    lifeStageId: lifeStageFilter,
+  })
+  const volunteerOptions = selectedVol && !filteredVolunteers.some((v) => v.id === selectedVol.id)
+    ? [selectedVol, ...filteredVolunteers]
+    : filteredVolunteers
   const ledGroups = selectedVol?.member.ledGroups ?? []
   const isFacilitatorTimothy = !!form.facilitatorId && ledGroups.length === 0
 
@@ -222,8 +237,24 @@ function EditDialog({
 
             <div className="space-y-1.5">
               <Label>Facilitator</Label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Select value={ageGroupFilter || "all"} onValueChange={(v) => setAgeGroupFilter(v === "all" ? "" : v)}>
+                  <SelectTrigger aria-label="Filter facilitators by age group"><SelectValue placeholder="All age groups" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All age groups</SelectItem>
+                    {VOLUNTEER_AGE_GROUPS.map((ageGroup) => <SelectItem key={ageGroup} value={ageGroup}>{ageGroup}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={lifeStageFilter || "all"} onValueChange={(v) => setLifeStageFilter(v === "all" ? "" : v)}>
+                  <SelectTrigger aria-label="Filter facilitators by life stage"><SelectValue placeholder="All life stages" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All life stages</SelectItem>
+                    {lifeStages.map((stage) => <SelectItem key={stage.id} value={stage.id}>{stage.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
               <PersonCombobox
-                options={volunteers.map((v) => ({ value: v.id, label: `${v.member.firstName} ${v.member.lastName}` }))}
+                options={volunteerOptions.map((v) => ({ value: v.id, label: `${v.member.firstName} ${v.member.lastName}` }))}
                 value={form.facilitatorId}
                 onValueChange={handleVolunteerChange}
                 placeholder="Unassigned"

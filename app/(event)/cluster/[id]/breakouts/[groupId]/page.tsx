@@ -153,6 +153,7 @@ export default async function ClusterBreakoutGroupDetailPage({
         where: { eventId: { in: events.map((e) => e.id) }, status: "Confirmed" },
         orderBy: { createdAt: "asc" },
         include: {
+          lifeStage: { select: { id: true, name: true } },
           member: {
             select: {
               id: true,
