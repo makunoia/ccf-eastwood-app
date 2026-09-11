@@ -43,7 +43,7 @@ async function enabledModules(eventId: string): Promise<EventModuleType[]> {
  * through `enableModule`, while the amount is saved through `setPricedModule`.
  */
 async function clusterPricingConflict(eventId: string): Promise<string | null> {
-  const membership = await db.eventClusterEvent.findUnique({
+  const membership = await db.eventClusterEvent.findFirst({
     where: { eventId },
     select: { cluster: { select: { name: true } } },
   })

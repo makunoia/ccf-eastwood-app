@@ -5,13 +5,13 @@ import type { Session } from "next-auth"
 import { db } from "@/lib/db"
 import { canAccessEvent } from "@/lib/permissions"
 import { ClusterKind } from "@/app/generated/prisma/client"
-import { anyOwner, isClusterOwner } from "@/lib/breakouts/owner"
+import { isClusterOwner } from "@/lib/breakouts/owner"
 import type { BreakoutOwner, BreakoutSet } from "@/lib/breakouts/owner"
 import type { Prisma } from "@/app/generated/prisma/client"
 
 /**
- * Pool scope (CCF-148) — how wide the volunteer roster and the breakout tables
- * reach for a given event.
+ * Pool scope — how wide the volunteer roster and the breakout tables reach for
+ * a given surface.
  *
  * This is the staffing-side counterpart of `lib/events/registration-core.ts`.
  * Nearly every breakout and volunteer query used to scope on a bare `eventId`,
@@ -21,12 +21,10 @@ import type { Prisma } from "@/app/generated/prisma/client"
  *
  * The two halves are deliberately asymmetric, because the two things are:
  *
- *  - **Volunteers pool as a union.** Someone genuinely signed up to serve under
- *    one ministry's event, and a collab wants both rosters as one list. The rows
- *    stay owned by their event.
- *  - **Breakouts do NOT pool. They sit side by side.** A cluster owns a fresh set
- *    of tables for its day, and each member event keeps its own standing set —
- *    both real, neither replacing the other.
+ * Event routes are intentionally event-only. A cluster's shared routes resolve
+ * their pool through `resolveClusterPoolScope`, using the explicit cluster id in
+ * the URL. This matters now that an event may join several collabs: there is no
+ * meaningful "current collab" to infer from an event id.
  *
  * That second rule is a reversal. `breakoutOwnerFor` used to return the CLUSTER
  * for every member event of a Collab, on the reasoning that a collab day resets
@@ -137,37 +135,6 @@ export function poolScopeFor(eventId: string, link: ClusterLink | null): PoolSco
 
 // ─── DB-aware resolution ─────────────────────────────────────────────────────
 
-const SELECT_LINK = {
-  clusterId: true,
-  cluster: {
-    select: {
-      id: true,
-      name: true,
-      kind: true,
-      events: { orderBy: { order: "asc" as const }, select: { eventId: true } },
-    },
-  },
-} as const
-
-/**
- * One round trip, cached per request: a page loader that needs the scope in two
- * places pays for it once. `EventClusterEvent` is unique on `eventId` ("one
- * cluster per event"), so this is a point read.
- */
-const loadLink = cache(async (eventId: string): Promise<ClusterLink | null> => {
-  const row = await db.eventClusterEvent.findUnique({
-    where: { eventId },
-    select: SELECT_LINK,
-  })
-  if (!row?.cluster) return null
-  return {
-    clusterId: row.cluster.id,
-    clusterName: row.cluster.name,
-    kind: row.cluster.kind,
-    memberEventIds: row.cluster.events.map((e) => e.eventId),
-  }
-})
-
 const loadClusterLink = cache(async (clusterId: string): Promise<ClusterLink | null> => {
   const cluster = await db.eventCluster.findUnique({
     where: { id: clusterId },
@@ -195,7 +162,7 @@ const loadClusterLink = cache(async (clusterId: string): Promise<ClusterLink | n
  * Authenticated callers want {@link resolveAccessiblePoolScope}.
  */
 export async function resolvePoolScope(eventId: string): Promise<PoolScope> {
-  return poolScopeFor(eventId, await loadLink(eventId))
+  return poolScopeFor(eventId, null)
 }
 
 /**
@@ -212,7 +179,7 @@ export async function resolveAccessiblePoolScope(
   session: Session | null,
   eventId: string
 ): Promise<PoolScope> {
-  const scope = poolScopeFor(eventId, await loadLink(eventId))
+  const scope = poolScopeFor(eventId, null)
   return narrowToAccessible(scope, session)
 }
 
@@ -267,11 +234,16 @@ function narrowToAccessible(scope: PoolScope, session: Session | null): PoolScop
  */
 export async function resolveSurfaceBreakoutOwner(
   eventId: string,
-  set: BreakoutSet = "event"
+  set: BreakoutSet = "event",
+  clusterId?: string
 ): Promise<BreakoutOwner> {
-  const scope = await resolvePoolScope(eventId)
-  if (set === "cluster" && scope.clusterBreakoutOwner) return scope.clusterBreakoutOwner
-  return scope.breakoutOwner
+  if (set !== "cluster" || !clusterId) return { eventId }
+
+  const link = await db.eventClusterEvent.findUnique({
+    where: { clusterId_eventId: { clusterId, eventId } },
+    select: { cluster: { select: { kind: true } } },
+  })
+  return link?.cluster.kind === ClusterKind.Collab ? { clusterId } : { eventId }
 }
 
 /**
@@ -306,6 +278,5 @@ export async function resolveSeatedScope(
   owner: BreakoutOwner
 ): Promise<Prisma.BreakoutGroupWhereInput> {
   if (isClusterOwner(owner)) return { ...owner }
-  const { clusterBreakoutOwner } = await resolvePoolScope(owner.eventId)
-  return clusterBreakoutOwner ? anyOwner([owner, clusterBreakoutOwner]) : { ...owner }
+  return { ...owner }
 }

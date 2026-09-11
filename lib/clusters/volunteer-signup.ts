@@ -1,4 +1,5 @@
 import { db } from "@/lib/db"
+import { ageGroupForBirthDate } from "@/lib/volunteers/age-groups"
 
 /**
  * Filing one volunteer sign-up against a Collab day.
@@ -59,22 +60,48 @@ export async function fileClusterVolunteerSignUp(
 
   const member = await db.member.findUnique({
     where: { id: memberId },
-    select: { id: true },
+    select: { id: true, birthMonth: true, birthYear: true, lifeStageId: true },
   })
   if (!member) return { ok: false, reason: "member" }
 
-  const existing = await db.volunteer.findFirst({
+  const existingRows = await db.volunteer.findMany({
     where: { memberId, eventId },
-    select: { id: true, signUpClusterId: true },
+    select: {
+      id: true,
+      signUpClusterId: true,
+      ageGroup: true,
+      lifeStageId: true,
+      clusterParticipations: { select: { clusterId: true } },
+    },
   })
-  if (existing?.signUpClusterId === clusterId) {
+  if (
+    existingRows.some(
+      (row) =>
+        row.signUpClusterId === clusterId ||
+        row.clusterParticipations.some((p) => p.clusterId === clusterId)
+    )
+  ) {
     return { ok: false, reason: "already" }
   }
+
+  // A standing event volunteer can be reused for their first Collab day. Once a
+  // row already represents another day, create a separate volunteer record: its
+  // committee, role, notes, and approval status are day-specific answers and
+  // must not overwrite the first Collab's serving record.
+  const existing = existingRows.find((row) => row.clusterParticipations.length === 0) ?? null
 
   const volunteer = existing
     ? await db.volunteer.update({
         where: { id: existing.id },
-        data: { signUpClusterId: clusterId, committeeId, preferredRoleId, notes },
+        data: {
+          signUpClusterId: clusterId,
+          committeeId,
+          preferredRoleId,
+          notes,
+          ageGroup: existing.ageGroup ?? ageGroupForBirthDate(member.birthYear, member.birthMonth),
+          lifeStageId: existing.lifeStageId ?? member.lifeStageId,
+          clusterParticipations: { create: { clusterId } },
+        },
         select: { id: true },
       })
     : await db.volunteer.create({
@@ -84,7 +111,10 @@ export async function fileClusterVolunteerSignUp(
           committeeId,
           preferredRoleId,
           notes,
+          ageGroup: ageGroupForBirthDate(member.birthYear, member.birthMonth),
+          lifeStageId: member.lifeStageId,
           signUpClusterId: clusterId,
+          clusterParticipations: { create: { clusterId } },
           leaderApprovalToken: crypto.randomUUID(),
           status: "Pending",
         },

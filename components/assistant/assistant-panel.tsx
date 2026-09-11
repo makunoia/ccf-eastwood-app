@@ -67,7 +67,7 @@ export function AssistantPanel() {
         <TooltipTrigger asChild>
           <Button
             size="icon"
-            className="fixed bottom-6 right-6 z-50 size-12 rounded-full shadow-lg"
+            className="fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] left-6 z-50 size-12 rounded-full shadow-lg lg:bottom-6 lg:left-auto lg:right-6"
             onClick={() => setOpen(true)}
             aria-label="Open AI Assistant"
           >

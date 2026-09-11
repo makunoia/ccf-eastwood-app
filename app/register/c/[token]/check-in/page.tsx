@@ -89,6 +89,7 @@ export default async function ClusterCheckinPage({
       <div className="overflow-hidden rounded-lg border bg-card">
         <ClusterCheckinBoard
           token={token}
+          clusterId={cluster.id}
           kind={cluster.kind}
           // Only offered while the door is actually open, so someone who can't
           // find themselves is never sent to a page that just tells them no.

@@ -86,7 +86,13 @@ export function clusterDayRegistrantWhere(input: {
   linkedOccurrenceIds: string[]
 }): Prisma.EventRegistrantWhereInput {
   const or: Prisma.EventRegistrantWhereInput[] = [
-    { registrationClusterId: input.clusterId },
+    {
+      OR: [
+        { clusterParticipations: { some: { clusterId: input.clusterId } } },
+        // Compatibility for rows written before participation history existed.
+        { registrationClusterId: input.clusterId },
+      ],
+    },
     // OneTime member events record check-in here; on a session event it stays null.
     { attendedAt: { not: null } },
   ]

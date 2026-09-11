@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache"
 import { Prisma } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import { requireEventWrite } from "@/lib/events/require-event-write"
-import { updateVolunteerSchema } from "@/lib/validations/volunteer"
+import { createVolunteerSchema, updateVolunteerSchema } from "@/lib/validations/volunteer"
+import { hasValidVolunteerAssignment } from "@/lib/volunteers/role-validation"
 
 type ActionResult<T = void> = { success: true; data: T } | { success: false; error: string }
 
@@ -13,6 +14,8 @@ type CreateInput = {
   memberId: string
   committeeId: string
   preferredRoleId: string
+  ageGroup: string
+  lifeStageId: string
   notes: string
 }
 
@@ -24,10 +27,14 @@ export async function createEventVolunteer(
   const authError = await requireEventWrite(raw.eventId)
   if (authError) return { success: false, error: authError.error }
 
-  const { eventId, memberId, committeeId, preferredRoleId, notes } = raw
+  const parsed = createVolunteerSchema.safeParse(raw)
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
+  }
+  const { eventId, memberId, committeeId, preferredRoleId, ageGroup, lifeStageId, notes } = parsed.data
 
-  if (!memberId || !eventId || !committeeId || !preferredRoleId) {
-    return { success: false, error: "All required fields must be filled." }
+  if (!await hasValidVolunteerAssignment(eventId, committeeId, preferredRoleId)) {
+    return { success: false, error: "Committee and preferred role must belong to this event." }
   }
 
   const existing = await db.volunteer.findFirst({ where: { memberId, eventId } })
@@ -42,12 +49,16 @@ export async function createEventVolunteer(
         eventId,
         committeeId,
         preferredRoleId,
+        ageGroup,
+        lifeStageId,
         notes: notes || null,
         leaderApprovalToken: crypto.randomUUID(),
       },
       select: { id: true },
     })
     revalidatePath(`/event/${eventId}/volunteers`)
+    revalidatePath(`/event/${eventId}/breakouts`, "layout")
+    revalidatePath("/cluster/[id]/breakouts/[groupId]", "page")
     revalidatePath("/volunteers")
     return { success: true, data: { id: volunteer.id } }
   } catch (e: unknown) {
@@ -64,6 +75,8 @@ type UpdateInput = {
   committeeId: string
   preferredRoleId: string
   assignedRoleId: string
+  ageGroup: string
+  lifeStageId: string
   status: "Pending" | "Confirmed" | "Rejected" | ""
   notes: string
 }
@@ -81,7 +94,11 @@ export async function updateEventVolunteer(
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
   }
 
-  const { memberId, committeeId, preferredRoleId, assignedRoleId, status, notes } = parsed.data
+  const { memberId, committeeId, preferredRoleId, assignedRoleId, ageGroup, lifeStageId, status, notes } = parsed.data
+
+  if (!await hasValidVolunteerAssignment(eventId, committeeId, preferredRoleId, assignedRoleId)) {
+    return { success: false, error: "Committee and roles must belong to this event." }
+  }
 
   try {
     // Scoped to the event so a foreign volunteer id can't be re-pointed into it.
@@ -99,12 +116,16 @@ export async function updateEventVolunteer(
         committeeId,
         preferredRoleId,
         assignedRoleId: assignedRoleId ?? null,
+        ageGroup,
+        lifeStageId,
         status,
         notes: notes ?? null,
       },
     })
     revalidatePath(`/event/${eventId}/volunteers`)
     revalidatePath(`/event/${eventId}/volunteers/${volunteerId}`)
+    revalidatePath(`/event/${eventId}/breakouts`, "layout")
+    revalidatePath("/cluster/[id]/breakouts/[groupId]", "page")
     revalidatePath("/volunteers")
     return { success: true, data: undefined }
   } catch {

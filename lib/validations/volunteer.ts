@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { VOLUNTEER_AGE_GROUPS } from "@/lib/volunteers/age-groups"
 
 const nullableString = z
   .string()
@@ -12,6 +13,11 @@ export const createVolunteerSchema = z.object({
   eventId: z.string().min(1, "Event is required"),
   committeeId: z.string().min(1, "Committee is required"),
   preferredRoleId: z.string().min(1, "Preferred role is required"),
+  ageGroup: z.preprocess(
+    (v) => v === "" ? null : v,
+    z.enum(VOLUNTEER_AGE_GROUPS).optional().nullable()
+  ).transform((v) => v ?? null),
+  lifeStageId: nullableString,
   notes: nullableString,
 })
 
@@ -23,6 +29,11 @@ export const updateVolunteerSchema = z.object({
   committeeId: z.string().min(1, "Committee is required"),
   preferredRoleId: z.string().min(1, "Preferred role is required"),
   assignedRoleId: nullableString,
+  ageGroup: z.preprocess(
+    (v) => v === "" ? null : v,
+    z.enum(VOLUNTEER_AGE_GROUPS).optional().nullable()
+  ).transform((v) => v ?? null),
+  lifeStageId: nullableString,
   status: z.enum(["Pending", "Confirmed", "Rejected"]),
   notes: nullableString,
 })
@@ -48,6 +59,8 @@ export type VolunteerFormValues = {
   committeeId: string
   preferredRoleId: string
   assignedRoleId: string
+  ageGroup?: string
+  lifeStageId?: string
   status: "Pending" | "Confirmed" | "Rejected" | ""
   notes: string
 }
@@ -58,6 +71,8 @@ export const defaultVolunteerForm: VolunteerFormValues = {
   committeeId: "",
   preferredRoleId: "",
   assignedRoleId: "",
+  ageGroup: "",
+  lifeStageId: "",
   status: "",
   notes: "",
 }

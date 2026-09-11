@@ -35,6 +35,7 @@ const SAMPLE_VALUES: Record<string, string> = {
   // Volunteer
   committeeName:    "Hospitality",
   roleName:         "Greeter",
+  ageGroup:         "25–34",
   status:           "Pending",
 
   // Small group

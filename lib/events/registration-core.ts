@@ -148,7 +148,8 @@ export async function assignBreakoutForRegistrant(
    * `BreakoutSet`: an event on a Collab has two valid sets and only the surface
    * knows which one it means.
    */
-  breakoutSet: BreakoutSet = "event"
+  breakoutSet: BreakoutSet = "event",
+  clusterId?: string
 ): Promise<AssignedBreakout> {
   try {
     const event = await db.event.findUnique({
@@ -163,7 +164,7 @@ export async function assignBreakoutForRegistrant(
     // Which tables are in play. Both sets exist on a Collab day and the surface
     // picks; everywhere else `resolveSurfaceBreakoutOwner` returns the event's own
     // whatever is asked for.
-    const owner = await resolveSurfaceBreakoutOwner(eventId, breakoutSet)
+    const owner = await resolveSurfaceBreakoutOwner(eventId, breakoutSet, clusterId)
 
     // A registrant may already be placed. The reuse paths — a walk-in for someone
     // who registered earlier, and amend — run this function against a row that has
@@ -259,8 +260,8 @@ export async function assignBreakoutForRegistrant(
       // the picker (`offerBreakoutPicker` on the walk-in page), an event with it
       // switched on had no gated path at all.
       const candidates = atDoor
-        ? await fetchBreakoutCandidates(eventId, atDoor.occurrenceId, true, breakoutSet)
-        : await fetchBreakoutCandidates(eventId, null, false, breakoutSet)
+        ? await fetchBreakoutCandidates(eventId, atDoor.occurrenceId, true, breakoutSet, clusterId)
+        : await fetchBreakoutCandidates(eventId, null, false, breakoutSet, clusterId)
       const best = suggestBreakoutGroup(candidates, {
         gender: profile.gender,
         birthYear: profile.birthYear,
@@ -384,14 +385,28 @@ export async function findEventVolunteerConflict(
 export async function findExistingEventRegistrationRow(
   eventId: string,
   person: PersonRef
-): Promise<{ id: string; registrationClusterId: string | null } | null> {
+): Promise<{ id: string; clusterParticipationIds: string[] } | null> {
   return db.eventRegistrant.findFirst({
     where:
       "memberId" in person
         ? { eventId, memberId: person.memberId }
         : { eventId, guestId: person.guestId },
-    select: { id: true, registrationClusterId: true },
-  })
+    select: {
+      id: true,
+      registrationClusterId: true,
+      clusterParticipations: { select: { clusterId: true } },
+    },
+  }).then((row) =>
+    row
+      ? {
+          id: row.id,
+          clusterParticipationIds: [
+            ...row.clusterParticipations.map((p) => p.clusterId),
+            ...(row.registrationClusterId ? [row.registrationClusterId] : []),
+          ],
+        }
+      : null
+  )
 }
 
 /** Existing registration for this person at this event, if any. */
@@ -422,6 +437,11 @@ export async function stampClusterProvenance(
   registrantId: string,
   clusterId: string
 ): Promise<void> {
+  await db.eventRegistrantClusterParticipation.upsert({
+    where: { eventRegistrantId_clusterId: { eventRegistrantId: registrantId, clusterId } },
+    create: { eventRegistrantId: registrantId, clusterId },
+    update: {},
+  })
   await db.eventRegistrant.updateMany({
     where: { id: registrantId, registrationClusterId: null },
     data: { registrationClusterId: clusterId },
@@ -455,6 +475,11 @@ export async function stampVolunteerClusterProvenance(
   volunteerId: string,
   clusterId: string
 ): Promise<void> {
+  await db.volunteerClusterParticipation.upsert({
+    where: { volunteerId_clusterId: { volunteerId, clusterId } },
+    create: { volunteerId, clusterId },
+    update: {},
+  })
   await db.volunteer.updateMany({
     where: { id: volunteerId, signUpClusterId: null },
     data: { signUpClusterId: clusterId },
@@ -977,7 +1002,7 @@ export async function completeEventRegistration(opts: {
    * Which set of tables the surface that collected this registration fills. A
    * cluster's shared form passes `"cluster"`; every per-event form leaves it.
    */
-  breakoutSet?: BreakoutSet
+    breakoutSet?: BreakoutSet
 }): Promise<{ id: string; breakoutGroup: AssignedBreakout }> {
   const { eventId, person, data, breakoutPick, profile, clusterId, walkIn, allowOverCapacity, existingRegistrantId, touchedFields, skipAutoAssign, breakoutSet } = opts
 
@@ -1000,7 +1025,12 @@ export async function completeEventRegistration(opts: {
         dietaryPreference: data.dietaryPreference ?? null,
         dietaryOther: data.dietaryOther,
         paymentReference: data.paymentReference,
+        // Compatibility field for legacy readers. The participation join above is
+        // the durable source of truth when this recurring event joins later days.
         registrationClusterId: clusterId ?? null,
+        ...(clusterId
+          ? { clusterParticipations: { create: { clusterId } } }
+          : {}),
       },
       select: { id: true },
     })
@@ -1018,7 +1048,8 @@ export async function completeEventRegistration(opts: {
     // flag buys is a stricter pool.
     walkIn ?? null,
     !!skipAutoAssign,
-    breakoutSet ?? "event"
+    breakoutSet ?? "event",
+    clusterId ?? undefined
   )
 
   // Someone who asked to join a DGroup becomes a request an admin can actually

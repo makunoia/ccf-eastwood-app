@@ -59,13 +59,16 @@ export async function getClusterVolunteersExport(
       db.volunteer.findMany({
         where: {
           eventId: { in: eventIds },
-          ...(scope === "day" ? { signUpClusterId: clusterId } : {}),
+          ...(scope === "day"
+            ? { clusterParticipations: { some: { clusterId } } }
+            : {}),
         },
         orderBy: [{ member: { lastName: "asc" } }, { member: { firstName: "asc" } }],
         select: {
           id: true,
           eventId: true,
           status: true,
+          ageGroup: true,
           notes: true,
           leaderNotes: true,
           createdAt: true,
@@ -79,10 +82,10 @@ export async function getClusterVolunteersExport(
               gender: true,
               birthMonth: true,
               birthYear: true,
-              lifeStage: { select: { name: true } },
               smallGroup: { select: { name: true } },
             },
           },
+          lifeStage: { select: { name: true } },
           committee: { select: { name: true } },
           preferredRole: { select: { name: true } },
           assignedRole: { select: { name: true } },
@@ -112,7 +115,8 @@ export async function getClusterVolunteersExport(
       nickname: v.member.nickname,
       email: v.member.email,
       phone: v.member.phone,
-      lifeStage: v.member.lifeStage?.name ?? null,
+      ageGroup: v.ageGroup,
+      lifeStage: v.lifeStage?.name ?? null,
       gender: v.member.gender,
       birthDate: formatBirthDate(v.member.birthMonth, v.member.birthYear),
       smallGroup: v.member.smallGroup?.name ?? null,

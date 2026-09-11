@@ -116,6 +116,8 @@ function revalidateClusterPaths(clusterId: string, publicToken?: string) {
   revalidatePath(`/cluster/${clusterId}/checkin`)
   revalidatePath(`/cluster/${clusterId}/settings`)
   revalidatePath(`/cluster/${clusterId}/volunteers`)
+  revalidatePath(`/cluster/${clusterId}/breakouts`)
+  revalidatePath("/cluster/[id]/breakouts/[groupId]", "page")
   revalidatePath(`/cluster/${clusterId}/forms`)
   revalidatePath(`/cluster/${clusterId}/forms/check-in`)
   if (publicToken) {
@@ -325,7 +327,9 @@ export async function addEventToCluster(
           type: true,
           startDate: true,
           modules: { select: { type: true } },
-          clusterMembership: { select: { clusterId: true } },
+          clusterMemberships: {
+            select: { clusterId: true, occurrenceId: true, cluster: { select: { date: true } } },
+          },
         },
       }),
       occurrenceId
@@ -349,13 +353,14 @@ export async function addEventToCluster(
         error: `${event.name} is a paid event. Paid events can't join a cluster — they keep their own registration form.`,
       }
     }
-    if (event.clusterMembership) {
+    const existingLink = await db.eventClusterEvent.findUnique({
+      where: { clusterId_eventId: { clusterId, eventId } },
+      select: { cluster: { select: { name: true } } },
+    })
+    if (existingLink) {
       return {
         success: false,
-        error:
-          event.clusterMembership.clusterId === clusterId
-            ? `${event.name} is already in this cluster.`
-            : `${event.name} already belongs to another cluster. An event can only be in one.`,
+        error: `${event.name} is already in this cluster.`,
       }
     }
 
@@ -368,6 +373,20 @@ export async function addEventToCluster(
       session: occurrence,
     })
     if (!linkCheck.ok) return { success: false, error: linkCheck.error }
+
+    const conflicts = event.clusterMemberships.filter((membership) => {
+      if (event.type === "OneTime") return true
+      if (occurrence?.id && membership.occurrenceId === occurrence.id) return true
+      return Boolean(
+        cluster.date && membership.cluster.date && isSameUtcDay(cluster.date, membership.cluster.date)
+      )
+    })
+    if (conflicts.length > 0) {
+      return {
+        success: false,
+        error: `${event.name} is already part of a collab for this event date or session.`,
+      }
+    }
 
     // On a collab, a new event has to keep the ministry question answerable —
     // adding one with no ministry, or one under a ministry already represented,
@@ -709,7 +728,14 @@ export async function registerForCluster(
             ? { memberId: person.memberId }
             : { guestId: person.guestId }),
         },
-        select: { eventId: true, registrationClusterId: true },
+        select: {
+          eventId: true,
+          registrationClusterId: true,
+          clusterParticipations: {
+            where: { clusterId: cluster.id },
+            select: { clusterId: true },
+          },
+        },
       })
       // The day's own registrations first. Scanning every member event is how an
       // amend finds the registration to re-open, but a row inherited from a
@@ -719,7 +745,9 @@ export async function registerForCluster(
       // `validateClusterEventSelection` applies: someone registered to both halves
       // is unusual but not impossible, and picking arbitrarily would amend a
       // different registration each time.
-      const onThisDay = held.filter((e) => e.registrationClusterId === cluster.id)
+      const onThisDay = held.filter(
+        (e) => e.clusterParticipations.length > 0 || e.registrationClusterId === cluster.id
+      )
       const preferred = onThisDay.length > 0 ? onThisDay : held
       const resolved = clusterEventIds.filter((id) =>
         preferred.some((e) => e.eventId === id)
@@ -772,7 +800,17 @@ export async function registerForCluster(
          * Parallel day is unchanged — there, the member event's registration is
          * precisely what the person asked for.
          */
-        const disposition = clusterDayRegistrationDisposition(isCollab, existing, cluster.id)
+        const disposition = clusterDayRegistrationDisposition(
+          isCollab,
+          existing
+            ? {
+                registrationClusterId: existing.clusterParticipationIds.includes(cluster.id)
+                  ? cluster.id
+                  : null,
+              }
+            : null,
+          cluster.id
+        )
 
         if (existing && disposition === "already" && !walkIn) {
           // Already registered, so there is nothing to create — but they DID just
@@ -807,7 +845,8 @@ export async function registerForCluster(
                 null,
                 false,
                 // Same set the main branch fills — this is the same shared form.
-                "cluster"
+                "cluster",
+                cluster.id
               )
             : null
           results.push({
@@ -1902,7 +1941,13 @@ export async function removeClusterVolunteerFromDay(
     // ministry's roster that was never on this one — matches nothing rather than
     // being silently cleared.
     const volunteer = await db.volunteer.findFirst({
-      where: { id: volunteerId, signUpClusterId: clusterId },
+      where: {
+        id: volunteerId,
+        OR: [
+          { clusterParticipations: { some: { clusterId } } },
+          { signUpClusterId: clusterId },
+        ],
+      },
       select: { id: true, eventId: true },
     })
     if (!volunteer) {
@@ -1914,10 +1959,15 @@ export async function removeClusterVolunteerFromDay(
       return { success: false, error: "Unauthorized." }
     }
 
-    await db.volunteer.update({
-      where: { id: volunteer.id },
-      data: { signUpClusterId: null },
-    })
+    await db.$transaction([
+      db.volunteerClusterParticipation.deleteMany({
+        where: { volunteerId: volunteer.id, clusterId },
+      }),
+      db.volunteer.update({
+        where: { id: volunteer.id },
+        data: { signUpClusterId: null },
+      }),
+    ])
 
     revalidatePath(`/event/${volunteer.eventId}/volunteers`)
     revalidateClusterPaths(clusterId)

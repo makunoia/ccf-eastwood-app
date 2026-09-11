@@ -5,7 +5,6 @@ import type { Prisma } from "@/app/generated/prisma/client"
 import { deriveEffectiveGenderFocus } from "@/lib/matching"
 import { resolvePoolScope } from "@/lib/events/pool-scope"
 import {
-  anyOwner,
   ownerOf,
   surfaceFor,
   type BreakoutSurface,
@@ -175,7 +174,7 @@ export async function getRegistrantPlacement(registrant: {
   const surface = surfaceFor(scope.breakoutOwner)
 
   const memberships = await db.breakoutGroupMember.findMany({
-    where: { registrantId: registrant.id },
+    where: { registrantId: registrant.id, breakoutGroup: { eventId: registrant.eventId } },
     select: {
       breakoutGroup: {
         select: { id: true, name: true, eventId: true, clusterId: true },
@@ -188,15 +187,9 @@ export async function getRegistrantPlacement(registrant: {
     return href ? [{ id: g.id, name: g.name, href }] : []
   })
 
-  const bothSets: Prisma.BreakoutGroupWhereInput = anyOwner(
-    scope.clusterBreakoutOwner
-      ? [scope.breakoutOwner, scope.clusterBreakoutOwner]
-      : [scope.breakoutOwner]
-  )
-
   const [facilitatedGroup, availableGroups] = await Promise.all([
     registrant.memberId
-      ? loadFacilitatedGroup(registrant.memberId, bothSets, scope.volunteerEventIds)
+      ? loadFacilitatedGroup(registrant.memberId, scope.breakoutOwner, scope.volunteerEventIds)
       : null,
     loadAvailableGroups(
       surface,

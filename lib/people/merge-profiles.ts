@@ -230,10 +230,10 @@ async function absorbMember(
   // Person-scoped rows. `performedGroupLogs` and `confirmationSubmissions` are the two
   // that were missing: both are SetNull, so deleting the loser silently anonymised its
   // audit trail instead of failing loudly.
-  const keeperVolunteers = await tx.volunteer.findMany({
-    where: { memberId: keeper.id }, select: { id: true },
-  })
-  await tx.volunteer.updateMany({ where: { memberId: loser.id }, data: { memberId: keeper.id } })
+  // `Volunteer` is unique per member/event. Fold any same-event rows before
+  // re-pointing ownership: a bulk update first violates that constraint and
+  // rolls the entire duplicate merge back before consolidation can run.
+  folds.push(...(await moveOrFoldVolunteers(tx, keeper.id, loser.id)))
   await tx.smallGroupMemberRequest.updateMany({ where: { memberId: loser.id }, data: { memberId: keeper.id } })
   await tx.smallGroupLog.updateMany({ where: { memberId: loser.id }, data: { memberId: keeper.id } })
   await tx.smallGroupLog.updateMany({ where: { performedByMemberId: loser.id }, data: { performedByMemberId: keeper.id } })
@@ -244,7 +244,6 @@ async function absorbMember(
   await repointFamilyLinks(tx, { memberId: loser.id }, { memberId: keeper.id })
 
   folds.push(...(await moveRegistrants(tx, { memberId: loser.id }, { memberId: keeper.id })))
-  folds.push(...(await foldVolunteers(tx, keeper.id, new Set(keeperVolunteers.map(v => v.id)))))
   await dedupeSchedulePreferences(tx, keeper.id)
 
   // A Guest the loser was promoted from is a second identity on a record being deleted.
@@ -692,34 +691,39 @@ function ownerKey(group: { eventId: string | null; clusterId: string | null }): 
 // ─── Volunteer folding ────────────────────────────────────────────────────────
 
 /**
- * Collapses a member's duplicate `Volunteer` rows, one per event.
- *
- * Called after the re-point, so both rows already belong to the keeper. Nine relations
- * hang off `Volunteer` and two of them carry uniques that include `volunteerId`, so this
- * is the widest fold in the file — but leaving it undone means the person shows twice on
- * the event's Volunteers screen and holds two sign-ups for one shift.
+ * Carries a loser's volunteer rows to the keeper without violating
+ * `@@unique([memberId, eventId])`. Rows for separate events can move directly;
+ * same-event rows are folded while they still have different member ids.
  */
-async function foldVolunteers(tx: TxClient, memberId: string, keeperIds: Set<string>): Promise<FoldSummary[]> {
-  const rows = await tx.volunteer.findMany({
-    where: { memberId },
-    orderBy: { createdAt: "asc" },
-    select: { id: true, eventId: true, event: { select: { name: true } } },
-  })
-
-  const keepByEvent = new Map<string, string>()
+async function moveOrFoldVolunteers(
+  tx: TxClient,
+  keeperMemberId: string,
+  loserMemberId: string,
+): Promise<FoldSummary[]> {
+  const [keeperRows, loserRows] = await Promise.all([
+    tx.volunteer.findMany({
+      where: { memberId: keeperMemberId },
+      select: { id: true, eventId: true },
+    }),
+    tx.volunteer.findMany({
+      where: { memberId: loserMemberId },
+      select: { id: true, eventId: true, event: { select: { name: true } } },
+    }),
+  ])
+  const keeperByEvent = new Map(keeperRows.map((row) => [row.eventId, row.id]))
   const folds: FoldSummary[] = []
 
-  // Prefer rows owned by the selected keeper before the re-point. Signup age must
-  // not decide which committee, role, and public approval link survive.
-  const ordered = [...rows.filter(row => keeperIds.has(row.id)), ...rows.filter(row => !keeperIds.has(row.id))]
-  for (const row of ordered) {
-    const keepId = keepByEvent.get(row.eventId)
-    if (!keepId) {
-      keepByEvent.set(row.eventId, row.id)
-      continue
+  for (const loserRow of loserRows) {
+    const keeperVolunteerId = keeperByEvent.get(loserRow.eventId)
+    if (keeperVolunteerId) {
+      const conflicts = await foldVolunteer(tx, keeperVolunteerId, loserRow.id)
+      folds.push({ kind: "volunteer role", eventName: loserRow.event.name, conflicts })
+    } else {
+      await tx.volunteer.update({
+        where: { id: loserRow.id },
+        data: { memberId: keeperMemberId },
+      })
     }
-    const conflicts = await foldVolunteer(tx, keepId, row.id)
-    folds.push({ kind: "volunteer role", eventName: row.event.name, conflicts })
   }
 
   return folds

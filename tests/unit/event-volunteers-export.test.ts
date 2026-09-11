@@ -17,6 +17,7 @@ function row(overrides: Partial<EventVolunteerExportRow> = {}): EventVolunteerEx
     nickname: null,
     email: "maria@example.com",
     phone: "+63 917 111 2222",
+    ageGroup: null,
     lifeStage: null,
     gender: null,
     birthDate: null,
@@ -55,10 +56,10 @@ describe("buildEventVolunteerColumns", () => {
 
   it("offers the profile columns only once the roster holds them", () => {
     const columns = buildEventVolunteerColumns(noModules, [
-      row({ nickname: "Mars", lifeStage: "Young Pro", smallGroup: "Team Ignite" }),
+      row({ nickname: "Mars", ageGroup: "25–34", lifeStage: "Young Pro", smallGroup: "Team Ignite" }),
     ])
     const keys = columns.map((c) => c.key)
-    expect(keys).toEqual(expect.arrayContaining(["nickname", "lifeStage", "smallGroup"]))
+    expect(keys).toEqual(expect.arrayContaining(["nickname", "ageGroup", "lifeStage", "smallGroup"]))
     expect(keys).not.toContain("gender")
     // Nobody was ever *asked* these on a form, so none of them may be flagged.
     expect(columns.every((c) => c.core)).toBe(true)

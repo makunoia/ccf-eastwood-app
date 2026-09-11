@@ -95,6 +95,7 @@ async function getEventContext(eventId: string) {
       volunteers: {
         where: { status: "Confirmed" },
         include: {
+          lifeStage: { select: { id: true, name: true } },
           member: {
             select: {
               id: true,

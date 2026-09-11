@@ -10,6 +10,7 @@ import {
   updateVolunteerSchema,
   type VolunteerFormValues,
 } from "@/lib/validations/volunteer"
+import { hasValidVolunteerAssignment } from "@/lib/volunteers/role-validation"
 
 type ActionResult<T = void> =
   | { success: true; data: T }
@@ -46,7 +47,11 @@ export async function createVolunteer(
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
   }
 
-  const { memberId, eventId, committeeId, preferredRoleId, notes } = parsed.data
+  const { memberId, eventId, committeeId, preferredRoleId, ageGroup, lifeStageId, notes } = parsed.data
+
+  if (!await hasValidVolunteerAssignment(eventId, committeeId, preferredRoleId)) {
+    return { success: false, error: "Committee and preferred role must belong to this event." }
+  }
 
   const existing = await db.volunteer.findFirst({
     where: { memberId, eventId },
@@ -65,12 +70,16 @@ export async function createVolunteer(
         eventId,
         committeeId,
         preferredRoleId,
+        ageGroup,
+        lifeStageId,
         notes: notes ?? null,
         leaderApprovalToken: crypto.randomUUID(),
       },
       select: { id: true },
     })
     revalidatePath("/volunteers")
+    revalidatePath(`/event/${eventId}/breakouts`, "layout")
+    revalidatePath("/cluster/[id]/breakouts/[groupId]", "page")
     return { success: true, data: { id: volunteer.id } }
   } catch (e: unknown) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
@@ -95,8 +104,12 @@ export async function updateVolunteer(
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
   }
 
-  const { memberId, eventId, committeeId, preferredRoleId, assignedRoleId, status, notes } =
+  const { memberId, eventId, committeeId, preferredRoleId, assignedRoleId, ageGroup, lifeStageId, status, notes } =
     parsed.data
+
+  if (!await hasValidVolunteerAssignment(eventId, committeeId, preferredRoleId, assignedRoleId)) {
+    return { success: false, error: "Committee and roles must belong to this event." }
+  }
 
   try {
     await db.volunteer.update({
@@ -107,12 +120,16 @@ export async function updateVolunteer(
         committeeId,
         preferredRoleId,
         assignedRoleId: assignedRoleId ?? null,
+        ageGroup,
+        lifeStageId,
         status,
         notes: notes ?? null,
       },
     })
     revalidatePath("/volunteers")
     revalidatePath(`/volunteers/${id}`)
+    revalidatePath(`/event/${eventId}/breakouts`, "layout")
+    revalidatePath("/cluster/[id]/breakouts/[groupId]", "page")
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to update volunteer" }

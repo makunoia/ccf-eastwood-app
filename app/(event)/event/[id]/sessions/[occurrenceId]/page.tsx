@@ -6,8 +6,6 @@ import { canExport, canImport, canWrite } from "@/lib/permissions"
 import { isEstablishedAttendee, resolveAttendeeStatus } from "@/lib/session-stats"
 import { ministryLabel } from "@/lib/events/ministry-label"
 import { breakoutOccupancy } from "@/lib/breakouts/occupancy"
-import { resolvePoolScope } from "@/lib/events/pool-scope"
-import { anyOwner } from "@/lib/breakouts/owner"
 import { BreadcrumbOverride } from "@/components/breadcrumb-context"
 import { DetailPageHeader } from "@/components/detail-page-header"
 import { SessionAttendeesTable } from "./session-attendees-table"
@@ -70,21 +68,8 @@ async function getOccurrenceDetail(occurrenceId: string) {
 
   if (!occurrence) return null
 
-  // Which tables this session runs, and whose volunteers may staff them.
-  //
-  // BOTH sets under a Collab: this event's own standing tables, which it keeps
-  // whether or not it shares a day, plus the day's cluster-owned ones. A sitting
-  // can need a stand-in at either, and offering only one of them leaves the other
-  // unstaffable — which is how the day's tables were unreachable before, and how
-  // the event's own would be unreachable if the fix simply swapped the two.
-  // Either ministry's roster can supply the substitute — see
-  // lib/events/pool-scope.ts.
-  const scope = await resolvePoolScope(occurrence.event.id)
-  const sessionTables = anyOwner(
-    scope.clusterBreakoutOwner
-      ? [scope.breakoutOwner, scope.clusterBreakoutOwner]
-      : [scope.breakoutOwner]
-  )
+  // Event Sessions only operate on this Event's standing breakout groups.
+  const sessionTables = { eventId: occurrence.event.id }
 
   const [
     volunteers,
@@ -94,7 +79,7 @@ async function getOccurrenceDetail(occurrenceId: string) {
     siblingOccurrences,
   ] = await Promise.all([
     db.volunteer.findMany({
-      where: { eventId: { in: scope.volunteerEventIds } },
+      where: { eventId: occurrence.event.id },
       select: {
         id: true,
         memberId: true,
@@ -114,7 +99,7 @@ async function getOccurrenceDetail(occurrenceId: string) {
                 firstName: true,
                 lastName: true,
                 eventRegistrations: {
-                  where: { eventId: { in: scope.candidateEventIds } },
+                  where: { eventId: occurrence.event.id },
                   select: {
                     occurrenceAttendances: {
                       where: { occurrenceId },
@@ -134,7 +119,7 @@ async function getOccurrenceDetail(occurrenceId: string) {
                 firstName: true,
                 lastName: true,
                 eventRegistrations: {
-                  where: { eventId: { in: scope.candidateEventIds } },
+                  where: { eventId: occurrence.event.id },
                   select: {
                     occurrenceAttendances: {
                       where: { occurrenceId },
@@ -166,7 +151,7 @@ async function getOccurrenceDetail(occurrenceId: string) {
       },
     }),
     db.occurrenceSubFacilitator.findMany({
-      where: { occurrenceId },
+      where: { occurrenceId, breakoutGroup: sessionTables },
       select: {
         breakoutGroupId: true,
         role: true,
@@ -272,6 +257,7 @@ export default async function OccurrenceDetailPage({
     year: "numeric",
     timeZone: "UTC",
   })
+  const eventBreakoutGroupIds = new Set(breakoutGroups.map((group) => group.id))
 
   const attendeesWithStats = occurrence.attendees.map((a) => {
     const checkedInAtFormatted = a.checkedInAt.toLocaleTimeString("en-PH", {
@@ -329,8 +315,12 @@ export default async function OccurrenceDetailPage({
       hasStatusOverride: a.isReturnerOverride !== null,
       isMember: !!r.memberId,
       isVolunteer,
-      breakoutGroupIds: r.breakoutGroupMemberships.map((m) => m.breakoutGroupId),
-      breakoutGroupNames: r.breakoutGroupMemberships.map((m) => m.breakoutGroup.name),
+      breakoutGroupIds: r.breakoutGroupMemberships
+        .filter((m) => eventBreakoutGroupIds.has(m.breakoutGroupId))
+        .map((m) => m.breakoutGroupId),
+      breakoutGroupNames: r.breakoutGroupMemberships
+        .filter((m) => eventBreakoutGroupIds.has(m.breakoutGroupId))
+        .map((m) => m.breakoutGroup.name),
       gender: r.member?.gender ?? r.guest?.gender ?? null,
     }
   })

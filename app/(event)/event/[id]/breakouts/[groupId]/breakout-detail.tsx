@@ -58,6 +58,8 @@ import { MatchingProfile } from "@/components/breakouts/matching-profile"
 import { CatchMechGroupField } from "@/components/breakouts/catch-mech-group-field"
 import { breakoutOccupancy } from "@/lib/breakouts/occupancy"
 import type { BreakoutSurface } from "@/lib/breakouts/owner"
+import { filterVolunteerAssignmentPool } from "@/lib/volunteers/assignment-profile"
+import { VOLUNTEER_AGE_GROUPS } from "@/lib/volunteers/age-groups"
 
 const UNASSIGNED = "__unassigned__"
 
@@ -122,6 +124,9 @@ export type SiblingGroup = {
 
 type AvailableVolunteer = {
   id: string
+  ageGroup: string | null
+  lifeStageId: string | null
+  lifeStage: { id: string; name: string } | null
   member: { id: string; firstName: string; lastName: string; ledGroups: { id: string; name: string }[] }
 }
 
@@ -198,9 +203,22 @@ function FacilitatorCell({
   const [selectedId, setSelectedId] = React.useState(volunteer?.id ?? UNASSIGNED)
   const [linkedGroupId, setLinkedGroupId] = React.useState("")
   const [saving, setSaving] = React.useState(false)
+  const [ageGroupFilter, setAgeGroupFilter] = React.useState("")
+  const [lifeStageFilter, setLifeStageFilter] = React.useState("")
 
   const eligible = availableVolunteers.filter((v) => v.id !== otherVolunteerId)
+  const filteredEligible = filterVolunteerAssignmentPool(eligible, {
+    ageGroup: ageGroupFilter,
+    lifeStageId: lifeStageFilter,
+  })
+  const ageGroups = VOLUNTEER_AGE_GROUPS
+  const lifeStages = Array.from(
+    new Map(eligible.flatMap((v) => v.lifeStage ? [[v.lifeStage.id, v.lifeStage] as const] : [])).values()
+  )
   const selectedVol = eligible.find((v) => v.id === selectedId) ?? null
+  const volunteerOptions = selectedVol && !filteredEligible.some((v) => v.id === selectedVol.id)
+    ? [selectedVol, ...filteredEligible]
+    : filteredEligible
   const ledGroups = selectedVol?.member.ledGroups ?? []
 
   React.useEffect(() => {
@@ -208,6 +226,8 @@ function FacilitatorCell({
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setSelectedId(volunteer?.id ?? UNASSIGNED)
       setLinkedGroupId("")
+      setAgeGroupFilter("")
+      setLifeStageFilter("")
     }
   }, [dialogOpen, volunteer])
 
@@ -283,13 +303,35 @@ function FacilitatorCell({
               Select a confirmed volunteer for the {label.toLowerCase()} slot.
             </DialogDescription>
           </DialogHeader>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor={`${role}-age-group`}>Age Group</Label>
+              <Select value={ageGroupFilter || "all"} onValueChange={(v) => setAgeGroupFilter(v === "all" ? "" : v)}>
+                <SelectTrigger id={`${role}-age-group`}><SelectValue placeholder="All age groups" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All age groups</SelectItem>
+                  {ageGroups.map((ageGroup) => <SelectItem key={ageGroup} value={ageGroup}>{ageGroup}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor={`${role}-life-stage`}>Life Stage</Label>
+              <Select value={lifeStageFilter || "all"} onValueChange={(v) => setLifeStageFilter(v === "all" ? "" : v)}>
+                <SelectTrigger id={`${role}-life-stage`}><SelectValue placeholder="All life stages" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All life stages</SelectItem>
+                  {lifeStages.map((stage) => <SelectItem key={stage.id} value={stage.id}>{stage.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
           <div className="space-y-1.5">
             <Label>Volunteer</Label>
             <Select value={selectedId} onValueChange={setSelectedId}>
               <SelectTrigger><SelectValue placeholder="Unassigned" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>
-                {eligible.map((v) => (
+                {volunteerOptions.map((v) => (
                   <SelectItem key={v.id} value={v.id}>
                     {v.member.firstName} {v.member.lastName}
                   </SelectItem>

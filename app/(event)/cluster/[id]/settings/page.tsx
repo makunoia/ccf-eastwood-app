@@ -55,7 +55,7 @@ export default async function ClusterSettingsPage({
   const candidates = await db.event.findMany({
     where: {
       modules: { none: { type: "Priced" } },
-      clusterMembership: null,
+      clusterMemberships: { none: { clusterId: id } },
       type: { not: "MultiDay" },
       ...(dayRange
         ? {
