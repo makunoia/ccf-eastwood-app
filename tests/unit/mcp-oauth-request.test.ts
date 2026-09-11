@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { validateAuthorizationRequest } from "@/app/oauth/authorize/route"
 
 function requestUrl(extra = "") {
@@ -6,6 +6,8 @@ function requestUrl(extra = "") {
 }
 
 describe("MCP OAuth authorization request", () => {
+  afterEach(() => vi.unstubAllEnvs())
+
   it("does not grant implicit scopes when the OAuth client omits scope", () => {
     const result = validateAuthorizationRequest(requestUrl())
     expect(result).toEqual({ ok: false, error: "scope is required." })
@@ -15,5 +17,14 @@ describe("MCP OAuth authorization request", () => {
     const url = requestUrl("&scope=churchie%3Amembers%3Aread"); url.searchParams.set("resource", "https://wrong.example/api/mcp")
     const result = validateAuthorizationRequest(url)
     expect(result).toEqual({ ok: false, error: "The OAuth resource does not match the Churchie MCP endpoint." })
+  })
+
+  it("accepts native-app HTTP loopback redirects at the transport validation layer", () => {
+    vi.stubEnv("NODE_ENV", "production")
+    vi.stubEnv("MCP_OAUTH_CLIENTS", "")
+    const url = requestUrl("&scope=churchie%3Amembers%3Aread")
+    url.searchParams.set("redirect_uri", "http://127.0.0.1:49152/oauth/callback")
+    const result = validateAuthorizationRequest(url)
+    expect(result).toEqual({ ok: false, error: "The OAuth client or callback is not approved for Churchie." })
   })
 })

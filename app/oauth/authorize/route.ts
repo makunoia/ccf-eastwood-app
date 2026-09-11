@@ -7,6 +7,9 @@ import { MCP_SCOPES, sanitizeRequestedScopes } from "@/lib/mcp/scopes"
 const CONSENT_COOKIE = "churchie_mcp_consent"
 function invalid(message: string) { return NextResponse.json({ error: "invalid_request", error_description: message }, { status: 400 }) }
 function escapeHtml(value: string) { return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!) }
+function isSecureRedirect(redirect: URL) {
+  return redirect.protocol === "https:" || (redirect.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(redirect.hostname))
+}
 
 type Validation = { ok: true; value: { clientId: string; redirectUri: string; scope: (typeof MCP_SCOPES)[number][]; challenge: string; state: string | null; resource: string } } | { ok: false; error: string }
 export function validateAuthorizationRequest(url: URL): Validation {
@@ -21,7 +24,7 @@ export function validateAuthorizationRequest(url: URL): Validation {
   if (!scope) return { ok: false, error: requestedScope === null ? "scope is required." : "The requested scope is not supported." }
   if (!challenge || !/^[A-Za-z0-9_-]{43,128}$/.test(challenge) || method !== "S256") return { ok: false, error: "A valid S256 PKCE challenge is required." }
   if (resource !== `${url.origin}/api/mcp`) return { ok: false, error: "The OAuth resource does not match the Churchie MCP endpoint." }
-  try { const redirect = new URL(redirectUri); if (redirect.protocol !== "https:" && process.env.NODE_ENV === "production") return { ok: false, error: "redirect_uri must use HTTPS." } } catch { return { ok: false, error: "redirect_uri is invalid." } }
+  try { const redirect = new URL(redirectUri); if (!isSecureRedirect(redirect) && process.env.NODE_ENV === "production") return { ok: false, error: "redirect_uri must use HTTPS or an HTTP loopback address." } } catch { return { ok: false, error: "redirect_uri is invalid." } }
   if (!isAllowedMcpClient(clientId, redirectUri)) return { ok: false, error: "The OAuth client or callback is not approved for Churchie." }
   return { ok: true, value: { clientId, redirectUri, scope, challenge, state, resource } }
 }
@@ -35,7 +38,7 @@ async function signedIn(request: Request) {
 
 export async function GET(request: Request) {
   const url = new URL(request.url), validation = validateAuthorizationRequest(url)
-  if (!validation.ok) { console.warn(JSON.stringify({ level: "warning", route: "/oauth/authorize", validationError: validation.error })); return invalid(validation.error) }
+  if (!validation.ok) { console.warn(JSON.stringify({ level: "warning", route: "/oauth/authorize", validationError: validation.error, clientId: url.searchParams.get("client_id"), redirectUri: url.searchParams.get("redirect_uri") })); return invalid(validation.error) }
   const params = validation.value
   const user = await signedIn(request); if (user instanceof NextResponse) return user
   const nonce = crypto.randomUUID(), jar = await cookies()
