@@ -3,5 +3,11 @@
   "github": {
     "enabled": true
   },
+  "crons": [
+    {
+      "path": "/api/cron/mcp-import-retention",
+      "schedule": "17 2 * * *"
+    }
+  ],
   "buildCommand": "prisma migrate deploy && pnpm run build"
 }

@@ -5,7 +5,8 @@ export const metadata: Metadata = {
   title: "Sign In",
 }
 
-export default function LoginPage() {
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ callbackUrl?: string }> }) {
+  const { callbackUrl } = await searchParams
   return (
     <div className="relative flex min-h-svh flex-col items-center justify-center p-6 md:p-10 bg-[#f6fefe]">
       <div
@@ -16,7 +17,7 @@ export default function LoginPage() {
         }}
       />
       <div className="relative w-full max-w-sm">
-        <LoginForm />
+        <LoginForm callbackUrl={callbackUrl} />
       </div>
       <p className="relative mt-12 text-[11px] tracking-widest text-muted-foreground/40 uppercase">
         Members · Events · DGroups · Ministries

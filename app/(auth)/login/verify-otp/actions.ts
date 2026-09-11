@@ -17,6 +17,7 @@ export async function verifyOtp(
 
   const jar = await cookies()
   const rawToken = jar.get("pre_auth_token")?.value
+  const callbackUrl = jar.get("pre_auth_callback")?.value
 
   if (!rawToken) {
     return { error: "Session expired. Please sign in again." }
@@ -43,11 +44,12 @@ export async function verifyOtp(
 
   // Code is correct — clear the pre-auth cookie and create a real session
   jar.delete("pre_auth_token")
+  jar.delete("pre_auth_callback")
 
   try {
     await signIn("credentials", {
       preAuthToken: rawToken,
-      redirectTo: await resolveLandingPathForUser(userId),
+      redirectTo: callbackUrl || await resolveLandingPathForUser(userId),
     })
     return {}
   } catch (error) {

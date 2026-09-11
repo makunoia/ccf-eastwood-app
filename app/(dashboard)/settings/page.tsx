@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { IconAdjustmentsHorizontal, IconAlertTriangle, IconDoorEnter, IconNumbers, IconTags, IconUsers } from "@tabler/icons-react"
+import { IconAdjustmentsHorizontal, IconAlertTriangle, IconDoorEnter, IconNumbers, IconPlugConnected, IconTags, IconUsers } from "@tabler/icons-react"
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
 export const metadata: Metadata = {
@@ -8,6 +8,12 @@ export const metadata: Metadata = {
 }
 
 const sections = [
+  {
+    title: "Connected Apps",
+    description: "Review and revoke ChatGPT and other connected admin integrations",
+    icon: IconPlugConnected,
+    href: "/settings/connected-apps",
+  },
   {
     title: "Users",
     description: "Manage admin accounts and configure scoped feature access per user",
