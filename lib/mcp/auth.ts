@@ -101,15 +101,37 @@ export async function createAuthorizationCode(input: { userId: string; clientId:
 }
 
 export async function exchangeAuthorizationCode(input: { code: string; clientId: string; redirectUri: string; resource: string; codeVerifier: string }) {
-  if (!/^[A-Za-z0-9._~-]{43,128}$/.test(input.codeVerifier)) return null
+  if (!/^[A-Za-z0-9._~-]{43,128}$/.test(input.codeVerifier)) {
+    console.warn(JSON.stringify({ level: "warning", operation: "mcp_authorization_code_exchange", rejection: "invalid_pkce_verifier" }))
+    return null
+  }
   return db.$transaction(async (tx) => {
     const record = await tx.mcpAuthorizationCode.findUnique({ where: { codeHash: hash(input.code) } })
-    if (!record || record.status !== "Pending" || record.expiresAt <= new Date() || record.clientId !== input.clientId || record.redirectUri !== input.redirectUri || record.resource !== input.resource) return null
+    if (!record) {
+      console.warn(JSON.stringify({ level: "warning", operation: "mcp_authorization_code_exchange", rejection: "authorization_code_not_found" }))
+      return null
+    }
+    const rejection = record.status !== "Pending" ? "authorization_code_not_pending"
+      : record.expiresAt <= new Date() ? "authorization_code_expired"
+      : record.clientId !== input.clientId ? "client_id_mismatch"
+      : record.redirectUri !== input.redirectUri ? "redirect_uri_mismatch"
+      : record.resource !== input.resource ? "resource_mismatch"
+      : null
+    if (rejection) {
+      console.warn(JSON.stringify({ level: "warning", operation: "mcp_authorization_code_exchange", rejection }))
+      return null
+    }
     const challenge = createHash("sha256").update(input.codeVerifier).digest("base64url")
-    if (!timingSafeStringEqual(challenge, record.codeChallenge)) return null
+    if (!timingSafeStringEqual(challenge, record.codeChallenge)) {
+      console.warn(JSON.stringify({ level: "warning", operation: "mcp_authorization_code_exchange", rejection: "pkce_challenge_mismatch" }))
+      return null
+    }
     // Compare-and-set makes a PKCE code single-use even under concurrent requests.
     const consumed = await tx.mcpAuthorizationCode.updateMany({ where: { id: record.id, status: "Pending", expiresAt: { gt: new Date() } }, data: { status: "Consumed", consumedAt: new Date() } })
-    if (consumed.count !== 1) return null
+    if (consumed.count !== 1) {
+      console.warn(JSON.stringify({ level: "warning", operation: "mcp_authorization_code_exchange", rejection: "authorization_code_race" }))
+      return null
+    }
     return createMcpToken(tx, record.userId, record.clientId, record.resource, record.scope)
   })
 }
