@@ -7,7 +7,6 @@ import { fetchBreakoutCandidates } from "@/lib/breakout-suggestion-server"
 import { breakoutOccupancy } from "@/lib/breakouts/occupancy"
 import { isClusterOwner, type BreakoutSet } from "@/lib/breakouts/owner"
 import { resolveSurfaceBreakoutOwner } from "@/lib/events/pool-scope"
-import { tryCreateSmallGroupRequestFromBreakout } from "@/lib/create-small-group-request"
 import { recordMemberGroupClaim } from "@/lib/small-groups/member-claim"
 import { createSeekerRequestFromRegistration } from "@/lib/small-groups/seeker-requests"
 import { buildStoredScheduleSlot } from "@/lib/matching/candidate-schedule"
@@ -305,7 +304,6 @@ export async function assignBreakoutForRegistrant(
         data: { breakoutGroupId: chosenGroupId, registrantId },
       })
     })
-    await tryCreateSmallGroupRequestFromBreakout(chosenGroupId, registrantId)
     revalidatePath(`/event/${eventId}/breakouts`)
     return fetchAssignedBreakoutDetails(chosenGroupId)
   } catch {

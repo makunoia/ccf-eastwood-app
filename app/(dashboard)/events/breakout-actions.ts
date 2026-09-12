@@ -34,11 +34,6 @@ import { personKeyFor } from "@/lib/clusters/roster"
 import { MAX_BREAKOUT_BATCH } from "@/lib/breakouts/candidate-filters"
 import { registrantName, registrantNameSelect } from "@/lib/metadata"
 import type { BatchFailure } from "@/components/batch/types"
-import {
-  tryCreateSmallGroupRequestFromBreakout,
-  tryCancelSmallGroupRequestFromBreakout,
-  tryTransferSmallGroupRequestFromBreakout,
-} from "@/lib/create-small-group-request"
 import { clearedMatchingProfile, missingTimothyFields } from "@/lib/breakouts/profile"
 
 type ActionResult<T = void> =
@@ -576,12 +571,6 @@ export async function addRegistrantsToBreakout(
       })
     }
 
-    // Best-effort side effect, deliberately outside the transaction: a failure
-    // to raise the small-group request must not roll back the placement.
-    for (const id of accepted) {
-      await tryCreateSmallGroupRequestFromBreakout(groupId, id)
-    }
-
     revalidateBreakoutSurfaces(owner, { groupId })
 
     return { success: true, data: { added: accepted.length, failed } }
@@ -610,7 +599,6 @@ export async function removeRegistrantFromBreakout(
     await db.breakoutGroupMember.delete({
       where: { breakoutGroupId_registrantId: { breakoutGroupId: groupId, registrantId } },
     })
-    await tryCancelSmallGroupRequestFromBreakout(groupId, registrantId)
     revalidateBreakoutSurfaces(owner, { sessions: true })
     return { success: true, data: undefined }
   } catch {
@@ -742,10 +730,6 @@ export async function transferRegistrantToBreakout(
     if (outcome === "not-in-source") {
       return { success: false, error: "No longer a member of this breakout group" }
     }
-
-    // Best-effort side effect, deliberately outside the transaction: a failure to
-    // re-point the small-group request must not roll back the move.
-    await tryTransferSmallGroupRequestFromBreakout(fromGroupId, toGroupId, registrantId)
 
     revalidateBreakoutSurfaces(owner, { groupId: fromGroupId, sessions: true })
     revalidateBreakoutSurfaces(owner, { groupId: toGroupId })
@@ -893,8 +877,6 @@ export async function autoAssignRegistrantToBreakout(
     await db.breakoutGroupMember.create({
       data: { breakoutGroupId: topMatch.groupId, registrantId },
     })
-    await tryCreateSmallGroupRequestFromBreakout(topMatch.groupId, registrantId)
-
     revalidateBreakoutSurfaces(owner)
   } catch {
     // Swallow — auto-assign is best-effort and must not interrupt check-in
@@ -1299,7 +1281,6 @@ export async function autoAssignBreakouts(
       await db.breakoutGroupMember.create({
         data: { breakoutGroupId: matches[0].groupId, registrantId: registrant.id },
       })
-      await tryCreateSmallGroupRequestFromBreakout(matches[0].groupId, registrant.id)
       seated.add(key)
       assigned++
     }
