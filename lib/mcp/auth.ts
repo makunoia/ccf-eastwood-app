@@ -20,6 +20,31 @@ export type McpActor = {
 
 const hash = (value: string) => createHash("sha256").update(value).digest("hex")
 const token = () => randomBytes(32).toString("base64url")
+const CODEX_OAUTH_CLIENT_ID = "https://chatgpt.com/oauth/codex/client.json"
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"])
+
+export function redirectUrisMatch(clientId: string, authorizedUri: string, tokenUri: string) {
+  if (authorizedUri === tokenUri) return true
+  if (clientId !== CODEX_OAUTH_CLIENT_ID) return false
+  try {
+    const authorized = new URL(authorizedUri)
+    const tokenRedirect = new URL(tokenUri)
+    return authorized.protocol === "http:"
+      && tokenRedirect.protocol === "http:"
+      && LOOPBACK_HOSTS.has(authorized.hostname)
+      && LOOPBACK_HOSTS.has(tokenRedirect.hostname)
+      && authorized.port === tokenRedirect.port
+      && authorized.pathname === tokenRedirect.pathname
+      && authorized.search === tokenRedirect.search
+      && authorized.hash === tokenRedirect.hash
+      && !authorized.username
+      && !authorized.password
+      && !tokenRedirect.username
+      && !tokenRedirect.password
+  } catch {
+    return false
+  }
+}
 
 /** Production connections are explicitly allow-listed as clientId=redirectUri pairs. */
 export function isAllowedMcpClient(clientId: string, redirectUri: string) {
@@ -30,7 +55,7 @@ export function isAllowedMcpClient(clientId: string, redirectUri: string) {
   }) ?? false
   if (configuredMatch) return true
   if (clientId === "https://chatgpt.com/oauth/client.json" && redirectUri === "https://chatgpt.com/connector_platform_oauth_redirect") return true
-  if (clientId === "https://chatgpt.com/oauth/codex/client.json") {
+  if (clientId === CODEX_OAUTH_CLIENT_ID) {
     try {
       const redirect = new URL(redirectUri)
       const isLoopback = ["localhost", "127.0.0.1", "[::1]"].includes(redirect.hostname)
@@ -114,7 +139,7 @@ export async function exchangeAuthorizationCode(input: { code: string; clientId:
     const rejection = record.status !== "Pending" ? "authorization_code_not_pending"
       : record.expiresAt <= new Date() ? "authorization_code_expired"
       : record.clientId !== input.clientId ? "client_id_mismatch"
-      : record.redirectUri !== input.redirectUri ? "redirect_uri_mismatch"
+      : !redirectUrisMatch(record.clientId, record.redirectUri, input.redirectUri) ? "redirect_uri_mismatch"
       : record.resource !== input.resource ? "resource_mismatch"
       : null
     if (rejection) {
