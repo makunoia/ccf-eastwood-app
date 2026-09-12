@@ -15,6 +15,8 @@ export async function login(
 ): Promise<{ error?: string }> {
   const username = ((formData.get("username") as string | null) ?? "").trim().toLowerCase()
   const password = (formData.get("password") as string | null) ?? ""
+  const callbackUrl = (formData.get("callbackUrl") as string | null) ?? ""
+  const safeCallbackUrl = callbackUrl.startsWith("/") || callbackUrl.startsWith(process.env.NEXTAUTH_URL ?? "http://localhost") ? callbackUrl : ""
 
   // Look up user and verify password manually before deciding auth path
   const user = await db.user.findUnique({
@@ -42,6 +44,9 @@ export async function login(
       maxAge: 5 * 60, // 5 minutes
       path: "/",
     })
+    if (safeCallbackUrl) {
+      jar.set("pre_auth_callback", safeCallbackUrl, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "strict", maxAge: 5 * 60, path: "/" })
+    }
     redirect("/login/verify-otp")
   }
 
@@ -50,7 +55,7 @@ export async function login(
     await signIn("credentials", {
       username,
       password,
-      redirectTo: await resolveLandingPathForUser(user.id),
+      redirectTo: safeCallbackUrl || await resolveLandingPathForUser(user.id),
     })
     return {}
   } catch (error) {

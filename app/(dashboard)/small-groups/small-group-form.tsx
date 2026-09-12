@@ -182,6 +182,7 @@ function toFormValues(group: SmallGroupRow): SmallGroupFormValues {
  */
 const LOG_ACTION_LABELS: Record<GroupLogAction, string> = {
   GroupCreated: "Group created",
+  GroupUpdated: "Group updated",
   MemberAdded: "Member added",
   MemberRemoved: "Member removed",
   MemberTransferred: "Member transferred",

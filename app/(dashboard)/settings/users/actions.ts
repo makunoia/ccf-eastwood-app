@@ -37,6 +37,18 @@ export async function createUser(
 
   const { username, name, permissions, eventIds } = parsed.data
 
+  const hasEventsPermission = permissions.some(({ feature }) => feature === "Events")
+  if (!hasEventsPermission && eventIds.length > 0) {
+    return { success: false, error: "Event access requires the Events feature permission" }
+  }
+
+  if (eventIds.length > 0) {
+    const eventCount = await db.event.count({ where: { id: { in: eventIds } } })
+    if (eventCount !== eventIds.length) {
+      return { success: false, error: "One or more selected events no longer exist" }
+    }
+  }
+
   const rawPassword = generatePassword()
   const hashedPassword = await bcrypt.hash(rawPassword, 12)
 
@@ -88,6 +100,27 @@ export async function updateUserPermissions(
   }
 
   const { permissions, eventIds } = parsed.data
+
+  const hasEventsPermission = permissions.some(({ feature }) => feature === "Events")
+  if (!hasEventsPermission && eventIds.length > 0) {
+    return { success: false, error: "Event access requires the Events feature permission" }
+  }
+
+  const target = await db.user.findUnique({
+    where: { id },
+    select: { role: true },
+  })
+  if (!target) return { success: false, error: "User not found" }
+  if (target.role === "SuperAdmin") {
+    return { success: false, error: "Super Admin access cannot be changed here" }
+  }
+
+  if (eventIds.length > 0) {
+    const eventCount = await db.event.count({ where: { id: { in: eventIds } } })
+    if (eventCount !== eventIds.length) {
+      return { success: false, error: "One or more selected events no longer exist" }
+    }
+  }
 
   const permissionRows = permissions.flatMap(({ feature, actions }) =>
     actions.map((action) => ({ userId: id, feature, action }))

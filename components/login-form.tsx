@@ -11,8 +11,9 @@ import Image from "next/image"
 
 export function LoginForm({
   className,
+  callbackUrl,
   ...props
-}: React.ComponentProps<"div">) {
+}: React.ComponentProps<"div"> & { callbackUrl?: string }) {
   const [state, formAction, isPending] = useActionState(login, null)
   const [showPassword, setShowPassword] = useState(false)
 
@@ -38,6 +39,7 @@ export function LoginForm({
       </div>
 
       <form action={formAction} className="w-full flex flex-col gap-5">
+        {callbackUrl && <input type="hidden" name="callbackUrl" value={callbackUrl} />}
         <div className="text-center mb-1">
           <h1 className="text-[22px] font-semibold tracking-tight text-foreground">
             Welcome back

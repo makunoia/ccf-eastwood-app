@@ -1,0 +1,8 @@
+{
+  "apps": {
+    "churchie-import-widget": {
+      "url": "${CHURCHIE_MCP_URL}/mcp/widget",
+      "description": "Secure DGroup workbook upload and import review widget."
+    }
+  }
+}

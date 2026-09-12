@@ -108,7 +108,7 @@ function RowActions({ row, events }: { row: UserRow; events: EventOption[] }) {
         <DropdownMenuContent align="end">
           <DropdownMenuItem onSelect={() => setEditOpen(true)}>
             <IconPencil className="mr-2 size-4" />
-            Edit permissions
+            Edit access
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem

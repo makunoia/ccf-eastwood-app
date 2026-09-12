@@ -16,6 +16,7 @@ import type { SmallGroupLogAction } from "@/app/generated/prisma/client"
  */
 export const SMALL_GROUP_LOG_LABEL: Record<SmallGroupLogAction, string> = {
   GroupCreated: "Group created",
+  GroupUpdated: "Group updated",
   MemberAdded: "Added to DGroup",
   MemberRemoved: "Removed from DGroup",
   MemberTransferred: "Transferred to another group",
@@ -31,6 +32,7 @@ export type LogTone = "positive" | "negative" | "neutral"
 
 export const SMALL_GROUP_LOG_TONE: Record<SmallGroupLogAction, LogTone> = {
   GroupCreated: "neutral",
+  GroupUpdated: "neutral",
   MemberAdded: "positive",
   MemberRemoved: "negative",
   MemberTransferred: "neutral",

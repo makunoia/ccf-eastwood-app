@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "churchie-admin": {
+      "transport": "streamable_http",
+      "url": "${CHURCHIE_MCP_URL}/api/mcp"
+    }
+  }
+}
