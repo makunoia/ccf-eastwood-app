@@ -148,6 +148,12 @@ export function UserDialog({ open, onOpenChange, user, events }: Props) {
     const permissions = buildPermissions()
     const resolvedEventIds = eventScope === "all" ? [] : eventIds
 
+    if (hasEventsPermission && eventScope === "specific" && resolvedEventIds.length === 0) {
+      toast.error("Select at least one event, or choose all events")
+      setSaving(false)
+      return
+    }
+
     if (isEdit) {
       const result = await updateUserPermissions(user!.id, { permissions, eventIds: resolvedEventIds })
       setSaving(false)
@@ -226,10 +232,10 @@ export function UserDialog({ open, onOpenChange, user, events }: Props) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{isEdit ? "Edit permissions" : "Add user"}</DialogTitle>
+          <DialogTitle>{isEdit ? "Edit access" : "Add user"}</DialogTitle>
           <DialogDescription>
             {isEdit
-              ? `Update the feature access for ${user?.name ?? user?.username}.`
+              ? `Update the privileges and event scope for ${user?.name ?? user?.username}.`
               : "Create a new account. A temporary password will be generated."}
           </DialogDescription>
         </DialogHeader>
@@ -322,7 +328,12 @@ export function UserDialog({ open, onOpenChange, user, events }: Props) {
             {/* Event access — only shown when Events has any actions */}
             {hasEventsPermission && (
               <div className="space-y-3">
-                <Label>Event access</Label>
+                <div className="space-y-1">
+                  <Label>Event scope</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Choose which events this account can view and manage.
+                  </p>
+                </div>
                 <RadioGroup
                   value={eventScope}
                   onValueChange={(v) => {

@@ -38,14 +38,18 @@ export const createUserSchema = z.object({
     ),
   name: z.string().min(1, "Name is required").trim(),
   permissions: z.array(permissionEntrySchema),
-  eventIds: z.array(z.string()),
+  eventIds: z.array(z.string()).refine((ids) => new Set(ids).size === ids.length, {
+    message: "An event can only be selected once",
+  }),
 })
 
 export type CreateUserInput = z.infer<typeof createUserSchema>
 
 export const updateUserPermissionsSchema = z.object({
   permissions: z.array(permissionEntrySchema),
-  eventIds: z.array(z.string()),
+  eventIds: z.array(z.string()).refine((ids) => new Set(ids).size === ids.length, {
+    message: "An event can only be selected once",
+  }),
 })
 
 export type UpdateUserPermissionsInput = z.infer<typeof updateUserPermissionsSchema>
