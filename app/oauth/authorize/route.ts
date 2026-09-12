@@ -10,6 +10,10 @@ function escapeHtml(value: string) { return value.replace(/[&<>"']/g, (char) => 
 function isSecureRedirect(redirect: URL) {
   return redirect.protocol === "https:" || (redirect.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(redirect.hostname))
 }
+export function authorizationPageCsp(redirectUri: string) {
+  const callbackOrigin = new URL(redirectUri).origin
+  return `default-src 'none'; style-src 'unsafe-inline'; form-action 'self' ${callbackOrigin}; base-uri 'none'; frame-ancestors 'none'`
+}
 
 type Validation = { ok: true; value: { clientId: string; redirectUri: string; scope: (typeof MCP_SCOPES)[number][]; challenge: string; state: string | null; resource: string } } | { ok: false; error: string }
 export function validateAuthorizationRequest(url: URL): Validation {
@@ -46,7 +50,7 @@ export async function GET(request: Request) {
   const fields = [...url.searchParams.entries(), ["consent_nonce", nonce] as const].map(([name, value]) => `<input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml(value)}">`).join("")
   const scopes = params.scope.map((scope) => `<li>${escapeHtml(scope.replace(/^churchie:/, "").replaceAll(":", " — "))}</li>`).join("")
   const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Connect Churchie</title><style>body{font:16px system-ui;background:#f6f7f9;color:#15171a;margin:0}.card{max-width:540px;margin:8vh auto;background:white;padding:32px;border:1px solid #ddd;border-radius:16px}button{padding:11px 18px;border-radius:9px;border:1px solid #bbb;font-weight:650}.allow{background:#15171a;color:white}.actions{display:flex;gap:10px;margin-top:24px}</style></head><body><main class="card"><h1>Connect Churchie Admin</h1><p>ChatGPT is requesting access to your Churchie administrator account. Churchie will continue enforcing your live role, feature permissions, and event access.</p><p>Requested access:</p><ul>${scopes}</ul><p>Mutations still require ChatGPT approval. Deletes and bulk changes remain Super Admin-only.</p><form method="post">${fields}<div class="actions"><button class="allow" name="decision" value="allow">Allow access</button><button name="decision" value="deny">Cancel</button></div></form></main></body></html>`
-  return new NextResponse(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'" } })
+  return new NextResponse(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": authorizationPageCsp(params.redirectUri) } })
 }
 
 export async function POST(request: Request) {
