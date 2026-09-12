@@ -63,6 +63,7 @@ export async function queryMembers(filters: {
   lifeStageId?: string
   gender?: "Male" | "Female"
   inSmallGroup?: boolean
+  includeDGroups?: boolean
   limit?: number
 }): Promise<AssistantList<AssistantMemberRow>> {
   const take = clampRowLimit(filters.limit)
@@ -96,10 +97,15 @@ export async function queryMembers(filters: {
     }),
     db.member.count({ where }),
   ])
-  return toAssistantList(rows.map(toAssistantMemberRow), totalCount)
+  return toAssistantList(rows.map((row) => {
+    const serialized = toAssistantMemberRow(row)
+    return filters.includeDGroups === false
+      ? { ...serialized, smallGroup: null, groupStatus: null }
+      : serialized
+  }), totalCount)
 }
 
-export async function getMemberDetail(memberId: string) {
+export async function getMemberDetail(memberId: string, allowedEventIds?: string[], includeDGroups = true) {
   const m = await db.member.findUnique({
     where: { id: memberId },
     select: {
@@ -124,7 +130,12 @@ export async function getMemberDetail(memberId: string) {
       ageRangeBucket: { select: { label: true } },
       smallGroup: { select: { id: true, name: true } },
       ledGroups: { select: { id: true, name: true } },
+      schedulePreferences: {
+        select: { dayOfWeek: true, timeStart: true, timeEnd: true },
+        orderBy: [{ dayOfWeek: "asc" }, { timeStart: "asc" }],
+      },
       eventRegistrations: {
+        where: allowedEventIds ? { eventId: { in: allowedEventIds } } : {},
         select: {
           event: { select: { id: true, name: true, startDate: true } },
           attendedAt: true,
@@ -153,9 +164,15 @@ export async function getMemberDetail(memberId: string) {
     workIndustry: m.workIndustry,
     meetingPreference: m.meetingPreference,
     lifeStage: m.lifeStage?.name ?? null,
-    smallGroup: m.smallGroup,
-    groupStatus: m.groupStatus,
-    leadsGroups: m.ledGroups,
+    smallGroup: includeDGroups ? m.smallGroup : null,
+    groupStatus: includeDGroups ? m.groupStatus : null,
+    leadsGroups: includeDGroups ? m.ledGroups : [],
+    schedulePreferences: m.schedulePreferences.map((schedule) => ({
+      dayOfWeek: schedule.dayOfWeek,
+      day: formatSchedule(schedule.dayOfWeek, null),
+      timeStart: schedule.timeStart,
+      timeEnd: schedule.timeEnd,
+    })),
     recentEventRegistrations: m.eventRegistrations.map((r) => ({
       eventId: r.event.id,
       eventName: r.event.name,
@@ -172,6 +189,7 @@ export async function queryGuests(filters: {
   query?: string
   lifeStageId?: string
   status?: "active" | "promoted" | "all"
+  includeDGroups?: boolean
   limit?: number
 }): Promise<AssistantList<AssistantGuestRow>> {
   const take = clampRowLimit(filters.limit)
@@ -204,10 +222,15 @@ export async function queryGuests(filters: {
     }),
     db.guest.count({ where }),
   ])
-  return toAssistantList(rows.map(toAssistantGuestRow), totalCount)
+  return toAssistantList(rows.map((row) => {
+    const serialized = toAssistantGuestRow(row)
+    return filters.includeDGroups === false
+      ? { ...serialized, claimedSmallGroup: null, claimedSatellite: null }
+      : serialized
+  }), totalCount)
 }
 
-export async function getGuestDetail(guestId: string) {
+export async function getGuestDetail(guestId: string, allowedEventIds?: string[], includeDGroups = true) {
   const g = await db.guest.findUnique({
     where: { id: guestId },
     select: {
@@ -227,6 +250,7 @@ export async function getGuestDetail(guestId: string) {
       meetingPreference: true,
       scheduleDayOfWeek: true,
       scheduleTimeStart: true,
+      scheduleTimeEnd: true,
       memberId: true,
       createdAt: true,
       lifeStage: { select: { name: true } },
@@ -244,6 +268,7 @@ export async function getGuestDetail(guestId: string) {
         take: 5,
       },
       eventRegistrations: {
+        where: allowedEventIds ? { eventId: { in: allowedEventIds } } : {},
         select: {
           event: { select: { id: true, name: true, startDate: true } },
           attendedAt: true,
@@ -269,18 +294,24 @@ export async function getGuestDetail(guestId: string) {
     workIndustry: g.workIndustry,
     meetingPreference: g.meetingPreference,
     schedule: formatSchedule(g.scheduleDayOfWeek, g.scheduleTimeStart),
+    scheduleDetails: {
+      dayOfWeek: g.scheduleDayOfWeek,
+      day: g.scheduleDayOfWeek === null ? null : formatSchedule(g.scheduleDayOfWeek, null),
+      timeStart: g.scheduleTimeStart,
+      timeEnd: g.scheduleTimeEnd,
+    },
     promoted: g.memberId !== null,
     promotedMemberId: g.memberId,
     createdAt: isoDate(g.createdAt),
     lifeStage: g.lifeStage?.name ?? null,
-    claimedSmallGroup: g.claimedSmallGroup,
-    claimedSatellite: g.claimedSatellite,
-    groupRequests: g.groupRequests.map((r) => ({
+    claimedSmallGroup: includeDGroups ? g.claimedSmallGroup : null,
+    claimedSatellite: includeDGroups ? g.claimedSatellite : null,
+    groupRequests: includeDGroups ? g.groupRequests.map((r) => ({
       id: r.id,
       status: r.status,
       group: r.smallGroup,
       createdAt: isoDate(r.createdAt),
-    })),
+    })) : [],
     recentEventRegistrations: g.eventRegistrations.map((r) => ({
       eventId: r.event.id,
       eventName: r.event.name,
@@ -297,6 +328,10 @@ export async function querySmallGroups(filters: {
   lifeStageId?: string
   dayOfWeek?: number
   groupType?: "Regular" | "Couples"
+  status?: "Active" | "Pending" | "Inactive"
+  genderFocus?: "Male" | "Female" | "Mixed"
+  meetingFormat?: "Online" | "Hybrid" | "InPerson"
+  locationCity?: string
   limit?: number
 }): Promise<AssistantList<AssistantGroupRow>> {
   const take = clampRowLimit(filters.limit)
@@ -309,6 +344,10 @@ export async function querySmallGroups(filters: {
     ...(filters.lifeStageId ? { lifeStages: { some: { id: filters.lifeStageId } } } : {}),
     ...(filters.dayOfWeek === undefined ? {} : { scheduleDayOfWeek: filters.dayOfWeek }),
     ...(filters.groupType ? { groupType: filters.groupType } : {}),
+    ...(filters.status ? { status: filters.status } : {}),
+    ...(filters.genderFocus ? { genderFocus: filters.genderFocus } : {}),
+    ...(filters.meetingFormat ? { meetingFormat: filters.meetingFormat } : {}),
+    ...(filters.locationCity ? { locationCity: { contains: filters.locationCity, mode: insensitive } } : {}),
   }
   const [rows, totalCount] = await Promise.all([
     db.smallGroup.findMany({
@@ -322,6 +361,9 @@ export async function querySmallGroups(filters: {
         memberLimit: true,
         scheduleDayOfWeek: true,
         scheduleTimeStart: true,
+        scheduleTimeEnd: true,
+        meetingFormat: true,
+        locationCity: true,
         leader: { select: { firstName: true, lastName: true, nickname: true } },
         lifeStages: { select: { name: true } },
         _count: { select: { members: true } },
@@ -351,8 +393,18 @@ export async function getSmallGroupDetail(groupId: string) {
       memberLimit: true,
       scheduleDayOfWeek: true,
       scheduleTimeStart: true,
+      scheduleTimeEnd: true,
       leader: { select: { id: true, firstName: true, lastName: true, nickname: true } },
       parentGroup: { select: { id: true, name: true } },
+      parentSatellite: true,
+      childGroups: {
+        select: {
+          id: true,
+          name: true,
+          leader: { select: { firstName: true, lastName: true, nickname: true } },
+        },
+        orderBy: { name: "asc" },
+      },
       lifeStages: { select: { name: true } },
       members: {
         select: {
@@ -382,7 +434,13 @@ export async function getSmallGroupDetail(groupId: string) {
     name: g.name,
     leader: g.leader ? { id: g.leader.id, name: fullName(g.leader) } : null,
     parentGroup: g.parentGroup,
+    parentSatellite: g.parentSatellite,
     childGroupCount: g._count.childGroups,
+    childGroups: g.childGroups.map((child) => ({
+      id: child.id,
+      name: child.name,
+      leader: fullName(child.leader),
+    })),
     lifeStages: g.lifeStages.map((ls) => ls.name),
     genderFocus: g.genderFocus,
     groupType: g.groupType,
@@ -396,6 +454,12 @@ export async function getSmallGroupDetail(groupId: string) {
     locationCity: g.locationCity,
     memberLimit: g.memberLimit,
     schedule: formatSchedule(g.scheduleDayOfWeek, g.scheduleTimeStart),
+    scheduleDetails: {
+      dayOfWeek: g.scheduleDayOfWeek,
+      day: g.scheduleDayOfWeek === null ? null : formatSchedule(g.scheduleDayOfWeek, null),
+      timeStart: g.scheduleTimeStart,
+      timeEnd: g.scheduleTimeEnd,
+    },
     members: g.members.map((m) => ({
       id: m.id,
       name: fullName(m),
@@ -408,6 +472,98 @@ export async function getSmallGroupDetail(groupId: string) {
       createdAt: isoDate(r.createdAt),
     })),
   }
+}
+
+export async function getSmallGroupStats() {
+  const [groups, pendingRequests] = await Promise.all([
+    db.smallGroup.findMany({
+      select: {
+        status: true,
+        memberLimit: true,
+        scheduleDayOfWeek: true,
+        scheduleTimeStart: true,
+        _count: { select: { members: true } },
+      },
+    }),
+    db.smallGroupMemberRequest.count({ where: { status: "Pending" } }),
+  ])
+  const byStatus = { Active: 0, Pending: 0, Inactive: 0 }
+  let totalRoster = 0
+  let groupsAtCapacity = 0
+  let groupsWithoutSchedule = 0
+  for (const group of groups) {
+    byStatus[group.status]++
+    totalRoster += group._count.members
+    if (group.memberLimit !== null && group._count.members >= group.memberLimit) groupsAtCapacity++
+    if (group.scheduleDayOfWeek === null || group.scheduleTimeStart === null) groupsWithoutSchedule++
+  }
+  return {
+    totalGroups: groups.length,
+    byStatus,
+    totalRoster,
+    averageRosterSize: groups.length === 0 ? 0 : Math.round((totalRoster / groups.length) * 10) / 10,
+    groupsAtCapacity,
+    groupsWithoutCompleteSchedule: groupsWithoutSchedule,
+    pendingRequests,
+  }
+}
+
+export async function querySmallGroupRequests(filters: {
+  status?: "Pending" | "Confirmed" | "Rejected"
+  origin?: "Assignment" | "RegistrationIntent"
+  groupId?: string
+  sourceEventId?: string
+  allowedSourceEventIds?: string[]
+  limit?: number
+}) {
+  const take = clampRowLimit(filters.limit)
+  const where: Prisma.SmallGroupMemberRequestWhereInput = {
+    ...(filters.status ? { status: filters.status } : {}),
+    ...(filters.origin ? { origin: filters.origin } : {}),
+    ...(filters.groupId ? { smallGroupId: filters.groupId } : {}),
+    ...(filters.sourceEventId ? { sourceEventId: filters.sourceEventId } : {}),
+    ...(filters.allowedSourceEventIds
+      ? { OR: [{ sourceEventId: null }, { sourceEventId: { in: filters.allowedSourceEventIds } }] }
+      : {}),
+  }
+  const [rows, totalCount] = await Promise.all([
+    db.smallGroupMemberRequest.findMany({
+      where,
+      select: {
+        id: true,
+        status: true,
+        origin: true,
+        notes: true,
+        declineReason: true,
+        createdAt: true,
+        resolvedAt: true,
+        smallGroup: { select: { id: true, name: true } },
+        fromGroup: { select: { id: true, name: true } },
+        sourceEvent: { select: { id: true, name: true } },
+        member: { select: { id: true, firstName: true, lastName: true, nickname: true } },
+        guest: { select: { id: true, firstName: true, lastName: true, nickname: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take,
+    }),
+    db.smallGroupMemberRequest.count({ where }),
+  ])
+  return toAssistantList(rows.map((request) => {
+    const person = request.member ?? request.guest
+    return {
+      id: request.id,
+      status: request.status,
+      origin: request.origin,
+      person: person ? { id: person.id, kind: request.member ? "member" : "guest", name: fullName(person) } : null,
+      targetGroup: request.smallGroup,
+      fromGroup: request.fromGroup,
+      sourceEvent: request.sourceEvent,
+      notes: request.notes,
+      declineReason: request.declineReason,
+      createdAt: request.createdAt.toISOString(),
+      resolvedAt: request.resolvedAt?.toISOString() ?? null,
+    }
+  }), totalCount)
 }
 
 // ─── Ministries ───────────────────────────────────────────────────────────────
@@ -438,23 +594,81 @@ export async function queryMinistries(filters: {
   return toAssistantList(rows.map(toAssistantMinistryRow), totalCount)
 }
 
+export async function getMinistryDetail(ministryId: string, allowedEventIds?: string[]) {
+  const ministry = await db.ministry.findUnique({
+    where: { id: ministryId },
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      logoUrl: true,
+      themeColorPrimary: true,
+      themeColorSecondary: true,
+      themeColorAccent: true,
+      lifeStage: { select: { id: true, name: true } },
+      events: {
+        where: allowedEventIds ? { eventId: { in: allowedEventIds } } : {},
+        select: {
+          event: {
+            select: { id: true, name: true, type: true, startDate: true, endDate: true },
+          },
+        },
+        orderBy: { event: { startDate: "desc" } },
+        take: 20,
+      },
+    },
+  })
+  if (!ministry) return null
+  return {
+    id: ministry.id,
+    name: ministry.name,
+    description: ministry.description,
+    lifeStage: ministry.lifeStage,
+    branding: {
+      logoUrl: ministry.logoUrl,
+      primary: ministry.themeColorPrimary,
+      secondary: ministry.themeColorSecondary,
+      accent: ministry.themeColorAccent,
+    },
+    events: ministry.events.map(({ event }) => ({
+      id: event.id,
+      name: event.name,
+      type: event.type,
+      startDate: isoDate(event.startDate),
+      endDate: isoDate(event.endDate),
+    })),
+  }
+}
+
 // ─── Events ───────────────────────────────────────────────────────────────────
 
 export async function queryEvents(filters: {
   query?: string
   timeframe?: "upcoming" | "past" | "all"
+  type?: "OneTime" | "MultiDay" | "Recurring"
+  ministryId?: string
+  startDateFrom?: Date
+  startDateTo?: Date
+  eventIds?: string[]
   limit?: number
 }): Promise<AssistantList<AssistantEventRow>> {
   const take = clampRowLimit(filters.limit)
   const now = new Date()
   const timeframe = filters.timeframe ?? "all"
   const where: Prisma.EventWhereInput = {
-    ...(filters.query ? { name: { contains: filters.query, mode: insensitive } } : {}),
-    ...(timeframe === "upcoming"
-      ? { endDate: { gte: now } }
-      : timeframe === "past"
-        ? { endDate: { lt: now } }
-        : {}),
+    AND: [
+      ...(filters.query ? [{ name: { contains: filters.query, mode: insensitive } }] : []),
+      ...(filters.type ? [{ type: filters.type }] : []),
+      ...(filters.ministryId ? [{ ministries: { some: { ministryId: filters.ministryId } } }] : []),
+      ...(filters.startDateFrom ? [{ endDate: { gte: filters.startDateFrom } }] : []),
+      ...(filters.startDateTo ? [{ startDate: { lte: filters.startDateTo } }] : []),
+      ...(filters.eventIds ? [{ id: { in: filters.eventIds } }] : []),
+      ...(timeframe === "upcoming"
+        ? [{ endDate: { gte: now } }]
+        : timeframe === "past"
+          ? [{ endDate: { lt: now } }]
+          : []),
+    ],
   }
   const [rows, totalCount] = await Promise.all([
     db.event.findMany({
@@ -491,6 +705,14 @@ export async function getEventDetail(eventId: string) {
       registrationEnd: true,
       recurrenceDayOfWeek: true,
       recurrenceFrequency: true,
+      recurrenceEndDate: true,
+      allMinistries: true,
+      formIncludeSmallGroup: true,
+      formIncludeDietary: true,
+      formIncludePayment: true,
+      autoAssignBreakout: true,
+      walkInSessionMode: true,
+      walkInOccurrenceId: true,
       modules: { select: { type: true } },
       ministries: { select: { ministry: { select: { name: true } } } },
       _count: {
@@ -523,10 +745,20 @@ export async function getEventDetail(eventId: string) {
         ? {
             day: formatSchedule(e.recurrenceDayOfWeek, null),
             frequency: e.recurrenceFrequency,
+            endDate: isoDate(e.recurrenceEndDate),
           }
         : null,
     modules: e.modules.map((m) => m.type),
+    allMinistries: e.allMinistries,
     ministries: e.ministries.map((m) => m.ministry.name),
+    forms: {
+      collectsDGroupProfile: e.formIncludeSmallGroup,
+      collectsDietaryNeeds: e.formIncludeDietary,
+      collectsPayment: e.formIncludePayment,
+      autoAssignsBreakouts: e.autoAssignBreakout,
+      walkInSessionMode: e.walkInSessionMode,
+      walkInOccurrenceId: e.walkInOccurrenceId,
+    },
     registrantCount: e._count.registrants,
     paidCount,
     attendedCount,
@@ -534,6 +766,36 @@ export async function getEventDetail(eventId: string) {
     breakoutGroupCount: e._count.breakoutGroups,
     volunteerCount: e._count.volunteers,
   }
+}
+
+export async function listEventOccurrences(eventId: string, limit?: number) {
+  const take = clampRowLimit(limit)
+  const [rows, totalCount] = await Promise.all([
+    db.eventOccurrence.findMany({
+      where: { eventId },
+      select: {
+        id: true,
+        date: true,
+        notes: true,
+        isOpen: true,
+        isStandalone: true,
+        series: { select: { id: true, title: true } },
+        _count: { select: { attendees: true } },
+      },
+      orderBy: { date: "desc" },
+      take,
+    }),
+    db.eventOccurrence.count({ where: { eventId } }),
+  ])
+  return toAssistantList(rows.map((occurrence) => ({
+    id: occurrence.id,
+    date: occurrence.date.toISOString(),
+    notes: occurrence.notes,
+    isOpen: occurrence.isOpen,
+    isStandalone: occurrence.isStandalone,
+    series: occurrence.series,
+    attendeeCount: occurrence._count.attendees,
+  })), totalCount)
 }
 
 // ─── Attendance stats ─────────────────────────────────────────────────────────
@@ -702,6 +964,98 @@ export async function queryVolunteers(filters: {
   return toAssistantList(rows.map(toAssistantVolunteerRow), totalCount)
 }
 
+export async function getVolunteerDetail(volunteerId: string) {
+  const volunteer = await db.volunteer.findUnique({
+    where: { id: volunteerId },
+    select: {
+      id: true,
+      status: true,
+      ageGroup: true,
+      notes: true,
+      leaderNotes: true,
+      attendedAt: true,
+      createdAt: true,
+      member: { select: { id: true, firstName: true, lastName: true, nickname: true } },
+      event: { select: { id: true, name: true, type: true } },
+      committee: { select: { id: true, name: true } },
+      preferredRole: { select: { id: true, name: true } },
+      assignedRole: { select: { id: true, name: true } },
+      lifeStage: { select: { id: true, name: true } },
+      occurrenceAttendances: {
+        select: { checkedInAt: true, occurrence: { select: { id: true, date: true } } },
+        orderBy: { checkedInAt: "desc" },
+        take: 10,
+      },
+    },
+  })
+  if (!volunteer) return null
+  return {
+    id: volunteer.id,
+    status: volunteer.status,
+    member: { id: volunteer.member.id, name: fullName(volunteer.member) },
+    event: volunteer.event,
+    committee: volunteer.committee,
+    preferredRole: volunteer.preferredRole,
+    assignedRole: volunteer.assignedRole,
+    lifeStage: volunteer.lifeStage,
+    ageGroup: volunteer.ageGroup,
+    notes: volunteer.notes,
+    leaderNotes: volunteer.leaderNotes,
+    attendedAt: volunteer.attendedAt?.toISOString() ?? null,
+    createdAt: volunteer.createdAt.toISOString(),
+    recentSessionAttendance: volunteer.occurrenceAttendances.map((attendance) => ({
+      occurrenceId: attendance.occurrence.id,
+      date: attendance.occurrence.date.toISOString(),
+      checkedInAt: attendance.checkedInAt.toISOString(),
+    })),
+  }
+}
+
+export async function getFamilyDetail(familyId: string) {
+  const family = await db.family.findUnique({
+    where: { id: familyId },
+    select: {
+      id: true,
+      name: true,
+      notes: true,
+      createdAt: true,
+      updatedAt: true,
+      members: {
+        select: {
+          id: true,
+          role: true,
+          member: { select: { id: true, firstName: true, lastName: true, nickname: true, phone: true, email: true } },
+          guest: { select: { id: true, firstName: true, lastName: true, nickname: true, phone: true, email: true, memberId: true } },
+        },
+        orderBy: { createdAt: "asc" },
+      },
+    },
+  })
+  if (!family) return null
+  return {
+    id: family.id,
+    name: family.name,
+    notes: family.notes,
+    createdAt: family.createdAt.toISOString(),
+    updatedAt: family.updatedAt.toISOString(),
+    members: family.members.map((membership) => {
+      const person = membership.member ?? membership.guest
+      return {
+        familyMemberId: membership.id,
+        role: membership.role,
+        person: person ? {
+          id: person.id,
+          kind: membership.member ? "member" : "guest",
+          name: fullName(person),
+          phone: person.phone,
+          email: person.email,
+          promotedMemberId: membership.guest?.memberId ?? null,
+        } : null,
+      }
+    }),
+  }
+}
+
 // ─── Counts ───────────────────────────────────────────────────────────────────
 
 export async function getEntityCounts(features: {
@@ -711,17 +1065,20 @@ export async function getEntityCounts(features: {
   ministries: boolean
   events: boolean
   volunteers: boolean
+  families?: boolean
+  eventIds?: string[]
 }) {
-  const [members, activeGuests, smallGroups, ministries, upcomingEvents, volunteers] =
+  const [members, activeGuests, smallGroups, ministries, upcomingEvents, volunteers, families] =
     await Promise.all([
       features.members ? db.member.count() : null,
       features.guests ? db.guest.count({ where: { memberId: null } }) : null,
       features.smallGroups ? db.smallGroup.count() : null,
       features.ministries ? db.ministry.count() : null,
-      features.events ? db.event.count({ where: { endDate: { gte: new Date() } } }) : null,
-      features.volunteers ? db.volunteer.count() : null,
+      features.events ? db.event.count({ where: { endDate: { gte: new Date() }, ...(features.eventIds ? { id: { in: features.eventIds } } : {}) } }) : null,
+      features.volunteers ? db.volunteer.count({ where: features.eventIds ? { eventId: { in: features.eventIds } } : {} }) : null,
+      features.families ? db.family.count() : null,
     ])
-  return { members, activeGuests, smallGroups, ministries, upcomingEvents, volunteers }
+  return { members, activeGuests, smallGroups, ministries, upcomingEvents, volunteers, families }
 }
 
 // ─── Life stages (shared lookup) ─────────────────────────────────────────────

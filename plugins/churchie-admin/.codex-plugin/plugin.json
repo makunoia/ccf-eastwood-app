@@ -1,6 +1,6 @@
 {
   "name": "churchie-admin",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Secure Churchie administration through the hosted MCP server.",
   "author": {
     "name": "Local developer"
@@ -9,11 +9,11 @@
   "interface": {
     "displayName": "Churchie Admin",
     "shortDescription": "Manage Churchie securely from ChatGPT.",
-    "longDescription": "Connects ChatGPT to Churchie with OAuth, scoped MCP tools, and a staged DGroup workbook workflow.",
+    "longDescription": "Connects ChatGPT to Churchie with OAuth, permission-scoped search, reporting and administrative tools, plus a staged DGroup workbook workflow.",
     "developerName": "Local developer",
     "category": "Productivity",
     "capabilities": [],
-    "defaultPrompt": "Connect my Churchie account, then help me manage DGroups and church records."
+    "defaultPrompt": "Connect my Churchie account, verify the relevant records, then help me answer questions or manage DGroups, events, people, volunteers, ministries, and families."
   },
   "mcpServers": "./.mcp.json",
   "apps": "./.app.json"

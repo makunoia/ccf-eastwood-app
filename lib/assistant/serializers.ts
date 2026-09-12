@@ -150,6 +150,9 @@ export type AssistantGroupRow = {
   groupType: string
   status: string
   schedule: string | null
+  scheduleEnd: string | null
+  meetingFormat: string | null
+  locationCity: string | null
 }
 
 type GroupRowSource = {
@@ -161,6 +164,9 @@ type GroupRowSource = {
   memberLimit: number | null
   scheduleDayOfWeek: number | null
   scheduleTimeStart: string | null
+  scheduleTimeEnd: string | null
+  meetingFormat: string | null
+  locationCity: string | null
   leader: { firstName: string; lastName: string; nickname: string | null } | null
   lifeStages: { name: string }[]
   _count: { members: number }
@@ -187,6 +193,9 @@ export function toAssistantGroupRow(g: GroupRowSource): AssistantGroupRow {
     groupType: g.groupType,
     status: g.status,
     schedule: formatSchedule(g.scheduleDayOfWeek, g.scheduleTimeStart),
+    scheduleEnd: g.scheduleTimeEnd,
+    meetingFormat: g.meetingFormat,
+    locationCity: g.locationCity,
   }
 }
 

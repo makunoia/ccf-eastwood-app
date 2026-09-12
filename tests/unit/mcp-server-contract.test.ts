@@ -21,8 +21,8 @@ const actor: McpActor = {
 const close: Array<() => Promise<void>> = []
 afterEach(async () => { await Promise.all(close.splice(0).map((fn) => fn())) })
 
-async function connectedClient() {
-  const server = createChurchieMcpServer(actor)
+async function connectedClient(clientActor: McpActor = actor) {
+  const server = createChurchieMcpServer(clientActor)
   const client = new Client({ name: "contract-test", version: "1.0.0" })
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)])
@@ -53,5 +53,72 @@ describe("Churchie MCP contract", () => {
     expect(start?._meta?.ui).toEqual({ resourceUri: "ui://churchie/dgroup-import-v1.html" })
     const resources = await client.listResources()
     expect(resources.resources.some((resource) => resource.uri === "ui://churchie/dgroup-import-v1.html")).toBe(true)
+  })
+
+  it("publishes rich, permission-aware lookup and operational tools", async () => {
+    const tools = (await (await connectedClient()).listTools()).tools
+    const names = tools.map((tool) => tool.name)
+    for (const name of [
+      "list_life_stages",
+      "get_member",
+      "get_guest",
+      "check_duplicate_contact",
+      "match_dgroups",
+      "get_dgroup_stats",
+      "search_dgroup_requests",
+      "get_ministry",
+      "get_event_attendance_stats",
+      "list_event_sessions",
+      "get_volunteer",
+      "get_family",
+      "get_entity_counts",
+      "resolve_dgroup_request",
+      "target_dgroup_request",
+      "set_event_attendance",
+      "set_event_session_checkin",
+      "set_event_registrant_payment",
+    ]) {
+      expect(names, name).toContain(name)
+    }
+
+    const eventSearch = tools.find((tool) => tool.name === "search_events")
+    expect(eventSearch?.inputSchema.properties).toMatchObject({
+      type: expect.any(Object),
+      ministryId: expect.any(Object),
+      startDateFrom: expect.any(Object),
+      startDateTo: expect.any(Object),
+    })
+    const memberSearch = tools.find((tool) => tool.name === "search_members")
+    expect(memberSearch?.inputSchema.properties).toMatchObject({
+      lifeStageId: expect.any(Object),
+      gender: expect.any(Object),
+      inSmallGroup: expect.any(Object),
+    })
+
+    for (const name of ["list_life_stages", "match_dgroups", "list_event_sessions"]) {
+      expect(tools.find((tool) => tool.name === name)?.annotations?.readOnlyHint, name).toBe(true)
+    }
+    for (const name of ["resolve_dgroup_request", "target_dgroup_request", "set_event_attendance", "set_event_session_checkin", "set_event_registrant_payment"]) {
+      expect(tools.find((tool) => tool.name === name)?.annotations?.readOnlyHint, name).toBe(false)
+    }
+  })
+
+  it("prunes unavailable mutations from a scoped Staff tool catalog", async () => {
+    const staff: McpActor = {
+      id: "staff_1",
+      username: "staff",
+      role: "Staff",
+      scopes: new Set(["churchie:events:read", "churchie:events:write"]),
+      permissions: new Map([["Events", new Set(["Write"])]]),
+      eventAccess: new Set(["event_1"]),
+    }
+    const names = (await (await connectedClient(staff)).listTools()).tools.map((tool) => tool.name)
+    expect(names).toContain("update_event")
+    expect(names).toContain("set_event_attendance")
+    expect(names).not.toContain("create_event")
+    expect(names).not.toContain("create_member")
+    expect(names).not.toContain("create_event_committee")
+    expect(names.some((name) => name.startsWith("delete_"))).toBe(false)
+    expect(names.some((name) => name.startsWith("bulk_"))).toBe(false)
   })
 })

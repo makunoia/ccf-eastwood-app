@@ -94,6 +94,7 @@ export async function removeMcpFamilyMember(actor: McpActor, familyMemberId: str
 
 export async function promoteMcpGuest(actor: McpActor, guestId: string, raw: { dateJoined: string; groupId?: string | null }): Promise<Result> {
   if (!canWrite(actor, "Guests") || !canWrite(actor, "Members")) return failure("You need Guest and Member write permission to promote a guest.")
+  if (raw.groupId && !canWrite(actor, "SmallGroups")) return failure("You need DGroup write permission to place the promoted guest in a DGroup.")
   const dateJoined = new Date(raw.dateJoined); if (Number.isNaN(dateJoined.getTime())) return invalid("A valid date joined is required")
   const guest = await db.guest.findUnique({ where: { id: guestId }, select: PROMOTABLE_GUEST_SELECT }); if (!guest) return failure("Guest not found")
   if (guest.memberId) return failure("This guest has already been promoted")
