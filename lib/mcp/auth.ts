@@ -57,7 +57,7 @@ export function isAllowedMcpClient(clientId: string, redirectUri: string) {
   // Development is deliberately frictionless. Production must name each exact
   // client/callback pair; do not bypass this with generic ChatGPT client IDs.
   if (process.env.NODE_ENV === "production") return false
-  return !configured && process.env.NODE_ENV !== "production"
+  return !configured
 }
 
 function timingSafeStringEqual(left: string, right: string) {
