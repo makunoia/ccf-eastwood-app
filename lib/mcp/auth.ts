@@ -20,42 +20,51 @@ export type McpActor = {
 
 const hash = (value: string) => createHash("sha256").update(value).digest("hex")
 const token = () => randomBytes(32).toString("base64url")
-const CODEX_OAUTH_CLIENT_ID = "https://chatgpt.com/oauth/codex/client.json"
-const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"])
+export const CODEX_OAUTH_CLIENT_ID = "https://chatgpt.com/oauth/codex/client.json"
+const CODEX_LOOPBACK_REDIRECT = /^http:\/\/(?:localhost|127\.0\.0\.1|\[::1\]):([0-9]+)\/callback$/
+
+/**
+ * Codex is a native OAuth client. Its local callback listener chooses its port
+ * at runtime, so it cannot be represented as a static clientId=redirectUri pair.
+ */
+export function isCodexNativeRedirect(redirectUri: string) {
+  const match = CODEX_LOOPBACK_REDIRECT.exec(redirectUri)
+  if (!match) return false
+  const port = Number(match[1])
+  return Number.isInteger(port) && port > 0 && port <= 65_535
+}
 
 export function redirectUrisMatch(clientId: string, authorizedUri: string, tokenUri: string) {
-  if (authorizedUri === tokenUri) return true
-  if (clientId !== CODEX_OAUTH_CLIENT_ID) return false
+  if (clientId !== CODEX_OAUTH_CLIENT_ID) return authorizedUri === tokenUri
+  if (!isCodexNativeRedirect(authorizedUri) || !isCodexNativeRedirect(tokenUri)) return false
   try {
     const authorized = new URL(authorizedUri)
     const tokenRedirect = new URL(tokenUri)
-    return authorized.protocol === "http:"
-      && tokenRedirect.protocol === "http:"
-      && LOOPBACK_HOSTS.has(authorized.hostname)
-      && LOOPBACK_HOSTS.has(tokenRedirect.hostname)
-      && authorized.port === tokenRedirect.port
-      && authorized.pathname === tokenRedirect.pathname
-      && authorized.search === tokenRedirect.search
-      && authorized.hash === tokenRedirect.hash
-      && !authorized.username
-      && !authorized.password
-      && !tokenRedirect.username
-      && !tokenRedirect.password
+    // A verified native redirect has no credentials, query, or fragment. Host
+    // aliases are safe only after both sides passed that same strict policy.
+    return authorized.port === tokenRedirect.port && authorized.pathname === tokenRedirect.pathname
   } catch {
     return false
   }
 }
 
-/** Production connections are explicitly allow-listed as clientId=redirectUri pairs. */
+/**
+ * Production is deny-by-default. Browser and Connector Platform clients need
+ * a configured exact clientId=redirectUri pair; Codex native uses the narrowly
+ * scoped dynamic-loopback policy above.
+ */
 export function isAllowedMcpClient(clientId: string, redirectUri: string) {
+  // The native client is never permitted through the generic configured-pair
+  // path: its callback must always meet the dynamic loopback policy.
+  if (clientId === CODEX_OAUTH_CLIENT_ID) return isCodexNativeRedirect(redirectUri)
   const configured = process.env.MCP_OAUTH_CLIENTS?.trim()
   const configuredMatch = configured?.split(",").some((entry) => {
     const separator = entry.indexOf("=")
     return separator > 0 && entry.slice(0, separator).trim() === clientId && entry.slice(separator + 1).trim() === redirectUri
   }) ?? false
   if (configuredMatch) return true
-  // Development is deliberately frictionless. Production must name each exact
-  // client/callback pair; do not bypass this with generic ChatGPT client IDs.
+  // Development is deliberately frictionless. Production permits only the
+  // exact configured pairs and the explicit Codex native registration policy.
   if (process.env.NODE_ENV === "production") return false
   return !configured
 }
