@@ -26,6 +26,7 @@ export function validateAuthorizationRequest(url: URL): Validation {
   if (!redirectUri) return { ok: false, error: "redirect_uri is required." }
   if (responseType !== "code") return { ok: false, error: "response_type must be code." }
   if (!scope) return { ok: false, error: requestedScope === null ? "scope is required." : "The requested scope is not supported." }
+  if (!scope.includes("offline_access")) return { ok: false, error: "offline_access is required for a renewable Churchie MCP connection." }
   if (!challenge || !/^[A-Za-z0-9_-]{43,128}$/.test(challenge) || method !== "S256") return { ok: false, error: "A valid S256 PKCE challenge is required." }
   if (resource !== `${url.origin}/api/mcp`) return { ok: false, error: "The OAuth resource does not match the Churchie MCP endpoint." }
   try { const redirect = new URL(redirectUri); if (!isSecureRedirect(redirect) && process.env.NODE_ENV === "production") return { ok: false, error: "redirect_uri must use HTTPS or an HTTP loopback address." } } catch { return { ok: false, error: "redirect_uri is invalid." } }

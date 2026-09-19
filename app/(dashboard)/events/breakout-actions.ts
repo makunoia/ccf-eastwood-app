@@ -34,11 +34,6 @@ import { personKeyFor } from "@/lib/clusters/roster"
 import { MAX_BREAKOUT_BATCH } from "@/lib/breakouts/candidate-filters"
 import { registrantName, registrantNameSelect } from "@/lib/metadata"
 import type { BatchFailure } from "@/components/batch/types"
-import {
-  tryCreateSmallGroupRequestFromBreakout,
-  tryCancelSmallGroupRequestFromBreakout,
-  tryTransferSmallGroupRequestFromBreakout,
-} from "@/lib/create-small-group-request"
 import { clearedMatchingProfile, missingTimothyFields } from "@/lib/breakouts/profile"
 
 type ActionResult<T = void> =
@@ -576,12 +571,6 @@ export async function addRegistrantsToBreakout(
       })
     }
 
-    // Best-effort side effect, deliberately outside the transaction: a failure
-    // to raise the small-group request must not roll back the placement.
-    for (const id of accepted) {
-      await tryCreateSmallGroupRequestFromBreakout(groupId, id)
-    }
-
     revalidateBreakoutSurfaces(owner, { groupId })
 
     return { success: true, data: { added: accepted.length, failed } }
@@ -610,7 +599,6 @@ export async function removeRegistrantFromBreakout(
     await db.breakoutGroupMember.delete({
       where: { breakoutGroupId_registrantId: { breakoutGroupId: groupId, registrantId } },
     })
-    await tryCancelSmallGroupRequestFromBreakout(groupId, registrantId)
     revalidateBreakoutSurfaces(owner, { sessions: true })
     return { success: true, data: undefined }
   } catch {
@@ -669,7 +657,7 @@ export async function transferRegistrantToBreakout(
     // isn't found.
     const registrant = await db.eventRegistrant.findFirst({
       where: { id: registrantId, eventId: { in: candidateEventIds } },
-      select: { id: true, memberId: true },
+      select: { id: true, memberId: true, guestId: true },
     })
     if (!registrant) {
       return {
@@ -711,7 +699,11 @@ export async function transferRegistrantToBreakout(
 
       const destination = await tx.breakoutGroup.findFirst({
         where: { id: toGroupId, ...owner },
-        select: { memberLimit: true, _count: { select: { members: true } } },
+        select: {
+          memberLimit: true,
+          linkedSmallGroupId: true,
+          _count: { select: { members: true } },
+        },
       })
       if (!destination) return "missing-destination" as const
 
@@ -730,6 +722,81 @@ export async function transferRegistrantToBreakout(
       await tx.breakoutGroupMember.create({
         data: { breakoutGroupId: toGroupId, registrantId },
       })
+
+      // A pending Catch Mech request belongs to the breakout that raised it.
+      // Moving its registrant must move that request too: retain the same row
+      // when both breakouts feed one DGroup, otherwise close the stale request
+      // and raise (or reuse) one for the destination's linked DGroup.
+      const personWhere = registrant.memberId
+        ? { memberId: registrant.memberId }
+        : registrant.guestId
+          ? { guestId: registrant.guestId }
+          : null
+      if (personWhere) {
+        const pending = await tx.smallGroupMemberRequest.findMany({
+          where: { breakoutGroupId: fromGroupId, status: "Pending", ...personWhere },
+          select: { id: true, smallGroupId: true, memberId: true, guestId: true },
+        })
+        const sameDestination = pending.filter(
+          (request) => request.smallGroupId === destination.linkedSmallGroupId
+        )
+        const obsolete = pending.filter(
+          (request) => request.smallGroupId !== destination.linkedSmallGroupId
+        )
+
+        if (sameDestination.length > 0) {
+          await tx.smallGroupMemberRequest.updateMany({
+            where: { id: { in: sameDestination.map((request) => request.id) } },
+            data: { breakoutGroupId: toGroupId },
+          })
+        }
+
+        if (obsolete.length > 0) {
+          const now = new Date()
+          await tx.smallGroupMemberRequest.updateMany({
+            where: { id: { in: obsolete.map((request) => request.id) } },
+            data: { status: "Rejected", resolvedAt: now },
+          })
+          await tx.smallGroupLog.createMany({
+            data: obsolete.flatMap((request) =>
+              request.smallGroupId
+                ? [{
+                    smallGroupId: request.smallGroupId,
+                    action: "TempAssignmentRejected",
+                    memberId: request.memberId,
+                    guestId: request.guestId,
+                    description: "Pending Catch Mech membership was cancelled after moving to another breakout group",
+                  }]
+                : []
+            ),
+          })
+        }
+
+        if (destination.linkedSmallGroupId && sameDestination.length === 0) {
+          const existing = await tx.smallGroupMemberRequest.findFirst({
+            where: {
+              smallGroupId: destination.linkedSmallGroupId,
+              status: "Pending",
+              ...personWhere,
+            },
+            select: { id: true },
+          })
+          if (existing) {
+            await tx.smallGroupMemberRequest.update({
+              where: { id: existing.id },
+              data: { breakoutGroupId: toGroupId },
+            })
+          } else {
+            await tx.smallGroupMemberRequest.create({
+              data: {
+                smallGroupId: destination.linkedSmallGroupId,
+                breakoutGroupId: toGroupId,
+                ...personWhere,
+              },
+            })
+          }
+        }
+      }
       return "moved" as const
     })
 
@@ -742,10 +809,6 @@ export async function transferRegistrantToBreakout(
     if (outcome === "not-in-source") {
       return { success: false, error: "No longer a member of this breakout group" }
     }
-
-    // Best-effort side effect, deliberately outside the transaction: a failure to
-    // re-point the small-group request must not roll back the move.
-    await tryTransferSmallGroupRequestFromBreakout(fromGroupId, toGroupId, registrantId)
 
     revalidateBreakoutSurfaces(owner, { groupId: fromGroupId, sessions: true })
     revalidateBreakoutSurfaces(owner, { groupId: toGroupId })
@@ -893,8 +956,6 @@ export async function autoAssignRegistrantToBreakout(
     await db.breakoutGroupMember.create({
       data: { breakoutGroupId: topMatch.groupId, registrantId },
     })
-    await tryCreateSmallGroupRequestFromBreakout(topMatch.groupId, registrantId)
-
     revalidateBreakoutSurfaces(owner)
   } catch {
     // Swallow — auto-assign is best-effort and must not interrupt check-in
@@ -1299,7 +1360,6 @@ export async function autoAssignBreakouts(
       await db.breakoutGroupMember.create({
         data: { breakoutGroupId: matches[0].groupId, registrantId: registrant.id },
       })
-      await tryCreateSmallGroupRequestFromBreakout(matches[0].groupId, registrant.id)
       seated.add(key)
       assigned++
     }

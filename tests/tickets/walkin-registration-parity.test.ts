@@ -32,7 +32,7 @@ const FULLY_COLLECTING_FORM = {
 }
 
 beforeEach(async () => {
-  await db.$executeRaw`TRUNCATE "OccurrenceAttendee", "BreakoutGroupMember", "BreakoutGroup", "Volunteer", "CommitteeRole", "VolunteerCommittee", "EventRegistrant", "EventOccurrence", "Event", "SmallGroupMemberRequest", "SmallGroup", "Guest", "Member", "LifeStage" RESTART IDENTITY CASCADE`
+  await db.$executeRaw`TRUNCATE "OccurrenceAttendee", "BreakoutGroupMember", "BreakoutGroup", "Volunteer", "CommitteeRole", "VolunteerCommittee", "EventRegistrant", "EventOccurrence", "Event", "SmallGroupMemberRequest", "SmallGroupLog", "SmallGroup", "Guest", "Member", "LifeStage" RESTART IDENTITY CASCADE`
 })
 
 afterAll(async () => {
@@ -413,6 +413,36 @@ describe("Walk-in registration parity with public registration", () => {
 
       expect(await db.breakoutGroupMember.count()).toBe(1)
       expect(asWalkIn.data.breakoutGroup?.id).toBe(group.id)
+    })
+
+    it("keeps breakout placement separate from DGroup requests and activity", async () => {
+      const event = await seedBreakoutEvent()
+      const leader = await db.member.create({
+        data: { firstName: "DGroup", lastName: "Leader", dateJoined: new Date(), language: [] },
+        select: { id: true },
+      })
+      const dgroup = await db.smallGroup.create({
+        data: { name: "Leader's DGroup", leaderId: leader.id },
+        select: { id: true },
+      })
+      const breakout = await db.breakoutGroup.create({
+        data: { eventId: event.id, name: "Table A", linkedSmallGroupId: dgroup.id, language: [] },
+        select: { id: true },
+      })
+
+      const result = await createRegistrant(
+        event.id,
+        payload({ mobileNumber: "+63 917 333 6999" }),
+        null,
+        null,
+        false,
+        breakout.id
+      )
+      expect(result.success).toBe(true)
+
+      expect(await db.breakoutGroupMember.count()).toBe(1)
+      expect(await db.smallGroupMemberRequest.count()).toBe(0)
+      expect(await db.smallGroupLog.count()).toBe(0)
     })
 
     it("moves the registrant when the reuse picks a different group", async () => {

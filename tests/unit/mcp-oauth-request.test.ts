@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { authorizationPageCsp, validateAuthorizationRequest } from "@/app/oauth/authorize/route"
-import { redirectUrisMatch } from "@/lib/mcp/auth"
+import { isAllowedMcpClient, redirectUrisMatch } from "@/lib/mcp/auth"
 
 function requestUrl(extra = "") {
   return new URL(`https://staging.ccfeastwood.app/oauth/authorize?client_id=${encodeURIComponent("https://chatgpt.com/oauth/client.json")}&redirect_uri=${encodeURIComponent("https://chatgpt.com/connector_platform_oauth_redirect")}&response_type=code&code_challenge=${"a".repeat(43)}&code_challenge_method=S256&resource=${encodeURIComponent("https://staging.ccfeastwood.app/api/mcp")}${extra}`)
@@ -14,26 +14,39 @@ describe("MCP OAuth authorization request", () => {
     expect(result).toEqual({ ok: false, error: "scope is required." })
   })
 
+  it("requires offline_access before issuing a renewable MCP connection", () => {
+    const result = validateAuthorizationRequest(requestUrl("&scope=churchie%3Amembers%3Aread"))
+    expect(result).toEqual({ ok: false, error: "offline_access is required for a renewable Churchie MCP connection." })
+  })
+
   it("reports the mismatched field without echoing credentials", () => {
-    const url = requestUrl("&scope=churchie%3Amembers%3Aread"); url.searchParams.set("resource", "https://wrong.example/api/mcp")
+    const url = requestUrl("&scope=offline_access%20churchie%3Amembers%3Aread"); url.searchParams.set("resource", "https://wrong.example/api/mcp")
     const result = validateAuthorizationRequest(url)
     expect(result).toEqual({ ok: false, error: "The OAuth resource does not match the Churchie MCP endpoint." })
   })
 
-  it("accepts the Codex native-app client with a dynamic HTTP loopback callback", () => {
+  it("accepts an explicitly allow-listed Codex native-app callback", () => {
     vi.stubEnv("NODE_ENV", "production")
-    vi.stubEnv("MCP_OAUTH_CLIENTS", "")
-    const url = requestUrl("&scope=churchie%3Amembers%3Aread")
+    const redirectUri = "http://127.0.0.1:49152/callback"
+    vi.stubEnv("MCP_OAUTH_CLIENTS", `https://chatgpt.com/oauth/codex/client.json=${redirectUri}`)
+    const url = requestUrl("&scope=offline_access%20churchie%3Amembers%3Aread")
     url.searchParams.set("client_id", "https://chatgpt.com/oauth/codex/client.json")
-    url.searchParams.set("redirect_uri", "http://127.0.0.1:49152/callback")
+    url.searchParams.set("redirect_uri", redirectUri)
     const result = validateAuthorizationRequest(url)
     expect(result.ok, JSON.stringify(result)).toBe(true)
+  })
+
+  it("rejects generic ChatGPT and dynamic clients unless their exact callback pair is allow-listed", () => {
+    vi.stubEnv("NODE_ENV", "production")
+    vi.stubEnv("MCP_OAUTH_CLIENTS", "https://chatgpt.com/oauth/codex/client.json=http://127.0.0.1:49152/callback")
+    expect(isAllowedMcpClient("https://chatgpt.com/oauth/client.json", "https://chatgpt.com/connector_platform_oauth_redirect")).toBe(false)
+    expect(isAllowedMcpClient("https://chatgpt.com/oauth/another-client/client.json", "https://chatgpt.com/connector/oauth/another-client")).toBe(false)
   })
 
   it("rejects non-loopback callbacks for the Codex native-app client", () => {
     vi.stubEnv("NODE_ENV", "production")
     vi.stubEnv("MCP_OAUTH_CLIENTS", "")
-    const url = requestUrl("&scope=churchie%3Amembers%3Aread")
+    const url = requestUrl("&scope=offline_access%20churchie%3Amembers%3Aread")
     url.searchParams.set("client_id", "https://chatgpt.com/oauth/codex/client.json")
     url.searchParams.set("redirect_uri", "http://attacker.example/callback")
     expect(validateAuthorizationRequest(url)).toEqual({ ok: false, error: "redirect_uri must use HTTPS or an HTTP loopback address." })

@@ -48,26 +48,16 @@ export function redirectUrisMatch(clientId: string, authorizedUri: string, token
 
 /** Production connections are explicitly allow-listed as clientId=redirectUri pairs. */
 export function isAllowedMcpClient(clientId: string, redirectUri: string) {
-  const configured = process.env.MCP_OAUTH_CLIENTS
+  const configured = process.env.MCP_OAUTH_CLIENTS?.trim()
   const configuredMatch = configured?.split(",").some((entry) => {
     const separator = entry.indexOf("=")
     return separator > 0 && entry.slice(0, separator).trim() === clientId && entry.slice(separator + 1).trim() === redirectUri
   }) ?? false
   if (configuredMatch) return true
-  if (clientId === "https://chatgpt.com/oauth/client.json" && redirectUri === "https://chatgpt.com/connector_platform_oauth_redirect") return true
-  if (clientId === CODEX_OAUTH_CLIENT_ID) {
-    try {
-      const redirect = new URL(redirectUri)
-      const isLoopback = ["localhost", "127.0.0.1", "[::1]"].includes(redirect.hostname)
-      if (redirect.protocol === "http:" && isLoopback && Boolean(redirect.port) && redirect.pathname === "/callback" && !redirect.username && !redirect.password) return true
-    } catch {
-      return false
-    }
-  }
-  const client = clientId.match(/^https:\/\/chatgpt\.com\/oauth\/([A-Za-z0-9_-]+)\/client\.json$/)
-  const redirect = redirectUri.match(/^https:\/\/chatgpt\.com\/connector\/oauth\/([A-Za-z0-9_-]+)$/)
-  if (client && redirect && client[1] === redirect[1]) return true
-  return !configured && process.env.NODE_ENV !== "production"
+  // Development is deliberately frictionless. Production must name each exact
+  // client/callback pair; do not bypass this with generic ChatGPT client IDs.
+  if (process.env.NODE_ENV === "production") return false
+  return !configured
 }
 
 function timingSafeStringEqual(left: string, right: string) {

@@ -535,7 +535,7 @@ describe("addRegistrantsToBreakout", () => {
     expect(await db.breakoutGroupMember.count()).toBe(0)
   })
 
-  it("creates a small group request per success when the group is linked", async () => {
+  it("does not create DGroup requests or activity when the group is linked", async () => {
     const event = await seedEvent()
     const leader = await seedMember({ firstName: "Leader" })
     const smallGroup = await db.smallGroup.create({
@@ -549,9 +549,9 @@ describe("addRegistrantsToBreakout", () => {
 
     const result = await addRegistrantsToBreakout(group.id, [a.id, b.id], { eventId: event.id })
     expect(result.success).toBe(true)
-    expect(
-      await db.smallGroupMemberRequest.count({ where: { smallGroupId: smallGroup.id } })
-    ).toBe(2)
+    expect(await db.breakoutGroupMember.count({ where: { breakoutGroupId: group.id } })).toBe(2)
+    expect(await db.smallGroupMemberRequest.count({ where: { smallGroupId: smallGroup.id } })).toBe(0)
+    expect(await db.smallGroupLog.count({ where: { smallGroupId: smallGroup.id } })).toBe(0)
   })
 
   it("revalidates the breakouts, group and registrants paths", async () => {

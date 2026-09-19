@@ -5,10 +5,6 @@ vi.mock("@/lib/auth", () => ({
 }))
 
 import { db } from "@/lib/db"
-import {
-  tryCreateSmallGroupRequestFromBreakout,
-  tryCancelSmallGroupRequestFromBreakout,
-} from "@/lib/create-small-group-request"
 import { submitCatchMechConfirmations } from "@/app/events/[id]/catch-mech/actions"
 import { submitMemberConfirmations } from "@/app/small-group-confirmation/[token]/actions"
 
@@ -87,43 +83,6 @@ async function seedGuestRegistrant(eventId: string) {
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe("CCF-48 — Activity logs include event name context", () => {
-  describe("integration — tryCreateSmallGroupRequestFromBreakout", () => {
-    it("includes event name in TempAssignmentCreated log description for a guest", async () => {
-      const { event, smallGroup, breakoutGroup } = await seedEventAndBreakout("B1G Fridays 2026")
-      const { registrant } = await seedGuestRegistrant(event.id)
-
-      await tryCreateSmallGroupRequestFromBreakout(breakoutGroup.id, registrant.id)
-
-      const log = await db.smallGroupLog.findFirst({
-        where: { smallGroupId: smallGroup.id, action: "TempAssignmentCreated" },
-        select: { description: true },
-      })
-
-      expect(log?.description).toContain("B1G Fridays 2026")
-    })
-  })
-
-  describe("integration — tryCancelSmallGroupRequestFromBreakout", () => {
-    it("includes event name in TempAssignmentRejected log description when cancelling", async () => {
-      const { event, smallGroup, breakoutGroup } = await seedEventAndBreakout("B1G Fridays 2026")
-      const { guest, registrant } = await seedGuestRegistrant(event.id)
-
-      // Pre-create a pending request so cancellation can find it
-      await db.smallGroupMemberRequest.create({
-        data: { smallGroupId: smallGroup.id, guestId: guest.id, status: "Pending", breakoutGroupId: breakoutGroup.id },
-      })
-
-      await tryCancelSmallGroupRequestFromBreakout(breakoutGroup.id, registrant.id)
-
-      const log = await db.smallGroupLog.findFirst({
-        where: { smallGroupId: smallGroup.id, action: "TempAssignmentRejected" },
-        select: { description: true },
-      })
-
-      expect(log?.description).toContain("B1G Fridays 2026")
-    })
-  })
-
   describe("integration — submitCatchMechConfirmations", () => {
     it("declined log includes event name", async () => {
       const { event, smallGroup, session, breakoutGroup } = await seedEventAndBreakout("B1G Fridays 2026")
@@ -231,21 +190,4 @@ describe("CCF-48 — Activity logs include event name context", () => {
     })
   })
 
-  describe("regression — event name appears in all catch mech log descriptions", () => {
-    it("breakout placement description contains event name, not generic 'breakout group placement'", async () => {
-      const { event, smallGroup, breakoutGroup } = await seedEventAndBreakout("Summer Camp 2026")
-      const { registrant } = await seedGuestRegistrant(event.id)
-
-      await tryCreateSmallGroupRequestFromBreakout(breakoutGroup.id, registrant.id)
-
-      const log = await db.smallGroupLog.findFirst({
-        where: { smallGroupId: smallGroup.id, action: "TempAssignmentCreated" },
-        select: { description: true },
-      })
-
-      expect(log?.description).toContain("Summer Camp 2026")
-      // Old generic wording without event name should be gone
-      expect(log?.description).not.toMatch(/via breakout group placement \(pending/)
-    })
-  })
 })
