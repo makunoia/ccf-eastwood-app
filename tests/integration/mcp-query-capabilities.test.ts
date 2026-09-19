@@ -71,7 +71,10 @@ describe("MCP query capabilities", () => {
     const request = await db.smallGroupMemberRequest.create({ data: { guestId: guest.id, smallGroupId: group.id, sourceEventId: event.id, origin: "RegistrationIntent" } })
 
     const familyDetail = await getFamilyDetail(family.id)
-    expect(familyDetail?.members.map((row) => row.role)).toEqual(["MotherWife", "Child"])
+    // Nested creates can share the same timestamp, so the database's
+    // `createdAt` ordering has no deterministic tie-breaker. This capability
+    // promises the complete family-role set, not an artificial role order.
+    expect(familyDetail?.members.map((row) => row.role).sort()).toEqual(["Child", "MotherWife"])
     expect((await listEventOccurrences(event.id)).rows[0]).toMatchObject({ id: occurrence.id, isOpen: true, attendeeCount: 0 })
     expect((await querySmallGroupRequests({ status: "Pending" })).rows[0]).toMatchObject({
       id: request.id,

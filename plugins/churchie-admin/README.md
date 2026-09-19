@@ -2,7 +2,9 @@
 
 Set `CHURCHIE_MCP_URL` to the deployed Churchie origin, then install this controlled plugin in ChatGPT developer mode. The MCP endpoint is `${CHURCHIE_MCP_URL}/api/mcp` and uses Churchie's OAuth authorization server at the same origin.
 
-In production, set `MCP_OAUTH_CLIENTS` to comma-separated exact `clientId=redirectUri` pairs issued to approved ChatGPT or Codex installations. No implicit or generic client exception is allowed. Clients must request `offline_access` to receive a renewable Churchie MCP connection.
+In production, set `MCP_OAUTH_CLIENTS` to comma-separated exact `clientId=redirectUri` pairs for approved browser or Connector Platform clients. Those clients always require an exact callback pair.
+
+Codex native uses its own fixed client ID, `https://chatgpt.com/oauth/codex/client.json`, and a dynamically assigned local callback such as `http://127.0.0.1:49152/callback`. Churchie permits this client only with HTTP loopback callbacks on `localhost`, `127.0.0.1`, or `[::1]`, an explicit port, and exactly `/callback`; it does not need a fixed `MCP_OAUTH_CLIENTS` entry. Do not replace this native OAuth flow with a Connector Platform callback URL. Clients must request `offline_access` to receive a renewable Churchie MCP connection.
 
 The connector is intentionally restricted to Churchie accounts and enforces the account's live role, feature, OAuth scope, and event access on each call.
 
