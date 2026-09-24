@@ -101,7 +101,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     signIn: "/login",
   },
   callbacks: {
-    async jwt({ token, user, trigger }) {
+    async jwt({ token, user }) {
       // On sign-in, embed user data into the token
       if (user) {
         token.id = user.id!
@@ -114,8 +114,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.requiresTotpSetup = user.requiresTotpSetup ?? false
       }
 
-      // On explicit session update, refresh flags from DB
-      if (trigger === "update" && token.id) {
+      // Refresh authorization data on every session read so role and permission
+      // changes take effect for existing JWT sessions without waiting for logout.
+      if (!user && token.id) {
         const fresh = await db.user.findUnique({
           where: { id: token.id as string },
           include: {
@@ -124,6 +125,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           },
         })
         if (fresh) {
+          token.name = fresh.name
           token.username = fresh.username
           token.role = fresh.role
           token.permissions = groupPermissions(fresh.permissions)
@@ -131,6 +133,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           token.totpEnabled = fresh.totpEnabled
           token.mustChangePassword = fresh.mustChangePassword
           token.requiresTotpSetup = fresh.requiresTotpSetup
+        } else {
+          // A deleted account must not keep authorization from a stale JWT.
+          token.username = ""
+          token.role = "Staff"
+          token.permissions = []
+          token.eventAccess = []
         }
       }
 

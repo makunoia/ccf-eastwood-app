@@ -81,7 +81,13 @@ export async function createUser(
     return { success: true, data: { id: user.id, generatedPassword: rawPassword } }
   } catch (e: unknown) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-      return { success: false, error: "An account with this username already exists" }
+      const target = e.meta?.target
+      const usernameConflict = Array.isArray(target)
+        ? target.includes("username")
+        : typeof target === "string" && target.includes("username")
+      if (usernameConflict) {
+        return { success: false, error: "An account with this username already exists" }
+      }
     }
     return { success: false, error: "Failed to create user" }
   }
@@ -99,21 +105,15 @@ export async function updateUserPermissions(
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
   }
 
-  const { permissions, eventIds } = parsed.data
+  const { username, role, permissions, eventIds } = parsed.data
 
   const hasEventsPermission = permissions.some(({ feature }) => feature === "Events")
   if (!hasEventsPermission && eventIds.length > 0) {
     return { success: false, error: "Event access requires the Events feature permission" }
   }
 
-  const target = await db.user.findUnique({
-    where: { id },
-    select: { role: true },
-  })
+  const target = await db.user.findUnique({ where: { id }, select: { id: true } })
   if (!target) return { success: false, error: "User not found" }
-  if (target.role === "SuperAdmin") {
-    return { success: false, error: "Super Admin access cannot be changed here" }
-  }
 
   if (eventIds.length > 0) {
     const eventCount = await db.event.count({ where: { id: { in: eventIds } } })
@@ -127,21 +127,23 @@ export async function updateUserPermissions(
   )
 
   try {
-    await db.$transaction([
-      db.userPermission.deleteMany({ where: { userId: id } }),
-      ...(permissionRows.length > 0
-        ? [db.userPermission.createMany({ data: permissionRows })]
-        : []),
-      db.userEventAccess.deleteMany({ where: { userId: id } }),
-      ...(eventIds.length > 0
-        ? [db.userEventAccess.createMany({ data: eventIds.map((eventId) => ({ userId: id, eventId })) })]
-        : []),
-    ])
+    await db.$transaction(async (tx) => {
+      await tx.user.update({ where: { id }, data: { username, role } })
+      await tx.userPermission.deleteMany({ where: { userId: id } })
+      if (permissionRows.length > 0) await tx.userPermission.createMany({ data: permissionRows })
+      await tx.userEventAccess.deleteMany({ where: { userId: id } })
+      if (eventIds.length > 0) {
+        await tx.userEventAccess.createMany({ data: eventIds.map((eventId) => ({ userId: id, eventId })) })
+      }
+    })
 
     revalidatePath("/settings/users")
     return { success: true, data: undefined }
-  } catch {
-    return { success: false, error: "Failed to update permissions" }
+  } catch (e: unknown) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      return { success: false, error: "An account with this username already exists" }
+    }
+    return { success: false, error: "Failed to update user" }
   }
 }
 
