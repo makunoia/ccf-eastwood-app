@@ -1,97 +1,285 @@
 "use client"
 
 import * as React from "react"
-import { IconListDetails } from "@tabler/icons-react"
+import { IconArrowDown, IconArrowUp, IconListDetails, IconTrash } from "@tabler/icons-react"
 import { toast } from "sonner"
+import { saveCustomFormSteps } from "@/app/(dashboard)/events/form-config-actions"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { saveCustomFormSteps } from "@/app/(dashboard)/events/form-config-actions"
 import type { CustomQuestion, CustomStep } from "@/lib/forms/custom-questions"
 import type { FormContext } from "@/app/generated/prisma/client"
 
-function id() { return crypto.randomUUID() }
-const newQuestion = (): CustomQuestion => ({ id: id(), label: "", type: "ShortText", required: false, options: [] })
-const newStep = (): CustomStep => ({ id: id(), title: "New step", questions: [newQuestion()] })
+function newQuestion(): CustomQuestion {
+  return { id: crypto.randomUUID(), label: "", type: "ShortText", required: false, options: [] }
+}
 
-export function CustomStepsEditor({ eventId, context, initial }: { eventId: string; context: FormContext; initial: CustomStep[] }) {
+function newStep(): CustomStep {
+  return { id: crypto.randomUUID(), title: "", questions: [newQuestion()] }
+}
+
+function moveItem<T>(items: T[], index: number, offset: -1 | 1): T[] {
+  const next = [...items]
+  const target = index + offset
+  if (target < 0 || target >= next.length) return next
+  ;[next[index], next[target]] = [next[target], next[index]]
+  return next
+}
+
+function optionDraftsFor(steps: CustomStep[]): Record<string, string> {
+  return Object.fromEntries(
+    steps.flatMap((step) => step.questions.map((question) => [question.id, question.options.join("\n")])),
+  )
+}
+
+function normalizeOptions(value: string): string[] {
+  return value.split("\n").map((option) => option.trim()).filter(Boolean)
+}
+
+function CustomQuestionEditor({
+  question,
+  index,
+  total,
+  optionsText,
+  onChange,
+  onOptionsChange,
+  onMove,
+  onRemove,
+}: {
+  question: CustomQuestion
+  index: number
+  total: number
+  optionsText: string
+  onChange: (patch: Partial<CustomQuestion>) => void
+  onOptionsChange: (value: string) => void
+  onMove: (offset: -1 | 1) => void
+  onRemove: () => void
+}) {
+  const isChoice = question.type === "SingleChoice" || question.type === "MultipleChoice"
+  const questionId = `custom-question-${question.id}`
+
+  return (
+    <div className="grid gap-x-4 gap-y-3 border-t pt-4 md:grid-cols-[minmax(0,1fr)_12rem]">
+      <div className="min-w-0 space-y-2">
+        <Label htmlFor={`${questionId}-label`}>Question {index + 1}</Label>
+        <Input
+          id={`${questionId}-label`}
+          value={question.label}
+          maxLength={160}
+          placeholder="Write your question"
+          onChange={(event) => onChange({ label: event.target.value })}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor={`${questionId}-type`}>Answer type</Label>
+        <Select
+          value={question.type}
+          onValueChange={(value) => onChange({ type: value as CustomQuestion["type"] })}
+        >
+          <SelectTrigger id={`${questionId}-type`} className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ShortText">Short text</SelectItem>
+            <SelectItem value="LongText">Long text</SelectItem>
+            <SelectItem value="SingleChoice">Single choice</SelectItem>
+            <SelectItem value="MultipleChoice">Multiple choice</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {isChoice && (
+        <div className="space-y-1.5 md:col-span-2">
+          <Label htmlFor={`${questionId}-options`}>Answer options</Label>
+          <Textarea
+            id={`${questionId}-options`}
+            value={optionsText}
+            onChange={(event) => onOptionsChange(event.target.value)}
+            placeholder="Enter one option per line"
+            rows={3}
+            className="min-h-20 resize-y"
+          />
+          <p className="text-xs text-muted-foreground">Press Enter after each option.</p>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center justify-between gap-3 md:col-span-2">
+        <div className="flex items-center gap-2">
+          <Switch
+            id={`${questionId}-required`}
+            checked={question.required}
+            onCheckedChange={(required) => onChange({ required })}
+          />
+          <Label htmlFor={`${questionId}-required`}>Required</Label>
+        </div>
+        <div className="flex flex-wrap items-center gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-label={`Move question ${index + 1} up`}
+            disabled={index === 0}
+            onClick={() => onMove(-1)}
+          >
+            <IconArrowUp aria-hidden className="size-4" />
+            <span className="sr-only">Move up</span>
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-label={`Move question ${index + 1} down`}
+            disabled={index === total - 1}
+            onClick={() => onMove(1)}
+          >
+            <IconArrowDown aria-hidden className="size-4" />
+            <span className="sr-only">Move down</span>
+          </Button>
+          <Button type="button" variant="ghost" size="sm" onClick={onRemove}>
+            <IconTrash aria-hidden className="size-4" />
+            Remove question
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function CustomStepsEditor({
+  eventId,
+  context,
+  initial,
+}: {
+  eventId: string
+  context: FormContext
+  initial: CustomStep[]
+}) {
   const [steps, setSteps] = React.useState(initial)
   const [savedSteps, setSavedSteps] = React.useState(initial)
-  const [optionDrafts, setOptionDrafts] = React.useState<Record<string, string>>(() =>
-    Object.fromEntries(initial.flatMap((step) => step.questions.map((question) => [question.id, question.options.join("\n")]))),
-  )
+  const [optionDrafts, setOptionDrafts] = React.useState(() => optionDraftsFor(initial))
   const [saving, setSaving] = React.useState(false)
+
   const currentSteps = steps.map((step) => ({
     ...step,
     questions: step.questions.map((question) => ({
       ...question,
-      options: (optionDrafts[question.id] ?? question.options.join("\n"))
-        .split("\n")
-        .map((option) => option.trim())
-        .filter(Boolean),
+      options: normalizeOptions(optionDrafts[question.id] ?? question.options.join("\n")),
     })),
   }))
   const dirty = JSON.stringify(currentSteps) !== JSON.stringify(savedSteps)
-  function updateStep(index: number, patch: Partial<CustomStep>) { setSteps((all) => all.map((s, i) => i === index ? { ...s, ...patch } : s)) }
-  function updateQuestion(si: number, qi: number, patch: Partial<CustomQuestion>) {
-    setSteps((all) => all.map((s, i) => i !== si ? s : { ...s, questions: s.questions.map((q, j) => j === qi ? { ...q, ...patch } : q) }))
+
+  function updateStep(stepIndex: number, patch: Partial<CustomStep>) {
+    setSteps((current) => current.map((step, index) => index === stepIndex ? { ...step, ...patch } : step))
   }
+
+  function updateQuestion(stepIndex: number, questionIndex: number, patch: Partial<CustomQuestion>) {
+    setSteps((current) => current.map((step, index) => index !== stepIndex ? step : {
+      ...step,
+      questions: step.questions.map((question, position) => position === questionIndex ? { ...question, ...patch } : question),
+    }))
+  }
+
   async function save() {
     setSaving(true)
-    const normalized = currentSteps
     try {
-      const result = await saveCustomFormSteps(eventId, context, normalized)
-      if (result.success) {
-        setSteps(normalized)
-        setSavedSteps(normalized)
-        setOptionDrafts(Object.fromEntries(normalized.flatMap((step) => step.questions.map((question) => [question.id, question.options.join("\n")]))))
-        toast.success("Custom steps saved")
+      const result = await saveCustomFormSteps(eventId, context, currentSteps)
+      if (!result.success) {
+        toast.error(result.error)
+        return
       }
-      else toast.error(result.error)
+      setSteps(currentSteps)
+      setSavedSteps(currentSteps)
+      setOptionDrafts(optionDraftsFor(currentSteps))
+      toast.success("Custom steps saved")
     } catch {
       toast.error("Could not save custom steps. Please try again.")
     } finally {
       setSaving(false)
     }
   }
+
   function cancelChanges() {
     setSteps(savedSteps)
-    setOptionDrafts(
-      Object.fromEntries(
-        savedSteps.flatMap((step) =>
-          step.questions.map((question) => [question.id, question.options.join("\n")]),
-        ),
-      ),
-    )
+    setOptionDrafts(optionDraftsFor(savedSteps))
   }
-  return <section className="space-y-3 rounded-lg border px-4 py-4">
-    <div className="flex items-start gap-3">
-      <IconListDetails aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium">Custom steps</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">Add questions to this form. Submitted answers keep the question wording from the time they were collected.</p>
-      </div>
-    </div>
-    {steps.map((step, si) => <div key={step.id} className="space-y-3 rounded-md border p-3">
-      <div className="flex flex-wrap items-center gap-2"><Input aria-label={`Step ${si + 1} title`} value={step.title} onChange={(e) => updateStep(si, { title: e.target.value })} />
-        <Button type="button" variant="outline" disabled={si === 0} onClick={() => setSteps((all) => { const next = [...all]; [next[si - 1], next[si]] = [next[si], next[si - 1]]; return next })}>↑</Button>
-        <Button type="button" variant="outline" disabled={si === steps.length - 1} onClick={() => setSteps((all) => { const next = [...all]; [next[si + 1], next[si]] = [next[si], next[si + 1]]; return next })}>↓</Button>
-        <Button type="button" variant="ghost" onClick={() => setSteps((all) => all.filter((_, i) => i !== si))}>Remove step</Button>
-      </div>
-      {step.questions.map((q, qi) => <div key={q.id} className="grid gap-3 border-t pt-3 md:grid-cols-[minmax(0,1fr)_180px_auto]">
-        <div className="space-y-2"><Label htmlFor={`question-label-${q.id}`}>Question</Label><Input id={`question-label-${q.id}`} value={q.label} onChange={(e) => updateQuestion(si, qi, { label: e.target.value })} />
-          {(q.type === "SingleChoice" || q.type === "MultipleChoice") && <div className="space-y-1.5"><Label htmlFor={`question-options-${q.id}`}>Answer options</Label><Textarea id={`question-options-${q.id}`} value={optionDrafts[q.id] ?? q.options.join("\n")} onChange={(e) => setOptionDrafts((drafts) => ({ ...drafts, [q.id]: e.target.value }))} placeholder="One option per line" rows={3} /><p className="text-xs text-muted-foreground">Enter one option per line.</p></div>}
+
+  return (
+    <section className="space-y-4 rounded-lg border px-4 py-4 sm:px-5" aria-labelledby={`custom-steps-title-${context}`}>
+      <div className="flex items-start gap-3">
+        <IconListDetails aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+        <div className="min-w-0">
+          <h3 id={`custom-steps-title-${context}`} className="text-sm font-medium">Custom steps</h3>
+          <p className="mt-0.5 max-w-prose text-xs leading-5 text-muted-foreground">
+            Add questions to this form. Submitted answers keep the wording used when they were collected.
+          </p>
         </div>
-        <div className="space-y-3"><Label>Answer type</Label><Select value={q.type} onValueChange={(value) => updateQuestion(si, qi, { type: value as CustomQuestion["type"] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="ShortText">Short text</SelectItem><SelectItem value="LongText">Long text</SelectItem><SelectItem value="SingleChoice">Single choice</SelectItem><SelectItem value="MultipleChoice">Multiple choice</SelectItem></SelectContent></Select>
-          <label className="flex items-center gap-2 text-sm"><Switch checked={q.required} onCheckedChange={(required) => updateQuestion(si, qi, { required })} /> Required</label>
+      </div>
+
+      {steps.length === 0 ? (
+        <p className="rounded-md bg-muted/50 px-3 py-2.5 text-sm text-muted-foreground">
+          No custom steps. Add a step to include questions in this form.
+        </p>
+      ) : (
+        <div className="divide-y">
+          {steps.map((step, stepIndex) => (
+            <section key={step.id} className="space-y-4 py-4 first:pt-0 last:pb-0" aria-label={`Step ${stepIndex + 1}`}>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <Label htmlFor={`custom-step-title-${step.id}`}>Step {stepIndex + 1}</Label>
+                  <Input
+                    id={`custom-step-title-${step.id}`}
+                    value={step.title}
+                    maxLength={100}
+                    placeholder="Step title"
+                    onChange={(event) => updateStep(stepIndex, { title: event.target.value })}
+                  />
+                </div>
+                <div className="flex flex-wrap items-center gap-1 sm:pt-5">
+                  <Button type="button" variant="ghost" size="sm" disabled={stepIndex === 0} onClick={() => setSteps((current) => moveItem(current, stepIndex, -1))}>Move up</Button>
+                  <Button type="button" variant="ghost" size="sm" disabled={stepIndex === steps.length - 1} onClick={() => setSteps((current) => moveItem(current, stepIndex, 1))}>Move down</Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setSteps((current) => current.filter((_, index) => index !== stepIndex))}>Remove step</Button>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                {step.questions.map((question, questionIndex) => (
+                  <CustomQuestionEditor
+                    key={question.id}
+                    question={question}
+                    index={questionIndex}
+                    total={step.questions.length}
+                    optionsText={optionDrafts[question.id] ?? question.options.join("\n")}
+                    onChange={(patch) => updateQuestion(stepIndex, questionIndex, patch)}
+                    onOptionsChange={(value) => setOptionDrafts((drafts) => ({ ...drafts, [question.id]: value }))}
+                    onMove={(offset) => updateStep(stepIndex, { questions: moveItem(step.questions, questionIndex, offset) })}
+                    onRemove={() => updateStep(stepIndex, { questions: step.questions.filter((_, index) => index !== questionIndex) })}
+                  />
+                ))}
+              </div>
+
+              <Button type="button" variant="outline" size="sm" onClick={() => updateStep(stepIndex, { questions: [...step.questions, newQuestion()] })}>
+                Add question
+              </Button>
+            </section>
+          ))}
         </div>
-        <div className="flex flex-col"><Button type="button" aria-label={`Move question ${qi + 1} up`} variant="outline" size="sm" disabled={qi === 0} onClick={() => updateStep(si, { questions: (() => { const next = [...step.questions]; [next[qi - 1], next[qi]] = [next[qi], next[qi - 1]]; return next })() })}>↑</Button><Button type="button" aria-label={`Move question ${qi + 1} down`} variant="outline" size="sm" disabled={qi === step.questions.length - 1} onClick={() => updateStep(si, { questions: (() => { const next = [...step.questions]; [next[qi + 1], next[qi]] = [next[qi], next[qi + 1]]; return next })() })}>↓</Button><Button type="button" variant="ghost" onClick={() => updateStep(si, { questions: step.questions.filter((_, i) => i !== qi) })}>Remove</Button></div>
-      </div>)}
-      <Button type="button" variant="outline" onClick={() => updateStep(si, { questions: [...step.questions, newQuestion()] })}>Add question</Button>
-    </div>)}
-    <div className="flex flex-wrap items-center gap-2"><Button type="button" variant="outline" size="sm" onClick={() => setSteps((all) => [...all, newStep()])}>Add step</Button>{dirty && !saving && <Button type="button" variant="ghost" size="sm" onClick={cancelChanges}>Cancel</Button>}<Button type="button" size="sm" onClick={save} disabled={!dirty || saving}>{saving ? "Saving…" : "Save"}</Button></div>
-  </section>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2 border-t pt-3">
+        <Button type="button" variant="outline" size="sm" onClick={() => setSteps((current) => [...current, newStep()])}>
+          Add step
+        </Button>
+        {dirty && !saving && (
+          <Button type="button" variant="ghost" size="sm" onClick={cancelChanges}>Cancel</Button>
+        )}
+        <Button type="button" size="sm" onClick={save} disabled={!dirty || saving}>
+          {saving ? "Saving…" : "Save"}
+        </Button>
+      </div>
+    </section>
+  )
 }
