@@ -11,7 +11,17 @@ export const metadata: Metadata = {
   title: "Registrants",
 }
 
-async function getEventRegistrants(id: string, search: string, typeFilter: string) {
+export async function getEventRegistrants(
+  id: string,
+  search: string,
+  typeFilter: string,
+  paymentFilter: string,
+  attendanceFilter: string,
+  lifeStageFilter: string,
+  genderFilter: string,
+  ageRangeFilter: string,
+  meetingPreferenceFilter: string,
+) {
   const event = await db.event.findUnique({
     where: { id },
     select: {
@@ -34,12 +44,21 @@ async function getEventRegistrants(id: string, search: string, typeFilter: strin
           isPaid: true,
           paymentReference: true,
           attendedAt: true,
+          occurrenceAttendances: { select: { id: true } },
           createdAt: true,
           member: {
-            select: { id: true, firstName: true, lastName: true, phone: true, email: true },
+            select: {
+              id: true, firstName: true, lastName: true, phone: true, email: true,
+              lifeStageId: true, gender: true, ageRangeBucketId: true,
+              birthMonth: true, birthYear: true, meetingPreference: true,
+            },
           },
           guest: {
-            select: { id: true, firstName: true, lastName: true, phone: true, email: true },
+            select: {
+              id: true, firstName: true, lastName: true, phone: true, email: true,
+              lifeStageId: true, gender: true, ageRangeBucketId: true,
+              birthMonth: true, birthYear: true, meetingPreference: true,
+            },
           },
           baptismOptIn: { select: { id: true } },
         },
@@ -55,6 +74,42 @@ async function getEventRegistrants(id: string, search: string, typeFilter: strin
     registrants = registrants.filter((r) => r.memberId !== null)
   } else if (typeFilter === "guest") {
     registrants = registrants.filter((r) => r.guestId !== null || (r.memberId === null && r.guestId === null))
+  }
+
+  if (paymentFilter === "paid") registrants = registrants.filter((r) => r.isPaid)
+  else if (paymentFilter === "unpaid") registrants = registrants.filter((r) => !r.isPaid)
+
+  if (attendanceFilter === "attended") {
+    registrants = registrants.filter((r) => r.attendedAt !== null || r.occurrenceAttendances.length > 0)
+  } else if (attendanceFilter === "not-attended") {
+    registrants = registrants.filter((r) => r.attendedAt === null && r.occurrenceAttendances.length === 0)
+  }
+
+  const profileValue = (r: (typeof registrants)[number], key: "lifeStageId" | "gender" | "ageRangeBucketId" | "meetingPreference") =>
+    r.member?.[key] ?? r.guest?.[key] ?? null
+  if (lifeStageFilter) registrants = registrants.filter((r) => profileValue(r, "lifeStageId") === lifeStageFilter)
+  if (genderFilter) registrants = registrants.filter((r) => profileValue(r, "gender") === genderFilter)
+  if (ageRangeFilter) {
+    const ageRange = await db.ageRangeBucket.findUnique({
+      where: { id: ageRangeFilter },
+      select: { minAge: true, maxAge: true },
+    })
+    registrants = ageRange
+      ? registrants.filter((r) => {
+          const profile = r.member ?? r.guest
+          if (!profile) return false
+          if (profile.ageRangeBucketId) return profile.ageRangeBucketId === ageRangeFilter
+          if (profile.birthYear == null) return false
+          const today = new Date()
+          let age = today.getUTCFullYear() - profile.birthYear
+          if (profile.birthMonth != null && today.getUTCMonth() + 1 < profile.birthMonth) age -= 1
+          return (ageRange.minAge == null || age >= ageRange.minAge) &&
+            (ageRange.maxAge == null || age <= ageRange.maxAge)
+        })
+      : registrants
+  }
+  if (meetingPreferenceFilter) {
+    registrants = registrants.filter((r) => profileValue(r, "meetingPreference") === meetingPreferenceFilter)
   }
 
   // Search filter (name, phone, email)
@@ -89,11 +144,19 @@ export default async function RegistrantsPage({
   const [{ id }, sp] = await Promise.all([params, searchParams])
   const search = (sp.search as string) || ""
   const typeFilter = (sp.type as string) || ""
+  const paymentFilter = (sp.payment as string) || ""
+  const attendanceFilter = (sp.attendance as string) || ""
+  const lifeStageFilter = (sp.lifeStage as string) || ""
+  const genderFilter = (sp.gender as string) || ""
+  const ageRangeFilter = (sp.ageRange as string) || ""
+  const meetingPreferenceFilter = (sp.meetingPreference as string) || ""
 
-  const [session, event, registerConfig] = await Promise.all([
+  const [session, event, registerConfig, lifeStages, ageRanges] = await Promise.all([
     auth(),
-    getEventRegistrants(id, search, typeFilter),
+    getEventRegistrants(id, search, typeFilter, paymentFilter, attendanceFilter, lifeStageFilter, genderFilter, ageRangeFilter, meetingPreferenceFilter),
     getEffectiveFormConfig(id, "Register"),
+    db.lifeStage.findMany({ orderBy: { order: "asc" }, select: { id: true, name: true } }),
+    db.ageRangeBucket.findMany({ orderBy: { order: "asc" }, select: { id: true, label: true } }),
   ])
   if (!event) notFound()
 
@@ -119,6 +182,14 @@ export default async function RegistrantsPage({
         canExport={canExport(session, "Events")}
         search={search}
         typeFilter={typeFilter}
+        paymentFilter={paymentFilter}
+        attendanceFilter={attendanceFilter}
+        lifeStageFilter={lifeStageFilter}
+        genderFilter={genderFilter}
+        ageRangeFilter={ageRangeFilter}
+        meetingPreferenceFilter={meetingPreferenceFilter}
+        lifeStages={lifeStages}
+        ageRanges={ageRanges}
         registrants={event.registrants.map((r) => ({
           ...r,
           attendedAt: r.attendedAt?.toISOString() ?? null,

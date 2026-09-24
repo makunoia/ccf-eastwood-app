@@ -20,6 +20,7 @@ import {
   IconChevronsRight,
   IconArrowDown,
   IconArrowUp,
+  IconArrowsSort,
 } from "@tabler/icons-react"
 
 import { Button } from "@/components/ui/button"
@@ -263,7 +264,7 @@ export function DataTable<TData, TValue>({
                   <TableHead
                     key={header.id}
                     className={cn(
-                      "relative truncate",
+                      "relative",
                       compact && "h-8",
                       header.column.columnDef.meta?.width === "actions" &&
                         ACTIONS_CELL_CLASS,
@@ -271,15 +272,30 @@ export function DataTable<TData, TValue>({
                     )}
                   >
                     {header.isPlaceholder ? null : header.column.getCanSort() ? (
-                      <button
-                        type="button"
-                        onClick={header.column.getToggleSortingHandler()}
-                        className="inline-flex max-w-full items-center gap-1 text-left"
-                        aria-label={`Sort by ${typeof header.column.columnDef.header === "string" ? header.column.columnDef.header : header.column.id} ${header.column.getIsSorted() === "asc" ? "descending" : "ascending"}`}
-                      >
-                        <span className="truncate">{flexRender(header.column.columnDef.header, header.getContext())}</span>
-                        {header.column.getIsSorted() === "asc" ? <IconArrowUp aria-hidden className="size-3.5 shrink-0" /> : header.column.getIsSorted() === "desc" ? <IconArrowDown aria-hidden className="size-3.5 shrink-0" /> : null}
-                      </button>
+                      typeof header.column.columnDef.header === "string" ? (
+                        <button
+                          type="button"
+                          onClick={header.column.getToggleSortingHandler()}
+                          className="inline-flex max-w-full items-center gap-1 text-left"
+                          aria-label={`Sort by ${header.column.columnDef.header} ${header.column.getIsSorted() === "asc" ? "descending" : "ascending"}`}
+                        >
+                          <span className="truncate">{header.column.columnDef.header}</span>
+                          {header.column.getIsSorted() === "asc" ? <IconArrowUp aria-hidden className="size-3.5 shrink-0" /> : header.column.getIsSorted() === "desc" ? <IconArrowDown aria-hidden className="size-3.5 shrink-0" /> : null}
+                        </button>
+                      ) : (
+                        <div className="inline-flex max-w-full items-center gap-1">
+                          {flexRender(header.column.columnDef.header, header.getContext())}
+                          <button
+                            type="button"
+                            onClick={header.column.getToggleSortingHandler()}
+                            aria-label={`Sort by ${header.column.id} ${header.column.getIsSorted() === "asc" ? "descending" : "ascending"}`}
+                            title="Sort column"
+                            className="inline-flex size-5 shrink-0 items-center justify-center rounded hover:bg-accent"
+                          >
+                            {header.column.getIsSorted() === "asc" ? <IconArrowUp aria-hidden className="size-3.5" /> : header.column.getIsSorted() === "desc" ? <IconArrowDown aria-hidden className="size-3.5" /> : <IconArrowsSort aria-hidden className="size-3.5" />}
+                          </button>
+                        </div>
+                      )
                     ) : flexRender(header.column.columnDef.header, header.getContext())}
                     {!header.isPlaceholder && header.column.columnDef.meta?.width !== "micro" && header.column.columnDef.meta?.width !== "actions" && (
                       <button
