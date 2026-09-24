@@ -23,7 +23,6 @@ import { VolunteerInfoUrlCopier } from "@/components/forms/volunteer-info-url-co
 import { WalkInSessionSetting } from "@/components/forms/walk-in-session-setting"
 import { formatOccurrenceDate } from "@/lib/format/occurrence"
 import { latestWalkInSession } from "@/lib/events/walk-in-session"
-import { CustomStepsEditor } from "@/components/forms/custom-steps-editor"
 import { customStepsSchema } from "@/lib/forms/custom-questions"
 
 function toDateInput(d: Date | null): string {
@@ -199,10 +198,10 @@ export default async function EventFormEditorPage({
               heading="Registration form"
               blurb="Name, mobile number, and email are always collected — everything else is opt-in. The walk-in form is configured on its own entry."
               successMessages={successMessages ?? undefined}
+              customSteps={{ Register: customStepsResult.success ? customStepsResult.data : [] }}
               eventName={event.name}
             />
           )}
-          <CustomStepsEditor eventId={id} context="Register" initial={customStepsResult.success ? customStepsResult.data : []} />
           {modules.includes("Breakout") && (
             <BreakoutAssignmentSetting eventId={id} initial={event.autoAssignBreakout} />
           )}
@@ -258,10 +257,10 @@ export default async function EventFormEditorPage({
               heading="Walk-in form"
               blurb="What someone registering at the door is asked for — configured separately from the public form, so the door version can ask less."
               successMessages={successMessages ?? undefined}
+              customSteps={{ WalkIn: customStepsResult.success ? customStepsResult.data : [] }}
               eventName={event.name}
             />
           )}
-          <CustomStepsEditor eventId={id} context="WalkIn" initial={customStepsResult.success ? customStepsResult.data : []} />
         </div>
       )}
 

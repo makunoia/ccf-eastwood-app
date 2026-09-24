@@ -80,6 +80,8 @@ import {
   setEventFormToggle,
 } from "@/app/(dashboard)/events/form-config-actions"
 import type { EventModuleType, FormContext } from "@/app/generated/prisma/client"
+import { CustomStepsEditor } from "@/components/forms/custom-steps-editor"
+import type { CustomStep } from "@/lib/forms/custom-questions"
 
 /**
  * Per-context registration form builder (CCF-120). Register / Walk-in / Check-in
@@ -189,6 +191,7 @@ export function EventFormBuilder({
   notApplicable = [],
   prerequisites,
   successMessages,
+  customSteps,
   eventName,
 }: {
   eventId?: string
@@ -215,6 +218,8 @@ export function EventFormBuilder({
    * an admin can tell configured copy from inherited copy.
    */
   successMessages?: Partial<Record<FormContext, string | null>>
+  /** Custom steps are supported by event Register and Walk-in contexts only. */
+  customSteps?: Partial<Record<FormContext, CustomStep[]>>
   /** Used only to render the default copy accurately in the editor's placeholder. */
   eventName?: string
 }) {
@@ -328,6 +333,14 @@ export function EventFormBuilder({
                 />
               ))}
             </Accordion>
+
+            {!clusterId && (context === "Register" || context === "WalkIn") && (
+              <CustomStepsEditor
+                eventId={eventId!}
+                context={context}
+                initial={customSteps?.[context] ?? []}
+              />
+            )}
 
             {/* Check-in has no success screen — it confirms attendance in place. */}
             {context !== "CheckIn" && (
