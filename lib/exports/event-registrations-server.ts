@@ -53,6 +53,7 @@ export async function getEventRegistrationExportRows(
       dietaryOther: true,
       isPaid: true,
       paymentReference: true,
+      customResponses: true,
       attendedAt: true,
       createdAt: true,
       member: {
@@ -158,6 +159,15 @@ export async function getEventRegistrationExportRows(
       dietary: formatDietary(r.dietaryPreference, r.dietaryOther),
       isPaid: r.isPaid,
       paymentReference: r.paymentReference,
+      customAnswers: Array.isArray(r.customResponses) && r.customResponses.length
+        ? r.customResponses.flatMap((item) => {
+            if (!item || typeof item !== "object") return []
+            const response = item as { label?: string; answer?: string | string[] }
+            return response.label && response.answer != null
+              ? [`${response.label}: ${Array.isArray(response.answer) ? response.answer.join(", ") : response.answer}`]
+              : []
+          }).join("; ") || null
+        : null,
 
       baptismOptIn: r.baptismOptIn !== null,
       bus: r.busPassengers.map((p) => p.bus.name).join("; ") || null,

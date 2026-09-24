@@ -85,6 +85,7 @@ import {
 } from "@/lib/events/checkin-lookup"
 import { recordMemberGroupClaim } from "@/lib/small-groups/member-claim"
 import { createSeekerRequestFromRegistration } from "@/lib/small-groups/seeker-requests"
+import { customStepsSchema, validateCustomResponses } from "@/lib/forms/custom-questions"
 import type { Gender } from "@/app/generated/prisma/client"
 
 type ActionResult<T = void> =
@@ -725,6 +726,23 @@ export async function createRegistrant(
     // branch below) keeps one source of truth: there is no path that can read the
     // unsanitised value by accident.
     const formConfig = await getEffectiveFormConfig(eventId, walkIn ? "WalkIn" : "Register")
+    const customConfig = await db.eventFormConfig.findUnique({
+      where: { eventId_context: { eventId, context: walkIn ? "WalkIn" : "Register" } },
+      select: { customSteps: true },
+    })
+    const customSteps = customStepsSchema.safeParse(customConfig?.customSteps ?? [])
+    const customResponses = customSteps.success
+      ? validateCustomResponses(customSteps.data, parsed.data.customResponses, walkIn ? "WalkIn" : "Register")
+      : null
+    if (!customSteps.success || !customResponses) {
+      if (customSteps.success && customSteps.data.length === 0 && parsed.data.customResponses.length === 0) {
+        // A form without custom questions keeps the legacy submission path.
+      } else {
+        return { success: false, error: "Please review your custom question answers and try again." }
+      }
+    } else {
+      parsed.data.customResponses = customResponses
+    }
     Object.assign(parsed.data, sanitizeRegistrantPayload(formConfig, parsed.data))
     // Required fields are checked *after* sanitizing, so a value submitted for a
     // disabled field can't satisfy a stale required flag on that same field.

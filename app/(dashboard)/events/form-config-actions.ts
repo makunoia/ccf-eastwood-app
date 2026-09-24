@@ -21,6 +21,7 @@ import {
   clusterWalkInPath,
 } from "@/lib/public-routes"
 import type { FormContext } from "@/app/generated/prisma/client"
+import { customStepsSchema } from "@/lib/forms/custom-questions"
 
 type ActionResult<T = void> =
   | { success: true; data: T }
@@ -89,6 +90,25 @@ function revalidateFormSurfaces(eventId: string) {
   revalidatePath(`/events/${eventId}/register`)
   revalidatePath(`/events/${eventId}/walk-in`)
   revalidatePath(`/events/${eventId}/checkin`)
+}
+
+export async function saveCustomFormSteps(eventId: string, context: FormContext, raw: unknown): Promise<ActionResult> {
+  const authError = await requireWrite()
+  if (authError) return { success: false, error: authError.error }
+  if (context !== "Register" && context !== "WalkIn") return { success: false, error: "Custom questions are not available for this form." }
+  const parsed = customStepsSchema.safeParse(raw)
+  if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid questions." }
+  try {
+    await db.eventFormConfig.upsert({
+      where: { eventId_context: { eventId, context } },
+      create: { eventId, context, customSteps: parsed.data, configuredAt: new Date() },
+      update: { customSteps: parsed.data, configuredAt: new Date() },
+    })
+    revalidateFormSurfaces(eventId)
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to save custom questions." }
+  }
 }
 
 /**

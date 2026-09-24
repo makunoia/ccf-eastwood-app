@@ -32,6 +32,7 @@ import { RegistrantGuestDetail } from "./registrant-guest-detail"
 import { RegistrantNavHeader } from "./registrant-nav-header"
 import { DeleteRegistrantSection } from "./delete-registrant-section"
 import { getRegistrantPlacement } from "@/lib/breakouts/registrant-placement"
+import { customStepsSchema } from "@/lib/forms/custom-questions"
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -52,6 +53,7 @@ async function getRegistrant(registrantId: string, eventId: string) {
       mobileNumber: true,
       isPaid: true,
       paymentReference: true,
+      customResponses: true,
       dietaryPreference: true,
       dietaryOther: true,
       attendedAt: true,
@@ -169,13 +171,21 @@ export default async function RegistrantDetailPage({
   // ── Registration responses ──────────────────────────────────────────────
   // Union across contexts: we don't record which surface someone came through,
   // so a field counts as "asked" if any context collects it.
-  const [formConfigs, familyLabel] = await Promise.all([
+  const [formConfigs, familyLabel, customFormConfigs] = await Promise.all([
     getEffectiveFormConfigs(eventId),
     getHouseholdLabel({
       memberId: registrant.memberId,
       guestId: registrant.guestId,
     }),
+    db.eventFormConfig.findMany({
+      where: { eventId, context: { in: ["Register", "WalkIn"] } },
+      select: { context: true, customSteps: true },
+    }),
   ])
+  const activeCustomQuestions = new Map(customFormConfigs.map((config) => {
+    const parsed = customStepsSchema.safeParse(config.customSteps ?? [])
+    return [config.context, new Set(parsed.success ? parsed.data.flatMap((step) => step.questions.map((question) => question.id)) : [])]
+  }))
   const formConfig = mergeFormConfigs(formConfigs)
   const person = registrant.member ?? registrant.guest ?? null
   const guestOnly = registrant.guest
@@ -205,14 +215,20 @@ export default async function RegistrantDetailPage({
     fieldMeetingPreference: formatMeetingPreference(person?.meetingPreference ?? null),
   })
 
-  const responseSectionRows = buildRegistrationSectionRows(formConfig, {
+  const responseSectionRows = [...buildRegistrationSectionRows(formConfig, {
     sectionSmallGroup:
       guestOnly?.claimedSmallGroup?.name ??
       (guestOnly?.claimedSatellite ? `${guestOnly.claimedSatellite} (another satellite)` : null),
     sectionDietary: formatDietary(registrant.dietaryPreference, registrant.dietaryOther),
     sectionPayment: formatPayment(registrant.isPaid, registrant.paymentReference),
     sectionFamily: familyLabel,
-  })
+  }), ...(Array.isArray(registrant.customResponses) ? registrant.customResponses.flatMap((item) => {
+    if (!item || typeof item !== "object") return []
+    const response = item as { context?: "Register" | "WalkIn"; questionId?: string; label?: string; answer?: string | string[] }
+    if (!response.label || response.answer == null) return []
+    const stillCollected = !!response.context && !!response.questionId && activeCustomQuestions.get(response.context)?.has(response.questionId) === true
+    return [{ key: `custom-${response.context ?? "unknown"}-${response.questionId ?? response.label}`, label: response.label, value: Array.isArray(response.answer) ? response.answer.join(", ") : response.answer, stillCollected }]
+  }) : [])]
 
   const responsesSection = (
     <RegistrationResponsesSection

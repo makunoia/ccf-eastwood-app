@@ -991,6 +991,8 @@ model EventRegistrant {
 
   isPaid           Boolean   @default(false)
   paymentReference String?
+  // Historical snapshots of custom registration questions and submitted answers.
+  customResponses Json?
   // Dietary restrictions — populated when the event's registration form has the Dietary module enabled
   dietaryPreference DietaryPreference?
   dietaryOther      String?
@@ -1498,6 +1500,10 @@ model EventFormConfig {
   clusterId String?
   cluster   EventCluster? @relation(fields: [clusterId], references: [id], onDelete: Cascade)
   context FormContext
+
+  // Custom question steps are configured only for event Register / WalkIn.
+  // Stored as JSON so the existing toggle config remains untouched.
+  customSteps Json?
 
   // Section toggles — whole steps in the flow
   sectionSmallGroup Boolean @default(false)

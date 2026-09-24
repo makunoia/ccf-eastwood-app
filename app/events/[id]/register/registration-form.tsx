@@ -36,7 +36,9 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { ScheduleInput } from "@/components/ui/schedule-input"
 import { Label } from "@/components/ui/label"
 import { MultiSelect } from "@/components/ui/multi-select"
@@ -95,6 +97,7 @@ import {
 import { BreakoutPicker } from "@/components/breakouts/breakout-picker"
 import { MINISTRY_REQUIRED_ERROR } from "@/lib/clusters/copy"
 import { MinistryAvatar } from "@/components/ministry-avatar"
+import type { CustomStep } from "@/lib/forms/custom-questions"
 
 const DAY_NAMES = ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"]
 const MEETING_FORMAT_LABEL: Record<"Online" | "Hybrid" | "InPerson", string> = {
@@ -317,6 +320,7 @@ type Props = {
   walkIn?: WalkInConfig
   /** Cluster shared form — exactly one of eventId / cluster is provided. */
   cluster?: ClusterConfig
+  customSteps?: CustomStep[]
 }
 
 // Card wrapper that can render chrome-less for embedding. Defined at module
@@ -432,6 +436,7 @@ export function RegistrationForm({
   frame = "card",
   walkIn,
   cluster,
+  customSteps = [],
 }: Props) {
   const plain = frame === "plain"
   const cfg = React.useMemo<EventFormConfigData>(
@@ -487,6 +492,7 @@ export function RegistrationForm({
     birthMonth: walkIn?.prefill.birthMonth ?? "",
     birthYear: walkIn?.prefill.birthYear ?? "",
   })
+  const [customAnswers, setCustomAnswers] = React.useState<Record<string, string | string[]>>({})
   // A field this form doesn't collect starts out as "they don't have one", so the
   // member-lookup branches below (which read `!noMobile && form.mobileNumber`)
   // degrade to the identifier that *is* being asked for, rather than looking up
@@ -692,6 +698,7 @@ export function RegistrationForm({
     ...(cfg.sectionFamily ? [{ key: "household", title: "Your Household" }] : []),
     ...(includeDietary ? [{ key: "dietary", title: "Dietary Preferences" }] : []),
     ...(includePayment ? [{ key: "payment", title: "Payment" }] : []),
+    ...(!cluster ? customSteps.map((s) => ({ key: `custom:${s.id}`, title: s.title })) : []),
   ]
 
   /**
@@ -854,6 +861,7 @@ export function RegistrationForm({
   }, [formStep])
 
   function handleReset() {
+    setCustomAnswers({})
     /**
      * Re-read the server's data for the next person.
      *
@@ -1180,6 +1188,11 @@ export function RegistrationForm({
         return
       }
     }
+    const customStep = customSteps.find((s) => `custom:${s.id}` === currentSectionKey)
+    if (customStep) {
+      const missing = customStep.questions.find((q) => q.required && (!customAnswers[q.id] || (Array.isArray(customAnswers[q.id]) && (customAnswers[q.id] as string[]).length === 0)))
+      if (missing) { toast.error(`${missing.label} is required.`); return }
+    }
 
     if (safeStep === 1) {
       if (!form.firstName.trim()) {
@@ -1479,6 +1492,7 @@ export function RegistrationForm({
         dietaryOther:
           includeDietary && form.dietaryPreference === "Other" ? form.dietaryOther || null : null,
         paymentReference: includePayment ? form.paymentReference || null : null,
+        customResponses: customSteps.flatMap((s) => s.questions.flatMap((q) => customAnswers[q.id] == null || customAnswers[q.id] === "" || (Array.isArray(customAnswers[q.id]) && (customAnswers[q.id] as string[]).length === 0) ? [] : [{ questionId: q.id, answer: customAnswers[q.id] }])),
     }
 
     // Cluster mode resolves the person once server-side, then fans out one
@@ -3216,6 +3230,18 @@ export function RegistrationForm({
               </div>
             </>
           )}
+
+          {currentSectionKey.startsWith("custom:") && (() => {
+            const customStep = customSteps.find((s) => `custom:${s.id}` === currentSectionKey)
+            if (!customStep) return null
+            return <div className="space-y-5">{customStep.questions.map((q) => <div key={q.id} className="space-y-2">
+              <Label id={`custom-question-${q.id}`} htmlFor={`custom-answer-${q.id}`}>{q.label}{q.required && <span className="text-destructive"> *</span>}</Label>
+              {q.type === "ShortText" && <Input id={`custom-answer-${q.id}`} value={String(customAnswers[q.id] ?? "")} onChange={(e) => setCustomAnswers((a) => ({ ...a, [q.id]: e.target.value }))} />}
+              {q.type === "LongText" && <Textarea id={`custom-answer-${q.id}`} value={String(customAnswers[q.id] ?? "")} onChange={(e) => setCustomAnswers((a) => ({ ...a, [q.id]: e.target.value }))} />}
+              {q.type === "SingleChoice" && <RadioGroup aria-labelledby={`custom-question-${q.id}`} value={String(customAnswers[q.id] ?? "")} onValueChange={(value) => setCustomAnswers((a) => ({ ...a, [q.id]: value }))}>{q.options.map((option, index) => { const optionId = `custom-answer-${q.id}-${index}`; return <div key={option} className="flex items-center gap-2"><RadioGroupItem id={optionId} value={option} /><Label htmlFor={optionId}>{option}</Label></div> })}</RadioGroup>}
+              {q.type === "MultipleChoice" && <div className="space-y-2">{q.options.map((option, index) => { const selected = Array.isArray(customAnswers[q.id]) ? customAnswers[q.id] as string[] : []; const optionId = `custom-answer-${q.id}-${index}`; return <div key={option} className="flex items-center gap-2"><Checkbox id={optionId} checked={selected.includes(option)} onCheckedChange={(checked) => setCustomAnswers((a) => ({ ...a, [q.id]: checked ? [...selected, option] : selected.filter((v) => v !== option) }))} /><Label htmlFor={optionId}>{option}</Label></div> })}</div>}
+            </div>)}</div>
+          })()}
 
           {/* ── Privacy Policy ── */}
           {safeStep === sections.length && (

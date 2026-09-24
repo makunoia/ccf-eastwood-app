@@ -938,7 +938,7 @@ async function mergeRegistrantAnswers(
 ): Promise<void> {
   const existing = await db.eventRegistrant.findUnique({
     where: { id: registrantId },
-    select: { dietaryPreference: true, dietaryOther: true, paymentReference: true },
+    select: { dietaryPreference: true, dietaryOther: true, paymentReference: true, customResponses: true },
   })
   if (!existing) return
 
@@ -951,6 +951,11 @@ async function mergeRegistrantAnswers(
   put("dietaryPreference", data.dietaryPreference ?? null)
   put("dietaryOther", data.dietaryOther)
   put("paymentReference", data.paymentReference)
+  const previous = Array.isArray(existing.customResponses) ? existing.customResponses as Array<{ questionId?: string }> : []
+  if (data.customResponses.length > 0) {
+    const incomingIds = new Set(data.customResponses.map((r) => r.questionId))
+    updates.customResponses = [...previous.filter((r) => !r.questionId || !incomingIds.has(r.questionId)), ...data.customResponses]
+  }
 
   if (Object.keys(updates).length > 0) {
     await db.eventRegistrant.update({ where: { id: registrantId }, data: updates })
@@ -1023,6 +1028,7 @@ export async function completeEventRegistration(opts: {
         dietaryPreference: data.dietaryPreference ?? null,
         dietaryOther: data.dietaryOther,
         paymentReference: data.paymentReference,
+        customResponses: data.customResponses.length ? data.customResponses : undefined,
         // Compatibility field for legacy readers. The participation join above is
         // the durable source of truth when this recurring event joins later days.
         registrationClusterId: clusterId ?? null,

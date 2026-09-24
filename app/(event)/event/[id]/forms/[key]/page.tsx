@@ -23,6 +23,8 @@ import { VolunteerInfoUrlCopier } from "@/components/forms/volunteer-info-url-co
 import { WalkInSessionSetting } from "@/components/forms/walk-in-session-setting"
 import { formatOccurrenceDate } from "@/lib/format/occurrence"
 import { latestWalkInSession } from "@/lib/events/walk-in-session"
+import { CustomStepsEditor } from "@/components/forms/custom-steps-editor"
+import { customStepsSchema } from "@/lib/forms/custom-questions"
 
 function toDateInput(d: Date | null): string {
   return d ? d.toISOString().split("T")[0] : ""
@@ -74,6 +76,9 @@ export default async function EventFormEditorPage({
   }
 
   const cfg = await getFormConfig(meta.key, id)
+  const customContext = meta.key === "EventWalkIn" ? "WalkIn" : meta.key === "EventRegistration" ? "Register" : null
+  const customRow = customContext ? await db.eventFormConfig.findUnique({ where: { eventId_context: { eventId: id, context: customContext } }, select: { customSteps: true } }) : null
+  const customStepsResult = customStepsSchema.safeParse(customRow?.customSteps ?? [])
   // Every key carrying dedicated config renders the per-context builder, so this
   // reads the flag rather than naming keys — one less place to edit per new form.
   const needsFormConfigs = !!meta.usesDedicatedConfig
@@ -197,6 +202,7 @@ export default async function EventFormEditorPage({
               eventName={event.name}
             />
           )}
+          <CustomStepsEditor eventId={id} context="Register" initial={customStepsResult.success ? customStepsResult.data : []} />
           {modules.includes("Breakout") && (
             <BreakoutAssignmentSetting eventId={id} initial={event.autoAssignBreakout} />
           )}
@@ -255,6 +261,7 @@ export default async function EventFormEditorPage({
               eventName={event.name}
             />
           )}
+          <CustomStepsEditor eventId={id} context="WalkIn" initial={customStepsResult.success ? customStepsResult.data : []} />
         </div>
       )}
 
