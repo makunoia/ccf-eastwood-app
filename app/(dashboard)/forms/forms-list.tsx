@@ -14,6 +14,7 @@ export type FormListRow = {
   label: string
   description: string
   href: string
+  publicHref?: string
   isOpen: boolean
 }
 
@@ -49,6 +50,16 @@ function FormRow({ row, eventId }: { row: FormListRow; eventId: string | null })
       description={row.description}
       control={
         <div className="flex items-center gap-2">
+          {row.publicHref && (
+            <a
+              href={row.publicHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mr-2 text-sm font-medium text-primary underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+            >
+              Open form<span className="sr-only"> (opens in a new tab)</span>
+            </a>
+          )}
           <span className="text-sm text-muted-foreground w-12 text-right">
             {isOpen ? "Open" : "Closed"}
           </span>

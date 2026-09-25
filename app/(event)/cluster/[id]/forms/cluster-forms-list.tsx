@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import type { ReactNode } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { IconDoorEnter, IconForms, IconHeart, IconUserPlus } from "@tabler/icons-react"
@@ -9,6 +10,12 @@ import { toast } from "sonner"
 import { Switch } from "@/components/ui/switch"
 import { SettingCard } from "@/components/ui/setting-card"
 import { updateEventCluster } from "@/app/(dashboard)/events/cluster-actions"
+import {
+  clusterCheckinPath,
+  clusterRegisterPath,
+  clusterVolunteerPath,
+  clusterWalkInPath,
+} from "@/lib/public-routes"
 
 /**
  * Cluster Forms list — same list-first pattern as the per-event Forms page:
@@ -28,6 +35,7 @@ function titleLink(href: string, label: string) {
 
 export function ClusterFormsList({
   clusterId,
+  publicToken,
   initialIsOpen,
   walkInIsOpen,
   checkInIsOpen,
@@ -36,6 +44,7 @@ export function ClusterFormsList({
   eventCount,
 }: {
   clusterId: string
+  publicToken: string
   initialIsOpen: boolean
   walkInIsOpen: boolean
   checkInIsOpen: boolean
@@ -46,6 +55,7 @@ export function ClusterFormsList({
 }) {
   const router = useRouter()
   const base = `/cluster/${clusterId}/forms`
+  const publicBase = clusterRegisterPath(publicToken)
   const [isOpen, setIsOpen] = React.useState(initialIsOpen)
   const [pending, setPending] = React.useState(false)
 
@@ -72,6 +82,7 @@ export function ClusterFormsList({
         description="The shared public form for the whole day — register once, tick the events you're attending."
         control={
           <div className="flex items-center gap-2">
+            <PublicFormLink href={publicBase}>Open form</PublicFormLink>
             <span className="w-12 text-right text-sm text-muted-foreground">
               {isOpen ? "Open" : "Closed"}
             </span>
@@ -93,9 +104,10 @@ export function ClusterFormsList({
         title={titleLink(`${base}/walk-in`, "Walk-in Registration")}
         description="The same form in door mode — staff-supervised, registers and checks people in on the spot."
         control={
-          <span className="text-sm text-muted-foreground">
-            {walkInIsOpen ? "Open" : "Closed"}
-          </span>
+          <div className="flex items-center gap-4">
+            <PublicFormLink href={clusterWalkInPath(publicToken)}>Open form</PublicFormLink>
+            <span className="text-sm text-muted-foreground">{walkInIsOpen ? "Open" : "Closed"}</span>
+          </div>
         }
       />
 
@@ -105,9 +117,10 @@ export function ClusterFormsList({
           title={titleLink(`${base}/volunteer`, "Volunteer Sign-Up")}
           description="The day's serving team signs up here — one form, routed by ministry, tracked against this day."
           control={
-            <span className="text-sm text-muted-foreground">
-              {volunteerIsOpen ? "Open" : "Closed"}
-            </span>
+            <div className="flex items-center gap-4">
+              <PublicFormLink href={clusterVolunteerPath(publicToken)}>Open form</PublicFormLink>
+              <span className="text-sm text-muted-foreground">{volunteerIsOpen ? "Open" : "Closed"}</span>
+            </div>
           }
         />
       )}
@@ -119,11 +132,25 @@ export function ClusterFormsList({
           eventCount === 1 ? "event" : "events"
         }.`}
         control={
-          <span className="text-sm text-muted-foreground">
-            {checkInIsOpen ? "Open" : "Closed"}
-          </span>
+          <div className="flex items-center gap-4">
+            <PublicFormLink href={clusterCheckinPath(publicToken)}>Open form</PublicFormLink>
+            <span className="text-sm text-muted-foreground">{checkInIsOpen ? "Open" : "Closed"}</span>
+          </div>
         }
       />
     </div>
+  )
+}
+
+function PublicFormLink({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-sm font-medium text-primary underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
+    >
+      {children}<span className="sr-only"> (opens in a new tab)</span>
+    </a>
   )
 }

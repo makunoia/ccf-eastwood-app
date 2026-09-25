@@ -20,6 +20,7 @@ export default async function FormsPage() {
     label: form.label,
     description: form.description,
     href: `/forms/${form.key}`,
+    publicHref: form.publicPath?.(),
     isOpen: openByScope.get(scopeKeyFor(form.key)) ?? defaultIsOpen(form.key),
   }))
 

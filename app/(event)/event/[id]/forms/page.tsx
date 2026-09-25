@@ -33,6 +33,7 @@ export default async function EventFormsPage({
     label: form.label,
     description: form.description,
     href: `/event/${id}/forms/${form.key}`,
+    publicHref: form.publicPath?.(id),
     isOpen: openByScope.get(scopeKeyFor(form.key, id)) ?? defaultIsOpen(form.key),
   }))
 
