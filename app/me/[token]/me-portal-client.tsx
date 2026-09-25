@@ -148,33 +148,36 @@ export function MePortalClient({
 
   return (
     <div className="min-h-screen bg-muted/40">
-      <div className="mx-auto max-w-2xl px-4 py-6 sm:px-6 sm:py-10">
-        <header className="rounded-2xl border bg-background px-5 py-6 shadow-sm sm:px-7">
-          <div className="flex items-start gap-4">
-            <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-              <IconUserCircle className="size-6" />
+      <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-10 lg:px-8">
+        <header className="relative overflow-hidden rounded-2xl border bg-background px-6 py-7 shadow-sm sm:px-9 sm:py-9">
+          <div className="absolute inset-y-0 right-0 hidden w-1/3 bg-primary/[0.035] sm:block" aria-hidden="true" />
+          <div className="relative flex flex-col justify-between gap-7 sm:flex-row sm:items-end">
+            <div className="flex items-start gap-4">
+              <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <IconUserCircle className="size-6" />
+              </div>
+              <div className="min-w-0 space-y-1.5">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
+                  CCF Eastwood <span className="px-1 text-muted-foreground/60">/</span> Member portal
+                </p>
+                <h1 className="text-3xl font-semibold tracking-tight sm:text-[2.1rem]">
+                  Welcome, {displayName}
+                </h1>
+                <p className="max-w-md text-sm leading-6 text-muted-foreground">
+                  Your small-group connections, together in one place.
+                </p>
+              </div>
             </div>
-            <div className="min-w-0 space-y-1">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
-                CCF Eastwood
-              </p>
-              <h1 className="text-2xl font-semibold tracking-tight">
-                Hi, {displayName}
-              </h1>
-              <p className="text-sm leading-6 text-muted-foreground">
-                Keep your small-group information up to date.
-              </p>
-            </div>
-          </div>
-          <div className="mt-5 flex items-center gap-2 border-t pt-4 text-xs text-muted-foreground">
-            <IconUsers className="size-3.5" />
-            {isLeader
-              ? `You lead ${ledGroups.length} ${ledGroups.length === 1 ? "group" : "groups"}`
-              : "Member portal"}
+            {isLeader && (
+              <div className="flex items-center gap-2 border-t pt-4 text-sm text-muted-foreground sm:border-t-0 sm:border-l sm:pl-6 sm:pt-0">
+                <IconUsers className="size-4 text-primary" />
+                <span>You lead <span className="font-semibold tabular-nums text-foreground">{ledGroups.length}</span> {ledGroups.length === 1 ? "group" : "groups"}</span>
+              </div>
+            )}
           </div>
         </header>
 
-        <div className="mt-8 space-y-9">
+        <div className="mt-9 grid gap-10 lg:grid-cols-[0.82fr_1.18fr] lg:gap-14">
           <MyGroupSection
             token={token}
             myGroup={myGroup}
@@ -215,10 +218,10 @@ function LedGroupsSection({
   }
 
   return (
-    <section className="space-y-4">
+    <section className="min-w-0 space-y-5">
       <div className="flex items-center justify-between gap-4">
         <div className="space-y-1">
-          <h2 className="text-base font-semibold">
+          <h2 className="text-lg font-semibold tracking-tight">
             Groups you lead
           </h2>
           <p className="text-sm text-muted-foreground">
@@ -251,7 +254,7 @@ function LedGroupsSection({
         </p>
       )}
 
-      <div className="space-y-4">
+      <div className="space-y-5">
         {ledGroups.map((g) => (
           <LedGroupCard key={g.id} token={token} group={g} />
         ))}
@@ -364,18 +367,19 @@ function MyGroupSection({
   }
 
   return (
-    <section className="space-y-4">
-      <div className="space-y-1">
-        <h2 className="text-base font-semibold">My group</h2>
+    <section className="min-w-0 space-y-5">
+      <div className="space-y-1.5">
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Your connection</p>
+        <h2 className="text-lg font-semibold tracking-tight">My group</h2>
         <p className="text-sm text-muted-foreground">
           Your current small-group connection.
         </p>
       </div>
 
       {myGroup ? (
-        <div className="rounded-xl border bg-background p-5 shadow-sm">
-          <p className="text-lg font-semibold tracking-tight">{myGroup.name}</p>
-          <div className="mt-4 grid gap-3 border-t pt-4 text-sm text-muted-foreground sm:grid-cols-2">
+        <div className="rounded-xl border bg-background p-6 shadow-sm">
+          <p className="text-xl font-semibold tracking-tight">{myGroup.name}</p>
+          <div className="mt-5 grid gap-3 border-t pt-4 text-sm text-muted-foreground">
             {myGroup.leader && (
               <p className="flex items-center gap-1.5">
                 <IconUsers className="size-3.5" />
@@ -620,7 +624,7 @@ function LedGroupCard({ token, group }: { token: string; group: LedGroup }) {
   const isEmpty = members.length === 0
 
   return (
-    <div className="rounded-xl border bg-background p-5 shadow-sm">
+    <div className="rounded-xl border bg-background p-5 shadow-sm sm:p-6">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 space-y-1">
           <p className="flex items-center gap-2 font-medium">
