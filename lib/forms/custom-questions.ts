@@ -18,7 +18,7 @@ export const customQuestionSchema = z.object({
 export const customStepSchema = z.object({
   id: z.string().min(1).max(80),
   title: z.string().trim().min(1).max(100),
-  questions: z.array(customQuestionSchema).min(1, "Add at least one question to each step.").max(30),
+  questions: z.array(customQuestionSchema).length(1, "Each step must contain exactly one question."),
 })
 export const customStepsSchema = z.array(customStepSchema).max(12).superRefine((steps, ctx) => {
   const stepIds = new Set<string>()

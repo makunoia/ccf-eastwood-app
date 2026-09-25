@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
-import { canWrite } from "@/lib/permissions"
+import { canAccessEvent, canWrite } from "@/lib/permissions"
 import {
   BARE_EVENT_FORM_CONFIG,
   FORM_CONTEXTS,
@@ -90,20 +90,27 @@ function revalidateFormSurfaces(eventId: string) {
   revalidatePath(`/events/${eventId}/register`)
   revalidatePath(`/events/${eventId}/walk-in`)
   revalidatePath(`/events/${eventId}/checkin`)
+  revalidatePath(`/event/${eventId}/dashboard`)
 }
 
 export async function saveCustomFormSteps(eventId: string, context: FormContext, raw: unknown): Promise<ActionResult> {
   const authError = await requireWrite()
   if (authError) return { success: false, error: authError.error }
+  const session = await auth()
+  if (!session?.user || !canAccessEvent(session, eventId)) return { success: false, error: "Unauthorized." }
   if (context !== "Register" && context !== "WalkIn") return { success: false, error: "Custom questions are not available for this form." }
   const parsed = customStepsSchema.safeParse(raw)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid questions." }
   try {
-    await db.eventFormConfig.upsert({
-      where: { eventId_context: { eventId, context } },
-      create: { eventId, context, customSteps: parsed.data, configuredAt: new Date() },
-      update: { customSteps: parsed.data, configuredAt: new Date() },
-    })
+    const configuredAt = new Date()
+    await db.$transaction([
+      db.event.update({ where: { id: eventId }, data: { customRegistrationSteps: parsed.data } }),
+      db.eventFormConfig.upsert({
+        where: { eventId_context: { eventId, context } },
+        create: { eventId, context, configuredAt },
+        update: { configuredAt },
+      }),
+    ])
     revalidateFormSurfaces(eventId)
     return { success: true, data: undefined }
   } catch {

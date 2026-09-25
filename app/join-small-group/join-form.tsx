@@ -192,7 +192,7 @@ function ResultCard({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function JoinForm({ lifeStages }: { lifeStages: LifeStage[] }) {
+export function JoinForm({ lifeStages, eventId }: { lifeStages: LifeStage[]; eventId?: string }) {
   const [step, setStep] = React.useState<Step>("personal")
 
   const [personal, setPersonal] = React.useState<PersonalInfoValues>({
@@ -258,7 +258,7 @@ export function JoinForm({ lifeStages }: { lifeStages: LifeStage[] }) {
     if (scheduleError) return toast.error(scheduleError)
 
     setSubmitting(true)
-    const result = await submitJoinForm(personal, prefs)
+    const result = await submitJoinForm(personal, prefs, eventId)
     setSubmitting(false)
 
     if (!result.success) {
@@ -274,7 +274,7 @@ export function JoinForm({ lifeStages }: { lifeStages: LifeStage[] }) {
   async function handleRequest() {
     if (!guestId || !selectedGroupId) return
     setRequesting(true)
-    const result = await requestToJoinGroup(guestId, selectedGroupId)
+    const result = await requestToJoinGroup(guestId, selectedGroupId, eventId)
     setRequesting(false)
 
     if ("hasPendingRequest" in result) {
@@ -301,7 +301,8 @@ export function JoinForm({ lifeStages }: { lifeStages: LifeStage[] }) {
     const result = await cancelAndRequestGroup(
       guestId,
       pendingConflict.existingRequestId,
-      pendingConflict.newGroupId
+      pendingConflict.newGroupId,
+      eventId
     )
     setRequesting(false)
     setPendingConflict(null)

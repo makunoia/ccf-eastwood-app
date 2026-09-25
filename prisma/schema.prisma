@@ -197,6 +197,7 @@ enum FormKey {
   VolunteerInfo
   VolunteerApproval
   CatchMech
+  EventJoinSmallGroup
 }
 
 /// The three independent surfaces a person can fill in for an event. Each one
@@ -769,6 +770,9 @@ model Event {
   // grows a session every time check-in is opened and re-picking it weekly is the
   // step that gets forgotten. The isOpen gate still applies either way.
   walkInSessionMode           WalkInSessionMode @default(Pinned)
+  // Shared Register and Walk-in custom questions. Historical answers remain
+  // snapshotted on EventRegistrant.customResponses.
+  customRegistrationSteps    Json?
   createdAt             DateTime            @default(now())
   updatedAt             DateTime            @updatedAt
 
@@ -1500,10 +1504,6 @@ model EventFormConfig {
   clusterId String?
   cluster   EventCluster? @relation(fields: [clusterId], references: [id], onDelete: Cascade)
   context FormContext
-
-  // Custom question steps are configured only for event Register / WalkIn.
-  // Stored as JSON so the existing toggle config remains untouched.
-  customSteps Json?
 
   // Section toggles — whole steps in the flow
   sectionSmallGroup Boolean @default(false)

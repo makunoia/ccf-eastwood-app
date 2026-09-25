@@ -20,6 +20,8 @@ import {
 import { getEventSetupChecklist } from "@/lib/events/setup-checklist"
 import { getEventDashboardLayout } from "@/lib/events/dashboard-widgets-server"
 import { visibleWidgetKeys, type DashboardWidgetKey } from "@/lib/events/dashboard-widgets"
+import { getEventCustomSteps } from "@/lib/forms/custom-steps-server"
+import { summarizeCustomQuestion } from "@/lib/events/custom-question-results"
 
 export const metadata: Metadata = {
   title: "Dashboard",
@@ -46,7 +48,8 @@ function dayKey(date: Date) {
 async function getEventDashboard(
   id: string,
   period: PeriodFilter,
-  shown: Set<DashboardWidgetKey>
+  shown: Set<DashboardWidgetKey>,
+  customSteps: Awaited<ReturnType<typeof getEventCustomSteps>>
 ) {
   const event = await db.event.findUnique({
     where: { id },
@@ -149,6 +152,21 @@ async function getEventDashboard(
   // DGroup before the event opened — which is exactly what "all time" promises
   // to show. Every period-bounded figure below uses this, not `periodStart`.
   const windowStart = period === "all" ? null : periodStart
+
+  // Include hidden questions too: a restored card must have its live summary
+  // while customize mode is still editing the client-side layout draft.
+  const customSubmissions = customSteps.length === 0
+    ? []
+    : await db.eventRegistrant.findMany({
+        where: { eventId: id, createdAt: { ...(windowStart ? { gte: windowStart } : {}), lte: periodEnd } },
+        select: { createdAt: true, customResponses: true },
+        orderBy: { createdAt: "desc" },
+      })
+  const customQuestionResults = customSteps.map((step) => summarizeCustomQuestion({
+    id: step.id,
+    title: step.title,
+    question: step.questions[0],
+  }, customSubmissions, windowStart, periodEnd))
 
   const occurrences =
     event.type === "OneTime"
@@ -472,6 +490,8 @@ async function getEventDashboard(
     pendingVolunteerCount,
     rejectedVolunteerCount,
     brandBackground,
+    customSteps,
+    customQuestionResults,
   }
 }
 
@@ -503,14 +523,16 @@ export default async function EventDashboardPage({
     await ensureMultiDayOccurrences(id, meta.startDate, meta.endDate)
   }
 
+  const customSteps = await getEventCustomSteps(id)
   const layout = await getEventDashboardLayout(
     id,
     meta.type,
-    meta.modules.map((m) => m.type)
+    meta.modules.map((m) => m.type),
+    customSteps
   )
   const shown = visibleWidgetKeys(layout)
 
-  const event = await getEventDashboard(id, normalizedPeriod, shown)
+  const event = await getEventDashboard(id, normalizedPeriod, shown, customSteps)
   if (!event) notFound()
 
   // Setup walkthrough — only built while the admin hasn't dismissed it.

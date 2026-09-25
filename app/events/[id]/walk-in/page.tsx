@@ -17,7 +17,7 @@ import {
 import { resolveEventBrand } from "@/lib/forms/event-brand"
 import { resolveWalkInAccess } from "@/lib/events/walk-in-access"
 import { resolveWalkInSession } from "@/lib/events/walk-in-session"
-import { customStepsSchema } from "@/lib/forms/custom-questions"
+import { getEventCustomSteps } from "@/lib/forms/custom-steps-server"
 
 /**
  * The door surface (CCF-133). Same form component as `/register`, a different
@@ -126,12 +126,11 @@ export default async function WalkInPage({
       : `/events/${id}/checkin`,
   }
 
-  const [formFields, successMessage, customConfig] = await Promise.all([
+  const [formFields, successMessage, customSteps] = await Promise.all([
     getEffectiveFormConfig(id, "WalkIn"),
     getEventFormSuccessMessage(id, "WalkIn"),
-    db.eventFormConfig.findUnique({ where: { eventId_context: { eventId: id, context: "WalkIn" } }, select: { customSteps: true } }),
+    getEventCustomSteps(id),
   ])
-  const customSteps = customStepsSchema.safeParse(customConfig?.customSteps ?? [])
 
   const lifeStages = formFields.fieldLifeStage
     ? await db.lifeStage.findMany({
@@ -236,7 +235,7 @@ export default async function WalkInPage({
         breakoutCandidates={breakoutCandidates}
         breakoutNotice={breakoutNotice}
         walkIn={walkIn}
-        customSteps={customSteps.success ? customSteps.data : []}
+        customSteps={customSteps}
       />
     </PublicFormShell>
   )

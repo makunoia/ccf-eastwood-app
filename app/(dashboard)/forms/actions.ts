@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { db } from "@/lib/db"
+import { auth } from "@/lib/auth"
+import { canAccessEvent, canWrite } from "@/lib/permissions"
 import type { FormKey } from "@/app/generated/prisma/client"
 import { FORM_REGISTRY, scopeKeyFor } from "@/lib/forms/registry"
 
@@ -44,11 +46,21 @@ function revalidateForForm(key: FormKey, eventId: string | null) {
   if (publicPath) revalidatePath(publicPath)
 }
 
+async function canEditForm(key: FormKey, eventId: string | null): Promise<boolean> {
+  const session = await auth()
+  if (!session?.user) return false
+  const meta = FORM_REGISTRY[key]
+  if (!meta || (meta.scope === "event") !== !!eventId) return false
+  if (eventId) return canWrite(session, "Events") && canAccessEvent(session, eventId)
+  return canWrite(session, "Forms")
+}
+
 export async function saveFormConfig(
   key: FormKey,
   eventId: string | null,
   raw: FormConfigValues
 ): Promise<ActionResult> {
+  if (!(await canEditForm(key, eventId))) return { success: false, error: "Unauthorized." }
   const parsed = formConfigSchema.safeParse(raw)
   if (!parsed.success) {
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
@@ -82,6 +94,7 @@ export async function setFormOpen(
   eventId: string | null,
   isOpen: boolean
 ): Promise<ActionResult> {
+  if (!(await canEditForm(key, eventId))) return { success: false, error: "Unauthorized." }
   try {
     await db.formConfig.upsert({
       where: { scopeKey: scopeKeyFor(key, eventId) },

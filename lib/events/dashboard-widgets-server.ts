@@ -6,6 +6,7 @@ import {
   resolveDashboardLayout,
   type DashboardLayout,
   type StoredWidget,
+  type CustomDashboardStep,
 } from "@/lib/events/dashboard-widgets"
 
 /**
@@ -32,8 +33,9 @@ export async function getStoredDashboardWidgets(eventId: string): Promise<Stored
 export async function getEventDashboardLayout(
   eventId: string,
   eventType: EventType,
-  modules: readonly EventModuleType[]
+  modules: readonly EventModuleType[],
+  customSteps: readonly CustomDashboardStep[] = []
 ): Promise<DashboardLayout> {
   const stored = await getStoredDashboardWidgets(eventId)
-  return resolveDashboardLayout(stored, eventType, modules)
+  return resolveDashboardLayout(stored, eventType, modules, customSteps)
 }

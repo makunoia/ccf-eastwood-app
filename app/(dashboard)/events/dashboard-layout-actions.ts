@@ -8,11 +8,13 @@ import { canAccessEvent, canWrite } from "@/lib/permissions"
 import {
   DASHBOARD_WIDGETS,
   DASHBOARD_WIDGET_KEYS,
+  getDashboardWidgetMeta,
   WIDGET_WIDTHS,
   isWidgetAvailable,
   isWidthAllowed,
   type WidgetWidth,
 } from "@/lib/events/dashboard-widgets"
+import { customStepsSchema } from "@/lib/forms/custom-questions"
 
 type ActionResult<T = void> =
   | { success: true; data: T }
@@ -35,7 +37,7 @@ async function requireEventWrite(eventId: string): Promise<{ error: string } | n
 }
 
 const entrySchema = z.object({
-  key: z.enum(DASHBOARD_WIDGET_KEYS),
+  key: z.string().min(1).max(1024),
   visible: z.boolean(),
   // Derived from the registry rather than restated, so adding a span size in one
   // place doesn't silently fail validation here.
@@ -55,7 +57,7 @@ const entrySchema = z.object({
  */
 const layoutSchema = z
   .array(entrySchema)
-  .max(DASHBOARD_WIDGET_KEYS.length)
+  .max(DASHBOARD_WIDGET_KEYS.length + 12)
   .refine(
     (entries) => new Set(entries.map((e) => e.key)).size === entries.length,
     "A widget was listed more than once."
@@ -86,19 +88,32 @@ export async function saveEventDashboardLayout(
   try {
     const event = await db.event.findUnique({
       where: { id: eventId },
-      select: { id: true, type: true, modules: { select: { type: true } } },
+      select: { id: true, type: true, customRegistrationSteps: true, modules: { select: { type: true } } },
     })
     if (!event) return { success: false, error: "Event not found." }
 
     const modules = event.modules.map((m) => m.type)
+    const parsedCustomSteps = customStepsSchema.safeParse(event.customRegistrationSteps ?? [])
+    const customSteps = parsedCustomSteps.success ? parsedCustomSteps.data : []
+    const questionIds = new Set(customSteps.map((step) => step.questions[0].id))
 
     // Re-check availability and width server-side. The customizer already hides
     // what doesn't apply, so anything failing here is a stale tab or a crafted
     // payload — either way it must not be able to store a widget this event
     // can't render, or a width the widget doesn't offer.
     for (const entry of parsed.data) {
-      const meta = DASHBOARD_WIDGETS[entry.key]
-      if (!isWidgetAvailable(meta, event.type, modules)) {
+      let dynamicQuestionId: string | null = null
+      if (entry.key.startsWith("customStep:")) {
+        try { dynamicQuestionId = decodeURIComponent(entry.key.slice("customStep:".length)) } catch { dynamicQuestionId = null }
+      }
+      const isCustom = dynamicQuestionId !== null && questionIds.has(dynamicQuestionId)
+      if (entry.key.startsWith("customStep:") && !isCustom) return { success: false, error: "That custom question is no longer available." }
+      const staticKey = isCustom ? undefined : DASHBOARD_WIDGET_KEYS.find((key) => key === entry.key)
+      const meta = isCustom
+        ? getDashboardWidgetMeta(entry.key as `customStep:${string}`, customSteps)
+        : staticKey ? DASHBOARD_WIDGETS[staticKey] : undefined
+      if (!meta) return { success: false, error: "Unknown dashboard widget." }
+      if (!isCustom && !isWidgetAvailable(meta, event.type, modules)) {
         return { success: false, error: `${meta.label} isn't available for this event.` }
       }
       if (meta.lane === "card" && !isWidthAllowed(meta, entry.width)) {

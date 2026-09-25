@@ -196,7 +196,7 @@ export function EditableGrid({
       onDragCancel={() => setDragging(null)}
     >
       {body}
-      <DragOverlay>{dragging && <WidgetDragGhost widgetKey={dragging} />}</DragOverlay>
+      <DragOverlay>{dragging && <WidgetDragGhost widgetKey={dragging} customSteps={event.customSteps} />}</DragOverlay>
     </DndContext>
   )
 }

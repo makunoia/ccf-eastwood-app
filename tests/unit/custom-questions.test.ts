@@ -1,16 +1,12 @@
 import { describe, expect, it } from "vitest"
 import { customStepsSchema, validateCustomResponses, type CustomStep } from "@/lib/forms/custom-questions"
 
-const steps: CustomStep[] = [{
-  id: "about-you",
-  title: "About you",
-  questions: [
-    { id: "name", label: "What should we call you?", type: "ShortText", required: true, options: [] },
-    { id: "details", label: "Anything else?", type: "LongText", required: false, options: [] },
-    { id: "session", label: "Session", type: "SingleChoice", required: false, options: ["Morning", "Evening"] },
-    { id: "interests", label: "Interests", type: "MultipleChoice", required: false, options: ["Music", "Sports"] },
-  ],
-}]
+const steps: CustomStep[] = [
+  { id: "about-you", title: "About you", questions: [{ id: "name", label: "What should we call you?", type: "ShortText", required: true, options: [] }] },
+  { id: "details-step", title: "Details", questions: [{ id: "details", label: "Anything else?", type: "LongText", required: false, options: [] }] },
+  { id: "session-step", title: "Session", questions: [{ id: "session", label: "Session", type: "SingleChoice", required: false, options: ["Morning", "Evening"] }] },
+  { id: "interests-step", title: "Interests", questions: [{ id: "interests", label: "Interests", type: "MultipleChoice", required: false, options: ["Music", "Sports"] }] },
+]
 
 describe("custom registration responses", () => {
   it("snapshots labels for text and choice answers", () => {
@@ -50,7 +46,10 @@ describe("custom registration responses", () => {
   it("rejects malformed admin definitions", () => {
     expect(customStepsSchema.safeParse([{ id: "s", title: "Step", questions: [] }]).success).toBe(false)
     expect(customStepsSchema.safeParse([
-      { ...steps[0], questions: [steps[0].questions[0], { ...steps[0].questions[0] }] },
+      { ...steps[0], questions: [] },
+    ]).success).toBe(false)
+    expect(customStepsSchema.safeParse([
+      { ...steps[0], questions: [steps[0].questions[0], { ...steps[0].questions[0], id: "another" }] },
     ]).success).toBe(false)
   })
 })

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { IconArrowDown, IconArrowUp, IconListDetails, IconTrash } from "@tabler/icons-react"
+import { IconListDetails } from "@tabler/icons-react"
 import { toast } from "sonner"
 import { saveCustomFormSteps } from "@/app/(dashboard)/events/form-config-actions"
 import { Button } from "@/components/ui/button"
@@ -11,7 +11,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import type { CustomQuestion, CustomStep } from "@/lib/forms/custom-questions"
-import type { FormContext } from "@/app/generated/prisma/client"
 
 function newQuestion(): CustomQuestion {
   return { id: crypto.randomUUID(), label: "", type: "ShortText", required: false, options: [] }
@@ -42,21 +41,15 @@ function normalizeOptions(value: string): string[] {
 function CustomQuestionEditor({
   question,
   index,
-  total,
   optionsText,
   onChange,
   onOptionsChange,
-  onMove,
-  onRemove,
 }: {
   question: CustomQuestion
   index: number
-  total: number
   optionsText: string
   onChange: (patch: Partial<CustomQuestion>) => void
   onOptionsChange: (value: string) => void
-  onMove: (offset: -1 | 1) => void
-  onRemove: () => void
 }) {
   const isChoice = question.type === "SingleChoice" || question.type === "MultipleChoice"
   const questionId = `custom-question-${question.id}`
@@ -107,43 +100,13 @@ function CustomQuestionEditor({
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-3 md:col-span-2">
-        <div className="flex items-center gap-2">
-          <Switch
-            id={`${questionId}-required`}
-            checked={question.required}
-            onCheckedChange={(required) => onChange({ required })}
-          />
-          <Label htmlFor={`${questionId}-required`}>Required</Label>
-        </div>
-        <div className="flex flex-wrap items-center gap-1">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            aria-label={`Move question ${index + 1} up`}
-            disabled={index === 0}
-            onClick={() => onMove(-1)}
-          >
-            <IconArrowUp aria-hidden className="size-4" />
-            <span className="sr-only">Move up</span>
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            aria-label={`Move question ${index + 1} down`}
-            disabled={index === total - 1}
-            onClick={() => onMove(1)}
-          >
-            <IconArrowDown aria-hidden className="size-4" />
-            <span className="sr-only">Move down</span>
-          </Button>
-          <Button type="button" variant="ghost" size="sm" onClick={onRemove}>
-            <IconTrash aria-hidden className="size-4" />
-            Remove question
-          </Button>
-        </div>
+      <div className="flex items-center gap-2 md:col-span-2">
+        <Switch
+          id={`${questionId}-required`}
+          checked={question.required}
+          onCheckedChange={(required) => onChange({ required })}
+        />
+        <Label htmlFor={`${questionId}-required`}>Required</Label>
       </div>
     </div>
   )
@@ -151,11 +114,9 @@ function CustomQuestionEditor({
 
 export function CustomStepsEditor({
   eventId,
-  context,
   initial,
 }: {
   eventId: string
-  context: FormContext
   initial: CustomStep[]
 }) {
   const [steps, setSteps] = React.useState(initial)
@@ -172,10 +133,6 @@ export function CustomStepsEditor({
   }))
   const dirty = JSON.stringify(currentSteps) !== JSON.stringify(savedSteps)
 
-  function updateStep(stepIndex: number, patch: Partial<CustomStep>) {
-    setSteps((current) => current.map((step, index) => index === stepIndex ? { ...step, ...patch } : step))
-  }
-
   function updateQuestion(stepIndex: number, questionIndex: number, patch: Partial<CustomQuestion>) {
     setSteps((current) => current.map((step, index) => index !== stepIndex ? step : {
       ...step,
@@ -183,10 +140,14 @@ export function CustomStepsEditor({
     }))
   }
 
+  function updateStep(stepIndex: number, patch: Partial<CustomStep>) {
+    setSteps((current) => current.map((step, index) => index === stepIndex ? { ...step, ...patch } : step))
+  }
+
   async function save() {
     setSaving(true)
     try {
-      const result = await saveCustomFormSteps(eventId, context, currentSteps)
+      const result = await saveCustomFormSteps(eventId, "Register", currentSteps)
       if (!result.success) {
         toast.error(result.error)
         return
@@ -208,13 +169,13 @@ export function CustomStepsEditor({
   }
 
   return (
-    <section className="space-y-4 rounded-lg border px-4 py-4 sm:px-5" aria-labelledby={`custom-steps-title-${context}`}>
+    <section className="space-y-4 rounded-lg border px-4 py-4 sm:px-5" aria-labelledby={`custom-steps-title-${eventId}`}>
       <div className="flex items-start gap-3">
         <IconListDetails aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
         <div className="min-w-0">
-          <h3 id={`custom-steps-title-${context}`} className="text-sm font-medium">Custom steps</h3>
+          <h3 id={`custom-steps-title-${eventId}`} className="text-sm font-medium">Shared custom steps</h3>
           <p className="mt-0.5 max-w-prose text-xs leading-5 text-muted-foreground">
-            Add questions to this form. Submitted answers keep the wording used when they were collected.
+            These steps appear on both Register and Walk-in forms. Each step has one question; submitted answers keep the wording used when they were collected.
           </p>
         </div>
       </div>
@@ -251,19 +212,12 @@ export function CustomStepsEditor({
                     key={question.id}
                     question={question}
                     index={questionIndex}
-                    total={step.questions.length}
                     optionsText={optionDrafts[question.id] ?? question.options.join("\n")}
                     onChange={(patch) => updateQuestion(stepIndex, questionIndex, patch)}
                     onOptionsChange={(value) => setOptionDrafts((drafts) => ({ ...drafts, [question.id]: value }))}
-                    onMove={(offset) => updateStep(stepIndex, { questions: moveItem(step.questions, questionIndex, offset) })}
-                    onRemove={() => updateStep(stepIndex, { questions: step.questions.filter((_, index) => index !== questionIndex) })}
                   />
                 ))}
               </div>
-
-              <Button type="button" variant="outline" size="sm" onClick={() => updateStep(stepIndex, { questions: [...step.questions, newQuestion()] })}>
-                Add question
-              </Button>
             </section>
           ))}
         </div>

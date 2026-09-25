@@ -282,6 +282,8 @@ export async function matchSmallGroups(
      * (e.g. catch-mech assignment for one half of a couple).
      */
     includeCouplesGroups?: boolean
+    /** Restrict candidates to these group IDs (used by event-scoped public forms). */
+    includeGroupIds?: string[]
   }
 ): Promise<MatchResult[]> {
   let candidate: CandidateProfile
@@ -378,6 +380,7 @@ export async function matchSmallGroups(
   }
 
   const eligible = groups.filter((g) => {
+    if (options?.includeGroupIds && !options.includeGroupIds.includes(g.id)) return false
     // Couples groups take married pairs, never individually matched candidates
     // (unless the caller explicitly opted in for a candidate with a spouse)
     if (g.groupType === "Couples" && !options?.includeCouplesGroups) return false

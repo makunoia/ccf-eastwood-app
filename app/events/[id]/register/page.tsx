@@ -15,7 +15,7 @@ import {
 } from "@/lib/forms/context-config-server"
 import { resolveEventBrand } from "@/lib/forms/event-brand"
 import { isWithinRegistrationWindow } from "@/lib/events/registration-window"
-import { customStepsSchema } from "@/lib/forms/custom-questions"
+import { getEventCustomSteps } from "@/lib/forms/custom-steps-server"
 
 async function getEvent(id: string) {
   const event = await db.event.findUnique({
@@ -100,12 +100,11 @@ export default async function RegisterPage({
   )
   if (!formConfig.isOpen || !withinWindow) return <FormClosed />
 
-  const [formFields, successMessage, customConfig] = await Promise.all([
+  const [formFields, successMessage, customSteps] = await Promise.all([
     getEffectiveFormConfig(id, "Register"),
     getEventFormSuccessMessage(id, "Register"),
-    db.eventFormConfig.findUnique({ where: { eventId_context: { eventId: id, context: "Register" } }, select: { customSteps: true } }),
+    getEventCustomSteps(id),
   ])
-  const customSteps = customStepsSchema.safeParse(customConfig?.customSteps ?? [])
 
   const lifeStages = formFields.fieldLifeStage
     ? await db.lifeStage.findMany({
@@ -209,7 +208,7 @@ export default async function RegisterPage({
         defaultLifeStageId={defaultLifeStageId}
         breakoutCandidates={publicBreakoutCandidates}
         breakoutNotice={breakoutNotice}
-        customSteps={customSteps.success ? customSteps.data : []}
+        customSteps={customSteps}
       />
     </PublicFormShell>
   )

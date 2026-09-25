@@ -726,11 +726,11 @@ export async function createRegistrant(
     // branch below) keeps one source of truth: there is no path that can read the
     // unsanitised value by accident.
     const formConfig = await getEffectiveFormConfig(eventId, walkIn ? "WalkIn" : "Register")
-    const customConfig = await db.eventFormConfig.findUnique({
-      where: { eventId_context: { eventId, context: walkIn ? "WalkIn" : "Register" } },
-      select: { customSteps: true },
+    const customConfig = await db.event.findUnique({
+      where: { id: eventId },
+      select: { customRegistrationSteps: true },
     })
-    const customSteps = customStepsSchema.safeParse(customConfig?.customSteps ?? [])
+    const customSteps = customStepsSchema.safeParse(customConfig?.customRegistrationSteps ?? [])
     const customResponses = customSteps.success
       ? validateCustomResponses(customSteps.data, parsed.data.customResponses, walkIn ? "WalkIn" : "Register")
       : null

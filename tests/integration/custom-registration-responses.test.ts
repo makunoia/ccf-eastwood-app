@@ -1,6 +1,8 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest"
 import { db } from "@/lib/db"
 import { createRegistrant } from "@/app/(dashboard)/events/actions"
+import { getEventCustomSteps } from "@/lib/forms/custom-steps-server"
+import { saveCustomFormSteps } from "@/app/(dashboard)/events/form-config-actions"
 
 beforeEach(async () => {
   await db.$executeRaw`TRUNCATE "EventRegistrant", "EventFormConfig", "Guest", "Event" RESTART IDENTITY CASCADE`
@@ -19,11 +21,10 @@ async function makeEvent() {
       endDate: new Date("2026-09-24"),
     },
   })
-  await db.eventFormConfig.create({
+  await db.event.update({
+    where: { id: event.id },
     data: {
-      eventId: event.id,
-      context: "Register",
-      customSteps: [{
+      customRegistrationSteps: [{
         id: "step-1",
         title: "Preferences",
         questions: [
@@ -62,11 +63,43 @@ describe("custom registration response persistence", () => {
       { context: "Register", questionId: "q-1", label: "Preferred session?", answer: "Morning" },
     ])
 
-    await db.eventFormConfig.update({
-      where: { eventId_context: { eventId, context: "Register" } },
-      data: { customSteps: [] },
-    })
+    await db.event.update({ where: { id: eventId }, data: { customRegistrationSteps: [] } })
     const afterQuestionRemoval = await db.eventRegistrant.findFirst({ where: { eventId } })
     expect(afterQuestionRemoval?.customResponses).toEqual(registrant?.customResponses)
+  })
+
+  it("uses the same shared question for Register and Walk-in submissions", async () => {
+    const eventId = await makeEvent()
+    expect(await getEventCustomSteps(eventId)).toMatchObject([
+      { id: "step-1", questions: [{ id: "q-1", label: "Preferred session?" }] },
+    ])
+
+    const registered = await createRegistrant(eventId, {
+      firstName: "Mia", lastName: "Reyes", customResponses: [{ questionId: "q-1", answer: "Morning" }],
+    }, null)
+    const walkIn = await createRegistrant(eventId, {
+      firstName: "Lia", lastName: "Santos", customResponses: [{ questionId: "q-1", answer: "Evening" }],
+    }, null, null, undefined, undefined, { occurrenceId: null })
+
+    expect(registered.success).toBe(true)
+    expect(walkIn.success).toBe(true)
+    const snapshots = await db.eventRegistrant.findMany({ where: { eventId }, select: { customResponses: true } })
+    expect(snapshots.flatMap((row) => row.customResponses as Array<{ context: string; questionId: string }>).map((answer) => answer.context).sort())
+      .toEqual(["Register", "WalkIn"])
+  })
+
+  it("saves the shared definition from either form context", async () => {
+    const eventId = await makeEvent()
+    const replacement = [{
+      id: "shared-step",
+      title: "Arrival",
+      questions: [{ id: "arrival-q", label: "How did you arrive?", type: "SingleChoice", required: false, options: ["Walk", "Drive"] }],
+    }]
+    const result = await saveCustomFormSteps(eventId, "WalkIn", replacement)
+
+    expect(result.success).toBe(true)
+    expect(await getEventCustomSteps(eventId)).toEqual(replacement)
+    const formConfig = await db.eventFormConfig.findUnique({ where: { eventId_context: { eventId, context: "WalkIn" } } })
+    expect(formConfig?.configuredAt).toBeInstanceOf(Date)
   })
 })

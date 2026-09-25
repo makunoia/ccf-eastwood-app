@@ -36,7 +36,8 @@ export const DASHBOARD_WIDGET_KEYS = [
   "chartSeriesComparison",
 ] as const
 
-export type DashboardWidgetKey = (typeof DASHBOARD_WIDGET_KEYS)[number]
+export type StaticDashboardWidgetKey = (typeof DASHBOARD_WIDGET_KEYS)[number]
+export type DashboardWidgetKey = StaticDashboardWidgetKey | `customStep:${string}`
 
 export type WidgetLane = "kpi" | "card"
 
@@ -99,7 +100,7 @@ const CARD_WIDTHS = WIDGET_WIDTHS
  * pre-customization dashboard exactly; the four `defaultVisible: false` KPIs are
  * figures the dashboard query already computed but never rendered.
  */
-export const DASHBOARD_WIDGETS: Record<DashboardWidgetKey, DashboardWidgetMeta> = {
+export const DASHBOARD_WIDGETS: Record<StaticDashboardWidgetKey, DashboardWidgetMeta> = {
   // ── KPI lane ──
   kpiAttendance: {
     key: "kpiAttendance",
@@ -291,7 +292,35 @@ export const ALL_DASHBOARD_WIDGETS: readonly DashboardWidgetMeta[] = DASHBOARD_W
 )
 
 export function isDashboardWidgetKey(value: string): value is DashboardWidgetKey {
-  return value in DASHBOARD_WIDGETS
+  return DASHBOARD_WIDGET_KEYS.some((key) => key === value) || value.startsWith("customStep:")
+}
+
+export type CustomDashboardStep = { id: string; title: string; questions: Array<{ id: string; label: string; type: string; options: string[] }> }
+
+export function customStepWidgetKey(questionId: string): DashboardWidgetKey {
+  return `customStep:${encodeURIComponent(questionId)}`
+}
+
+export function customStepQuestionId(key: DashboardWidgetKey): string | null {
+  if (!key.startsWith("customStep:")) return null
+  try { return decodeURIComponent(key.slice("customStep:".length)) } catch { return null }
+}
+
+export function getDashboardWidgetMeta(
+  key: DashboardWidgetKey,
+  customSteps: readonly CustomDashboardStep[] = []
+): DashboardWidgetMeta | undefined {
+  const staticKey = DASHBOARD_WIDGET_KEYS.find((candidate) => candidate === key)
+  if (staticKey) return DASHBOARD_WIDGETS[staticKey]
+  const questionId = customStepQuestionId(key)
+  const index = customSteps.findIndex((step) => step.questions[0]?.id === questionId)
+  const step = customSteps[index]
+  const question = step?.questions[0]
+  if (!step || !question) return undefined
+  return {
+    key, lane: "card", label: step.title, description: question.label,
+    defaultVisible: true, defaultOrder: 7 + index, defaultWidth: 6, widths: CARD_WIDTHS,
+  }
 }
 
 // ─── Availability ────────────────────────────────────────────────────────────
@@ -379,16 +408,35 @@ export type DashboardLayout = {
 export function resolveDashboardLayout(
   stored: readonly StoredWidget[],
   eventType: EventType,
-  modules: readonly EventModuleType[]
+  modules: readonly EventModuleType[],
+  customSteps: readonly CustomDashboardStep[] = []
 ): DashboardLayout {
   const byKey = new Map<DashboardWidgetKey, StoredWidget>()
   for (const row of stored) {
     if (isDashboardWidgetKey(row.key)) byKey.set(row.key, row)
   }
 
-  const available = availableWidgets(eventType, modules)
+  const available = [
+    ...availableWidgets(eventType, modules),
+    ...customSteps.flatMap((step, index) => {
+      const question = step.questions[0]
+      return question ? [{
+        key: customStepWidgetKey(question.id),
+        lane: "card" as const,
+        label: step.title,
+        description: question.label,
+        defaultVisible: true,
+        defaultOrder: 7 + index,
+        defaultWidth: 6 as WidgetWidth,
+        widths: CARD_WIDTHS,
+      }] : []
+    }),
+  ]
   const availableKeys = new Set(available.map((meta) => meta.key))
-  const droppedKeys = DASHBOARD_WIDGET_KEYS.filter((key) => !availableKeys.has(key))
+  const droppedKeys: DashboardWidgetKey[] = [
+    ...DASHBOARD_WIDGET_KEYS.filter((key) => !availableKeys.has(key)),
+    ...stored.map((row) => row.key).filter((key): key is DashboardWidgetKey => isDashboardWidgetKey(key) && !availableKeys.has(key)),
+  ]
 
   const resolved = available.map((meta) => {
     const row = byKey.get(meta.key)
@@ -420,9 +468,10 @@ export function resolveDashboardLayout(
 /** The default layout, i.e. what an event with no stored rows resolves to. */
 export function defaultDashboardLayout(
   eventType: EventType,
-  modules: readonly EventModuleType[]
+  modules: readonly EventModuleType[],
+  customSteps: readonly CustomDashboardStep[] = []
 ): DashboardLayout {
-  return resolveDashboardLayout([], eventType, modules)
+  return resolveDashboardLayout([], eventType, modules, customSteps)
 }
 
 /** Just the widgets that render, in order. */
@@ -454,7 +503,7 @@ export function visibleLayout(layout: DashboardLayout): DashboardLayout {
  * nothing the admin asked for and unrelated to the tile that went.
  */
 export function shouldPackRows(layout: DashboardLayout): boolean {
-  return layout.droppedKeys.some((key) => DASHBOARD_WIDGETS[key].lane === "card")
+  return layout.droppedKeys.some((key) => !DASHBOARD_WIDGET_KEYS.includes(key as StaticDashboardWidgetKey) || DASHBOARD_WIDGETS[key as StaticDashboardWidgetKey].lane === "card")
 }
 
 /** Every visible key across both lanes — for gating server-side data loading. */

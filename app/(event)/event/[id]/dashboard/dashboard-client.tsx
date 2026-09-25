@@ -173,7 +173,7 @@ export function EventDashboardClient({
 
       {editing && (
         <>
-          <HiddenTray hidden={hidden} onRestore={handleRestore} />
+          <HiddenTray hidden={hidden} onRestore={handleRestore} customSteps={event.customSteps} />
           <EditModeBar
             dirty={dirty}
             saving={saving}

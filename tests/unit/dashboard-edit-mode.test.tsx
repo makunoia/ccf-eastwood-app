@@ -112,6 +112,8 @@ function makeEvent(overrides: Partial<EventDashboardData> = {}): EventDashboardD
     pendingVolunteerCount: 2,
     rejectedVolunteerCount: 1,
     brandBackground: null,
+    customSteps: [],
+    customQuestionResults: [],
     ...overrides,
   }
 }

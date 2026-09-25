@@ -337,7 +337,6 @@ export function EventFormBuilder({
             {!clusterId && (context === "Register" || context === "WalkIn") && (
               <CustomStepsEditor
                 eventId={eventId!}
-                context={context}
                 initial={customSteps?.[context] ?? []}
               />
             )}

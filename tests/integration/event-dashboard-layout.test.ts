@@ -64,6 +64,49 @@ describe("saveEventDashboardLayout", () => {
     expect(rows.map((r) => r.visible)).toEqual([true, true, false])
   })
 
+  it("persists and resolves a reorderable card for each active custom step", async () => {
+    const event = await db.event.create({
+      data: {
+        name: "Custom steps",
+        type: "OneTime",
+        startDate: new Date("2026-01-01"),
+        endDate: new Date("2026-01-01"),
+        customRegistrationSteps: [
+          { id: "step-a", title: "Session", questions: [{ id: "question-a", label: "Which session?", type: "SingleChoice", required: false, options: ["AM", "PM"] }] },
+          { id: "step-b", title: "Notes", questions: [{ id: "question-b", label: "Any notes?", type: "LongText", required: false, options: [] }] },
+        ],
+      },
+    })
+    const definitions = (await db.event.findUniqueOrThrow({ where: { id: event.id }, select: { customRegistrationSteps: true } })).customRegistrationSteps as never[]
+    const defaults = defaultDashboardLayout("OneTime", [], definitions as never[])
+    const reorderedCards = [...defaults.cards]
+    const questionB = reorderedCards.findIndex((widget) => widget.key === "customStep:question-b")
+    const [b] = reorderedCards.splice(questionB, 1)
+    reorderedCards.unshift({ ...b, width: 8 })
+    const aIndex = reorderedCards.findIndex((widget) => widget.key === "customStep:question-a")
+    const [a] = reorderedCards.splice(aIndex, 1)
+    reorderedCards.splice(1, 0, { ...a, visible: false, width: 4 })
+    const result = await saveEventDashboardLayout(event.id, [...defaults.kpis, ...reorderedCards].map((widget) => ({
+      key: widget.key,
+      visible: widget.visible,
+      width: widget.width,
+    })))
+    expect(result.success).toBe(true)
+    const layout = await getEventDashboardLayout(event.id, "OneTime", [], definitions as never[])
+    expect(layout.cards.slice(0, 2).map((widget) => [widget.key, widget.visible, widget.width])).toEqual([
+      ["customStep:question-b", true, 8],
+      ["customStep:question-a", false, 4],
+    ])
+
+    const afterRemoval = await getEventDashboardLayout(event.id, "OneTime", [], [definitions[0]] as never[])
+    expect(afterRemoval.cards.map((widget) => widget.key)).not.toContain("customStep:question-b")
+    expect(afterRemoval.droppedKeys).toContain("customStep:question-b")
+
+    expect((await resetEventDashboardLayout(event.id)).success).toBe(true)
+    const reset = await getEventDashboardLayout(event.id, "OneTime", [], definitions as never[])
+    expect(reset.cards.find((widget) => widget.key === "customStep:question-a")?.visible).toBe(true)
+  })
+
   it("replaces the previous layout instead of leaving orphan rows", async () => {
     const event = await makeEvent()
     await saveEventDashboardLayout(event.id, THREE_CARDS)
@@ -132,13 +175,15 @@ describe("saveEventDashboardLayout", () => {
 
   it("rejects an unknown widget key", async () => {
     const event = await makeEvent()
-    const result = await saveEventDashboardLayout(event.id, [
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      { key: "chartSomethingElse" as any, visible: true, width: 4 },
-    ])
+    for (const key of ["chartSomethingElse", "constructor", "toString", "__proto__"]) {
+      const result = await saveEventDashboardLayout(event.id, [
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        { key: key as any, visible: true, width: 4 },
+      ])
 
-    expect(result.success).toBe(false)
-    expect(await db.eventDashboardWidget.count({ where: { eventId: event.id } })).toBe(0)
+      expect(result.success, key).toBe(false)
+      expect(await db.eventDashboardWidget.count({ where: { eventId: event.id } })).toBe(0)
+    }
   })
 
   it("rejects a width outside the grid", async () => {

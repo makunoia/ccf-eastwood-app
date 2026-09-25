@@ -171,21 +171,16 @@ export default async function RegistrantDetailPage({
   // ── Registration responses ──────────────────────────────────────────────
   // Union across contexts: we don't record which surface someone came through,
   // so a field counts as "asked" if any context collects it.
-  const [formConfigs, familyLabel, customFormConfigs] = await Promise.all([
+  const [formConfigs, familyLabel, customFormConfig] = await Promise.all([
     getEffectiveFormConfigs(eventId),
     getHouseholdLabel({
       memberId: registrant.memberId,
       guestId: registrant.guestId,
     }),
-    db.eventFormConfig.findMany({
-      where: { eventId, context: { in: ["Register", "WalkIn"] } },
-      select: { context: true, customSteps: true },
-    }),
+    db.event.findUnique({ where: { id: eventId }, select: { customRegistrationSteps: true } }),
   ])
-  const activeCustomQuestions = new Map(customFormConfigs.map((config) => {
-    const parsed = customStepsSchema.safeParse(config.customSteps ?? [])
-    return [config.context, new Set(parsed.success ? parsed.data.flatMap((step) => step.questions.map((question) => question.id)) : [])]
-  }))
+  const parsedCustomSteps = customStepsSchema.safeParse(customFormConfig?.customRegistrationSteps ?? [])
+  const activeCustomQuestions = new Set(parsedCustomSteps.success ? parsedCustomSteps.data.flatMap((step) => step.questions.map((question) => question.id)) : [])
   const formConfig = mergeFormConfigs(formConfigs)
   const person = registrant.member ?? registrant.guest ?? null
   const guestOnly = registrant.guest
@@ -226,7 +221,7 @@ export default async function RegistrantDetailPage({
     if (!item || typeof item !== "object") return []
     const response = item as { context?: "Register" | "WalkIn"; questionId?: string; label?: string; answer?: string | string[] }
     if (!response.label || response.answer == null) return []
-    const stillCollected = !!response.context && !!response.questionId && activeCustomQuestions.get(response.context)?.has(response.questionId) === true
+    const stillCollected = !!response.questionId && activeCustomQuestions.has(response.questionId)
     return [{ key: `custom-${response.context ?? "unknown"}-${response.questionId ?? response.label}`, label: response.label, value: Array.isArray(response.answer) ? response.answer.join(", ") : response.answer, stillCollected }]
   }) : [])]
 

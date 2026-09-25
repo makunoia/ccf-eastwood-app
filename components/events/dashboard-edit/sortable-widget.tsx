@@ -6,7 +6,8 @@ import { IconEyeOff, IconGripVertical } from "@tabler/icons-react"
 
 import { cn } from "@/lib/utils"
 import {
-  DASHBOARD_WIDGETS,
+  getDashboardWidgetMeta,
+  customStepQuestionId,
   WIDTH_CLASS,
   WIDTH_LABELS,
   type DashboardWidgetKey,
@@ -17,6 +18,7 @@ import { WIDGET_COMPONENTS } from "@/app/(event)/event/[id]/dashboard/widgets"
 import type { EventDashboardData } from "@/app/(event)/event/[id]/dashboard/shared"
 
 import { ResizeHandle } from "./resize-handle"
+import { CustomQuestionCard } from "@/app/(event)/event/[id]/dashboard/widgets/custom-question-card"
 
 /**
  * One widget in the grid — the same component in both modes.
@@ -41,8 +43,12 @@ export function SortableWidget({
   onHide: (key: DashboardWidgetKey) => void
   onResize: (key: DashboardWidgetKey, width: WidgetWidth) => void
 }) {
-  const meta = DASHBOARD_WIDGETS[widget.key]
-  const Widget = WIDGET_COMPONENTS[widget.key]
+  const meta = getDashboardWidgetMeta(widget.key, event.customSteps) ?? {
+    key: widget.key, lane: "card" as const, label: "Custom step", description: "Question results",
+    defaultVisible: true, defaultOrder: 0, defaultWidth: 6 as WidgetWidth, widths: [6] as const,
+  }
+  const customQuestionId = customStepQuestionId(widget.key)
+  const Widget = customQuestionId ? undefined : WIDGET_COMPONENTS[widget.key as import("@/lib/events/dashboard-widgets").StaticDashboardWidgetKey]
   const isKpi = meta.lane === "kpi"
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -81,7 +87,7 @@ export function SortableWidget({
           editing && "pointer-events-none select-none"
         )}
       >
-        <Widget event={event} />
+        {customQuestionId ? <CustomQuestionCard event={event} questionId={customQuestionId} /> : Widget && <Widget event={event} />}
       </div>
 
       {editing && (
@@ -129,12 +135,12 @@ export function SortableWidget({
 }
 
 /** What follows the pointer during a drag — deliberately not a live chart. */
-export function WidgetDragGhost({ widgetKey }: { widgetKey: DashboardWidgetKey }) {
-  const meta = DASHBOARD_WIDGETS[widgetKey]
+export function WidgetDragGhost({ widgetKey, customSteps }: { widgetKey: DashboardWidgetKey; customSteps: EventDashboardData["customSteps"] }) {
+  const meta = getDashboardWidgetMeta(widgetKey, customSteps)
   return (
     <div className="flex cursor-grabbing items-center gap-2 rounded-lg border bg-background px-3 py-2 shadow-lg">
       <IconGripVertical className="size-4 text-muted-foreground" />
-      <span className="text-sm font-medium">{meta.label}</span>
+      <span className="text-sm font-medium">{meta?.label ?? "Custom step"}</span>
     </div>
   )
 }

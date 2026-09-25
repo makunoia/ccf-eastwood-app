@@ -3,6 +3,8 @@
 import type { ChartConfig } from "@/components/ui/chart"
 import type { AttendanceSeriesPoint } from "@/lib/events/attendance-series"
 import type { EventTurnout } from "@/lib/events/turnout"
+import type { CustomQuestionResult } from "@/lib/events/custom-question-results"
+import type { CustomStep } from "@/lib/forms/custom-questions"
 
 /**
  * The dashboard payload and everything the widgets render it with.
@@ -98,6 +100,8 @@ export type EventDashboardData = {
   pendingVolunteerCount: number
   rejectedVolunteerCount: number
   brandBackground: string | null
+  customSteps: CustomStep[]
+  customQuestionResults: CustomQuestionResult[]
 }
 
 /** Every widget takes the whole payload — they each pick what they need from it. */
