@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
-import { canWrite } from "@/lib/permissions"
+import { canAccessEvent, canWrite } from "@/lib/permissions"
+import { getVolunteerPlacementRequestIds } from "@/lib/catch-mech/volunteer-requests"
 import { repointFamilyLinks, findSpouseOfPerson } from "@/lib/family-links"
 import {
   PROMOTABLE_GUEST_SELECT,
@@ -392,7 +393,7 @@ export async function reopenCatchMechRequest(
 ): Promise<ActionResult<void>> {
   const session = await auth()
   if (!session?.user) return { success: false, error: "Not authenticated." }
-  if (!canWrite(session, "SmallGroups")) return { success: false, error: "Unauthorized." }
+  if (!canWrite(session, "SmallGroups") || !canAccessEvent(session, eventId)) return { success: false, error: "Unauthorized." }
   const actorId = session.user.id ?? null
 
   try {
@@ -404,6 +405,8 @@ export async function reopenCatchMechRequest(
         smallGroupId: true,
         memberId: true,
         guestId: true,
+        breakoutGroupId: true,
+        registrantCancelledAt: true,
         member: {
           select: {
             id: true,
@@ -418,6 +421,17 @@ export async function reopenCatchMechRequest(
     if (request.status !== "Confirmed" && request.status !== "Rejected") {
       return { success: false, error: "Only confirmed or rejected decisions can be undone" }
     }
+    if (request.registrantCancelledAt) {
+      return { success: false, error: "A registrant-cancelled request cannot be reopened here." }
+    }
+    const scope = await resolveCatchMechScope(eventId)
+    const belongsToEvent = request.breakoutGroupId
+      ? await db.breakoutGroup.findFirst({
+          where: { id: request.breakoutGroupId, AND: [scope.where] },
+          select: { id: true },
+        })
+      : (await getVolunteerPlacementRequestIds(eventId)).has(request.id)
+    if (!belongsToEvent) return { success: false, error: "This request does not belong to this event." }
 
     // A groupless decline (a Timothy who leads no group yet) has no group to reopen
     // into, so undoing it means dropping the record — that alone returns the person
@@ -433,10 +447,11 @@ export async function reopenCatchMechRequest(
     await db.$transaction(async (tx) => {
       // ── Rejected → Pending: simply reopen the request ──────────────────────
       if (request.status === "Rejected") {
-        await tx.smallGroupMemberRequest.update({
-          where: { id: request.id },
+        const reopened = await tx.smallGroupMemberRequest.updateMany({
+          where: { id: request.id, status: "Rejected", registrantCancelledAt: null },
           data: { status: "Pending", resolvedAt: null, declineReason: null, notes: null },
         })
+        if (reopened.count !== 1) throw new Error("This request has already changed.")
         await tx.smallGroupLog.create({
           data: {
             smallGroupId,

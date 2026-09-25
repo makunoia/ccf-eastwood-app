@@ -1,4 +1,5 @@
 import { db } from "@/lib/db"
+import { withSerializableRetry } from "@/lib/db/serializable-retry"
 import type { PersonRef } from "@/lib/events/registration-core"
 
 /**
@@ -13,8 +14,8 @@ import type { PersonRef } from "@/lib/events/registration-core"
  * `origin = RegistrationIntent`. That is deliberately a different shape from every
  * other request: the existing ones name the group they're asking to join, whereas
  * this one is a person asking to be matched *to* a group that hasn't been chosen
- * yet. Admins triage these on DGroups → Requests, where the matching engine can
- * suggest a group from the profile the same form just captured.
+ * yet. Admins see unplaced requests on DGroups → Seeking, while the source
+ * event's Catch Mech tracker follows the same request through resolution.
  *
  * No `SmallGroupLog` entry accompanies it — that table is scoped to a group, and
  * a seeker has none yet. The log picks the story up when the request is resolved
@@ -62,28 +63,30 @@ export async function createSeekerRequestFromRegistration(
     // Any open request already means an admin has this person in the queue —
     // whether they're seeking, or someone has already picked a group for them.
     // A second row would just be noise on the same screen.
-    const existing = await db.smallGroupMemberRequest.findFirst({
-      where: { ...personWhere, status: "Pending" },
-      select: { id: true, smallGroupId: true },
-    })
-    if (existing) {
-      return {
-        created: false,
-        reason: existing.smallGroupId ? "already-requested" : "duplicate",
+    return await withSerializableRetry(async (tx): Promise<SeekerResult> => {
+      const existing = await tx.smallGroupMemberRequest.findFirst({
+        where: { ...personWhere, status: "Pending" },
+        select: { id: true, smallGroupId: true },
+      })
+      if (existing) {
+        return {
+          created: false,
+          reason: existing.smallGroupId ? "already-requested" : "duplicate",
+        }
       }
-    }
 
-    const request = await db.smallGroupMemberRequest.create({
-      data: {
-        ...personWhere,
-        smallGroupId: null,
-        status: "Pending",
-        origin: "RegistrationIntent",
-        sourceEventId: eventId,
-      },
-      select: { id: true },
+      const request = await tx.smallGroupMemberRequest.create({
+        data: {
+          ...personWhere,
+          smallGroupId: null,
+          status: "Pending",
+          origin: "RegistrationIntent",
+          sourceEventId: eventId,
+        },
+        select: { id: true },
+      })
+      return { created: true, requestId: request.id }
     })
-    return { created: true, requestId: request.id }
   } catch {
     // Never propagate — registration must not fail over a follow-up record.
     return { created: false, reason: "error" }

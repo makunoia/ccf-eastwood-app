@@ -6,6 +6,7 @@ import { IconExternalLink } from "@tabler/icons-react"
 import { toast } from "sonner"
 import type { FormKey } from "@/app/generated/prisma/client"
 import { Switch } from "@/components/ui/switch"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { FORM_REGISTRY } from "@/lib/forms/registry"
 import { setFormOpen } from "./actions"
 
@@ -15,6 +16,7 @@ export type FormListRow = {
   description: string
   href: string
   publicHref?: string
+  checkinSessions?: { id: string; label: string; href: string }[]
   isOpen: boolean
 }
 
@@ -48,6 +50,8 @@ function FormRow({ row, eventId }: { row: FormListRow; eventId: string | null })
   }
 
   const Icon = FORM_REGISTRY[row.key].icon
+  const checkinSessions = row.checkinSessions ?? []
+  const publicHref = checkinSessions.length === 1 ? checkinSessions[0].href : row.publicHref
 
   return (
     <li className="grid gap-4 px-4 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start sm:gap-x-12">
@@ -65,9 +69,44 @@ function FormRow({ row, eventId }: { row: FormListRow; eventId: string | null })
       </div>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pl-8 sm:justify-end sm:pl-0 sm:pt-1">
-        {row.publicHref && (
+        {checkinSessions.length > 1 ? (
+          <Dialog>
+            <DialogTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline underline-offset-4"
+              >
+                View <IconExternalLink className="size-3.5" aria-hidden="true" />
+                <span className="sr-only">{row.label}</span>
+              </button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Choose a check-in form</DialogTitle>
+                <DialogDescription>
+                  Select the session whose check-in form you want to open.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-2">
+                {checkinSessions.map((session) => (
+                  <a
+                    key={session.id}
+                    href={session.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-between rounded-md border px-4 py-3 text-sm font-medium hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {session.label}
+                    <IconExternalLink className="size-4 text-muted-foreground" aria-hidden="true" />
+                    <span className="sr-only">(opens in a new tab)</span>
+                  </a>
+                ))}
+              </div>
+            </DialogContent>
+          </Dialog>
+        ) : publicHref && (
           <a
-            href={row.publicHref}
+            href={publicHref}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline underline-offset-4"

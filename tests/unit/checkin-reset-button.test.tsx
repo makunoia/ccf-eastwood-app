@@ -21,6 +21,7 @@ const {
   lookupCheckinRegistrant,
   searchCheckinByName,
   markCheckinAttendance,
+  saveCheckinMatchingProfile,
   getRegistrantBreakoutGroupName,
   lookupClusterCheckin,
   checkInToCluster,
@@ -28,6 +29,7 @@ const {
   lookupCheckinRegistrant: vi.fn(),
   searchCheckinByName: vi.fn(),
   markCheckinAttendance: vi.fn(),
+  saveCheckinMatchingProfile: vi.fn(),
   getRegistrantBreakoutGroupName: vi.fn(),
   lookupClusterCheckin: vi.fn(),
   checkInToCluster: vi.fn(),
@@ -41,8 +43,7 @@ vi.mock("@/app/(dashboard)/events/actions", () => ({
   lookupHouseholdForCheckin: vi.fn(),
   checkInHousehold: vi.fn(),
   addHouseholdMemberAtCheckin: vi.fn(),
-  recordSmallGroupInterestAtCheckin: vi.fn(),
-  saveCheckinMatchingProfile: vi.fn(),
+  saveCheckinMatchingProfile,
   saveCheckinClaimedGroup: vi.fn(),
 }))
 vi.mock("@/app/(dashboard)/events/breakout-actions", () => ({
@@ -74,6 +75,7 @@ beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true })
   lookupCheckinRegistrant.mockReset()
   markCheckinAttendance.mockReset()
+  saveCheckinMatchingProfile.mockReset()
   markCheckinAttendance.mockResolvedValue({ success: true, data: null })
   getRegistrantBreakoutGroupName.mockReset()
   getRegistrantBreakoutGroupName.mockResolvedValue(null)
@@ -167,6 +169,42 @@ describe("event check-in board — after checking someone in", () => {
       fireEvent.click(screen.getByRole("button", { name: "Done" }))
     })
     expect((screen.getByLabelText("Mobile number") as HTMLInputElement).value).toBe("")
+  })
+})
+
+describe("event check-in board — DGroup interest", () => {
+  it("makes no request when interest is tapped or the profile is skipped", async () => {
+    lookupCheckinRegistrant.mockResolvedValue({
+      success: true,
+      data: {
+        ...MATCHED_PERSON,
+        smallGroupPrompt: {
+          person: { guestId: "g1" },
+          existingProfile: {
+            lifeStageId: null,
+            ageRangeBucketId: null,
+            gender: null,
+            language: [],
+            meetingPreference: null,
+            workCity: null,
+            scheduleDayOfWeek: null,
+            scheduleTimeStart: null,
+            scheduleTimeEnd: null,
+          },
+        },
+      },
+    })
+    render(<CheckinBoard eventId="e1" occurrenceId={null} config={{ sectionSmallGroup: true }} />)
+
+    fireEvent.change(screen.getByLabelText("Mobile number"), { target: { value: "+63 917 111 2222" } })
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Find my registration" })))
+    await act(async () => fireEvent.click(await screen.findByRole("button", { name: "Yes, check me in" })))
+    await act(async () => fireEvent.click(await screen.findByRole("button", { name: "Yes, I'm interested" })))
+    expect(saveCheckinMatchingProfile).not.toHaveBeenCalled()
+
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Skip for now" })))
+    expect(saveCheckinMatchingProfile).not.toHaveBeenCalled()
+    expect(screen.getByText("You're checked in.")).toBeDefined()
   })
 })
 

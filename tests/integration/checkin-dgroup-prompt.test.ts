@@ -15,7 +15,6 @@ import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import {
   lookupCheckinRegistrant,
-  recordSmallGroupInterestAtCheckin,
   saveCheckinMatchingProfile,
   saveCheckinClaimedGroup,
 } from "@/app/(dashboard)/events/actions"
@@ -350,6 +349,96 @@ describe("check-in DGroup prompt — guest behavior is unchanged", () => {
   })
 })
 
+describe("check-in provisional breakout requests", () => {
+  async function seedPendingBreakoutRequest(eventId: string, person: { guestId: string } | { memberId: string }, groupId: string) {
+    const breakout = await db.breakoutGroup.create({
+      data: { eventId, name: `Table ${groupId}`, language: [] },
+    })
+    return db.smallGroupMemberRequest.create({
+      data: { ...person, smallGroupId: groupId, breakoutGroupId: breakout.id, status: "Pending" },
+    })
+  }
+
+  it("asks despite a pending breakout assignment, then replaces it only on profile submit", async () => {
+    const event = await seedEvent()
+    const guest = await db.guest.create({ data: { firstName: "Maria", lastName: "Santos", phone: PHONE, language: [] } })
+    await db.eventRegistrant.create({ data: { eventId: event.id, guestId: guest.id } })
+    const group = await seedGroup()
+    const provisional = await seedPendingBreakoutRequest(event.id, { guestId: guest.id }, group.id)
+
+    expect((await lookupPrompt(event.id))?.person).toEqual({ guestId: guest.id })
+    expect((await db.smallGroupMemberRequest.findUniqueOrThrow({ where: { id: provisional.id } })).status).toBe("Pending")
+    expect(await db.smallGroupMemberRequest.count({ where: { guestId: guest.id } })).toBe(1)
+
+    const saved = await saveCheckinMatchingProfile(event.id, { guestId: guest.id }, { workCity: "Pasig" })
+    expect(saved.success).toBe(true)
+    expect((await db.guest.findUniqueOrThrow({ where: { id: guest.id } })).workCity).toBe("Pasig")
+    const oldRequest = await db.smallGroupMemberRequest.findUniqueOrThrow({ where: { id: provisional.id } })
+    expect(oldRequest.status).toBe("Rejected")
+    expect(oldRequest.resolvedAt).not.toBeNull()
+    expect(oldRequest.registrantCancelledAt).not.toBeNull()
+    expect(await db.smallGroupLog.findFirst({ where: { smallGroupId: group.id, action: "TempAssignmentRejected", guestId: guest.id, description: { contains: "registrant's request" } } })).not.toBeNull()
+    const interest = await db.smallGroupMemberRequest.findFirstOrThrow({
+      where: { guestId: guest.id, origin: "RegistrationIntent", status: "Pending" },
+    })
+    expect(interest.smallGroupId).toBeNull()
+    expect(interest.sourceEventId).toBe(event.id)
+    expect(await lookupPrompt(event.id)).toBeNull()
+  })
+
+  it("leaves the provisional request untouched when profile submission fails", async () => {
+    const event = await seedEvent()
+    const member = await seedMember()
+    await db.eventRegistrant.create({ data: { eventId: event.id, memberId: member.id } })
+    const group = await seedGroup()
+    const provisional = await seedPendingBreakoutRequest(event.id, { memberId: member.id }, group.id)
+
+    const saved = await saveCheckinMatchingProfile(event.id, { memberId: member.id }, { gender: "Unknown" as "Male" })
+    expect(saved.success).toBe(false)
+    expect((await db.smallGroupMemberRequest.findUniqueOrThrow({ where: { id: provisional.id } })).status).toBe("Pending")
+    expect(await db.smallGroupMemberRequest.count({ where: { memberId: member.id } })).toBe(1)
+    expect((await db.member.findUniqueOrThrow({ where: { id: member.id } })).gender).toBeNull()
+  })
+
+  it("keeps the selected group's pending request and cancels requests to other groups", async () => {
+    const event = await seedEvent()
+    const member = await seedMember()
+    await db.eventRegistrant.create({ data: { eventId: event.id, memberId: member.id } })
+    const selectedGroup = await seedGroup("Selected")
+    const otherGroup = await seedGroup("Other")
+    const keep = await seedPendingBreakoutRequest(event.id, { memberId: member.id }, selectedGroup.id)
+    const cancel = await seedPendingBreakoutRequest(event.id, { memberId: member.id }, otherGroup.id)
+
+    const result = await saveCheckinClaimedGroup(event.id, { memberId: member.id }, selectedGroup.id)
+    expect(result.success).toBe(true)
+    const kept = await db.smallGroupMemberRequest.findUniqueOrThrow({ where: { id: keep.id } })
+    expect(kept.status).toBe("Pending")
+    expect(kept.registrantClaimedAt).not.toBeNull()
+    const cancelled = await db.smallGroupMemberRequest.findUniqueOrThrow({ where: { id: cancel.id } })
+    expect(cancelled.status).toBe("Rejected")
+    expect(cancelled.registrantCancelledAt).not.toBeNull()
+    expect(await db.smallGroupMemberRequest.count({ where: { memberId: member.id, status: "Pending" } })).toBe(1)
+    expect((await db.member.findUniqueOrThrow({ where: { id: member.id } })).smallGroupId).toBeNull()
+    expect(await lookupPrompt(event.id)).toBeNull()
+  })
+
+  it("records a guest's selected group and keeps its provisional request", async () => {
+    const event = await seedEvent()
+    const guest = await db.guest.create({ data: { firstName: "Maria", lastName: "Santos", phone: PHONE, language: [] } })
+    await db.eventRegistrant.create({ data: { eventId: event.id, guestId: guest.id } })
+    const selectedGroup = await seedGroup("Selected")
+    const otherGroup = await seedGroup("Other")
+    const keep = await seedPendingBreakoutRequest(event.id, { guestId: guest.id }, selectedGroup.id)
+    const cancel = await seedPendingBreakoutRequest(event.id, { guestId: guest.id }, otherGroup.id)
+
+    const result = await saveCheckinClaimedGroup(event.id, { guestId: guest.id }, selectedGroup.id)
+    expect(result.success).toBe(true)
+    expect((await db.guest.findUniqueOrThrow({ where: { id: guest.id } })).claimedSmallGroupId).toBe(selectedGroup.id)
+    expect((await db.smallGroupMemberRequest.findUniqueOrThrow({ where: { id: keep.id } })).status).toBe("Pending")
+    expect((await db.smallGroupMemberRequest.findUniqueOrThrow({ where: { id: cancel.id } })).status).toBe("Rejected")
+  })
+})
+
 describe("check-in DGroup writes work with no session", () => {
   // The kiosk is a public page. Everything below must pass with `auth()`
   // returning null — that is the regression.
@@ -362,7 +451,7 @@ describe("check-in DGroup writes work with no session", () => {
     const member = await seedMember()
     await db.eventRegistrant.create({ data: { eventId: event.id, memberId: member.id } })
 
-    const res = await recordSmallGroupInterestAtCheckin(event.id, { memberId: member.id })
+    const res = await saveCheckinMatchingProfile(event.id, { memberId: member.id }, {})
     expect(res.success).toBe(true)
     const request = await db.smallGroupMemberRequest.findFirst({ where: { memberId: member.id } })
     expect(request?.status).toBe("Pending")
@@ -406,7 +495,7 @@ describe("check-in DGroup writes work with no session", () => {
     })
   })
 
-  it("replaces rather than duplicates a member's schedule on a second save", async () => {
+  it("replaces rather than duplicates a member's existing schedule", async () => {
     const event = await seedEvent()
     const member = await seedMember()
     await db.schedulePreference.create({
@@ -437,14 +526,12 @@ describe("check-in DGroup writes work with no session", () => {
     expect(saved?.gender).toBe("Female")
   })
 
-  it("saves a guest's matching profile and claimed group", async () => {
+  it("saves a guest's matching profile and interest request", async () => {
     const event = await seedEvent()
     const guest = await db.guest.create({
       data: { firstName: "Maria", lastName: "Santos", phone: PHONE, language: [] },
     })
     await db.eventRegistrant.create({ data: { eventId: event.id, guestId: guest.id } })
-    const group = await seedGroup()
-
     const profileRes = await saveCheckinMatchingProfile(
       event.id,
       { guestId: guest.id },
@@ -452,13 +539,35 @@ describe("check-in DGroup writes work with no session", () => {
     )
     expect(profileRes.success).toBe(true)
 
-    const claimRes = await saveCheckinClaimedGroup(event.id, { guestId: guest.id }, group.id)
-    expect(claimRes.success).toBe(true)
-
     const saved = await db.guest.findUnique({ where: { id: guest.id } })
     expect(saved?.workCity).toBe("Pasig")
     expect(saved?.scheduleDayOfWeek).toBe(4)
-    expect(saved?.claimedSmallGroupId).toBe(group.id)
+    expect(saved?.claimedSmallGroupId).toBeNull()
+    expect(await db.smallGroupMemberRequest.count({ where: { guestId: guest.id, origin: "RegistrationIntent", status: "Pending" } })).toBe(1)
+  })
+
+  it("accepts concurrent and repeated submissions without cancelling twice or creating another interest", async () => {
+    const event = await seedEvent()
+    const guest = await db.guest.create({
+      data: { firstName: "Maria", lastName: "Santos", phone: PHONE, language: [] },
+    })
+    await db.eventRegistrant.create({ data: { eventId: event.id, guestId: guest.id } })
+    const group = await seedGroup()
+    const breakout = await db.breakoutGroup.create({ data: { eventId: event.id, name: "Table 1", language: [] } })
+    await db.smallGroupMemberRequest.create({
+      data: { guestId: guest.id, smallGroupId: group.id, breakoutGroupId: breakout.id },
+    })
+
+    const attempts = await Promise.all([
+      saveCheckinMatchingProfile(event.id, { guestId: guest.id }, { workCity: "Pasig" }),
+      saveCheckinMatchingProfile(event.id, { guestId: guest.id }, { workCity: "Pasig" }),
+    ])
+    expect(attempts.every((result) => result.success)).toBe(true)
+    expect((await saveCheckinMatchingProfile(event.id, { guestId: guest.id }, { workCity: "Makati" })).success).toBe(true)
+    expect((await db.guest.findUniqueOrThrow({ where: { id: guest.id } })).workCity).toBe("Pasig")
+    expect(await db.smallGroupMemberRequest.count({ where: { guestId: guest.id, origin: "RegistrationIntent" } })).toBe(1)
+    expect(await db.smallGroupMemberRequest.count({ where: { guestId: guest.id, registrantCancelledAt: { not: null } } })).toBe(1)
+    expect(await db.smallGroupLog.count({ where: { guestId: guest.id, action: "TempAssignmentRejected" } })).toBe(1)
   })
 
   it("accepts a volunteer who has no registrant row", async () => {
@@ -497,7 +606,7 @@ describe("check-in DGroup writes work with no session", () => {
     // No registrant row, no volunteer row — the event is the only thing scoping
     // these public writes, so an arbitrary id must be rejected.
     expect((await saveCheckinMatchingProfile(event.id, { memberId: member.id }, { workCity: "X" })).success).toBe(false)
-    expect((await recordSmallGroupInterestAtCheckin(event.id, { guestId: other.id })).success).toBe(false)
+    expect((await saveCheckinMatchingProfile(event.id, { guestId: other.id }, {})).success).toBe(false)
     expect((await saveCheckinClaimedGroup(event.id, { guestId: other.id }, "whatever")).success).toBe(false)
 
     const saved = await db.member.findUnique({ where: { id: member.id } })

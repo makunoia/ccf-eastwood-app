@@ -15,6 +15,8 @@ import { actorCan, actorCanWriteEvent, type McpActor } from "./auth"
 import { hasValidVolunteerAssignment } from "@/lib/volunteers/role-validation"
 import { revalidatePath } from "next/cache"
 import { logGroupStatusChange, logMembershipMove } from "@/lib/small-groups/membership-log"
+import { advancePendingInterest, revalidateInterestEvents } from "@/lib/small-groups/advance-interest"
+import { clearUpwardSatelliteOnConfirm } from "@/lib/small-groups/upward-satellite"
 
 export const MCP_BATCH_LIMIT = 100
 type Feature = "Members" | "Guests" | "SmallGroups" | "Ministries" | "Events" | "Volunteers"
@@ -100,7 +102,19 @@ export async function promoteMcpGuest(actor: McpActor, guestId: string, raw: { d
   if (guest.memberId) return failure("This guest has already been promoted")
   const group = raw.groupId ? await db.smallGroup.findUnique({ where: { id: raw.groupId }, select: { id: true, status: true } }) : null
   if (raw.groupId && !group) return failure("DGroup not found")
-  try { const result = await db.$transaction((tx) => promoteGuestRecord(tx, { guestId, guest, dateJoined, group })); return { success: true, data: result } } catch { return failure("Failed to promote guest") }
+  try {
+    const result = await db.$transaction(async (tx) => {
+      const promoted = await promoteGuestRecord(tx, { guestId, guest, dateJoined, group })
+      const interest = group ? await advancePendingInterest(tx, {
+        person: { guestId }, groupId: group.id, status: "Confirmed", actorId: actor.id,
+        promotedMemberId: promoted.memberId,
+      }) : null
+      return { ...promoted, interestEventId: interest?.sourceEventId }
+    })
+    revalidateInterestEvents([result.interestEventId])
+    const { interestEventId: _interestEventId, ...promoted } = result
+    return { success: true, data: promoted }
+  } catch { return failure("Failed to promote guest") }
 }
 
 export async function moveMcpDGroupMember(actor: McpActor, memberId: string, groupId: string | null, status: "Member" | "Timothy" | "Leader" | null): Promise<Result> {
@@ -115,12 +129,19 @@ export async function moveMcpDGroupMember(actor: McpActor, memberId: string, gro
   if (group && member.smallGroupId !== group.id && group.memberLimit !== null && group._count.members >= group.memberLimit) return failure("This DGroup is already at its member limit.")
   const memberName = `${member.firstName} ${member.lastName}`
   try {
-    await db.$transaction(async (tx) => {
+    const interestEventId = await db.$transaction(async (tx) => {
       await tx.member.update({ where: { id: memberId }, data: { smallGroupId: groupId, groupStatus: groupId ? status : null } })
       await logMembershipMove(tx, { memberId, memberName, fromGroupId: member.smallGroupId, toGroupId: groupId, actor: { userId: actor.id }, context: "through the Churchie ChatGPT plugin" })
       if (groupId && member.smallGroupId === groupId && status) await logGroupStatusChange(tx, { smallGroupId: groupId, memberId, memberName, from: member.groupStatus, to: status, actor: { userId: actor.id } })
+      const interest = groupId ? await advancePendingInterest(tx, {
+        person: { memberId }, groupId, status: "Confirmed", actorId: actor.id,
+        fromGroupId: member.smallGroupId,
+      }) : null
+      if (groupId) await clearUpwardSatelliteOnConfirm(tx, [memberId])
+      return interest?.sourceEventId
     })
     revalidatePath("/members"); revalidatePath("/small-groups"); if (groupId) revalidatePath(`/small-groups/${groupId}`)
+    revalidateInterestEvents([interestEventId])
     return { success: true, data: { memberId, groupId, status: groupId ? status : null } }
   } catch (e) { return failure(knownError(e, "Failed to update DGroup roster")) }
 }

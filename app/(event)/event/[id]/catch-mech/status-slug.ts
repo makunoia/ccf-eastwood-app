@@ -48,12 +48,15 @@ export const SLUG_CONFIG: Record<CatchMechSlug, SlugConfig> = {
     // declineReason at all, so ALL leader-side rejections are null. The explicit OR
     // below emits `("declineReason" IS NULL OR "declineReason" <> $1)` and keeps them.
     declineReasonWhere: {
-      OR: [{ declineReason: null }, { declineReason: { not: "AlreadyInSmallGroup" } }],
+      AND: [
+        { registrantCancelledAt: null },
+        { OR: [{ declineReason: null }, { declineReason: { not: "AlreadyInSmallGroup" } }] },
+      ],
     },
   },
   "in-small-group": {
     prismaStatus: "Rejected",
     label: "In DGroup",
-    declineReasonWhere: { declineReason: "AlreadyInSmallGroup" },
+    declineReasonWhere: { declineReason: "AlreadyInSmallGroup", registrantCancelledAt: null },
   },
 }

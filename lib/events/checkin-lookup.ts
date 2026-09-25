@@ -50,7 +50,7 @@ export const MEMBER_LOOKUP_SELECT = {
     orderBy: { createdAt: "asc" as const },
     take: 1,
   },
-  groupRequests: { select: { status: true, resolvedAt: true } },
+  groupRequests: { select: { status: true, resolvedAt: true, breakoutGroupId: true, registrantClaimedAt: true } },
 } as const
 
 /**
@@ -99,7 +99,7 @@ export function findEventRegistrantsForLookup(eventIds: string[]) {
           ageRangeBucketId: true,
           claimedSmallGroupId: true,
           claimedSatellite: true,
-          groupRequests: { select: { status: true, resolvedAt: true } },
+          groupRequests: { select: { status: true, resolvedAt: true, breakoutGroupId: true, registrantClaimedAt: true } },
         },
       },
     },

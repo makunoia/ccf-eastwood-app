@@ -52,6 +52,7 @@ export async function submitMemberConfirmations(
   try {
     const affectedGuestIds = new Set<string>()
     const affectedBreakoutGroupIds = new Set<string>()
+    const affectedInterestEventIds = new Set<string>()
 
     // Pre-fetch event names for requests linked to catch mech breakout groups
     const decisionIds = decisions.map((d) => d.requestId)
@@ -86,7 +87,7 @@ export async function submitMemberConfirmations(
 
         const request = await tx.smallGroupMemberRequest.findUnique({
           where: { id: requestId },
-          select: RESOLVABLE_REQUEST_SELECT,
+          select: { ...RESOLVABLE_REQUEST_SELECT, sourceEventId: true },
         })
         if (!request) continue
 
@@ -106,6 +107,7 @@ export async function submitMemberConfirmations(
 
         if (request.guestId) affectedGuestIds.add(request.guestId)
         if (request.breakoutGroupId) affectedBreakoutGroupIds.add(request.breakoutGroupId)
+        if (request.sourceEventId) affectedInterestEventIds.add(request.sourceEventId)
         if (result.outcome === "confirmed" && result.confirmedMemberId) {
           confirmedMemberIds.push(result.confirmedMemberId)
         }
@@ -135,6 +137,7 @@ export async function submitMemberConfirmations(
     for (const guestId of affectedGuestIds) {
       revalidatePath(`/guests/${guestId}`)
     }
+    for (const eventId of affectedInterestEventIds) revalidatePath(`/event/${eventId}/catch-mech`)
 
     // If this leader was previously a Timothy facilitating breakout groups,
     // link those groups to this small group now that they've become a leader.

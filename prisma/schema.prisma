@@ -1306,11 +1306,16 @@ model SmallGroupMemberRequest {
   // legitimately carries a null smallGroupId while still Pending.
   origin        SmallGroupRequestOrigin @default(Assignment)
 
-  // The event whose registration form produced a RegistrationIntent request, so
-  // the admin triaging it can see where the person came from. Null for every other
-  // origin.
+  // The event where interest was submitted at registration or check-in. Retained
+  // when the interest request is assigned to a group, so event staff can follow
+  // it through leader confirmation or dismissal.
   sourceEventId String?
   sourceEvent   Event?  @relation("SmallGroupRequestSource", fields: [sourceEventId], references: [id], onDelete: SetNull)
+
+  // A registrant can affirm a provisional breakout assignment without making
+  // a second request. A cancellation is distinct from a leader rejection.
+  registrantClaimedAt   DateTime?
+  registrantCancelledAt DateTime?
 
   // The faci who declined via Catch Mech. Only needed to scope a groupless decline
   // (smallGroupId = null) to its author — lead and co-faci share a breakout group,

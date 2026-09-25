@@ -14,7 +14,7 @@ import {
 import { dismissSeekerRequest } from "@/app/(dashboard)/small-groups/actions"
 import {
   createRegistrant,
-  recordSmallGroupInterestAtCheckin,
+  saveCheckinMatchingProfile,
 } from "@/app/(dashboard)/events/actions"
 
 /**
@@ -345,8 +345,9 @@ describe("CCF-101", () => {
       const event = await seedEvent()
       const guest = await seedGuest()
       await db.eventRegistrant.create({ data: { eventId: event.id, guestId: guest.id } })
+      await db.eventFormConfig.create({ data: { eventId: event.id, context: "CheckIn", sectionSmallGroup: true } })
 
-      const result = await recordSmallGroupInterestAtCheckin(event.id, { guestId: guest.id })
+      const result = await saveCheckinMatchingProfile(event.id, { guestId: guest.id }, {})
       expect(result.success).toBe(true)
       expect(await countSeekerRequests()).toBe(1)
     })
@@ -354,8 +355,9 @@ describe("CCF-101", () => {
     it("refuses a guest who is not registered for that event", async () => {
       const event = await seedEvent()
       const guest = await seedGuest()
+      await db.eventFormConfig.create({ data: { eventId: event.id, context: "CheckIn", sectionSmallGroup: true } })
 
-      const result = await recordSmallGroupInterestAtCheckin(event.id, { guestId: guest.id })
+      const result = await saveCheckinMatchingProfile(event.id, { guestId: guest.id }, {})
       expect(result.success).toBe(false)
       expect(await countSeekerRequests()).toBe(0)
     })

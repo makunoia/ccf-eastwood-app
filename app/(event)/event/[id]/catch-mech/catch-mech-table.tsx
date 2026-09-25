@@ -20,7 +20,7 @@ import { CatchMechUndoButton } from "./catch-mech-undo-button"
 export type MemberEntry = {
   name: string
   /** InSmallGroup is a Rejected request with declineReason AlreadyInSmallGroup. */
-  status: "Confirmed" | "Rejected" | "InSmallGroup" | "Pending"
+  status: "Confirmed" | "Rejected" | "InSmallGroup" | "Pending" | "Cancelled"
   requestId: string | null  // present only for resolved (non-Pending) entries
 }
 
@@ -31,7 +31,7 @@ export type GroupRow = {
   faciMemberId: string | null
   isTimothy: boolean
   ledGroupNames: string[]
-  /** Confirmed + Rejected + Pending — excludes inSmallGroupCount. */
+  /** Confirmed + Rejected + Pending — excludes inSmallGroupCount and cancellations. */
   toMatchCount: number
   confirmedCount: number
   rejectedCount: number
@@ -47,6 +47,7 @@ const STATUS_BADGE_CLASS: Record<MemberEntry["status"], string> = {
   Rejected: "bg-red-100 text-red-700",
   InSmallGroup: "bg-sky-100 text-sky-700",
   Pending: "bg-amber-100 text-amber-700",
+  Cancelled: "bg-slate-100 text-slate-700",
 }
 
 const STATUS_LABEL: Record<MemberEntry["status"], string> = {
@@ -54,6 +55,7 @@ const STATUS_LABEL: Record<MemberEntry["status"], string> = {
   Rejected: "Rejected",
   InSmallGroup: "In DGroup",
   Pending: "Pending",
+  Cancelled: "Registrant cancelled",
 }
 
 const FACI_BADGE_CLASS = {

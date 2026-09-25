@@ -37,23 +37,25 @@ export type AggRequest = {
   guestId: string | null
   status: "Confirmed" | "Rejected" | "Pending"
   declineReason: DeclineReason | null
+  registrantCancelledAt?: Date | null
   resolvedAt?: Date | null
 }
 
 export type CatchMechStats = {
-  /** Everyone tracked by catch mech: confirmed + rejected + inSmallGroup + pending. */
+  /** Everyone tracked by catch mech, including registrant-cancelled requests. */
   totalCohort: number
   /** Tables holding people with neither a facilitator nor a co-facilitator. */
   unstaffedGroupCount: number
   /** People sitting at those tables — nobody can submit for them. */
   unstaffedPeopleCount: number
-  /** The people catch mech is actually trying to place: totalCohort − inSmallGroup. */
+  /** The people catch mech is trying to place. */
   matchable: number
   totalConfirmed: number
   /** True rejections only — excludes AlreadyInSmallGroup. */
   totalRejected: number
   totalInSmallGroup: number
   totalPending: number
+  totalCancelled: number
 }
 
 /**
@@ -81,6 +83,7 @@ export function buildCatchMechGroupRows(
   let totalRejected = 0
   let totalInSmallGroup = 0
   let totalPending = 0
+  let totalCancelled = 0
 
   for (const bg of breakoutGroups) {
     const faciMember = bg.facilitator?.member ?? null
@@ -96,6 +99,7 @@ export function buildCatchMechGroupRows(
     let confirmed = 0
     let rejected = 0
     let inSmallGroup = 0
+    let cancelled = 0
     const members: GroupRow["members"] = []
 
     for (const m of bg.members) {
@@ -142,7 +146,8 @@ export function buildCatchMechGroupRows(
       if (req?.status === "Confirmed") { status = "Confirmed"; confirmed++ }
       else if (req?.status === "Rejected") {
         // Both buckets are Prisma status Rejected — declineReason splits them.
-        if (req.declineReason === "AlreadyInSmallGroup") { status = "InSmallGroup"; inSmallGroup++ }
+        if (req.registrantCancelledAt) { status = "Cancelled"; cancelled++ }
+        else if (req.declineReason === "AlreadyInSmallGroup") { status = "InSmallGroup"; inSmallGroup++ }
         else { status = "Rejected"; rejected++ }
       }
 
@@ -151,10 +156,10 @@ export function buildCatchMechGroupRows(
       countedPeople.add(personKey)
 
       // requestId enables the admin undo action — only present for resolved decisions
-      members.push({ name, status, requestId: req?.id ?? null })
+      members.push({ name, status, requestId: status === "Cancelled" ? null : req?.id ?? null })
     }
 
-    const pending = members.length - confirmed - rejected - inSmallGroup
+    const pending = members.length - confirmed - rejected - inSmallGroup - cancelled
     // Per-group "To Match" excludes the in-group bucket, so each row reconciles as
     // Confirmed + Rejected + Pending = To Match.
     const toMatch = confirmed + rejected + pending
@@ -170,6 +175,7 @@ export function buildCatchMechGroupRows(
     totalRejected += rejected
     totalInSmallGroup += inSmallGroup
     totalPending += pending
+    totalCancelled += cancelled
 
     groupRows.push({
       id: bg.id,
@@ -187,7 +193,7 @@ export function buildCatchMechGroupRows(
     })
   }
 
-  const totalCohort = totalConfirmed + totalRejected + totalInSmallGroup + totalPending
+  const totalCohort = totalConfirmed + totalRejected + totalInSmallGroup + totalPending + totalCancelled
 
   return {
     groupRows,
@@ -195,11 +201,12 @@ export function buildCatchMechGroupRows(
       totalCohort,
       unstaffedGroupCount,
       unstaffedPeopleCount,
-      matchable: totalCohort - totalInSmallGroup,
+      matchable: totalCohort - totalInSmallGroup - totalCancelled,
       totalConfirmed,
       totalRejected,
       totalInSmallGroup,
       totalPending,
+      totalCancelled,
     },
   }
 }

@@ -3,7 +3,7 @@ import { notFound } from "next/navigation"
 import Link from "next/link"
 import { AlertTriangle, ChevronRight, ClipboardCheck, UserX, Users } from "lucide-react"
 import { auth } from "@/lib/auth"
-import { canRead } from "@/lib/permissions"
+import { canRead, canWrite } from "@/lib/permissions"
 import { db } from "@/lib/db"
 import { unassignedCandidateWhere } from "@/lib/breakouts/candidate-pool"
 import { resolveCatchMechScope } from "@/lib/catch-mech/scope"
@@ -12,6 +12,8 @@ import { CatchMechTable } from "./catch-mech-table"
 import { WeeklyConfirmationsChart } from "./weekly-confirmations-chart"
 import { buildWeeklyBuckets } from "./weekly-buckets"
 import { buildCatchMechGroupRows, type CatchMechStats } from "./aggregate"
+import { InterestTracker } from "./interest-tracker"
+import { loadEventInterests } from "./interest-data"
 
 export const metadata: Metadata = {
   title: "Catch Mech",
@@ -92,6 +94,7 @@ async function getCatchMechData(eventId: string) {
       guestId: true,
       status: true,
       declineReason: true,
+      registrantCancelledAt: true,
       resolvedAt: true,
     },
   })
@@ -169,7 +172,9 @@ async function getCatchMechData(eventId: string) {
     where: { eventId, ...unassignedCandidateWhere(scope.seatedWhere) },
   })
 
-  return { groupRows, stats, weeklyBuckets, response, volunteerResponse, unseatedCount, scope }
+  const interests = await loadEventInterests(eventId)
+
+  return { groupRows, stats, weeklyBuckets, response, volunteerResponse, unseatedCount, interests, scope }
 }
 
 /** Whole-number percentage, guarding a zero denominator. */
@@ -250,6 +255,11 @@ function PlacementPanel({ eventId, stats }: { eventId: string; stats: CatchMechS
             of {stats.totalCohort} tracked · {pct(resolved, stats.matchable)}% resolved
           </span>
         </div>
+        {stats.totalCancelled > 0 && (
+          <p className="mt-1 text-xs text-muted-foreground">
+            {stats.totalCancelled} registrant-cancelled request{stats.totalCancelled === 1 ? "" : "s"} shown in breakout history
+          </p>
+        )}
       </div>
 
       <div className="px-5 pb-5 sm:px-6">
@@ -406,7 +416,7 @@ export default async function CatchMechAdminPage({
   const data = await getCatchMechData(id)
   if (!data) notFound()
 
-  const { groupRows, stats, weeklyBuckets, response, volunteerResponse, unseatedCount, scope } =
+  const { groupRows, stats, weeklyBuckets, response, volunteerResponse, unseatedCount, interests, scope } =
     data
 
   // A table with neither facilitator nor co-faci contributes nothing to the
@@ -418,6 +428,8 @@ export default async function CatchMechAdminPage({
 
   const session = await auth()
   const canViewMember = canRead(session, "Members")
+  const canViewGuest = canRead(session, "Guests")
+  const canManageInterests = canWrite(session, "SmallGroups")
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">
@@ -460,6 +472,14 @@ export default async function CatchMechAdminPage({
       </div>
 
       {unseatedCount > 0 && <UnseatedCard eventId={id} count={unseatedCount} />}
+
+      <InterestTracker
+        eventId={id}
+        rows={interests}
+        canManage={canManageInterests}
+        canViewMembers={canViewMember}
+        canViewGuests={canViewGuest}
+      />
 
       <WeeklyConfirmationsChart
         buckets={weeklyBuckets}

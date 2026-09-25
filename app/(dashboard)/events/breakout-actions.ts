@@ -691,7 +691,7 @@ export async function transferRegistrantToBreakout(
     // isn't found.
     const registrant = await db.eventRegistrant.findFirst({
       where: { id: registrantId, eventId: { in: candidateEventIds } },
-      select: { id: true, memberId: true },
+      select: { id: true, memberId: true, guestId: true },
     })
     if (!registrant) {
       return {
@@ -755,8 +755,63 @@ export async function transferRegistrantToBreakout(
       await tx.breakoutGroupMember.create({
         data: { breakoutGroupId: toGroupId, registrantId },
       })
-      // A breakout seat is independent of DGroup membership. A facilitator's
-      // linked DGroup is only a possible destination for an explicit request.
+
+      // Carry an explicit Catch Mech request with the seat. A same-DGroup move
+      // keeps the request and its place in the leader's queue; changing DGroups
+      // declines the old request and raises a fresh one for the new destination.
+      const [sourceGroup, destinationGroup] = await Promise.all([
+        tx.breakoutGroup.findUnique({ where: { id: fromGroupId }, select: { linkedSmallGroupId: true } }),
+        tx.breakoutGroup.findUnique({ where: { id: toGroupId }, select: { linkedSmallGroupId: true } }),
+      ])
+      const requests = await tx.smallGroupMemberRequest.findMany({
+        where: {
+          breakoutGroupId: fromGroupId,
+          status: "Pending",
+          ...(registrant.memberId ? { memberId: registrant.memberId } : { guestId: registrant.guestId }),
+        },
+      })
+      const matchingRequest = requests.find((request) =>
+        registrant.memberId ? request.memberId === registrant.memberId : request.guestId === registrant.guestId
+      )
+      if (matchingRequest) {
+        if (sourceGroup?.linkedSmallGroupId === destinationGroup?.linkedSmallGroupId && destinationGroup?.linkedSmallGroupId) {
+          await tx.smallGroupMemberRequest.update({
+            where: { id: matchingRequest.id },
+            data: { breakoutGroupId: toGroupId },
+          })
+        } else if (sourceGroup?.linkedSmallGroupId !== destinationGroup?.linkedSmallGroupId) {
+          const now = new Date()
+          await tx.smallGroupMemberRequest.update({
+            where: { id: matchingRequest.id },
+            data: { status: "Rejected", resolvedAt: now },
+          })
+          if (matchingRequest.smallGroupId) {
+            await tx.smallGroupLog.create({
+              data: {
+                smallGroupId: matchingRequest.smallGroupId,
+                action: "TempAssignmentRejected",
+                guestId: matchingRequest.guestId,
+                memberId: matchingRequest.memberId,
+                fromGroupId: sourceGroup?.linkedSmallGroupId ?? null,
+                toGroupId: destinationGroup?.linkedSmallGroupId ?? null,
+                description: "Catch Mech request was withdrawn after breakout transfer",
+              },
+            })
+          }
+          if (destinationGroup?.linkedSmallGroupId) {
+            await tx.smallGroupMemberRequest.create({
+              data: {
+                smallGroupId: destinationGroup.linkedSmallGroupId,
+                guestId: matchingRequest.guestId,
+                memberId: matchingRequest.memberId,
+                breakoutGroupId: toGroupId,
+                origin: matchingRequest.origin,
+                sourceEventId: matchingRequest.sourceEventId,
+              },
+            })
+          }
+        }
+      }
       return "moved" as const
     })
 

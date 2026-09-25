@@ -8,7 +8,7 @@ import {
 import { dismissSeekerRequest } from "@/app/(dashboard)/small-groups/actions"
 import {
   createRegistrant,
-  recordSmallGroupInterestAtCheckin,
+  saveCheckinMatchingProfile,
 } from "@/app/(dashboard)/events/actions"
 
 /**
@@ -83,6 +83,17 @@ describe("DGroup seeker requests", () => {
       })
       expect(request.origin).toBe("RegistrationIntent")
       expect(request.smallGroupId).toBeNull()
+    })
+
+    it("keeps one request when registration interest is submitted concurrently", async () => {
+      const event = await seedEvent()
+      const guest = await seedGuest()
+      const results = await Promise.all([
+        createSeekerRequestFromRegistration({ guestId: guest.id }, event.id),
+        createSeekerRequestFromRegistration({ guestId: guest.id }, event.id),
+      ])
+      expect(results.filter((result) => result.created)).toHaveLength(1)
+      expect(await db.smallGroupMemberRequest.count({ where: { guestId: guest.id } })).toBe(1)
     })
 
     it("the new request is picked up by the seeker query and count", async () => {
@@ -293,8 +304,9 @@ describe("DGroup seeker requests", () => {
       const event = await seedEvent()
       const guest = await seedGuest()
       await db.eventRegistrant.create({ data: { eventId: event.id, guestId: guest.id } })
+      await db.eventFormConfig.create({ data: { eventId: event.id, context: "CheckIn", sectionSmallGroup: true } })
 
-      const result = await recordSmallGroupInterestAtCheckin(event.id, { guestId: guest.id })
+      const result = await saveCheckinMatchingProfile(event.id, { guestId: guest.id }, {})
       expect(result.success).toBe(true)
       expect(await countSeekerRequests()).toBe(1)
     })
@@ -302,8 +314,9 @@ describe("DGroup seeker requests", () => {
     it("refuses a guest who is not registered for that event", async () => {
       const event = await seedEvent()
       const guest = await seedGuest()
+      await db.eventFormConfig.create({ data: { eventId: event.id, context: "CheckIn", sectionSmallGroup: true } })
 
-      const result = await recordSmallGroupInterestAtCheckin(event.id, { guestId: guest.id })
+      const result = await saveCheckinMatchingProfile(event.id, { guestId: guest.id }, {})
       expect(result.success).toBe(false)
       expect(await countSeekerRequests()).toBe(0)
     })

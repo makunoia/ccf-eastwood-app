@@ -38,7 +38,6 @@ import {
   lookupHouseholdForCheckin,
   checkInHousehold,
   addHouseholdMemberAtCheckin,
-  recordSmallGroupInterestAtCheckin,
   saveCheckinMatchingProfile,
   saveCheckinClaimedGroup,
   type CheckinPerson,
@@ -937,29 +936,19 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
 
   // ── Small Group Prompt ────────────────────────────────────────────────────
   if (step === "sg-prompt" && matched?.smallGroupPrompt) {
-    const prompt = matched.smallGroupPrompt
     return (
       <div className="flex flex-col items-center justify-center px-6 py-8">
         <div className="w-full space-y-6">
-          <div className="space-y-2 text-center">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              DGroup
-            </p>
-            <h2 className="text-2xl font-semibold tracking-tight">
-              Are you interested in joining a DGroup?
+          <div className="text-center">
+            <h2 className="text-2xl font-semibold tracking-tight text-balance">
+              Looking to join a DGroup?
             </h2>
           </div>
 
           <div className="flex flex-col gap-3">
             <Button
               className="w-full"
-              onClick={() => {
-                // Fire-and-forget: the request is admin bookkeeping, and making
-                // someone at a kiosk wait on it (or blocking them if it fails)
-                // would be worse than a missed row.
-                void recordSmallGroupInterestAtCheckin(eventId, prompt.person)
-                setStep("sg-profile")
-              }}
+              onClick={() => setStep("sg-profile")}
             >
               Yes, I&apos;m interested
             </Button>
@@ -1175,9 +1164,10 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
 //   1. The checked-in subject is a matched guest or member — including a member
 //      checking in as a volunteer,
 //   2. who is *not yet in a DGroup* — i.e. the lookup returned a `smallGroupPrompt`, and
-//   3. who taps "Yes, I'm interested" on the preceding "Are you interested in
-//      joining a DGroup?" prompt (`sg-prompt` step).
-// Anyone already in a group, or already awaiting placement, never reaches this step.
+//   3. who taps "Yes, I'm interested" on the preceding DGroup prompt.
+// A breakout-linked pending assignment is provisional, so it does not block
+// the question. Interest and assignment cancellation are saved together only
+// when the person submits this form; Skip leaves the old assignment intact.
 //
 // Fields mirror the public registration form (`registration-form.tsx`): shared
 // MultiSelect for Language, Select for Meeting Preference / Life Stage / City —
