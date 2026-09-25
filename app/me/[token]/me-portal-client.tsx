@@ -14,7 +14,6 @@ import {
   IconPlus,
   IconSearch,
   IconTrash,
-  IconUserCircle,
   IconUsers,
   IconX,
 } from "@tabler/icons-react"
@@ -152,11 +151,7 @@ export function MePortalClient({
         <header className="relative overflow-hidden rounded-2xl border bg-background px-6 py-7 shadow-sm sm:px-9 sm:py-9">
           <div className="absolute inset-y-0 right-0 hidden w-1/3 bg-primary/[0.035] sm:block" aria-hidden="true" />
           <div className="relative flex flex-col justify-between gap-7 sm:flex-row sm:items-end">
-            <div className="flex items-start gap-4">
-              <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                <IconUserCircle className="size-6" />
-              </div>
-              <div className="min-w-0 space-y-1.5">
+            <div className="min-w-0 space-y-1.5">
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
                   CCF Eastwood <span className="px-1 text-muted-foreground/60">/</span> Member portal
                 </p>
@@ -166,7 +161,6 @@ export function MePortalClient({
                 <p className="max-w-md text-sm leading-6 text-muted-foreground">
                   Your small-group connections, together in one place.
                 </p>
-              </div>
             </div>
             {isLeader && (
               <div className="flex items-center gap-2 border-t pt-4 text-sm text-muted-foreground sm:border-t-0 sm:border-l sm:pl-6 sm:pt-0">
