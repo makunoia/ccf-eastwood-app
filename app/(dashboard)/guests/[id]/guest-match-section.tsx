@@ -8,6 +8,8 @@ import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { GuestAssignmentMenu } from "@/components/guest-assignment-menu"
+import { AssignGuestNowDialog, type GuestAssignmentTarget } from "@/components/assign-guest-now-dialog"
 import { Input } from "@/components/ui/input"
 import { ScheduleInput } from "@/components/ui/schedule-input"
 import { Label } from "@/components/ui/label"
@@ -80,6 +82,9 @@ export const GuestMatchSection = React.forwardRef<
   GuestMatchSectionHandle,
   {
     guestId: string
+    guestName: string
+    canAssignNow: boolean
+    canRequestConfirmation: boolean
     pipelineStatus: GuestPipelineStatus
     claimedGroup: ClaimedGroup
     claimedSatellite: string | null
@@ -92,6 +97,9 @@ export const GuestMatchSection = React.forwardRef<
 >(function GuestMatchSection(
   {
     guestId,
+    guestName,
+    canAssignNow,
+    canRequestConfirmation,
     pipelineStatus,
     claimedGroup,
     claimedSatellite,
@@ -108,6 +116,7 @@ export const GuestMatchSection = React.forwardRef<
   const [dirty, setDirty] = React.useState(false)
   const [levels, setLevels] = React.useState<EscalationLevel[]>([])
   const [assigningId, setAssigningId] = React.useState<string | null>(null)
+  const [assignNowTarget, setAssignNowTarget] = React.useState<GuestAssignmentTarget | null>(null)
   const [clearingClaimed, setClearingClaimed] = React.useState(false)
   const [localClaimedGroup, setLocalClaimedGroup] = React.useState<ClaimedGroup>(claimedGroup)
   const [localClaimedSatellite, setLocalClaimedSatellite] = React.useState(claimedSatellite)
@@ -195,7 +204,7 @@ export const GuestMatchSection = React.forwardRef<
     const res = await assignGuestToGroupTemporarily(groupId, guestId)
     setAssigningId(null)
     if (res.success) {
-      toast.success("Guest temporarily assigned — awaiting leader confirmation")
+      toast.success("Confirmation requested from the DGroup leader")
       router.refresh()
     } else {
       toast.error(res.error)
@@ -215,10 +224,26 @@ export const GuestMatchSection = React.forwardRef<
     }
   }
 
-  async function handleConfirmClaimed() {
-    if (!localClaimedGroup) return
-    await handleAssign(localClaimedGroup.id)
+  function assignmentMenu(groupId: string, groupName: string) {
+    return (
+      <GuestAssignmentMenu
+        canAssignNow={canAssignNow}
+        canRequestConfirmation={canRequestConfirmation}
+        disabled={assigningId !== null || clearingClaimed}
+        onAssignNow={() => setAssignNowTarget({ id: groupId, name: groupName })}
+        onRequestConfirmation={() => { void handleAssign(groupId) }}
+      />
+    )
   }
+
+  const assignNowDialog = (
+    <AssignGuestNowDialog
+      guestId={guestId}
+      guestName={guestName}
+      target={assignNowTarget}
+      onOpenChange={setAssignNowTarget}
+    />
+  )
 
   if (pipelineStatus === "Member") {
     return null
@@ -250,7 +275,16 @@ export const GuestMatchSection = React.forwardRef<
               Their request to join a DGroup is pending; no group has been selected yet.
             </p>
           )}
+          {pendingGroupId && pendingGroupName && canAssignNow && (
+            <div className="mt-3">
+              <Button size="sm" onClick={() => setAssignNowTarget({ id: pendingGroupId, name: pendingGroupName })}>
+                Assign now
+              </Button>
+              <p className="mt-1 text-xs text-muted-foreground">Promote to member and confirm this DGroup placement without waiting for the leader.</p>
+            </div>
+          )}
         </div>
+        {assignNowDialog}
       </div>
     )
   }
@@ -317,7 +351,11 @@ export const GuestMatchSection = React.forwardRef<
               </h3>
               <p className="text-xs text-muted-foreground mt-0.5">
                 Fill in the required fields and click Find matching groups.
-                Assigning creates a pending request — the leader confirms via their link.
+                {canAssignNow
+                  ? "Choose whether to assign the guest now or request leader confirmation."
+                  : canRequestConfirmation
+                    ? "Request leader confirmation to place the guest in a DGroup."
+                    : "You need Small Groups write access to assign this guest."}
               </p>
             </div>
 
@@ -467,6 +505,7 @@ export const GuestMatchSection = React.forwardRef<
                         result={r}
                         onAssign={() => { void handleAssign(r.groupId) }}
                         assigning={assigningId === r.groupId}
+                        assignmentMenu={assignmentMenu(r.groupId, r.groupName)}
                         onGroupClick={() => {
                           setSelectedGroupId(r.groupId)
                           setSheetOpen(true)
@@ -485,6 +524,7 @@ export const GuestMatchSection = React.forwardRef<
           open={sheetOpen}
           onOpenChange={setSheetOpen}
         />
+        {assignNowDialog}
       </div>
     )
   }
@@ -507,13 +547,7 @@ export const GuestMatchSection = React.forwardRef<
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              onClick={() => { void handleConfirmClaimed() }}
-              disabled={assigningId !== null || clearingClaimed}
-            >
-              {assigningId === localClaimedGroup.id ? "Assigning…" : "Assign to Group"}
-            </Button>
+            {assignmentMenu(localClaimedGroup.id, localClaimedGroup.name)}
             <Button
               size="sm"
               variant="ghost"
@@ -525,7 +559,11 @@ export const GuestMatchSection = React.forwardRef<
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            Assignment creates a pending request — the group leader confirms via their link.
+            {canAssignNow
+              ? "Assign now to promote the guest immediately, or request the DGroup leader's confirmation."
+              : canRequestConfirmation
+                ? "Request the DGroup leader's confirmation to place this guest."
+                : "You need Small Groups write access to assign this guest."}
           </p>
         </div>
       )}
@@ -707,6 +745,7 @@ export const GuestMatchSection = React.forwardRef<
                       result={r}
                       onAssign={() => { void handleAssign(r.groupId) }}
                       assigning={assigningId === r.groupId}
+                      assignmentMenu={assignmentMenu(r.groupId, r.groupName)}
                       onGroupClick={() => {
                         setSelectedGroupId(r.groupId)
                         setSheetOpen(true)
@@ -725,6 +764,7 @@ export const GuestMatchSection = React.forwardRef<
         open={sheetOpen}
         onOpenChange={setSheetOpen}
       />
+      {assignNowDialog}
     </div>
   )
 })

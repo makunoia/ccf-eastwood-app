@@ -78,6 +78,24 @@ describe("catch-mech — independent co-facilitator decisions + admin undo", () 
     await db.$disconnect()
   })
 
+  it("shows and accepts only registrants of the session's event", async () => {
+    const s = await seedScaffold()
+    const otherEvent = await db.event.create({
+      data: { name: "Other event", type: "OneTime", startDate: new Date(), endDate: new Date() },
+    })
+    const own = await addGuestRegistrant(s.event.id, s.breakout.id, "Own")
+    const outside = await addGuestRegistrant(otherEvent.id, s.breakout.id, "Outside")
+
+    const data = await getSessionData(s.leadSession.token)
+    expect(data?.rows.map((row) => row.registrantId)).toEqual([own.reg.id])
+
+    const result = await submitCatchMechConfirmations(s.leadSession.token, [
+      { registrantId: outside.reg.id, status: "confirmed" },
+    ])
+    expect(result.success).toBe(false)
+    expect(await db.smallGroupMemberRequest.count({ where: { guestId: outside.guest.id } })).toBe(0)
+  })
+
   it("a lead's rejection still lets the co-facilitator see (and the rejecting lead not see) the person", async () => {
     const s = await seedScaffold()
     const { guest, reg } = await addGuestRegistrant(s.event.id, s.breakout.id, "Gina")

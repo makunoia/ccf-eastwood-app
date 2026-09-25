@@ -34,6 +34,24 @@ export type FetchedRegistrant = Prisma.EventRegistrantGetPayload<{
   select: typeof registrantSelect
 }>
 
+/** A public facilitator token can act only on registrants seated at its event's table. */
+export async function decisionsBelongToCatchMechSession(
+  eventId: string,
+  breakoutGroupId: string,
+  decisions: ConfirmDecision[]
+): Promise<boolean> {
+  const ids = [...new Set(decisions.map((decision) => decision.registrantId))]
+  if (ids.length === 0) return true
+  const count = await db.breakoutGroupMember.count({
+    where: {
+      breakoutGroupId,
+      registrantId: { in: ids },
+      registrant: { eventId },
+    },
+  })
+  return count === ids.length
+}
+
 export async function prefetchRegistrantData(decisions: ConfirmDecision[]): Promise<{
   registrantMap: Map<string, FetchedRegistrant>
   takenEmails: Set<string>

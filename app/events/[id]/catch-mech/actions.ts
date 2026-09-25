@@ -9,6 +9,7 @@ import {
   staffVolunteerFor,
 } from "@/lib/catch-mech/faci-session"
 import {
+  decisionsBelongToCatchMechSession,
   prefetchRegistrantData,
   resolveConfirmations,
 } from "@/lib/catch-mech/confirmations"
@@ -148,6 +149,9 @@ export async function submitCatchMechConfirmations(
     })
     if (!session) {
       return { success: false, error: "Session not found or expired" }
+    }
+    if (!(await decisionsBelongToCatchMechSession(session.eventId, session.breakoutGroupId, decisions))) {
+      return { success: false, error: "A registrant is not part of this event's table" }
     }
 
     const { candidates, declineGroupId } = resolveCatchMechTargets(session)
@@ -352,6 +356,9 @@ export async function createSmallGroupForTimothy(
     })
     if (!session) {
       return { success: false, error: "Session not found or expired" }
+    }
+    if (!(await decisionsBelongToCatchMechSession(session.eventId, session.breakoutGroupId, decisions))) {
+      return { success: false, error: "A registrant is not part of this event's table" }
     }
 
     const faciMember = session.facilitator.member

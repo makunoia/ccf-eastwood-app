@@ -1,16 +1,7 @@
 import type { Session } from "next-auth"
+import { manilaToday } from "@/lib/date/manila-today"
 
-const MANILA_DATE_FORMAT = new Intl.DateTimeFormat("en-CA", {
-  timeZone: "Asia/Manila",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-})
-
-/** Today's date in Asia/Manila as YYYY-MM-DD. */
-export function manilaToday(now: Date = new Date()): string {
-  return MANILA_DATE_FORMAT.format(now)
-}
+export { manilaToday }
 
 export function buildSystemPrompt(session: Session): string {
   const { username, role } = session.user

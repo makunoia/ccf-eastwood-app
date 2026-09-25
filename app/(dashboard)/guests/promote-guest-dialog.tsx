@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { PersonCombobox, type PersonComboboxOption } from "@/components/ui/person-combobox"
 import { promoteGuestToMember } from "./actions"
+import { manilaToday } from "@/lib/date/manila-today"
 import { listSmallGroupOptions } from "../small-groups/actions"
 
 type Props = {
@@ -27,7 +28,7 @@ type Props = {
 }
 
 function today(): string {
-  return new Date().toISOString().slice(0, 10)
+  return manilaToday()
 }
 
 /**

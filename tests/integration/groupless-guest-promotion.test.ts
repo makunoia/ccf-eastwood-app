@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterAll, vi } from "vitest"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import { promoteGuestToMember } from "@/app/(dashboard)/guests/actions"
+import { assignGuestToGroupTemporarily } from "@/app/(dashboard)/small-groups/actions"
+import { manilaToday } from "@/lib/date/manila-today"
 
 /**
  * Promoting a guest to a member without a DGroup.
@@ -147,9 +149,7 @@ describe("date joined", () => {
     expect((await promoteGuestToMember(guest.id, group.id)).success).toBe(true)
 
     const member = await memberFor(guest.id)
-    expect(member.dateJoined.toISOString().slice(0, 10)).toBe(
-      new Date().toISOString().slice(0, 10)
-    )
+    expect(member.dateJoined.toISOString().slice(0, 10)).toBe(manilaToday())
   })
 
   it("rejects a blank date rather than inventing one", async () => {
@@ -322,6 +322,8 @@ describe("group placement", () => {
     expect((await promoteGuestToMember(guest.id, group.id)).success).toBe(true)
 
     const member = await memberFor(guest.id)
+    expect(member.smallGroupId).toBe(group.id)
+    expect(await db.smallGroupMemberRequest.count({ where: { memberId: member.id } })).toBe(0)
     const logs = await db.smallGroupLog.findMany({ where: { smallGroupId: group.id } })
     expect(logs).toHaveLength(1)
     expect(logs[0]).toMatchObject({
@@ -356,6 +358,27 @@ describe("group placement", () => {
 })
 
 describe("pending DGroup requests", () => {
+  it("keeps a confirmation request pending until direct assignment promotes the guest", async () => {
+    const group = await seedGroup()
+    const guest = await seedGuest()
+
+    expect((await assignGuestToGroupTemporarily(group.id, guest.id)).success).toBe(true)
+    expect((await db.guest.findUniqueOrThrow({ where: { id: guest.id } })).memberId).toBeNull()
+    const request = await db.smallGroupMemberRequest.findFirstOrThrow({
+      where: { guestId: guest.id, smallGroupId: group.id },
+    })
+    expect(request.status).toBe("Pending")
+
+    expect((await promoteGuestToMember(guest.id, group.id)).success).toBe(true)
+    const member = await memberFor(guest.id)
+    expect(member.smallGroupId).toBe(group.id)
+    expect(await db.smallGroupMemberRequest.count({ where: { status: "Pending", memberId: member.id } })).toBe(0)
+    expect(await db.smallGroupMemberRequest.findUniqueOrThrow({ where: { id: request.id } })).toMatchObject({
+      status: "Confirmed",
+      memberId: member.id,
+      guestId: null,
+    })
+  })
   async function seedPendingRequest(guestId: string, smallGroupId: string) {
     return db.smallGroupMemberRequest.create({
       data: { smallGroupId, guestId, status: "Pending" },

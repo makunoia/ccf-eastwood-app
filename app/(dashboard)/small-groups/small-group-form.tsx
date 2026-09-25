@@ -18,6 +18,7 @@ import { DetailPageHeader } from "@/components/detail-page-header"
 import { useListNavigation } from "@/lib/hooks/use-list-navigation"
 import { BreadcrumbOverride } from "@/components/breadcrumb-context"
 import { Button } from "@/components/ui/button"
+import { GuestAssignmentMenu } from "@/components/guest-assignment-menu"
 import { TimelineEntry } from "@/components/ui/timeline-entry"
 import {
   DropdownMenu,
@@ -136,6 +137,8 @@ type GroupLogEntry = {
 }
 
 type Props = {
+  canAssignNow?: boolean
+  canRequestConfirmation?: boolean
   members: { id: string; firstName: string; lastName: string; smallGroupId: string | null }[]
   smallGroups: { id: string; name: string }[]
   lifeStages: { id: string; name: string }[]
@@ -226,6 +229,8 @@ function getInitials(name: string): string {
 }
 
 export function SmallGroupForm({
+  canAssignNow = false,
+  canRequestConfirmation = false,
   members,
   smallGroups,
   lifeStages,
@@ -487,7 +492,7 @@ export function SmallGroupForm({
     const result = await assignGuestToGroupTemporarily(group.id, tempSelectedGuest.id)
     setAssigningTempGuest(false)
     if (result.success) {
-      toast.success(`${tempSelectedGuest.firstName} ${tempSelectedGuest.lastName} temporarily assigned — pending leader confirmation`)
+      toast.success(`Confirmation requested for ${tempSelectedGuest.firstName} ${tempSelectedGuest.lastName}`)
       setTempGuestOpen(false)
       resetTempGuestDialog()
       router.refresh()
@@ -947,9 +952,11 @@ export function SmallGroupForm({
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => setAddGuestOpen(true)}>
-                        Guest
-                      </DropdownMenuItem>
+                      {canAssignNow && (
+                        <DropdownMenuItem onClick={() => setAddGuestOpen(true)}>
+                          Guest
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuItem onClick={() => setAddMemberOpen(true)}>
                         Member
                       </DropdownMenuItem>
@@ -1034,15 +1041,13 @@ export function SmallGroupForm({
                   )}
                 </div>
                 <div className="flex gap-2">
-                  <Button
-                    type="button"
+                  <GuestAssignmentMenu
                     variant="outline"
-                    size="sm"
-                    onClick={() => setTempGuestOpen(true)}
-                  >
-                    <IconUserPlus className="size-4" />
-                    Assign guest
-                  </Button>
+                    canAssignNow={canAssignNow}
+                    canRequestConfirmation={canRequestConfirmation}
+                    onAssignNow={() => setAddGuestOpen(true)}
+                    onRequestConfirmation={() => setTempGuestOpen(true)}
+                  />
                   <Button
                     type="button"
                     variant="outline"
@@ -1055,8 +1060,8 @@ export function SmallGroupForm({
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">
-                Temporarily assigned people appear here until the group leader confirms or declines at{" "}
-                <code className="text-xs">/small-group-confirmation</code>.
+                Confirmation requests appear here until the group leader accepts or declines them.
+                Guests assigned now appear in Members immediately.
               </p>
               {pendingRequests.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No pending assignments.</p>
@@ -1189,10 +1194,10 @@ export function SmallGroupForm({
       <Dialog open={addGuestOpen} onOpenChange={(open) => { setAddGuestOpen(open); if (!open) resetGuestDialog() }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add guest</DialogTitle>
+            <DialogTitle>Assign guest now</DialogTitle>
             <DialogDescription>
               Search for a guest to promote and add to{" "}
-              <span className="font-medium">{group?.name}</span>. This will create a Member record from the guest&apos;s profile.
+              <span className="font-medium">{group?.name}</span> today, without leader confirmation. This creates a Member record from the guest&apos;s profile.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
@@ -1238,7 +1243,7 @@ export function SmallGroupForm({
               Cancel
             </Button>
             <Button onClick={handleAddGuest} disabled={!selectedGuest || addingGuest}>
-              {addingGuest ? "Promoting…" : "Promote & add"}
+              {addingGuest ? "Assigning…" : "Promote and assign"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1284,10 +1289,10 @@ export function SmallGroupForm({
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Assign guest temporarily</DialogTitle>
+            <DialogTitle>Request leader confirmation</DialogTitle>
             <DialogDescription>
-              Search for a guest to temporarily assign to{" "}
-              <span className="font-medium">{group?.name}</span>. The group leader must confirm before they become a full member.
+              Search for a guest to request placement in{" "}
+              <span className="font-medium">{group?.name}</span>. The group leader must confirm before they become a member.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
@@ -1333,7 +1338,7 @@ export function SmallGroupForm({
               Cancel
             </Button>
             <Button onClick={handleAssignTempGuest} disabled={!tempSelectedGuest || assigningTempGuest}>
-              {assigningTempGuest ? "Assigning…" : "Assign temporarily"}
+              {assigningTempGuest ? "Requesting…" : "Request confirmation"}
             </Button>
           </DialogFooter>
         </DialogContent>

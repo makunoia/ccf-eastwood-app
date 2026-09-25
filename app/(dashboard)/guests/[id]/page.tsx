@@ -1,6 +1,8 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
+import { auth } from "@/lib/auth"
+import { canWrite } from "@/lib/permissions"
 import { personTitle } from "@/lib/metadata"
 import { GuestEventHistory } from "./guest-event-history"
 import { GuestActivityLog, type ActivityEntry } from "./guest-activity-log"
@@ -240,13 +242,14 @@ export default async function GuestDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const [guest, lifeStages, ageRanges, registrations, activityLogs, catchMechComments] = await Promise.all([
+  const [guest, lifeStages, ageRanges, registrations, activityLogs, catchMechComments, session] = await Promise.all([
     getGuest(id),
     getLifeStages(),
     getAgeRanges(),
     getGuestEventRegistrations(id),
     getGuestActivityLogs(id),
     getGuestCatchMechComments(id),
+    auth(),
   ])
 
   if (!guest) notFound()
@@ -303,6 +306,8 @@ export default async function GuestDetailPage({
 
   return (
     <GuestDetailContent
+      canAssignNow={canWrite(session, "Guests") && canWrite(session, "SmallGroups")}
+      canRequestConfirmation={canWrite(session, "SmallGroups")}
       guest={guest}
       lifeStages={lifeStages}
       ageRanges={ageRanges}

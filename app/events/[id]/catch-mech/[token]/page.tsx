@@ -15,6 +15,7 @@ export async function getSessionData(token: string) {
   const session = await db.catchMechSession.findUnique({
     where: { token },
     select: {
+      eventId: true,
       breakoutGroupId: true,
       facilitatorVolunteerId: true,
       event: {
@@ -59,27 +60,28 @@ export async function getSessionData(token: string) {
           name: true,
           facilitatorId: true,
           linkedSmallGroup: { select: { id: true, name: true } },
-          members: {
-            orderBy: { assignedAt: "asc" },
-            select: {
-              registrantId: true,
-              assignedAt: true,
-              registrant: {
-                select: {
-                  id: true,
-                  memberId: true,
-                  guestId: true,
-                  member: { select: { id: true, firstName: true, lastName: true, smallGroupId: true } },
-                  guest: { select: { id: true, firstName: true, lastName: true, memberId: true } },
-                },
-              },
-            },
-          },
         },
       },
     },
   })
   if (!session) return null
+
+  const members = await db.breakoutGroupMember.findMany({
+    where: { breakoutGroupId: session.breakoutGroupId, registrant: { eventId: session.eventId } },
+    orderBy: { assignedAt: "asc" },
+    select: {
+      registrantId: true,
+      registrant: {
+        select: {
+          id: true,
+          memberId: true,
+          guestId: true,
+          member: { select: { id: true, firstName: true, lastName: true, smallGroupId: true } },
+          guest: { select: { id: true, firstName: true, lastName: true, memberId: true } },
+        },
+      },
+    },
+  })
 
   const faciMember = session.facilitator.member
 
@@ -91,10 +93,10 @@ export async function getSessionData(token: string) {
   const candidateIds = new Set(candidates.map((g) => g.id))
 
   // Collect IDs for a batch lookup of existing SmallGroupMemberRequests
-  const guestIds = session.breakoutGroup.members
+  const guestIds = members
     .map((m) => m.registrant.guestId)
     .filter((id): id is string => id !== null)
-  const memberIds = session.breakoutGroup.members
+  const memberIds = members
     .map((m) => m.registrant.memberId)
     .filter((id): id is string => id !== null)
 
@@ -148,7 +150,7 @@ export async function getSessionData(token: string) {
   }
 
   const rows: RegistrantRow[] = []
-  for (const m of session.breakoutGroup.members) {
+  for (const m of members) {
     const r = m.registrant
     // Skip anonymous registrants
     if (!r.memberId && !r.guestId) continue
@@ -176,6 +178,7 @@ export async function getSessionData(token: string) {
 
   return {
     token,
+    eventId: session.eventId,
     event: session.event,
     groupName: session.breakoutGroup.name,
     faciName: `${faciMember.firstName} ${faciMember.lastName}`,
@@ -192,7 +195,7 @@ export default async function CatchMechConfirmPage({
 }) {
   const { id, token } = await params
   const data = await getSessionData(token)
-  if (!data) notFound()
+  if (!data || data.eventId !== id) notFound()
 
   const formConfig = await getFormConfig("CatchMech", id)
   if (!formConfig.isOpen) return <FormClosed />

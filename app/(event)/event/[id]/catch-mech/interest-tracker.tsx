@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import {
   assignCatchMechInterest,
+  deleteCatchMechInterest,
   dismissCatchMechInterest,
   getCatchMechInterestMatches,
   type InterestMatchLevel,
@@ -62,6 +63,8 @@ export function InterestTracker({
   const [assigningId, setAssigningId] = React.useState<string | null>(null)
   const [dismissing, setDismissing] = React.useState<InterestRow | null>(null)
   const [savingDismissal, setSavingDismissal] = React.useState(false)
+  const [deleting, setDeleting] = React.useState<InterestRow | null>(null)
+  const [savingDeletion, setSavingDeletion] = React.useState(false)
   const matchRequestVersion = React.useRef(0)
 
   async function openMatches(requestId: string) {
@@ -109,6 +112,21 @@ export function InterestTracker({
     router.refresh()
   }
 
+  async function deleteInterest() {
+    if (!deleting) return
+    setSavingDeletion(true)
+    const result = await deleteCatchMechInterest(eventId, deleting.id)
+    setSavingDeletion(false)
+    if (!result.success) {
+      toast.error(result.error)
+      return
+    }
+    setDeleting(null)
+    if (openId === deleting.id) setOpenId(null)
+    toast.success("DGroup interest deleted")
+    router.refresh()
+  }
+
   const awaiting = rows.filter((row) => row.status === "Pending" && !row.groupId).length
 
   return (
@@ -131,6 +149,7 @@ export function InterestTracker({
             const canOpenProfile = row.personType === "Member" ? canViewMembers : canViewGuests
             const profileHref = row.personType === "Member" ? `/members/${row.personId}` : `/guests/${row.personId}`
             const canAct = canManage && row.status === "Pending" && !row.groupId
+            const canDelete = canManage && !row.groupId && (row.status === "Pending" || row.status === "Rejected")
             return (
               <div key={row.id} className="p-4 sm:px-5">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -149,12 +168,17 @@ export function InterestTracker({
                       <span> · {row.createdAt.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric", timeZone: "Asia/Manila" })}</span>
                     </p>
                   </div>
-                  {canAct && (
+                  {(canAct || canDelete) && (
                     <div className="flex shrink-0 items-center gap-2">
-                      <Button variant="outline" size="sm" onClick={() => void openMatches(row.id)}>
-                        {openId === row.id ? "Close matches" : "Find DGroup"}
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => setDismissing(row)}>Dismiss</Button>
+                      {canAct && (
+                        <>
+                          <Button variant="outline" size="sm" onClick={() => void openMatches(row.id)}>
+                            {openId === row.id ? "Close matches" : "Find DGroup"}
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => setDismissing(row)}>Dismiss</Button>
+                        </>
+                      )}
+                      {canDelete && <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setDeleting(row)}>Delete</Button>}
                     </div>
                   )}
                 </div>
@@ -203,6 +227,23 @@ export function InterestTracker({
             <AlertDialogCancel disabled={savingDismissal}>Keep request</AlertDialogCancel>
             <AlertDialogAction disabled={savingDismissal} onClick={() => void dismiss()}>
               {savingDismissal ? "Dismissing…" : "Dismiss request"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={deleting !== null} onOpenChange={(open) => { if (!open && !savingDeletion) setDeleting(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {deleting?.personName}&apos;s DGroup interest?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently removes the interest request from Catch Mech. Their guest or member profile is kept. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={savingDeletion}>Keep request</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" disabled={savingDeletion} onClick={() => void deleteInterest()}>
+              {savingDeletion ? "Deleting…" : "Delete request"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

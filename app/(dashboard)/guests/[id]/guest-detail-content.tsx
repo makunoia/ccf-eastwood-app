@@ -53,6 +53,8 @@ function addOneHour(time: string): string {
 
 type Props = {
   guest: GuestData
+  canAssignNow: boolean
+  canRequestConfirmation: boolean
   lifeStages: { id: string; name: string }[]
   ageRanges: { id: string; label: string }[]
   pipelineStatus: GuestPipelineStatus
@@ -61,7 +63,7 @@ type Props = {
   activityHistory: React.ReactNode
 }
 
-export function GuestDetailContent({ guest, lifeStages, ageRanges, pipelineStatus, sourceEvent, eventHistory, activityHistory }: Props) {
+export function GuestDetailContent({ guest, canAssignNow, canRequestConfirmation, lifeStages, ageRanges, pipelineStatus, sourceEvent, eventHistory, activityHistory }: Props) {
   return (
     <GuestForm
       guest={guest}
@@ -73,6 +75,9 @@ export function GuestDetailContent({ guest, lifeStages, ageRanges, pipelineStatu
       matchSection={
         <GuestMatchSection
           guestId={guest.id}
+          guestName={`${guest.firstName} ${guest.lastName}`}
+          canAssignNow={canAssignNow}
+          canRequestConfirmation={canRequestConfirmation}
           pipelineStatus={pipelineStatus}
           claimedGroup={guest.claimedSmallGroup}
           claimedSatellite={guest.claimedSatellite}

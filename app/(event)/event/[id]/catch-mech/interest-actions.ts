@@ -203,3 +203,27 @@ export async function dismissCatchMechInterest(
     return { success: false, error: "Failed to dismiss DGroup interest." }
   }
 }
+
+export async function deleteCatchMechInterest(
+  eventId: string,
+  requestId: string
+): Promise<ActionResult<void>> {
+  if (!(await interestActor(eventId))) return { success: false, error: "Unauthorized." }
+  try {
+    const deleted = await db.smallGroupMemberRequest.deleteMany({
+      where: {
+        id: requestId,
+        sourceEventId: eventId,
+        origin: "RegistrationIntent",
+        smallGroupId: null,
+        status: { in: ["Pending", "Rejected"] },
+      },
+    })
+    if (deleted.count !== 1) return { success: false, error: "This interest request has already changed." }
+    revalidatePath(`/event/${eventId}/catch-mech`)
+    revalidatePath("/small-groups")
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to delete DGroup interest." }
+  }
+}

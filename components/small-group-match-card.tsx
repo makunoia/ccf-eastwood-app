@@ -215,6 +215,8 @@ type SmallGroupMatchCardProps = {
   assignLabel?: string
   /** Action button label while in-flight. Defaults to "Assigning…". */
   assigningLabel?: string
+  /** Guest matching may offer two assignment paths instead of the default action. */
+  assignmentMenu?: React.ReactNode
   /** Optional subtitle rendered below the match percentage (e.g. volunteer info). */
   subtitle?: string
   /** Admin surfaces pass this to reveal the per-factor breakdown grid. Kept off
@@ -231,6 +233,7 @@ export function SmallGroupMatchCard({
   onGroupClick,
   assignLabel = "Assign",
   assigningLabel = "Assigning…",
+  assignmentMenu,
   subtitle,
   showBreakdown = false,
   context = "SmallGroup",
@@ -275,9 +278,11 @@ export function SmallGroupMatchCard({
             <Button size="sm" variant="ghost" onClick={() => setDetailsOpen(true)}>
               See Details
             </Button>
-            <Button size="sm" onClick={onAssign} disabled={assigning}>
-              {assigning ? assigningLabel : assignLabel}
-            </Button>
+            {assignmentMenu !== undefined ? assignmentMenu : (
+              <Button size="sm" onClick={onAssign} disabled={assigning}>
+                {assigning ? assigningLabel : assignLabel}
+              </Button>
+            )}
           </div>
         </div>
       </div>
