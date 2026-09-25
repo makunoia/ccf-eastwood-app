@@ -941,11 +941,13 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
     return (
       <div className="flex flex-col items-center justify-center px-6 py-8">
         <div className="w-full space-y-6">
-          <div className="space-y-1 text-center">
-            <h2 className="text-2xl font-semibold tracking-tight">One quick question</h2>
-            <p className="text-sm text-muted-foreground">
-              Are you interested in joining a DGroup?
+          <div className="space-y-2 text-center">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              DGroup
             </p>
+            <h2 className="text-2xl font-semibold tracking-tight">
+              Are you interested in joining a DGroup?
+            </h2>
           </div>
 
           <div className="flex flex-col gap-3">

@@ -1295,7 +1295,8 @@ model SmallGroupMemberRequest {
   assignedByUserId String?
   assignedByUser   User?           @relation(fields: [assignedByUserId], references: [id])
 
-  // Tracks which breakout group triggered this request (for auto-cancellation on removal)
+  // Context for an explicit Catch Mech decision; a breakout seat alone never
+  // creates a DGroup request.
   breakoutGroupId  String?
 
   // Where this request came from (CCF-101). `Assignment` is every pre-existing

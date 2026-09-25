@@ -12,7 +12,7 @@ import {
 } from "@/lib/breakouts/owner"
 
 async function getGuest(id: string) {
-  const [g, pendingRequest, rejectedRequest] = await Promise.all([
+  const [g, pendingGroupRequest, latestResolvedGroupRequest] = await Promise.all([
     db.guest.findUnique({
       where: { id },
       include: {
@@ -58,11 +58,13 @@ async function getGuest(id: string) {
     }),
     db.smallGroupMemberRequest.findFirst({
       where: { guestId: id, status: "Pending" },
+      orderBy: { createdAt: "desc" },
       select: { smallGroup: { select: { id: true, name: true } } },
     }),
     db.smallGroupMemberRequest.findFirst({
-      where: { guestId: id, status: "Rejected" },
-      select: { id: true },
+      where: { guestId: id, status: { in: ["Confirmed", "Rejected"] } },
+      orderBy: { createdAt: "desc" },
+      select: { status: true },
     }),
   ])
   if (!g) return null
@@ -119,9 +121,10 @@ async function getGuest(id: string) {
     claimedSmallGroup: g.claimedSmallGroup,
     claimedSatellite: g.claimedSatellite,
     eventRegistrations: g.eventRegistrations,
-    pendingGroupName: pendingRequest?.smallGroup?.name ?? null,
-    pendingGroupId: pendingRequest?.smallGroup?.id ?? null,
-    hasRejectedSmallGroupRequest: !!rejectedRequest,
+    pendingGroupName: pendingGroupRequest?.smallGroup?.name ?? null,
+    pendingGroupId: pendingGroupRequest?.smallGroup?.id ?? null,
+    hasPendingSmallGroupRequest: pendingGroupRequest !== null,
+    hasRejectedSmallGroupRequest: latestResolvedGroupRequest?.status === "Rejected",
     matchedBreakout,
   }
 }
@@ -250,7 +253,7 @@ export default async function GuestDetailPage({
 
   const pipelineStatus = computeGuestStatus({
     memberId: guest.memberId,
-    hasPendingSmallGroupRequest: guest.pendingGroupName !== null,
+    hasPendingSmallGroupRequest: guest.hasPendingSmallGroupRequest,
     hasRejectedSmallGroupRequest: guest.hasRejectedSmallGroupRequest,
     eventRegistrations: guest.eventRegistrations,
   })
@@ -310,4 +313,3 @@ export default async function GuestDetailPage({
     />
   )
 }
-

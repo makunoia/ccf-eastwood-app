@@ -4,11 +4,10 @@ import * as React from "react"
 import type { ReactNode } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { IconDoorEnter, IconForms, IconHeart, IconUserPlus } from "@tabler/icons-react"
+import { IconDoorEnter, IconExternalLink, IconForms, IconHeart, IconUserPlus } from "@tabler/icons-react"
 import { toast } from "sonner"
 
 import { Switch } from "@/components/ui/switch"
-import { SettingCard } from "@/components/ui/setting-card"
 import { updateEventCluster } from "@/app/(dashboard)/events/cluster-actions"
 import {
   clusterCheckinPath,
@@ -18,8 +17,8 @@ import {
 } from "@/lib/public-routes"
 
 /**
- * Cluster Forms list — same list-first pattern as the per-event Forms page:
- * rows here, each opening its own config page.
+ * Cluster Forms groups the shared registration and arrival surfaces separately
+ * from the optional Collab volunteer form.
  */
 
 function titleLink(href: string, label: string) {
@@ -75,82 +74,97 @@ export function ClusterFormsList({
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      <SettingCard
-        icon={IconForms}
-        title={titleLink(`${base}/registration`, "Registration Form")}
-        description="The shared public form for the whole day — register once, tick the events you're attending."
-        control={
-          <div className="flex items-center gap-2">
-            <PublicFormLink href={publicBase}>Open form</PublicFormLink>
-            <span className="w-12 text-right text-sm text-muted-foreground">
-              {isOpen ? "Open" : "Closed"}
-            </span>
-            <Switch
-              checked={isOpen}
-              onCheckedChange={handleToggle}
-              disabled={pending}
-              aria-label={`${isOpen ? "Close" : "Open"} Registration Form`}
-            />
-          </div>
-        }
-      />
-
-      {/* Each of the three surfaces owns its switch, so each row reports its own
-          state. The switches themselves live on the config pages; only the
-          shared form's is duplicated here, where it is flipped most often. */}
-      <SettingCard
-        icon={IconUserPlus}
-        title={titleLink(`${base}/walk-in`, "Walk-in Registration")}
-        description="The same form in door mode — staff-supervised, registers and checks people in on the spot."
-        control={
-          <div className="flex items-center gap-4">
-            <PublicFormLink href={clusterWalkInPath(publicToken)}>Open form</PublicFormLink>
-            <span className="text-sm text-muted-foreground">{walkInIsOpen ? "Open" : "Closed"}</span>
-          </div>
-        }
-      />
-
+    <div className="flex max-w-5xl flex-col gap-7">
+      <section aria-labelledby="cluster-arrival-heading">
+        <h2 id="cluster-arrival-heading" className="mb-2 text-sm font-semibold">Registration &amp; arrival</h2>
+        <ul className="divide-y rounded-lg border bg-card">
+          <ClusterFormRow
+            icon={IconForms}
+            title={titleLink(`${base}/registration`, "Registration Form")}
+            description="The shared public form for the whole day."
+            publicHref={publicBase}
+            status={isOpen ? "On" : "Off"}
+            control={(
+              <Switch
+                checked={isOpen}
+                onCheckedChange={handleToggle}
+                disabled={pending}
+                aria-label={`${isOpen ? "Turn off" : "Turn on"} public access for Registration Form`}
+              />
+            )}
+          />
+          {/* These forms have their own access controls on their configuration screens. */}
+          <ClusterFormRow
+            icon={IconUserPlus}
+            title={titleLink(`${base}/walk-in`, "Walk-in Registration")}
+            description="Register and check in someone at the door."
+            publicHref={clusterWalkInPath(publicToken)}
+            status={walkInIsOpen ? "On" : "Off"}
+          />
+          <ClusterFormRow
+            icon={IconDoorEnter}
+            title={titleLink(`${base}/check-in`, "Check-in")}
+            description={`One kiosk for the day across ${eventCount} ${eventCount === 1 ? "event" : "events"}.`}
+            publicHref={clusterCheckinPath(publicToken)}
+            status={checkInIsOpen ? "On" : "Off"}
+          />
+        </ul>
+      </section>
       {isCollab && (
-        <SettingCard
-          icon={IconHeart}
-          title={titleLink(`${base}/volunteer`, "Volunteer Sign-Up")}
-          description="The day's serving team signs up here — one form, routed by ministry, tracked against this day."
-          control={
-            <div className="flex items-center gap-4">
-              <PublicFormLink href={clusterVolunteerPath(publicToken)}>Open form</PublicFormLink>
-              <span className="text-sm text-muted-foreground">{volunteerIsOpen ? "Open" : "Closed"}</span>
-            </div>
-          }
-        />
+        <section aria-labelledby="cluster-serving-heading">
+          <h2 id="cluster-serving-heading" className="mb-2 text-sm font-semibold">Serving</h2>
+          <ul className="divide-y rounded-lg border bg-card">
+            <ClusterFormRow
+              icon={IconHeart}
+              title={titleLink(`${base}/volunteer`, "Volunteer Sign-Up")}
+              description="The day's serving team signs up here, routed by ministry."
+              publicHref={clusterVolunteerPath(publicToken)}
+              status={volunteerIsOpen ? "On" : "Off"}
+            />
+          </ul>
+        </section>
       )}
-
-      <SettingCard
-        icon={IconDoorEnter}
-        title={titleLink(`${base}/check-in`, "Check-in")}
-        description={`One kiosk for the whole day, plus each event's own form — ${eventCount} ${
-          eventCount === 1 ? "event" : "events"
-        }.`}
-        control={
-          <div className="flex items-center gap-4">
-            <PublicFormLink href={clusterCheckinPath(publicToken)}>Open form</PublicFormLink>
-            <span className="text-sm text-muted-foreground">{checkInIsOpen ? "Open" : "Closed"}</span>
-          </div>
-        }
-      />
     </div>
   )
 }
 
-function PublicFormLink({ href, children }: { href: string; children: ReactNode }) {
+function ClusterFormRow({
+  icon: Icon,
+  title,
+  description,
+  publicHref,
+  status,
+  control,
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  title: ReactNode
+  description: string
+  publicHref: string
+  status: string
+  control?: ReactNode
+}) {
   return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="text-sm font-medium text-primary underline decoration-dashed underline-offset-2 decoration-foreground/50 hover:decoration-foreground transition-colors"
-    >
-      {children}<span className="sr-only"> (opens in a new tab)</span>
-    </a>
+    <li className="grid gap-4 px-4 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start sm:gap-x-12">
+      <div className="flex min-w-0 items-start gap-3">
+        <Icon className="mt-0.5 size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <div className="min-w-0">
+          <div className="font-medium">{title}</div>
+          <p className="mt-1 max-w-[58ch] text-sm leading-5 text-muted-foreground">{description}</p>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pl-8 sm:justify-end sm:pl-0 sm:pt-1">
+        <a
+          href={publicHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline underline-offset-4"
+        >
+          View <IconExternalLink className="size-3.5" aria-hidden="true" />
+          <span className="sr-only"> public form (opens in a new tab)</span>
+        </a>
+        <span className="text-sm text-muted-foreground">{status}</span>
+        {control}
+      </div>
+    </li>
   )
 }

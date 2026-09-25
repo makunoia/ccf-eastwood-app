@@ -40,5 +40,5 @@ export default async function EventJoinSmallGroupPage({ params }: { params: Prom
     bannerUrl: event.registrationPageBannerUrl,
     primaryColor: brand.primaryColor,
   })
-  return <PublicFormShell theme={theme} alt={event.name} wide><JoinForm lifeStages={lifeStages} eventId={id} /></PublicFormShell>
+  return <PublicFormShell theme={theme} alt={event.name}><JoinForm lifeStages={lifeStages} eventId={id} /></PublicFormShell>
 }

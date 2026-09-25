@@ -8,9 +8,9 @@
  * which locked the form and sent admins to the DGroup page to change anything;
  * a breakout table is not its facilitator's DGroup, so that coupling is gone.
  * The facilitator's DGroup is still shown, as information (see
- * `components/breakouts/facilitator-leadership.tsx`) and still routes Catch Mech
- * requests via `BreakoutGroup.linkedSmallGroupId` — but it no longer decides
- * what this group matches for.
+ * `components/breakouts/facilitator-leadership.tsx`) and is offered as a Catch
+ * Mech destination when a facilitator explicitly confirms someone. The link
+ * does not create a DGroup request when someone takes a breakout seat.
  *
  * Client-safe on purpose: no React, no Prisma, no icon imports — the detail page
  * card, both edit drawers and the server action all import from here, and every

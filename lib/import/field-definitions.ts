@@ -92,7 +92,7 @@ export const SMALL_GROUP_FIELDS: FieldDefinition[] = [
 // group, so those columns are intentionally omitted from the import.
 export const BREAKOUT_GROUP_FIELDS: FieldDefinition[] = [
   { key: "name",              label: "Group Name",         required: true },
-  { key: "facilitatorMobile", label: "Facilitator Mobile", required: false, hint: "Matched by mobile against an existing event volunteer. Their DGroup is linked automatically." },
+  { key: "facilitatorMobile", label: "Facilitator Mobile", required: false, hint: "Matched by mobile against an existing event volunteer. Their DGroup is shown as a possible Catch Mech destination; breakout guests are not assigned to it." },
   { key: "memberLimit",       label: "Member Limit",       required: false },
 ]
 

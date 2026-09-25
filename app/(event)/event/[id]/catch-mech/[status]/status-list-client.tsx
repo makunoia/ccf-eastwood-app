@@ -23,7 +23,7 @@ export type StatusListRow = {
   name: string
   type: "Member" | "Guest"
   breakoutGroupName: string
-  smallGroupName: string | null  // null for the declined statuses
+  smallGroupName: string | null  // null until an explicit DGroup decision
   declineReason: string | null   // display string, only set for declined rows
   rejectedByName: string | null  // facilitator name, only set for declined rows
 }

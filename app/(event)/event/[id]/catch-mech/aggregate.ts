@@ -37,6 +37,7 @@ export type AggRequest = {
   guestId: string | null
   status: "Confirmed" | "Rejected" | "Pending"
   declineReason: DeclineReason | null
+  resolvedAt?: Date | null
 }
 
 export type CatchMechStats = {
@@ -86,7 +87,11 @@ export function buildCatchMechGroupRows(
     const isTimothy = faciMember ? faciMember.ledGroups.length === 0 : false
     const ledGroupNames = faciMember?.ledGroups.map((g) => g.name) ?? []
 
-    const groupRequests = allRequests.filter((r) => r.breakoutGroupId === bg.id)
+    // Pending is the default for an undecided breakout seat. Historical
+    // request rows must not mask a later facilitator decision for that person.
+    const groupRequests = allRequests
+      .filter((r) => r.breakoutGroupId === bg.id && r.status !== "Pending")
+      .sort((a, b) => (b.resolvedAt?.getTime() ?? 0) - (a.resolvedAt?.getTime() ?? 0))
 
     let confirmed = 0
     let rejected = 0

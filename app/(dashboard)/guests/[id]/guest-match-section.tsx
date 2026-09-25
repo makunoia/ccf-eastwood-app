@@ -34,7 +34,7 @@ import type { GuestPipelineStatus } from "@/lib/guest-utils"
 // ─── Level labels ─────────────────────────────────────────────────────────────
 
 const LEVEL_LABEL: Record<1 | 2 | 3, string> = {
-  1: "Breakout facilitator's group",
+  1: "Facilitator's DGroup suggestions",
   2: "Other event volunteer groups",
   3: "All DGroups",
 }
@@ -227,9 +227,11 @@ export const GuestMatchSection = React.forwardRef<
   if (pipelineStatus === "Pending") {
     return (
       <div className="max-w-2xl space-y-4">
-        {pendingGroupName && (
-          <div className="rounded-lg border bg-muted/40 p-4">
-            <p className="text-sm font-semibold">Awaiting leader confirmation</p>
+        <div className="rounded-lg border bg-muted/40 p-4">
+          <p className="text-sm font-semibold">
+            {pendingGroupName ? "Awaiting leader confirmation" : "Awaiting DGroup placement"}
+          </p>
+          {pendingGroupName ? (
             <p className="text-sm text-muted-foreground">
               Temporarily assigned to{" "}
               {pendingGroupId ? (
@@ -243,8 +245,12 @@ export const GuestMatchSection = React.forwardRef<
                 <span className="font-medium text-foreground">{pendingGroupName}</span>
               )}.
             </p>
-          </div>
-        )}
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Their request to join a DGroup is pending; no group has been selected yet.
+            </p>
+          )}
+        </div>
       </div>
     )
   }
@@ -254,13 +260,8 @@ export const GuestMatchSection = React.forwardRef<
     return (
       <div className="max-w-2xl space-y-4">
         {matchedBreakout && (
-          <div className={["rounded-lg border p-4 space-y-3", isDeclined ? "border-destructive/40 bg-destructive/5" : ""].join(" ")}>
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold">Breakout Group Assignment</h3>
-              {isDeclined && (
-                <Badge variant="destructive" className="text-xs">Membership Declined</Badge>
-              )}
-            </div>
+          <div className="rounded-lg border p-4 space-y-3">
+            <h3 className="text-sm font-semibold">Event Breakout Group</h3>
             <div className="space-y-2 text-sm">
               <div className="flex gap-2">
                 <span className="text-muted-foreground w-32 shrink-0">Event</span>
@@ -273,7 +274,7 @@ export const GuestMatchSection = React.forwardRef<
               {matchedBreakout.linkedSmallGroup ? (
                 <>
                   <div className="flex gap-2">
-                    <span className="text-muted-foreground w-32 shrink-0">DGroup</span>
+                    <span className="text-muted-foreground w-40 shrink-0">Facilitator&apos;s DGroup</span>
                     <span>{matchedBreakout.linkedSmallGroup.name}</span>
                   </div>
                   <div className="flex gap-2">
@@ -296,10 +297,17 @@ export const GuestMatchSection = React.forwardRef<
                 </div>
               )}
             </div>
+            {matchedBreakout.linkedSmallGroup && (
+              <p className="text-xs text-muted-foreground">
+                Breakout placement does not assign this guest to the facilitator&apos;s DGroup.
+              </p>
+            )}
           </div>
         )}
         {isDeclined && (
-          <section className="space-y-4">
+          <Badge variant="destructive" className="text-xs">DGroup Request Declined</Badge>
+        )}
+        <section className="space-y-4">
             <div>
               <h3 className="text-sm font-semibold">
                 DGroup Matching
@@ -437,10 +445,9 @@ export const GuestMatchSection = React.forwardRef<
               )}
               {state === "loading" ? "Searching…" : "Find matching groups"}
             </Button>
-          </section>
-        )}
+        </section>
 
-        {isDeclined && state === "done" && (
+        {state === "done" && (
           <>
             {levels.length === 0 ? (
               <p className="text-sm text-muted-foreground">
