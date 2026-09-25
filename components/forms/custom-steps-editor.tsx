@@ -1,7 +1,10 @@
 "use client"
 
 import * as React from "react"
-import { IconListDetails } from "@tabler/icons-react"
+import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core"
+import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable"
+import { CSS } from "@dnd-kit/utilities"
+import { IconGripVertical, IconListDetails, IconTrash } from "@tabler/icons-react"
 import { toast } from "sonner"
 import { saveCustomFormSteps } from "@/app/(dashboard)/events/form-config-actions"
 import { Button } from "@/components/ui/button"
@@ -20,14 +23,6 @@ function newStep(): CustomStep {
   return { id: crypto.randomUUID(), title: "", questions: [newQuestion()] }
 }
 
-function moveItem<T>(items: T[], index: number, offset: -1 | 1): T[] {
-  const next = [...items]
-  const target = index + offset
-  if (target < 0 || target >= next.length) return next
-  ;[next[index], next[target]] = [next[target], next[index]]
-  return next
-}
-
 function optionDraftsFor(steps: CustomStep[]): Record<string, string> {
   return Object.fromEntries(
     steps.flatMap((step) => step.questions.map((question) => [question.id, question.options.join("\n")])),
@@ -36,6 +31,70 @@ function optionDraftsFor(steps: CustomStep[]): Record<string, string> {
 
 function normalizeOptions(value: string): string[] {
   return value.split("\n").map((option) => option.trim()).filter(Boolean)
+}
+
+function SortableStep({
+  step,
+  stepIndex,
+  children,
+  onTitleChange,
+  onRemove,
+}: {
+  step: CustomStep
+  stepIndex: number
+  children: React.ReactNode
+  onTitleChange: (value: string) => void
+  onRemove: () => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: step.id })
+
+  return (
+    <section
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={`space-y-4 py-4 first:pt-0 last:pb-0 ${isDragging ? "relative z-10 rounded-md bg-background shadow-md" : ""}`}
+      aria-label={`Step ${stepIndex + 1}`}
+    >
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <Label htmlFor={`custom-step-title-${step.id}`}>Step {stepIndex + 1}</Label>
+          <Input
+            id={`custom-step-title-${step.id}`}
+            value={step.title}
+            maxLength={100}
+            placeholder="Step title"
+            onChange={(event) => onTitleChange(event.target.value)}
+          />
+        </div>
+        <div className="flex items-center gap-1 sm:pt-5">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-8 touch-none cursor-grab text-muted-foreground active:cursor-grabbing"
+            aria-label={`Reorder step ${stepIndex + 1}. Press Space to pick up, use the arrow keys to move, then press Space to drop or Escape to cancel.`}
+            title="Drag or press Space to reorder"
+            {...attributes}
+            {...listeners}
+          >
+            <IconGripVertical aria-hidden className="size-4" />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-8 text-muted-foreground hover:text-destructive"
+            aria-label={`Remove step ${stepIndex + 1}`}
+            title="Remove step"
+            onClick={onRemove}
+          >
+            <IconTrash aria-hidden className="size-4" />
+          </Button>
+        </div>
+      </div>
+      {children}
+    </section>
+  )
 }
 
 function CustomQuestionEditor({
@@ -123,6 +182,10 @@ export function CustomStepsEditor({
   const [savedSteps, setSavedSteps] = React.useState(initial)
   const [optionDrafts, setOptionDrafts] = React.useState(() => optionDraftsFor(initial))
   const [saving, setSaving] = React.useState(false)
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
 
   const currentSteps = steps.map((step) => ({
     ...step,
@@ -168,6 +231,20 @@ export function CustomStepsEditor({
     setOptionDrafts(optionDraftsFor(savedSteps))
   }
 
+  function handleReorder(event: DragEndEvent) {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    setSteps((current) => {
+      const from = current.findIndex((step) => step.id === active.id)
+      const to = current.findIndex((step) => step.id === over.id)
+      if (from < 0 || to < 0) return current
+      const next = [...current]
+      const [moved] = next.splice(from, 1)
+      next.splice(to, 0, moved)
+      return next
+    })
+  }
+
   return (
     <section className="space-y-4 rounded-lg border px-4 py-4 sm:px-5" aria-labelledby={`custom-steps-title-${eventId}`}>
       <div className="flex items-start gap-3">
@@ -185,42 +262,34 @@ export function CustomStepsEditor({
           No custom steps. Add a step to include questions in this form.
         </p>
       ) : (
-        <div className="divide-y">
-          {steps.map((step, stepIndex) => (
-            <section key={step.id} className="space-y-4 py-4 first:pt-0 last:pb-0" aria-label={`Step ${stepIndex + 1}`}>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <div className="min-w-0 flex-1 space-y-1.5">
-                  <Label htmlFor={`custom-step-title-${step.id}`}>Step {stepIndex + 1}</Label>
-                  <Input
-                    id={`custom-step-title-${step.id}`}
-                    value={step.title}
-                    maxLength={100}
-                    placeholder="Step title"
-                    onChange={(event) => updateStep(stepIndex, { title: event.target.value })}
-                  />
-                </div>
-                <div className="flex flex-wrap items-center gap-1 sm:pt-5">
-                  <Button type="button" variant="ghost" size="sm" disabled={stepIndex === 0} onClick={() => setSteps((current) => moveItem(current, stepIndex, -1))}>Move up</Button>
-                  <Button type="button" variant="ghost" size="sm" disabled={stepIndex === steps.length - 1} onClick={() => setSteps((current) => moveItem(current, stepIndex, 1))}>Move down</Button>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setSteps((current) => current.filter((_, index) => index !== stepIndex))}>Remove step</Button>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                {step.questions.map((question, questionIndex) => (
-                  <CustomQuestionEditor
-                    key={question.id}
-                    question={question}
-                    index={questionIndex}
-                    optionsText={optionDrafts[question.id] ?? question.options.join("\n")}
-                    onChange={(patch) => updateQuestion(stepIndex, questionIndex, patch)}
-                    onOptionsChange={(value) => setOptionDrafts((drafts) => ({ ...drafts, [question.id]: value }))}
-                  />
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleReorder}>
+          <SortableContext items={steps.map((step) => step.id)} strategy={verticalListSortingStrategy}>
+            <div className="divide-y">
+              {steps.map((step, stepIndex) => (
+                <SortableStep
+                  key={step.id}
+                  step={step}
+                  stepIndex={stepIndex}
+                  onTitleChange={(value) => updateStep(stepIndex, { title: value })}
+                  onRemove={() => setSteps((current) => current.filter((item) => item.id !== step.id))}
+                >
+                  <div className="space-y-4">
+                    {step.questions.map((question, questionIndex) => (
+                      <CustomQuestionEditor
+                        key={question.id}
+                        question={question}
+                        index={questionIndex}
+                        optionsText={optionDrafts[question.id] ?? question.options.join("\n")}
+                        onChange={(patch) => updateQuestion(stepIndex, questionIndex, patch)}
+                        onOptionsChange={(value) => setOptionDrafts((drafts) => ({ ...drafts, [question.id]: value }))}
+                      />
+                    ))}
+                  </div>
+                </SortableStep>
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
       )}
 
       <div className="flex flex-wrap items-center gap-2 border-t pt-3">
