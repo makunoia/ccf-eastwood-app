@@ -46,6 +46,17 @@ export const createUserSchema = z.object({
 export type CreateUserInput = z.infer<typeof createUserSchema>
 
 export const updateUserPermissionsSchema = z.object({
+  username: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .min(3, "Username must be at least 3 characters")
+    .max(32, "Username must be at most 32 characters")
+    .regex(
+      /^[a-z0-9._-]+$/,
+      "Use lowercase letters, numbers, dots, dashes, or underscores"
+    ),
+  role: z.enum(["Staff", "SuperAdmin"]),
   permissions: z.array(permissionEntrySchema),
   eventIds: z.array(z.string()).refine((ids) => new Set(ids).size === ids.length, {
     message: "An event can only be selected once",

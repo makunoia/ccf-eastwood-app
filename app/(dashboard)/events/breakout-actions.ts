@@ -65,6 +65,33 @@ async function poolVolunteerEventIds(owner: BreakoutOwner): Promise<string[]> {
 }
 
 /**
+ * Keep facilitator links inside the owner’s volunteer pool, including writes
+ * made through the group create/edit drawers (not only the detail-page picker).
+ */
+async function validateFacilitatorsInPool(
+  owner: BreakoutOwner,
+  facilitatorIds: readonly (string | null | undefined)[]
+): Promise<string | null> {
+  const ids = [...new Set(facilitatorIds.filter((id): id is string => !!id))]
+  if (ids.length === 0) return null
+
+  const volunteerEventIds = await poolVolunteerEventIds(owner)
+  const found = await db.volunteer.findMany({
+    where: {
+      id: { in: ids },
+      eventId: { in: volunteerEventIds },
+      status: "Confirmed",
+    },
+    select: { id: true },
+  })
+  if (found.length === ids.length) return null
+
+  return volunteerEventIds.length > 1
+    ? "Facilitator must be a confirmed volunteer for this event day"
+    : "Facilitator must be a confirmed volunteer for this event"
+}
+
+/**
  * Revalidate the surfaces a breakout change is visible on.
  *
  * The two owners live at different paths, and both reach public pickers.
@@ -177,6 +204,9 @@ export async function createBreakoutGroup(
     ...profile
   } = parsed.data
 
+  const facilitatorError = await validateFacilitatorsInPool(owner, [facilitatorId, coFacilitatorId])
+  if (facilitatorError) return { success: false, error: facilitatorError }
+
   const timothyError = await validateTimothyProfile(facilitatorId, profile)
   if (timothyError) return { success: false, error: timothyError }
 
@@ -233,24 +263,28 @@ export async function updateBreakoutGroup(
     ...profile
   } = parsed.data
 
-  const timothyError = await validateTimothyProfile(facilitatorId, profile)
-  if (timothyError) return { success: false, error: timothyError }
-
-  // Scoped by owner: `requireBreakoutWrite` checks the *argument* owner, so
-  // without this an admin scoped to event A could pass event B's group id.
   const existing = await db.breakoutGroup.findFirst({
     where: { id: groupId, ...owner },
     select: { facilitatorId: true, coFacilitatorId: true, manualAssignOnly: true },
   })
   if (!existing) return { success: false, error: "Breakout group not found" }
 
+  const nextFacilitatorId = facilitatorId === undefined ? existing.facilitatorId : facilitatorId
+  const nextCoFacilitatorId =
+    coFacilitatorId === undefined ? existing.coFacilitatorId : coFacilitatorId
+  const facilitatorError = await validateFacilitatorsInPool(owner, [
+    nextFacilitatorId,
+    nextCoFacilitatorId,
+  ])
+  if (facilitatorError) return { success: false, error: facilitatorError }
+
+  const timothyError = await validateTimothyProfile(facilitatorId, profile)
+  if (timothyError) return { success: false, error: timothyError }
+
   // An absent key means "not on the form", not "clear it". Neither edit drawer
   // has a co-facilitator control — that slot is assigned from the detail page —
   // so writing `coFacilitatorId ?? null` silently detached the co-facilitator on
   // every save from either drawer.
-  const nextFacilitatorId = facilitatorId === undefined ? existing.facilitatorId : facilitatorId
-  const nextCoFacilitatorId =
-    coFacilitatorId === undefined ? existing.coFacilitatorId : coFacilitatorId
   // Same rule: a caller that never showed the control must not switch it off.
   const nextManualAssignOnly =
     manualAssignOnly === undefined ? existing.manualAssignOnly : manualAssignOnly
@@ -701,7 +735,6 @@ export async function transferRegistrantToBreakout(
         where: { id: toGroupId, ...owner },
         select: {
           memberLimit: true,
-          linkedSmallGroupId: true,
           _count: { select: { members: true } },
         },
       })
@@ -723,75 +756,57 @@ export async function transferRegistrantToBreakout(
         data: { breakoutGroupId: toGroupId, registrantId },
       })
 
-      // A pending Catch Mech request belongs to the breakout that raised it.
-      // Moving its registrant must move that request too: retain the same row
-      // when both breakouts feed one DGroup, otherwise close the stale request
-      // and raise (or reuse) one for the destination's linked DGroup.
-      const personWhere = registrant.memberId
-        ? { memberId: registrant.memberId }
-        : registrant.guestId
-          ? { guestId: registrant.guestId }
-          : null
-      if (personWhere) {
-        const pending = await tx.smallGroupMemberRequest.findMany({
-          where: { breakoutGroupId: fromGroupId, status: "Pending", ...personWhere },
-          select: { id: true, smallGroupId: true, memberId: true, guestId: true },
-        })
-        const sameDestination = pending.filter(
-          (request) => request.smallGroupId === destination.linkedSmallGroupId
-        )
-        const obsolete = pending.filter(
-          (request) => request.smallGroupId !== destination.linkedSmallGroupId
-        )
-
-        if (sameDestination.length > 0) {
-          await tx.smallGroupMemberRequest.updateMany({
-            where: { id: { in: sameDestination.map((request) => request.id) } },
+      // Carry an explicit Catch Mech request with the seat. A same-DGroup move
+      // keeps the request and its place in the leader's queue; changing DGroups
+      // declines the old request and raises a fresh one for the new destination.
+      const [sourceGroup, destinationGroup] = await Promise.all([
+        tx.breakoutGroup.findUnique({ where: { id: fromGroupId }, select: { linkedSmallGroupId: true } }),
+        tx.breakoutGroup.findUnique({ where: { id: toGroupId }, select: { linkedSmallGroupId: true } }),
+      ])
+      const requests = await tx.smallGroupMemberRequest.findMany({
+        where: {
+          breakoutGroupId: fromGroupId,
+          status: "Pending",
+          ...(registrant.memberId ? { memberId: registrant.memberId } : { guestId: registrant.guestId }),
+        },
+      })
+      const matchingRequest = requests.find((request) =>
+        registrant.memberId ? request.memberId === registrant.memberId : request.guestId === registrant.guestId
+      )
+      if (matchingRequest) {
+        if (sourceGroup?.linkedSmallGroupId === destinationGroup?.linkedSmallGroupId && destinationGroup?.linkedSmallGroupId) {
+          await tx.smallGroupMemberRequest.update({
+            where: { id: matchingRequest.id },
             data: { breakoutGroupId: toGroupId },
           })
-        }
-
-        if (obsolete.length > 0) {
+        } else if (sourceGroup?.linkedSmallGroupId !== destinationGroup?.linkedSmallGroupId) {
           const now = new Date()
-          await tx.smallGroupMemberRequest.updateMany({
-            where: { id: { in: obsolete.map((request) => request.id) } },
+          await tx.smallGroupMemberRequest.update({
+            where: { id: matchingRequest.id },
             data: { status: "Rejected", resolvedAt: now },
           })
-          await tx.smallGroupLog.createMany({
-            data: obsolete.flatMap((request) =>
-              request.smallGroupId
-                ? [{
-                    smallGroupId: request.smallGroupId,
-                    action: "TempAssignmentRejected",
-                    memberId: request.memberId,
-                    guestId: request.guestId,
-                    description: "Pending Catch Mech membership was cancelled after moving to another breakout group",
-                  }]
-                : []
-            ),
-          })
-        }
-
-        if (destination.linkedSmallGroupId && sameDestination.length === 0) {
-          const existing = await tx.smallGroupMemberRequest.findFirst({
-            where: {
-              smallGroupId: destination.linkedSmallGroupId,
-              status: "Pending",
-              ...personWhere,
-            },
-            select: { id: true },
-          })
-          if (existing) {
-            await tx.smallGroupMemberRequest.update({
-              where: { id: existing.id },
-              data: { breakoutGroupId: toGroupId },
+          if (matchingRequest.smallGroupId) {
+            await tx.smallGroupLog.create({
+              data: {
+                smallGroupId: matchingRequest.smallGroupId,
+                action: "TempAssignmentRejected",
+                guestId: matchingRequest.guestId,
+                memberId: matchingRequest.memberId,
+                fromGroupId: sourceGroup?.linkedSmallGroupId ?? null,
+                toGroupId: destinationGroup?.linkedSmallGroupId ?? null,
+                description: "Catch Mech request was withdrawn after breakout transfer",
+              },
             })
-          } else {
+          }
+          if (destinationGroup?.linkedSmallGroupId) {
             await tx.smallGroupMemberRequest.create({
               data: {
-                smallGroupId: destination.linkedSmallGroupId,
+                smallGroupId: destinationGroup.linkedSmallGroupId,
+                guestId: matchingRequest.guestId,
+                memberId: matchingRequest.memberId,
                 breakoutGroupId: toGroupId,
-                ...personWhere,
+                origin: matchingRequest.origin,
+                sourceEventId: matchingRequest.sourceEventId,
               },
             })
           }

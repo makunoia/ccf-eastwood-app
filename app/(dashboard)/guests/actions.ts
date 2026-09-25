@@ -23,6 +23,7 @@ import {
 } from "@/lib/people/promote-guest"
 import { runBatchDelete } from "@/lib/batch"
 import { PERSON_NAME_FIELDS, personSearchWhere } from "@/lib/search/name-search"
+import { advancePendingInterest, revalidateInterestEvents } from "@/lib/small-groups/advance-interest"
 import type { BatchDeleteResult } from "@/components/batch/types"
 
 type ActionResult<T = void> =
@@ -275,6 +276,12 @@ export async function promoteGuestToMember(
         group,
         schedule: "raw",
       })
+      const interest = targetGroupId
+        ? await advancePendingInterest(tx, {
+            person: { guestId }, groupId: targetGroupId, status: "Confirmed",
+            actorId: session.user.id ?? null, promotedMemberId: memberId,
+          })
+        : null
 
       // A guest can be sitting on a DGroup request awaiting leader confirmation.
       // Promoting them directly answers it, so resolve it here rather than leaving
@@ -338,13 +345,13 @@ export async function promoteGuestToMember(
         })
       }
 
-      return memberId
+      return { memberId, interestEventId: interest?.sourceEventId }
     })
 
     revalidatePath("/guests")
     revalidatePath(`/guests/${guestId}`)
     revalidatePath("/members")
-    revalidatePath(`/members/${result}`)
+    revalidatePath(`/members/${result.memberId}`)
     if (targetGroupId) {
       revalidatePath("/small-groups")
       revalidatePath(`/small-groups/${targetGroupId}`)
@@ -352,8 +359,9 @@ export async function promoteGuestToMember(
     for (const { eventId } of guestEventIds) {
       revalidatePath(`/event/${eventId}/dashboard`)
     }
+    revalidateInterestEvents([result.interestEventId])
 
-    return { success: true, data: { memberId: result } }
+    return { success: true, data: { memberId: result.memberId } }
   } catch (error) {
     // checkDuplicateContactInfo is a read-then-write check, so two admins
     // promoting same-email guests at once can still collide on Member.email.

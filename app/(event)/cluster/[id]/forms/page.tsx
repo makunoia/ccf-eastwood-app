@@ -23,6 +23,7 @@ export default async function ClusterFormsPage({
     select: {
       id: true,
       kind: true,
+      publicToken: true,
       isOpen: true,
       walkInIsOpen: true,
       checkInIsOpen: true,
@@ -41,6 +42,7 @@ export default async function ClusterFormsPage({
       />
       <ClusterFormsList
         clusterId={id}
+        publicToken={cluster.publicToken}
         initialIsOpen={cluster.isOpen}
         walkInIsOpen={cluster.walkInIsOpen}
         checkInIsOpen={cluster.checkInIsOpen}

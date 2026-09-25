@@ -163,6 +163,16 @@ export const FORM_REGISTRY: Record<FormKey, FormMeta> = {
     themeFields: ["logoUrl", "bannerUrl", "primaryColor", "title", "description"],
     requiresEventModule: "CatchMech",
   },
+  EventJoinSmallGroup: {
+    key: "EventJoinSmallGroup",
+    label: "Join a DGroup",
+    description: "Public page where guests share their preferences and request to join a DGroup led by an event volunteer.",
+    scope: "event",
+    icon: IconDoorEnter,
+    publicPath: (eventId) => `/events/${eventId}/join-small-group`,
+    themeFields: ["logoUrl", "bannerUrl", "primaryColor", "title", "description"],
+    requiresEventModule: "Volunteers",
+  },
 }
 
 export const GLOBAL_FORMS: FormMeta[] = Object.values(FORM_REGISTRY).filter(

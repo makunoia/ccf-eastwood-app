@@ -46,19 +46,21 @@ function sharedUpdates(parsed: MatchingProfileInput): Record<string, unknown> {
 
 export async function applyGuestMatchingProfile(
   guestId: string,
-  parsed: MatchingProfileInput
+  parsed: MatchingProfileInput,
+  client: Prisma.TransactionClient | typeof db = db
 ): Promise<void> {
   const data = sharedUpdates(parsed) as Prisma.GuestUpdateInput
   for (const key of SCHEDULE_KEYS) {
     if (!(key in parsed)) continue
     ;(data as Record<string, unknown>)[key] = parsed[key] ?? null
   }
-  await db.guest.update({ where: { id: guestId }, data })
+  await client.guest.update({ where: { id: guestId }, data })
 }
 
 export async function applyMemberMatchingProfile(
   memberId: string,
-  parsed: MatchingProfileInput
+  parsed: MatchingProfileInput,
+  client: Prisma.TransactionClient | typeof db = db
 ): Promise<void> {
   const data = sharedUpdates(parsed) as Prisma.MemberUpdateInput
 
@@ -86,5 +88,5 @@ export async function applyMemberMatchingProfile(
   }
 
   if (Object.keys(data).length === 0) return
-  await db.member.update({ where: { id: memberId }, data })
+  await client.member.update({ where: { id: memberId }, data })
 }

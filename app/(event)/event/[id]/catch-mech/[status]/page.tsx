@@ -53,11 +53,6 @@ async function getStatusListData(eventId: string, status: CatchMechSlug) {
         where: { breakoutGroupId: { in: breakoutGroupIds } },
         select: {
           breakoutGroupId: true,
-          breakoutGroup: {
-            select: {
-              linkedSmallGroup: { select: { name: true } },
-            },
-          },
           registrant: {
             select: {
               id: true,
@@ -123,7 +118,9 @@ async function getStatusListData(eventId: string, status: CatchMechSlug) {
         name,
         type,
         breakoutGroupName: breakoutGroupNameMap.get(m.breakoutGroupId) ?? "—",
-        smallGroupName: m.breakoutGroup.linkedSmallGroup?.name ?? null,
+        // This is a breakout seat awaiting a Catch Mech decision, not a DGroup
+        // request to the facilitator's linked group.
+        smallGroupName: null,
         declineReason: null,
         rejectedByName: null,
       })

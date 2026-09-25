@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from "vitest"
-import { render, screen } from "@testing-library/react"
+import { fireEvent, render, screen } from "@testing-library/react"
 
 import { FormConfigEditor } from "@/app/(dashboard)/forms/form-config-editor"
+import { FormsList, type FormListRow } from "@/app/(dashboard)/forms/forms-list"
 import { CheckinFormsCard } from "@/app/(event)/cluster/[id]/forms/checkin-forms-card"
 
 /**
@@ -67,6 +68,46 @@ describe("form config editor — View public form", () => {
   it("renders no link at all when the form has no public URL", () => {
     renderEditor(undefined)
     expect(screen.queryByRole("link", { name: /View public form/ })).toBeNull()
+  })
+})
+
+describe("event Forms — View check-in form", () => {
+  const row: FormListRow = {
+    key: "EventCheckIn",
+    label: "Check-in",
+    description: "Check people in",
+    href: "/event/e1/forms/EventCheckIn",
+    publicHref: "/events/e1/checkin",
+    isOpen: true,
+  }
+  const sessions = [
+    { id: "o1", label: "Sun, Aug 9, 2026", href: "/events/e1/checkin/o1" },
+    { id: "o2", label: "Sun, Aug 16, 2026", href: "/events/e1/checkin/o2" },
+  ]
+
+  it("asks which check-in form to view when multiple sessions are available", () => {
+    render(<FormsList rows={[{ ...row, checkinSessions: sessions }]} eventId="e1" />)
+    expect(screen.queryByRole("link", { name: /^View/ })).toBeNull()
+
+    fireEvent.click(screen.getByRole("button", { name: /View Check-in/ }))
+
+    expect(screen.getByRole("dialog", { name: "Choose a check-in form" })).toBeTruthy()
+    const links = screen.getAllByRole("link", { name: /Aug .*opens in a new tab/ })
+    expect(links.map((link) => link.getAttribute("href"))).toEqual([
+      "/events/e1/checkin/o1",
+      "/events/e1/checkin/o2",
+    ])
+    for (const link of links) {
+      expect(link.getAttribute("target")).toBe("_blank")
+      expect(link.getAttribute("rel")).toContain("noopener")
+    }
+  })
+
+  it("opens the only available session directly", () => {
+    render(<FormsList rows={[{ ...row, checkinSessions: [sessions[0]] }]} eventId="e1" />)
+    const link = screen.getByRole("link", { name: /^View/ })
+    expect(link.getAttribute("href")).toBe("/events/e1/checkin/o1")
+    expect(link.getAttribute("target")).toBe("_blank")
   })
 })
 

@@ -65,6 +65,7 @@ export type EventRegistrationExportRow = {
   dietary: string | null
   isPaid: boolean
   paymentReference: string | null
+  customAnswers: string | null
 
   // Module-gathered facts
   baptismOptIn: boolean
@@ -85,6 +86,7 @@ export const EVENT_EXPORT_GROUPS = [
   "Your Household",
   "Dietary Preferences",
   "Payment",
+  "Custom questions",
   "Baptism",
   "Embarkation",
 ] as const
@@ -124,6 +126,7 @@ const STATIC_COLUMNS: readonly ColumnDef[] = [
   // payment column to every event. Someone actually paying is the real signal.
   { key: "isPaid", label: "Paid", group: "Payment", toggle: "sectionPayment", hasData: (rows) => rows.some((r) => r.isPaid), value: (r) => yesNo(r.isPaid) },
   { key: "paymentReference", label: "Payment Reference", group: "Payment", toggle: "sectionPayment", value: (r) => r.paymentReference },
+  { key: "customAnswers", label: "Custom answers", group: "Custom questions", toggle: null, optional: true, value: (r) => r.customAnswers },
 
   // ── Modules ──
   { key: "baptismOptIn", label: "Baptism Opt-in", group: "Baptism", module: "Baptism", toggle: null, hasData: (rows) => rows.some((r) => r.baptismOptIn), value: (r) => yesNo(r.baptismOptIn) },

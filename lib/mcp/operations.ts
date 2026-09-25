@@ -13,6 +13,7 @@ import {
   resolveMemberRequest,
 } from "@/lib/small-groups/resolve-member-request"
 import { clearUpwardSatelliteOnConfirm } from "@/lib/small-groups/upward-satellite"
+import { advancePendingInterest, revalidateInterestEvents } from "@/lib/small-groups/advance-interest"
 import { actorCan, actorCanWriteEvent, type McpActor } from "./auth"
 
 type Result =
@@ -213,10 +214,11 @@ export async function targetMcpDGroupRequest(
           select: {
             id: true,
             status: true,
+            origin: true,
             smallGroupId: true,
             guestId: true,
             memberId: true,
-            guest: { select: { firstName: true, lastName: true } },
+            guest: { select: { firstName: true, lastName: true, memberId: true } },
             member: { select: { firstName: true, lastName: true, smallGroupId: true } },
           },
         }),
@@ -228,24 +230,25 @@ export async function targetMcpDGroupRequest(
       if (!request) return { error: "DGroup request not found." } as const
       if (!group) return { error: "DGroup not found." } as const
       if (request.status !== "Pending") return { error: "This request has already been resolved." } as const
+      if (request.origin !== "RegistrationIntent") return { error: "This is not an unplaced interest request." } as const
       if (request.smallGroupId) return { error: "This request already targets a DGroup." } as const
       if (group.memberLimit !== null && group._count.members >= group.memberLimit) {
         return { error: "This DGroup is already at its member limit." } as const
       }
       if (!request.guestId && !request.memberId) return { error: "This request has no linked person." } as const
+      if (request.guest?.memberId || request.member?.smallGroupId === groupId) {
+        return { error: "This person's DGroup details have changed." } as const
+      }
 
       const personName = request.member
         ? `${request.member.firstName} ${request.member.lastName}`
         : request.guest
           ? `${request.guest.firstName} ${request.guest.lastName}`
           : "Unknown"
-      await tx.smallGroupMemberRequest.update({
-        where: { id: request.id },
-        data: {
-          smallGroupId: group.id,
-          fromGroupId: request.member?.smallGroupId ?? null,
-          assignedByUserId: actor.id,
-        },
+      const interest = await advancePendingInterest(tx, {
+        person: request.memberId ? { memberId: request.memberId } : { guestId: request.guestId! },
+        requestId, groupId, status: "Pending", actorId: actor.id,
+        fromGroupId: request.member?.smallGroupId,
       })
       await tx.smallGroupLog.create({
         data: {
@@ -259,10 +262,12 @@ export async function targetMcpDGroupRequest(
           description: `${personName} was matched to this DGroup through the Churchie ChatGPT plugin (pending confirmation)`,
         },
       })
-      return { requestId, groupId: group.id, groupName: group.name, personName, status: "Pending" }
+      return { requestId, groupId: group.id, groupName: group.name, personName, status: "Pending", sourceEventId: interest?.sourceEventId }
     })
     if ("error" in result && result.error) return fail(result.error)
-    return { success: true, data: result }
+    revalidateInterestEvents([result.sourceEventId])
+    const { sourceEventId: _sourceEventId, ...data } = result
+    return { success: true, data }
   } catch {
     return fail("Failed to assign the DGroup request.")
   }

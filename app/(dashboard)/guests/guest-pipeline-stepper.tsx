@@ -6,8 +6,8 @@ const PIPELINE_STAGES_DECLINED: GuestPipelineStatus[] = ["New", "EventAttendee",
 const STAGE_LABEL: Record<GuestPipelineStatus, string> = {
   New: "New",
   EventAttendee: "Event Attendee",
-  Matched: "Matched",
-  Declined: "Declined",
+  Matched: "Breakout Placed",
+  Declined: "DGroup Declined",
   Pending: "Pending",
   Member: "Member",
 }
@@ -15,9 +15,9 @@ const STAGE_LABEL: Record<GuestPipelineStatus, string> = {
 const STAGE_DESCRIPTION: Record<GuestPipelineStatus, string> = {
   New: "Registered but has not yet attended an event.",
   EventAttendee: "Has attended at least one event but hasn't been placed in a breakout group yet.",
-  Matched: "Was placed in a breakout group at an event and is ready to be connected to a DGroup.",
-  Declined: "Was placed in a breakout group but membership was declined by the group leader. Assign to another DGroup.",
-  Pending: "Has a pending DGroup assignment — awaiting confirmation from the group leader.",
+  Matched: "Has an event breakout seat. DGroup placement requires a separate decision.",
+  Declined: "The latest DGroup request was declined. Find another DGroup or submit a new request.",
+  Pending: "Has a pending DGroup request, awaiting placement or leader confirmation.",
   // Not "has joined a DGroup" — an admin can promote someone without placing
   // them in one, so joining a group is a common route here, not the definition.
   Member: "Has been promoted to a full member.",

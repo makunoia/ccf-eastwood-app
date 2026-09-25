@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { IconCopy, IconCheck, IconAlertTriangle } from "@tabler/icons-react"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   FEATURE_AREAS,
   PERMISSION_ACTIONS,
@@ -67,6 +68,8 @@ export function UserDialog({ open, onOpenChange, user, events }: Props) {
 
   const [username, setUsername] = React.useState("")
   const [name, setName] = React.useState("")
+  const [editUsername, setEditUsername] = React.useState("")
+  const [role, setRole] = React.useState<"Staff" | "SuperAdmin">("Staff")
   // Map of feature → selected actions
   const [permMap, setPermMap] = React.useState<Record<FeatureAreaValue, PermissionActionValue[]>>(emptyPermissions)
   const [eventScope, setEventScope] = React.useState<"all" | "specific">("all")
@@ -80,6 +83,8 @@ export function UserDialog({ open, onOpenChange, user, events }: Props) {
     if (user) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setName(user.name ?? "")
+      setEditUsername(user.username)
+      setRole(user.role)
       const map = emptyPermissions()
       for (const { feature, actions } of user.permissions) {
         map[feature as FeatureAreaValue] = actions as PermissionActionValue[]
@@ -91,6 +96,8 @@ export function UserDialog({ open, onOpenChange, user, events }: Props) {
     } else {
       setUsername("")
       setName("")
+      setEditUsername("")
+      setRole("Staff")
       setPermMap(emptyPermissions())
       setEventScope("all")
       setEventIds([])
@@ -155,10 +162,15 @@ export function UserDialog({ open, onOpenChange, user, events }: Props) {
     }
 
     if (isEdit) {
-      const result = await updateUserPermissions(user!.id, { permissions, eventIds: resolvedEventIds })
+      const result = await updateUserPermissions(user!.id, {
+        username: editUsername,
+        role,
+        permissions,
+        eventIds: resolvedEventIds,
+      })
       setSaving(false)
       if (result.success) {
-        toast.success("Permissions updated")
+        toast.success("User updated")
         onOpenChange(false)
       } else {
         toast.error(result.error)
@@ -232,16 +244,46 @@ export function UserDialog({ open, onOpenChange, user, events }: Props) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{isEdit ? "Edit access" : "Add user"}</DialogTitle>
+          <DialogTitle>{isEdit ? "Edit user" : "Add user"}</DialogTitle>
           <DialogDescription>
             {isEdit
-              ? `Update the privileges and event scope for ${user?.name ?? user?.username}.`
+              ? `Update the account details and access for ${user?.name ?? user?.username}.`
               : "Create a new account. A temporary password will be generated."}
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit}>
           <div className="space-y-5 py-2">
+            {isEdit && (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-username">Username</Label>
+                  <Input
+                    id="edit-username"
+                    value={editUsername}
+                    onChange={(e) => setEditUsername(e.target.value.toLowerCase())}
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    pattern="[a-z0-9._-]+"
+                    minLength={3}
+                    maxLength={32}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="user-role">Role</Label>
+                  <Select value={role} onValueChange={(value) => setRole(value as "Staff" | "SuperAdmin")}>
+                    <SelectTrigger id="user-role"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Staff">Staff</SelectItem>
+                      <SelectItem value="SuperAdmin">Super Admin</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
+
             {/* Name & username — create only */}
             {!isEdit && (
               <>
@@ -293,6 +335,11 @@ export function UserDialog({ open, onOpenChange, user, events }: Props) {
                   ))}
                 </div>
               </div>
+              {isEdit && role === "SuperAdmin" && (
+                <p className="text-xs text-muted-foreground">
+                  Super Admins have full access. These feature settings are retained if the account returns to Staff.
+                </p>
+              )}
 
               <div className="rounded-md border divide-y">
                 {FEATURE_AREAS.map((feature) => {

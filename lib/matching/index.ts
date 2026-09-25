@@ -282,6 +282,8 @@ export async function matchSmallGroups(
      * (e.g. catch-mech assignment for one half of a couple).
      */
     includeCouplesGroups?: boolean
+    /** Restrict candidates to these group IDs (used by event-scoped public forms). */
+    includeGroupIds?: string[]
   }
 ): Promise<MatchResult[]> {
   let candidate: CandidateProfile
@@ -365,19 +367,20 @@ export async function matchSmallGroups(
   const rejectedGroupIds = new Set<string>()
   if ("guestId" in params) {
     const rejected = await db.smallGroupMemberRequest.findMany({
-      where: { guestId: params.guestId, status: "Rejected", smallGroupId: { not: null } },
+      where: { guestId: params.guestId, status: "Rejected", registrantCancelledAt: null, smallGroupId: { not: null } },
       select: { smallGroupId: true },
     })
     for (const r of rejected) if (r.smallGroupId) rejectedGroupIds.add(r.smallGroupId)
   } else {
     const rejected = await db.smallGroupMemberRequest.findMany({
-      where: { memberId: params.memberId, status: "Rejected", smallGroupId: { not: null } },
+      where: { memberId: params.memberId, status: "Rejected", registrantCancelledAt: null, smallGroupId: { not: null } },
       select: { smallGroupId: true },
     })
     for (const r of rejected) if (r.smallGroupId) rejectedGroupIds.add(r.smallGroupId)
   }
 
   const eligible = groups.filter((g) => {
+    if (options?.includeGroupIds && !options.includeGroupIds.includes(g.id)) return false
     // Couples groups take married pairs, never individually matched candidates
     // (unless the caller explicitly opted in for a candidate with a spouse)
     if (g.groupType === "Couples" && !options?.includeCouplesGroups) return false
@@ -475,6 +478,7 @@ export async function matchCouplesGroups(
     where: {
       memberId: { in: [params.memberIdA, params.memberIdB] },
       status: "Rejected",
+      registrantCancelledAt: null,
       smallGroupId: { not: null },
     },
     select: { smallGroupId: true },
@@ -608,7 +612,7 @@ export async function matchSmallGroupsWithEscalation(
 
   // Groups that already rejected this guest should not be re-suggested.
   const rejectedRequests = await db.smallGroupMemberRequest.findMany({
-    where: { guestId, status: "Rejected" },
+    where: { guestId, status: "Rejected", registrantCancelledAt: null },
     select: { smallGroupId: true },
   })
   const rejectedGroupIds = new Set(rejectedRequests.map((r) => r.smallGroupId))

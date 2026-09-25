@@ -2,7 +2,7 @@
 
 import { IconPlus } from "@tabler/icons-react"
 
-import { DASHBOARD_WIDGETS, type DashboardWidgetKey, type ResolvedWidget } from "@/lib/events/dashboard-widgets"
+import { getDashboardWidgetMeta, type CustomDashboardStep, type DashboardWidgetKey, type ResolvedWidget } from "@/lib/events/dashboard-widgets"
 
 /**
  * Everything currently switched off, as chips below the grid.
@@ -15,9 +15,11 @@ import { DASHBOARD_WIDGETS, type DashboardWidgetKey, type ResolvedWidget } from 
 export function HiddenTray({
   hidden,
   onRestore,
+  customSteps,
 }: {
   hidden: ResolvedWidget[]
   onRestore: (key: DashboardWidgetKey) => void
+  customSteps: readonly CustomDashboardStep[]
 }) {
   return (
     <div className="mt-4 rounded-lg border border-dashed p-3">
@@ -31,17 +33,17 @@ export function HiddenTray({
       ) : (
         <div className="flex flex-wrap gap-2">
           {hidden.map((widget) => {
-            const meta = DASHBOARD_WIDGETS[widget.key]
+            const meta = getDashboardWidgetMeta(widget.key, customSteps)
             return (
               <button
                 key={widget.key}
                 type="button"
                 onClick={() => onRestore(widget.key)}
-                aria-label={`Show ${meta.label}`}
+                aria-label={`Show ${meta?.label ?? "custom step"}`}
                 className="flex items-center gap-1.5 rounded-md border bg-background px-2.5 py-1.5 text-xs font-medium transition-colors hover:border-primary/50 hover:text-primary"
               >
                 <IconPlus className="size-3" />
-                {meta.label}
+                {meta?.label ?? "Custom step"}
               </button>
             )
           })}

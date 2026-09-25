@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { db } from "@/lib/db"
+import { withSerializableRetry } from "@/lib/db/serializable-retry"
 import { auth } from "@/lib/auth"
 import { canWrite } from "@/lib/permissions"
 import {
@@ -83,8 +84,8 @@ import {
   type RegistrantLookupRow,
   type VolunteerLookupRow,
 } from "@/lib/events/checkin-lookup"
-import { recordMemberGroupClaim } from "@/lib/small-groups/member-claim"
-import { createSeekerRequestFromRegistration } from "@/lib/small-groups/seeker-requests"
+import { cancelPendingBreakoutRequests } from "@/lib/small-groups/checkin-requests"
+import { customStepsSchema, validateCustomResponses } from "@/lib/forms/custom-questions"
 import type { Gender } from "@/app/generated/prisma/client"
 
 type ActionResult<T = void> =
@@ -725,6 +726,23 @@ export async function createRegistrant(
     // branch below) keeps one source of truth: there is no path that can read the
     // unsanitised value by accident.
     const formConfig = await getEffectiveFormConfig(eventId, walkIn ? "WalkIn" : "Register")
+    const customConfig = await db.event.findUnique({
+      where: { id: eventId },
+      select: { customRegistrationSteps: true },
+    })
+    const customSteps = customStepsSchema.safeParse(customConfig?.customRegistrationSteps ?? [])
+    const customResponses = customSteps.success
+      ? validateCustomResponses(customSteps.data, parsed.data.customResponses, walkIn ? "WalkIn" : "Register")
+      : null
+    if (!customSteps.success || !customResponses) {
+      if (customSteps.success && customSteps.data.length === 0 && parsed.data.customResponses.length === 0) {
+        // A form without custom questions keeps the legacy submission path.
+      } else {
+        return { success: false, error: "Please review your custom question answers and try again." }
+      }
+    } else {
+      parsed.data.customResponses = customResponses
+    }
     Object.assign(parsed.data, sanitizeRegistrantPayload(formConfig, parsed.data))
     // Required fields are checked *after* sanitizing, so a value submitted for a
     // disabled field can't satisfy a stale required flag on that same field.
@@ -1559,18 +1577,12 @@ type CheckinAmbiguousResult = {
 // ran them, passing `[eventId]`.
 
 /**
- * An open request means an admin already has this person in the placement queue.
- * Asking again at a kiosk would only produce a duplicate row on the same screen.
- *
- * *Open* means unresolved, which is narrower than "not Rejected". A Confirmed
- * request keeps its row forever — every removal path (`removeMemberFromGroup`,
- * the portal's `removeMemberFromLedGroup`, catch-mech's remove) only nulls
- * `Member.smallGroupId`, leaving the old Confirmed row behind. Treating that as
- * open silenced the prompt permanently for a member who joined a group and later
- * left, which is precisely who this question is for.
+ * A breakout-linked assignment is provisional and may not reflect the person's
+ * own DGroup answer. Other open requests already capture that answer and still
+ * suppress the kiosk prompt.
  */
-function hasOpenGroupRequest(requests: { status: string; resolvedAt: Date | null }[]): boolean {
-  return requests.some((r) => r.resolvedAt === null && r.status !== "Rejected")
+function hasOpenGroupRequest(requests: { status: string; resolvedAt: Date | null; breakoutGroupId: string | null; registrantClaimedAt: Date | null }[]): boolean {
+  return requests.some((r) => r.status !== "Rejected" && r.resolvedAt === null && (!r.breakoutGroupId || r.registrantClaimedAt !== null))
 }
 
 type GuestPromptRow = NonNullable<RegistrantLookupRow["guest"]>
@@ -2643,35 +2655,6 @@ export async function addHouseholdMemberAtCheckin(
 }
 
 /**
- * "Yes, I'm interested" on the check-in DGroup prompt (CCF-101).
- *
- * Check-in had the same dead end registration did: the prompt collected a
- * matching profile and then dropped the intent, so nobody was told a person had
- * asked to be placed. Recorded at the moment they answer rather than when they
- * save the profile — the profile step is skippable, and the interest is real
- * either way.
- *
- * Public, like every other check-in action: the board runs unauthenticated at a
- * kiosk. It can only ever create a Pending request for a guest who is already a
- * registrant of this event, which is not a meaningful write primitive to expose.
- */
-export async function recordSmallGroupInterestAtCheckin(
-  eventId: string,
-  person: CheckinPerson
-): Promise<ActionResult> {
-  try {
-    if (!(await isCheckinSubject(eventId, person))) {
-      return { success: false, error: "Not registered for this event." }
-    }
-    await createSeekerRequestFromRegistration(person, eventId)
-    revalidatePath("/small-groups")
-    return { success: true, data: undefined }
-  } catch {
-    return { success: false, error: "Failed to record DGroup interest" }
-  }
-}
-
-/**
  * Whether this person is actually attending this event.
  *
  * Every check-in write is public, so the event is the only thing scoping it: a
@@ -2695,7 +2678,9 @@ async function isCheckinSubject(eventId: string, person: CheckinPerson): Promise
 }
 
 /**
- * The check-in DGroup prompt's profile step ("Tell us about yourself").
+ * The check-in DGroup prompt's profile submission. The person has only asked
+ * for a new DGroup when they save this form; leaving it keeps any provisional
+ * breakout assignments intact.
  *
  * A kiosk copy of `saveGuestMatchingProfile`/the member equivalent, gated on
  * event attendance instead of a session: the admin actions call `requireWrite()`,
@@ -2735,16 +2720,74 @@ export async function saveCheckinMatchingProfile(
       return { success: false, error: requiredFieldsMessage(missing) }
     }
 
-    if ("guestId" in person) {
-      await applyGuestMatchingProfile(person.guestId, profile)
-      revalidatePath(`/guests/${person.guestId}`)
-    } else {
-      await applyMemberMatchingProfile(person.memberId, profile)
-      revalidatePath(`/members/${person.memberId}`)
+    if (!checkinConfig.sectionSmallGroup) {
+      return { success: false, error: "The DGroup form is not open for this event." }
     }
+
+    const result = await withSerializableRetry(async (tx) => {
+      // The kiosk may have been open while an admin resolved or added a request.
+      // Recheck the person and queue before replacing any provisional assignment.
+      const subject = "guestId" in person
+        ? await tx.guest.findUnique({
+            where: { id: person.guestId },
+            select: { memberId: true, claimedSmallGroupId: true, claimedSatellite: true },
+          })
+        : await tx.member.findUnique({
+            where: { id: person.memberId },
+            select: { smallGroupId: true, upwardSatellite: true },
+          })
+      if (!subject || ("memberId" in subject
+        ? subject.memberId || subject.claimedSmallGroupId || subject.claimedSatellite
+        : subject.smallGroupId || subject.upwardSatellite)) {
+        return { success: false as const, error: "Your DGroup details have changed. Please start again." }
+      }
+
+      const otherRequest = await tx.smallGroupMemberRequest.findFirst({
+        where: {
+          ...person,
+          status: "Pending",
+          resolvedAt: null,
+          breakoutGroupId: null,
+        },
+        select: { id: true, sourceEventId: true, origin: true },
+      })
+      if (otherRequest) {
+        if (otherRequest.sourceEventId === eventId && otherRequest.origin === "RegistrationIntent") {
+          return { success: true as const, changedGroups: [] as string[] }
+        }
+        return { success: false as const, error: "A DGroup request is already being reviewed." }
+      }
+
+      if ("guestId" in person) {
+        await applyGuestMatchingProfile(person.guestId, profile, tx)
+      } else {
+        await applyMemberMatchingProfile(person.memberId, profile, tx)
+      }
+      const changedGroups = await cancelPendingBreakoutRequests(
+        tx,
+        person,
+        "Provisional breakout assignment cancelled at the registrant's request after they submitted a new DGroup interest form at check-in"
+      )
+      await tx.smallGroupMemberRequest.create({
+        data: {
+          ...person,
+          status: "Pending",
+          origin: "RegistrationIntent",
+          sourceEventId: eventId,
+        },
+      })
+      return { success: true as const, changedGroups }
+    })
+    if (!result.success) return { success: false, error: result.error }
+
+    revalidatePath("/small-groups")
+    revalidatePath(`/event/${eventId}/catch-mech`)
+    for (const groupId of result.changedGroups) revalidatePath(`/small-groups/${groupId}`)
+    if ("guestId" in person) revalidatePath(`/guests/${person.guestId}`)
+    else revalidatePath(`/members/${person.memberId}`)
     return { success: true, data: undefined }
   } catch {
-    return { success: false, error: "Failed to save profile" }
+    return { success: false, error: "Failed to save DGroup interest" }
   }
 }
 
@@ -2756,8 +2799,7 @@ export async function saveCheckinMatchingProfile(
  * takes a `CheckinPerson` rather than a guest id:
  *
  *   - **Guest** → `claimedSmallGroupId`, a scratch column for exactly this.
- *   - **Member** → a *Pending* `SmallGroupMemberRequest` via
- *     `recordMemberGroupClaim`. `Member.smallGroupId` is real membership that
+ *   - **Member** → a *Pending* `SmallGroupMemberRequest`. `Member.smallGroupId` is real membership that
  *     only an admin may set, so the claim becomes a request for a leader or an
  *     admin to confirm — the same shape the member portal produces.
  *
@@ -2792,32 +2834,88 @@ export async function saveCheckinClaimedGroup(
       return { success: false, error: "That DGroup is no longer active." }
     }
 
-    if ("memberId" in person) {
-      const result = await recordMemberGroupClaim(
-        person.memberId,
-        { scope: "group", smallGroupId },
-        "event check-in"
-      )
-      // "already-placed" and "already-requested" mean the answer is already on
-      // file — nothing to do, and telling someone at a kiosk their correct answer
-      // failed would be wrong. A no-op that isn't one of those two means the write
-      // did not happen and the person is being told it did, so it surfaces.
-      if (!result.recorded && result.reason !== "already-placed" && result.reason !== "already-requested") {
-        return { success: false, error: "Failed to save DGroup" }
+    const result = await withSerializableRetry(async (tx) => {
+      const otherRequest = await tx.smallGroupMemberRequest.findFirst({
+        where: { ...person, status: "Pending", resolvedAt: null, breakoutGroupId: null },
+        select: { id: true, smallGroupId: true },
+      })
+      if (otherRequest && !("memberId" in person && otherRequest.smallGroupId === smallGroupId)) {
+        return { success: false as const, error: "A DGroup request is already being reviewed." }
       }
-      revalidatePath(`/members/${person.memberId}`)
-      revalidatePath("/small-groups")
-      revalidatePath(`/small-groups/${smallGroupId}`)
-      return { success: true, data: undefined }
-    }
 
-    await db.guest.update({
-      where: { id: person.guestId },
-      // Naming one of our groups supersedes an earlier "my DGroup is at another
-      // satellite" answer — the two can't both be true.
-      data: { claimedSmallGroupId: smallGroupId, claimedSatellite: null },
+      if ("memberId" in person) {
+        const member = await tx.member.findUnique({
+          where: { id: person.memberId },
+          select: { firstName: true, lastName: true, smallGroupId: true },
+        })
+        if (!member || member.smallGroupId) {
+          return { success: false as const, error: "Your DGroup details have changed. Please start again." }
+        }
+        const sameGroupRequest = await tx.smallGroupMemberRequest.findFirst({
+          where: {
+            memberId: person.memberId,
+            smallGroupId,
+            status: "Pending",
+            resolvedAt: null,
+          },
+          select: { id: true },
+        })
+        const changedGroups = await cancelPendingBreakoutRequests(
+          tx,
+          person,
+          "Provisional breakout assignment cancelled at the registrant's request after they named another DGroup at check-in",
+          smallGroupId
+        )
+        if (!sameGroupRequest) {
+          await tx.smallGroupMemberRequest.create({
+            data: { memberId: person.memberId, smallGroupId, status: "Pending" },
+          })
+          await tx.smallGroupLog.create({
+            data: {
+              smallGroupId,
+              action: "TempAssignmentCreated",
+              memberId: person.memberId,
+              performedByMemberId: person.memberId,
+              toGroupId: smallGroupId,
+              description: `${member.firstName} ${member.lastName} said they are already in this group at event check-in (pending leader confirmation)`,
+            },
+          })
+        } else {
+          await tx.smallGroupMemberRequest.update({
+            where: { id: sameGroupRequest.id },
+            data: { registrantClaimedAt: new Date() },
+          })
+        }
+        return { success: true as const, changedGroups }
+      }
+
+      const guest = await tx.guest.findUnique({
+        where: { id: person.guestId },
+        select: { memberId: true },
+      })
+      if (!guest || guest.memberId) {
+        return { success: false as const, error: "Your DGroup details have changed. Please start again." }
+      }
+      const changedGroups = await cancelPendingBreakoutRequests(
+        tx,
+        person,
+        "Provisional breakout assignment cancelled at the registrant's request after they named another DGroup at check-in",
+        smallGroupId
+      )
+      await tx.guest.update({
+        where: { id: person.guestId },
+        data: { claimedSmallGroupId: smallGroupId, claimedSatellite: null },
+      })
+      return { success: true as const, changedGroups }
     })
-    revalidatePath(`/guests/${person.guestId}`)
+    if (!result.success) return { success: false, error: result.error }
+
+    revalidatePath("/small-groups")
+    revalidatePath(`/small-groups/${smallGroupId}`)
+    revalidatePath(`/event/${eventId}/catch-mech`)
+    for (const groupId of result.changedGroups) revalidatePath(`/small-groups/${groupId}`)
+    if ("memberId" in person) revalidatePath(`/members/${person.memberId}`)
+    else revalidatePath(`/guests/${person.guestId}`)
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to save DGroup" }

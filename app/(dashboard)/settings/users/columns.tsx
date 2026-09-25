@@ -80,10 +80,6 @@ function RowActions({ row, events }: { row: UserRow; events: EventOption[] }) {
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
 
-  if (row.role === "SuperAdmin") {
-    return null // Cannot edit or delete the Super Admin via this UI
-  }
-
   async function handleDelete() {
     setDeleting(true)
     const result = await deleteUser(row.id)
@@ -108,16 +104,20 @@ function RowActions({ row, events }: { row: UserRow; events: EventOption[] }) {
         <DropdownMenuContent align="end">
           <DropdownMenuItem onSelect={() => setEditOpen(true)}>
             <IconPencil className="mr-2 size-4" />
-            Edit access
+            Edit user
           </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onSelect={() => setDeleteOpen(true)}
-            className="text-destructive focus:text-destructive"
-          >
-            <IconTrash className="mr-2 size-4" />
-            Delete
-          </DropdownMenuItem>
+          {row.role !== "SuperAdmin" && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onSelect={() => setDeleteOpen(true)}
+                className="text-destructive focus:text-destructive"
+              >
+                <IconTrash className="mr-2 size-4" />
+                Delete
+              </DropdownMenuItem>
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
 

@@ -22,6 +22,7 @@ import {
   type SkipReason,
 } from "@/lib/small-groups/resolve-member-request"
 import { clearUpwardSatelliteOnConfirm } from "@/lib/small-groups/upward-satellite"
+import { advancePendingInterest, revalidateInterestEvents } from "@/lib/small-groups/advance-interest"
 import type { BatchDeleteResult, BatchFailure } from "@/components/batch/types"
 
 type ActionResult<T = void> =
@@ -57,6 +58,7 @@ export async function createSmallGroup(
   try {
     const actorId = await getActorId()
     const group = await db.$transaction(async (tx) => {
+      let interestEventId: string | null | undefined
       const created = await tx.smallGroup.create({
         data: {
           name: parsed.data.name,
@@ -92,6 +94,7 @@ export async function createSmallGroup(
             groupStatus: "Member",
           },
         })
+        await clearUpwardSatelliteOnConfirm(tx, [parsed.data.leaderId])
         if (leader) {
           await logMembershipMove(tx, {
             memberId: parsed.data.leaderId,
@@ -102,6 +105,11 @@ export async function createSmallGroup(
             context: `as the leader of "${parsed.data.name}"`,
           })
         }
+        const interest = await advancePendingInterest(tx, {
+          person: { memberId: parsed.data.leaderId }, groupId: parsed.data.parentGroupId,
+          status: "Confirmed", actorId, fromGroupId: leader?.smallGroupId,
+        })
+        interestEventId = interest?.sourceEventId
       }
 
       await tx.smallGroupLog.create({
@@ -132,12 +140,13 @@ export async function createSmallGroup(
         })
       }
 
-      return created
+      return { ...created, interestEventId }
     })
     revalidatePath("/small-groups")
     if (parsed.data.parentGroupId) {
       revalidatePath(`/small-groups/${parsed.data.parentGroupId}`)
     }
+    revalidateInterestEvents([group.interestEventId])
     return { success: true, data: { id: group.id } }
   } catch {
     return { success: false, error: "Failed to create DGroup" }
@@ -203,7 +212,8 @@ export async function updateSmallGroup(
 
   try {
     const actorId = await getActorId()
-    await db.$transaction(async (tx) => {
+    const interestEventId = await db.$transaction(async (tx) => {
+      let interestEventId: string | null | undefined
       await tx.smallGroup.update({
         where: { id },
         data: {
@@ -261,6 +271,7 @@ export async function updateSmallGroup(
             groupStatus: "Member",
           },
         })
+        await clearUpwardSatelliteOnConfirm(tx, [parsed.data.leaderId])
         if (leader) {
           await logMembershipMove(tx, {
             memberId: parsed.data.leaderId,
@@ -271,6 +282,11 @@ export async function updateSmallGroup(
             context: `as the leader of "${parsed.data.name}"`,
           })
         }
+        const interest = await advancePendingInterest(tx, {
+          person: { memberId: parsed.data.leaderId }, groupId: parsed.data.parentGroupId,
+          status: "Confirmed", actorId, fromGroupId: leader?.smallGroupId,
+        })
+        interestEventId = interest?.sourceEventId
       }
 
       // Moving the parent to an outside satellite undoes that auto-assignment:
@@ -304,12 +320,14 @@ export async function updateSmallGroup(
           }
         }
       }
+      return interestEventId
     })
     revalidatePath("/small-groups")
     revalidatePath(`/small-groups/${id}`)
     if (parsed.data.parentGroupId) {
       revalidatePath(`/small-groups/${parsed.data.parentGroupId}`)
     }
+    revalidateInterestEvents([interestEventId])
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to update DGroup" }
@@ -424,11 +442,12 @@ export async function addMemberToGroup(
     if (!member) return { success: false, error: "Member not found" }
 
     const fromGroupId = member.smallGroupId
-    await db.$transaction(async (tx) => {
+    const interestEventIds = await db.$transaction(async (tx) => {
       await tx.member.update({
         where: { id: memberId },
         data: { smallGroupId: groupId, groupStatus: "Member" },
       })
+      await clearUpwardSatelliteOnConfirm(tx, [memberId])
       if (group.status === "Pending") {
         await tx.smallGroup.update({ where: { id: groupId }, data: { status: "Active" } })
       }
@@ -439,11 +458,16 @@ export async function addMemberToGroup(
         toGroupId: groupId,
         actor: { userId: actorId },
       })
+      const interest = await advancePendingInterest(tx, {
+        person: { memberId }, groupId, status: "Confirmed", actorId, fromGroupId,
+      })
+      return [interest?.sourceEventId]
     })
 
     revalidatePath(`/small-groups/${groupId}`)
     if (fromGroupId) revalidatePath(`/small-groups/${fromGroupId}`)
     revalidatePath("/small-groups")
+    revalidateInterestEvents(interestEventIds)
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to add member to group" }
@@ -517,7 +541,8 @@ export async function addCoupleToGroup(
     if (!member || !spouse) return { success: false, error: "Member not found" }
 
     const actorId = await getActorId()
-    await db.$transaction(async (tx) => {
+    const interestEventIds = await db.$transaction(async (tx) => {
+      const interestEventIds: (string | null | undefined)[] = []
       for (const [id, person] of [
         [memberId, member],
         [spouseMemberId, spouse],
@@ -526,6 +551,7 @@ export async function addCoupleToGroup(
           where: { id },
           data: { smallGroupId: groupId, groupStatus: "Member" },
         })
+        await clearUpwardSatelliteOnConfirm(tx, [id])
         await logMembershipMove(tx, {
           memberId: id,
           memberName: `${person.firstName} ${person.lastName}`,
@@ -534,10 +560,16 @@ export async function addCoupleToGroup(
           actor: { userId: actorId },
           context: "(couple)",
         })
+        const interest = await advancePendingInterest(tx, {
+          person: { memberId: id }, groupId, status: "Confirmed", actorId,
+          fromGroupId: person.smallGroupId,
+        })
+        interestEventIds.push(interest?.sourceEventId)
       }
       if (group.status === "Pending") {
         await tx.smallGroup.update({ where: { id: groupId }, data: { status: "Active" } })
       }
+      return interestEventIds
     })
 
     revalidatePath(`/small-groups/${groupId}`)
@@ -545,6 +577,7 @@ export async function addCoupleToGroup(
       if (from) revalidatePath(`/small-groups/${from}`)
     }
     revalidatePath("/small-groups")
+    revalidateInterestEvents(interestEventIds)
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to add couple to group" }
@@ -653,15 +686,16 @@ export async function assignGuestToGroupTemporarily(
     }
 
     const actorId = await getActorId()
-    await db.$transaction([
-      db.smallGroupMemberRequest.create({
-        data: {
-          smallGroupId: groupId,
-          guestId,
-          assignedByUserId: actorId,
-        },
-      }),
-      db.smallGroupLog.create({
+    const interestEventId = await db.$transaction(async (tx) => {
+      const interest = await advancePendingInterest(tx, {
+        person: { guestId }, groupId, status: "Pending", actorId,
+      })
+      if (!interest) {
+        await tx.smallGroupMemberRequest.create({
+          data: { smallGroupId: groupId, guestId, assignedByUserId: actorId },
+        })
+      }
+      await tx.smallGroupLog.create({
         data: {
           smallGroupId: groupId,
           action: "TempAssignmentCreated",
@@ -669,10 +703,13 @@ export async function assignGuestToGroupTemporarily(
           performedByUserId: actorId,
           description: `${guest.firstName} ${guest.lastName} was temporarily assigned to the group (pending leader confirmation)`,
         },
-      }),
-    ])
+      })
+      return interest?.sourceEventId
+    })
 
     revalidatePath(`/small-groups/${groupId}`)
+    revalidatePath("/small-groups")
+    revalidateInterestEvents([interestEventId])
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to assign guest to group" }
@@ -705,16 +742,20 @@ export async function assignMemberTransferTemporarily(
     }
 
     const actorId = await getActorId()
-    await db.$transaction([
-      db.smallGroupMemberRequest.create({
-        data: {
-          smallGroupId: groupId,
-          memberId,
-          fromGroupId: member.smallGroupId ?? null,
-          assignedByUserId: actorId,
-        },
-      }),
-      db.smallGroupLog.create({
+    const interestEventId = await db.$transaction(async (tx) => {
+      const interest = await advancePendingInterest(tx, {
+        person: { memberId }, groupId, status: "Pending", actorId,
+        fromGroupId: member.smallGroupId,
+      })
+      if (!interest) {
+        await tx.smallGroupMemberRequest.create({
+          data: {
+            smallGroupId: groupId, memberId,
+            fromGroupId: member.smallGroupId ?? null, assignedByUserId: actorId,
+          },
+        })
+      }
+      await tx.smallGroupLog.create({
         data: {
           smallGroupId: groupId,
           action: "TempAssignmentCreated",
@@ -724,10 +765,13 @@ export async function assignMemberTransferTemporarily(
           performedByUserId: actorId,
           description: `${member.firstName} ${member.lastName} was temporarily assigned for transfer to this group (pending leader confirmation)`,
         },
-      }),
-    ])
+      })
+      return interest?.sourceEventId
+    })
 
     revalidatePath(`/small-groups/${groupId}`)
+    revalidatePath("/small-groups")
+    revalidateInterestEvents([interestEventId])
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to assign member transfer" }
@@ -794,16 +838,22 @@ export async function requestCoupleAssignment(
     }
 
     const actorId = await getActorId()
-    await db.$transaction(async (tx) => {
+    const interestEventIds = await db.$transaction(async (tx) => {
+      const interestEventIds: (string | null | undefined)[] = []
       for (const member of members) {
-        await tx.smallGroupMemberRequest.create({
-          data: {
-            smallGroupId: groupId,
-            memberId: member.id,
-            fromGroupId: member.smallGroupId ?? null,
-            assignedByUserId: actorId,
-          },
+        const interest = await advancePendingInterest(tx, {
+          person: { memberId: member.id }, groupId, status: "Pending", actorId,
+          fromGroupId: member.smallGroupId,
         })
+        if (!interest) {
+          await tx.smallGroupMemberRequest.create({
+            data: {
+              smallGroupId: groupId, memberId: member.id,
+              fromGroupId: member.smallGroupId ?? null, assignedByUserId: actorId,
+            },
+          })
+        }
+        interestEventIds.push(interest?.sourceEventId)
         await tx.smallGroupLog.create({
           data: {
             smallGroupId: groupId,
@@ -816,10 +866,12 @@ export async function requestCoupleAssignment(
           },
         })
       }
+      return interestEventIds
     })
 
     revalidatePath(`/small-groups/${groupId}`)
     revalidatePath("/small-groups")
+    revalidateInterestEvents(interestEventIds)
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to create couple request" }
@@ -930,6 +982,7 @@ export async function resolveMemberRequestsBatch(
     const touchedGroupIds = new Set<string>()
     const touchedGuestIds = new Set<string>()
     const breakoutGroupIds = new Set<string>()
+    const interestEventIds = new Set<string>()
 
     // Deduped: `resolveMemberRequest` guards on the request's *current* status, so
     // the same id twice in one call would otherwise be read once and applied twice
@@ -943,6 +996,7 @@ export async function resolveMemberRequestsBatch(
             where: { id },
             select: {
               ...RESOLVABLE_REQUEST_SELECT,
+              sourceEventId: true,
               smallGroup: { select: { id: true, name: true, status: true, leaderId: true } },
             },
           })
@@ -984,6 +1038,7 @@ export async function resolveMemberRequestsBatch(
         if (request.guestId) touchedGuestIds.add(request.guestId)
         if (request.fromGroupId) touchedGroupIds.add(request.fromGroupId)
         if (request.breakoutGroupId) breakoutGroupIds.add(request.breakoutGroupId)
+        if (request.sourceEventId) interestEventIds.add(request.sourceEventId)
       } catch {
         failed.push({ id, name: "Unknown", reason: "could not be updated" })
       }
@@ -1008,6 +1063,7 @@ export async function resolveMemberRequestsBatch(
         revalidatePath(`/event/${eventId}/dashboard`)
       }
     }
+    for (const eventId of interestEventIds) revalidatePath(`/event/${eventId}/catch-mech`)
 
     return { success: true, data: { resolved, failed } }
   } catch {
@@ -1046,7 +1102,7 @@ export async function dismissSeekerRequest(requestId: string): Promise<ActionRes
   try {
     const request = await db.smallGroupMemberRequest.findUnique({
       where: { id: requestId },
-      select: { status: true, origin: true, smallGroupId: true },
+      select: { status: true, origin: true, smallGroupId: true, sourceEventId: true },
     })
     if (!request) return { success: false, error: "Request not found" }
     if (request.origin !== "RegistrationIntent" || request.smallGroupId) {
@@ -1063,6 +1119,7 @@ export async function dismissSeekerRequest(requestId: string): Promise<ActionRes
     })
 
     revalidatePath("/small-groups")
+    if (request.sourceEventId) revalidatePath(`/event/${request.sourceEventId}/catch-mech`)
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to dismiss request" }

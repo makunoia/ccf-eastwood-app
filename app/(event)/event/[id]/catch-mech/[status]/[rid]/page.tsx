@@ -76,6 +76,7 @@ async function getDetailData(registrantId: string, eventId: string, prismaStatus
     db.smallGroupMemberRequest.findFirst({
       where: {
         status: prismaStatus,
+        ...(prismaStatus === "Rejected" ? { registrantCancelledAt: null } : {}),
         AND: [
           {
             OR: [

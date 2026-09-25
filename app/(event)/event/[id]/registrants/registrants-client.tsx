@@ -454,17 +454,40 @@ function RegistrantCard({
 // ─── Filters ──────────────────────────────────────────────────────────────────
 
 function RegistrantsFilters({
-  search, typeFilter,
-}: { search: string; typeFilter: string }) {
+  search, typeFilter, paymentFilter, attendanceFilter, lifeStageFilter, genderFilter,
+  ageRangeFilter, meetingPreferenceFilter, lifeStages, ageRanges, isPaidEvent,
+}: {
+  search: string
+  typeFilter: string
+  paymentFilter: string
+  attendanceFilter: string
+  lifeStageFilter: string
+  genderFilter: string
+  ageRangeFilter: string
+  meetingPreferenceFilter: string
+  lifeStages: { id: string; name: string }[]
+  ageRanges: { id: string; label: string }[]
+  isPaidEvent: boolean
+}) {
   const router = useRouter()
   const pathname = usePathname()
-  const hasFilters = search || typeFilter
+  const hasFilters = search || typeFilter || paymentFilter || attendanceFilter || lifeStageFilter || genderFilter || ageRangeFilter || meetingPreferenceFilter
 
   function buildUrl(overrides: Record<string, string>) {
     const params = new URLSearchParams()
-    const current = { search, type: typeFilter, ...overrides }
+    const current = {
+      search, type: typeFilter, payment: paymentFilter, attendance: attendanceFilter,
+      lifeStage: lifeStageFilter, gender: genderFilter, ageRange: ageRangeFilter,
+      meetingPreference: meetingPreferenceFilter, ...overrides,
+    }
     if (current.search) params.set("search", current.search)
     if (current.type) params.set("type", current.type)
+    if (current.payment) params.set("payment", current.payment)
+    if (current.attendance) params.set("attendance", current.attendance)
+    if (current.lifeStage) params.set("lifeStage", current.lifeStage)
+    if (current.gender) params.set("gender", current.gender)
+    if (current.ageRange) params.set("ageRange", current.ageRange)
+    if (current.meetingPreference) params.set("meetingPreference", current.meetingPreference)
     const qs = params.toString()
     return qs ? `${pathname}?${qs}` : pathname
   }
@@ -478,7 +501,7 @@ function RegistrantsFilters({
       searchValue={search}
       searchPlaceholder="Search registrants..."
       onSearch={(value) => setFilter("search", value)}
-      activeCount={typeFilter ? 1 : 0}
+      activeCount={[typeFilter, paymentFilter, attendanceFilter, lifeStageFilter, genderFilter, ageRangeFilter, meetingPreferenceFilter].filter(Boolean).length}
       hasActive={Boolean(hasFilters)}
       onClear={() => router.replace(pathname)}
     >
@@ -497,6 +520,71 @@ function RegistrantsFilters({
           </SelectContent>
         </Select>
       </FilterField>
+      {isPaidEvent && <FilterField label="Payment">
+        <Select
+          value={paymentFilter || "all"}
+          onValueChange={(v) => setFilter("payment", v === "all" ? "" : v)}
+        >
+          <SelectTrigger className="w-full"><SelectValue placeholder="Any payment status" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Any payment status</SelectItem>
+            <SelectItem value="paid">Paid</SelectItem>
+            <SelectItem value="unpaid">Unpaid</SelectItem>
+          </SelectContent>
+        </Select>
+      </FilterField>}
+      <FilterField label="Attendance">
+        <Select
+          value={attendanceFilter || "all"}
+          onValueChange={(v) => setFilter("attendance", v === "all" ? "" : v)}
+        >
+          <SelectTrigger className="w-full"><SelectValue placeholder="Any attendance" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Any attendance</SelectItem>
+            <SelectItem value="attended">Attended</SelectItem>
+            <SelectItem value="not-attended">Not attended</SelectItem>
+          </SelectContent>
+        </Select>
+      </FilterField>
+      <FilterField label="Age range">
+        <Select value={ageRangeFilter || "all"} onValueChange={(v) => setFilter("ageRange", v === "all" ? "" : v)}>
+          <SelectTrigger className="w-full"><SelectValue placeholder="Any age range" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Any age range</SelectItem>
+            {ageRanges.map((range) => <SelectItem key={range.id} value={range.id}>{range.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </FilterField>
+      <FilterField label="Life stage">
+        <Select value={lifeStageFilter || "all"} onValueChange={(v) => setFilter("lifeStage", v === "all" ? "" : v)}>
+          <SelectTrigger className="w-full"><SelectValue placeholder="Any life stage" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Any life stage</SelectItem>
+            {lifeStages.map((stage) => <SelectItem key={stage.id} value={stage.id}>{stage.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </FilterField>
+      <FilterField label="Gender">
+        <Select value={genderFilter || "all"} onValueChange={(v) => setFilter("gender", v === "all" ? "" : v)}>
+          <SelectTrigger className="w-full"><SelectValue placeholder="Any gender" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Any gender</SelectItem>
+            <SelectItem value="Male">Male</SelectItem>
+            <SelectItem value="Female">Female</SelectItem>
+          </SelectContent>
+        </Select>
+      </FilterField>
+      <FilterField label="Meeting preference">
+        <Select value={meetingPreferenceFilter || "all"} onValueChange={(v) => setFilter("meetingPreference", v === "all" ? "" : v)}>
+          <SelectTrigger className="w-full"><SelectValue placeholder="Any preference" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Any preference</SelectItem>
+            <SelectItem value="Online">Online</SelectItem>
+            <SelectItem value="Hybrid">Hybrid</SelectItem>
+            <SelectItem value="InPerson">In person</SelectItem>
+          </SelectContent>
+        </Select>
+      </FilterField>
     </FilterBar>
   )
 }
@@ -512,12 +600,21 @@ type Props = {
   canExport: boolean
   search: string
   typeFilter: string
+  paymentFilter: string
+  attendanceFilter: string
+  lifeStageFilter: string
+  genderFilter: string
+  ageRangeFilter: string
+  meetingPreferenceFilter: string
+  lifeStages: { id: string; name: string }[]
+  ageRanges: { id: string; label: string }[]
   registrants: Registrant[]
 }
 
 export function RegistrantsClient({
   eventId, eventName, eventType, isPaidEvent, formIncludePayment, canExport,
-  search, typeFilter, registrants,
+  search, typeFilter, paymentFilter, attendanceFilter, lifeStageFilter, genderFilter,
+  ageRangeFilter, meetingPreferenceFilter, lifeStages, ageRanges, registrants,
 }: Props) {
   const [paymentDialogOpen, setPaymentDialogOpen] = React.useState(false)
   const [addDialogOpen, setAddDialogOpen]         = React.useState(false)
@@ -646,14 +743,26 @@ export function RegistrantsClient({
       />
 
       {/* Filters */}
-      <RegistrantsFilters search={search} typeFilter={typeFilter} />
+      <RegistrantsFilters
+        search={search}
+        typeFilter={typeFilter}
+        paymentFilter={paymentFilter}
+        attendanceFilter={attendanceFilter}
+        lifeStageFilter={lifeStageFilter}
+        genderFilter={genderFilter}
+        ageRangeFilter={ageRangeFilter}
+        meetingPreferenceFilter={meetingPreferenceFilter}
+        lifeStages={lifeStages}
+        ageRanges={ageRanges}
+        isPaidEvent={isPaidEvent}
+      />
 
       {/* Mobile card list */}
       <div className="flex flex-col gap-2 md:hidden">
         {registrants.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
             <IconUsers className="size-8" />
-            <p className="text-sm">{search || typeFilter ? "No registrants match your search" : "No registrants yet"}</p>
+            <p className="text-sm">{search || typeFilter || paymentFilter || attendanceFilter || lifeStageFilter || genderFilter || ageRangeFilter || meetingPreferenceFilter ? "No registrants match your filters" : "No registrants yet"}</p>
           </div>
         ) : (
           registrants.map((r) => (
@@ -683,7 +792,7 @@ export function RegistrantsClient({
             <>
               <IconClock className="size-8" />
               <p className="text-sm">
-                {search || typeFilter ? "No registrants match your search" : "No registrants yet"}
+                {search || typeFilter || paymentFilter || attendanceFilter || lifeStageFilter || genderFilter || ageRangeFilter || meetingPreferenceFilter ? "No registrants match your filters" : "No registrants yet"}
               </p>
             </>
           }

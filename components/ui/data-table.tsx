@@ -18,6 +18,9 @@ import {
   IconChevronRight,
   IconChevronsLeft,
   IconChevronsRight,
+  IconArrowDown,
+  IconArrowUp,
+  IconArrowsSort,
 } from "@tabler/icons-react"
 
 import { Button } from "@/components/ui/button"
@@ -128,6 +131,7 @@ export function DataTable<TData, TValue>({
   const [sorting, setSorting] = React.useState<SortingState>([])
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
   const [pagination, setPagination] = React.useState({ pageIndex: 0, pageSize: initialPageSize })
+  const [resizedWidths, setResizedWidths] = React.useState<Record<string, number>>({})
   // The space the table has to fill. Column floors can only be honoured against
   // a real number, and `table-layout: fixed` will not take a `calc()` — see
   // `columnStyles`. Null until measured, which is what the server renders with.
@@ -199,6 +203,12 @@ export function DataTable<TData, TValue>({
   const widths = visibleColumns.map((c) => c.columnDef.meta?.width)
   const minWidth = tableMinWidth(widths)
   const styles = columnStyles(widths, available)
+  const resizedDelta = visibleColumns.reduce((total, column, index) => {
+    const width = resizedWidths[column.id]
+    if (width == null) return total
+    const base = available == null ? 0 : Number.parseFloat(styles[index].width)
+    return total + width - base
+  }, 0)
   const rows = table.getRowModel().rows
   const compact = layout.density === "Compact"
   // What's actually on screen, not what was handed in: on a tree table this is
@@ -238,13 +248,13 @@ export function DataTable<TData, TValue>({
           data-density={layout.density}
           containerClassName="min-h-0 flex-1"
           className="table-fixed"
-          style={{ minWidth }}
+          style={{ minWidth: Math.max(minWidth, (available ?? minWidth) + resizedDelta) }}
         >
           {/* The whole point of the rewrite: widths come from the column's
               declared token, not from whatever text landed in the cells. */}
           <colgroup>
             {visibleColumns.map((column, index) => (
-              <col key={column.id} style={styles[index]} />
+              <col key={column.id} style={resizedWidths[column.id] == null ? styles[index] : { width: `${resizedWidths[column.id]}px` }} />
             ))}
           </colgroup>
           <TableHeader className="sticky top-0 z-10 bg-muted">
@@ -254,16 +264,62 @@ export function DataTable<TData, TValue>({
                   <TableHead
                     key={header.id}
                     className={cn(
-                      "truncate",
+                      "relative",
                       compact && "h-8",
                       header.column.columnDef.meta?.width === "actions" &&
                         ACTIONS_CELL_CLASS,
                       header.column.columnDef.meta?.align === "right" && "text-right",
                     )}
                   >
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(header.column.columnDef.header, header.getContext())}
+                    {header.isPlaceholder ? null : header.column.getCanSort() ? (
+                      typeof header.column.columnDef.header === "string" ? (
+                        <button
+                          type="button"
+                          onClick={header.column.getToggleSortingHandler()}
+                          className="inline-flex max-w-full items-center gap-1 text-left"
+                          aria-label={`Sort by ${header.column.columnDef.header} ${header.column.getIsSorted() === "asc" ? "descending" : "ascending"}`}
+                        >
+                          <span className="truncate">{header.column.columnDef.header}</span>
+                          {header.column.getIsSorted() === "asc" ? <IconArrowUp aria-hidden className="size-3.5 shrink-0" /> : header.column.getIsSorted() === "desc" ? <IconArrowDown aria-hidden className="size-3.5 shrink-0" /> : null}
+                        </button>
+                      ) : (
+                        <div className="inline-flex max-w-full items-center gap-1">
+                          {flexRender(header.column.columnDef.header, header.getContext())}
+                          <button
+                            type="button"
+                            onClick={header.column.getToggleSortingHandler()}
+                            aria-label={`Sort by ${header.column.id} ${header.column.getIsSorted() === "asc" ? "descending" : "ascending"}`}
+                            title="Sort column"
+                            className="inline-flex size-5 shrink-0 items-center justify-center rounded hover:bg-accent"
+                          >
+                            {header.column.getIsSorted() === "asc" ? <IconArrowUp aria-hidden className="size-3.5" /> : header.column.getIsSorted() === "desc" ? <IconArrowDown aria-hidden className="size-3.5" /> : <IconArrowsSort aria-hidden className="size-3.5" />}
+                          </button>
+                        </div>
+                      )
+                    ) : flexRender(header.column.columnDef.header, header.getContext())}
+                    {!header.isPlaceholder && header.column.columnDef.meta?.width !== "micro" && header.column.columnDef.meta?.width !== "actions" && (
+                      <button
+                        type="button"
+                        aria-label={`Resize ${typeof header.column.columnDef.header === "string" ? header.column.columnDef.header : header.column.id} column`}
+                        title="Drag to resize column"
+                        onPointerDown={(event) => {
+                          event.preventDefault()
+                          const startX = event.clientX
+                          const startWidth = event.currentTarget.parentElement?.getBoundingClientRect().width ?? 0
+                          const id = header.column.id
+                          const move = (moveEvent: PointerEvent) => {
+                            setResizedWidths((current) => ({ ...current, [id]: Math.max(64, Math.round(startWidth + moveEvent.clientX - startX)) }))
+                          }
+                          const up = () => {
+                            window.removeEventListener("pointermove", move)
+                            window.removeEventListener("pointerup", up)
+                          }
+                          window.addEventListener("pointermove", move)
+                          window.addEventListener("pointerup", up, { once: true })
+                        }}
+                        className="absolute inset-y-0 right-0 z-20 w-2 cursor-col-resize touch-none select-none after:absolute after:inset-y-2 after:left-1/2 after:w-px after:-translate-x-1/2 after:bg-border hover:after:bg-primary"
+                      />
+                    )}
                   </TableHead>
                 ))}
               </TableRow>

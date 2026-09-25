@@ -1,6 +1,6 @@
 "use client"
 
-import type { DashboardWidgetKey } from "@/lib/events/dashboard-widgets"
+import type { StaticDashboardWidgetKey } from "@/lib/events/dashboard-widgets"
 import type { WidgetProps } from "../shared"
 
 import {
@@ -30,7 +30,7 @@ import {
  * on someone's dashboard.
  */
 export const WIDGET_COMPONENTS: Record<
-  DashboardWidgetKey,
+  StaticDashboardWidgetKey,
   (props: WidgetProps) => React.ReactNode
 > = {
   kpiAttendance: KpiAttendance,

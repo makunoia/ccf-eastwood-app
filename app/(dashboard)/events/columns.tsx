@@ -98,6 +98,7 @@ export function buildColumns(): ColumnDef<EventRow>[] {
     },
     {
       id: "date",
+      accessorFn: (row) => row.startDate,
       header: "Date",
       meta: { label: "Date", width: "date" },
       cell: ({ row }) => {

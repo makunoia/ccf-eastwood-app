@@ -10,6 +10,7 @@ import {
   autoAssignRegistrantToBreakout,
   getRegistrantBreakoutGroupName,
   setFacilitator,
+  updateBreakoutGroup,
 } from "@/app/(dashboard)/events/breakout-actions"
 import {
   addEventToCluster,
@@ -565,6 +566,67 @@ describe("volunteers pool as a union", () => {
     expect(result.success).toBe(false)
   })
 
+  it("rejects an outside volunteer passed through group create and edit", async () => {
+    const { clusterId } = await seedDay("Collab")
+    const other = await db.event.create({
+      data: { name: "Unrelated", type: "OneTime", startDate: DAY, endDate: DAY },
+      select: { id: true },
+    })
+    const stranger = await seedMember("Stranger")
+    const volunteer = await seedVolunteer(other.id, stranger.id)
+    const group = await db.breakoutGroup.create({
+      data: { clusterId, name: "Table 1", language: [] },
+      select: { id: true },
+    })
+    const payload = {
+      name: "Table 1",
+      facilitatorId: volunteer.id,
+      lifeStageIds: [],
+      language: [],
+    }
+
+    const create = await createBreakoutGroup(
+      { clusterId },
+      { ...payload, name: "Table 2", facilitatorId: null, coFacilitatorId: volunteer.id }
+    )
+    const update = await updateBreakoutGroup(group.id, { clusterId }, payload)
+
+    expect(create.success).toBe(false)
+    expect(update.success).toBe(false)
+    expect(
+      (await db.breakoutGroup.findUnique({ where: { id: group.id } }))?.facilitatorId
+    ).toBeNull()
+  })
+
+  it("accepts a confirmed volunteer from either member event through create and edit", async () => {
+    const { clusterId, singlesId } = await seedDay("Collab")
+    const host = await seedMember("Host")
+    const volunteer = await seedVolunteer(singlesId, host.id)
+    const lifeStage = await db.lifeStage.create({ data: { name: "Adults", order: 0 } })
+    const values = {
+      name: "Table 1",
+      facilitatorId: volunteer.id,
+      lifeStageIds: [lifeStage.id],
+      genderFocus: "Mixed" as const,
+      language: ["English"],
+      ageRangeMin: 18,
+      ageRangeMax: 99,
+    }
+
+    const created = await createBreakoutGroup({ clusterId }, values)
+    expect(created.success).toBe(true)
+    if (!created.success) return
+
+    const updated = await updateBreakoutGroup(created.data.id, { clusterId }, {
+      ...values,
+      name: "Table 1 renamed",
+    })
+    expect(updated.success).toBe(true)
+    expect(
+      (await db.breakoutGroup.findUnique({ where: { id: created.data.id } }))?.facilitatorId
+    ).toBe(volunteer.id)
+  })
+
   it("keeps an event-owned table refusing the partner's volunteer", async () => {
     const { youthId, singlesId } = await seedDay("Collab")
     const standing = await db.breakoutGroup.create({
@@ -891,6 +953,68 @@ describe("registerForCluster on a Collab day", () => {
     expect(await db.eventRegistrant.count()).toBe(1)
     expect(await db.breakoutGroupMember.count()).toBe(1)
     expect(await db.smallGroupMemberRequest.count()).toBe(1)
+  })
+
+  it("refuses an event-owned table submitted to the Collab form", async () => {
+    const day = await openDay("Collab")
+    await db.eventFormConfig.create({
+      data: { clusterId: day.id, context: "Register", sectionBreakout: true },
+    })
+    const eventTable = await db.breakoutGroup.create({
+      data: { eventId: day.youthId, name: "Youth standing table" },
+      select: { id: true },
+    })
+
+    const result = await registerForCluster(
+      day.publicToken,
+      payload,
+      null,
+      null,
+      undefined,
+      [day.youthId],
+      undefined,
+      undefined,
+      undefined,
+      eventTable.id
+    )
+
+    expect(result.success).toBe(true)
+    expect(await db.breakoutGroupMember.count({ where: { breakoutGroupId: eventTable.id } })).toBe(0)
+  })
+
+  it("seats an explicit Collab pick in the Collab table beside any standing placement", async () => {
+    const day = await openDay("Collab")
+    await db.eventFormConfig.create({
+      data: { clusterId: day.id, context: "Register", sectionBreakout: true },
+    })
+    const eventTable = await db.breakoutGroup.create({
+      data: { eventId: day.youthId, name: "Youth standing table" },
+      select: { id: true },
+    })
+    const clusterTable = await db.breakoutGroup.create({
+      data: { clusterId: day.id, name: "Collab table" },
+      select: { id: true },
+    })
+
+    const result = await registerForCluster(
+      day.publicToken,
+      payload,
+      null,
+      null,
+      undefined,
+      [day.youthId],
+      undefined,
+      undefined,
+      undefined,
+      clusterTable.id
+    )
+
+    expect(result.success).toBe(true)
+    const seat = await db.breakoutGroupMember.findFirst({
+      where: { breakoutGroupId: { in: [eventTable.id, clusterTable.id] } },
+      select: { breakoutGroupId: true },
+    })
+    expect(seat?.breakoutGroupId).toBe(clusterTable.id)
   })
 
   it("still honours the tickboxes on a Parallel day", async () => {

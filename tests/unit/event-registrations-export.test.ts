@@ -57,6 +57,7 @@ function row(
     dietary: null,
     isPaid: false,
     paymentReference: null,
+    customAnswers: null,
     baptismOptIn: false,
     bus: null,
     busDirection: null,

@@ -46,6 +46,7 @@ export const registrantSchema = z.object({
   dietaryOther: z.string().optional().nullable().transform((v) => v || null),
   // Optional payment reference — collected when the Payment registration module is enabled
   paymentReference: z.string().optional().nullable().transform((v) => v || null),
+  customResponses: z.array(z.object({ questionId: z.string(), answer: z.union([z.string(), z.array(z.string())]) })).optional().default([]),
 })
   .transform((data) =>
     // A claimed DGroup is either one of ours or one at another satellite, never

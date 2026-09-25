@@ -20,6 +20,22 @@ import {
  */
 
 describe("catch-mech dashboard count — pure aggregation", () => {
+  it("shows a registrant cancellation without counting it as a leader rejection", () => {
+    const groups: AggBreakoutGroup[] = [{
+      id: "bg1", name: "Table 1", facilitator: null, coFacilitator: null,
+      members: [{ registrant: {
+        id: "r1", memberId: null, guestId: "g1", member: null,
+        guest: { firstName: "Maria", lastName: "Santos", memberId: null },
+      } }],
+    }]
+    const { stats, groupRows } = buildCatchMechGroupRows(groups, [{
+      id: "req1", breakoutGroupId: "bg1", memberId: null, guestId: "g1",
+      status: "Rejected", declineReason: null, registrantCancelledAt: new Date(),
+    }])
+    expect(stats).toMatchObject({ totalCohort: 1, matchable: 0, totalRejected: 0, totalPending: 0, totalCancelled: 1 })
+    expect(groupRows[0].members[0]).toMatchObject({ status: "Cancelled", requestId: null })
+  })
+
   it("counts a confirmed member even though they now have a smallGroupId", () => {
     const breakoutGroups: AggBreakoutGroup[] = [
       {
@@ -189,7 +205,7 @@ describe("catch-mech AlreadyInSmallGroup bucket split", () => {
     const { stats } = buildCatchMechGroupRows([], [])
     expect(stats).toMatchObject({
       totalCohort: 0, matchable: 0, totalConfirmed: 0,
-      totalRejected: 0, totalInSmallGroup: 0, totalPending: 0,
+      totalRejected: 0, totalInSmallGroup: 0, totalPending: 0, totalCancelled: 0,
     })
   })
 })

@@ -54,7 +54,8 @@ export type JoinMatchResult = MatchResult & {
 
 export async function submitJoinForm(
   personal: PersonalInfoValues,
-  prefs: MatchingPrefsValues
+  prefs: MatchingPrefsValues,
+  eventId?: string
 ): Promise<ActionResult<{ guestId: string; results: JoinMatchResult[] }>> {
   const parsedPersonal = personalInfoSchema.safeParse(personal)
   if (!parsedPersonal.success) {
@@ -70,6 +71,9 @@ export async function submitJoinForm(
   const m = parsedPrefs.data
 
   try {
+    if (eventId && !(await isEventJoinFormAvailable(eventId))) {
+      return { success: false, error: "This DGroup form is unavailable." }
+    }
     // Upsert guest by phone
     const existing = await db.guest.findFirst({
       where: { phone: p.phone, memberId: null },
@@ -101,7 +105,8 @@ export async function submitJoinForm(
       guestId = guest.id
     }
 
-    const matchResults = await matchSmallGroups({ guestId }, { limit: 5 })
+    const eventGroupIds = eventId ? await getEventLeaderGroupIds(eventId) : undefined
+    const matchResults = await matchSmallGroups({ guestId }, { limit: 5, includeGroupIds: eventGroupIds })
 
     if (matchResults.length === 0) {
       return { success: true, data: { guestId, results: [] } }
@@ -165,9 +170,16 @@ export type RequestResult =
 
 export async function requestToJoinGroup(
   guestId: string,
-  groupId: string
+  groupId: string,
+  eventId?: string
 ): Promise<RequestResult> {
   try {
+    if (eventId && !(await isEventJoinFormAvailable(eventId))) {
+      return { success: false, error: "This DGroup form is unavailable." }
+    }
+    if (eventId && !(await isEventLeaderGroup(eventId, groupId))) {
+      return { success: false, error: "That DGroup is not available for this event." }
+    }
     const existingRequest = await db.smallGroupMemberRequest.findFirst({
       where: { guestId, status: "Pending" },
       select: {
@@ -219,9 +231,16 @@ export async function requestToJoinGroup(
 export async function cancelAndRequestGroup(
   guestId: string,
   existingRequestId: string,
-  newGroupId: string
+  newGroupId: string,
+  eventId?: string
 ): Promise<{ success: true } | { success: false; error: string }> {
   try {
+    if (eventId && !(await isEventJoinFormAvailable(eventId))) {
+      return { success: false, error: "This DGroup form is unavailable." }
+    }
+    if (eventId && !(await isEventLeaderGroup(eventId, newGroupId))) {
+      return { success: false, error: "That DGroup is not available for this event." }
+    }
     const guest = await db.guest.findUnique({
       where: { id: guestId },
       select: { firstName: true, lastName: true },
@@ -230,10 +249,14 @@ export async function cancelAndRequestGroup(
 
     const existing = await db.smallGroupMemberRequest.findUnique({
       where: { id: existingRequestId },
-      select: { smallGroupId: true },
+      select: { smallGroupId: true, guestId: true, status: true },
     })
     // A groupless request is a Catch Mech decline, never a pending join request.
-    if (!existing?.smallGroupId) return { success: false, error: "Request not found" }
+    if (
+      !existing?.smallGroupId ||
+      existing.guestId !== guestId ||
+      existing.status !== "Pending"
+    ) return { success: false, error: "Request not found" }
 
     await db.$transaction([
       db.smallGroupMemberRequest.update({
@@ -266,4 +289,29 @@ export async function cancelAndRequestGroup(
     console.error(e)
     return { success: false, error: "Something went wrong. Please try again." }
   }
+}
+
+async function getEventLeaderGroupIds(eventId: string): Promise<string[]> {
+  const groups = await db.smallGroup.findMany({
+    where: { leader: { volunteers: { some: { eventId, status: "Confirmed" } } } },
+    select: { id: true },
+  })
+  return groups.map((group) => group.id)
+}
+
+async function isEventJoinFormAvailable(eventId: string): Promise<boolean> {
+  const [event, config] = await Promise.all([
+    db.event.findUnique({
+      where: { id: eventId },
+      select: { modules: { where: { type: "Volunteers" }, select: { id: true } } },
+    }),
+    db.formConfig.findUnique({ where: { scopeKey: `${eventId}:EventJoinSmallGroup` }, select: { isOpen: true } }),
+  ])
+  return !!event?.modules.length && (config?.isOpen ?? true)
+}
+
+async function isEventLeaderGroup(eventId: string, groupId: string): Promise<boolean> {
+  return (await db.smallGroup.count({
+    where: { id: groupId, leader: { volunteers: { some: { eventId, status: "Confirmed" } } } },
+  })) > 0
 }

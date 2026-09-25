@@ -273,7 +273,7 @@ describe("snapWidth", () => {
 describe("shouldPackRows", () => {
   it("is false when the event can have every card — the admin owns the gaps", () => {
     const layout = resolveDashboardLayout([], "Recurring", ALL)
-    expect(layout.droppedKeys.filter((k) => DASHBOARD_WIDGETS[k].lane === "card")).toEqual([])
+    expect(layout.droppedKeys.filter((k) => DASHBOARD_WIDGETS[k as keyof typeof DASHBOARD_WIDGETS]?.lane === "card")).toEqual([])
     expect(shouldPackRows(layout)).toBe(false)
   })
 
