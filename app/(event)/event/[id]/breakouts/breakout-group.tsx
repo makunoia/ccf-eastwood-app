@@ -45,6 +45,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { MultiSelect } from "@/components/ui/multi-select"
+import { PersonCombobox } from "@/components/ui/person-combobox"
 import {
   Select,
   SelectContent,
@@ -56,14 +57,7 @@ import { PageHeader, PageActions, type PageAction } from "@/components/page-head
 import { FilterBar, FilterField } from "@/components/filter-bar"
 import { ImportWizard } from "@/components/import/import-wizard"
 import { LANGUAGE_OPTIONS } from "@/lib/constants/group-options"
-import {
-  CLEARED_PROFILE_FORM,
-  GENDER_FOCUS_LABELS,
-  formatAgeRange,
-  missingTimothyFields,
-} from "@/lib/breakouts/profile"
-import { FacilitatorLeadership } from "@/components/breakouts/facilitator-leadership"
-import { CatchMechGroupField } from "@/components/breakouts/catch-mech-group-field"
+import { GENDER_FOCUS_LABELS, formatAgeRange } from "@/lib/breakouts/profile"
 import {
   createBreakoutGroup,
   updateBreakoutGroup,
@@ -141,13 +135,11 @@ type GroupFormDialogProps = {
 function GroupFormDialog({ open, onOpenChange, surface, group, lifeStages, volunteers, defaultLifeStageIds = [] }: GroupFormDialogProps) {
   const isEdit = !!group
   const [form, setForm] = React.useState(EMPTY_FORM)
-  const [sourceGroupId, setSourceGroupId] = React.useState("")
   const [saving, setSaving] = React.useState(false)
 
   React.useEffect(() => {
     if (open) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setSourceGroupId(group?.linkedSmallGroupId ?? "")
       setForm(
         group
           ? {
@@ -166,25 +158,9 @@ function GroupFormDialog({ open, onOpenChange, surface, group, lifeStages, volun
     }
   }, [open, group, defaultLifeStageIds])
 
-  // Swapping one facilitator for another moves only the Catch Mech routing
-  // target — the matching criteria are this group's own and a swap never
-  // rewrites them. Emptying the slot on an existing group is the other case: it
-  // clears the profile server-side (`updateBreakoutGroup`), so the fields are
-  // blanked here to match. On a new group there is nothing to clear.
   function handleVolunteerChange(volunteerId: string) {
-    const vol = volunteers.find((v) => v.id === volunteerId)
-    const led = vol?.member.ledGroups ?? []
-    setSourceGroupId(led.length === 1 ? led[0].id : "")
-    setForm((f) => ({
-      ...f,
-      facilitatorId: volunteerId,
-      ...(volunteerId === "" && group?.facilitatorId ? CLEARED_PROFILE_FORM : {}),
-    }))
+    setForm((f) => ({ ...f, facilitatorId: volunteerId }))
   }
-
-  const selectedVolunteer = volunteers.find((v) => v.id === form.facilitatorId) ?? null
-  const ledGroups = selectedVolunteer?.member.ledGroups ?? []
-  const isFacilitatorTimothy = !!form.facilitatorId && ledGroups.length === 0
 
   function field(key: keyof typeof EMPTY_FORM) {
     return {
@@ -196,20 +172,12 @@ function GroupFormDialog({ open, onOpenChange, surface, group, lifeStages, volun
 
   async function handleSubmit() {
     if (!form.name.trim()) { toast.error("Group name is required"); return }
-    if (isFacilitatorTimothy) {
-      const missing = missingTimothyFields(form)
-      if (missing.length > 0) {
-        toast.error(`Timothy profile requires: ${missing.join(", ")}`)
-        return
-      }
-    }
     setSaving(true)
     const data = {
       name: form.name.trim(),
       facilitatorId: form.facilitatorId || null,
       memberLimit: form.memberLimit ? Number(form.memberLimit) : null,
       manualAssignOnly: form.manualAssignOnly,
-      linkedSmallGroupId: sourceGroupId || null,
       lifeStageIds: form.lifeStageIds,
       genderFocus: (form.genderFocus as "Male" | "Female" | "Mixed") || null,
       language: form.language,
@@ -275,55 +243,30 @@ function GroupFormDialog({ open, onOpenChange, surface, group, lifeStages, volun
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="bg-facilitator">Facilitator</Label>
-              <Select value={form.facilitatorId} onValueChange={(v) => handleVolunteerChange(v === "_none" ? "" : v)}>
-                <SelectTrigger id="bg-facilitator"><SelectValue placeholder="Unassigned" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="_none">Unassigned</SelectItem>
-                  {volunteers.map((v) => (
-                    <SelectItem key={v.id} value={v.id}>{volunteerName(v)}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {/* Context, not a control — the criteria below are this group's own
-                  whichever DGroup the facilitator leads. Inside the field so it
-                  reads as this select's footnote, not a stray line. */}
-              {form.facilitatorId && !isFacilitatorTimothy && (
-                <FacilitatorLeadership ledGroups={ledGroups} linkGroups={false} />
-              )}
-            </div>
-
-            {form.facilitatorId && ledGroups.length > 1 && (
-              <CatchMechGroupField
-                id="bg-catch-mech"
-                ledGroups={ledGroups}
-                value={sourceGroupId}
-                onValueChange={setSourceGroupId}
-              />
-            )}
-
-            {isFacilitatorTimothy && (
-              <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5">
-                This volunteer does not lead a DGroup yet (Timothy). Set the profile below — it will be used to create their DGroup when their first member is confirmed.
-              </p>
-            )}
           </div>
 
-          {/* ── Matching profile ──
-              Always editable. It used to be swapped for a read-only grid the
-              moment the facilitator led a DGroup, because the criteria were a
-              copy of that DGroup; they are the group's own now. */}
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Facilitator</p>
+            <Label htmlFor="bg-facilitator">Who leads this breakout group</Label>
+            <PersonCombobox
+              id="bg-facilitator"
+              options={volunteers.map((v) => ({ value: v.id, label: volunteerName(v) }))}
+              value={form.facilitatorId}
+              onValueChange={handleVolunteerChange}
+              placeholder="Unassigned"
+              clearable
+              clearLabel="Unassigned"
+            />
+          </div>
+
           <div className="space-y-4">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              {isFacilitatorTimothy
-                ? <>Future DGroup Profile <span className="normal-case font-normal text-destructive">(Timothy — required)</span></>
-                : <>Matching Profile <span className="normal-case font-normal">(used for auto-assign)</span></>
-              }
+              Who this group is for
             </p>
+            <p className="text-xs text-muted-foreground">These criteria belong to this breakout group and guide suggestions and automatic placement.</p>
 
             <div className="space-y-1.5">
-              <Label>Life Stages {isFacilitatorTimothy && <span className="text-destructive">*</span>}</Label>
+              <Label>Attendee life stages</Label>
               <MultiSelect
                 className="w-full"
                 placeholder="Any"
@@ -334,7 +277,7 @@ function GroupFormDialog({ open, onOpenChange, surface, group, lifeStages, volun
             </div>
 
             <div className="space-y-1.5">
-              <Label>Gender Focus {isFacilitatorTimothy && <span className="text-destructive">*</span>}</Label>
+              <Label>Gender Focus</Label>
               <Select value={form.genderFocus} onValueChange={(v) => setForm((f) => ({ ...f, genderFocus: v }))}>
                 <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                 <SelectContent>
@@ -346,17 +289,17 @@ function GroupFormDialog({ open, onOpenChange, surface, group, lifeStages, volun
             </div>
 
             <div className="space-y-1.5">
-              <Label>Language {isFacilitatorTimothy && <span className="text-destructive">*</span>}</Label>
+              <Label>Language</Label>
               <MultiSelect options={LANGUAGE_OPTIONS} value={form.language} onChange={(v) => setForm((f) => ({ ...f, language: v }))} />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label htmlFor="bg-agemin">Min Age {isFacilitatorTimothy && <span className="text-destructive">*</span>}</Label>
+                <Label htmlFor="bg-agemin">Min Age</Label>
                 <Input id="bg-agemin" type="number" min={0} placeholder="—" {...field("ageRangeMin")} />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="bg-agemax">Max Age {isFacilitatorTimothy && <span className="text-destructive">*</span>}</Label>
+                <Label htmlFor="bg-agemax">Max Age</Label>
                 <Input id="bg-agemax" type="number" min={0} placeholder="—" {...field("ageRangeMax")} />
               </div>
             </div>

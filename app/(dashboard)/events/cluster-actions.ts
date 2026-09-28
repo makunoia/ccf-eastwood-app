@@ -692,6 +692,7 @@ export async function registerForCluster(
         gender: (parsed.data.gender ?? stored.gender) as Gender | null,
         birthYear: parsed.data.birthYear ?? stored.birthYear,
         lifeStageId: parsed.data.lifeStageId ?? stored.lifeStageId,
+        language: parsed.data.language?.length ? parsed.data.language : stored.language,
       }
     } else if (confirmedGuestId) {
       touched = verifyIdentityGrant(grant, { recordId: confirmedGuestId, recordType: "guest" })
@@ -703,6 +704,7 @@ export async function registerForCluster(
         gender: (parsed.data.gender ?? stored.gender) as Gender | null,
         birthYear: parsed.data.birthYear ?? stored.birthYear,
         lifeStageId: parsed.data.lifeStageId ?? stored.lifeStageId,
+        language: parsed.data.language?.length ? parsed.data.language : stored.language,
       }
     } else {
       const { guestId, ...stored } = await resolveAnonymousGuest(parsed.data, skipDeduplication)
@@ -711,6 +713,7 @@ export async function registerForCluster(
         gender: (parsed.data.gender ?? stored.gender) as Gender | null,
         birthYear: parsed.data.birthYear ?? stored.birthYear,
         lifeStageId: parsed.data.lifeStageId ?? stored.lifeStageId,
+        language: parsed.data.language?.length ? parsed.data.language : stored.language,
       }
     }
 
@@ -1056,7 +1059,6 @@ export async function carryOverBreakoutGroups(
           memberLimit: src.memberLimit,
           isEnabled: src.isEnabled,
           manualAssignOnly: src.manualAssignOnly,
-          linkedSmallGroupId: src.linkedSmallGroupId,
           lifeStages: { connect: src.lifeStages.map((l) => ({ id: l.id })) },
           schedules: {
             create: src.schedules.map((sc) => ({

@@ -759,7 +759,7 @@ describe("matchBreakoutGroups — effective gender focus", () => {
     expect(ids(results)).not.toContain(breakout.id)
   })
 
-  it("infers gender focus from the facilitator when the group sets none", async () => {
+  it("leaves a group open when its explicit focus is blank, regardless of facilitator gender", async () => {
     const { event, breakout } = await seedEventWithBreakout({ facilitatorGender: "Female" })
     const male = await seedGuest({ firstName: "Male", gender: "Male" })
     const female = await seedGuest({ firstName: "Female", gender: "Female" })
@@ -770,11 +770,11 @@ describe("matchBreakoutGroups — effective gender focus", () => {
       data: { eventId: event.id, guestId: female.id },
     })
 
-    expect(ids(await matchBreakoutGroups(maleReg.id, { eventId: event.id }))).not.toContain(breakout.id)
+    expect(ids(await matchBreakoutGroups(maleReg.id, { eventId: event.id }))).toContain(breakout.id)
     expect(ids(await matchBreakoutGroups(femaleReg.id, { eventId: event.id }))).toContain(breakout.id)
   })
 
-  it("falls back to the linked small group's focus when facilitator gender is unknown", async () => {
+  it("does not inherit a linked small group's gender focus", async () => {
     const { event, breakout } = await seedEventWithBreakout({
       linkedGroupGenderFocus: "Female",
     })
@@ -789,7 +789,7 @@ describe("matchBreakoutGroups — effective gender focus", () => {
 
     const results = await matchBreakoutGroups(registrant.id, { eventId: event.id })
     expect(ids(results)).toContain(control.id)
-    expect(ids(results)).not.toContain(breakout.id)
+    expect(ids(results)).toContain(breakout.id)
   })
 })
 

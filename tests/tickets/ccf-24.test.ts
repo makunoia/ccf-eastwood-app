@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest"
 import { db } from "@/lib/db"
 import { createSmallGroupForTimothy } from "@/app/events/[id]/catch-mech/actions"
 import { submitMemberConfirmations } from "@/app/small-group-confirmation/[token]/actions"
+import { resolveCatchMechTargets } from "@/lib/catch-mech/targets"
 
 beforeEach(async () => {
   await db.$executeRaw`TRUNCATE "CatchMechSession", "SmallGroupMemberRequest", "SmallGroupLog", "BreakoutGroupMember", "BreakoutGroup", "Volunteer", "CommitteeRole", "VolunteerCommittee", "EventMinistry", "EventRegistrant", "EventOccurrence", "Event", "SmallGroup", "Member", "Guest" RESTART IDENTITY CASCADE`
@@ -55,9 +56,9 @@ async function createBreakoutGroupForMember(memberId: string, bgName: string, li
   return { event, volunteer, breakoutGroup }
 }
 
-describe("CCF-24 – Auto-update Breakout Group linked small group on Timothy→Leader transition", () => {
+describe("CCF-24 – Catch Mech resolves a facilitator's current DGroups", () => {
   describe("Catch Mech path: createSmallGroupForTimothy", () => {
-    it("links the current breakout group to the new small group", async () => {
+    it("uses the newly led DGroup without linking the breakout group", async () => {
       const { timothy } = await seedTimothy()
       const { event, volunteer, breakoutGroup } = await createBreakoutGroupForMember(timothy.id, "BG Event A")
       const session = await db.catchMechSession.create({
@@ -68,10 +69,16 @@ describe("CCF-24 – Auto-update Breakout Group linked small group on Timothy→
 
       expect(result.success).toBe(true)
       const updated = await db.breakoutGroup.findUnique({ where: { id: breakoutGroup.id } })
-      expect(updated?.linkedSmallGroupId).not.toBeNull()
+      expect(updated?.linkedSmallGroupId).toBeNull()
+      const ledGroups = await db.smallGroup.findMany({ where: { leaderId: timothy.id }, select: { id: true, name: true } })
+      expect(resolveCatchMechTargets({
+        facilitatorVolunteerId: volunteer.id,
+        breakoutGroup: { facilitatorId: volunteer.id },
+        facilitator: { member: { ledGroups } },
+      }).candidates).toEqual(ledGroups)
     })
 
-    it("also links other breakout groups from other events where Timothy is a facilitator", async () => {
+    it("leaves other breakout groups untouched when Timothy becomes a leader", async () => {
       const { timothy } = await seedTimothy()
       const { event: eventA, volunteer: volunteerA, breakoutGroup: bgA } = await createBreakoutGroupForMember(timothy.id, "BG Event A")
       const { breakoutGroup: bgB } = await createBreakoutGroupForMember(timothy.id, "BG Event B")
@@ -86,9 +93,8 @@ describe("CCF-24 – Auto-update Breakout Group linked small group on Timothy→
       const updatedBgA = await db.breakoutGroup.findUnique({ where: { id: bgA.id } })
       const updatedBgB = await db.breakoutGroup.findUnique({ where: { id: bgB.id } })
 
-      expect(updatedBgA?.linkedSmallGroupId).not.toBeNull()
-      expect(updatedBgB?.linkedSmallGroupId).not.toBeNull()
-      expect(updatedBgA?.linkedSmallGroupId).toBe(updatedBgB?.linkedSmallGroupId)
+      expect(updatedBgA?.linkedSmallGroupId).toBeNull()
+      expect(updatedBgB?.linkedSmallGroupId).toBeNull()
     })
 
     it("does not overwrite breakout groups that are already linked to a different small group", async () => {
@@ -126,7 +132,7 @@ describe("CCF-24 – Auto-update Breakout Group linked small group on Timothy→
       expect(updated?.groupStatus).toBe("Leader")
     })
 
-    it("all linked breakout groups point to the same newly created small group", async () => {
+    it("does not copy the new DGroup onto any breakout group", async () => {
       const { timothy } = await seedTimothy()
       const { event: eventA, volunteer: volunteerA, breakoutGroup: bgA } = await createBreakoutGroupForMember(timothy.id, "BG Event A")
       const { breakoutGroup: bgB } = await createBreakoutGroupForMember(timothy.id, "BG Event B")
@@ -147,18 +153,18 @@ describe("CCF-24 – Auto-update Breakout Group linked small group on Timothy→
         db.breakoutGroup.findUnique({ where: { id: bgC.id } }),
       ])
 
-      expect(updatedA?.linkedSmallGroupId).toBe(newGroup!.id)
-      expect(updatedB?.linkedSmallGroupId).toBe(newGroup!.id)
-      expect(updatedC?.linkedSmallGroupId).toBe(newGroup!.id)
+      expect(updatedA?.linkedSmallGroupId).toBeNull()
+      expect(updatedB?.linkedSmallGroupId).toBeNull()
+      expect(updatedC?.linkedSmallGroupId).toBeNull()
     })
   })
 
   describe("Small Group confirmation link path: submitMemberConfirmations", () => {
-    it("links unlinked breakout groups when a leader submits confirmations", async () => {
+    it("leaves an unlinked breakout group alone when a leader submits confirmations", async () => {
       const leader = await db.member.create({
         data: { firstName: "Leader", lastName: "L", dateJoined: new Date(), language: [] },
       })
-      const smallGroup = await db.smallGroup.create({
+      await db.smallGroup.create({
         data: { name: "Leader's Group", leaderId: leader.id, leaderConfirmationToken: "test-token-sg-confirm" },
       })
       const { breakoutGroup } = await createBreakoutGroupForMember(leader.id, "Unlinked BG")
@@ -170,7 +176,7 @@ describe("CCF-24 – Auto-update Breakout Group linked small group on Timothy→
 
       expect(result.success).toBe(true)
       const updated = await db.breakoutGroup.findUnique({ where: { id: breakoutGroup.id } })
-      expect(updated?.linkedSmallGroupId).toBe(smallGroup.id)
+      expect(updated?.linkedSmallGroupId).toBeNull()
     })
   })
 

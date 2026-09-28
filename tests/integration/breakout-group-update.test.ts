@@ -165,10 +165,7 @@ describe("updateBreakoutGroup and the co-facilitator slot", () => {
     ).toBe(false)
   })
 
-  it("keeps manualAssignOnly when clearing the facilitator wipes the profile", async () => {
-    // Emptying the facilitator slot clears the *matching profile*. How a table
-    // is reached is not one of its criteria, so it survives — which is why the
-    // field is written outside that branch of the update.
+  it("keeps manualAssignOnly and criteria when removing the facilitator", async () => {
     const { event, group, faci } = await seed()
     await db.breakoutGroup.update({
       where: { id: group.id },
@@ -184,13 +181,13 @@ describe("updateBreakoutGroup and the co-facilitator slot", () => {
     const result = await updateBreakoutGroup(
       group.id,
       { eventId: event.id },
-      drawerPayload({ facilitatorId: null, manualAssignOnly: true })
+      drawerPayload({ facilitatorId: null, manualAssignOnly: true, genderFocus: "Male", ageRangeMin: 20 })
     )
 
     expect(result.success).toBe(true)
     const updated = await db.breakoutGroup.findUnique({ where: { id: group.id } })
     expect(updated?.facilitatorId).toBeNull()
-    expect(updated?.genderFocus).toBeNull() // profile cleared, as before
+    expect(updated?.genderFocus).toBe("Male")
     expect(updated?.manualAssignOnly).toBe(true) // …but this is not profile
   })
 
@@ -319,15 +316,13 @@ describe("updateBreakoutGroup and the matching profile", () => {
   })
 })
 
-// ─── Unlinking the facilitator ────────────────────────────────────────────────
+// ─── Facilitator changes preserve criteria ───────────────────────────────────
 
 /**
- * A swap is not an unlink. Changing facilitator never rewrites what a group
- * matches for — the criteria are hand-entered and the group's own — but leaving
- * the slot empty means nobody runs the table, so it carries no criteria and no
- * Catch Mech target either. Both write paths have to agree.
+ * Criteria belong to the breakout group. A legacy Catch Mech link belongs to
+ * the lead facilitator and is cleared when that lead changes.
  */
-describe("unlinking a facilitator clears the matching profile", () => {
+describe("facilitator changes preserve the matching profile", () => {
   /** Gives the seeded group a full profile and a Catch Mech target. */
   async function withProfile(groupId: string, linkedSmallGroupId: string) {
     const lifeStage = await db.lifeStage.create({ data: { name: "Young Pro", order: 0 } })
@@ -352,7 +347,7 @@ describe("unlinking a facilitator clears the matching profile", () => {
     })
   }
 
-  it("clears every factor via setFacilitator", async () => {
+  it("preserves every factor via setFacilitator", async () => {
     const { event, group, faci } = await seed()
     await withProfile(group.id, faci.ledGroup.id)
 
@@ -362,11 +357,11 @@ describe("unlinking a facilitator clears the matching profile", () => {
     const updated = await readGroup(group.id)
     expect(updated?.facilitatorId).toBeNull()
     expect(updated?.linkedSmallGroupId).toBeNull()
-    expect(updated?.lifeStages).toHaveLength(0)
-    expect(updated?.genderFocus).toBeNull()
-    expect(updated?.language).toEqual([])
-    expect(updated?.ageRangeMin).toBeNull()
-    expect(updated?.ageRangeMax).toBeNull()
+    expect(updated?.lifeStages).toHaveLength(1)
+    expect(updated?.genderFocus).toBe("Female")
+    expect(updated?.language).toEqual(["English"])
+    expect(updated?.ageRangeMin).toBe(25)
+    expect(updated?.ageRangeMax).toBe(35)
   })
 
   // Regression: this is exactly what 444912e protected — a facilitator change
@@ -402,10 +397,7 @@ describe("unlinking a facilitator clears the matching profile", () => {
     expect(updated?.linkedSmallGroupId).toBe(faci.ledGroup.id)
   })
 
-  // The drawer blanks its own fields on the same change, but a stale client —
-  // or a direct caller — must not be able to keep criteria on a group it just
-  // emptied the facilitator slot of.
-  it("clears via updateBreakoutGroup even when the payload carries criteria", async () => {
+  it("preserves via updateBreakoutGroup when the facilitator is removed", async () => {
     const { event, group, faci } = await seed()
     const lifeStage = await withProfile(group.id, faci.ledGroup.id)
 
@@ -427,10 +419,10 @@ describe("unlinking a facilitator clears the matching profile", () => {
     const updated = await readGroup(group.id)
     expect(updated?.facilitatorId).toBeNull()
     expect(updated?.linkedSmallGroupId).toBeNull()
-    expect(updated?.lifeStages).toHaveLength(0)
-    expect(updated?.genderFocus).toBeNull()
-    expect(updated?.language).toEqual([])
-    expect(updated?.ageRangeMin).toBeNull()
+    expect(updated?.lifeStages).toHaveLength(1)
+    expect(updated?.genderFocus).toBe("Female")
+    expect(updated?.language).toEqual(["English"])
+    expect(updated?.ageRangeMin).toBe(25)
   })
 
   // It is the transition that clears, not the state: a group that never had a
@@ -462,96 +454,18 @@ describe("unlinking a facilitator clears the matching profile", () => {
   })
 })
 
-// ─── Timothy facilitators ─────────────────────────────────────────────────────
+// ─── DGroup leadership is independent of breakout criteria ──────────────────
 
-/**
- * A facilitator who leads no DGroup is a "Timothy": this profile seeds the
- * DGroup created for them when their first member is confirmed, so unlike an
- * ordinary breakout group there is nothing to fall back on and all four factors
- * are required.
- */
-describe("updateBreakoutGroup and Timothy facilitators", () => {
-  async function timothyVolunteer(eventId: string) {
-    const committee = await db.volunteerCommittee.findFirstOrThrow({ where: { eventId } })
+describe("updateBreakoutGroup without DGroup leadership", () => {
+  it("accepts a facilitator with no DGroup and an empty profile", async () => {
+    const { event, group } = await seed()
+    const committee = await db.volunteerCommittee.findFirstOrThrow({ where: { eventId: event.id } })
     const role = await db.committeeRole.findFirstOrThrow({ where: { committeeId: committee.id } })
-    const member = await db.member.create({
-      data: { firstName: "Timo", lastName: "T", dateJoined: new Date(), language: [] },
-    })
-    return db.volunteer.create({
-      data: {
-        memberId: member.id,
-        eventId,
-        committeeId: committee.id,
-        preferredRoleId: role.id,
-        status: "Confirmed",
-      },
-    })
-  }
-
-  it("rejects an incomplete Timothy profile, naming what is missing", async () => {
-    const { event, group } = await seed()
-    const timo = await timothyVolunteer(event.id)
-
-    const result = await updateBreakoutGroup(
-      group.id,
-      { eventId: event.id },
-      drawerPayload({ facilitatorId: timo.id, genderFocus: "Male" })
-    )
-
-    expect(result.success).toBe(false)
-    if (!result.success) {
-      expect(result.error).toContain("Life Stage")
-      expect(result.error).toContain("Language")
-      expect(result.error).toContain("Age Range")
-      expect(result.error).not.toContain("Gender Focus")
-      // Both dropped from the form, so requiring them was unsatisfiable.
-      expect(result.error).not.toContain("Meeting Format")
-      expect(result.error).not.toContain("Meeting Schedule")
-    }
-  })
-
-  it("accepts the four factors", async () => {
-    const { event, group } = await seed()
-    const timo = await timothyVolunteer(event.id)
-    const lifeStage = await db.lifeStage.create({ data: { name: "Young Pro", order: 0 } })
-
-    const result = await updateBreakoutGroup(
-      group.id,
-      { eventId: event.id },
-      drawerPayload({
-        facilitatorId: timo.id,
-        lifeStageIds: [lifeStage.id],
-        genderFocus: "Male",
-        language: ["English"],
-        ageRangeMin: 25,
-        ageRangeMax: 35,
-      })
-    )
-
+    const member = await db.member.create({ data: { firstName: "New", lastName: "Facilitator", dateJoined: new Date(), language: [] } })
+    const volunteer = await db.volunteer.create({ data: { memberId: member.id, eventId: event.id, committeeId: committee.id, preferredRoleId: role.id, status: "Confirmed" } })
+    const result = await updateBreakoutGroup(group.id, { eventId: event.id }, drawerPayload({ facilitatorId: volunteer.id }))
     expect(result.success).toBe(true)
-    const updated = await db.breakoutGroup.findUnique({ where: { id: group.id } })
-    expect(updated?.facilitatorId).toBe(timo.id)
-  })
-
-  it("requires both age bounds", async () => {
-    const { event, group } = await seed()
-    const timo = await timothyVolunteer(event.id)
-    const lifeStage = await db.lifeStage.create({ data: { name: "Young Pro", order: 0 } })
-
-    const result = await updateBreakoutGroup(
-      group.id,
-      { eventId: event.id },
-      drawerPayload({
-        facilitatorId: timo.id,
-        lifeStageIds: [lifeStage.id],
-        genderFocus: "Male",
-        language: ["English"],
-        ageRangeMin: 25,
-      })
-    )
-
-    expect(result.success).toBe(false)
-    if (!result.success) expect(result.error).toContain("Age Range")
+    expect((await db.breakoutGroup.findUnique({ where: { id: group.id } }))?.facilitatorId).toBe(volunteer.id)
   })
 })
 

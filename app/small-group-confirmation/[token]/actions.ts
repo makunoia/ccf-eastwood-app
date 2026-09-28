@@ -139,33 +139,6 @@ export async function submitMemberConfirmations(
     }
     for (const eventId of affectedInterestEventIds) revalidatePath(`/event/${eventId}/catch-mech`)
 
-    // If this leader was previously a Timothy facilitating breakout groups,
-    // link those groups to this small group now that they've become a leader.
-    // Only applies when the group actually has a leader.
-    if (group.leaderId) {
-      const updatedBreakouts = await db.breakoutGroup.findMany({
-        where: {
-          linkedSmallGroupId: null,
-          OR: [
-            { facilitator: { memberId: group.leaderId } },
-            { coFacilitator: { memberId: group.leaderId } },
-          ],
-        },
-        select: { id: true, eventId: true },
-      })
-      if (updatedBreakouts.length > 0) {
-        await db.breakoutGroup.updateMany({
-          where: { id: { in: updatedBreakouts.map((b) => b.id) } },
-          data: { linkedSmallGroupId: group.id },
-        })
-        const eventIds = [...new Set(updatedBreakouts.map((b) => b.eventId))]
-        for (const eventId of eventIds) {
-          revalidatePath(`/event/${eventId}/breakouts`)
-          revalidatePath(`/event/${eventId}/dashboard`)
-        }
-      }
-    }
-
     // Revalidate catch-mech admin pages for any requests linked to a breakout group
     const requestIds = decisions.map((d) => d.requestId)
     const linked = await db.smallGroupMemberRequest.findMany({

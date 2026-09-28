@@ -36,17 +36,9 @@ import {
 } from "@/components/ui/select"
 import { LANGUAGE_OPTIONS } from "@/lib/constants/group-options"
 import { updateBreakoutGroup, deleteBreakoutGroup } from "@/app/(dashboard)/events/breakout-actions"
-import {
-  CLEARED_PROFILE_FORM,
-  GENDER_FOCUS_LABELS,
-  missingTimothyFields,
-} from "@/lib/breakouts/profile"
-import { FacilitatorLeadership } from "@/components/breakouts/facilitator-leadership"
-import { CatchMechGroupField } from "@/components/breakouts/catch-mech-group-field"
+import { GENDER_FOCUS_LABELS } from "@/lib/breakouts/profile"
 import { BreakoutEnabledSwitch } from "../enabled-switch"
 import type { BreakoutSurface } from "@/lib/breakouts/owner"
-import { filterVolunteerAssignmentPool } from "@/lib/volunteers/assignment-profile"
-import { VOLUNTEER_AGE_GROUPS } from "@/lib/volunteers/age-groups"
 
 /** Shown, not inherited — a breakout group's criteria are its own. */
 type LedGroup = {
@@ -100,17 +92,11 @@ function EditDialog({
     ageRangeMin: "",
     ageRangeMax: "",
   })
-  const [sourceGroupId, setSourceGroupId] = React.useState("")
   const [saving, setSaving] = React.useState(false)
-  const [ageGroupFilter, setAgeGroupFilter] = React.useState("")
-  const [lifeStageFilter, setLifeStageFilter] = React.useState("")
 
   React.useEffect(() => {
     if (open) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setSourceGroupId(group.linkedSmallGroupId ?? "")
-      setAgeGroupFilter("")
-      setLifeStageFilter("")
       setForm({
         name: group.name,
         memberLimit: group.memberLimit?.toString() ?? "",
@@ -125,33 +111,9 @@ function EditDialog({
     }
   }, [open, group])
 
-  // Swapping one facilitator for another moves only the Catch Mech routing
-  // target: the matching criteria are this group's own and a swap never
-  // rewrites them. *Emptying* the slot is the other case — the group is left
-  // with no facilitator, so it keeps no criteria either. The server clears them
-  // regardless (`updateBreakoutGroup`); blanking the fields here keeps the form
-  // showing what is about to be saved.
   function handleVolunteerChange(volunteerId: string) {
-    const vol = volunteers.find((v) => v.id === volunteerId)
-    const led = vol?.member.ledGroups ?? []
-    setSourceGroupId(led.length === 1 ? led[0].id : "")
-    setForm((f) => ({
-      ...f,
-      facilitatorId: volunteerId,
-      ...(volunteerId === "" && group.facilitatorId ? CLEARED_PROFILE_FORM : {}),
-    }))
+    setForm((f) => ({ ...f, facilitatorId: volunteerId }))
   }
-
-  const selectedVol = volunteers.find((v) => v.id === form.facilitatorId) ?? null
-  const filteredVolunteers = filterVolunteerAssignmentPool(volunteers, {
-    ageGroup: ageGroupFilter,
-    lifeStageId: lifeStageFilter,
-  })
-  const volunteerOptions = selectedVol && !filteredVolunteers.some((v) => v.id === selectedVol.id)
-    ? [selectedVol, ...filteredVolunteers]
-    : filteredVolunteers
-  const ledGroups = selectedVol?.member.ledGroups ?? []
-  const isFacilitatorTimothy = !!form.facilitatorId && ledGroups.length === 0
 
   function field(key: string) {
     return {
@@ -163,20 +125,12 @@ function EditDialog({
 
   async function handleSave() {
     if (!form.name.trim()) { toast.error("Group name is required"); return }
-    if (isFacilitatorTimothy) {
-      const missing = missingTimothyFields(form)
-      if (missing.length > 0) {
-        toast.error(`Timothy profile requires: ${missing.join(", ")}`)
-        return
-      }
-    }
     setSaving(true)
     const result = await updateBreakoutGroup(group.id, surface.owner, {
       name: form.name.trim(),
       facilitatorId: form.facilitatorId || null,
       memberLimit: form.memberLimit ? Number(form.memberLimit) : null,
       manualAssignOnly: form.manualAssignOnly,
-      linkedSmallGroupId: sourceGroupId || null,
       lifeStageIds: form.lifeStageIds,
       genderFocus: (form.genderFocus as "Male" | "Female" | "Mixed") || null,
       language: form.language,
@@ -235,70 +189,29 @@ function EditDialog({
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <Label>Facilitator</Label>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Select value={ageGroupFilter || "all"} onValueChange={(v) => setAgeGroupFilter(v === "all" ? "" : v)}>
-                  <SelectTrigger aria-label="Filter facilitators by age group"><SelectValue placeholder="All age groups" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All age groups</SelectItem>
-                    {VOLUNTEER_AGE_GROUPS.map((ageGroup) => <SelectItem key={ageGroup} value={ageGroup}>{ageGroup}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-                <Select value={lifeStageFilter || "all"} onValueChange={(v) => setLifeStageFilter(v === "all" ? "" : v)}>
-                  <SelectTrigger aria-label="Filter facilitators by life stage"><SelectValue placeholder="All life stages" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All life stages</SelectItem>
-                    {lifeStages.map((stage) => <SelectItem key={stage.id} value={stage.id}>{stage.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <PersonCombobox
-                options={volunteerOptions.map((v) => ({ value: v.id, label: `${v.member.firstName} ${v.member.lastName}` }))}
-                value={form.facilitatorId}
-                onValueChange={handleVolunteerChange}
-                placeholder="Unassigned"
-                clearable
-                clearLabel="Unassigned"
-              />
-              {/* Context, not a control — the criteria below are this group's own
-                  whichever DGroup the facilitator leads. Inside the field so it
-                  reads as this select's footnote, not a stray line. */}
-              {form.facilitatorId && !isFacilitatorTimothy && (
-                <FacilitatorLeadership ledGroups={ledGroups} linkGroups={false} />
-              )}
-            </div>
-
-            {form.facilitatorId && ledGroups.length > 1 && (
-              <CatchMechGroupField
-                id="edit-bg-catch-mech"
-                ledGroups={ledGroups}
-                value={sourceGroupId}
-                onValueChange={setSourceGroupId}
-              />
-            )}
-
-            {isFacilitatorTimothy && (
-              <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5">
-                This volunteer does not lead a DGroup yet (Timothy). Set the profile below — it will be used to create their DGroup when their first member is confirmed.
-              </p>
-            )}
           </div>
 
-          {/* ── Matching profile ──
-              Always editable. It used to be swapped for a read-only grid the
-              moment the facilitator led a DGroup, because the criteria were a
-              copy of that DGroup; they are the group's own now. */}
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Facilitator</p>
+            <Label>Who leads this breakout group</Label>
+            <PersonCombobox
+              options={volunteers.map((v) => ({ value: v.id, label: `${v.member.firstName} ${v.member.lastName}` }))}
+              value={form.facilitatorId}
+              onValueChange={handleVolunteerChange}
+              placeholder="Unassigned"
+              clearable
+              clearLabel="Unassigned"
+            />
+          </div>
+
           <div className="space-y-4">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              {isFacilitatorTimothy
-                ? <>Future DGroup Profile <span className="normal-case font-normal text-destructive">(Timothy — required)</span></>
-                : <>Matching Profile <span className="normal-case font-normal">(used for auto-assign)</span></>
-              }
+              Who this group is for
             </p>
+            <p className="text-xs text-muted-foreground">These criteria belong to this breakout group and guide suggestions and automatic placement.</p>
 
             <div className="space-y-1.5">
-              <Label>Life Stages {isFacilitatorTimothy && <span className="text-destructive">*</span>}</Label>
+              <Label>Attendee life stages</Label>
               <MultiSelect
                 className="w-full"
                 placeholder="Any"
@@ -309,7 +222,7 @@ function EditDialog({
             </div>
 
             <div className="space-y-1.5">
-              <Label>Gender Focus {isFacilitatorTimothy && <span className="text-destructive">*</span>}</Label>
+              <Label>Gender Focus</Label>
               <Select value={form.genderFocus} onValueChange={(v) => setForm((f) => ({ ...f, genderFocus: v }))}>
                 <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                 <SelectContent>
@@ -321,17 +234,17 @@ function EditDialog({
             </div>
 
             <div className="space-y-1.5">
-              <Label>Language {isFacilitatorTimothy && <span className="text-destructive">*</span>}</Label>
+              <Label>Language</Label>
               <MultiSelect options={LANGUAGE_OPTIONS} value={form.language} onChange={(v) => setForm((f) => ({ ...f, language: v }))} />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Min Age {isFacilitatorTimothy && <span className="text-destructive">*</span>}</Label>
+                <Label>Min Age</Label>
                 <Input type="number" min={0} placeholder="—" {...field("ageRangeMin")} />
               </div>
               <div className="space-y-1.5">
-                <Label>Max Age {isFacilitatorTimothy && <span className="text-destructive">*</span>}</Label>
+                <Label>Max Age</Label>
                 <Input type="number" min={0} placeholder="—" {...field("ageRangeMax")} />
               </div>
             </div>

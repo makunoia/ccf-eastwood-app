@@ -3,10 +3,11 @@
 import * as React from "react"
 import { type ColumnDef } from "@tanstack/react-table"
 import Link from "next/link"
+import { Popover as PopoverPrimitive } from "radix-ui"
 import {
-  IconAlertTriangle,
   IconArrowsExchange,
   IconCheck,
+  IconChevronDown,
   IconDots,
   IconPencil,
   IconTrash,
@@ -27,6 +28,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
+import { PersonCombobox } from "@/components/ui/person-combobox"
 import {
   Select,
   SelectContent,
@@ -43,25 +45,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
-import {
   removeRegistrantFromBreakout,
   setFacilitator,
   transferRegistrantToBreakout,
 } from "@/app/(dashboard)/events/breakout-actions"
 import { AddRegistrantSheet } from "./add-registrant-sheet"
 import { MatchingProfile } from "@/components/breakouts/matching-profile"
-import { CatchMechGroupField } from "@/components/breakouts/catch-mech-group-field"
 import { breakoutOccupancy } from "@/lib/breakouts/occupancy"
 import type { BreakoutSurface } from "@/lib/breakouts/owner"
-import { filterVolunteerAssignmentPool } from "@/lib/volunteers/assignment-profile"
-import { VOLUNTEER_AGE_GROUPS } from "@/lib/volunteers/age-groups"
-
-const UNASSIGNED = "__unassigned__"
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -108,7 +99,7 @@ type BreakoutMemberRow = {
     nickname: string | null
     mobileNumber: string | null
     attendedAt: Date | null
-    occurrenceAttendances: { occurrence: { date: Date } }[]
+    occurrenceAttendances: { occurrenceId: string; occurrence: { date: Date } }[]
     member: RegistrantMember | null
     guest: { id: string; firstName: string; lastName: string } | null
   }
@@ -200,54 +191,27 @@ function FacilitatorCell({
   availableVolunteers: AvailableVolunteer[]
 }) {
   const [dialogOpen, setDialogOpen] = React.useState(false)
-  const [selectedId, setSelectedId] = React.useState(volunteer?.id ?? UNASSIGNED)
-  const [linkedGroupId, setLinkedGroupId] = React.useState("")
+  const [selectedId, setSelectedId] = React.useState(volunteer?.id ?? "")
   const [saving, setSaving] = React.useState(false)
-  const [ageGroupFilter, setAgeGroupFilter] = React.useState("")
-  const [lifeStageFilter, setLifeStageFilter] = React.useState("")
 
   const eligible = availableVolunteers.filter((v) => v.id !== otherVolunteerId)
-  const filteredEligible = filterVolunteerAssignmentPool(eligible, {
-    ageGroup: ageGroupFilter,
-    lifeStageId: lifeStageFilter,
-  })
-  const ageGroups = VOLUNTEER_AGE_GROUPS
-  const lifeStages = Array.from(
-    new Map(eligible.flatMap((v) => v.lifeStage ? [[v.lifeStage.id, v.lifeStage] as const] : [])).values()
-  )
-  const selectedVol = eligible.find((v) => v.id === selectedId) ?? null
-  const volunteerOptions = selectedVol && !filteredEligible.some((v) => v.id === selectedVol.id)
-    ? [selectedVol, ...filteredEligible]
-    : filteredEligible
-  const ledGroups = selectedVol?.member.ledGroups ?? []
 
   React.useEffect(() => {
     if (dialogOpen) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setSelectedId(volunteer?.id ?? UNASSIGNED)
-      setLinkedGroupId("")
-      setAgeGroupFilter("")
-      setLifeStageFilter("")
+      setSelectedId(volunteer?.id ?? "")
     }
   }, [dialogOpen, volunteer])
-
-  React.useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (ledGroups.length === 1) setLinkedGroupId(ledGroups[0].id)
-    else setLinkedGroupId("")
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId])
 
   async function handleSave() {
     setSaving(true)
     try {
-      const volunteerId = selectedId === UNASSIGNED ? null : selectedId
+      const volunteerId = selectedId || null
       const result = await setFacilitator(
         groupId,
         volunteerId,
         role,
-        surface.owner,
-        role === "facilitator" ? (linkedGroupId || null) : undefined
+        surface.owner
       )
       if (result.success) {
         toast.success(`${label} updated`)
@@ -303,62 +267,17 @@ function FacilitatorCell({
               Select a confirmed volunteer for the {label.toLowerCase()} slot.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor={`${role}-age-group`}>Age Group</Label>
-              <Select value={ageGroupFilter || "all"} onValueChange={(v) => setAgeGroupFilter(v === "all" ? "" : v)}>
-                <SelectTrigger id={`${role}-age-group`}><SelectValue placeholder="All age groups" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All age groups</SelectItem>
-                  {ageGroups.map((ageGroup) => <SelectItem key={ageGroup} value={ageGroup}>{ageGroup}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor={`${role}-life-stage`}>Life Stage</Label>
-              <Select value={lifeStageFilter || "all"} onValueChange={(v) => setLifeStageFilter(v === "all" ? "" : v)}>
-                <SelectTrigger id={`${role}-life-stage`}><SelectValue placeholder="All life stages" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All life stages</SelectItem>
-                  {lifeStages.map((stage) => <SelectItem key={stage.id} value={stage.id}>{stage.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
           <div className="space-y-1.5">
             <Label>Volunteer</Label>
-            <Select value={selectedId} onValueChange={setSelectedId}>
-              <SelectTrigger><SelectValue placeholder="Unassigned" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>
-                {volunteerOptions.map((v) => (
-                  <SelectItem key={v.id} value={v.id}>
-                    {v.member.firstName} {v.member.lastName}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          {/* Unassigning is destructive by side effect — the action clears the
-              group's criteria and Catch Mech target with the facilitator. Say so
-              before the save, not after. */}
-          {role === "facilitator" && selectedId === UNASSIGNED && volunteer && (
-            <p className="text-muted-foreground flex items-start gap-1.5 text-xs">
-              <IconAlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-              <span>
-                Unassigning also clears this group&apos;s matching profile and its
-                Catch Mech DGroup.
-              </span>
-            </p>
-          )}
-          {role === "facilitator" && selectedId !== UNASSIGNED && ledGroups.length > 1 && (
-            <CatchMechGroupField
-              id="assign-catch-mech"
-              ledGroups={ledGroups}
-              value={linkedGroupId}
-              onValueChange={setLinkedGroupId}
+            <PersonCombobox
+              options={eligible.map((v) => ({ value: v.id, label: `${v.member.firstName} ${v.member.lastName}` }))}
+              value={selectedId}
+              onValueChange={setSelectedId}
+              placeholder="Unassigned"
+              clearable
+              clearLabel="Unassigned"
             />
-          )}
+          </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Cancel</Button>
             <Button onClick={handleSave} disabled={saving}>{saving ? "Saving…" : "Save"}</Button>
@@ -375,10 +294,12 @@ function OccurrenceAttendanceCell({
   attendances,
   total,
   eventType,
+  eventId,
 }: {
-  attendances: { occurrence: { date: Date } }[]
+  attendances: { occurrenceId: string; occurrence: { date: Date } }[]
   total: number
   eventType: string
+  eventId: string
 }) {
   const count = attendances.length
   const unit = eventType === "MultiDay" ? "day" : "session"
@@ -387,33 +308,47 @@ function OccurrenceAttendanceCell({
     return <span className="text-muted-foreground text-sm">—</span>
   }
 
-  const dateList = attendances.map((a) =>
-    new Date(a.occurrence.date).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    })
-  )
-
   return (
-    <TooltipProvider delayDuration={200}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="inline-flex items-center gap-1 text-sm text-green-600 cursor-default">
-            <IconCheck className="size-4" />
-            {total > 0 ? `${count} / ${total} ${unit}${total !== 1 ? "s" : ""}` : `${count} ${unit}${count !== 1 ? "s" : ""}`}
-          </span>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-48 text-xs">
-          <p className="font-medium mb-1">Attended {unit}s:</p>
-          <ul className="space-y-0.5">
-            {dateList.map((d, i) => (
-              <li key={i}>{d}</li>
+    <PopoverPrimitive.Root>
+      <PopoverPrimitive.Trigger asChild>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 rounded-sm text-sm text-foreground underline decoration-dashed underline-offset-2 decoration-foreground/50 transition-colors hover:decoration-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label={`View ${count} attended ${unit}${count !== 1 ? "s" : ""}`}
+        >
+          <IconCheck className="size-4 text-green-600" aria-hidden="true" />
+          {total > 0 ? `${count} / ${total} ${unit}${total !== 1 ? "s" : ""}` : `${count} ${unit}${count !== 1 ? "s" : ""}`}
+          <IconChevronDown className="size-3.5 text-muted-foreground" aria-hidden="true" />
+        </button>
+      </PopoverPrimitive.Trigger>
+      <PopoverPrimitive.Portal>
+        <PopoverPrimitive.Content
+          align="start"
+          sideOffset={6}
+          className="z-50 w-56 rounded-md border bg-popover p-3 text-popover-foreground shadow-md outline-none"
+        >
+          <p className="mb-2 text-sm font-medium">Attended {unit}s</p>
+          <ul className="max-h-64 space-y-1 overflow-y-auto text-sm">
+            {attendances.map((attendance) => (
+              <li key={attendance.occurrenceId}>
+                <Link
+                  href={`/event/${eventId}/sessions/${attendance.occurrenceId}`}
+                  className="block rounded-sm px-2 py-1.5 hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {new Date(attendance.occurrence.date).toLocaleDateString("en-PH", {
+                    weekday: "short",
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                    timeZone: "UTC",
+                  })}
+                </Link>
+              </li>
             ))}
           </ul>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+        </PopoverPrimitive.Content>
+      </PopoverPrimitive.Portal>
+    </PopoverPrimitive.Root>
   )
 }
 
@@ -524,6 +459,7 @@ function buildMemberColumns({
             attendances={r.occurrenceAttendances}
             total={totalOccurrences}
             eventType={eventType}
+            eventId={r.eventId}
           />
         )
       },
@@ -910,6 +846,7 @@ export function BreakoutDetail({
 
         <div className="border-t p-5">
           <MatchingProfile
+            heading="Who this group is for"
             profile={{
               lifeStages: group.lifeStages,
               genderFocus: group.genderFocus,
@@ -917,14 +854,6 @@ export function BreakoutDetail({
               ageRangeMin: group.ageRangeMin,
               ageRangeMax: group.ageRangeMax,
             }}
-            footnote={
-              group.facilitator && group.facilitator.member.ledGroups.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  This facilitator leads no DGroup yet (Timothy) — these criteria seed the
-                  DGroup created for them when their first member is confirmed.
-                </p>
-              ) : null
-            }
           />
         </div>
       </section>

@@ -35,6 +35,8 @@ function byScoreThenConfidence(a: MatchResult, b: MatchResult): number {
  * overflow later.
  */
 function byBreakoutRank(a: MatchResult, b: MatchResult): number {
+  const languageTier = (r: MatchResult): number =>
+    !r.coverage.language ? 1 : r.breakdown.language === 1 ? 0 : 2
   const openSeats = (r: MatchResult): number =>
     r.groupSummary.memberLimit === null
       ? -1
@@ -42,7 +44,8 @@ function byBreakoutRank(a: MatchResult, b: MatchResult): number {
   return (
     b.totalScore - a.totalScore ||
     b.confidence - a.confidence ||
-    openSeats(b) - openSeats(a)
+    openSeats(b) - openSeats(a) ||
+    languageTier(a) - languageTier(b)
   )
 }
 
@@ -726,12 +729,7 @@ export function buildBreakoutGroupProfile(g: BreakoutGroupScoreRow): GroupProfil
     name: g.name,
     lifeStageIds: g.lifeStages.map((ls) => ls.id),
     lifeStageNames: g.lifeStages.map((ls) => ls.name),
-    genderFocus: deriveEffectiveGenderFocus(
-      g.genderFocus,
-      g.facilitator?.member.gender,
-      g.coFacilitator?.member.gender,
-      g.linkedSmallGroup?.genderFocus
-    ),
+    genderFocus: deriveEffectiveGenderFocus(g.genderFocus),
     language: g.language,
     ageRangeMin: g.ageRangeMin,
     ageRangeMax: g.ageRangeMax,

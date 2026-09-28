@@ -69,7 +69,7 @@ async function seedBaseFixture() {
   return { event, leaderMember, smallGroup, breakoutGroup, session, committee, role, volunteer }
 }
 
-async function seedMemberRegistrant(eventId: string) {
+async function seedMemberRegistrant(eventId: string, breakoutGroupId: string) {
   const member = await db.member.create({
     data: { firstName: "Jane", lastName: "Doe", dateJoined: new Date(), language: [] },
     select: { id: true },
@@ -77,6 +77,9 @@ async function seedMemberRegistrant(eventId: string) {
   const registrant = await db.eventRegistrant.create({
     data: { eventId, memberId: member.id },
     select: { id: true },
+  })
+  await db.breakoutGroupMember.create({
+    data: { breakoutGroupId, registrantId: registrant.id },
   })
   return { member, registrant }
 }
@@ -92,8 +95,8 @@ async function seedMemberRegistrant(eventId: string) {
 describe("CCF-27 – Catch Mech confirmation form improvements", () => {
   describe("regression – submit with all declined", () => {
     it("submitting all-declined returns success (button should not be blocked)", async () => {
-      const { session, smallGroup, event } = await seedBaseFixture()
-      const { registrant } = await seedMemberRegistrant(event.id)
+      const { session, smallGroup, event, breakoutGroup } = await seedBaseFixture()
+      const { registrant } = await seedMemberRegistrant(event.id, breakoutGroup.id)
 
       // Pre-create a pending request
       await db.smallGroupMemberRequest.create({
@@ -110,8 +113,8 @@ describe("CCF-27 – Catch Mech confirmation form improvements", () => {
 
   describe("integration – rejection reason saved", () => {
     it("saves the rejection reason to SmallGroupMemberRequest.notes", async () => {
-      const { session, smallGroup, event } = await seedBaseFixture()
-      const { registrant } = await seedMemberRegistrant(event.id)
+      const { session, smallGroup, event, breakoutGroup } = await seedBaseFixture()
+      const { registrant } = await seedMemberRegistrant(event.id, breakoutGroup.id)
       const memberId = (await db.eventRegistrant.findUnique({ where: { id: registrant.id }, select: { memberId: true } }))!.memberId!
 
       await db.smallGroupMemberRequest.create({
@@ -132,8 +135,8 @@ describe("CCF-27 – Catch Mech confirmation form improvements", () => {
     })
 
     it("creates a new rejected request with reason when no pre-existing request exists", async () => {
-      const { session, smallGroup, event } = await seedBaseFixture()
-      const { registrant } = await seedMemberRegistrant(event.id)
+      const { session, smallGroup, event, breakoutGroup } = await seedBaseFixture()
+      const { registrant } = await seedMemberRegistrant(event.id, breakoutGroup.id)
       const memberId = (await db.eventRegistrant.findUnique({ where: { id: registrant.id }, select: { memberId: true } }))!.memberId!
 
       await submitCatchMechConfirmations(session.token, [
@@ -152,8 +155,8 @@ describe("CCF-27 – Catch Mech confirmation form improvements", () => {
 
   describe("integration – pending status leaves request untouched", () => {
     it("does not create or update SmallGroupMemberRequest for pending decisions", async () => {
-      const { session, smallGroup, event } = await seedBaseFixture()
-      const { registrant } = await seedMemberRegistrant(event.id)
+      const { session, smallGroup, event, breakoutGroup } = await seedBaseFixture()
+      const { registrant } = await seedMemberRegistrant(event.id, breakoutGroup.id)
       const memberId = (await db.eventRegistrant.findUnique({ where: { id: registrant.id }, select: { memberId: true } }))!.memberId!
 
       const existing = await db.smallGroupMemberRequest.create({

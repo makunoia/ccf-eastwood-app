@@ -1,20 +1,11 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest"
 
-// These tests exercise the Timothy profile validation, not permissions —
-// breakout-actions now requires an authenticated writer, so hand it one.
 vi.mock("@/lib/auth", () => ({
   auth: vi.fn().mockResolvedValue({
     user: {
-      id: undefined,
-      name: "Test Admin",
-      email: "test@example.com",
-      username: "test-admin",
-      role: "SuperAdmin",
-      permissions: [],
-      eventAccess: [],
-      totpEnabled: false,
-      mustChangePassword: false,
-      requiresTotpSetup: false,
+      id: undefined, name: "Test Admin", email: "test@example.com", username: "test-admin",
+      role: "SuperAdmin", permissions: [], eventAccess: [], totpEnabled: false,
+      mustChangePassword: false, requiresTotpSetup: false,
     },
   }),
 }))
@@ -22,273 +13,39 @@ vi.mock("@/lib/auth", () => ({
 import { db } from "@/lib/db"
 import { createBreakoutGroup, updateBreakoutGroup } from "@/app/(dashboard)/events/breakout-actions"
 
-/**
- * CCF-78 — Timothy Information should be required if volunteer is a Timothy
- * when creating a Breakout Group.
- *
- * A Timothy is a volunteer whose member has no led small groups (ledGroups.length === 0).
- * When such a volunteer is assigned as facilitator, the matching profile fields
- * become required so the system has enough data to set up their future small
- * group.
- *
- * The required set is now the four factors a breakout group actually matches
- * on — Life Stage, Gender Focus, Language, Age Range. Meeting Format and
- * Meeting Schedule were dropped from breakout groups entirely (a table meets
- * once, during the event), so requiring them had become unsatisfiable.
- */
-
-/** Everything a Timothy facilitator must supply. */
-const TIMOTHY_PROFILE = {
-  genderFocus: "Mixed" as const,
-  language: ["Filipino"],
-  ageRangeMin: 25,
-  ageRangeMax: 35,
-}
-
-// ─── Seed helpers ──────────────────────────────────────────────────────────────
-
-async function seedBase() {
-  const event = await db.event.create({
-    data: { name: "Test Event", type: "OneTime", startDate: new Date(), endDate: new Date() },
-  })
-  const committee = await db.volunteerCommittee.create({
-    data: { name: "Faci Committee", eventId: event.id },
-  })
-  const role = await db.committeeRole.create({
-    data: { name: "Facilitator", committeeId: committee.id },
-  })
-  return { event, committee, role }
-}
-
-async function seedTimothyVolunteer(eventId: string, committeeId: string, roleId: string) {
-  const member = await db.member.create({
-    data: { firstName: "Tim", lastName: "Othy", dateJoined: new Date(), language: [] },
-  })
-  const volunteer = await db.volunteer.create({
-    data: { memberId: member.id, eventId, committeeId, preferredRoleId: roleId, status: "Confirmed" },
-  })
-  // Timothy: member has no led small groups
-  return { member, volunteer }
-}
-
-async function seedLeaderVolunteer(eventId: string, committeeId: string, roleId: string) {
-  const member = await db.member.create({
-    data: { firstName: "Lead", lastName: "Er", dateJoined: new Date(), language: [] },
-  })
-  const smallGroup = await db.smallGroup.create({
-    data: { name: "Leader's Group", leaderId: member.id },
-  })
-  const volunteer = await db.volunteer.create({
-    data: { memberId: member.id, eventId, committeeId, preferredRoleId: roleId, status: "Confirmed" },
-  })
-  return { member, volunteer, smallGroup }
-}
-
-// ─── Setup / Teardown ──────────────────────────────────────────────────────────
-
 beforeEach(async () => {
   await db.$executeRaw`TRUNCATE "SmallGroupMemberRequest", "SmallGroupLog", "BreakoutGroupMember", "BreakoutGroupSchedule", "BreakoutGroup", "Volunteer", "CommitteeRole", "VolunteerCommittee", "EventMinistry", "EventRegistrant", "EventOccurrence", "Event", "SmallGroup", "Member", "Guest", "LifeStage" RESTART IDENTITY CASCADE`
 })
 
-afterAll(async () => {
-  await db.$disconnect()
-})
+afterAll(async () => { await db.$disconnect() })
 
-// ─── createBreakoutGroup ───────────────────────────────────────────────────────
+async function seed() {
+  const event = await db.event.create({ data: { name: "Test Event", type: "OneTime", startDate: new Date(), endDate: new Date() } })
+  const committee = await db.volunteerCommittee.create({ data: { name: "Facilitators", eventId: event.id } })
+  const role = await db.committeeRole.create({ data: { name: "Facilitator", committeeId: committee.id } })
+  const member = await db.member.create({ data: { firstName: "New", lastName: "Facilitator", dateJoined: new Date(), language: [] } })
+  const volunteer = await db.volunteer.create({ data: { memberId: member.id, eventId: event.id, committeeId: committee.id, preferredRoleId: role.id, status: "Confirmed" } })
+  return { event, volunteer }
+}
 
-describe("CCF-78 — createBreakoutGroup with Timothy facilitator", () => {
-  it("succeeds when Timothy facilitator has all required profile fields", async () => {
-    const { event, committee, role } = await seedBase()
-    const { volunteer } = await seedTimothyVolunteer(event.id, committee.id, role.id)
-
-    const lifeStage = await db.lifeStage.create({ data: { name: "Young Pro", order: 0 } })
-
+describe("breakout group criteria are independent of DGroup leadership", () => {
+  it("creates a breakout group with a facilitator who leads no DGroup and no criteria", async () => {
+    const { event, volunteer } = await seed()
     const result = await createBreakoutGroup({ eventId: event.id }, {
-      name: "Table 1",
-      lifeStageIds: [lifeStage.id],
-      facilitatorId: volunteer.id,
-      ...TIMOTHY_PROFILE,
+      name: "Breakout Group A", facilitatorId: volunteer.id, lifeStageIds: [], language: [],
     })
-
     expect(result.success).toBe(true)
   })
 
-  it("rejects when Timothy facilitator has no profile fields at all", async () => {
-    const { event, committee, role } = await seedBase()
-    const { volunteer } = await seedTimothyVolunteer(event.id, committee.id, role.id)
-
-    const result = await createBreakoutGroup({ eventId: event.id }, {
-      name: "Table 1",
-      lifeStageIds: [],
-      facilitatorId: volunteer.id,
-      language: [],
-    })
-
-    expect(result.success).toBe(false)
-    if (result.success) return
-    expect(result.error).toMatch(/Timothy profile requires/i)
-  })
-
-  it("rejects when language is missing for Timothy facilitator", async () => {
-    const { event, committee, role } = await seedBase()
-    const { volunteer } = await seedTimothyVolunteer(event.id, committee.id, role.id)
-
-    const lifeStage = await db.lifeStage.create({ data: { name: "Young Pro", order: 0 } })
-
-    const result = await createBreakoutGroup({ eventId: event.id }, {
-      name: "Table 1",
-      lifeStageIds: [lifeStage.id],
-      facilitatorId: volunteer.id,
-      ...TIMOTHY_PROFILE,
-      language: [],
-    })
-
-    expect(result.success).toBe(false)
-    if (result.success) return
-    expect(result.error).toContain("Language")
-  })
-
-  it("rejects when the life stage is missing for Timothy facilitator", async () => {
-    const { event, committee, role } = await seedBase()
-    const { volunteer } = await seedTimothyVolunteer(event.id, committee.id, role.id)
-
-    const result = await createBreakoutGroup({ eventId: event.id }, {
-      name: "Table 1",
-      lifeStageIds: [],
-      facilitatorId: volunteer.id,
-      ...TIMOTHY_PROFILE,
-    })
-
-    expect(result.success).toBe(false)
-    if (result.success) return
-    expect(result.error).toContain("Life Stage")
-  })
-
-  it("rejects when only one age bound is given for Timothy facilitator", async () => {
-    const { event, committee, role } = await seedBase()
-    const { volunteer } = await seedTimothyVolunteer(event.id, committee.id, role.id)
-    const lifeStage = await db.lifeStage.create({ data: { name: "Young Pro", order: 0 } })
-
-    const result = await createBreakoutGroup({ eventId: event.id }, {
-      name: "Table 1",
-      lifeStageIds: [lifeStage.id],
-      facilitatorId: volunteer.id,
-      ...TIMOTHY_PROFILE,
-      ageRangeMax: null,
-    })
-
-    expect(result.success).toBe(false)
-    if (result.success) return
-    expect(result.error).toContain("Age Range")
-  })
-
-  it("allows no profile when facilitator is a non-Timothy (has led groups)", async () => {
-    const { event, committee, role } = await seedBase()
-    const { volunteer } = await seedLeaderVolunteer(event.id, committee.id, role.id)
-
-    const result = await createBreakoutGroup({ eventId: event.id }, {
-      name: "Table 2",
-      lifeStageIds: [],
-      facilitatorId: volunteer.id,
-      language: [],
-    })
-
-    expect(result.success).toBe(true)
-  })
-
-  it("allows no profile when no facilitator is assigned", async () => {
-    const { event } = await seedBase()
-
-    const result = await createBreakoutGroup({ eventId: event.id }, {
-      name: "Table 3",
-      lifeStageIds: [],
-      language: [],
-    })
-
-    expect(result.success).toBe(true)
-  })
-})
-
-// ─── updateBreakoutGroup ───────────────────────────────────────────────────────
-
-describe("CCF-78 — updateBreakoutGroup with Timothy facilitator", () => {
-  it("rejects update when Timothy facilitator is missing required profile", async () => {
-    const { event, committee, role } = await seedBase()
-    const { volunteer } = await seedTimothyVolunteer(event.id, committee.id, role.id)
-    const group = await db.breakoutGroup.create({
-      data: { name: "Table 1", eventId: event.id },
-    })
-
+  it("updates a breakout group with the same facilitator and a partial age range", async () => {
+    const { event, volunteer } = await seed()
+    const group = await db.breakoutGroup.create({ data: { eventId: event.id, name: "Breakout Group A" } })
     const result = await updateBreakoutGroup(group.id, { eventId: event.id }, {
-      name: "Table 1",
-      lifeStageIds: [],
-      facilitatorId: volunteer.id,
-      language: [],
+      name: group.name, facilitatorId: volunteer.id, lifeStageIds: [], language: [], ageRangeMin: 25,
     })
-
-    expect(result.success).toBe(false)
-    if (result.success) return
-    expect(result.error).toMatch(/Timothy profile requires/i)
-  })
-
-  it("succeeds update when Timothy facilitator has all required profile fields", async () => {
-    const { event, committee, role } = await seedBase()
-    const { volunteer } = await seedTimothyVolunteer(event.id, committee.id, role.id)
-    const group = await db.breakoutGroup.create({
-      data: { name: "Table 1", eventId: event.id },
-    })
-
-    const lifeStage = await db.lifeStage.create({ data: { name: "Young Pro", order: 0 } })
-
-    const result = await updateBreakoutGroup(group.id, { eventId: event.id }, {
-      name: "Table 1",
-      lifeStageIds: [lifeStage.id],
-      facilitatorId: volunteer.id,
-      ...TIMOTHY_PROFILE,
-    })
-
     expect(result.success).toBe(true)
-  })
-})
-
-// ─── Regression ───────────────────────────────────────────────────────────────
-
-describe("CCF-78 — regression", () => {
-  it("non-Timothy facilitator can still be assigned without any profile (existing behaviour)", async () => {
-    const { event, committee, role } = await seedBase()
-    const { volunteer } = await seedLeaderVolunteer(event.id, committee.id, role.id)
-
-    const result = await createBreakoutGroup({ eventId: event.id }, {
-      name: "Regression Table",
-      lifeStageIds: [],
-      facilitatorId: volunteer.id,
-      language: [],
-    })
-
-    expect(result.success).toBe(true)
-  })
-
-  it("error message explicitly lists each missing Timothy profile field", async () => {
-    const { event, committee, role } = await seedBase()
-    const { volunteer } = await seedTimothyVolunteer(event.id, committee.id, role.id)
-
-    const result = await createBreakoutGroup({ eventId: event.id }, {
-      name: "Table 1",
-      lifeStageIds: [],
-      facilitatorId: volunteer.id,
-      language: [],
-      // All profile fields missing
-    })
-
-    expect(result.success).toBe(false)
-    if (result.success) return
-    // All 4 required fields mentioned
-    expect(result.error).toContain("Life Stage")
-    expect(result.error).toContain("Gender Focus")
-    expect(result.error).toContain("Language")
-    expect(result.error).toContain("Age Range")
-    // Dropped from breakout groups — requiring them was unsatisfiable.
-    expect(result.error).not.toContain("Meeting Format")
-    expect(result.error).not.toContain("Meeting Schedule")
+    const updated = await db.breakoutGroup.findUnique({ where: { id: group.id } })
+    expect(updated?.ageRangeMin).toBe(25)
+    expect(updated?.ageRangeMax).toBeNull()
   })
 })

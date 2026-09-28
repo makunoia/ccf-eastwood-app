@@ -27,8 +27,6 @@ export const breakoutGroupSchema = z
     language: z.array(z.string()).default([]),
     ageRangeMin: z.coerce.number().int().min(0).nullable().optional(),
     ageRangeMax: z.coerce.number().int().min(0).nullable().optional(),
-    /** Not matching — which DGroup receives this group's Catch Mech requests. */
-    linkedSmallGroupId: z.string().nullable().optional(),
   })
   .refine(
     (data) => {

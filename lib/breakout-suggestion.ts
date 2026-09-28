@@ -24,6 +24,7 @@ export type BreakoutCandidate = {
    * same convention the matching engine's `lifeStageIds` uses.
    */
   lifeStageIds: string[]
+  language: string[]
   ageRangeMin: number | null
   ageRangeMax: number | null
   /** Derived server-side via `breakoutOccupancy`. */
@@ -70,6 +71,7 @@ export type RegistrantProfile = {
    * field behaves exactly as it did before this existed.
    */
   lifeStageId?: string | null
+  language?: string[]
 }
 
 /**
@@ -153,11 +155,24 @@ function specificity(group: BreakoutCandidate): number {
  * what makes the suggested group rotate as a day fills instead of naming the
  * same table to everyone.
  *
- * Specificity breaks ties, so among equally empty groups a gendered or
- * life-staged one still wins over a catch-all.
+ * Language overlap breaks equal-fill ties, then specificity. Neither can make
+ * a group that is already fuller outrank a less-filled group.
  */
-function byEmptiestThenSpecific(a: BreakoutCandidate, b: BreakoutCandidate): number {
-  return a.fillLevel - b.fillLevel || specificity(b) - specificity(a)
+function byEmptiestThenSpecific(
+  a: BreakoutCandidate,
+  b: BreakoutCandidate,
+  profile?: { language?: string[] }
+): number {
+  return a.fillLevel - b.fillLevel ||
+    languageTier(a, profile) - languageTier(b, profile) ||
+    specificity(b) - specificity(a)
+}
+
+/** Known overlap breaks equal-fill ties; missing data is neutral, then mismatch. */
+function languageTier(group: BreakoutCandidate, profile?: { language?: string[] }): number {
+  const person = profile?.language ?? []
+  if (group.language.length === 0 || person.length === 0) return 1
+  return person.some((language) => group.language.includes(language)) ? 0 : 2
 }
 
 /**
@@ -202,13 +217,14 @@ function isKnownLifeStageMatch(
  * matching table exists `fillLevel` rotates between them again.
  */
 function comparatorFor(
-  profile?: { gender: Gender | null; lifeStageId?: string | null }
+  profile?: { gender: Gender | null; lifeStageId?: string | null; language?: string[] }
 ): (a: BreakoutCandidate, b: BreakoutCandidate) => number {
   const lifeStageDecides = profile != null && profile.gender == null
-  if (!lifeStageDecides) return byEmptiestThenSpecific
   return (a, b) =>
-    Number(isKnownLifeStageMatch(b, profile)) - Number(isKnownLifeStageMatch(a, profile)) ||
-    byEmptiestThenSpecific(a, b)
+    (lifeStageDecides
+      ? Number(isKnownLifeStageMatch(b, profile)) - Number(isKnownLifeStageMatch(a, profile))
+      : 0) ||
+    byEmptiestThenSpecific(a, b, profile)
 }
 
 export type BreakoutPickerOption = BreakoutCandidate & {
@@ -254,9 +270,7 @@ export function withoutOccupancy(groups: BreakoutCandidate[]): BreakoutCandidate
  * leads. That includes the life-stage fallback: pass the profile or the ordering
  * silently reverts to plain emptiest-first.
  *
- * Pass the *effective* focus — `fetchBreakoutCandidates` already resolves it
- * through `deriveEffectiveGenderFocus`, so a group whose focus is only implied
- * by its facilitator filters the same way an explicit one does.
+ * Use the group's explicit focus. A blank focus accepts every gender.
  *
  * `manualAssignOnly` is deliberately *not* applied here, and it is the one place
  * this list and `suggestBreakoutGroup` are meant to disagree: a group held back
@@ -266,7 +280,7 @@ export function withoutOccupancy(groups: BreakoutCandidate[]): BreakoutCandidate
  */
 export function breakoutPickerOptions(
   groups: BreakoutCandidate[],
-  profile?: { gender: Gender | null; lifeStageId?: string | null }
+  profile?: { gender: Gender | null; lifeStageId?: string | null; language?: string[] }
 ): BreakoutPickerOption[] {
   return groups
     .filter(

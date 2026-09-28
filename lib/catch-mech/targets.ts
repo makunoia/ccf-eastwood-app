@@ -12,7 +12,6 @@ export type CatchMechSessionShape = {
   facilitatorVolunteerId: string
   breakoutGroup: {
     facilitatorId: string | null
-    linkedSmallGroup: CandidateGroup | null
   }
   facilitator: {
     member: {
@@ -24,8 +23,8 @@ export type CatchMechSessionShape = {
 
 export type CatchMechTargets = {
   /**
-   * Groups this faci may confirm someone into, linked group first (the picker's
-   * default). Empty means the faci is a Timothy who must name a group first.
+   * Groups this faci leads. Empty means the faci is a Timothy who must name a
+   * group first. Historical breakout-to-DGroup links are not destinations.
    */
   candidates: CandidateGroup[]
   /**
@@ -37,23 +36,10 @@ export type CatchMechTargets = {
 }
 
 export function resolveCatchMechTargets(session: CatchMechSessionShape): CatchMechTargets {
-  // The breakout's linked group belongs to the LEAD faci. A co-faci absorbs into
-  // their OWN group, so they ignore the link entirely.
-  const isLeadFaci = session.facilitatorVolunteerId === session.breakoutGroup.facilitatorId
-  const link = isLeadFaci ? session.breakoutGroup.linkedSmallGroup : null
   const led = session.facilitator.member.ledGroups
 
-  const candidates = [...led]
-  if (link) {
-    // Linked group leads the list so it becomes the picker's default. It may not be
-    // one the faci leads — an admin link is still a valid destination.
-    const existing = candidates.findIndex((g) => g.id === link.id)
-    if (existing >= 0) candidates.splice(existing, 1)
-    candidates.unshift(link)
-  }
-
   return {
-    candidates,
-    declineGroupId: link?.id ?? led[0]?.id ?? null,
+    candidates: led,
+    declineGroupId: led[0]?.id ?? null,
   }
 }

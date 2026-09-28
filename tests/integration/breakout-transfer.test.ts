@@ -129,6 +129,49 @@ describe("transferRegistrantToBreakout", () => {
     expect(await db.breakoutGroupMember.count({ where: { registrantId: r.id } })).toBe(1)
   })
 
+  it("keeps prior session attendance with the registrant after a transfer", async () => {
+    const event = await db.event.create({
+      data: {
+        name: "Weekly Gathering",
+        type: "Recurring",
+        startDate: new Date("2026-09-01T00:00:00.000Z"),
+        endDate: new Date("2026-10-01T00:00:00.000Z"),
+      },
+    })
+    const from = await seedGroup(event.id, { name: "A" })
+    const to = await seedGroup(event.id, { name: "B" })
+    const r = await seedRegistrant(event.id, { firstName: "Mover", lastName: "One" })
+    const occurrence = await db.eventOccurrence.create({
+      data: { eventId: event.id, date: new Date("2026-09-20T00:00:00.000Z") },
+    })
+    const attendance = await db.occurrenceAttendee.create({
+      data: { occurrenceId: occurrence.id, registrantId: r.id },
+    })
+    await place(from.id, r.id)
+
+    const result = await transferRegistrantToBreakout(from.id, to.id, r.id, { eventId: event.id })
+
+    expect(result.success).toBe(true)
+    expect(await db.occurrenceAttendee.findUnique({ where: { id: attendance.id } })).toMatchObject({
+      occurrenceId: occurrence.id,
+      registrantId: r.id,
+      checkedInAt: attendance.checkedInAt,
+    })
+    // The session screen counts checked-in people through the group's current members.
+    const groups = await db.breakoutGroup.findMany({
+      where: { eventId: event.id },
+      select: {
+        id: true,
+        members: {
+          where: { registrant: { occurrenceAttendances: { some: { occurrenceId: occurrence.id } } } },
+          select: { registrantId: true },
+        },
+      },
+    })
+    expect(groups.find((group) => group.id === from.id)?.members).toHaveLength(0)
+    expect(groups.find((group) => group.id === to.id)?.members).toEqual([{ registrantId: r.id }])
+  })
+
   it("revalidates both group paths plus the event surfaces", async () => {
     const event = await seedEvent()
     const from = await seedGroup(event.id, { name: "A" })
@@ -287,7 +330,7 @@ describe("transferRegistrantToBreakout and the Catch Mech request", () => {
     return db.smallGroup.create({ data: { name, leaderId: leader.id, language: [] } })
   }
 
-  it("re-points a pending request when both groups feed the same DGroup", async () => {
+  it("withdraws a pending request even when both groups have the same legacy DGroup", async () => {
     const event = await seedEvent()
     const sg = await seedSmallGroup("Alpha")
     const { from, to } = await seedLinkedGroups(event.id, [sg.id, sg.id])
@@ -302,14 +345,14 @@ describe("transferRegistrantToBreakout and the Catch Mech request", () => {
     expect(result.success).toBe(true)
 
     const after = await db.smallGroupMemberRequest.findUnique({ where: { id: request.id } })
-    // Still the same request: same row, same createdAt, still awaiting the leader.
-    expect(after?.status).toBe("Pending")
-    expect(after?.breakoutGroupId).toBe(to.id)
+    expect(after?.status).toBe("Rejected")
+    expect(after?.resolvedAt).not.toBeNull()
+    expect(after?.breakoutGroupId).toBe(from.id)
     expect(after?.createdAt.getTime()).toBe(request.createdAt.getTime())
     expect(await db.smallGroupMemberRequest.count()).toBe(1)
   })
 
-  it("raises no bogus rejection log on a same-DGroup transfer", async () => {
+  it("records a withdrawal on a same-DGroup transfer", async () => {
     const event = await seedEvent()
     const sg = await seedSmallGroup("Alpha")
     const { from, to } = await seedLinkedGroups(event.id, [sg.id, sg.id])
@@ -324,10 +367,57 @@ describe("transferRegistrantToBreakout and the Catch Mech request", () => {
 
     expect(
       await db.smallGroupLog.count({ where: { action: "TempAssignmentRejected" } })
-    ).toBe(0)
+    ).toBe(1)
   })
 
-  it("cancels and re-raises when the destination feeds a different DGroup", async () => {
+  it("withdraws every pending request tied to the former breakout group", async () => {
+    const event = await seedEvent()
+    const alpha = await seedSmallGroup("Alpha")
+    const beta = await seedSmallGroup("Beta")
+    const { from, to } = await seedLinkedGroups(event.id, [alpha.id, beta.id])
+    const guest = await seedGuest()
+    const registrant = await seedRegistrant(event.id, { guestId: guest.id })
+    await place(from.id, registrant.id)
+    await db.smallGroupMemberRequest.createMany({
+      data: [alpha.id, beta.id].map((smallGroupId) => ({
+        smallGroupId,
+        guestId: guest.id,
+        breakoutGroupId: from.id,
+      })),
+    })
+
+    const result = await transferRegistrantToBreakout(from.id, to.id, registrant.id, { eventId: event.id })
+
+    expect(result.success).toBe(true)
+    expect(await db.smallGroupMemberRequest.count({
+      where: { breakoutGroupId: from.id, guestId: guest.id, status: "Pending" },
+    })).toBe(0)
+    expect(await db.smallGroupMemberRequest.count({
+      where: { breakoutGroupId: from.id, guestId: guest.id, status: "Rejected" },
+    })).toBe(2)
+    expect(await db.smallGroupLog.count({ where: { action: "TempAssignmentRejected" } })).toBe(2)
+  })
+
+  it("does not withdraw another person's request when an anonymous registrant transfers", async () => {
+    const event = await seedEvent()
+    const from = await seedGroup(event.id, { name: "A" })
+    const to = await seedGroup(event.id, { name: "B" })
+    const member = await seedMember()
+    const smallGroup = await seedSmallGroup("Existing")
+    const pending = await db.smallGroupMemberRequest.create({
+      data: { smallGroupId: smallGroup.id, memberId: member.id, breakoutGroupId: from.id },
+    })
+    const registrant = await seedRegistrant(event.id, { firstName: "Anonymous", lastName: "Visitor" })
+    await place(from.id, registrant.id)
+
+    const result = await transferRegistrantToBreakout(from.id, to.id, registrant.id, { eventId: event.id })
+
+    expect(result.success).toBe(true)
+    expect((await db.smallGroupMemberRequest.findUnique({ where: { id: pending.id } }))?.status).toBe("Pending")
+    expect(await groupIdFor(registrant.id)).toBe(to.id)
+  })
+
+  it("withdraws without creating a request for the destination DGroup", async () => {
     const event = await seedEvent()
     const alpha = await seedSmallGroup("Alpha")
     const beta = await seedSmallGroup("Beta")
@@ -349,7 +439,7 @@ describe("transferRegistrantToBreakout and the Catch Mech request", () => {
     const raised = await db.smallGroupMemberRequest.findFirst({
       where: { smallGroupId: beta.id, guestId: guest.id, status: "Pending" },
     })
-    expect(raised?.breakoutGroupId).toBe(to.id)
+    expect(raised).toBeNull()
   })
 
   it("still moves the registrant when there is no Catch Mech request to carry", async () => {

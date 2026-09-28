@@ -75,13 +75,13 @@ export default async function ClusterBreakoutsPage({
           <div className="space-y-0.5 text-sm">
             <p className="font-medium">
               {orphanGroups.length === 1
-                ? "1 table has no facilitator"
-                : `${orphanGroups.length} tables have no facilitator`}
+                ? "1 breakout group has no facilitator"
+                : `${orphanGroups.length} breakout groups have no facilitator`}
             </p>
             <p className="text-muted-foreground">
-              {orphanPeople === 1 ? "1 person is" : `${orphanPeople} people are`} seated at{" "}
+              {orphanPeople === 1 ? "1 person is" : `${orphanPeople} people are`} assigned to{" "}
               {orphanGroups.map((g) => g.name).join(", ")}. Catch Mech follows up on a
-              table through its facilitator, so until one is assigned these people
+              breakout group through its facilitator, so until one is assigned these people
               reach no ministry&apos;s follow-up and nobody can confirm them into a DGroup.
             </p>
           </div>

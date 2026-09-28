@@ -66,7 +66,7 @@ async function getBreakoutGroup(groupId: string, eventId: string) {
               mobileNumber: true,
               attendedAt: true,
               occurrenceAttendances: {
-                select: { occurrence: { select: { date: true } } },
+                select: { occurrenceId: true, occurrence: { select: { date: true } } },
                 orderBy: { occurrence: { date: "asc" } },
               },
               member: {

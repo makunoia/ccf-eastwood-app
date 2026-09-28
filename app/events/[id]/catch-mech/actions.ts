@@ -126,7 +126,6 @@ export async function submitCatchMechConfirmations(
         breakoutGroup: {
           select: {
             facilitatorId: true,
-            linkedSmallGroup: { select: { id: true, name: true } },
           },
         },
         facilitator: {
@@ -161,7 +160,7 @@ export async function submitCatchMechConfirmations(
       return { success: false, error: targetError }
     }
 
-    // Timothy — leads no group and none is linked. They can only absorb someone once
+    // Timothy — leads no group. They can only absorb someone once
     // they have a group, so a confirmation sends them to the name step first. Declines
     // need no group and persist right here.
     if (candidates.length === 0) {
@@ -325,10 +324,8 @@ export async function createSmallGroupForTimothy(
     return { success: false, error: validationError }
   }
 
-  let newGroupId: string | null = null
   let eventId: string | null = null
   let breakoutGroupId: string | null = null
-  let faciMemberId: string | null = null
 
   try {
     const session = await db.catchMechSession.findUnique({
@@ -364,11 +361,6 @@ export async function createSmallGroupForTimothy(
     const faciMember = session.facilitator.member
     eventId = session.eventId
     breakoutGroupId = session.breakoutGroupId
-    faciMemberId = faciMember.id
-    // The breakout's linked group belongs to the LEAD facilitator. A co-facilitator
-    // creating their own group must not overwrite the lead's breakout link.
-    const isLeadFaci = session.facilitatorVolunteerId === session.breakoutGroup.facilitatorId
-
     // Guard: must still be a Timothy (no leading group)
     if (faciMember.ledGroups.length > 0) {
       return { success: false, error: "You already lead a DGroup" }
@@ -387,7 +379,6 @@ export async function createSmallGroupForTimothy(
         data: { name: groupName.trim(), leaderId: faciMember.id },
         select: { id: true },
       })
-      newGroupId = created.id
 
       await tx.smallGroupLog.create({
         data: {
@@ -397,15 +388,6 @@ export async function createSmallGroupForTimothy(
           description: `Group "${groupName.trim()}" was created via Catch Mech${eventName ? ` of ${eventName}` : ""}`,
         },
       })
-
-      // Link the breakout group to the newly created small group — only when the
-      // acting faci is the LEAD. A co-faci's group must not hijack the lead's link.
-      if (isLeadFaci) {
-        await tx.breakoutGroup.update({
-          where: { id: session.breakoutGroupId },
-          data: { linkedSmallGroupId: created.id },
-        })
-      }
 
       // Promote the faci's status to Leader in their home group
       await tx.member.update({
@@ -443,41 +425,6 @@ export async function createSmallGroupForTimothy(
   } catch (err) {
     console.error("[createSmallGroupForTimothy]", err)
     return { success: false, error: "Failed to create DGroup" }
-  }
-
-  // Past the commit: the group exists, so nothing below may turn this into a failure.
-  // Auto-linking other breakouts is a convenience, and reporting failure here would
-  // send the faci back to a name step that now rejects them ("You already lead a
-  // DGroup") — stranding them with no way forward.
-  try {
-    if (newGroupId && faciMemberId && breakoutGroupId) {
-      // Auto-link other breakout groups where this member is the LEAD facilitator across
-      // all events — linkedSmallGroupId always represents the lead faci's group.
-      const otherBreakouts = await db.breakoutGroup.findMany({
-        where: {
-          linkedSmallGroupId: null,
-          id: { not: breakoutGroupId },
-          facilitator: { memberId: faciMemberId },
-        },
-        select: { id: true, eventId: true },
-      })
-      if (otherBreakouts.length > 0) {
-        await db.breakoutGroup.updateMany({
-          where: { id: { in: otherBreakouts.map((b) => b.id) } },
-          data: { linkedSmallGroupId: newGroupId },
-        })
-        const otherEventIds = [...new Set(otherBreakouts.map((b) => b.eventId))]
-        safeRevalidate(() => {
-          for (const eid of otherEventIds) {
-            revalidatePath(`/event/${eid}/breakouts`)
-            revalidatePath(`/event/${eid}/catch-mech`, "layout")
-            revalidatePath(`/event/${eid}/dashboard`)
-          }
-        }, "createSmallGroupForTimothy")
-      }
-    }
-  } catch (err) {
-    console.error("[createSmallGroupForTimothy] post-commit auto-link failed", err)
   }
 
   safeRevalidate(() => {

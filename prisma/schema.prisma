@@ -1075,7 +1075,8 @@ model BreakoutGroup {
   // `BreakoutCandidate` and be applied in `isEligible` alone.
   manualAssignOnly Boolean   @default(false)
 
-  // Linked small group for temp-membership assignment on registrant assignment
+  // Legacy Catch Mech destination retained for historical data; new decisions
+  // resolve from the acting facilitator's currently led DGroups.
   linkedSmallGroupId String?
   linkedSmallGroup   SmallGroup? @relation("BreakoutLinkedGroup", fields: [linkedSmallGroupId], references: [id], onDelete: SetNull)
 

@@ -231,11 +231,11 @@ describe("faci leading multiple small groups", () => {
     expect(members).toBe(0)
   })
 
-  it("still offers the picker when the breakout is linked, defaulting to the link", async () => {
+  it("offers the picker in DGroup order despite a legacy breakout link", async () => {
     const s = await seed({ ledGroups: ["Makati East", "BGC Young Pros"], linkTo: 1 })
 
     const data = await getSessionData(s.session.token)
-    expect(data?.candidates.map((c) => c.id)).toEqual([s.ledGroups[1].id, s.ledGroups[0].id])
+    expect(data?.candidates.map((c) => c.id)).toEqual([s.ledGroups[0].id, s.ledGroups[1].id])
 
     // The faci can override the link and absorb into their other group.
     const result = await submitCatchMechConfirmations(s.session.token, [

@@ -59,7 +59,6 @@ export async function getSessionData(token: string) {
         select: {
           name: true,
           facilitatorId: true,
-          linkedSmallGroup: { select: { id: true, name: true } },
         },
       },
     },
@@ -116,6 +115,7 @@ export async function getSessionData(token: string) {
             memberId: true,
             status: true,
             smallGroupId: true,
+            breakoutGroupId: true,
             declinedByVolunteerId: true,
           },
         })
@@ -124,11 +124,15 @@ export async function getSessionData(token: string) {
   const hidesPerson = (r: {
     status: string
     smallGroupId: string | null
+    breakoutGroupId: string | null
     declinedByVolunteerId: string | null
   }) => {
     // A confirmation places the person (one group per person) — hidden from everyone.
     if (r.status === "Confirmed") return true
     if (r.status !== "Rejected") return false
+    // A withdrawn request from a previous breakout group must not hide the
+    // person from the facilitator of the group they now attend.
+    if (r.breakoutGroupId && r.breakoutGroupId !== session.breakoutGroupId) return false
     // A group-bound decline only clears the person from that group's own list, so a
     // co-faci can still confirm someone the lead declined.
     if (r.smallGroupId) return candidateIds.has(r.smallGroupId)
@@ -243,7 +247,7 @@ export default async function CatchMechConfirmPage({
           </p>
           <h1 className={`text-2xl font-bold ${hasBg ? "text-white" : ""}`}>Hi, {data.faciName}!</h1>
           <p className={`text-sm leading-relaxed ${hasBg ? "text-white/75" : "text-muted-foreground"}`}>
-            Review the people from your table. Confirm who will join your DGroup, mark others as pending, or decline with a reason.
+            Review the people in your breakout group. Confirm who will join your DGroup, mark others as pending, or decline with a reason.
           </p>
         </div>
       </div>

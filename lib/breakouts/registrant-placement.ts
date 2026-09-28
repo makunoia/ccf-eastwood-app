@@ -108,12 +108,7 @@ async function loadAvailableGroups(
     .filter((g) => {
       if (excludeIds.includes(g.id)) return false
       if (!registrantGender) return true
-      const effectiveFocus = deriveEffectiveGenderFocus(
-        g.genderFocus,
-        g.facilitator?.member.gender ?? null,
-        g.coFacilitator?.member.gender ?? null,
-        g.linkedSmallGroup?.genderFocus
-      )
+      const effectiveFocus = deriveEffectiveGenderFocus(g.genderFocus)
       if (!effectiveFocus || effectiveFocus === "Mixed") return true
       return effectiveFocus === registrantGender
     })
