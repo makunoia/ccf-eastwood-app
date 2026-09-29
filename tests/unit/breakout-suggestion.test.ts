@@ -34,6 +34,7 @@ function makeGroup(
     name: "Group",
     genderFocus: null,
     lifeStageIds: [],
+    language: [],
     ageRangeMin: null,
     ageRangeMax: null,
     manualAssignOnly: false,
@@ -793,5 +794,37 @@ describe("life stage decides when gender is unknown", () => {
     expect(
       suggestBreakoutGroup(groups, { gender: null, birthYear: null, lifeStageId: SINGLES })
     ).toBeNull()
+  })
+})
+
+describe("language preference", () => {
+  const groups = [
+    makeGroup({ id: "mismatch", language: ["Cebuano"], fillLevel: 0 }),
+    makeGroup({ id: "unknown", language: [], fillLevel: 0.2 }),
+    makeGroup({ id: "overlap", language: ["English"], fillLevel: 0.8 }),
+  ]
+  const profile = { gender: null, birthYear: null, language: ["English"] }
+
+  it("uses fullness before language preference", () => {
+    expect(suggestBreakoutGroup(groups, profile)?.id).toBe("mismatch")
+    expect(breakoutPickerOptions(groups, profile).map((group) => group.id)).toEqual([
+      "mismatch", "unknown", "overlap",
+    ])
+  })
+
+  it("prefers an overlapping language when groups are equally full", () => {
+    const equallyFull = groups.map((group) => ({ ...group, fillLevel: 0.2 }))
+    expect(suggestBreakoutGroup(equallyFull, profile)?.id).toBe("overlap")
+    expect(breakoutPickerOptions(equallyFull, profile).map((group) => group.id)).toEqual([
+      "overlap", "unknown", "mismatch",
+    ])
+  })
+
+  it("keeps mismatches eligible when they are the only option", () => {
+    expect(suggestBreakoutGroup(groups.slice(0, 1), profile)?.id).toBe("mismatch")
+  })
+
+  it("uses fill order when the person's language is unknown", () => {
+    expect(suggestBreakoutGroup(groups, { gender: null, birthYear: null })?.id).toBe("mismatch")
   })
 })

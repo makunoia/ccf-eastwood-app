@@ -1,40 +1,11 @@
 /**
- * A breakout group's *effective* gender focus.
- *
- * Client-safe on purpose: no Prisma, no React. This used to live in
- * `lib/matching/index.ts`, which pulls in the database and `unstable_cache` — so
- * the public registration path couldn't reach it and fell back to the raw
- * `genderFocus` column instead. That split meant a group whose focus is only
- * implied by its facilitator read as "open to everyone" on the public form while
- * every admin surface treated it as gendered.
+ * The breakout group's explicit gender focus. Blank means any gender.
  */
 
 export type GenderFocusValue = "Male" | "Female" | "Mixed"
 
-/**
- * Precedence: an explicit `genderFocus` on the group wins; otherwise infer from
- * the facilitator(s)' gender (two different genders → "Mixed"); otherwise fall
- * back to the linked DGroup's focus; otherwise null (matches everyone).
- */
-export function deriveEffectiveGenderFocus(
-  explicitFocus: GenderFocusValue | null,
-  facilitatorGender: "Male" | "Female" | null | undefined,
-  coFacilitatorGender: "Male" | "Female" | null | undefined,
-  linkedSmallGroupGenderFocus?: GenderFocusValue | null
-): GenderFocusValue | null {
-  if (explicitFocus !== null) return explicitFocus
-
-  const genders = [facilitatorGender, coFacilitatorGender].filter(
-    (g): g is "Male" | "Female" => g === "Male" || g === "Female"
-  )
-  if (genders.length > 0) {
-    const unique = [...new Set(genders)]
-    return unique.length > 1 ? "Mixed" : unique[0]
-  }
-
-  if (linkedSmallGroupGenderFocus != null) return linkedSmallGroupGenderFocus
-
-  return null
+export function deriveEffectiveGenderFocus(explicitFocus: GenderFocusValue | null): GenderFocusValue | null {
+  return explicitFocus
 }
 
 /**

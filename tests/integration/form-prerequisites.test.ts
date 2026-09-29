@@ -271,9 +271,8 @@ describe("clusterFormPrerequisites — Collab breakout warnings", () => {
  * stage to decide. That is a survivable fallback rather than a broken form —
  * but it has to be said out loud, because nothing on the screen showed it.
  *
- * The focus is usually *implied* by who runs the table rather than set on it,
- * which is why counting the `genderFocus` column alone would have reported zero
- * for most affected events.
+ * Only a group's explicit gender focus restricts placement. The migration
+ * preserves an existing implied focus by writing it onto the group.
  */
 describe("gender field warning", () => {
   async function seedGenderedGroup(
@@ -314,9 +313,9 @@ describe("gender field warning", () => {
     })
   }
 
-  it("raises the warning off a facilitator-implied focus, not just an explicit one", async () => {
+  it("raises the warning for an explicitly gendered group", async () => {
     const event = await seedEvent()
-    await seedGenderedGroup(event.id, { facilitatorGender: "Male" })
+    await seedGenderedGroup(event.id, { facilitatorGender: "Male", focus: "Male" })
 
     const result = await eventFormPrerequisites(event.id, false)
     expect(result.fieldGender?.whenOff).toBe(true)
@@ -328,12 +327,20 @@ describe("gender field warning", () => {
 
   it("says nobody can be placed at all when auto-assign is on", async () => {
     const event = await seedEvent()
-    await seedGenderedGroup(event.id, { facilitatorGender: "Female" })
+    await seedGenderedGroup(event.id, { facilitatorGender: "Female", focus: "Female" })
 
     const result = await eventFormPrerequisites(event.id, true)
     expect(result.fieldGender?.message).toContain("nobody can be placed")
     // The sectionBreakout chain still answers its own question independently.
     expect(result.sectionBreakout?.message).toContain("Auto-assign is on")
+  })
+
+  it("stays quiet when only the facilitator has a gender", async () => {
+    const event = await seedEvent()
+    await seedGenderedGroup(event.id, { facilitatorGender: "Female" })
+
+    const result = await eventFormPrerequisites(event.id, false)
+    expect(result.fieldGender).toBeUndefined()
   })
 
   it("stays quiet for an explicitly Mixed table", async () => {

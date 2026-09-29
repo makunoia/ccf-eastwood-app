@@ -42,6 +42,7 @@ export type PersonRef = { memberId: string } | { guestId: string; nickname?: str
 export type ResolvedProfile = {
   gender: Gender | null
   birthYear: number | null
+  language: string[]
   /**
    * Carried so automatic placement applies the same life-stage rule the picker
    * does. Without it the two disagreed about which tables suit a person: the
@@ -109,7 +110,7 @@ export async function assignBreakoutForRegistrant(
    * test fixture, a path that never asked — can still pass one. Absent reads as
    * unknown, which never rules a group out.
    */
-  profile: { gender: Gender | null; birthYear: number | null; lifeStageId?: string | null },
+  profile: { gender: Gender | null; birthYear: number | null; lifeStageId?: string | null; language?: string[] },
   allowOverCapacity = false,
   /**
    * Set when this placement is happening at the door, carrying the session the
@@ -265,6 +266,7 @@ export async function assignBreakoutForRegistrant(
         gender: profile.gender,
         birthYear: profile.birthYear,
         lifeStageId: profile.lifeStageId ?? null,
+        language: profile.language ?? [],
       })
       if (best) chosenGroupId = best.id
     }
@@ -668,6 +670,7 @@ export async function resolveConfirmedMember(
     gender: existing.gender,
     birthYear: existing.birthYear,
     lifeStageId: existing.lifeStageId,
+    language: existing.language,
   }
 }
 
@@ -751,6 +754,7 @@ export async function resolveConfirmedGuest(
     gender: existing.gender,
     birthYear: existing.birthYear,
     lifeStageId: existing.lifeStageId,
+    language: existing.language,
   }
 }
 
@@ -799,6 +803,7 @@ export async function resolveAnonymousGuest(
     gender: true,
     birthYear: true,
     lifeStageId: true,
+    language: true,
   } as const
   let existingGuest: {
     id: string
@@ -806,6 +811,7 @@ export async function resolveAnonymousGuest(
     gender: Gender | null
     birthYear: number | null
     lifeStageId: string | null
+    language: string[]
   } | null = null
   if (!skipDeduplication) {
     if (data.mobileNumber) {
@@ -878,6 +884,7 @@ export async function resolveAnonymousGuest(
       gender: existingGuest.gender,
       birthYear: existingGuest.birthYear,
       lifeStageId: existingGuest.lifeStageId,
+      language: existingGuest.language,
     }
   }
 
@@ -914,6 +921,7 @@ export async function resolveAnonymousGuest(
     gender: matchingProfile.gender,
     birthYear: data.birthYear ?? null,
     lifeStageId: matchingProfile.lifeStageId,
+    language: matchingProfile.language ?? [],
   }
 }
 

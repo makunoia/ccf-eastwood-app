@@ -14,12 +14,14 @@ function session(over: Partial<{
   linkedSmallGroup: { id: string; name: string } | null
   ledGroups: { id: string; name: string }[]
 }> = {}): CatchMechSessionShape {
+  // Keep the historical field in the runtime row to prove the resolver ignores it.
+  const breakoutGroup = {
+    facilitatorId: over.breakoutFacilitatorId === undefined ? "v1" : over.breakoutFacilitatorId,
+    linkedSmallGroup: over.linkedSmallGroup ?? null,
+  }
   return {
     facilitatorVolunteerId: over.facilitatorVolunteerId ?? "v1",
-    breakoutGroup: {
-      facilitatorId: over.breakoutFacilitatorId === undefined ? "v1" : over.breakoutFacilitatorId,
-      linkedSmallGroup: over.linkedSmallGroup ?? null,
-    },
+    breakoutGroup,
     facilitator: { member: { ledGroups: over.ledGroups ?? [] } },
   }
 }
@@ -45,20 +47,26 @@ describe("resolveCatchMechTargets", () => {
     expect(t.declineGroupId).toBe(groupA.id)
   })
 
-  it("puts the linked group first so it becomes the picker default", () => {
+  it("does not reorder a facilitator's DGroups around a legacy breakout link", () => {
     const t = resolveCatchMechTargets(
       session({ ledGroups: [groupA, groupB], linkedSmallGroup: groupB })
     )
-    expect(t.candidates).toEqual([groupB, groupA])
-    expect(t.declineGroupId).toBe(groupB.id)
+    expect(t.candidates).toEqual([groupA, groupB])
+    expect(t.declineGroupId).toBe(groupA.id)
   })
 
-  it("includes an admin-linked group the faci does not lead", () => {
+  it("never offers a legacy linked group that the facilitator does not lead", () => {
     const t = resolveCatchMechTargets(
       session({ ledGroups: [groupA], linkedSmallGroup: linked })
     )
-    expect(t.candidates).toEqual([linked, groupA])
-    expect(t.declineGroupId).toBe(linked.id)
+    expect(t.candidates).toEqual([groupA])
+    expect(t.declineGroupId).toBe(groupA.id)
+  })
+
+  it("keeps a facilitator without DGroups on the Timothy path despite a legacy link", () => {
+    const t = resolveCatchMechTargets(session({ linkedSmallGroup: linked }))
+    expect(t.candidates).toEqual([])
+    expect(t.declineGroupId).toBeNull()
   })
 
   it("ignores the link for a co-faci — they absorb into their own group", () => {

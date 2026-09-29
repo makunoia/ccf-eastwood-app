@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { Prisma, type SmallGroupStatus } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
+import { manilaToday } from "@/lib/date/manila-today"
 import { canWrite } from "@/lib/permissions"
 import {
   guestSchema,
@@ -220,7 +221,7 @@ export async function promoteGuestToMember(
 
   const parsed = promoteGuestSchema.safeParse({
     groupId: groupId ?? null,
-    dateJoined: opts?.dateJoined ?? new Date().toISOString().slice(0, 10),
+    dateJoined: opts?.dateJoined ?? manilaToday(),
   })
   if (!parsed.success) {
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }

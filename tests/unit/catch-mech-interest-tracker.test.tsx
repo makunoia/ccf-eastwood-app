@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 import * as React from "react"
 import { describe, expect, it, vi } from "vitest"
-import { render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { InterestTracker, type InterestRow } from "@/app/(event)/event/[id]/catch-mech/interest-tracker"
+import { deleteCatchMechInterest } from "@/app/(event)/event/[id]/catch-mech/interest-actions"
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }))
 vi.mock("@/app/(event)/event/[id]/catch-mech/interest-actions", () => ({
   assignCatchMechInterest: vi.fn(),
+  deleteCatchMechInterest: vi.fn(),
   dismissCatchMechInterest: vi.fn(),
   getCatchMechInterestMatches: vi.fn(),
 }))
@@ -30,5 +32,18 @@ describe("Catch Mech DGroup interest tracker", () => {
     expect(screen.getByText("Placed", { exact: false })).toBeDefined()
     expect(screen.getAllByText("Dismissed", { exact: false }).length).toBeGreaterThan(0)
     expect(screen.getAllByText("Declined", { exact: false }).length).toBeGreaterThan(0)
+  })
+
+  it("offers deletion for pending and dismissed interests only when staff can manage them", async () => {
+    const { container } = render(<InterestTracker eventId="e1" rows={rows} canManage canViewMembers={false} canViewGuests={false} />)
+    expect(screen.getAllByRole("button", { name: "Delete" })).toHaveLength(2)
+    expect(container.textContent).toContain("Dismissed Person")
+
+    vi.mocked(deleteCatchMechInterest).mockResolvedValue({ success: true, data: undefined })
+    fireEvent.click(screen.getAllByRole("button", { name: "Delete" })[1])
+    const dialog = screen.getByRole("alertdialog")
+    expect(within(dialog).getByText(/Delete Dismissed Person/)).toBeDefined()
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete request" }))
+    await waitFor(() => expect(deleteCatchMechInterest).toHaveBeenCalledWith("e1", "4"))
   })
 })

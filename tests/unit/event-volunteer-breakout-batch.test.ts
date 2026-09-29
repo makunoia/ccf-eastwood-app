@@ -138,7 +138,7 @@ async function seedFacilitator(
 }
 
 describe("importBreakoutGroups", () => {
-  it("creates a breakout group, matching the facilitator by mobile and auto-linking their sole small group", async () => {
+  it("creates a breakout group, matching the facilitator by mobile without linking their small group", async () => {
     const event = await db.event.create({ data: { name: "Conf", type: "OneTime", startDate: new Date(), endDate: new Date() } })
     const { volunteer, ledGroupIds } = await seedFacilitator(event.id, { phone: "09171234567", leadsGroups: 1 })
 
@@ -157,7 +157,8 @@ describe("importBreakoutGroups", () => {
       where: { eventId: event.id, name: "Group 1" },
     })
     expect(created?.facilitatorId).toBe(volunteer.id)
-    expect(created?.linkedSmallGroupId).toBe(ledGroupIds[0])
+    expect(ledGroupIds).toHaveLength(1)
+    expect(created?.linkedSmallGroupId).toBeNull()
     expect(created?.memberLimit).toBe(12)
   })
 

@@ -616,8 +616,9 @@ export function RegistrationForm({
       gender: (form.gender || null) as "Male" | "Female" | null,
       birthYear: form.birthYear ? parseInt(form.birthYear, 10) : null,
       lifeStageId: form.lifeStageId || null,
+      language: form.language,
     })
-  }, [breakoutCandidates, form.gender, form.birthYear, form.lifeStageId, hasBreakoutChoices])
+  }, [breakoutCandidates, form.gender, form.birthYear, form.lifeStageId, form.language, hasBreakoutChoices])
 
   // Filtered by gender and life stage once they're known — a men's group is not
   // something a woman can join, so listing it is a dead end. With either blank
@@ -629,8 +630,9 @@ export function RegistrationForm({
       breakoutPickerOptions(breakoutCandidates, {
         gender: (form.gender || null) as "Male" | "Female" | null,
         lifeStageId: form.lifeStageId || null,
+        language: form.language,
       }),
-    [breakoutCandidates, form.gender, form.lifeStageId]
+    [breakoutCandidates, form.gender, form.lifeStageId, form.language]
   )
 
   // Going back and changing gender must not leave a now-hidden group selected —

@@ -21,7 +21,7 @@ afterAll(async () => {
 /**
  * Seeds an event with a confirmed volunteer (a Member identified by mobile) who
  * can be assigned as a breakout facilitator. Optionally makes that member lead a
- * single small group so the import's auto-link can pick it up.
+ * single small group to verify that importing does not copy the link.
  */
 async function seedEventVolunteer(opts: { phone: string; ledGroupName?: string; rawPhone?: boolean }) {
   const event = await db.event.create({
@@ -49,7 +49,7 @@ async function seedEventVolunteer(opts: { phone: string; ledGroupName?: string; 
 }
 
 describe("breakout group import — facilitator by mobile", () => {
-  it("assigns the matched event volunteer as facilitator and auto-links their small group", async () => {
+  it("assigns the matched event volunteer without linking their small group", async () => {
     const { event, volunteer, smallGroup } = await seedEventVolunteer({
       phone: "09170000001",
       ledGroupName: "Grace's Group",
@@ -65,7 +65,8 @@ describe("breakout group import — facilitator by mobile", () => {
 
     const created = await db.breakoutGroup.findFirst({ where: { eventId: event.id, name: "Group A" } })
     expect(created?.facilitatorId).toBe(volunteer.id)
-    expect(created?.linkedSmallGroupId).toBe(smallGroup!.id)
+    expect(smallGroup).not.toBeNull()
+    expect(created?.linkedSmallGroupId).toBeNull()
   })
 
   it("normalizes both sides — matches a legacy stored phone against a formatted CSV value", async () => {

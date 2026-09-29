@@ -215,7 +215,6 @@ export async function mutateSmallGroup(actor: McpActor, action: "create" | "upda
             await logMembershipMove(tx, { memberId: groupValues.leaderId, memberName: `${leader.firstName} ${leader.lastName}`, fromGroupId: leader.smallGroupId, toGroupId: groupValues.parentGroupId, actor: { userId: actor.id }, context: `as the leader of "${groupValues.name}" through the Churchie ChatGPT plugin` })
           }
           await tx.smallGroupLog.create({ data: { smallGroupId: created.id, action: "GroupCreated", performedByUserId: actor.id, description: `Group "${groupValues.name}" was created through the Churchie ChatGPT plugin` } })
-          await tx.breakoutGroup.updateMany({ where: { linkedSmallGroupId: null, OR: [{ facilitator: { memberId: groupValues.leaderId } }, { coFacilitator: { memberId: groupValues.leaderId } }] }, data: { linkedSmallGroupId: created.id } })
           return created
         })
       : await db.smallGroup.update({ where: { id: id! }, data: { ...groupValues, lifeStages: { set: lifeStageIds.map((id) => ({ id })) } }, select: { id: true, name: true, leaderId: true } })

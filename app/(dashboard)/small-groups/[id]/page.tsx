@@ -1,6 +1,8 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
+import { auth } from "@/lib/auth"
+import { canWrite } from "@/lib/permissions"
 import { mapCouplesInRoster } from "@/lib/family-links"
 import { logActorName } from "@/lib/small-group-log"
 import type { SmallGroupLogAction } from "@/app/generated/prisma/client"
@@ -207,15 +209,18 @@ export default async function SmallGroupDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const [group, { members, smallGroups, lifeStages }] = await Promise.all([
+  const [group, { members, smallGroups, lifeStages }, session] = await Promise.all([
     getSmallGroup(id),
     getData(),
+    auth(),
   ])
 
   if (!group) notFound()
 
   return (
     <SmallGroupForm
+      canAssignNow={canWrite(session, "Guests") && canWrite(session, "SmallGroups")}
+      canRequestConfirmation={canWrite(session, "SmallGroups")}
       members={members}
       smallGroups={smallGroups}
       lifeStages={lifeStages}

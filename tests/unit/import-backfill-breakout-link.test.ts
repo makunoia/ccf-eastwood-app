@@ -68,8 +68,8 @@ async function seedBreakoutWithLeaderlessFacilitator(leader: {
   return { event, member, volunteer, breakoutGroup }
 }
 
-describe("breakout link back-fill on small group import", () => {
-  it("links a facilitator's breakout group when their small group is imported", async () => {
+describe("small group import leaves breakout links alone", () => {
+  it("does not link a facilitator's breakout group when their small group is imported", async () => {
     const { breakoutGroup, member } = await seedBreakoutWithLeaderlessFacilitator({
       firstName: "Grace",
       lastName: "Lee",
@@ -95,7 +95,7 @@ describe("breakout link back-fill on small group import", () => {
     expect(createdGroup).not.toBeNull()
 
     const after = await db.breakoutGroup.findUnique({ where: { id: breakoutGroup.id } })
-    expect(after?.linkedSmallGroupId).toBe(createdGroup!.id)
+    expect(after?.linkedSmallGroupId).toBeNull()
   })
 
   it("does not overwrite an existing link, and skips when the leader leads multiple groups", async () => {

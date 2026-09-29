@@ -179,6 +179,7 @@ async function loadCandidates(
       // public form needs the group's accepted stages just as the admin
       // surfaces do. Empty means "accepts everyone".
       lifeStages: { select: { id: true } },
+      language: true,
       ageRangeMin: true,
       ageRangeMax: true,
       memberLimit: true,
@@ -187,12 +188,6 @@ async function loadCandidates(
       // would make it behave exactly like `isEnabled: false`.
       manualAssignOnly: true,
       _count: { select: { members: true } },
-      // Not for display — a group's gender focus is often left blank and implied
-      // by who runs it, and both the picker and the suggester have to see the
-      // same focus the admin surfaces do. See `deriveEffectiveGenderFocus`.
-      facilitator: { select: { member: { select: { gender: true } } } },
-      coFacilitator: { select: { member: { select: { gender: true } } } },
-      linkedSmallGroup: { select: { genderFocus: true } },
     },
   })
 
@@ -210,13 +205,9 @@ async function loadCandidates(
     return {
       id: g.id,
       name: g.name,
-      genderFocus: deriveEffectiveGenderFocus(
-        g.genderFocus,
-        g.facilitator?.member.gender,
-        g.coFacilitator?.member.gender,
-        g.linkedSmallGroup?.genderFocus
-      ),
+      genderFocus: deriveEffectiveGenderFocus(g.genderFocus),
       lifeStageIds: g.lifeStages.map((ls) => ls.id),
+      language: g.language,
       ageRangeMin: g.ageRangeMin,
       ageRangeMax: g.ageRangeMax,
       isFull: occupancy.isFull,
@@ -345,14 +336,8 @@ export type BreakoutPickerReadiness = {
    */
   autoAssignableGroups: number
   /**
-   * Enabled groups whose **effective** focus is Male or Female — the ones that
+   * Enabled groups whose explicit focus is Male or Female — the ones that
    * can never be suggested to someone whose gender the form didn't ask for.
-   *
-   * Deliberately not a `count`: the focus is usually *implied* by who runs the
-   * table rather than set on it, so this has to go through
-   * `deriveEffectiveGenderFocus` exactly as `loadCandidates` does. A count on the
-   * `genderFocus` column alone would report zero for the very events where the
-   * problem is worst.
    */
   genderedGroups: number
 }
@@ -360,7 +345,7 @@ export type BreakoutPickerReadiness = {
 async function pickerReadinessFor(
   owner: BreakoutOwner
 ): Promise<BreakoutPickerReadiness> {
-  const [totalGroups, enabledGroups, staffedGroups, autoAssignableGroups, enabled] = await Promise.all([
+  const [totalGroups, enabledGroups, staffedGroups, autoAssignableGroups, genderedGroups] = await Promise.all([
     db.breakoutGroup.count({ where: owner }),
     db.breakoutGroup.count({ where: { ...owner, ...ENABLED_BREAKOUT_WHERE } }),
     db.breakoutGroup.count({
@@ -373,26 +358,10 @@ async function pickerReadinessFor(
     // The same clause `matchBreakoutGroups` scores over, so the warning and the
     // matcher can't disagree about what is placeable.
     db.breakoutGroup.count({ where: { ...owner, ...AUTO_ASSIGNABLE_BREAKOUT_WHERE } }),
-    db.breakoutGroup.findMany({
-      where: { ...owner, ...ENABLED_BREAKOUT_WHERE },
-      select: {
-        genderFocus: true,
-        facilitator: { select: { member: { select: { gender: true } } } },
-        coFacilitator: { select: { member: { select: { gender: true } } } },
-        linkedSmallGroup: { select: { genderFocus: true } },
-      },
+    db.breakoutGroup.count({
+      where: { ...owner, ...ENABLED_BREAKOUT_WHERE, genderFocus: { in: ["Male", "Female"] } },
     }),
   ])
-
-  const genderedGroups = enabled.filter((g) => {
-    const focus = deriveEffectiveGenderFocus(
-      g.genderFocus,
-      g.facilitator?.member.gender,
-      g.coFacilitator?.member.gender,
-      g.linkedSmallGroup?.genderFocus
-    )
-    return focus === "Male" || focus === "Female"
-  }).length
 
   return { totalGroups, enabledGroups, staffedGroups, autoAssignableGroups, genderedGroups }
 }

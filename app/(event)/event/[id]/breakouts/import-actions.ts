@@ -86,13 +86,10 @@ type ImportRow = {
   existingId?: string
 }
 
-// A breakout group's matching profile (life stage, gender, language, age,
-// meeting format, location, schedule) is inherited from the facilitator's linked
-// small group, so the import only carries these few breakout-owned scalars.
+// Import only the breakout-owned scalars present in the CSV.
 type BreakoutScalars = {
   name: string
   facilitatorId: string | null
-  linkedSmallGroupId: string | null
   memberLimit: number | null
 }
 
@@ -125,16 +122,13 @@ export async function importBreakoutGroups(
         })
       : []
 
-    // normalized phone → matched facilitator volunteer. We also pre-compute the
-    // small group to auto-link: only when the facilitator leads exactly one group
-    // (same rule as the form's auto-link and the small-group import back-fill).
-    const mobileToFacilitator = new Map<string, { volunteerId: string; linkedSmallGroupId: string | null }>()
+    // normalized phone → matched facilitator volunteer.
+    const mobileToFacilitator = new Map<string, { volunteerId: string }>()
     for (const v of eventVolunteers) {
       const phone = normalizeMobile(v.member?.phone)
       if (!phone || mobileToFacilitator.has(phone)) continue
       mobileToFacilitator.set(phone, {
         volunteerId: v.id,
-        linkedSmallGroupId: v.member!.ledGroups.length === 1 ? v.member!.ledGroups[0].id : null,
       })
     }
 
@@ -149,10 +143,7 @@ export async function importBreakoutGroups(
         }
 
         // ── Facilitator (matched by mobile against an existing event volunteer) ─
-        // The facilitator's small group is linked automatically — there is no
-        // small-group column to import.
         let facilitatorId: string | null = null
-        let linkedSmallGroupId: string | null = null
         const facilitatorMobile = normalizeMobile(mapped.facilitatorMobile)
         if (facilitatorMobile) {
           const match = mobileToFacilitator.get(facilitatorMobile)
@@ -162,13 +153,11 @@ export async function importBreakoutGroups(
             continue
           }
           facilitatorId = match.volunteerId
-          linkedSmallGroupId = match.linkedSmallGroupId
         }
 
         const data: BreakoutScalars = {
           name,
           facilitatorId,
-          linkedSmallGroupId,
           memberLimit: mapped.memberLimit ? parseIntField(mapped.memberLimit) : null,
         }
 
@@ -180,7 +169,6 @@ export async function importBreakoutGroups(
               eventId: true,
               name: true,
               facilitatorId: true,
-              linkedSmallGroupId: true,
               memberLimit: true,
             },
           })
@@ -203,11 +191,12 @@ export async function importBreakoutGroups(
                   memberLimit: data.memberLimit,
                 }
 
-          // The small-group link is system-derived, not a CSV column — only ever
-          // fill it in, never clear or overwrite an existing link (even on use-csv).
           await db.breakoutGroup.update({
             where: { id: existingId },
-            data: { ...payload, linkedSmallGroupId: enrichNullable(existing.linkedSmallGroupId, data.linkedSmallGroupId) },
+            data: {
+              ...payload,
+              ...(payload.facilitatorId !== existing.facilitatorId ? { linkedSmallGroupId: null } : {}),
+            },
           })
 
           result.updated++

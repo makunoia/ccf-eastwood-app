@@ -3,6 +3,7 @@ import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import {
   assignCatchMechInterest,
+  deleteCatchMechInterest,
   dismissCatchMechInterest,
   getCatchMechInterestMatches,
 } from "@/app/(event)/event/[id]/catch-mech/interest-actions"
@@ -36,6 +37,27 @@ async function seed() {
 }
 
 describe("Catch Mech event interest", () => {
+  it("deletes pending and dismissed interests only from their source event, keeping profiles", async () => {
+    const { event, otherEvent, group } = await seed()
+    const guest = await db.guest.create({ data: { firstName: "Maria", lastName: "Santos", language: [] } })
+    const pending = await db.smallGroupMemberRequest.create({
+      data: { guestId: guest.id, origin: "RegistrationIntent", sourceEventId: event.id },
+    })
+    const dismissed = await db.smallGroupMemberRequest.create({
+      data: { guestId: guest.id, origin: "RegistrationIntent", sourceEventId: event.id, status: "Rejected" },
+    })
+    const assigned = await db.smallGroupMemberRequest.create({
+      data: { guestId: guest.id, origin: "RegistrationIntent", sourceEventId: event.id, smallGroupId: group.id },
+    })
+
+    expect((await deleteCatchMechInterest(otherEvent.id, pending.id)).success).toBe(false)
+    expect((await deleteCatchMechInterest(event.id, assigned.id)).success).toBe(false)
+    expect((await deleteCatchMechInterest(event.id, pending.id)).success).toBe(true)
+    expect((await deleteCatchMechInterest(event.id, dismissed.id)).success).toBe(true)
+    expect(await db.smallGroupMemberRequest.findMany({ where: { sourceEventId: event.id }, select: { id: true } })).toEqual([{ id: assigned.id }])
+    expect(await db.guest.findUnique({ where: { id: guest.id } })).not.toBeNull()
+  })
+
   it("scopes matches and dismissal to the request's source event", async () => {
     const { event, otherEvent } = await seed()
     const guest = await db.guest.create({ data: { firstName: "Maria", lastName: "Santos", language: [] } })

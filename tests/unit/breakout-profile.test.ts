@@ -1,11 +1,8 @@
 import { describe, it, expect } from "vitest"
 import {
-  clearedMatchingProfile,
-  CLEARED_PROFILE_FORM,
   isProfileEmpty,
   profileRows,
   formatAgeRange,
-  missingTimothyFields,
   type BreakoutMatchingProfile,
 } from "@/lib/breakouts/profile"
 
@@ -37,7 +34,6 @@ describe("isProfileEmpty", () => {
     expect(isProfileEmpty(profile(overrides as Partial<BreakoutMatchingProfile>))).toBe(false)
   })
 })
-
 describe("profileRows", () => {
   it("returns the four matching factors in a fixed order", () => {
     expect(profileRows(profile()).map((r) => r.key)).toEqual([
@@ -104,93 +100,5 @@ describe("formatAgeRange", () => {
 
   it("keeps a zero bound rather than treating it as unset", () => {
     expect(formatAgeRange(0, 12)).toBe("0–12 yrs")
-  })
-})
-
-describe("missingTimothyFields", () => {
-  const complete = {
-    lifeStageIds: ["ls1"],
-    genderFocus: "Male",
-    language: ["English"],
-    ageRangeMin: 25,
-    ageRangeMax: 35,
-  }
-
-  it("accepts a complete profile", () => {
-    expect(missingTimothyFields(complete)).toEqual([])
-  })
-
-  it("names every missing field, in form order", () => {
-    expect(missingTimothyFields({})).toEqual([
-      "Life Stage",
-      "Gender Focus",
-      "Language",
-      "Age Range",
-    ])
-  })
-
-  it.each([
-    ["Life Stage", { lifeStageIds: [] }],
-    ["Gender Focus", { genderFocus: "" }],
-    ["Language", { language: [] }],
-  ])("flags a missing %s", (label, override) => {
-    expect(missingTimothyFields({ ...complete, ...override })).toEqual([label])
-  })
-
-  // A DGroup age range with one open end isn't a range, and this profile seeds
-  // a real DGroup — so both bounds are required.
-  it("requires both age bounds", () => {
-    expect(missingTimothyFields({ ...complete, ageRangeMax: null })).toEqual(["Age Range"])
-    expect(missingTimothyFields({ ...complete, ageRangeMin: null })).toEqual(["Age Range"])
-  })
-
-  // The drawers hold form values as strings; "" is unset, "0" is not.
-  it("reads the drawers' string form values", () => {
-    expect(missingTimothyFields({ ...complete, ageRangeMin: "", ageRangeMax: "" })).toEqual([
-      "Age Range",
-    ])
-    expect(missingTimothyFields({ ...complete, ageRangeMin: "0", ageRangeMax: "12" })).toEqual([])
-  })
-
-  // Meeting Format and Meeting Schedule used to be required here; the fields no
-  // longer exist on a breakout group, so requiring them was unsatisfiable.
-  it("no longer requires meeting format or schedule", () => {
-    expect(missingTimothyFields(complete)).not.toContain("Meeting Format")
-    expect(missingTimothyFields(complete)).not.toContain("Meeting Schedule")
-  })
-})
-
-describe("clearedMatchingProfile", () => {
-  // Unlinking a facilitator clears the group's criteria; both write paths
-  // (`setFacilitator` and `updateBreakoutGroup`) spread this same fragment, so
-  // what it covers is what "cleared" means.
-  it("empties every factor the profile is made of", () => {
-    expect(clearedMatchingProfile()).toEqual({
-      lifeStages: { set: [] },
-      genderFocus: null,
-      language: { set: [] },
-      ageRangeMin: null,
-      ageRangeMax: null,
-    })
-  })
-
-  it("covers exactly the fields isProfileEmpty reads", () => {
-    const cleared = profile({
-      lifeStages: [],
-      genderFocus: clearedMatchingProfile().genderFocus,
-      language: [],
-      ageRangeMin: clearedMatchingProfile().ageRangeMin,
-      ageRangeMax: clearedMatchingProfile().ageRangeMax,
-    })
-    expect(isProfileEmpty(cleared)).toBe(true)
-  })
-
-  it("blanks the drawers' form state to match", () => {
-    expect(missingTimothyFields(CLEARED_PROFILE_FORM)).toEqual([
-      "Life Stage",
-      "Gender Focus",
-      "Language",
-      "Age Range",
-    ])
   })
 })

@@ -19,7 +19,6 @@ function normalizeMobile(raw: string | undefined): string {
   const trimmed = raw?.trim()
   return trimmed ? formatPhilippinePhone(trimmed) : ""
 }
-
 // ─── Duplicate check ──────────────────────────────────────────────────────────
 
 export async function checkSmallGroupDuplicates(
@@ -577,63 +576,10 @@ export async function importSmallGroups(
     }
   }
 
-  await linkBreakoutGroupsForLeaders([...touchedLeaderIds])
 
   revalidatePath("/small-groups")
   return { success: true, data: result }
   } catch {
     return { success: false, error: "Import failed unexpectedly" }
-  }
-}
-
-/**
- * After importing small groups, back-fill the `linkedSmallGroupId` of any
- * breakout group whose facilitator now leads exactly one small group and which
- * has no linked small group yet. Mirrors the form's auto-link behaviour
- * (`ledGroups.length === 1`) so a facilitator's small group imported *after*
- * the breakout group was created gets picked up automatically.
- */
-async function linkBreakoutGroupsForLeaders(leaderIds: string[]): Promise<void> {
-  if (leaderIds.length === 0) return
-
-  // Two sets, because a breakout group is owned by an event OR by a Collab
-  // cluster (CCF-148) and their breakouts pages live at different paths.
-  const affectedEventIds = new Set<string>()
-  const affectedClusterIds = new Set<string>()
-
-  for (const leaderId of leaderIds) {
-    // Only auto-link when the leader leads a single small group — otherwise the
-    // correct source group is ambiguous (same rule the create/edit form uses).
-    const ledGroups = await db.smallGroup.findMany({
-      where: { leaderId },
-      select: { id: true },
-    })
-    if (ledGroups.length !== 1) continue
-    const smallGroupId = ledGroups[0].id
-
-    const breakouts = await db.breakoutGroup.findMany({
-      where: {
-        linkedSmallGroupId: null,
-        facilitator: { is: { memberId: leaderId } },
-      },
-      select: { id: true, eventId: true, clusterId: true },
-    })
-    if (breakouts.length === 0) continue
-
-    await db.breakoutGroup.updateMany({
-      where: { id: { in: breakouts.map((b) => b.id) } },
-      data: { linkedSmallGroupId: smallGroupId },
-    })
-    for (const b of breakouts) {
-      if (b.eventId) affectedEventIds.add(b.eventId)
-      if (b.clusterId) affectedClusterIds.add(b.clusterId)
-    }
-  }
-
-  for (const eventId of affectedEventIds) {
-    revalidatePath(`/event/${eventId}/breakouts`)
-  }
-  for (const clusterId of affectedClusterIds) {
-    revalidatePath(`/cluster/${clusterId}/breakouts`)
   }
 }

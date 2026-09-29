@@ -34,7 +34,6 @@ import { personKeyFor } from "@/lib/clusters/roster"
 import { MAX_BREAKOUT_BATCH } from "@/lib/breakouts/candidate-filters"
 import { registrantName, registrantNameSelect } from "@/lib/metadata"
 import type { BatchFailure } from "@/components/batch/types"
-import { clearedMatchingProfile, missingTimothyFields } from "@/lib/breakouts/profile"
 
 type ActionResult<T = void> =
   | { success: true; data: T }
@@ -145,38 +144,6 @@ function revalidateBreakoutSurfaces(
   if (opts?.sessions) revalidatePath(`/event/${eventId}/sessions`, "layout")
 }
 
-// ─── Timothy profile validation ───────────────────────────────────────────────
-
-/**
- * When a facilitator volunteer is a Timothy (has no led small groups),
- * the breakout group's matching profile must be filled in so that the system
- * has enough data to set up their future small group.
- *
- * `missingTimothyFields` is shared with both edit drawers so the client can't
- * accept a profile this rejects.
- */
-async function validateTimothyProfile(
-  facilitatorId: string | null | undefined,
-  profile: Parameters<typeof missingTimothyFields>[0]
-): Promise<string | null> {
-  if (!facilitatorId) return null
-
-  const volunteer = await db.volunteer.findUnique({
-    where: { id: facilitatorId },
-    select: { member: { select: { _count: { select: { ledGroups: true } } } } },
-  })
-  if (!volunteer) return null
-
-  const isTimothy = volunteer.member._count.ledGroups === 0
-  if (!isTimothy) return null
-
-  const missing = missingTimothyFields(profile)
-  if (missing.length > 0) {
-    return `Timothy profile requires: ${missing.join(", ")}`
-  }
-  return null
-}
-
 // ─── Breakout Group CRUD ──────────────────────────────────────────────────────
 
 export async function createBreakoutGroup(
@@ -190,25 +157,17 @@ export async function createBreakoutGroup(
   if (!parsed.success) {
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
   }
-  // `manualAssignOnly` is destructured out with the non-matching fields on
-  // purpose: `profile` is what `validateTimothyProfile` reads and what
-  // `clearedMatchingProfile` mirrors, and this is a routing setting, not a
-  // criterion a Timothy has to fill in.
   const {
     name,
     facilitatorId,
     coFacilitatorId,
     memberLimit,
     manualAssignOnly,
-    linkedSmallGroupId,
     ...profile
   } = parsed.data
 
   const facilitatorError = await validateFacilitatorsInPool(owner, [facilitatorId, coFacilitatorId])
   if (facilitatorError) return { success: false, error: facilitatorError }
-
-  const timothyError = await validateTimothyProfile(facilitatorId, profile)
-  if (timothyError) return { success: false, error: timothyError }
 
   try {
     const group = await db.breakoutGroup.create({
@@ -221,7 +180,6 @@ export async function createBreakoutGroup(
         coFacilitatorId: coFacilitatorId ?? null,
         memberLimit: memberLimit ?? null,
         manualAssignOnly: manualAssignOnly ?? false,
-        linkedSmallGroupId: linkedSmallGroupId ?? null,
         lifeStages: { connect: profile.lifeStageIds.map((id) => ({ id })) },
         genderFocus: profile.genderFocus ?? null,
         language: profile.language,
@@ -252,14 +210,12 @@ export async function updateBreakoutGroup(
   if (!parsed.success) {
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
   }
-  // See `createBreakoutGroup` on why `manualAssignOnly` is kept out of `profile`.
   const {
     name,
     facilitatorId,
     coFacilitatorId,
     memberLimit,
     manualAssignOnly,
-    linkedSmallGroupId,
     ...profile
   } = parsed.data
 
@@ -278,9 +234,6 @@ export async function updateBreakoutGroup(
   ])
   if (facilitatorError) return { success: false, error: facilitatorError }
 
-  const timothyError = await validateTimothyProfile(facilitatorId, profile)
-  if (timothyError) return { success: false, error: timothyError }
-
   // An absent key means "not on the form", not "clear it". Neither edit drawer
   // has a co-facilitator control — that slot is assigned from the detail page —
   // so writing `coFacilitatorId ?? null` silently detached the co-facilitator on
@@ -298,11 +251,7 @@ export async function updateBreakoutGroup(
     }
   }
 
-  // Emptying the facilitator slot clears the profile, whatever the form sent —
-  // the drawer blanks its own fields on the same change, but the server is the
-  // one that decides. It's the *transition* that clears: a group created without
-  // a facilitator keeps criteria someone typed, and later saves don't wipe them.
-  const unlinkedFacilitator = existing.facilitatorId !== null && nextFacilitatorId === null
+  const facilitatorChanged = existing.facilitatorId !== nextFacilitatorId
 
   try {
     await db.breakoutGroup.update({
@@ -312,21 +261,14 @@ export async function updateBreakoutGroup(
         facilitatorId: nextFacilitatorId,
         coFacilitatorId: nextCoFacilitatorId,
         memberLimit: memberLimit ?? null,
-        // Outside the ternary below: emptying the facilitator clears the
-        // *matching profile*, and how a group is reached is not one of its
-        // criteria. A table held back for manual assignment stays held back when
-        // its facilitator drops out.
         manualAssignOnly: nextManualAssignOnly,
-        ...(unlinkedFacilitator
-          ? { linkedSmallGroupId: null, ...clearedMatchingProfile() }
-          : {
-              linkedSmallGroupId: linkedSmallGroupId ?? null,
-              lifeStages: { set: profile.lifeStageIds.map((id) => ({ id })) },
-              genderFocus: profile.genderFocus ?? null,
-              language: profile.language,
-              ageRangeMin: profile.ageRangeMin ?? null,
-              ageRangeMax: profile.ageRangeMax ?? null,
-            }),
+        // The historical Catch Mech default belongs to the former lead.
+        ...(facilitatorChanged ? { linkedSmallGroupId: null } : {}),
+        lifeStages: { set: profile.lifeStageIds.map((id) => ({ id })) },
+        genderFocus: profile.genderFocus ?? null,
+        language: profile.language,
+        ageRangeMin: profile.ageRangeMin ?? null,
+        ageRangeMax: profile.ageRangeMax ?? null,
       },
     })
     // The edit drawer is mounted on the detail page too. `publicPickers` because
@@ -756,61 +698,34 @@ export async function transferRegistrantToBreakout(
         data: { breakoutGroupId: toGroupId, registrantId },
       })
 
-      // Carry an explicit Catch Mech request with the seat. A same-DGroup move
-      // keeps the request and its place in the leader's queue; changing DGroups
-      // declines the old request and raises a fresh one for the new destination.
-      const [sourceGroup, destinationGroup] = await Promise.all([
-        tx.breakoutGroup.findUnique({ where: { id: fromGroupId }, select: { linkedSmallGroupId: true } }),
-        tx.breakoutGroup.findUnique({ where: { id: toGroupId }, select: { linkedSmallGroupId: true } }),
-      ])
-      const requests = await tx.smallGroupMemberRequest.findMany({
-        where: {
-          breakoutGroupId: fromGroupId,
-          status: "Pending",
-          ...(registrant.memberId ? { memberId: registrant.memberId } : { guestId: registrant.guestId }),
-        },
-      })
-      const matchingRequest = requests.find((request) =>
-        registrant.memberId ? request.memberId === registrant.memberId : request.guestId === registrant.guestId
-      )
-      if (matchingRequest) {
-        if (sourceGroup?.linkedSmallGroupId === destinationGroup?.linkedSmallGroupId && destinationGroup?.linkedSmallGroupId) {
-          await tx.smallGroupMemberRequest.update({
-            where: { id: matchingRequest.id },
-            data: { breakoutGroupId: toGroupId },
+      // A transfer ends any pending DGroup request from the former breakout
+      // group. The new facilitator makes a fresh decision in Catch Mech.
+      const requestIdentity = registrant.memberId
+        ? { memberId: registrant.memberId }
+        : registrant.guestId
+          ? { guestId: registrant.guestId }
+          : null
+      const requests = requestIdentity
+        ? await tx.smallGroupMemberRequest.findMany({
+            where: { breakoutGroupId: fromGroupId, status: "Pending", ...requestIdentity },
           })
-        } else if (sourceGroup?.linkedSmallGroupId !== destinationGroup?.linkedSmallGroupId) {
-          const now = new Date()
-          await tx.smallGroupMemberRequest.update({
-            where: { id: matchingRequest.id },
-            data: { status: "Rejected", resolvedAt: now },
-          })
-          if (matchingRequest.smallGroupId) {
-            await tx.smallGroupLog.create({
-              data: {
-                smallGroupId: matchingRequest.smallGroupId,
-                action: "TempAssignmentRejected",
-                guestId: matchingRequest.guestId,
-                memberId: matchingRequest.memberId,
-                fromGroupId: sourceGroup?.linkedSmallGroupId ?? null,
-                toGroupId: destinationGroup?.linkedSmallGroupId ?? null,
-                description: "Catch Mech request was withdrawn after breakout transfer",
-              },
-            })
-          }
-          if (destinationGroup?.linkedSmallGroupId) {
-            await tx.smallGroupMemberRequest.create({
-              data: {
-                smallGroupId: destinationGroup.linkedSmallGroupId,
-                guestId: matchingRequest.guestId,
-                memberId: matchingRequest.memberId,
-                breakoutGroupId: toGroupId,
-                origin: matchingRequest.origin,
-                sourceEventId: matchingRequest.sourceEventId,
-              },
-            })
-          }
-        }
+        : []
+      if (requests.length > 0) {
+        await tx.smallGroupMemberRequest.updateMany({
+          where: { id: { in: requests.map((request) => request.id) } },
+          data: { status: "Rejected", resolvedAt: new Date() },
+        })
+        const logs = requests.flatMap((request) =>
+          request.smallGroupId ? [{
+              smallGroupId: request.smallGroupId,
+              action: "TempAssignmentRejected",
+              guestId: request.guestId,
+              memberId: request.memberId,
+              fromGroupId: request.smallGroupId,
+              description: "Catch Mech request was withdrawn after breakout transfer",
+            } as const] : []
+        )
+        if (logs.length > 0) await tx.smallGroupLog.createMany({ data: logs })
       }
       return "moved" as const
     })
@@ -1034,12 +949,13 @@ async function checkinRegistrantProfile(registrantId: string): Promise<{
   gender: Gender | null
   birthYear: number | null
   lifeStageId: string | null
+  language: string[]
 }> {
   const row = await db.eventRegistrant.findUnique({
     where: { id: registrantId },
     select: {
-      member: { select: { gender: true, birthYear: true, lifeStageId: true } },
-      guest: { select: { gender: true, birthYear: true, lifeStageId: true } },
+      member: { select: { gender: true, birthYear: true, lifeStageId: true, language: true } },
+      guest: { select: { gender: true, birthYear: true, lifeStageId: true, language: true } },
     },
   })
   const person = row?.member ?? row?.guest ?? null
@@ -1047,6 +963,7 @@ async function checkinRegistrantProfile(registrantId: string): Promise<{
     gender: person?.gender ?? null,
     birthYear: person?.birthYear ?? null,
     lifeStageId: person?.lifeStageId ?? null,
+    language: person?.language ?? [],
   }
 }
 
@@ -1391,24 +1308,14 @@ export async function autoAssignBreakouts(
 /**
  * Assign or clear one of a breakout group's two facilitator slots.
  *
- * This deliberately does **not** touch the matching profile. It used to copy the
- * facilitator's linked DGroup criteria over the group's own, which meant a
- * facilitator change silently rewrote what the group matched for and made the
- * profile read-only in both edit drawers. A breakout table is not its
- * facilitator's DGroup — the criteria are the group's, hand-entered and always
- * editable.
- *
- * `linkedSmallGroupId` still travels with a facilitator change, but only as
- * Catch Mech routing: it decides which DGroup receives this group's member
- * requests (`resolveLinkedSmallGroup`). Absent means "not submitted", not
- * "clear it".
+ * Matching criteria belong to the breakout group and survive every facilitator
+ * change. A historical Catch Mech destination is cleared when the lead changes.
  */
 export async function setFacilitator(
   groupId: string,
   volunteerId: string | null,
   role: "facilitator" | "coFacilitator",
-  owner: BreakoutOwner,
-  linkedSmallGroupId?: string | null
+  owner: BreakoutOwner
 ): Promise<ActionResult> {
   const denied = await requireBreakoutWrite(owner)
   if (denied) return { success: false, error: denied.error }
@@ -1447,30 +1354,22 @@ export async function setFacilitator(
       }
     }
 
-    // Unassigning the facilitator takes the group's matching profile and Catch
-    // Mech target with it — a table nobody runs matches for nothing. Only this
-    // slot: the co-facilitator is a second pair of hands, not the owner, and a
-    // swap between two facilitators leaves the criteria untouched.
-    const unlinked = role === "facilitator" && volunteerId === null
-
     // findFirst + update rather than a bare update by id: clearing a slot skips
     // the owner-scoped read above, so without this an owner argument could name
     // a group it doesn't own.
     const target = await db.breakoutGroup.findFirst({
       where: { id: groupId, ...owner },
-      select: { id: true },
+      select: { id: true, facilitatorId: true },
     })
     if (!target) return { success: false, error: "Breakout group not found" }
 
     await db.breakoutGroup.update({
       where: { id: groupId },
       data: role === "facilitator"
-        ? unlinked
-          ? { facilitatorId: null, linkedSmallGroupId: null, ...clearedMatchingProfile() }
-          : {
-              facilitatorId: volunteerId,
-              ...(linkedSmallGroupId !== undefined ? { linkedSmallGroupId } : {}),
-            }
+        ? {
+            facilitatorId: volunteerId,
+            ...(target.facilitatorId !== volunteerId ? { linkedSmallGroupId: null } : {}),
+          }
         : { coFacilitatorId: volunteerId },
     })
     revalidateBreakoutSurfaces(owner, { groupId })
