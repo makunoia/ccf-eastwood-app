@@ -16,7 +16,7 @@ async function getOccurrenceDetail(occurrenceId: string) {
   const occurrence = await db.eventOccurrence.findUnique({
     where: { id: occurrenceId },
     include: {
-      sessionRegistrations: { include: { registrant: { select: { id: true, firstName: true, lastName: true, memberId: true, member: { select: { firstName: true, lastName: true } }, guest: { select: { firstName: true, lastName: true } } } } } },
+      sessionRegistrations: { include: { registrant: { select: { id: true, firstName: true, lastName: true, memberId: true, guestId: true, member: { select: { firstName: true, lastName: true } }, guest: { select: { firstName: true, lastName: true } } } } } },
       event: {
         select: {
           id: true,
@@ -59,6 +59,7 @@ async function getOccurrenceDetail(occurrenceId: string) {
           volunteer: {
             select: {
               id: true,
+              memberId: true,
               member: { select: { firstName: true, lastName: true, gender: true } },
             },
           },
@@ -273,6 +274,7 @@ export default async function OccurrenceDetailPage({
         id: a.id,
         kind: "volunteer" as const,
         subjectId: a.volunteer.id,
+        personKey: `member:${a.volunteer.memberId}`,
         name: `${a.volunteer.member.firstName} ${a.volunteer.member.lastName}`.trim() || null,
         checkedInAtFormatted,
         // Volunteers are established — never tagged "New".
@@ -309,6 +311,7 @@ export default async function OccurrenceDetailPage({
       id: a.id,
       kind: "registrant" as const,
       subjectId: r.id,
+      personKey: r.memberId ? `member:${r.memberId}` : r.guestId ? `guest:${r.guestId}` : `registrant:${r.id}`,
       hasSessionRegistration: occurrence.sessionRegistrations.some((sessionRegistration) => sessionRegistration.registrantId === r.id),
       name: getAttendeeName(r),
       checkedInAtFormatted,
@@ -459,7 +462,7 @@ export default async function OccurrenceDetailPage({
         <SessionAttendeesTable
           eventId={id}
           occurrenceId={occurrenceId}
-          sessionRegistrations={occurrence.sessionRegistrations.map((sessionRegistration) => ({ registrantId: sessionRegistration.registrantId, name: getAttendeeName(sessionRegistration.registrant) ?? "Unknown", isMember: !!sessionRegistration.registrant.memberId, checkedIn: false }))}
+          sessionRegistrations={occurrence.sessionRegistrations.map((sessionRegistration) => ({ registrantId: sessionRegistration.registrantId, personKey: sessionRegistration.registrant.memberId ? `member:${sessionRegistration.registrant.memberId}` : sessionRegistration.registrant.guestId ? `guest:${sessionRegistration.registrant.guestId}` : `registrant:${sessionRegistration.registrantId}`, name: getAttendeeName(sessionRegistration.registrant) ?? "Unknown", isMember: !!sessionRegistration.registrant.memberId, checkedIn: false }))}
           attendees={attendeesWithStats}
           breakoutGroups={breakoutGroupOptions}
           breakoutStats={breakoutStats}

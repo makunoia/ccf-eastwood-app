@@ -1,10 +1,19 @@
 import { describe, expect, it } from "vitest"
-import { sessionRegistrationStats } from "@/lib/events/session-registration-stats"
+import { sessionRegistrationStats, sessionTurnoutStats } from "@/lib/events/session-registration-stats"
 import { validateSessionTargets, SessionTargetChanged } from "@/lib/events/session-registration"
 import { buildClusterCheckinPeople } from "@/lib/clusters/checkin-person"
 import { buildSessionAttendanceTable } from "@/lib/exports/session-attendance"
 
 describe("session registration", () => {
+  it("calculates session turnout from registrations and additional arrivals without double-counting", () => {
+    const registered = Array.from({ length: 10 }, (_, i) => `member:${i}`)
+    const present = [...registered.slice(0, 6), "guest:walk-in", "member:volunteer"]
+    expect(sessionTurnoutStats(registered, present)).toEqual({ total: 12, checkedIn: 8, notCheckedIn: 4, rate: 8 / 12 })
+    expect(sessionTurnoutStats(["member:a", "member:a"], ["member:a", "member:a"])).toEqual({ total: 1, checkedIn: 1, notCheckedIn: 0, rate: 1 })
+    expect(sessionTurnoutStats([], ["guest:walk-in"]).rate).toBe(1)
+    expect(sessionTurnoutStats(["member:a"], []).rate).toBe(0)
+    expect(sessionTurnoutStats([], []).rate).toBeNull()
+  })
   it("counts session registration arrivals separately from unregistered arrivals and deduplicates IDs", () => {
     expect(sessionRegistrationStats(["a", "a", "b"], ["a", "c", "c"])).toEqual({ expected: 2, checkedIn: 1, notCheckedIn: 1, rate: 0.5 })
     expect(sessionRegistrationStats([], ["a"]).rate).toBeNull()

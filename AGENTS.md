@@ -639,3 +639,5 @@ it("...", async () => {
 - `Member.dateJoined` is required — always pass `dateJoined: new Date()` when seeding.
 - Truncate all tables touched by the test (use CASCADE freely — it won't drop the schema).
 - No shared fixtures. Tests must be fully self-contained.
+
+Session detail uses “Registered for this session” for its registration roster. Its Turnout is all checked-in people divided by the identity-deduplicated union of session registrations and checked-in people, including volunteers and walk-ins. It updates from the current attendance rows and does not use the event series roster as its denominator.

@@ -59,7 +59,7 @@ import {
   type AttendeeStatusChoice,
   type BreakoutStatSortMode,
 } from "@/lib/session-attendees"
-import { formatTurnoutRate, formatTurnoutRatio } from "@/lib/events/turnout"
+import { formatTurnoutRate } from "@/lib/events/turnout"
 import type { BreakoutOccupancy } from "@/lib/breakouts/occupancy"
 import { cn } from "@/lib/utils"
 import type { PersonComboboxOption } from "@/components/ui/person-combobox"
@@ -67,7 +67,7 @@ import {
   assignSubFacilitator,
   removeSubFacilitator,
 } from "./sub-facilitator-actions"
-import { sessionRegistrationStats } from "@/lib/events/session-registration-stats"
+import { sessionRegistrationStats, sessionTurnoutStats } from "@/lib/events/session-registration-stats"
 import { SessionRegistrationRoster, type SessionRegistrationRow } from "./session-registration-roster"
 import { removeSessionAttendee, setAttendeeReturnerStatus } from "./attendee-actions"
 // Mirrors the Prisma enum — avoid importing Prisma client in client components (pulls node:module)
@@ -78,6 +78,7 @@ export type AttendeeRow = {
   id: string
   kind: "registrant" | "volunteer"
   subjectId: string
+  personKey?: string
   hasSessionRegistration?: boolean
   name: string | null
   checkedInAtFormatted: string
@@ -306,7 +307,7 @@ function buildAttendeeColumns({
         </Link>
       ),
     },
-    { id: "sessionRegistration", header: "Expected", meta: { label: "Expected", width: "status" }, cell: ({ row }) => row.original.hasSessionRegistration ? <Badge variant="secondary">Expected</Badge> : null },
+    { id: "sessionRegistration", header: "Session registration", meta: { label: "Session registration", width: "status" }, cell: ({ row }) => row.original.hasSessionRegistration ? <Badge variant="secondary">Registered</Badge> : null },
     {
       id: "status",
       // The sort is the caller's (it reorders `sortedAttendees`), so the header
@@ -513,10 +514,12 @@ export function SessionAttendeesTable({
     setRows(attendees)
   }
 
-  const presentIds = rows.filter((r) => r.kind === "registrant").map((r) => r.subjectId)
+  const presentIds = rows.map((r) => r.personKey ?? `${r.kind}:${r.subjectId}`)
+  const registeredIds = sessionRegistrations.map((r) => r.personKey ?? `registrant:${r.registrantId}`)
   const presentSet = new Set(presentIds)
-  const expectedRows = sessionRegistrations.map((r) => ({ ...r, checkedIn: presentSet.has(r.registrantId) }))
-  const registrationStats = sessionRegistrationStats(sessionRegistrations.map((r) => r.registrantId), presentIds)
+  const registeredRows = sessionRegistrations.map((r) => ({ ...r, checkedIn: presentSet.has(r.personKey ?? `registrant:${r.registrantId}`) }))
+  const registrationStats = sessionRegistrationStats(registeredIds, presentIds)
+  const turnout = sessionTurnoutStats(registeredIds, presentIds)
 
   function patchRow(id: string, patch: Partial<AttendeeRow>) {
     setRows((current) => current.map((r) => (r.id === id ? { ...r, ...patch } : r)))
@@ -641,27 +644,20 @@ export function SessionAttendeesTable({
           value={stats.volunteersPresent}
           icon={<UserCheck className="size-4" />}
         />
-        {/* Participants over the event's registered roster — volunteers are excluded
-            from the numerator because they hold no registration to be counted against.
-            The caption spells the ratio out: the denominator is the whole series, so a
-            bare percentage would leave the reader guessing what it divides by. */}
         <StatCard
-          label="Series turnout"
-          value={formatTurnoutRate(stats.turnout.rate)}
+          label="Turnout"
+          value={formatTurnoutRate(turnout.rate)}
+          turnoutBar={{ checkedIn: turnout.checkedIn, total: turnout.total }}
           icon={<Target className="size-4" />}
-          caption={
-            stats.turnout.preRegistered === 0
-              ? "No registrations yet"
-              : `${formatTurnoutRatio(stats.turnout)} checked in · ${stats.turnout.noShows.toLocaleString()} no-show${stats.turnout.noShows === 1 ? "" : "s"}`
-          }
+          caption={turnout.total === 0 ? "No registrations or check-ins yet" : `${turnout.checkedIn} of ${turnout.total} checked in · ${turnout.notCheckedIn} not checked in`}
         />
       </div>
 
       {sessionRegistrations.length > 0 && <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard icon={<Users className="size-4" />} label="Expected" value={registrationStats.expected} />
-        <StatCard icon={<UserCheck className="size-4" />} label="Expected checked in" value={registrationStats.checkedIn} />
-        <StatCard icon={<Users className="size-4" />} label="Expected but not checked in" value={registrationStats.notCheckedIn} />
-        <StatCard icon={<Target className="size-4" />} label="Expected attendance rate" value={formatTurnoutRate(registrationStats.rate)} />
+        <StatCard icon={<Users className="size-4" />} label="Registered for this session" value={registrationStats.expected} />
+        <StatCard icon={<UserCheck className="size-4" />} label="Checked in" value={registrationStats.checkedIn} />
+        <StatCard icon={<Users className="size-4" />} label="Not checked in" value={registrationStats.notCheckedIn} />
+        <StatCard icon={<Target className="size-4" />} label="Registration attendance rate" value={formatTurnoutRate(registrationStats.rate)} />
       </div>}
       <Tabs
         value={activeTab}
@@ -672,7 +668,7 @@ export function SessionAttendeesTable({
           <TabsTrigger value="attendees" className="after:-bottom-px">
             Attendees
           </TabsTrigger>
-          <TabsTrigger value="sessionRegistration" className="after:-bottom-px">Expected ({sessionRegistrations.length})</TabsTrigger>
+          <TabsTrigger value="sessionRegistration" className="after:-bottom-px">Registered for this session ({sessionRegistrations.length})</TabsTrigger>
           <TabsTrigger value="breakouts" className="after:-bottom-px">
             Breakout Groups
           </TabsTrigger>
@@ -721,7 +717,7 @@ export function SessionAttendeesTable({
           </div>
         )}
 
-        <TabsContent value="sessionRegistration" className="mt-0"><SessionRegistrationRoster eventId={eventId} rows={expectedRows} /></TabsContent>
+        <TabsContent value="sessionRegistration" className="mt-0"><SessionRegistrationRoster eventId={eventId} rows={registeredRows} /></TabsContent>
         <TabsContent value="attendees" className="mt-0">
           {rows.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
@@ -773,7 +769,7 @@ export function SessionAttendeesTable({
                         up down the right edge like a column. */}
                     <div className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
                       <TypeBadge attendee={a} />
-                      {a.hasSessionRegistration && <Badge variant="secondary">Expected</Badge>}
+                      {a.hasSessionRegistration && <Badge variant="secondary">Registered</Badge>}
                       <span className="min-w-0 flex-1 truncate">
                         {a.breakoutGroupNames.length > 0 ? (
                           a.breakoutGroupNames.join(", ")
