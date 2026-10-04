@@ -65,7 +65,10 @@ describe("session registration", () => {
       createRegistrant(event.id, input(event.id, occurrence.id), member.id),
       createRegistrant(event.id, input(event.id, occurrence.id), member.id),
     ])
-    expect(results.every((r) => r.success)).toBe(true)
+    expect(results).toEqual([
+      expect.objectContaining({ success: true }),
+      expect.objectContaining({ success: true }),
+    ])
     expect(await db.eventRegistrant.count()).toBe(1)
     expect(await db.sessionRegistration.count()).toBe(1)
   })
