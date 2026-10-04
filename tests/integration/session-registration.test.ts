@@ -31,6 +31,22 @@ async function volunteer(seedData: Awaited<ReturnType<typeof seed>>) {
 }
 
 describe("session registration", () => {
+  it("uses the session series title when available and falls back to the event name", async () => {
+    const { event, occurrence } = await seed()
+    expect((await registrationSessionTargets(event.id))?.[0].label).toBe("Sunday · Sun, Oct 4, 2026")
+    const series = await db.eventOccurrenceSeries.create({ data: {
+      eventId: event.id, title: "  Growing Together  ", startDate: occurrence.date, endDate: occurrence.date,
+    } })
+    await db.eventOccurrence.update({ where: { id: occurrence.id }, data: { seriesId: series.id } })
+    expect((await registrationSessionTargets(event.id))?.[0].label).toBe("Growing Together · Sun, Oct 4, 2026")
+    const cluster = await db.eventCluster.create({ data: {
+      name: "Day", publicToken: "named-session", sessionRegistrationEnabled: true,
+      events: { create: { eventId: event.id, occurrenceId: occurrence.id } },
+    } })
+    expect((await registrationSessionTargets(undefined, cluster.id))?.[0].label).toBe("Growing Together · Sun, Oct 4, 2026")
+    await db.eventOccurrenceSeries.update({ where: { id: series.id }, data: { title: " " } })
+    expect((await registrationSessionTargets(event.id))?.[0].label).toBe("Sunday · Sun, Oct 4, 2026")
+  })
   it.each(["Recurring", "MultiDay"] as const)("creates a session registration for a closed %s session without attendance and reuses it", async (type) => {
     const { event, occurrence, member } = await seed(type)
     const first = await createRegistrant(event.id, input(event.id, occurrence.id), member.id)

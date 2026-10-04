@@ -56,6 +56,21 @@ async function submit(page: import("@playwright/test").Page) {
   await page.getByRole("button", { name: "Register", exact: true }).click()
 }
 
+test("a named session is highlighted above its date", async ({ page, sessionRegistration }) => {
+  const seriesId = randomUUID()
+  await sessionRegistration.client.query(`INSERT INTO "EventOccurrenceSeries" (id, "eventId", title, "startDate", "endDate", "updatedAt") VALUES ($1, $2, 'Growing Together', '2026-10-04', '2026-10-04', NOW())`, [seriesId, sessionRegistration.eventId])
+  await sessionRegistration.client.query(`UPDATE "EventOccurrence" SET "seriesId" = $1 WHERE id = $2`, [seriesId, sessionRegistration.occurrenceId])
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto(`/events/${sessionRegistration.eventId}/register`)
+  const card = page.getByRole("status", { name: "Session registration", exact: true })
+  await expect(card.getByRole("heading", { name: "Growing Together", exact: true })).toBeVisible()
+  await expect(card.getByText("Sun, Oct 4, 2026", { exact: true })).toBeVisible()
+  await expect(card.getByRole("heading", { name: "Session Sunday", exact: true })).toHaveCount(0)
+  await page.screenshot({ path: "/private/tmp/churchie-named-session-mobile.png", fullPage: true })
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.screenshot({ path: "/private/tmp/churchie-named-session-desktop.png", fullPage: true })
+})
+
 test("a volunteer explicitly registers as a participant and can confirm the same session again", async ({ page, sessionRegistration }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   const committeeId = randomUUID(), roleId = randomUUID(), volunteerId = randomUUID()

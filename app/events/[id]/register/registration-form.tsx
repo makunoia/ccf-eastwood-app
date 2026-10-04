@@ -349,8 +349,8 @@ function SessionRegistrationCard({ targets }: { targets?: SessionTarget[] | null
             const date = separator < 0 ? null : target.label.slice(separator + 3)
             return (
               <div key={target.eventId} className="min-w-0">
-                {date && <p className="text-2xl font-semibold leading-tight tracking-tight text-foreground text-pretty">{date}</p>}
-                <h2 className="mt-2 text-base font-medium leading-snug text-foreground">{name}</h2>
+                <h2 className="text-2xl font-semibold leading-snug tracking-tight text-foreground text-pretty">{name}</h2>
+                {date && <p className="mt-2 text-lg font-medium leading-snug text-foreground">{date}</p>}
               </div>
             )
           })}

@@ -17,22 +17,22 @@ export async function registrationSessionTargets(eventId?: string, clusterId?: s
       where: { id: clusterId },
       select: { sessionRegistrationEnabled: true, events: { select: {
         event: { select: { id: true, name: true, type: true } },
-        occurrence: { select: { id: true, date: true } },
+        occurrence: { select: { id: true, date: true, series: { select: { title: true } } } },
       } } },
     })
     if (!cluster?.sessionRegistrationEnabled) return null
     return cluster.events.filter((link) => link.event.type !== "OneTime").map((link) => ({
       eventId: link.event.id, occurrenceId: link.occurrence?.id ?? null,
-      label: `${link.event.name} · ${link.occurrence ? formatOccurrenceDate(link.occurrence.date) : "No session linked"}`,
+      label: `${link.occurrence?.series?.title.trim() || link.event.name} · ${link.occurrence ? formatOccurrenceDate(link.occurrence.date) : "No session linked"}`,
     }))
   }
   const event = await db.event.findUnique({ where: { id: eventId }, select: {
     id: true, name: true, type: true, sessionRegistrationEnabled: true,
   } })
   if (!event?.sessionRegistrationEnabled || event.type === "OneTime") return null
-  const session = await db.eventOccurrence.findFirst({ where: { eventId }, orderBy: [...LATEST_SESSION_FIRST], select: { id: true, date: true } })
+  const session = await db.eventOccurrence.findFirst({ where: { eventId }, orderBy: [...LATEST_SESSION_FIRST], select: { id: true, date: true, series: { select: { title: true } } } })
   return [{ eventId: event.id, occurrenceId: session?.id ?? null,
-    label: `${event.name} · ${session ? formatOccurrenceDate(session.date) : "No session available"}` }]
+    label: `${session?.series?.title.trim() || event.name} · ${session ? formatOccurrenceDate(session.date) : "No session available"}` }]
 }
 
 export function validateSessionTargets(targets: SessionTarget[] | null, displayed: Record<string, string | null> | undefined, eventIds: string[]) {
