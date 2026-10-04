@@ -45,7 +45,7 @@ async function identify(page: import("@playwright/test").Page, fixture: SessionR
   await expect(sessionCard).toHaveCount(1)
   await expect(sessionCard.getByRole("heading", { name: "Session Sunday", exact: true })).toBeVisible()
   await expect(sessionCard.getByText("Sun, Oct 4, 2026", { exact: true })).toBeVisible()
-  await page.screenshot({ path: `/private/tmp/churchie-sessionRegistration-session-${page.viewportSize()?.width}.png`, fullPage: true })
+  await page.screenshot({ path: test.info().outputPath(`churchie-sessionRegistration-session-${page.viewportSize()?.width}.png`), fullPage: true })
   await page.getByRole("textbox", { name: "Mobile Number", exact: true }).fill(fixture.phone.replace(/\D/g, "").replace(/^63/, ""))
   await page.getByRole("button", { name: "Continue", exact: true }).click()
   await page.getByRole("button", { name: "Yes, that's me", exact: true }).click()
@@ -66,9 +66,9 @@ test("a named session is highlighted above its date", async ({ page, sessionRegi
   await expect(card.getByRole("heading", { name: "Growing Together", exact: true })).toBeVisible()
   await expect(card.getByText("Sun, Oct 4, 2026", { exact: true })).toBeVisible()
   await expect(card.getByRole("heading", { name: "Session Sunday", exact: true })).toHaveCount(0)
-  await page.screenshot({ path: "/private/tmp/churchie-named-session-mobile.png", fullPage: true })
+  await page.screenshot({ path: test.info().outputPath("churchie-named-session-mobile.png"), fullPage: true })
   await page.setViewportSize({ width: 1280, height: 900 })
-  await page.screenshot({ path: "/private/tmp/churchie-named-session-desktop.png", fullPage: true })
+  await page.screenshot({ path: test.info().outputPath("churchie-named-session-desktop.png"), fullPage: true })
 })
 
 test("a volunteer explicitly registers as a participant and can confirm the same session again", async ({ page, sessionRegistration }) => {
@@ -87,7 +87,7 @@ test("a volunteer explicitly registers as a participant and can confirm the same
   await page.getByRole("button", { name: "Register as a participant for this session" }).click()
   await submit(page)
   await expect(page.getByText(/You’re already registered for Session Sunday/)).toBeVisible()
-  await page.screenshot({ path: "/private/tmp/churchie-sessionRegistration-registration.png", fullPage: true })
+  await page.screenshot({ path: test.info().outputPath("churchie-sessionRegistration-registration.png"), fullPage: true })
 })
 
 test("a changed active session is reviewed before registration is saved", async ({ page, sessionRegistration }) => {
@@ -121,7 +121,7 @@ test("admin session and breakout rosters show expected participants", async ({ a
   await expect(page.getByText("Session registration", { exact: true })).toBeVisible()
   await expect(page.getByRole("switch", { name: "Enable session registration", exact: true })).toBeChecked()
   await expect(page.getByText("Sun, Oct 4, 2026", { exact: true })).toBeVisible()
-  await page.screenshot({ path: "/private/tmp/churchie-session-registration-setting.png", fullPage: true })
+  await page.screenshot({ path: test.info().outputPath("churchie-session-registration-setting.png"), fullPage: true })
   const registrantId = randomUUID(), groupId = randomUUID()
   await sessionRegistration.client.query(`INSERT INTO "EventModule" (id, "eventId", type, "updatedAt") VALUES ($1, $2, 'Breakout', NOW())`, [randomUUID(), sessionRegistration.eventId])
   await sessionRegistration.client.query(`INSERT INTO "EventRegistrant" (id, "eventId", "memberId", "updatedAt") VALUES ($1, $2, $3, NOW())`, [registrantId, sessionRegistration.eventId, sessionRegistration.memberId])
@@ -140,7 +140,7 @@ test("admin session and breakout rosters show expected participants", async ({ a
   await page.getByRole("tab", { name: "Registered for this session (1)", exact: true }).click()
   await expect(page.getByRole("link", { name: "Maria Session", exact: true })).toBeVisible()
   await expect(page.getByRole("cell", { name: "Not checked in", exact: true })).toBeVisible()
-  await page.screenshot({ path: "/private/tmp/churchie-sessionRegistration-roster.png", fullPage: true })
+  await page.screenshot({ path: test.info().outputPath("churchie-sessionRegistration-roster.png"), fullPage: true })
   await page.goto(`/event/${sessionRegistration.eventId}/breakouts/${groupId}`)
   await expect(page.getByRole("cell", { name: "Expected", exact: true })).toBeVisible()
 })
