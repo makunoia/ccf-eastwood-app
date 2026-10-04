@@ -649,7 +649,6 @@ export function SessionAttendeesTable({
           value={formatTurnoutRate(turnout.rate)}
           turnoutBar={{ checkedIn: turnout.checkedIn, total: turnout.total }}
           icon={<Target className="size-4" />}
-          caption={turnout.total === 0 ? "No registrations or check-ins yet" : `${turnout.checkedIn} of ${turnout.total} checked in · ${turnout.notCheckedIn} not checked in`}
         />
       </div>
 

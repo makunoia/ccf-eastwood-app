@@ -337,8 +337,8 @@ function SessionRegistrationCard({ targets }: { targets?: SessionTarget[] | null
   if (!targets?.length) return null
 
   return (
-    <Card role="status" aria-label="Session registration" className="py-5">
-      <CardHeader className="gap-3">
+    <Card role="status" aria-label="Session registration" className="py-4">
+      <CardHeader className="gap-2">
         <p className="text-sm font-medium text-muted-foreground">
           Registering for
         </p>
@@ -349,8 +349,8 @@ function SessionRegistrationCard({ targets }: { targets?: SessionTarget[] | null
             const date = separator < 0 ? null : target.label.slice(separator + 3)
             return (
               <div key={target.eventId} className="min-w-0">
-                <h2 className="text-2xl font-semibold leading-snug tracking-tight text-foreground text-pretty">{name}</h2>
-                {date && <p className="mt-2 text-lg font-medium leading-snug text-foreground">{date}</p>}
+                <h2 className="text-lg font-medium leading-snug text-foreground text-pretty">{name}</h2>
+                {date && <p className="mt-1 text-base leading-snug text-foreground">{date}</p>}
               </div>
             )
           })}
