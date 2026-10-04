@@ -392,7 +392,7 @@ function UnseatedCard({ eventId, count }: { eventId: string; count: number }) {
           <span className="text-muted-foreground/50">
             <UserX className="size-4" />
           </span>
-          Not at a table
+          Not in a breakout group
         </span>
         <span className="flex flex-wrap items-baseline gap-x-2">
           <span className="text-2xl font-semibold tracking-tight">{count}</span>
@@ -423,7 +423,7 @@ export default async function CatchMechAdminPage({
   // expected denominator, so the response card would read 100% while its members
   // stay Pending with nobody able to answer for them. Say so on the card itself.
   const unstaffedCaveat = stats.unstaffedGroupCount > 0
-    ? `${stats.unstaffedGroupCount} ${stats.unstaffedGroupCount === 1 ? "table has" : "tables have"} no facilitator — ${stats.unstaffedPeopleCount} ${stats.unstaffedPeopleCount === 1 ? "person" : "people"} nobody can confirm`
+    ? `${stats.unstaffedGroupCount} ${stats.unstaffedGroupCount === 1 ? "breakout group has" : "breakout groups have"} no facilitator — ${stats.unstaffedPeopleCount} ${stats.unstaffedPeopleCount === 1 ? "person" : "people"} nobody can confirm`
     : null
 
   const session = await auth()
@@ -437,7 +437,7 @@ export default async function CatchMechAdminPage({
         title="Catch Mech"
         description={
           scope.viaCluster
-            ? `Track DGroup confirmations from this event's own breakout groups and its tables at ${scope.clusterName ?? "the collab"}`
+            ? `Track DGroup confirmations from this event's own breakout groups and its breakout groups at ${scope.clusterName ?? "the collab"}`
             : "Track DGroup confirmations from breakout groups"
         }
       />

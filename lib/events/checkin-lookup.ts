@@ -1,4 +1,4 @@
-import { recordSessionAttendance } from "@/lib/events/session-rsvp"
+import { recordSessionAttendance } from "@/lib/events/session-registration"
 import "server-only"
 
 import { db } from "@/lib/db"

@@ -230,7 +230,7 @@ export async function getClusterRegistrantRows(
         select: { firstName: true, lastName: true, phone: true, gender: true },
       },
       event: { select: { type: true } },
-      sessionRsvps: { select: { occurrenceId: true } },
+      sessionRegistrations: { select: { occurrenceId: true } },
       occurrenceAttendances: {
         ...occurrenceScopeFilter(events, scope),
         select: { occurrenceId: true, checkedInAt: true },
@@ -244,7 +244,7 @@ export async function getClusterRegistrantRows(
     const row = {
       id: r.id,
       kind: "Registrant" as const,
-      participantRsvp: !!linked && r.sessionRsvps.some((rsvp) => rsvp.occurrenceId === linked),
+      sessionParticipant: !!linked && r.sessionRegistrations.some((sessionRegistration) => sessionRegistration.occurrenceId === linked),
       eventId: r.eventId,
       eventType: r.event.type,
       memberId: r.memberId,
@@ -266,7 +266,7 @@ export async function getClusterRegistrantRows(
       registrationClusterId: r.clusterParticipations[0]?.clusterId ?? r.registrationClusterId,
       registeredAt: r.createdAt,
     }
-    return { ...row, onClusterDay: row.participantRsvp || isOnClusterDay(row, scope) }
+    return { ...row, onClusterDay: row.sessionParticipant || isOnClusterDay(row, scope) }
   })
   return rows.filter((row) => belongsOnClusterList(row, scope))
 }
@@ -366,7 +366,7 @@ export async function getClusterDayRows(
     getClusterRegistrantRows(events, scope),
     getClusterVolunteerRows(events, scope),
   ])
-  const participants = new Set(registrants.filter((r) => r.participantRsvp && r.memberId).map((r) => `${r.eventId}:${r.memberId}`))
+  const participants = new Set(registrants.filter((r) => r.sessionParticipant && r.memberId).map((r) => `${r.eventId}:${r.memberId}`))
   return [...registrants, ...volunteers.filter((v) => !participants.has(`${v.eventId}:${v.memberId}`))]
 }
 
@@ -621,7 +621,7 @@ export async function getClusterRegistrationExportRows(
         },
       },
       event: { select: { type: true } },
-      sessionRsvps: { select: { occurrenceId: true, occurrence: { select: { date: true } } } },
+      sessionRegistrations: { select: { occurrenceId: true, occurrence: { select: { date: true } } } },
       occurrenceAttendances: {
         ...occurrenceScopeFilter(events, scope),
         orderBy: { checkedInAt: "asc" },
@@ -687,8 +687,8 @@ export async function getClusterRegistrationExportRows(
         : (pickAttendance(r.occurrenceAttendances, linked)[0]?.checkedInAt ?? null)
     // Computed from `createdAt` itself, not the ISO string below — the day test
     // needs the instant, and stringifying first would hand it a Date-shaped lie.
-    const participantRsvp = !!linked && r.sessionRsvps.some((rsvp) => rsvp.occurrenceId === linked)
-    const onClusterDay = participantRsvp || isOnClusterDay(
+    const sessionParticipant = !!linked && r.sessionRegistrations.some((sessionRegistration) => sessionRegistration.occurrenceId === linked)
+    const onClusterDay = sessionParticipant || isOnClusterDay(
       {
         eventType: r.event.type,
         checkedIn: checkedInAt !== null,
@@ -708,8 +708,8 @@ export async function getClusterRegistrationExportRows(
 
     return {
       id: r.id,
-      participantRsvp,
-      rsvpSessions: participantRsvp ? `${events.find((e) => e.id === r.eventId)?.name ?? r.eventId} · ${r.sessionRsvps.find((rsvp) => rsvp.occurrenceId === linked)!.occurrence.date.toISOString().split("T")[0]}` : null,
+      sessionParticipant,
+      registeredSessions: sessionParticipant ? `${events.find((e) => e.id === r.eventId)?.name ?? r.eventId} · ${r.sessionRegistrations.find((sessionRegistration) => sessionRegistration.occurrenceId === linked)!.occurrence.date.toISOString().split("T")[0]}` : null,
       eventId: r.eventId,
       eventType: r.event.type,
       hasLinkedSession: linked !== null,
@@ -829,10 +829,10 @@ export async function getClusterRegistrationExportRows(
   // "wasn't here" from "we have no record of them" the way the roster does. A
   // Collab day has no series-only rows to carry: they are not part of that day's
   // list on any surface, and an export is no place to reintroduce them.
-  const participantMembers = new Set(allRows.filter((r) => r.participantRsvp && r.memberId).map((r) => `${r.eventId}:${r.memberId}`))
+  const participantMembers = new Set(allRows.filter((r) => r.sessionParticipant && r.memberId).map((r) => `${r.eventId}:${r.memberId}`))
   const rows = [
     ...allRows.filter((row) => belongsOnClusterList(row, scope)),
-    ...volunteerRows.filter((v) => !participantMembers.has(`${v.eventId}:${v.memberId}`)).map((v) => ({ ...v, participantRsvp: false, rsvpSessions: null })),
+    ...volunteerRows.filter((v) => !participantMembers.has(`${v.eventId}:${v.memberId}`)).map((v) => ({ ...v, sessionParticipant: false, registeredSessions: null })),
   ]
   //
   // Fold day rows first, then in cluster order: when two registrations disagree
@@ -861,7 +861,7 @@ export async function getClusterRegistrationExportRows(
       memberId,
       guestId,
       registrationClusterId,
-      participantRsvp: _participantRsvp,
+      sessionParticipant: _sessionParticipant,
       ...fields
     } = row
     const key = personKeyFor({ id, memberId, guestId })
@@ -899,7 +899,7 @@ export async function getClusterRegistrationExportRows(
     existing.registeredAt =
       earlier(existing.registeredAt, fields.registeredAt) ?? existing.registeredAt
     existing.checkedInAt = earlier(existing.checkedInAt, fields.checkedInAt)
-    existing.rsvpSessions = mergeList(existing.rsvpSessions ?? null, fields.rsvpSessions)
+    existing.registeredSessions = mergeList(existing.registeredSessions ?? null, fields.registeredSessions)
     existing.checkedIn = existing.checkedIn || fields.checkedIn
     existing.viaSharedForm =
       existing.viaSharedForm || registrationClusterId === clusterId

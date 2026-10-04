@@ -28,7 +28,7 @@ export type SessionAttendanceExportRow = {
   mobile: string
   email: string | null
   type: "Member" | "Guest" | "Volunteer"
-  rsvp?: boolean
+  sessionRegistration?: boolean
   checkedInAt: string | null // ISO datetime
 }
 
@@ -70,8 +70,8 @@ const COLUMNS: readonly ColumnDef[] = [
   { key: "email", label: "Email", group: "Personal Information", toggle: null, optional: true, value: (r) => r.email },
   { key: "type", label: "Type", group: "Personal Information", toggle: null, value: (r) => r.type },
 
-  { key: "rsvp", label: "RSVP", group: "Check-in", toggle: null, optional: true, hasData: (rows) => rows.some((r) => !!r.rsvp), value: (r) => r.rsvp ? "Expected" : "" },
-  { key: "attendance", label: "Attendance", group: "Check-in", toggle: null, optional: true, hasData: (rows) => rows.some((r) => !!r.rsvp), value: (r) => r.checkedInAt ? "Checked in" : "Not checked in" },
+  { key: "sessionRegistration", label: "Expected", group: "Check-in", toggle: null, optional: true, hasData: (rows) => rows.some((r) => !!r.sessionRegistration), value: (r) => r.sessionRegistration ? "Expected" : "" },
+  { key: "attendance", label: "Attendance", group: "Check-in", toggle: null, optional: true, hasData: (rows) => rows.some((r) => !!r.sessionRegistration), value: (r) => r.checkedInAt ? "Checked in" : "Not checked in" },
   { key: "checkedInAt", label: "Checked In", group: "Check-in", toggle: null, value: (r) => formatCheckInTime(r.checkedInAt) },
 ]
 

@@ -20,7 +20,7 @@ import { BreakoutAssignmentSetting } from "@/components/forms/breakout-assignmen
 import { RegistrationPageTab } from "@/components/forms/registration-page-tab"
 import { RegistrationWindowSetting } from "@/components/forms/registration-window-setting"
 import { VolunteerInfoUrlCopier } from "@/components/forms/volunteer-info-url-copier"
-import { SessionRsvpSetting } from "@/components/forms/session-rsvp-setting"
+import { SessionRegistrationSetting } from "@/components/forms/session-registration-setting"
 import { WalkInSessionSetting } from "@/components/forms/walk-in-session-setting"
 import { formatOccurrenceDate } from "@/lib/format/occurrence"
 import { latestWalkInSession } from "@/lib/events/walk-in-session"
@@ -64,7 +64,7 @@ export default async function EventFormEditorPage({
       registrationPageBannerUrl: true,
       walkInOccurrenceId: true,
       walkInSessionMode: true,
-      registrationRsvpEnabled: true,
+      sessionRegistrationEnabled: true,
     },
   })
   if (!event) notFound()
@@ -188,7 +188,7 @@ export default async function EventFormEditorPage({
               }}
             />
           )}
-          {event.type !== "OneTime" && <SessionRsvpSetting owner={{ eventId: id }} enabled={event.registrationRsvpEnabled}
+          {event.type !== "OneTime" && <SessionRegistrationSetting owner={{ eventId: id }} enabled={event.sessionRegistrationEnabled}
             sessionLabel={latestWalkIn ? formatOccurrenceDate(latestWalkIn.date) : "No sessions yet"} />}
           {formConfigs && (
             <EventFormBuilder

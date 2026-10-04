@@ -1,4 +1,4 @@
-export function sessionRsvpStats(expectedRegistrantIds: string[], presentRegistrantIds: string[]) {
+export function sessionRegistrationStats(expectedRegistrantIds: string[], presentRegistrantIds: string[]) {
   const expectedIds = new Set(expectedRegistrantIds)
   const presentIds = new Set(presentRegistrantIds)
   const expected = expectedIds.size

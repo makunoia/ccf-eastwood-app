@@ -144,7 +144,7 @@ export function WalkInSessionSetting({
       className="max-w-2xl"
       icon={IconCalendarEvent}
       title="Active session"
-      description={`The session used by general check-in and walk-in. Choose "Latest ${sessionNoun} created" to follow new sessions automatically. Registration RSVP also follows the latest session when enabled.`}
+      description={`The session used by general check-in and walk-in. Choose "Latest ${sessionNoun} created" to follow new sessions automatically. Registration session registration also follows the latest session when enabled.`}
       control={
         <Select value={value} onValueChange={handleChange} disabled={saving}>
           <SelectTrigger className="w-[15rem]" aria-label={`Walk-in ${sessionNoun}`}>

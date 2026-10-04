@@ -4,8 +4,8 @@ import { resolveActiveSession } from "@/lib/events/walk-in-session"
 import { personKeyFor } from "@/lib/clusters/roster"
 import type { BreakoutOwner } from "@/lib/breakouts/owner"
 
-/** Person identity, not the seated registrant row, joins a shared table to its RSVPs. */
-export async function breakoutRsvpKeys(owner: BreakoutOwner, occurrenceId?: string): Promise<Set<string>> {
+/** Person identity, not the seated registrant row, joins a shared table to its session registrations. */
+export async function breakoutSessionRegistrationKeys(owner: BreakoutOwner, occurrenceId?: string): Promise<Set<string>> {
   let occurrenceIds: string[]
   if ("clusterId" in owner) {
     const links = await db.eventClusterEvent.findMany({ where: { clusterId: owner.clusterId }, select: { occurrenceId: true } })
@@ -18,6 +18,6 @@ export async function breakoutRsvpKeys(owner: BreakoutOwner, occurrenceId?: stri
     occurrenceIds = session ? [session.id] : []
   }
   if (!occurrenceIds.length) return new Set()
-  const rsvps = await db.sessionRsvp.findMany({ where: { occurrenceId: { in: occurrenceIds } }, select: { registrant: { select: { id: true, memberId: true, guestId: true } } } })
-  return new Set(rsvps.map((rsvp) => personKeyFor(rsvp.registrant)))
+  const sessionRegistrations = await db.sessionRegistration.findMany({ where: { occurrenceId: { in: occurrenceIds } }, select: { registrant: { select: { id: true, memberId: true, guestId: true } } } })
+  return new Set(sessionRegistrations.map((sessionRegistration) => personKeyFor(sessionRegistration.registrant)))
 }

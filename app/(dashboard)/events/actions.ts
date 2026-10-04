@@ -49,7 +49,7 @@ import {
   seriesContainsDate,
 } from "@/lib/events/occurrence-series"
 import { isWithinRegistrationWindow } from "@/lib/events/registration-window"
-import { registrationRsvpTargets, validateRsvpTargets, RsvpTargetChanged, recordSessionAttendance, hasParticipantRsvp, type RsvpTarget } from "@/lib/events/session-rsvp"
+import { registrationSessionTargets, validateSessionTargets, SessionTargetChanged, recordSessionAttendance, hasSessionParticipantRegistration, type SessionTarget } from "@/lib/events/session-registration"
 import { latestWalkInSession } from "@/lib/events/walk-in-session"
 import { fieldsForContext } from "@/lib/forms/context-config"
 import { getEffectiveFormConfig } from "@/lib/forms/context-config-server"
@@ -106,7 +106,7 @@ export type RegistrationFailureReason = "alreadyRegistered" | "sessionChanged"
 
 type RegistrationResult<T> =
   | { success: true; data: T }
-  | { success: false; error: string; reason?: RegistrationFailureReason; rsvpTargets?: RsvpTarget[] }
+  | { success: false; error: string; reason?: RegistrationFailureReason; sessionTargets?: SessionTarget[] }
 
 async function requireWrite(): Promise<{ error: string } | null> {
   const session = await auth()
@@ -534,7 +534,7 @@ export async function lookupMemberForRegistration(params: {
           )
         : new Set<string>()
       if (params.eventId && params.occurrenceId) {
-        for (const member of members) if (await hasParticipantRsvp(params.eventId, member.id, params.occurrenceId)) volunteerMemberIds.delete(member.id)
+        for (const member of members) if (await hasSessionParticipantRegistration(params.eventId, member.id, params.occurrenceId)) volunteerMemberIds.delete(member.id)
       }
       return {
         matchType: "ambiguous",
@@ -546,7 +546,7 @@ export async function lookupMemberForRegistration(params: {
       const isVolunteer = params.eventId
         ? !!(await db.volunteer.findFirst({ where: { memberId: members[0].id, eventId: params.eventId }, select: { id: true } }))
         : false
-      return { ...members[0], matchedBy: "mobile", recordType: "member", isVolunteer: isVolunteer && !await hasParticipantRsvp(params.eventId!, members[0].id, params.occurrenceId) }
+      return { ...members[0], matchedBy: "mobile", recordType: "member", isVolunteer: isVolunteer && !await hasSessionParticipantRegistration(params.eventId!, members[0].id, params.occurrenceId) }
     }
   }
 
@@ -565,7 +565,7 @@ export async function lookupMemberForRegistration(params: {
           )
         : new Set<string>()
       if (params.eventId && params.occurrenceId) {
-        for (const member of members) if (await hasParticipantRsvp(params.eventId, member.id, params.occurrenceId)) volunteerMemberIds.delete(member.id)
+        for (const member of members) if (await hasSessionParticipantRegistration(params.eventId, member.id, params.occurrenceId)) volunteerMemberIds.delete(member.id)
       }
       return {
         matchType: "ambiguous",
@@ -577,7 +577,7 @@ export async function lookupMemberForRegistration(params: {
       const isVolunteer = params.eventId
         ? !!(await db.volunteer.findFirst({ where: { memberId: members[0].id, eventId: params.eventId }, select: { id: true } }))
         : false
-      return { ...members[0], matchedBy: "email", recordType: "member", isVolunteer: isVolunteer && !await hasParticipantRsvp(params.eventId!, members[0].id, params.occurrenceId) }
+      return { ...members[0], matchedBy: "email", recordType: "member", isVolunteer: isVolunteer && !await hasSessionParticipantRegistration(params.eventId!, members[0].id, params.occurrenceId) }
     }
   }
 
@@ -594,7 +594,7 @@ export async function lookupMemberForRegistration(params: {
       const isVolunteer = params.eventId
         ? !!(await db.volunteer.findFirst({ where: { memberId: member.id, eventId: params.eventId }, select: { id: true } }))
         : false
-      return { ...member, matchedBy: "nameBirthday", recordType: "member", isVolunteer: isVolunteer && !await hasParticipantRsvp(params.eventId!, member.id, params.occurrenceId) }
+      return { ...member, matchedBy: "nameBirthday", recordType: "member", isVolunteer: isVolunteer && !await hasSessionParticipantRegistration(params.eventId!, member.id, params.occurrenceId) }
     }
   }
 
@@ -673,16 +673,16 @@ export async function createRegistrant(
   // `confirmedGuestId`, minted by `revealProfileForRegistration` after the second
   // factor. Without it `touchedFields` is ignored — see `grantedTouchedFields`.
   grant?: string | null
-): Promise<RegistrationResult<{ id: string; breakoutGroup: AssignedBreakout; rsvpAlready?: boolean }>> {
+): Promise<RegistrationResult<{ id: string; breakoutGroup: AssignedBreakout; alreadyRegisteredForSession?: boolean }>> {
   const parsed = registrantSchema.safeParse(raw)
   if (!parsed.success) {
     return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" }
   }
 
   try {
-    const rsvpTargets = !walkIn ? await registrationRsvpTargets(eventId) : null
-    validateRsvpTargets(rsvpTargets, parsed.data.rsvpOccurrenceIds, [eventId])
-    const rsvpOccurrenceId = rsvpTargets?.[0]?.occurrenceId ?? null
+    const sessionTargets = !walkIn ? await registrationSessionTargets(eventId) : null
+    validateSessionTargets(sessionTargets, parsed.data.sessionOccurrenceIds, [eventId])
+    const sessionOccurrenceId = sessionTargets?.[0]?.occurrenceId ?? null
     /**
      * Which record this submission claims to be, when it claims to be one at all.
      * Resolved up front because both the window check and the duplicate guard need
@@ -717,7 +717,7 @@ export async function createRegistrant(
     // joined before it shut. The case it exists for is an admin who made a field
     // required after registration closed — enforcing the window there would make
     // the answer uncollectable by the only route that asks for it.
-    if (!walkIn && (!isAmend || rsvpOccurrenceId)) {
+    if (!walkIn && (!isAmend || sessionOccurrenceId)) {
       const event = await db.event.findUnique({
         where: { id: eventId },
         select: { registrationStart: true, registrationEnd: true },
@@ -816,7 +816,7 @@ export async function createRegistrant(
      *    crafted POST rewrite a stranger's answers, which is a worse hole than the
      *    one the duplicate guard closes.
      */
-    const isBlockedDuplicate = existingForConfirmed !== null && !walkIn && !isAmend && !rsvpOccurrenceId
+    const isBlockedDuplicate = existingForConfirmed !== null && !walkIn && !isAmend && !sessionOccurrenceId
 
     /** The person-facing half of the same fact, kept in one place. */
     const DUPLICATE_ERROR = "You're already registered for this event."
@@ -839,7 +839,7 @@ export async function createRegistrant(
     // same as before the extraction: guards fire before any profile write.
     if (confirmedMemberId) {
       // Volunteer guard — volunteers don't need to register as attendees
-      if (await findEventVolunteerConflict(eventId, confirmedMemberId) && !(rsvpOccurrenceId && parsed.data.registerAsParticipant) && !(walkIn && await hasParticipantRsvp(eventId, confirmedMemberId, walkIn.occurrenceId))) {
+      if (await findEventVolunteerConflict(eventId, confirmedMemberId) && !(sessionOccurrenceId && parsed.data.registerAsParticipant) && !(walkIn && await hasSessionParticipantRegistration(eventId, confirmedMemberId, walkIn.occurrenceId))) {
         return { success: false, error: "You're serving as a volunteer at this event — you don't need to register as an attendee." }
       }
 
@@ -855,7 +855,7 @@ export async function createRegistrant(
       const stored = await resolveConfirmedMember(confirmedMemberId, parsed.data, touched)
       const result = await completeEventRegistration({
         eventId,
-        rsvpOccurrenceId,
+        sessionOccurrenceId,
         person: { memberId: confirmedMemberId },
         data: parsed.data,
         breakoutPick,
@@ -884,7 +884,7 @@ export async function createRegistrant(
       const stored = await resolveConfirmedGuest(confirmedGuestId, parsed.data, touched)
       const result = await completeEventRegistration({
         eventId,
-        rsvpOccurrenceId,
+        sessionOccurrenceId,
         person: { guestId: confirmedGuestId },
         data: parsed.data,
         breakoutPick,
@@ -909,13 +909,13 @@ export async function createRegistrant(
       // No confirmed record means nothing was proven, so there is no amend here —
       // only the walk-in door reuses a registration on this path.
       const existingRegistrationId = await findExistingEventRegistration(eventId, { guestId })
-      if (existingRegistrationId && !walkIn && !rsvpOccurrenceId) {
+      if (existingRegistrationId && !walkIn && !sessionOccurrenceId) {
         return { success: false, error: DUPLICATE_ERROR, reason: "alreadyRegistered" }
       }
 
       const result = await completeEventRegistration({
         eventId,
-        rsvpOccurrenceId,
+        sessionOccurrenceId,
         person: { guestId, nickname: parsed.data.nickname ?? null },
         data: parsed.data,
         breakoutPick,
@@ -936,7 +936,7 @@ export async function createRegistrant(
       return { success: true, data: result }
     }
   } catch (error) {
-    if (error instanceof RsvpTargetChanged) return { success: false, error: error.message, reason: "sessionChanged", rsvpTargets: error.targets }
+    if (error instanceof SessionTargetChanged) return { success: false, error: error.message, reason: "sessionChanged", sessionTargets: error.targets }
     // A contact collision is the person's to fix, so it has to survive the
     // catch-all as itself rather than becoming "please try again".
     if (error instanceof ProfileCollisionError) {
@@ -1437,8 +1437,8 @@ export async function checkInToOccurrence(
   subject: CheckinSubject
 ): Promise<ActionResult> {
   try {
-    const occurrence = await db.eventOccurrence.findUnique({ where: { id: occurrenceId }, select: { isOpen: true, event: { select: { registrationRsvpEnabled: true } } } })
-    if (occurrence?.event.registrationRsvpEnabled && !occurrence.isOpen && !await isEventStaffViewer()) {
+    const occurrence = await db.eventOccurrence.findUnique({ where: { id: occurrenceId }, select: { isOpen: true, event: { select: { sessionRegistrationEnabled: true } } } })
+    if (occurrence?.event.sessionRegistrationEnabled && !occurrence.isOpen && !await isEventStaffViewer()) {
       return { success: false, error: "Check-in is closed for this session." }
     }
     await recordSessionAttendance(occurrenceId, subject)
@@ -1712,15 +1712,15 @@ async function resolveCheckinCandidates(
   matchedVolunteers: VolunteerLookupRow[],
   occurrenceId: string | null
 ): Promise<{ volunteers: CheckinRegistrantResult[]; registrants: CheckinRegistrantResult[] }> {
-  const participantRsvps = occurrenceId ? await db.sessionRsvp.findMany({ where: {
+  const sessionParticipants = occurrenceId ? await db.sessionRegistration.findMany({ where: {
     occurrenceId, registrantId: { in: matchedRegistrants.map((r) => r.id) },
   }, select: { registrantId: true, registrant: { select: { memberId: true } } } }) : []
-  const rsvpIds = new Set(participantRsvps.map((r) => r.registrantId))
-  const participantMemberIds = new Set(participantRsvps.map((r) => r.registrant.memberId))
+  const expectedRegistrantIds = new Set(sessionParticipants.map((r) => r.registrantId))
+  const participantMemberIds = new Set(sessionParticipants.map((r) => r.registrant.memberId))
   const volunteerRows = matchedVolunteers.filter((v) => !participantMemberIds.has(v.memberId))
   const volunteerMemberIds = new Set(volunteerRows.map((v) => v.memberId))
   const registrantRows = matchedRegistrants.filter((r) =>
-    rsvpIds.has(r.id) || (volunteerRows.length === 0 && !(r.memberId && volunteerMemberIds.has(r.memberId)))
+    expectedRegistrantIds.has(r.id) || (volunteerRows.length === 0 && !(r.memberId && volunteerMemberIds.has(r.memberId)))
   )
 
   const [volunteerEntries, registrantEntries] = await Promise.all([
@@ -1937,7 +1937,7 @@ export async function createHouseholdRegistration(
   RegistrationResult<{
     id: string
     familyId: string
-    rsvpAlready?: boolean
+    alreadyRegisteredForSession?: boolean
     breakoutGroup: AssignedBreakout
     householdRegistrantIds: string[]
     /** Household members who are serving as volunteers, so were not registered. */
@@ -2222,19 +2222,19 @@ export async function createHouseholdRegistration(
         select: { id: true },
       })
 
-      const householdRsvp = !walkIn ? await registrationRsvpTargets(eventId) : null
-      const householdRsvpId = householdRsvp?.[0]?.occurrenceId ?? null
-      validateRsvpTargets(householdRsvp, primaryRaw.rsvpOccurrenceIds, [eventId])
+      const householdSessionTargets = !walkIn ? await registrationSessionTargets(eventId) : null
+      const householdOccurrenceId = householdSessionTargets?.[0]?.occurrenceId ?? null
+      validateSessionTargets(householdSessionTargets, primaryRaw.sessionOccurrenceIds, [eventId])
       const registrantId = await withSerializableRetry(async (tx) => {
-        if (householdRsvpId) {
-          const { assertRsvpTarget } = await import("@/lib/events/session-rsvp")
-          await assertRsvpTarget(tx, eventId, householdRsvpId)
+        if (householdOccurrenceId) {
+          const { assertSessionTarget } = await import("@/lib/events/session-registration")
+          await assertSessionTarget(tx, eventId, householdOccurrenceId)
         }
         const held = await tx.eventRegistrant.findFirst({ where: { eventId, ...(personRef.memberId ? { memberId: personRef.memberId } : { guestId: personRef.guestId }) }, select: { id: true } })
         const registration = held ?? existingRegistrant ?? await tx.eventRegistrant.create({ data: { eventId, memberId: personRef.memberId ?? null, guestId: personRef.guestId ?? null }, select: { id: true } })
-        if (householdRsvpId) {
-          const key = { occurrenceId: householdRsvpId, registrantId: registration.id }
-          await tx.sessionRsvp.upsert({ where: { occurrenceId_registrantId: key }, create: key, update: {} })
+        if (householdOccurrenceId) {
+          const key = { occurrenceId: householdOccurrenceId, registrantId: registration.id }
+          await tx.sessionRegistration.upsert({ where: { occurrenceId_registrantId: key }, create: key, update: {} })
         }
         return registration.id
       })
@@ -2263,7 +2263,7 @@ export async function createHouseholdRegistration(
       data: {
         id: primaryRegistrantId,
         familyId,
-        rsvpAlready: primaryResult.data.rsvpAlready,
+        alreadyRegisteredForSession: primaryResult.data.alreadyRegisteredForSession,
         breakoutGroup: primaryResult.data.breakoutGroup,
         householdRegistrantIds,
         skippedVolunteers,

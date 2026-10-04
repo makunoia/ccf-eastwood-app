@@ -28,7 +28,7 @@ export type ClusterRegistrantRow = {
   /** The `EventRegistrant` id, or the `Volunteer` id when `kind` is Volunteer. */
   id: string
   kind: ClusterParticipantKind
-  participantRsvp?: boolean
+  sessionParticipant?: boolean
   eventId: string
   eventType: EventType
   memberId: string | null
@@ -258,7 +258,7 @@ export type ClusterRosterCell = {
   /** The `EventRegistrant` id, or the `Volunteer` id when `kind` is Volunteer. */
   registrantId: string
   kind: ClusterParticipantKind
-  participantRsvp?: boolean
+  sessionParticipant?: boolean
   checkedIn: boolean
   /** When they arrived on this event — see {@link ClusterRegistrantRow.checkedInAt}. */
   checkedInAt: Date | null
@@ -287,7 +287,7 @@ const STANDING_RANK: Record<ClusterStanding, number> = {
 
 /** Serving outranks attending; within a kind, the stronger standing wins. */
 function cellRank(cell: ClusterRosterCell): number {
-  return (cell.participantRsvp ? 20 : cell.kind === "Volunteer" ? 10 : 0) + STANDING_RANK[standingFor(cell)]
+  return (cell.sessionParticipant ? 20 : cell.kind === "Volunteer" ? 10 : 0) + STANDING_RANK[standingFor(cell)]
 }
 
 export type ClusterRosterPerson = {
@@ -371,7 +371,7 @@ export function buildClusterRoster(
     const cell: ClusterRosterCell = {
       registrantId: row.id,
       kind: row.kind,
-      participantRsvp: row.participantRsvp,
+      sessionParticipant: row.sessionParticipant,
       checkedIn: row.checkedIn,
       checkedInAt: row.checkedInAt,
       onClusterDay: row.onClusterDay,

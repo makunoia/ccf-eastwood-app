@@ -15,7 +15,7 @@ import {
   clusterNotApplicableToggles,
   clusterOffersBreakoutStep,
 } from "@/lib/forms/cluster-sections"
-import { SessionRsvpSetting } from "@/components/forms/session-rsvp-setting"
+import { SessionRegistrationSetting } from "@/components/forms/session-registration-setting"
 import { formatOccurrenceDate } from "@/lib/format/occurrence"
 import { ClusterFormSettings } from "../cluster-form-settings"
 
@@ -37,7 +37,7 @@ export default async function ClusterRegistrationFormPage({
       kind: true,
       publicToken: true,
       isOpen: true,
-      registrationRsvpEnabled: true,
+      sessionRegistrationEnabled: true,
       events: { select: { event: { select: { name: true, type: true } }, occurrence: { select: { date: true } } } },
       registrationStart: true,
       registrationEnd: true,
@@ -90,7 +90,7 @@ export default async function ClusterRegistrationFormPage({
         }}
       />
 
-      <SessionRsvpSetting owner={{ clusterId: id }} enabled={cluster.registrationRsvpEnabled} sessionLabel={cluster.events.filter((e) => e.event.type !== "OneTime").map((e) => `${e.event.name} · ${e.occurrence ? formatOccurrenceDate(e.occurrence.date) : "No session linked"}`).join("; ") || "No session-based events"} />
+      <SessionRegistrationSetting owner={{ clusterId: id }} enabled={cluster.sessionRegistrationEnabled} sessionLabel={cluster.events.filter((e) => e.event.type !== "OneTime").map((e) => `${e.event.name} · ${e.occurrence ? formatOccurrenceDate(e.occurrence.date) : "No session linked"}`).join("; ") || "No session-based events"} />
       <EventFormBuilder
         clusterId={id}
         initial={configs}
@@ -98,7 +98,7 @@ export default async function ClusterRegistrationFormPage({
         heading="Registration form"
         blurb={
           offersBreakout
-            ? "What the public form asks for. Name, mobile number, and email are always collected. Breakout picking offers this day's own tables; payment and household capture aren't available on the shared form."
+            ? "What the public form asks for. Name, mobile number, and email are always collected. Breakout picking offers this day's own breakout groups; payment and household capture aren't available on the shared form."
             : "What the public form asks for. Name, mobile number, and email are always collected; payment, breakout picking, and household capture aren't available on the shared form."
         }
         notApplicable={clusterNotApplicableToggles(cluster.kind)}

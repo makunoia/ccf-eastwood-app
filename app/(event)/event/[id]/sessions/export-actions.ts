@@ -47,28 +47,28 @@ export async function getSessionsAttendanceExport(
     const occurrences = await db.eventOccurrence.findMany({
       where: { eventId, ...(occurrenceId ? { id: occurrenceId } : {}) }, orderBy: { date: "asc" },
       select: { id: true, date: true, series: { select: { title: true } },
-        rsvps: { select: { registrant: { select: registrantSelect } } },
+        sessionRegistrations: { select: { registrant: { select: registrantSelect } } },
         attendees: { orderBy: { checkedInAt: "asc" }, select: { checkedInAt: true,
           registrant: { select: registrantSelect }, volunteer: { select: { member: { select: personSelect } } } } },
       },
     })
     const rows: SessionAttendanceExportRow[] = occurrences.flatMap((occurrence) => {
       const base = { sessionDate: occurrence.date.toISOString().split("T")[0], seriesTitle: occurrence.series?.title ?? null }
-      const rsvpIds = new Set(occurrence.rsvps.map((rsvp) => rsvp.registrant.id))
+      const expectedRegistrantIds = new Set(occurrence.sessionRegistrations.map((sessionRegistration) => sessionRegistration.registrant.id))
       const presentIds = new Set(occurrence.attendees.flatMap((a) => a.registrant ? [a.registrant.id] : []))
-      const participantRow = (registrant: (typeof occurrence.rsvps)[number]["registrant"], checkedInAt: Date | null): SessionAttendanceExportRow => {
+      const participantRow = (registrant: (typeof occurrence.sessionRegistrations)[number]["registrant"], checkedInAt: Date | null): SessionAttendanceExportRow => {
         const person = registrant.member ?? registrant.guest
         return { ...base, firstName: person?.firstName ?? registrant.firstName ?? "", lastName: person?.lastName ?? registrant.lastName ?? "",
           nickname: registrant.nickname ?? person?.nickname ?? null, mobile: person?.phone ?? registrant.mobileNumber ?? "",
-          email: person?.email ?? registrant.email ?? null, type: registrant.memberId ? "Member" : "Guest", rsvp: rsvpIds.has(registrant.id), checkedInAt: checkedInAt?.toISOString() ?? null }
+          email: person?.email ?? registrant.email ?? null, type: registrant.memberId ? "Member" : "Guest", sessionRegistration: expectedRegistrantIds.has(registrant.id), checkedInAt: checkedInAt?.toISOString() ?? null }
       }
       return [
         ...occurrence.attendees.map((attendee): SessionAttendanceExportRow => {
           if (attendee.registrant) return participantRow(attendee.registrant, attendee.checkedInAt)
           const member = attendee.volunteer!.member
-          return { ...base, firstName: member.firstName, lastName: member.lastName, nickname: member.nickname, mobile: member.phone ?? "", email: member.email, type: "Volunteer", rsvp: false, checkedInAt: attendee.checkedInAt.toISOString() }
+          return { ...base, firstName: member.firstName, lastName: member.lastName, nickname: member.nickname, mobile: member.phone ?? "", email: member.email, type: "Volunteer", sessionRegistration: false, checkedInAt: attendee.checkedInAt.toISOString() }
         }),
-        ...occurrence.rsvps.filter((rsvp) => !presentIds.has(rsvp.registrant.id)).map((rsvp) => participantRow(rsvp.registrant, null)),
+        ...occurrence.sessionRegistrations.filter((sessionRegistration) => !presentIds.has(sessionRegistration.registrant.id)).map((sessionRegistration) => participantRow(sessionRegistration.registrant, null)),
       ]
     })
 

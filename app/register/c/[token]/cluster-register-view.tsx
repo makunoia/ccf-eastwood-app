@@ -14,7 +14,7 @@ import { clusterOffersBreakoutStep } from "@/lib/forms/cluster-sections"
 import { fetchClusterBreakoutAvailability } from "@/lib/breakout-suggestion-server"
 import { resolveBreakoutNotice, withoutOccupancy } from "@/lib/breakout-suggestion"
 import { isEventStaffViewer } from "@/lib/events/staff-viewer"
-import { registrationRsvpTargets } from "@/lib/events/session-rsvp"
+import { registrationSessionTargets } from "@/lib/events/session-registration"
 import type { FormTheme } from "@/lib/forms/config"
 
 /**
@@ -131,10 +131,10 @@ export async function ClusterRegisterView({
   }
 
   const formContext = door ? "WalkIn" : "Register"
-  const [formFields, successMessage, rsvpTargets] = await Promise.all([
+  const [formFields, successMessage, sessionTargets] = await Promise.all([
     getClusterFormConfig(cluster.id, formContext),
     getClusterFormSuccessMessage(cluster.id, formContext),
-    door ? Promise.resolve(null) : registrationRsvpTargets(undefined, cluster.id),
+    door ? Promise.resolve(null) : registrationSessionTargets(undefined, cluster.id),
   ])
   // Payment is out of scope for the shared form and household capture doesn't fan
   // out. Breakout picking follows where cluster-owned tables exist — a Collab day
@@ -203,7 +203,7 @@ export async function ClusterRegisterView({
   return (
     <PublicFormShell theme={theme} alt={cluster.name}>
       <RegistrationForm
-        rsvpTargets={rsvpTargets}
+        sessionTargets={sessionTargets}
         cluster={{
           token,
           kind: cluster.kind,

@@ -80,7 +80,7 @@ export function VolunteerEntryForm({ eventId }: { eventId: string }) {
         <div className="space-y-1">
           <h1 className="text-xl font-semibold">You&apos;re facilitating {redirect.groupName}</h1>
           <p className="text-sm text-muted-foreground">
-            Facilitators answer for their whole table, not just the people they
+            Facilitators answer for their whole breakout group, not just the people they
             personally absorbed — so this one form covers everything.
           </p>
         </div>
@@ -100,8 +100,8 @@ export function VolunteerEntryForm({ eventId }: { eventId: string }) {
         <div className="space-y-1 text-center">
           <h1 className="text-xl font-semibold">Which group are you answering for?</h1>
           <p className="text-sm text-muted-foreground">
-            You facilitate more than one table. Facilitators answer for their whole
-            table, so pick the one you&apos;re reporting on.
+            You facilitate more than one breakout group. Facilitators answer for their whole
+            breakout group, so pick the one you&apos;re reporting on.
           </p>
         </div>
         {error && <p className="text-sm text-destructive">{error}</p>}

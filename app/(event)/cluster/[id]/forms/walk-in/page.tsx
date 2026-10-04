@@ -70,7 +70,7 @@ export default async function ClusterWalkInFormPage({
         heading="Walk-in form"
         blurb={
           offersBreakout
-            ? "What someone registering at the door is asked for — configured separately from the public form, so the door version can ask less. Breakout picking here only offers tables whose facilitator has checked in."
+            ? "What someone registering at the door is asked for — configured separately from the public form, so the door version can ask less. Breakout picking here only offers breakout groups whose facilitator has checked in."
             : "What someone registering at the door is asked for — configured separately from the public form, so the door version can ask less."
         }
         notApplicable={clusterNotApplicableToggles(cluster.kind)}

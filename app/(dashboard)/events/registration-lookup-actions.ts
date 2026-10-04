@@ -2,7 +2,7 @@
 
 import { headers } from "next/headers"
 import { z } from "zod"
-import { hasParticipantRsvp } from "@/lib/events/session-rsvp"
+import { hasSessionParticipantRegistration } from "@/lib/events/session-registration"
 import { db } from "@/lib/db"
 import { contactHintFrom, maskEmail, maskName } from "@/lib/contact-hint"
 import { findExistingEventRegistration } from "@/lib/events/registration-core"
@@ -445,7 +445,7 @@ export async function revealProfileForRegistration(
         recordType === "guest"
           ? (record as { claimedSatellite: string | null }).claimedSatellite
           : null,
-      isVolunteer: isVolunteer && !(eventId && context === "WalkIn" && await hasParticipantRsvp(eventId, recordId, occurrenceId)),
+      isVolunteer: isVolunteer && !(eventId && context === "WalkIn" && await hasSessionParticipantRegistration(eventId, recordId, occurrenceId)),
     }
 
     const standing = await resolveEventStanding(

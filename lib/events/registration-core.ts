@@ -1,6 +1,6 @@
 import { isBreakoutStaff } from "@/lib/breakouts/staffing"
 import { withSerializableRetry } from "@/lib/db/serializable-retry"
-import { assertRsvpTarget, convertVolunteerAttendance, recordSessionAttendance } from "@/lib/events/session-rsvp"
+import { assertSessionTarget, convertVolunteerAttendance, recordSessionAttendance } from "@/lib/events/session-registration"
 import "server-only"
 
 import { revalidatePath } from "next/cache"
@@ -978,7 +978,7 @@ async function mergeRegistrantAnswers(
  */
 export async function completeEventRegistration(opts: {
   eventId: string
-  rsvpOccurrenceId?: string | null
+  sessionOccurrenceId?: string | null
   person: PersonRef
   data: RegistrantData
   /** Explicit breakout pick already resolved against the caller's form config; null = auto-assign path. */
@@ -1016,15 +1016,15 @@ export async function completeEventRegistration(opts: {
    * cluster's shared form passes `"cluster"`; every per-event form leaves it.
    */
     breakoutSet?: BreakoutSet
-}): Promise<{ id: string; breakoutGroup: AssignedBreakout; rsvpAlready?: boolean }> {
+}): Promise<{ id: string; breakoutGroup: AssignedBreakout; alreadyRegisteredForSession?: boolean }> {
   const { eventId, person, data, breakoutPick, profile, clusterId, walkIn, allowOverCapacity, existingRegistrantId, touchedFields, skipAutoAssign, breakoutSet } = opts
 
-  let rsvpAlready = false
-  const rsvpOccurrenceId = opts.rsvpOccurrenceId
-  // Creating/reusing the series row and confirming RSVP is one serializable decision.
+  let alreadyRegisteredForSession = false
+  const sessionOccurrenceId = opts.sessionOccurrenceId
+  // Creating/reusing the series row and confirming session registration is one serializable decision.
   const registration = await withSerializableRetry(async (tx) => {
-    if (rsvpOccurrenceId) await assertRsvpTarget(tx, eventId, rsvpOccurrenceId, clusterId)
-    const held = rsvpOccurrenceId ? await tx.eventRegistrant.findFirst({ where: {
+    if (sessionOccurrenceId) await assertSessionTarget(tx, eventId, sessionOccurrenceId, clusterId)
+    const held = sessionOccurrenceId ? await tx.eventRegistrant.findFirst({ where: {
       eventId, ...("memberId" in person ? { memberId: person.memberId } : { guestId: person.guestId }),
     }, select: { id: true } }) : null
     const existingId = existingRegistrantId ?? held?.id
@@ -1039,19 +1039,19 @@ export async function completeEventRegistration(opts: {
         ...(clusterId ? { clusterParticipations: { create: { clusterId } } } : {}),
       }, select: { id: true },
     })
-    if (rsvpOccurrenceId) {
-      const key = { occurrenceId: rsvpOccurrenceId, registrantId: registrant.id }
-      rsvpAlready = !!await tx.sessionRsvp.findUnique({ where: { occurrenceId_registrantId: key } })
-      await tx.sessionRsvp.upsert({ where: { occurrenceId_registrantId: key }, create: key, update: {} })
-      await convertVolunteerAttendance(tx, rsvpOccurrenceId, registrant.id)
+    if (sessionOccurrenceId) {
+      const key = { occurrenceId: sessionOccurrenceId, registrantId: registrant.id }
+      alreadyRegisteredForSession = !!await tx.sessionRegistration.findUnique({ where: { occurrenceId_registrantId: key } })
+      await tx.sessionRegistration.upsert({ where: { occurrenceId_registrantId: key }, create: key, update: {} })
+      await convertVolunteerAttendance(tx, sessionOccurrenceId, registrant.id)
     }
     return { id: registrant.id, reused: !!existingId }
   })
   const registrantId = registration.id
   if (registration.reused) {
     if (clusterId) await stampClusterProvenance(registrantId, clusterId)
-    // An RSVP is not permission to overwrite payment or existing answers.
-    if (!rsvpOccurrenceId || touchedFields) await mergeRegistrantAnswers(registrantId, data, touchedFields)
+    // A session registration is not permission to overwrite payment or existing answers.
+    if (!sessionOccurrenceId || touchedFields) await mergeRegistrantAnswers(registrantId, data, touchedFields)
   }
 
   const breakoutGroup = await assignBreakoutForRegistrant(
@@ -1067,7 +1067,7 @@ export async function completeEventRegistration(opts: {
     !!skipAutoAssign,
     breakoutSet ?? "event",
     clusterId ?? undefined,
-    rsvpOccurrenceId ?? walkIn?.occurrenceId
+    sessionOccurrenceId ?? walkIn?.occurrenceId
   )
 
   // Someone who asked to join a DGroup becomes a request an admin can actually
@@ -1088,5 +1088,5 @@ export async function completeEventRegistration(opts: {
     await checkInWalkInRegistrant(registrantId, walkIn.occurrenceId)
   }
 
-  return { id: registrantId, breakoutGroup, ...(rsvpOccurrenceId ? { rsvpAlready } : {}) }
+  return { id: registrantId, breakoutGroup, ...(sessionOccurrenceId ? { alreadyRegisteredForSession } : {}) }
 }

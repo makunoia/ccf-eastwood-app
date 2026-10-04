@@ -39,7 +39,7 @@ export type ClusterCheckinSubjectRow = {
   eventId: string
   subject: ClusterCheckinSubject
   alreadyCheckedIn: boolean
-  participantRsvp?: boolean
+  sessionParticipant?: boolean
   firstName: string
   lastName: string
   nickname: string | null
@@ -123,7 +123,7 @@ export function buildClusterCheckinPeople(
 }
 
 function beats(candidate: ClusterCheckinSubjectRow, existing: ClusterCheckinSubjectRow): boolean {
-  if (!!candidate.participantRsvp !== !!existing.participantRsvp) return !!candidate.participantRsvp
+  if (!!candidate.sessionParticipant !== !!existing.sessionParticipant) return !!candidate.sessionParticipant
   if (candidate.subject.kind !== existing.subject.kind) {
     return candidate.subject.kind === "volunteer"
   }

@@ -1,4 +1,4 @@
-import { breakoutRsvpKeys } from "@/lib/breakouts/rsvp"
+import { breakoutSessionRegistrationKeys } from "@/lib/breakouts/session-registration"
 import { personKeyFor } from "@/lib/clusters/roster"
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
@@ -153,8 +153,8 @@ export default async function BreakoutGroupDetailPage({
   const surface = eventSurface(eventId)
   const confirmedVolunteers = [...eventData.volunteers]
 
-  const rsvpSession = (await searchParams)?.session
-  const rsvpKeys = await breakoutRsvpKeys({ eventId }, rsvpSession)
+  const explicitSessionId = (await searchParams)?.session
+  const expectedPersonKeys = await breakoutSessionRegistrationKeys({ eventId }, explicitSessionId)
 
   return (
     <>
@@ -218,7 +218,7 @@ export default async function BreakoutGroupDetailPage({
           ageRangeMin: group.ageRangeMin,
           ageRangeMax: group.ageRangeMax,
           memberLimit: group.memberLimit,
-          members: group.members.map((m) => ({ ...m, expected: rsvpKeys.has(personKeyFor(m.registrant)) })),
+          members: group.members.map((m) => ({ ...m, expected: expectedPersonKeys.has(personKeyFor(m.registrant)) })),
           eventType: eventData.type,
           totalOccurrences,
         }}

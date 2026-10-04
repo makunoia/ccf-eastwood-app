@@ -150,7 +150,7 @@ export async function submitCatchMechConfirmations(
       return { success: false, error: "Session not found or expired" }
     }
     if (!(await decisionsBelongToCatchMechSession(session.eventId, session.breakoutGroupId, decisions))) {
-      return { success: false, error: "A registrant is not part of this event's table" }
+      return { success: false, error: "A registrant is not part of this event's breakout group" }
     }
 
     const { candidates, declineGroupId } = resolveCatchMechTargets(session)
@@ -355,7 +355,7 @@ export async function createSmallGroupForTimothy(
       return { success: false, error: "Session not found or expired" }
     }
     if (!(await decisionsBelongToCatchMechSession(session.eventId, session.breakoutGroupId, decisions))) {
-      return { success: false, error: "A registrant is not part of this event's table" }
+      return { success: false, error: "A registrant is not part of this event's breakout group" }
     }
 
     const faciMember = session.facilitator.member

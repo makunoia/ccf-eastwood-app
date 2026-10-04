@@ -72,7 +72,7 @@ export function CatchMechEntryForm({ eventId, groups }: Props) {
         <div className="space-y-1 text-center">
           <p className="text-sm font-medium">Are you a facilitator?</p>
           <p className="text-xs text-muted-foreground">
-            Facilitators confirm the people at their table. Everyone else tells us who
+            Facilitators confirm the people in their breakout group. Everyone else tells us who
             joined their DGroup.
           </p>
         </div>
@@ -85,7 +85,7 @@ export function CatchMechEntryForm({ eventId, groups }: Props) {
             }}
             className="w-full rounded-lg border px-4 py-3 text-left transition-colors hover:bg-muted/50"
           >
-            <span className="block text-sm font-medium">Yes, I facilitated a table</span>
+            <span className="block text-sm font-medium">Yes, I facilitated a breakout group</span>
             <span className="block text-xs text-muted-foreground">
               Confirm who from your breakout group is joining a DGroup
             </span>
@@ -121,7 +121,7 @@ export function CatchMechEntryForm({ eventId, groups }: Props) {
         >
           ← Back
         </button>
-        <p className="text-sm font-medium text-center">Select your table</p>
+        <p className="text-sm font-medium text-center">Select your breakout group</p>
         {groups.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-4">
             No breakout groups with facilitators set up yet.

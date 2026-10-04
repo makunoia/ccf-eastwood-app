@@ -390,7 +390,7 @@ export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy
       <div className="text-center space-y-2 py-4">
         <p className="font-medium">All members reviewed</p>
         <p className="text-sm text-muted-foreground">
-          Everyone from your table has already been confirmed or declined.
+          Everyone from your breakout group has already been confirmed or declined.
         </p>
       </div>
     )

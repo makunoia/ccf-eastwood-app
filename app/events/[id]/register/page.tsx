@@ -15,7 +15,7 @@ import {
 } from "@/lib/forms/context-config-server"
 import { resolveEventBrand } from "@/lib/forms/event-brand"
 import { isWithinRegistrationWindow } from "@/lib/events/registration-window"
-import { registrationRsvpTargets } from "@/lib/events/session-rsvp"
+import { registrationSessionTargets } from "@/lib/events/session-registration"
 import { getEventCustomSteps } from "@/lib/forms/custom-steps-server"
 
 async function getEvent(id: string) {
@@ -101,11 +101,11 @@ export default async function RegisterPage({
   )
   if (!formConfig.isOpen || !withinWindow) return <FormClosed />
 
-  const [formFields, successMessage, customSteps, rsvpTargets] = await Promise.all([
+  const [formFields, successMessage, customSteps, sessionTargets] = await Promise.all([
     getEffectiveFormConfig(id, "Register"),
     getEventFormSuccessMessage(id, "Register"),
     getEventCustomSteps(id),
-    registrationRsvpTargets(id),
+    registrationSessionTargets(id),
   ])
 
   const lifeStages = formFields.fieldLifeStage
@@ -201,7 +201,7 @@ export default async function RegisterPage({
       }
     >
       <RegistrationForm
-        rsvpTargets={rsvpTargets}
+        sessionTargets={sessionTargets}
         eventId={event.id}
         eventName={event.name}
         config={formFields}

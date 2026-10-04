@@ -1,4 +1,4 @@
-import { breakoutRsvpKeys } from "@/lib/breakouts/rsvp"
+import { breakoutSessionRegistrationKeys } from "@/lib/breakouts/session-registration"
 import { personKeyFor } from "@/lib/clusters/roster"
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
@@ -174,9 +174,9 @@ export default async function ClusterBreakoutGroupDetailPage({
   // rather than a session tally: each person's own event's check-in for the day,
   // whichever of the two shapes it took, is projected onto `attendedAt` and the
   // occurrence list is emptied. `totalOccurrences: 0` then has nothing to count.
-  const rsvpKeys = await breakoutRsvpKeys({ clusterId })
+  const expectedPersonKeys = await breakoutSessionRegistrationKeys({ clusterId })
   const members = group.members.map((m) => ({
-    expected: rsvpKeys.has(personKeyFor(m.registrant)),
+    expected: expectedPersonKeys.has(personKeyFor(m.registrant)),
     ...m,
     registrant: {
       ...m.registrant,

@@ -3,68 +3,68 @@ import type { Prisma } from "@/app/generated/prisma/client"
 import { LATEST_SESSION_FIRST } from "@/lib/events/walk-in-session"
 import { formatOccurrenceDate } from "@/lib/format/occurrence"
 
-export type RsvpTarget = { eventId: string; occurrenceId: string | null; label: string }
-export class RsvpTargetChanged extends Error {
-  constructor(public targets: RsvpTarget[]) {
+export type SessionTarget = { eventId: string; occurrenceId: string | null; label: string }
+export class SessionTargetChanged extends Error {
+  constructor(public targets: SessionTarget[]) {
     super("The session has changed. Please review the session below and submit again.")
   }
 }
 
 /** Shared forms own their setting and pin; event forms follow their active session. */
-export async function registrationRsvpTargets(eventId?: string, clusterId?: string): Promise<RsvpTarget[] | null> {
+export async function registrationSessionTargets(eventId?: string, clusterId?: string): Promise<SessionTarget[] | null> {
   if (clusterId) {
     const cluster = await db.eventCluster.findUnique({
       where: { id: clusterId },
-      select: { registrationRsvpEnabled: true, events: { select: {
+      select: { sessionRegistrationEnabled: true, events: { select: {
         event: { select: { id: true, name: true, type: true } },
         occurrence: { select: { id: true, date: true } },
       } } },
     })
-    if (!cluster?.registrationRsvpEnabled) return null
+    if (!cluster?.sessionRegistrationEnabled) return null
     return cluster.events.filter((link) => link.event.type !== "OneTime").map((link) => ({
       eventId: link.event.id, occurrenceId: link.occurrence?.id ?? null,
       label: `${link.event.name} · ${link.occurrence ? formatOccurrenceDate(link.occurrence.date) : "No session linked"}`,
     }))
   }
   const event = await db.event.findUnique({ where: { id: eventId }, select: {
-    id: true, name: true, type: true, registrationRsvpEnabled: true,
+    id: true, name: true, type: true, sessionRegistrationEnabled: true,
   } })
-  if (!event?.registrationRsvpEnabled || event.type === "OneTime") return null
+  if (!event?.sessionRegistrationEnabled || event.type === "OneTime") return null
   const session = await db.eventOccurrence.findFirst({ where: { eventId }, orderBy: [...LATEST_SESSION_FIRST], select: { id: true, date: true } })
   return [{ eventId: event.id, occurrenceId: session?.id ?? null,
     label: `${event.name} · ${session ? formatOccurrenceDate(session.date) : "No session available"}` }]
 }
 
-export function validateRsvpTargets(targets: RsvpTarget[] | null, displayed: Record<string, string | null> | undefined, eventIds: string[]) {
+export function validateSessionTargets(targets: SessionTarget[] | null, displayed: Record<string, string | null> | undefined, eventIds: string[]) {
   if (!targets) return
   const selected = targets.filter((t) => eventIds.includes(t.eventId))
   if (selected.some((t) => !t.occurrenceId || displayed?.[t.eventId] !== t.occurrenceId)) {
-    throw new RsvpTargetChanged(targets)
+    throw new SessionTargetChanged(targets)
   }
 }
 
 /** Recheck the target inside the registration transaction, including configuration races. */
-export async function assertRsvpTarget(tx: Prisma.TransactionClient, eventId: string, occurrenceId: string, clusterId?: string | null) {
+export async function assertSessionTarget(tx: Prisma.TransactionClient, eventId: string, occurrenceId: string, clusterId?: string | null) {
   const occurrence = await tx.eventOccurrence.findFirst({ where: { id: occurrenceId, eventId }, select: { id: true } })
   let valid = !!occurrence
   if (clusterId) {
     const link = await tx.eventClusterEvent.findUnique({ where: { clusterId_eventId: { clusterId, eventId } }, select: {
-      occurrenceId: true, cluster: { select: { registrationRsvpEnabled: true } },
+      occurrenceId: true, cluster: { select: { sessionRegistrationEnabled: true } },
     } })
-    valid = valid && !!link?.cluster.registrationRsvpEnabled && link.occurrenceId === occurrenceId
+    valid = valid && !!link?.cluster.sessionRegistrationEnabled && link.occurrenceId === occurrenceId
   } else {
-    const event = await tx.event.findUnique({ where: { id: eventId }, select: { registrationRsvpEnabled: true } })
+    const event = await tx.event.findUnique({ where: { id: eventId }, select: { sessionRegistrationEnabled: true } })
     const latest = await tx.eventOccurrence.findFirst({ where: { eventId }, orderBy: [...LATEST_SESSION_FIRST], select: { id: true } })
-    valid = valid && !!event?.registrationRsvpEnabled && latest?.id === occurrenceId
+    valid = valid && !!event?.sessionRegistrationEnabled && latest?.id === occurrenceId
   }
-  if (!valid) throw new RsvpTargetChanged(await registrationRsvpTargets(eventId, clusterId ?? undefined) ?? [])
+  if (!valid) throw new SessionTargetChanged(await registrationSessionTargets(eventId, clusterId ?? undefined) ?? [])
 }
 
-/** Participant RSVP overrides serving for this occurrence only. */
-export async function participantRsvpForVolunteer(tx: Prisma.TransactionClient, occurrenceId: string, volunteerId: string) {
+/** Participant session registration overrides serving for this occurrence only. */
+export async function sessionParticipantForVolunteer(tx: Prisma.TransactionClient, occurrenceId: string, volunteerId: string) {
   const volunteer = await tx.volunteer.findUnique({ where: { id: volunteerId }, select: { memberId: true, eventId: true } })
   if (!volunteer?.eventId) return null
-  return tx.sessionRsvp.findFirst({ where: { occurrenceId, occurrence: { eventId: volunteer.eventId },
+  return tx.sessionRegistration.findFirst({ where: { occurrenceId, occurrence: { eventId: volunteer.eventId },
     registrant: { eventId: volunteer.eventId, memberId: volunteer.memberId } }, select: { registrantId: true } })
 }
 
@@ -86,13 +86,13 @@ export async function recordSessionAttendance(occurrenceId: string, subject: { k
   const { withSerializableRetry } = await import("@/lib/db/serializable-retry")
   await withSerializableRetry(async (tx) => {
     const occurrence = await tx.eventOccurrence.findUniqueOrThrow({ where: { id: occurrenceId }, select: { eventId: true } })
-    const override = subject.kind === "volunteer" ? await participantRsvpForVolunteer(tx, occurrenceId, subject.id) : null
+    const override = subject.kind === "volunteer" ? await sessionParticipantForVolunteer(tx, occurrenceId, subject.id) : null
     const resolved = override ? { kind: "registrant" as const, id: override.registrantId } : subject
     if (resolved.kind === "registrant") {
       const registrant = await tx.eventRegistrant.findFirst({ where: { id: resolved.id, eventId: occurrence.eventId }, select: { id: true } })
       if (!registrant) throw new Error("Invalid attendance subject")
-      const rsvp = await tx.sessionRsvp.findUnique({ where: { occurrenceId_registrantId: { occurrenceId, registrantId: resolved.id } } })
-      if (rsvp) await convertVolunteerAttendance(tx, occurrenceId, resolved.id)
+      const sessionRegistration = await tx.sessionRegistration.findUnique({ where: { occurrenceId_registrantId: { occurrenceId, registrantId: resolved.id } } })
+      if (sessionRegistration) await convertVolunteerAttendance(tx, occurrenceId, resolved.id)
       await tx.occurrenceAttendee.upsert({ where: { occurrenceId_registrantId: { occurrenceId, registrantId: resolved.id } }, create: { occurrenceId, registrantId: resolved.id, checkedInAt }, update: {} })
     } else {
       const volunteer = await tx.volunteer.findFirst({ where: { id: resolved.id, eventId: occurrence.eventId }, select: { id: true } })
@@ -102,7 +102,7 @@ export async function recordSessionAttendance(occurrenceId: string, subject: { k
   })
 }
 
-export async function hasParticipantRsvp(eventId: string, memberId: string, occurrenceId: string | null | undefined) {
+export async function hasSessionParticipantRegistration(eventId: string, memberId: string, occurrenceId: string | null | undefined) {
   if (!occurrenceId) return false
-  return !!await db.sessionRsvp.findFirst({ where: { occurrenceId, occurrence: { eventId }, registrant: { eventId, memberId } }, select: { id: true } })
+  return !!await db.sessionRegistration.findFirst({ where: { occurrenceId, occurrence: { eventId }, registrant: { eventId, memberId } }, select: { id: true } })
 }

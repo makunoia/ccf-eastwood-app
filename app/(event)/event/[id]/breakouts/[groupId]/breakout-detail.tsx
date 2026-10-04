@@ -428,7 +428,7 @@ function buildMemberColumns({
         )
       },
     },
-    { id: "rsvp", header: "RSVP", meta: { label: "RSVP", width: "status" }, cell: ({ row }) => row.original.expected ? <Badge variant="secondary">RSVP</Badge> : null },
+    { id: "sessionRegistration", header: "Expected", meta: { label: "Expected", width: "status" }, cell: ({ row }) => row.original.expected ? <Badge variant="secondary">Expected</Badge> : null },
     {
       id: "type",
       accessorFn: (row) => (row.registrant.memberId ? "Member" : "Guest"),

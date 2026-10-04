@@ -572,7 +572,7 @@ async function moveRegistrants(
       } },
     })
     folds.push({ kind: "breakout seat", eventName: owner, conflicts: [
-      { field: "table", kept: keptTable, dropped: seat.breakoutGroup.name },
+      { field: "breakout group", kept: keptTable, dropped: seat.breakoutGroup.name },
     ] })
   }
 
