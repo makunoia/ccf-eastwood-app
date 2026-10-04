@@ -16,6 +16,7 @@ async function getOccurrenceDetail(occurrenceId: string) {
   const occurrence = await db.eventOccurrence.findUnique({
     where: { id: occurrenceId },
     include: {
+      rsvps: { include: { registrant: { select: { id: true, firstName: true, lastName: true, memberId: true, member: { select: { firstName: true, lastName: true } }, guest: { select: { firstName: true, lastName: true } } } } } },
       event: {
         select: {
           id: true,
@@ -287,7 +288,7 @@ export default async function OccurrenceDetailPage({
     }
 
     const r = a.registrant!
-    const isVolunteer = r.memberId ? volunteerMemberIds.has(r.memberId) : false
+    const isVolunteer = !occurrence.rsvps.some((rsvp) => rsvp.registrantId === r.id) && (r.memberId ? volunteerMemberIds.has(r.memberId) : false)
     // Members and volunteers are established — never "New". Only first-time guests are
     // tagged New, and an admin can pin that on the row itself. The derived value travels
     // to the client too, so clearing an override is a plain toggle back.
@@ -308,6 +309,7 @@ export default async function OccurrenceDetailPage({
       id: a.id,
       kind: "registrant" as const,
       subjectId: r.id,
+      hasRsvp: occurrence.rsvps.some((rsvp) => rsvp.registrantId === r.id),
       name: getAttendeeName(r),
       checkedInAtFormatted,
       isReturner,
@@ -446,7 +448,7 @@ export default async function OccurrenceDetailPage({
                 eventId={id}
                 occurrenceId={occurrenceId}
                 sessionDate={occurrence.date.toISOString().split("T")[0]}
-                disabled={totalCount === 0}
+                disabled={totalCount === 0 && occurrence.rsvps.length === 0}
               />
             )}
           </>
@@ -457,6 +459,7 @@ export default async function OccurrenceDetailPage({
         <SessionAttendeesTable
           eventId={id}
           occurrenceId={occurrenceId}
+          rsvps={occurrence.rsvps.map((rsvp) => ({ registrantId: rsvp.registrantId, name: getAttendeeName(rsvp.registrant) ?? "Unknown", isMember: !!rsvp.registrant.memberId, checkedIn: false }))}
           attendees={attendeesWithStats}
           breakoutGroups={breakoutGroupOptions}
           breakoutStats={breakoutStats}

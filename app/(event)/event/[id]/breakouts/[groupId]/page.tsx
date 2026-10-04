@@ -1,3 +1,5 @@
+import { breakoutRsvpKeys } from "@/lib/breakouts/rsvp"
+import { personKeyFor } from "@/lib/clusters/roster"
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 
@@ -125,8 +127,10 @@ export async function generateMetadata({
 
 export default async function BreakoutGroupDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string; groupId: string }>
+  searchParams?: Promise<{ session?: string }>
 }) {
   const { id: eventId, groupId } = await params
   await requireEventModule(eventId, "Breakout")
@@ -148,6 +152,9 @@ export default async function BreakoutGroupDetailPage({
 
   const surface = eventSurface(eventId)
   const confirmedVolunteers = [...eventData.volunteers]
+
+  const rsvpSession = (await searchParams)?.session
+  const rsvpKeys = await breakoutRsvpKeys({ eventId }, rsvpSession)
 
   return (
     <>
@@ -211,7 +218,7 @@ export default async function BreakoutGroupDetailPage({
           ageRangeMin: group.ageRangeMin,
           ageRangeMax: group.ageRangeMax,
           memberLimit: group.memberLimit,
-          members: group.members,
+          members: group.members.map((m) => ({ ...m, expected: rsvpKeys.has(personKeyFor(m.registrant)) })),
           eventType: eventData.type,
           totalOccurrences,
         }}

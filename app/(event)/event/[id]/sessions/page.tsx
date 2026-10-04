@@ -16,6 +16,7 @@ async function getEventSessions(id: string) {
       id: true,
       name: true,
       type: true,
+      registrationRsvpEnabled: true,
       startDate: true,
       endDate: true,
       occurrences: {
@@ -87,6 +88,7 @@ export default async function SessionsPage({
             isOpen: occurrence.isOpen,
             isStandalone: occurrence.isStandalone,
             attendeeCount: occurrence._count.attendees,
+            requiresOpen: event.registrationRsvpEnabled,
             participantCount: participantsByOccurrence.get(occurrence.id) ?? 0,
             seriesId: occurrence.seriesId,
           })),
@@ -101,6 +103,7 @@ export default async function SessionsPage({
           date: o.date.toISOString(),
           isOpen: o.isOpen,
           attendeeCount: o._count.attendees,
+          requiresOpen: event.registrationRsvpEnabled,
           participantCount: participantsByOccurrence.get(o.id) ?? 0,
           isStandalone: o.isStandalone,
           seriesId: o.seriesId,

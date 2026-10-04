@@ -15,6 +15,8 @@ import {
   clusterNotApplicableToggles,
   clusterOffersBreakoutStep,
 } from "@/lib/forms/cluster-sections"
+import { SessionRsvpSetting } from "@/components/forms/session-rsvp-setting"
+import { formatOccurrenceDate } from "@/lib/format/occurrence"
 import { ClusterFormSettings } from "../cluster-form-settings"
 
 export const metadata: Metadata = {
@@ -35,6 +37,8 @@ export default async function ClusterRegistrationFormPage({
       kind: true,
       publicToken: true,
       isOpen: true,
+      registrationRsvpEnabled: true,
+      events: { select: { event: { select: { name: true, type: true } }, occurrence: { select: { date: true } } } },
       registrationStart: true,
       registrationEnd: true,
       logoUrl: true,
@@ -86,6 +90,7 @@ export default async function ClusterRegistrationFormPage({
         }}
       />
 
+      <SessionRsvpSetting owner={{ clusterId: id }} enabled={cluster.registrationRsvpEnabled} sessionLabel={cluster.events.filter((e) => e.event.type !== "OneTime").map((e) => `${e.event.name} · ${e.occurrence ? formatOccurrenceDate(e.occurrence.date) : "No session linked"}`).join("; ") || "No session-based events"} />
       <EventFormBuilder
         clusterId={id}
         initial={configs}

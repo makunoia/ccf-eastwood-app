@@ -20,6 +20,7 @@ import { BreakoutAssignmentSetting } from "@/components/forms/breakout-assignmen
 import { RegistrationPageTab } from "@/components/forms/registration-page-tab"
 import { RegistrationWindowSetting } from "@/components/forms/registration-window-setting"
 import { VolunteerInfoUrlCopier } from "@/components/forms/volunteer-info-url-copier"
+import { SessionRsvpSetting } from "@/components/forms/session-rsvp-setting"
 import { WalkInSessionSetting } from "@/components/forms/walk-in-session-setting"
 import { formatOccurrenceDate } from "@/lib/format/occurrence"
 import { latestWalkInSession } from "@/lib/events/walk-in-session"
@@ -63,6 +64,7 @@ export default async function EventFormEditorPage({
       registrationPageBannerUrl: true,
       walkInOccurrenceId: true,
       walkInSessionMode: true,
+      registrationRsvpEnabled: true,
     },
   })
   if (!event) notFound()
@@ -104,7 +106,7 @@ export default async function EventFormEditorPage({
   // Which session "latest" resolves to *right now*, read through the same helper
   // the public door uses so the card can never advertise a different session than
   // the one people would be registered into.
-  const latestWalkIn = showWalkInSession ? await latestWalkInSession(id) : null
+  const latestWalkIn = event.type !== "OneTime" ? await latestWalkInSession(id) : null
 
   /**
    * MultiDay and Recurring check-in has no event-wide open state to own: each
@@ -148,6 +150,9 @@ export default async function EventFormEditorPage({
           >
             Go to {sessionsLabel}
           </Link>
+          <Link href={`/events/${id}/checkin`} target="_blank" rel="noopener noreferrer" className="ml-4 text-sm font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 transition-colors hover:decoration-foreground">
+            View check-in form<span className="sr-only"> (opens in a new tab)</span>
+          </Link>
         </SettingCard>
       ) : (
         <FormConfigEditor
@@ -183,6 +188,8 @@ export default async function EventFormEditorPage({
               }}
             />
           )}
+          {event.type !== "OneTime" && <SessionRsvpSetting owner={{ eventId: id }} enabled={event.registrationRsvpEnabled}
+            sessionLabel={latestWalkIn ? formatOccurrenceDate(latestWalkIn.date) : "No sessions yet"} />}
           {formConfigs && (
             <EventFormBuilder
               eventId={id}

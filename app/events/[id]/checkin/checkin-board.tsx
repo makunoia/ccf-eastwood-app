@@ -327,7 +327,7 @@ export function CheckinBoard({ eventId, occurrenceId, lifeStages = [], ageRanges
       // someone here and then asking them would be offering a choice already made,
       // and the step would in fact never render — it skips anyone already seated.
       if (occurrenceId !== null && autoAssignBreakout && !offerBreakoutPicker) {
-        await autoAssignRegistrantToBreakout(matched.subjectId, eventId)
+        await autoAssignRegistrantToBreakout(matched.subjectId, eventId, "event", occurrenceId)
       }
       const breakout = await getRegistrantBreakoutGroupName(matched.subjectId, eventId)
       if (breakout) {

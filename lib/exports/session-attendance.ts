@@ -28,7 +28,8 @@ export type SessionAttendanceExportRow = {
   mobile: string
   email: string | null
   type: "Member" | "Guest" | "Volunteer"
-  checkedInAt: string // ISO datetime
+  rsvp?: boolean
+  checkedInAt: string | null // ISO datetime
 }
 
 export const SESSION_ATTENDANCE_GROUPS = [
@@ -47,7 +48,8 @@ export type SessionAttendanceColumnState = ExportColumnState<SessionAttendanceGr
  * Time of day only — the date is its own column, so repeating it in every
  * check-in cell would be noise. Matches what the sessions screen displays.
  */
-function formatCheckInTime(iso: string): string {
+function formatCheckInTime(iso: string | null): string {
+  if (!iso) return ""
   return new Date(iso).toLocaleTimeString("en-PH", {
     hour: "2-digit",
     minute: "2-digit",
@@ -68,6 +70,8 @@ const COLUMNS: readonly ColumnDef[] = [
   { key: "email", label: "Email", group: "Personal Information", toggle: null, optional: true, value: (r) => r.email },
   { key: "type", label: "Type", group: "Personal Information", toggle: null, value: (r) => r.type },
 
+  { key: "rsvp", label: "RSVP", group: "Check-in", toggle: null, optional: true, hasData: (rows) => rows.some((r) => !!r.rsvp), value: (r) => r.rsvp ? "Expected" : "" },
+  { key: "attendance", label: "Attendance", group: "Check-in", toggle: null, optional: true, hasData: (rows) => rows.some((r) => !!r.rsvp), value: (r) => r.checkedInAt ? "Checked in" : "Not checked in" },
   { key: "checkedInAt", label: "Checked In", group: "Check-in", toggle: null, value: (r) => formatCheckInTime(r.checkedInAt) },
 ]
 

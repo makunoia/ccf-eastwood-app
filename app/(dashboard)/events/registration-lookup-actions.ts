@@ -2,6 +2,7 @@
 
 import { headers } from "next/headers"
 import { z } from "zod"
+import { hasParticipantRsvp } from "@/lib/events/session-rsvp"
 import { db } from "@/lib/db"
 import { contactHintFrom, maskEmail, maskName } from "@/lib/contact-hint"
 import { findExistingEventRegistration } from "@/lib/events/registration-core"
@@ -217,6 +218,7 @@ function toCandidate(
 const lookupSchema = z.object({
   mobileNumber: z.string().min(1),
   eventId: z.string().nullish(),
+  occurrenceId: z.string().nullish(),
 })
 
 /**
@@ -281,6 +283,7 @@ const revealSchema = z.object({
   birthMonth: z.number().int().min(1).max(12).nullish(),
   birthYear: z.number().int().nullish(),
   eventId: z.string().nullish(),
+  occurrenceId: z.string().nullish(),
   /**
    * Which form is asking. The walk-in door and the public form can be configured
    * to collect different things, so "what does this profile still not answer?"
@@ -374,7 +377,7 @@ export async function revealProfileForRegistration(
 
   if (!(await rateLimitOk())) return { ok: false, reason: "rateLimited" }
 
-  const { recordId, recordType, birthMonth, birthYear, eventId, context } = parsed.data
+  const { recordId, recordType, birthMonth, birthYear, eventId, occurrenceId, context } = parsed.data
 
   try {
     const record =
@@ -442,7 +445,7 @@ export async function revealProfileForRegistration(
         recordType === "guest"
           ? (record as { claimedSatellite: string | null }).claimedSatellite
           : null,
-      isVolunteer,
+      isVolunteer: isVolunteer && !(eventId && context === "WalkIn" && await hasParticipantRsvp(eventId, recordId, occurrenceId)),
     }
 
     const standing = await resolveEventStanding(

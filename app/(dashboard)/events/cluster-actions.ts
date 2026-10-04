@@ -1,5 +1,6 @@
 "use server"
 
+import { registrationRsvpTargets, validateRsvpTargets, RsvpTargetChanged, hasParticipantRsvp, type RsvpTarget } from "@/lib/events/session-rsvp"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { db } from "@/lib/db"
@@ -91,7 +92,7 @@ import { MINISTRY_REQUIRED_ERROR } from "@/lib/clusters/copy"
 
 type ActionResult<T = void> =
   | { success: true; data: T }
-  | { success: false; error: string }
+  | { success: false; error: string; rsvpTargets?: RsvpTarget[] }
 
 async function requireWrite(): Promise<{ error: string } | null> {
   const session = await auth()
@@ -508,6 +509,9 @@ export type ClusterEventRegistrationResult = {
     | "volunteer" // serving as a volunteer at that event
     | "failed" // unexpected per-event failure
   registrantId?: string
+  rsvpAlready?: boolean
+  rsvpLabel?: string
+  rsvpTargets?: RsvpTarget[]
   breakoutGroup?: AssignedBreakout
   /** Walk-in mode only: the person was checked in on this event. */
   checkedIn?: boolean
@@ -761,6 +765,8 @@ export async function registerForCluster(
       targetEventIds = resolved.slice(0, 1)
     }
 
+    const rsvpTargets = !walkIn ? await registrationRsvpTargets(undefined, cluster.id) : null
+    validateRsvpTargets(rsvpTargets, parsed.data.rsvpOccurrenceIds, targetEventIds)
     // ── Fan out per selected event (partial success) ────────────────────────
     const results: ClusterEventRegistrationResult[] = []
     const eventsById = new Map(clusterEvents.map((e) => [e.id, e]))
@@ -776,11 +782,13 @@ export async function registerForCluster(
           continue
         }
 
+        const rsvpTarget = rsvpTargets?.find((t) => t.eventId === eventId)
+        const rsvpOccurrenceId = rsvpTarget?.occurrenceId ?? null
         const serving =
           "memberId" in person
             ? await findEventVolunteerRecord(eventId, person.memberId)
             : null
-        if (serving) {
+        if (serving && !(rsvpOccurrenceId && parsed.data.registerAsParticipant) && !(walkIn && "memberId" in person && await hasParticipantRsvp(eventId, person.memberId, linkedSessionByEvent.get(eventId)))) {
           // Serving instead of attending — no registrant row to create, and there
           // must not be one. But they DID just come through this day's form, and
           // that is the only evidence `volunteerIsOnClusterDay` accepts for a
@@ -815,7 +823,7 @@ export async function registerForCluster(
           cluster.id
         )
 
-        if (existing && disposition === "already" && !walkIn) {
+        if (existing && disposition === "already" && !walkIn && !rsvpOccurrenceId) {
           // Already registered, so there is nothing to create — but they DID just
           // sign up for this day, and the day roll-up reads that from the
           // provenance column. Stamping it here is the whole difference between
@@ -878,6 +886,7 @@ export async function registerForCluster(
 
         const completed = await completeEventRegistration({
           eventId,
+          rsvpOccurrenceId,
           person,
           data: parsed.data,
           // Null on a Parallel day, where the shared form has no picker — and
@@ -905,18 +914,21 @@ export async function registerForCluster(
           // as a fresh sign-up, still says "already".
           status: walkIn && existing ? "already" : "registered",
           registrantId: completed.id,
+          rsvpAlready: completed.rsvpAlready,
+          rsvpLabel: rsvpTarget?.label,
           breakoutGroup: completed.breakoutGroup,
           checkedIn: walkInForEvent !== null,
         })
         revalidatePath(`/event/${eventId}/registrants`)
-      } catch {
-        results.push({ eventId, eventName: event.name, status: "failed" })
+      } catch (error) {
+        results.push({ eventId, eventName: event.name, status: "failed", ...(error instanceof RsvpTargetChanged ? { rsvpTargets: error.targets } : {}) })
       }
     }
 
     revalidateClusterPaths(cluster.id)
     return { success: true, data: { results } }
   } catch (error) {
+    if (error instanceof RsvpTargetChanged) return { success: false, error: error.message, rsvpTargets: error.targets }
     // Person resolution happens once, before the fan-out, so a contact collision
     // sinks the whole submission rather than producing per-event partials — and
     // has to reach the person as itself, not as "please try again".
@@ -1450,6 +1462,8 @@ async function buildPeopleFromMatches(
 ): Promise<ClusterCheckinPerson[]> {
   const checkedIn = await loadClusterAttendance(ctx, matchedRegistrants, matchedVolunteers)
 
+  const rsvps = await db.sessionRsvp.findMany({ where: { OR: ctx.targets.filter((t) => t.occurrenceId).map((t) => ({ occurrenceId: t.occurrenceId!, registrant: { eventId: t.eventId } })), registrantId: { in: matchedRegistrants.map((r) => r.id) } }, select: { registrantId: true } })
+  const rsvpIds = new Set(rsvps.map((r) => r.registrantId))
   const rows: ClusterCheckinSubjectRow[] = []
 
   for (const r of matchedRegistrants) {
@@ -1459,6 +1473,7 @@ async function buildPeopleFromMatches(
       key: registrantIdentityKey(r),
       eventId: r.eventId,
       subject: { kind: "registrant", id: r.id },
+      participantRsvp: rsvpIds.has(r.id),
       alreadyCheckedIn: checkedIn.has(`registrant:${r.id}@${r.eventId}`),
       firstName,
       lastName,

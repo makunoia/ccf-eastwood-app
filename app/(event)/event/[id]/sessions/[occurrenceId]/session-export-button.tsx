@@ -33,10 +33,10 @@ export function SessionExportButton({
   >({
     title: "Export attendance",
     description:
-      "Everyone who checked in to this session — registrants and volunteers alike, one row each.",
+      "Expected participants and everyone checked in to this session, with RSVP and attendance recorded separately.",
     groups: SESSION_ATTENDANCE_GROUPS,
-    unit: ["check-in", "check-ins"],
-    emptyMessage: "No attendance to export yet.",
+    unit: ["person", "people"],
+    emptyMessage: "No RSVP or attendance to export yet.",
     loadingMessage: "Gathering check-ins…",
     load: () => getSessionsAttendanceExport(eventId, occurrenceId),
     download: (rows, selected) =>

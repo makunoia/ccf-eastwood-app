@@ -7,6 +7,8 @@ import { optionalBirthMonth, optionalBirthYear } from "@/lib/validations/birth-d
 // and the cluster shared form (registerForCluster). Lives outside the "use server"
 // action files so both can import the value.
 export const registrantSchema = z.object({
+  rsvpOccurrenceIds: z.record(z.string(), z.string().nullable()).optional(),
+  registerAsParticipant: z.boolean().optional().default(false),
   firstName: z.string().min(1, "First name is required").trim(),
   lastName: z.string().min(1, "Last name is required").trim(),
   nickname: z.string().nullish().transform((v) => (v === "" || v == null ? null : v.trim())),

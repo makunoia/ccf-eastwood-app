@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { Gender, Prisma } from "@/app/generated/prisma/client"
+import { recordSessionAttendance } from "@/lib/events/session-rsvp"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import { canImport } from "@/lib/permissions"
@@ -371,6 +372,12 @@ async function recordVolunteerAttendance(
   memberId: string,
   checkedInAt: Date
 ): Promise<"linked" | "skipped"> {
+  const participantRsvp = await db.sessionRsvp.findFirst({ where: { occurrenceId, registrant: { memberId, eventId } }, select: { registrantId: true } })
+  if (participantRsvp) {
+    const already = await db.occurrenceAttendee.findUnique({ where: { occurrenceId_registrantId: { occurrenceId, registrantId: participantRsvp.registrantId } } })
+    await recordSessionAttendance(occurrenceId, { kind: "registrant", id: participantRsvp.registrantId }, checkedInAt)
+    return already ? "skipped" : "linked"
+  }
   const memberRegistrants = await db.eventRegistrant.findMany({
     where: { eventId, memberId },
     select: {

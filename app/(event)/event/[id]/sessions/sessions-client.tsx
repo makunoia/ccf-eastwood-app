@@ -77,6 +77,7 @@ import {
 import { getSessionsAttendanceExport } from "./export-actions"
 
 export type OccurrenceRow = {
+  requiresOpen?: boolean
   id: string
   date: string
   /** Every check-in, volunteers included — what "N people checked in" reports. */
@@ -228,6 +229,7 @@ function SessionCard({
   const switchId = `checkin-${occurrence.id}`
   const kioskReachable = isCheckinLive({
     isOpen: occurrence.isOpen,
+    requiresOpen: occurrence.requiresOpen,
     date: occurrence.date,
     today,
   })

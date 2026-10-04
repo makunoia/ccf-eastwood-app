@@ -97,6 +97,7 @@ import {
 import { BreakoutPicker } from "@/components/breakouts/breakout-picker"
 import { MINISTRY_REQUIRED_ERROR } from "@/lib/clusters/copy"
 import { MinistryAvatar } from "@/components/ministry-avatar"
+import type { RsvpTarget } from "@/lib/events/session-rsvp"
 import type { CustomStep } from "@/lib/forms/custom-questions"
 
 const DAY_NAMES = ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"]
@@ -292,6 +293,7 @@ type ClusterConfig = {
 }
 
 type Props = {
+  rsvpTargets?: RsvpTarget[] | null
   eventId?: string
   eventName?: string
   /**
@@ -332,14 +334,19 @@ type Props = {
  * the shell is the one place that sees both.
  */
 function FormShell({
+  rsvpTargets,
   plain,
   className,
   children,
   ...props
-}: React.ComponentProps<typeof Card> & { plain?: boolean }) {
+}: React.ComponentProps<typeof Card> & { plain?: boolean; rsvpTargets?: RsvpTarget[] | null }) {
   const body = (
     <>
       <OfflineNotice />
+      {rsvpTargets && rsvpTargets.length > 0 && <div role="status" className="mx-6 mt-6 rounded-lg border bg-muted/40 p-3 text-sm">
+        <p className="font-medium">Registration confirms your RSVP for:</p>
+        {rsvpTargets.map((target) => <p key={target.eventId}>{target.label}</p>)}
+      </div>}
       {children}
     </>
   )
@@ -425,6 +432,7 @@ function DoneActions({
 
 export function RegistrationForm({
   eventId,
+  rsvpTargets = null,
   eventName = "",
   config,
   successMessage = null,
@@ -438,6 +446,10 @@ export function RegistrationForm({
   cluster,
   customSteps = [],
 }: Props) {
+  const [currentRsvpTargets, setCurrentRsvpTargets] = React.useState(rsvpTargets)
+  const [registerAsParticipant, setRegisterAsParticipant] = React.useState(false)
+  const [rsvpAlready, setRsvpAlready] = React.useState(false)
+  const rsvpEnabled = !!currentRsvpTargets?.length && !walkIn
   const plain = frame === "plain"
   const cfg = React.useMemo<EventFormConfigData>(
     () => ({ ...BARE_EVENT_FORM_CONFIG, ...config }),
@@ -863,6 +875,9 @@ export function RegistrationForm({
   }, [formStep])
 
   function handleReset() {
+    setCurrentRsvpTargets(rsvpTargets)
+    setRegisterAsParticipant(false)
+    setRsvpAlready(false)
     setCustomAnswers({})
     /**
      * Re-read the server's data for the next person.
@@ -988,6 +1003,7 @@ export function RegistrationForm({
       mobileNumber: form.mobileNumber,
       // Cluster mode has no single event, so there is no volunteer record to check.
       eventId: cluster ? null : eventId,
+      occurrenceId: walkIn?.occurrenceId,
     })
     setSubmitting(false)
 
@@ -1023,7 +1039,10 @@ export function RegistrationForm({
     grant: string | null,
     standing: { alreadyRegistered: boolean; fieldsStillNeeded: RequirableKey[] }
   ) {
-    if (profile.isVolunteer) {
+    if (profile.isVolunteer && !registerAsParticipant) {
+      setProfileSnapshot(profile)
+      setIdentityGrant(grant)
+      setForm((prev) => ({ ...prev, ...prefillFromProfile(profile) }))
       setMatchedMember({
         id: profile.recordId,
         firstName: profile.firstName,
@@ -1076,7 +1095,7 @@ export function RegistrationForm({
      * existing registration and checks the person in, so "you're already
      * registered" is not a refusal there, it's the normal case.
      */
-    if (standing.alreadyRegistered && !walkIn) {
+    if (standing.alreadyRegistered && !walkIn && !rsvpEnabled) {
       // A field the admin turned on (or made required) since they signed up is
       // the one thing still worth asking for. `fieldsStillNeeded` is empty in the
       // ordinary case, which is a plain terminal screen.
@@ -1111,6 +1130,7 @@ export function RegistrationForm({
       birthMonth: secondFactorMonth ? parseInt(secondFactorMonth, 10) : null,
       birthYear: secondFactorYear ? parseInt(secondFactorYear, 10) : null,
       eventId: cluster ? null : eventId,
+      occurrenceId: walkIn?.occurrenceId,
       // The door and the public form can collect different things, so "what does
       // this profile still not answer?" has to be asked of the right one.
       context: walkIn ? "WalkIn" : "Register",
@@ -1241,6 +1261,7 @@ export function RegistrationForm({
             // Cluster mode has no single event: volunteer conflicts are per-event
             // partial results at submit time, not an up-front block.
             eventId: cluster ? null : eventId,
+      occurrenceId: walkIn?.occurrenceId,
           })
           setSubmitting(false)
 
@@ -1281,8 +1302,8 @@ export function RegistrationForm({
    * the submit-side landing in `register()` instead: still a screen with somewhere
    * to go, just one step later for the people who skipped the gate.
    */
-  function handleEarlyConfirm(match: MatchedMember) {
-    if (match.isVolunteer) {
+  function handleEarlyConfirm(match: MatchedMember, participant = registerAsParticipant) {
+    if (match.isVolunteer && !participant) {
       setMatchedMember(match)
       setCandidates(null)
       setStep("volunteer-blocked")
@@ -1418,6 +1439,7 @@ export function RegistrationForm({
         birthMonth: hasBirthday ? parseInt(form.birthMonth, 10) : null,
         birthYear: hasBirthday ? parseInt(form.birthYear, 10) : null,
         eventId: cluster ? null : eventId,
+      occurrenceId: walkIn?.occurrenceId,
       })
       setSubmitting(false)
       if (match) {
@@ -1494,6 +1516,8 @@ export function RegistrationForm({
         dietaryOther:
           includeDietary && form.dietaryPreference === "Other" ? form.dietaryOther || null : null,
         paymentReference: includePayment ? form.paymentReference || null : null,
+        rsvpOccurrenceIds: currentRsvpTargets ? Object.fromEntries(currentRsvpTargets.map((t) => [t.eventId, t.occurrenceId])) : undefined,
+        registerAsParticipant,
         customResponses: customSteps.flatMap((s) => s.questions.flatMap((q) => customAnswers[q.id] == null || customAnswers[q.id] === "" || (Array.isArray(customAnswers[q.id]) && (customAnswers[q.id] as string[]).length === 0) ? [] : [{ questionId: q.id, answer: customAnswers[q.id] }])),
     }
 
@@ -1514,9 +1538,17 @@ export function RegistrationForm({
       )
       setSubmitting(false)
       if (result.success) {
+        const changed = result.data.results.find((r) => r.rsvpTargets)
+        if (changed) {
+          setCurrentRsvpTargets(changed.rsvpTargets ?? [])
+          window.scrollTo({ top: 0, behavior: "smooth" })
+          toast.error("The session has changed. Please review it and submit again. Other successful registrations have been saved.")
+          return
+        }
         setClusterResults(result.data.results)
         setStep("done")
       } else {
+        if (result.rsvpTargets) { setCurrentRsvpTargets(result.rsvpTargets); window.scrollTo({ top: 0, behavior: "smooth" }) }
         toast.error(result.error)
       }
       return
@@ -1566,6 +1598,7 @@ export function RegistrationForm({
     setSubmitting(false)
 
     if (result.success) {
+      if ("rsvpAlready" in result.data) setRsvpAlready(!!result.data.rsvpAlready)
       setAssignedBreakout(result.data.breakoutGroup)
       // Household members who are serving as volunteers aren't registered as
       // attendees — say so rather than letting them silently vanish.
@@ -1581,6 +1614,10 @@ export function RegistrationForm({
         )
       }
       setStep("done")
+    } else if (result.reason === "sessionChanged") {
+      setCurrentRsvpTargets(result.rsvpTargets ?? [])
+      window.scrollTo({ top: 0, behavior: "smooth" })
+      toast.error(result.error)
     } else if (result.reason === "alreadyRegistered") {
       /**
        * The backstop for the people step 0 can't catch: someone the dedup ladder
@@ -1626,6 +1663,7 @@ export function RegistrationForm({
     const anyVolunteer = clusterResults.some((r) => r.status === "volunteer")
     const anySucceeded = anyRegistered || anyVolunteer
     const statusLine = (r: ClusterEventRegistrationResult): string => {
+      if (r.rsvpLabel) return `You’re ${r.rsvpAlready ? "already " : ""}registered for ${r.rsvpLabel}`
       switch (r.status) {
         case "registered":
           return r.checkedIn ? "Registered · checked in" : "Registered"
@@ -1658,7 +1696,7 @@ export function RegistrationForm({
     const collapsedCheckedIn = collapsed && clusterResults.some((r) => r.checkedIn)
 
     return (
-      <FormShell plain={plain}>
+      <FormShell rsvpTargets={currentRsvpTargets} plain={plain}>
         <CardContent className="flex flex-col items-center gap-5 pt-10 pb-6">
           <div
             className={cn(
@@ -1787,7 +1825,7 @@ export function RegistrationForm({
         ].filter(Boolean)
       : []
     return (
-      <FormShell plain={plain}>
+      <FormShell rsvpTargets={currentRsvpTargets} plain={plain}>
         <CardContent className="flex flex-col items-center gap-5 pt-10 pb-6">
           <div className="flex size-16 items-center justify-center rounded-full bg-green-100">
             <IconCheck className="size-8 text-green-600" />
@@ -1797,7 +1835,7 @@ export function RegistrationForm({
               Welcome{displayName ? `, ${displayName}` : ""}!
             </p>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              {resolveSuccessMessage(successMessage, walkIn ? "WalkIn" : "Register", eventName)}
+              {rsvpEnabled ? `You’re ${rsvpAlready ? "already " : ""}registered for ${currentRsvpTargets?.[0]?.label}.` : resolveSuccessMessage(successMessage, walkIn ? "WalkIn" : "Register", eventName)}
             </p>
             {displayBreakout && (
               <div className="mt-3 rounded-xl border bg-muted/40 px-4 py-3 text-left space-y-0.5">
@@ -1821,7 +1859,7 @@ export function RegistrationForm({
   if (step === "identify") {
     return (
       <div className="space-y-4">
-        <FormShell plain={plain}>
+        <FormShell rsvpTargets={currentRsvpTargets} plain={plain}>
           <CardHeader>
             <CardTitle>What&apos;s your mobile number?</CardTitle>
             <CardDescription>
@@ -1863,7 +1901,7 @@ export function RegistrationForm({
             underlined line under the Continue button, which read as a way to
             dodge the form rather than the ordinary route for anyone we don't
             have on file yet. */}
-        <FormShell plain={plain}>
+        <FormShell rsvpTargets={currentRsvpTargets} plain={plain}>
           <CardContent className="space-y-3">
             <div className="space-y-1">
               <p className="text-sm font-medium text-foreground">First time with us?</p>
@@ -1896,7 +1934,7 @@ export function RegistrationForm({
   // ── Step 0: "Is this you?" — masked identity + second factor ──────────────
   if (step === "identify-confirm" && identifyMatch) {
     return (
-      <FormShell plain={plain}>
+      <FormShell rsvpTargets={currentRsvpTargets} plain={plain}>
         <CardHeader>
           <CardTitle>Is this you?</CardTitle>
           <CardDescription>
@@ -1961,7 +1999,7 @@ export function RegistrationForm({
   // ── Step 0: one number, several profiles (shared family handsets) ─────────
   if (step === "identify-ambiguous" && identifyCandidates) {
     return (
-      <FormShell plain={plain}>
+      <FormShell rsvpTargets={currentRsvpTargets} plain={plain}>
         <CardHeader>
           <CardTitle>Which one is you?</CardTitle>
           <CardDescription>
@@ -2022,7 +2060,7 @@ export function RegistrationForm({
     // plain dead end — which is still a screen with somewhere to go.
     const canAmend = identityGrant !== null
     return (
-      <FormShell plain={plain}>
+      <FormShell rsvpTargets={currentRsvpTargets} plain={plain}>
         <CardContent className="flex flex-col items-center gap-5 pt-10 pb-6">
           <div className="flex size-16 items-center justify-center rounded-full bg-green-100">
             <IconCheck className="size-8 text-green-600" />
@@ -2069,7 +2107,7 @@ export function RegistrationForm({
   if (step === "volunteer-blocked" && matchedMember) {
     const firstName = matchedMember.firstName
     return (
-      <FormShell plain={plain}>
+      <FormShell rsvpTargets={currentRsvpTargets} plain={plain}>
         <CardContent className="flex flex-col items-center gap-5 pt-10 pb-6">
           <div className="flex size-16 items-center justify-center rounded-full bg-primary/10">
             <IconCheck className="size-8 text-primary" />
@@ -2082,6 +2120,10 @@ export function RegistrationForm({
               You&apos;re serving as a volunteer at this event — you&apos;re already included and don&apos;t need to register as an attendee.
             </p>
           </div>
+          {rsvpEnabled && <Button className="h-auto w-full whitespace-normal py-3 text-center" onClick={() => {
+            setRegisterAsParticipant(true)
+            handleEarlyConfirm(matchedMember, true)
+          }}>Register as a participant for this session</Button>}
           <DoneActions walkIn={walkIn} onReset={handleReset} variant="outline" />
         </CardContent>
       </FormShell>
@@ -2090,7 +2132,7 @@ export function RegistrationForm({
 
   if (step === "disambiguate" && candidates) {
     return (
-      <FormShell plain={plain}>
+      <FormShell rsvpTargets={currentRsvpTargets} plain={plain}>
         <CardHeader>
           <CardTitle>Multiple profiles found</CardTitle>
           <CardDescription>
@@ -2136,7 +2178,7 @@ export function RegistrationForm({
 
   if (step === "confirm" && matchedMember) {
     return (
-      <FormShell plain={plain}>
+      <FormShell rsvpTargets={currentRsvpTargets} plain={plain}>
         <CardHeader>
           <CardTitle>Is this you?</CardTitle>
           <CardDescription>
@@ -2164,7 +2206,7 @@ export function RegistrationForm({
             <Button
               className="flex-1"
               onClick={() => {
-                if (matchedMember.isVolunteer) {
+                if (matchedMember.isVolunteer && !registerAsParticipant) {
                   setStep("volunteer-blocked")
                   return
                 }
@@ -2198,7 +2240,7 @@ export function RegistrationForm({
 
   if (step === "early-confirm" && matchedMember) {
     return (
-      <FormShell plain={plain}>
+      <FormShell rsvpTargets={currentRsvpTargets} plain={plain}>
         <CardHeader>
           <CardTitle>Is this you?</CardTitle>
           <CardDescription>
@@ -2246,7 +2288,7 @@ export function RegistrationForm({
 
   if (step === "early-disambiguate" && candidates) {
     return (
-      <FormShell plain={plain}>
+      <FormShell rsvpTargets={currentRsvpTargets} plain={plain}>
         <CardHeader>
           <CardTitle>Multiple profiles found</CardTitle>
           <CardDescription>
@@ -2288,7 +2330,7 @@ export function RegistrationForm({
   }
 
   return (
-    <FormShell plain={plain} ref={cardRef} className="pt-0">
+    <FormShell rsvpTargets={currentRsvpTargets} plain={plain} ref={cardRef} className="pt-0">
       {/* No bottom padding here, and none on the CardContent below: the Card's own
           `gap-6` is the single spacer between the header and the fields. Both used
           to add their own padding on top of that gap, which read as a title crowded
@@ -2341,6 +2383,10 @@ export function RegistrationForm({
 
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {cluster && rsvpEnabled && <div className="flex items-start gap-2">
+            <Checkbox id="rsvp-participant" checked={registerAsParticipant} onCheckedChange={(checked) => setRegisterAsParticipant(checked === true)} />
+            <Label htmlFor="rsvp-participant">If I volunteer at these events, register me as a participant for the selected sessions.</Label>
+          </div>}
           {/* ── Personal Information ── */}
           {currentSectionKey === "personal" && (
             <>

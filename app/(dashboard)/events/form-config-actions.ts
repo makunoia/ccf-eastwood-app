@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { db } from "@/lib/db"
+import { requireClusterWrite } from "@/lib/events/require-event-write"
 import { auth } from "@/lib/auth"
 import { canAccessEvent, canWrite } from "@/lib/permissions"
 import {
@@ -268,8 +269,9 @@ export async function setWalkInOccurrence(
   try {
     const event = await db.event.findUnique({
       where: { id: eventId },
-      select: { id: true, type: true },
+      select: { id: true, type: true, registrationRsvpEnabled: true },
     })
+    if (event?.registrationRsvpEnabled) return { success: false, error: "Active session follows the latest session while RSVP is enabled. Disable RSVP before pinning a session." }
     if (!event) return { success: false, error: "Event not found." }
     if (event.type === "OneTime" && occurrenceId !== null) {
       return { success: false, error: "One-time events have no sessions to pick." }
@@ -561,5 +563,38 @@ export async function copyClusterFormConfig(
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to copy registration form configuration" }
+  }
+}
+
+/** RSVP is owned by the registration surface, independently of check-in opening. */
+export async function setRegistrationRsvp(owner: { eventId: string } | { clusterId: string }, enabled: boolean): Promise<ActionResult> {
+  try {
+    const parsed = z.union([z.object({ eventId: z.string().min(1) }).strict(), z.object({ clusterId: z.string().min(1) }).strict()]).safeParse(owner)
+    if (!parsed.success || typeof enabled !== "boolean") return { success: false, error: "Invalid setting." }
+    const session = await auth()
+    if (!session?.user || !canWrite(session, "Events")) return { success: false, error: "Unauthorized." }
+    if ("eventId" in parsed.data) {
+      const { eventId } = parsed.data
+      if (!canAccessEvent(session, eventId)) return { success: false, error: "Unauthorized." }
+      const event = await db.event.findUnique({ where: { id: eventId }, select: { type: true, _count: { select: { occurrences: true } } } })
+      if (!event || event.type === "OneTime") return { success: false, error: "Session RSVP requires a MultiDay or Recurring event." }
+      if (enabled && !event._count.occurrences) return { success: false, error: "Create a session before enabling RSVP." }
+      await db.event.update({ where: { id: eventId }, data: { registrationRsvpEnabled: enabled, ...(enabled ? { walkInSessionMode: "Latest" } : {}) } })
+      revalidateFormSurfaces(eventId)
+      revalidatePath(`/events/${eventId}/checkin`, "layout")
+    } else {
+      const { clusterId } = parsed.data
+      const cluster = await db.eventCluster.findUnique({ where: { id: clusterId }, select: { events: { select: { eventId: true, occurrenceId: true, event: { select: { type: true } } } } } })
+      const denied = await requireClusterWrite(clusterId)
+      if (!cluster || denied) return { success: false, error: denied?.error ?? "Event day not found." }
+      const sessionEvents = cluster.events.filter((e) => e.event.type !== "OneTime")
+      if (enabled && (!sessionEvents.length || sessionEvents.some((e) => !e.occurrenceId))) return { success: false, error: "Link a session for every session-based event before enabling RSVP." }
+      await db.eventCluster.update({ where: { id: clusterId }, data: { registrationRsvpEnabled: enabled } })
+      revalidatePath(`/cluster/${clusterId}/forms/registration`)
+      revalidatePath("/register/c/[token]", "page")
+    }
+    return { success: true, data: undefined }
+  } catch {
+    return { success: false, error: "Failed to update session RSVP." }
   }
 }

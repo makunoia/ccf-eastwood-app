@@ -2,12 +2,13 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { getEventName } from "@/lib/metadata"
+import SessionCheckinPage from "./[occurrenceId]/page"
 import { CheckinBoard } from "./checkin-board"
 import { FormClosed } from "@/components/form-closed"
 import { getFormConfig } from "@/lib/forms/config"
 import { getEffectiveFormConfig } from "@/lib/forms/context-config-server"
 import { resolveWalkInAccess } from "@/lib/events/walk-in-access"
-import { resolveWalkInSession } from "@/lib/events/walk-in-session"
+import { resolveActiveSession } from "@/lib/events/walk-in-session"
 
 async function getEvent(id: string) {
   return db.event.findUnique({
@@ -120,38 +121,11 @@ export default async function CheckinPage({
   const subtitle = ministryNames || undefined
 
   if (event.type === "Recurring" || event.type === "MultiDay") {
-    return (
-      <div className="relative min-h-svh bg-muted">
-        {bannerUrl && (
-          <>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={bannerUrl} alt="" className="fixed inset-0 h-full w-full object-cover" />
-            <div className="fixed inset-0 bg-black/50" />
-          </>
-        )}
-        <CheckinHeader logoUrl={logoUrl} name={`${event.name} Check-in`} subtitle={subtitle} primaryColor={primaryColor} bannerUrl={bannerUrl} />
-        <div className="relative z-10 -mt-10 flex items-start justify-center px-4 pb-4">
-          <div className="w-full max-w-md rounded-lg border bg-card overflow-hidden">
-            <div className="flex flex-col items-center justify-center gap-2 px-6 py-16 text-center">
-              <p className="font-medium text-sm">
-                {event.type === "MultiDay" ? "Use the day check-in link" : "Use the session check-in link"}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                {event.type === "MultiDay"
-                  ? "Each day has its own check-in link. Copy it from the event page in the admin dashboard."
-                  : "Each session has its own check-in link. Copy it from the event page in the admin dashboard."}
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
+    const active = await resolveActiveSession(event)
+    if (!active?.isOpen) return <FormClosed title="Check-in is currently unavailable" />
+    return <SessionCheckinPage params={Promise.resolve({ id, occurrenceId: active.id })} />
   }
 
-  // OneTime only, so this is the only surface the Public access switch governs.
-  // MultiDay/Recurring never reach here — they check in per occurrence, and that
-  // occurrence's own `isOpen` is the control, which is why Forms shows them a
-  // pointer to Sessions instead of a switch.
   const formConfig = await getFormConfig("EventCheckIn", id)
   if (!formConfig.isOpen) return <FormClosed title="Check-in is currently unavailable" />
 
@@ -181,7 +155,7 @@ export default async function CheckinPage({
   const walkInAccess = resolveWalkInAccess({
     eventType: event.type,
     formIsOpen: walkInConfig.isOpen,
-    session: await resolveWalkInSession(event),
+    session: await resolveActiveSession(event),
   })
 
   return (

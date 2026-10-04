@@ -67,6 +67,8 @@ import {
   assignSubFacilitator,
   removeSubFacilitator,
 } from "./sub-facilitator-actions"
+import { sessionRsvpStats } from "@/lib/events/session-rsvp-stats"
+import { SessionRsvpRoster, type SessionRsvpRow } from "./session-rsvp-roster"
 import { removeSessionAttendee, setAttendeeReturnerStatus } from "./attendee-actions"
 // Mirrors the Prisma enum — avoid importing Prisma client in client components (pulls node:module)
 const FacilitatorRole = { Facilitator: "Facilitator", CoFacilitator: "CoFacilitator" } as const
@@ -76,6 +78,7 @@ export type AttendeeRow = {
   id: string
   kind: "registrant" | "volunteer"
   subjectId: string
+  hasRsvp?: boolean
   name: string | null
   checkedInAtFormatted: string
   isReturner: boolean
@@ -270,7 +273,7 @@ function CapacityCell({ occupancy }: { occupancy: BreakoutOccupancy }) {
 }
 
 type TypeFilter = "all" | "member" | "guest" | "volunteer"
-type SessionTab = "attendees" | "breakouts"
+type SessionTab = "attendees" | "breakouts" | "rsvp"
 
 function buildAttendeeColumns({
   eventId,
@@ -303,6 +306,7 @@ function buildAttendeeColumns({
         </Link>
       ),
     },
+    { id: "rsvp", header: "RSVP", meta: { label: "RSVP", width: "status" }, cell: ({ row }) => row.original.hasRsvp ? <Badge variant="secondary">RSVP</Badge> : null },
     {
       id: "status",
       // The sort is the caller's (it reorders `sortedAttendees`), so the header
@@ -387,7 +391,7 @@ function buildBreakoutStatColumns({
       meta: { label: "Group", width: "name", locked: true },
       cell: ({ row }) => (
         <Link
-          href={`/event/${eventId}/breakouts/${row.original.id}`}
+          href={`/event/${eventId}/breakouts/${row.original.id}?session=${occurrenceId}`}
           className="font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 transition-colors hover:decoration-foreground"
         >
           {row.original.name}
@@ -468,6 +472,7 @@ export function SessionAttendeesTable({
   eventId,
   occurrenceId,
   attendees,
+  rsvps = [],
   breakoutGroups,
   breakoutStats,
   volunteerOptions,
@@ -477,6 +482,7 @@ export function SessionAttendeesTable({
   eventId: string
   occurrenceId: string
   attendees: AttendeeRow[]
+  rsvps?: SessionRsvpRow[]
   breakoutGroups: BreakoutGroupOption[]
   breakoutStats: BreakoutStatRow[]
   volunteerOptions: PersonComboboxOption[]
@@ -506,6 +512,11 @@ export function SessionAttendeesTable({
     setLastServerRows(attendees)
     setRows(attendees)
   }
+
+  const presentIds = rows.filter((r) => r.kind === "registrant").map((r) => r.subjectId)
+  const presentSet = new Set(presentIds)
+  const expectedRows = rsvps.map((r) => ({ ...r, checkedIn: presentSet.has(r.registrantId) }))
+  const rsvpStats = sessionRsvpStats(rsvps.map((r) => r.registrantId), presentIds)
 
   function patchRow(id: string, patch: Partial<AttendeeRow>) {
     setRows((current) => current.map((r) => (r.id === id ? { ...r, ...patch } : r)))
@@ -635,7 +646,7 @@ export function SessionAttendeesTable({
             The caption spells the ratio out: the denominator is the whole series, so a
             bare percentage would leave the reader guessing what it divides by. */}
         <StatCard
-          label="Turnout"
+          label="Series turnout"
           value={formatTurnoutRate(stats.turnout.rate)}
           icon={<Target className="size-4" />}
           caption={
@@ -646,6 +657,12 @@ export function SessionAttendeesTable({
         />
       </div>
 
+      {rsvps.length > 0 && <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatCard icon={<Users className="size-4" />} label="Expected" value={rsvpStats.expected} />
+        <StatCard icon={<UserCheck className="size-4" />} label="RSVP checked in" value={rsvpStats.checkedIn} />
+        <StatCard icon={<Users className="size-4" />} label="Expected but not checked in" value={rsvpStats.notCheckedIn} />
+        <StatCard icon={<Target className="size-4" />} label="RSVP attendance rate" value={formatTurnoutRate(rsvpStats.rate)} />
+      </div>}
       <Tabs
         value={activeTab}
         onValueChange={(value) => setActiveTab(value as SessionTab)}
@@ -655,6 +672,7 @@ export function SessionAttendeesTable({
           <TabsTrigger value="attendees" className="after:-bottom-px">
             Attendees
           </TabsTrigger>
+          <TabsTrigger value="rsvp" className="after:-bottom-px">RSVP ({rsvps.length})</TabsTrigger>
           <TabsTrigger value="breakouts" className="after:-bottom-px">
             Breakout Groups
           </TabsTrigger>
@@ -703,6 +721,7 @@ export function SessionAttendeesTable({
           </div>
         )}
 
+        <TabsContent value="rsvp" className="mt-0"><SessionRsvpRoster eventId={eventId} rows={expectedRows} /></TabsContent>
         <TabsContent value="attendees" className="mt-0">
           {rows.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
@@ -754,6 +773,7 @@ export function SessionAttendeesTable({
                         up down the right edge like a column. */}
                     <div className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
                       <TypeBadge attendee={a} />
+                      {a.hasRsvp && <Badge variant="secondary">RSVP</Badge>}
                       <span className="min-w-0 flex-1 truncate">
                         {a.breakoutGroupNames.length > 0 ? (
                           a.breakoutGroupNames.join(", ")
@@ -814,7 +834,7 @@ export function SessionAttendeesTable({
                 {sortedBreakoutStats.map((bg) => (
                   <div key={bg.id} className="space-y-2.5 rounded-lg border px-3 py-2.5">
                     <Link
-                      href={`/event/${eventId}/breakouts/${bg.id}`}
+                      href={`/event/${eventId}/breakouts/${bg.id}?session=${occurrenceId}`}
                       className="block truncate text-sm font-medium underline decoration-dashed underline-offset-2 decoration-foreground/50 transition-colors hover:decoration-foreground"
                     >
                       {bg.name}

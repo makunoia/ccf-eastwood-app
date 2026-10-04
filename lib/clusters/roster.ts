@@ -28,6 +28,7 @@ export type ClusterRegistrantRow = {
   /** The `EventRegistrant` id, or the `Volunteer` id when `kind` is Volunteer. */
   id: string
   kind: ClusterParticipantKind
+  participantRsvp?: boolean
   eventId: string
   eventType: EventType
   memberId: string | null
@@ -257,6 +258,7 @@ export type ClusterRosterCell = {
   /** The `EventRegistrant` id, or the `Volunteer` id when `kind` is Volunteer. */
   registrantId: string
   kind: ClusterParticipantKind
+  participantRsvp?: boolean
   checkedIn: boolean
   /** When they arrived on this event — see {@link ClusterRegistrantRow.checkedInAt}. */
   checkedInAt: Date | null
@@ -285,7 +287,7 @@ const STANDING_RANK: Record<ClusterStanding, number> = {
 
 /** Serving outranks attending; within a kind, the stronger standing wins. */
 function cellRank(cell: ClusterRosterCell): number {
-  return (cell.kind === "Volunteer" ? 10 : 0) + STANDING_RANK[standingFor(cell)]
+  return (cell.participantRsvp ? 20 : cell.kind === "Volunteer" ? 10 : 0) + STANDING_RANK[standingFor(cell)]
 }
 
 export type ClusterRosterPerson = {
@@ -369,6 +371,7 @@ export function buildClusterRoster(
     const cell: ClusterRosterCell = {
       registrantId: row.id,
       kind: row.kind,
+      participantRsvp: row.participantRsvp,
       checkedIn: row.checkedIn,
       checkedInAt: row.checkedInAt,
       onClusterDay: row.onClusterDay,
@@ -385,6 +388,7 @@ export function buildClusterRoster(
     }
   }
 
+  for (const person of byPerson.values()) person.isVolunteer = Object.values(person.perEvent).some((cell) => cell?.kind === "Volunteer")
   const rosterRows = [...byPerson.values()].sort((a, b) => {
     const lastCmp = a.lastName.localeCompare(b.lastName, undefined, { sensitivity: "base" })
     if (lastCmp !== 0) return lastCmp
