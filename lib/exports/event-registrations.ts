@@ -48,6 +48,7 @@ export type EventRegistrationExportRow = {
   sessionsAttended: number
   /** Those sessions' dates, `yyyy-mm-dd` joined with "; ". Null when none. */
   sessionDates: string | null
+  registeredSessionDates?: string | null
 
   // Form-gathered answers — all display-formatted server-side, null when unanswered
   nickname: string | null
@@ -171,6 +172,7 @@ function recordColumns(eventType: EventType): ColumnDef[] {
   }
   return [
     registeredAt,
+    { key: "registeredSessionDates", label: "Registered session dates", group: "Registration record", toggle: null, optional: true, value: (r) => r.registeredSessionDates },
     {
       key: "sessionsAttended",
       label: "Sessions Attended",

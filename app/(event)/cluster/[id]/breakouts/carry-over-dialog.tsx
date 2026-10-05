@@ -133,7 +133,7 @@ export function CarryOverBreakoutsDialog({
               </Label>
             </div>
             <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-              Off means the tables arrive empty and the day&apos;s distribution starts
+              Off means the breakout groups arrive empty and the day&apos;s distribution starts
               fresh — the usual choice. On copies whoever is in those groups right
               now, which for a recurring event is its standing roster rather than the
               people registered for this day.

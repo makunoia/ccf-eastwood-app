@@ -122,7 +122,7 @@ export function WalkInSessionSetting({
       <SettingCard
         className="max-w-2xl"
         icon={IconCalendarEvent}
-        title={`Walk-in ${sessionNoun}`}
+        title="Active session"
         description={
           followsLatest
             ? `Walk-in follows the latest ${sessionNoun}, but this event has no ${sessionNoun}s yet — it stays off until the first one is created and open.`
@@ -143,8 +143,8 @@ export function WalkInSessionSetting({
     <SettingCard
       className="max-w-2xl"
       icon={IconCalendarEvent}
-      title={`Walk-in ${sessionNoun}`}
-      description={`Which ${sessionNoun} someone registering at the door is checked into. Opening a ${sessionNoun}'s check-in on Sessions sets this automatically — or pick "Latest ${sessionNoun}" to always use the newest one, so it never needs re-pointing.`}
+      title="Active session"
+      description={`The session used by general check-in and walk-in. Choose "Latest ${sessionNoun} created" to follow new sessions automatically. Registration session registration also follows the latest session when enabled.`}
       control={
         <Select value={value} onValueChange={handleChange} disabled={saving}>
           <SelectTrigger className="w-[15rem]" aria-label={`Walk-in ${sessionNoun}`}>

@@ -84,6 +84,7 @@ export async function getEventRegistrationExportRows(
         select: { breakoutGroup: { select: { name: true } } },
         orderBy: { assignedAt: "asc" },
       },
+      sessionRegistrations: { select: { occurrence: { select: { date: true } } }, orderBy: { occurrence: { date: "asc" } } },
       occurrenceAttendances: {
         select: { occurrence: { select: { date: true } } },
         orderBy: { checkedInAt: "asc" },
@@ -123,6 +124,7 @@ export async function getEventRegistrationExportRows(
       mobile: person?.phone ?? r.mobileNumber ?? "",
       type: r.memberId ? "Member" : "Guest",
       registeredAt: r.createdAt.toISOString(),
+      registeredSessionDates: r.sessionRegistrations.map((sessionRegistration) => sessionRegistration.occurrence.date.toISOString().split("T")[0]).join("; ") || null,
       attendedAt: r.attendedAt?.toISOString() ?? null,
       sessionsAttended: sessionDates.length,
       sessionDates: sessionDates.join("; ") || null,

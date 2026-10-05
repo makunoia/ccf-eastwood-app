@@ -81,6 +81,7 @@ type RegistrantMember = {
 }
 
 type BreakoutMemberRow = {
+  expected?: boolean
   registrantId: string
   assignedAt: Date
   registrant: {
@@ -427,6 +428,7 @@ function buildMemberColumns({
         )
       },
     },
+    { id: "sessionRegistration", header: "Expected", meta: { label: "Expected", width: "status" }, cell: ({ row }) => row.original.expected ? <Badge variant="secondary">Expected</Badge> : null },
     {
       id: "type",
       accessorFn: (row) => (row.registrant.memberId ? "Member" : "Guest"),

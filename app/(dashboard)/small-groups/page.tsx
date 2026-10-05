@@ -1,17 +1,13 @@
 import type { Metadata } from "next"
 import {
-  GenderFocus,
-  MeetingFormat,
   MemberRequestStatus,
   Prisma,
   SmallGroupRequestOrigin,
-  SmallGroupStatus,
-  SmallGroupType,
 } from "@/app/generated/prisma/client"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import { canExport, canImport, canWrite } from "@/lib/permissions"
-import { allTokensMatch } from "@/lib/search/name-search"
+import { dGroupFilterWhere, parseDGroupFilters } from "@/lib/small-groups/list-filters"
 import {
   SEEKER_REQUEST_WHERE,
   countSeekerRequests,
@@ -182,31 +178,10 @@ export default async function SmallGroupsPage({
 }) {
   const params = await searchParams
   const tab = (params.tab as string) || "all"
-  const search = (params.search as string) || ""
-  const lifeStageId = (params.lifeStageId as string) || ""
-  const genderFocus = (params.genderFocus as string) || ""
-  const meetingFormat = (params.meetingFormat as string) || ""
-  const status = (params.status as string) || ""
-  const groupType = (params.groupType as string) || ""
+  const filters = parseDGroupFilters(params)
+  const where = dGroupFilterWhere(filters)
 
-  const where: Prisma.SmallGroupWhereInput = {
-    AND: [
-      // A group is findable by its own name or by its leader's — each token has to
-      // hit one of those, so "Maria Santos" matches the group Maria Santos leads.
-      (allTokensMatch(search, (token) => [
-        { name: { contains: token, mode: "insensitive" as const } },
-        { leader: { firstName: { contains: token, mode: "insensitive" as const } } },
-        { leader: { lastName: { contains: token, mode: "insensitive" as const } } },
-      ]) as Prisma.SmallGroupWhereInput | null) ?? {},
-      lifeStageId ? { lifeStages: { some: { id: lifeStageId } } } : {},
-      genderFocus ? { genderFocus: genderFocus as GenderFocus } : {},
-      meetingFormat ? { meetingFormat: meetingFormat as MeetingFormat } : {},
-      status ? { status: status as SmallGroupStatus } : {},
-      groupType ? { groupType: groupType as SmallGroupType } : {},
-    ],
-  }
-
-  const [session, pendingRequestCount, seekerCount, groups, lifeStages, requests, seekers] =
+  const [session, pendingRequestCount, seekerCount, groups, lifeStages, requests, seekers, filterGroups] =
     await Promise.all([
       auth(),
       db.smallGroupMemberRequest.count({
@@ -226,6 +201,10 @@ export default async function SmallGroupsPage({
         : Promise.resolve([]),
       tab === "requests" ? getPendingRequests() : Promise.resolve([]),
       tab === "seeking" ? getSeekers() : Promise.resolve([]),
+      tab === "all" ? db.smallGroup.findMany({
+        orderBy: { name: "asc" },
+        select: { id: true, name: true, locationCity: true, language: true, leader: { select: { id: true, firstName: true, lastName: true } } },
+      }) : Promise.resolve([]),
     ])
 
   const writable = canWrite(session, "SmallGroups")
@@ -278,12 +257,11 @@ export default async function SmallGroupsPage({
           <>
             <SmallGroupsFilters
               lifeStages={lifeStages}
-              search={search}
-              lifeStageId={lifeStageId}
-              genderFocus={genderFocus}
-              meetingFormat={meetingFormat}
-              status={status}
-              groupType={groupType}
+              filters={filters}
+              cities={[...new Set(filterGroups.flatMap((g) => g.locationCity ? [g.locationCity] : []))].sort((a, b) => a.localeCompare(b))}
+              languages={[...new Set(filterGroups.flatMap((g) => g.language))].sort((a, b) => a.localeCompare(b))}
+              parentGroups={filterGroups.map(({ id, name }) => ({ id, name }))}
+              leaders={[...new Map(filterGroups.map((g) => [g.leader.id, { id: g.leader.id, name: `${g.leader.firstName} ${g.leader.lastName}` }])).values()].sort((a, b) => a.name.localeCompare(b.name))}
             />
             <SmallGroupsTable groups={groups} canWrite={selectionEnabled} />
           </>

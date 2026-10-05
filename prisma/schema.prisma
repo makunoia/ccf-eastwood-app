@@ -745,6 +745,7 @@ model Event {
   formIncludeDietary          Boolean             @default(false)
   formIncludePayment          Boolean             @default(false)
   autoAssignBreakout          Boolean             @default(false)
+  sessionRegistrationEnabled     Boolean             @default(false) @map("registrationRsvpEnabled")
   // Registration page customization
   registrationPageTitle       String?
   registrationPageDescription String?
@@ -840,6 +841,7 @@ model EventCluster {
   // own timetable — weeks before the attendee form opens, and closed once the
   // roster is full — so it gets its own switch like the other three.
   volunteerIsOpen Boolean @default(false)
+  sessionRegistrationEnabled Boolean @default(false) @map("registrationRsvpEnabled")
   registrationStart DateTime?
   registrationEnd   DateTime?
   // Registration page customization — mirrors Event's public form fields
@@ -911,6 +913,7 @@ model EventOccurrence {
   createdAt DateTime             @default(now())
   updatedAt DateTime             @updatedAt
 
+  sessionRegistrations            SessionRegistration[]
   attendees        OccurrenceAttendee[]
   subFacilitators  OccurrenceSubFacilitator[]
   clusterLinks     EventClusterEvent[]
@@ -923,12 +926,28 @@ model EventOccurrence {
   @@index([seriesId])
 }
 
+// Intent to attend a session, separate from attendance. No historical backfill.
+model SessionRegistration {
+  id           String          @id @default(cuid())
+  occurrenceId String
+  occurrence   EventOccurrence @relation(fields: [occurrenceId], references: [id], onDelete: Cascade)
+  registrantId String
+  registrant   EventRegistrant @relation(fields: [registrantId], references: [id], onDelete: Cascade)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@unique([occurrenceId, registrantId])
+  @@index([registrantId])
+  @@map("SessionRsvp")
+}
+
 model OccurrenceAttendee {
   id           String          @id @default(cuid())
   occurrenceId String
   occurrence   EventOccurrence @relation(fields: [occurrenceId], references: [id], onDelete: Cascade)
-  // Exactly one of registrantId / volunteerId is set (app-layer enforced), mirroring the
-  // EventRegistrant memberId/guestId convention. A volunteer is never a registrant.
+  // Exactly one of registrantId / volunteerId is set (app-layer enforced).
+  // A participant session registration selects the registrant lane for this occurrence, even if
+  // the person also holds a volunteer assignment for the event.
   registrantId String?
   registrant   EventRegistrant? @relation(fields: [registrantId], references: [id], onDelete: Cascade)
   volunteerId  String?
@@ -1007,6 +1026,7 @@ model EventRegistrant {
   breakoutGroupMemberships BreakoutGroupMember[]
   baptismOptIn             BaptismOptIn?
   busPassengers            BusPassenger[]
+  sessionRegistrations             SessionRegistration[]
   occurrenceAttendances    OccurrenceAttendee[]
   clusterParticipations    EventRegistrantClusterParticipation[]
 }

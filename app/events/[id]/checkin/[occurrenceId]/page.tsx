@@ -27,6 +27,7 @@ async function getOccurrenceWithEvent(occurrenceId: string) {
           themeColorPrimary: true,
           registrationPageBannerUrl: true,
           autoAssignBreakout: true,
+          sessionRegistrationEnabled: true,
           walkInOccurrence: { select: { id: true, isOpen: true } },
           walkInSessionMode: true,
           ministries: {
@@ -185,7 +186,7 @@ export default async function OccurrenceCheckinPage({
   // Date gate: only allow check-in on the occurrence's date. `isCheckinLive` is
   // shared with the Sessions list, which offers the link to this page only when
   // this branch will let someone through.
-  if (!isCheckinLive({ isOpen: occurrence.isOpen, date: occurrence.date, today: utcToday() })) {
+  if (!isCheckinLive({ isOpen: occurrence.isOpen, date: occurrence.date, today: utcToday(), requiresOpen: occurrence.event.sessionRegistrationEnabled })) {
     return (
       <div className="relative min-h-svh bg-muted">
         {bannerUrl && (
@@ -207,7 +208,7 @@ export default async function OccurrenceCheckinPage({
             <div className="flex flex-col items-center justify-center gap-2 px-6 py-16 text-center">
               <p className="font-medium text-sm">Check-in not available</p>
               <p className="text-sm text-muted-foreground">
-                This check-in link is only active on {dateLabel}.
+                {occurrence.event.sessionRegistrationEnabled ? "Check-in is closed for this session." : `This check-in link is only active on ${dateLabel}.`}
               </p>
             </div>
           </div>

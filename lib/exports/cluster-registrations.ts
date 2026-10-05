@@ -73,6 +73,7 @@ export type ClusterRegistrationExportRow = {
   registeredAt: string // ISO datetime
   /** They reached at least one of the day's events through the shared link. */
   viaSharedForm: boolean
+  registeredSessions?: string | null
   /** They checked in to at least one of the day's events. */
   checkedIn: boolean
   /** Earliest check-in across the day's events; null when they never arrived. */
@@ -141,6 +142,7 @@ export function eventColumnKey(eventId: string): string {
  * cluster's per-event columns into the "Events" slot.
  */
 export const CLUSTER_EXPORT_COLUMNS: readonly ColumnDef[] = [
+  { key: "registeredSessions", label: "Registered sessions", group: "Registration record", toggle: null, optional: true, value: (r) => r.registeredSessions },
   // ── Personal Information ──
   { key: "firstName", label: "First Name", group: "Personal Information", toggle: null, value: (r) => r.firstName },
   { key: "lastName", label: "Last Name", group: "Personal Information", toggle: null, value: (r) => r.lastName },

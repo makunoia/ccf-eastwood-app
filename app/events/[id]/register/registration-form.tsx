@@ -97,6 +97,7 @@ import {
 import { BreakoutPicker } from "@/components/breakouts/breakout-picker"
 import { MINISTRY_REQUIRED_ERROR } from "@/lib/clusters/copy"
 import { MinistryAvatar } from "@/components/ministry-avatar"
+import type { SessionTarget } from "@/lib/events/session-registration"
 import type { CustomStep } from "@/lib/forms/custom-questions"
 
 const DAY_NAMES = ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"]
@@ -292,6 +293,7 @@ type ClusterConfig = {
 }
 
 type Props = {
+  sessionTargets?: SessionTarget[] | null
   eventId?: string
   eventName?: string
   /**
@@ -331,29 +333,61 @@ type Props = {
  * mid-form matters as much as one that is already down when the door opens, and
  * the shell is the one place that sees both.
  */
+function SessionRegistrationCard({ targets }: { targets?: SessionTarget[] | null }) {
+  if (!targets?.length) return null
+
+  return (
+    <Card role="status" aria-label="Session registration" className="py-4">
+      <CardHeader className="gap-2">
+        <p className="text-sm font-medium text-muted-foreground">
+          Registering for
+        </p>
+        <div className="space-y-3">
+          {targets.map((target) => {
+            const separator = target.label.lastIndexOf(" · ")
+            const name = separator < 0 ? target.label : target.label.slice(0, separator)
+            const date = separator < 0 ? null : target.label.slice(separator + 3)
+            return (
+              <div key={target.eventId} className="min-w-0">
+                <h2 className="text-lg font-medium leading-snug text-foreground text-pretty">{name}</h2>
+                {date && <p className="mt-1 text-base leading-snug text-foreground">{date}</p>}
+              </div>
+            )
+          })}
+        </div>
+      </CardHeader>
+    </Card>
+  )
+}
+
 function FormShell({
+  sessionTargets,
   plain,
   className,
   children,
   ...props
-}: React.ComponentProps<typeof Card> & { plain?: boolean }) {
+}: React.ComponentProps<typeof Card> & { plain?: boolean; sessionTargets?: SessionTarget[] | null }) {
   const body = (
     <>
       <OfflineNotice />
       {children}
     </>
   )
-  if (plain) {
-    return (
+  const form = plain ? (
       <div className={cn("flex flex-col gap-6 py-6", className)} {...props}>
         {body}
       </div>
-    )
-  }
-  return (
+    ) : (
     <Card className={className} {...props}>
       {body}
     </Card>
+  )
+  if (!sessionTargets?.length) return form
+  return (
+    <div className="space-y-4">
+      <SessionRegistrationCard targets={sessionTargets} />
+      {form}
+    </div>
   )
 }
 
@@ -425,6 +459,7 @@ function DoneActions({
 
 export function RegistrationForm({
   eventId,
+  sessionTargets = null,
   eventName = "",
   config,
   successMessage = null,
@@ -438,6 +473,10 @@ export function RegistrationForm({
   cluster,
   customSteps = [],
 }: Props) {
+  const [currentSessionTargets, setCurrentSessionTargets] = React.useState(sessionTargets)
+  const [registerAsParticipant, setRegisterAsParticipant] = React.useState(false)
+  const [alreadyRegisteredForSession, setAlreadyRegisteredForSession] = React.useState(false)
+  const sessionRegistrationEnabled = !!currentSessionTargets?.length && !walkIn
   const plain = frame === "plain"
   const cfg = React.useMemo<EventFormConfigData>(
     () => ({ ...BARE_EVENT_FORM_CONFIG, ...config }),
@@ -863,6 +902,9 @@ export function RegistrationForm({
   }, [formStep])
 
   function handleReset() {
+    setCurrentSessionTargets(sessionTargets)
+    setRegisterAsParticipant(false)
+    setAlreadyRegisteredForSession(false)
     setCustomAnswers({})
     /**
      * Re-read the server's data for the next person.
@@ -988,6 +1030,7 @@ export function RegistrationForm({
       mobileNumber: form.mobileNumber,
       // Cluster mode has no single event, so there is no volunteer record to check.
       eventId: cluster ? null : eventId,
+      occurrenceId: walkIn?.occurrenceId,
     })
     setSubmitting(false)
 
@@ -1023,7 +1066,10 @@ export function RegistrationForm({
     grant: string | null,
     standing: { alreadyRegistered: boolean; fieldsStillNeeded: RequirableKey[] }
   ) {
-    if (profile.isVolunteer) {
+    if (profile.isVolunteer && !registerAsParticipant) {
+      setProfileSnapshot(profile)
+      setIdentityGrant(grant)
+      setForm((prev) => ({ ...prev, ...prefillFromProfile(profile) }))
       setMatchedMember({
         id: profile.recordId,
         firstName: profile.firstName,
@@ -1076,7 +1122,7 @@ export function RegistrationForm({
      * existing registration and checks the person in, so "you're already
      * registered" is not a refusal there, it's the normal case.
      */
-    if (standing.alreadyRegistered && !walkIn) {
+    if (standing.alreadyRegistered && !walkIn && !sessionRegistrationEnabled) {
       // A field the admin turned on (or made required) since they signed up is
       // the one thing still worth asking for. `fieldsStillNeeded` is empty in the
       // ordinary case, which is a plain terminal screen.
@@ -1111,6 +1157,7 @@ export function RegistrationForm({
       birthMonth: secondFactorMonth ? parseInt(secondFactorMonth, 10) : null,
       birthYear: secondFactorYear ? parseInt(secondFactorYear, 10) : null,
       eventId: cluster ? null : eventId,
+      occurrenceId: walkIn?.occurrenceId,
       // The door and the public form can collect different things, so "what does
       // this profile still not answer?" has to be asked of the right one.
       context: walkIn ? "WalkIn" : "Register",
@@ -1241,6 +1288,7 @@ export function RegistrationForm({
             // Cluster mode has no single event: volunteer conflicts are per-event
             // partial results at submit time, not an up-front block.
             eventId: cluster ? null : eventId,
+      occurrenceId: walkIn?.occurrenceId,
           })
           setSubmitting(false)
 
@@ -1281,8 +1329,8 @@ export function RegistrationForm({
    * the submit-side landing in `register()` instead: still a screen with somewhere
    * to go, just one step later for the people who skipped the gate.
    */
-  function handleEarlyConfirm(match: MatchedMember) {
-    if (match.isVolunteer) {
+  function handleEarlyConfirm(match: MatchedMember, participant = registerAsParticipant) {
+    if (match.isVolunteer && !participant) {
       setMatchedMember(match)
       setCandidates(null)
       setStep("volunteer-blocked")
@@ -1418,6 +1466,7 @@ export function RegistrationForm({
         birthMonth: hasBirthday ? parseInt(form.birthMonth, 10) : null,
         birthYear: hasBirthday ? parseInt(form.birthYear, 10) : null,
         eventId: cluster ? null : eventId,
+      occurrenceId: walkIn?.occurrenceId,
       })
       setSubmitting(false)
       if (match) {
@@ -1494,6 +1543,8 @@ export function RegistrationForm({
         dietaryOther:
           includeDietary && form.dietaryPreference === "Other" ? form.dietaryOther || null : null,
         paymentReference: includePayment ? form.paymentReference || null : null,
+        sessionOccurrenceIds: currentSessionTargets ? Object.fromEntries(currentSessionTargets.map((t) => [t.eventId, t.occurrenceId])) : undefined,
+        registerAsParticipant,
         customResponses: customSteps.flatMap((s) => s.questions.flatMap((q) => customAnswers[q.id] == null || customAnswers[q.id] === "" || (Array.isArray(customAnswers[q.id]) && (customAnswers[q.id] as string[]).length === 0) ? [] : [{ questionId: q.id, answer: customAnswers[q.id] }])),
     }
 
@@ -1514,9 +1565,17 @@ export function RegistrationForm({
       )
       setSubmitting(false)
       if (result.success) {
+        const changed = result.data.results.find((r) => r.sessionTargets)
+        if (changed) {
+          setCurrentSessionTargets(changed.sessionTargets ?? [])
+          window.scrollTo({ top: 0, behavior: "smooth" })
+          toast.error("The session has changed. Please review it and submit again. Other successful registrations have been saved.")
+          return
+        }
         setClusterResults(result.data.results)
         setStep("done")
       } else {
+        if (result.sessionTargets) { setCurrentSessionTargets(result.sessionTargets); window.scrollTo({ top: 0, behavior: "smooth" }) }
         toast.error(result.error)
       }
       return
@@ -1566,6 +1625,7 @@ export function RegistrationForm({
     setSubmitting(false)
 
     if (result.success) {
+      if ("alreadyRegisteredForSession" in result.data) setAlreadyRegisteredForSession(!!result.data.alreadyRegisteredForSession)
       setAssignedBreakout(result.data.breakoutGroup)
       // Household members who are serving as volunteers aren't registered as
       // attendees — say so rather than letting them silently vanish.
@@ -1581,6 +1641,10 @@ export function RegistrationForm({
         )
       }
       setStep("done")
+    } else if (result.reason === "sessionChanged") {
+      setCurrentSessionTargets(result.sessionTargets ?? [])
+      window.scrollTo({ top: 0, behavior: "smooth" })
+      toast.error(result.error)
     } else if (result.reason === "alreadyRegistered") {
       /**
        * The backstop for the people step 0 can't catch: someone the dedup ladder
@@ -1626,6 +1690,7 @@ export function RegistrationForm({
     const anyVolunteer = clusterResults.some((r) => r.status === "volunteer")
     const anySucceeded = anyRegistered || anyVolunteer
     const statusLine = (r: ClusterEventRegistrationResult): string => {
+      if (r.sessionLabel) return `You’re ${r.alreadyRegisteredForSession ? "already " : ""}registered for ${r.sessionLabel}`
       switch (r.status) {
         case "registered":
           return r.checkedIn ? "Registered · checked in" : "Registered"
@@ -1658,7 +1723,7 @@ export function RegistrationForm({
     const collapsedCheckedIn = collapsed && clusterResults.some((r) => r.checkedIn)
 
     return (
-      <FormShell plain={plain}>
+      <FormShell sessionTargets={currentSessionTargets} plain={plain}>
         <CardContent className="flex flex-col items-center gap-5 pt-10 pb-6">
           <div
             className={cn(
@@ -1787,7 +1852,7 @@ export function RegistrationForm({
         ].filter(Boolean)
       : []
     return (
-      <FormShell plain={plain}>
+      <FormShell sessionTargets={currentSessionTargets} plain={plain}>
         <CardContent className="flex flex-col items-center gap-5 pt-10 pb-6">
           <div className="flex size-16 items-center justify-center rounded-full bg-green-100">
             <IconCheck className="size-8 text-green-600" />
@@ -1797,7 +1862,7 @@ export function RegistrationForm({
               Welcome{displayName ? `, ${displayName}` : ""}!
             </p>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              {resolveSuccessMessage(successMessage, walkIn ? "WalkIn" : "Register", eventName)}
+              {sessionRegistrationEnabled ? `You’re ${alreadyRegisteredForSession ? "already " : ""}registered for ${currentSessionTargets?.[0]?.label}.` : resolveSuccessMessage(successMessage, walkIn ? "WalkIn" : "Register", eventName)}
             </p>
             {displayBreakout && (
               <div className="mt-3 rounded-xl border bg-muted/40 px-4 py-3 text-left space-y-0.5">
@@ -1821,6 +1886,7 @@ export function RegistrationForm({
   if (step === "identify") {
     return (
       <div className="space-y-4">
+        <SessionRegistrationCard targets={currentSessionTargets} />
         <FormShell plain={plain}>
           <CardHeader>
             <CardTitle>What&apos;s your mobile number?</CardTitle>
@@ -1896,7 +1962,7 @@ export function RegistrationForm({
   // ── Step 0: "Is this you?" — masked identity + second factor ──────────────
   if (step === "identify-confirm" && identifyMatch) {
     return (
-      <FormShell plain={plain}>
+      <FormShell sessionTargets={currentSessionTargets} plain={plain}>
         <CardHeader>
           <CardTitle>Is this you?</CardTitle>
           <CardDescription>
@@ -1961,7 +2027,7 @@ export function RegistrationForm({
   // ── Step 0: one number, several profiles (shared family handsets) ─────────
   if (step === "identify-ambiguous" && identifyCandidates) {
     return (
-      <FormShell plain={plain}>
+      <FormShell sessionTargets={currentSessionTargets} plain={plain}>
         <CardHeader>
           <CardTitle>Which one is you?</CardTitle>
           <CardDescription>
@@ -2022,7 +2088,7 @@ export function RegistrationForm({
     // plain dead end — which is still a screen with somewhere to go.
     const canAmend = identityGrant !== null
     return (
-      <FormShell plain={plain}>
+      <FormShell sessionTargets={currentSessionTargets} plain={plain}>
         <CardContent className="flex flex-col items-center gap-5 pt-10 pb-6">
           <div className="flex size-16 items-center justify-center rounded-full bg-green-100">
             <IconCheck className="size-8 text-green-600" />
@@ -2069,7 +2135,7 @@ export function RegistrationForm({
   if (step === "volunteer-blocked" && matchedMember) {
     const firstName = matchedMember.firstName
     return (
-      <FormShell plain={plain}>
+      <FormShell sessionTargets={currentSessionTargets} plain={plain}>
         <CardContent className="flex flex-col items-center gap-5 pt-10 pb-6">
           <div className="flex size-16 items-center justify-center rounded-full bg-primary/10">
             <IconCheck className="size-8 text-primary" />
@@ -2082,6 +2148,10 @@ export function RegistrationForm({
               You&apos;re serving as a volunteer at this event — you&apos;re already included and don&apos;t need to register as an attendee.
             </p>
           </div>
+          {sessionRegistrationEnabled && <Button className="h-auto w-full whitespace-normal py-3 text-center" onClick={() => {
+            setRegisterAsParticipant(true)
+            handleEarlyConfirm(matchedMember, true)
+          }}>Register as a participant for this session</Button>}
           <DoneActions walkIn={walkIn} onReset={handleReset} variant="outline" />
         </CardContent>
       </FormShell>
@@ -2090,7 +2160,7 @@ export function RegistrationForm({
 
   if (step === "disambiguate" && candidates) {
     return (
-      <FormShell plain={plain}>
+      <FormShell sessionTargets={currentSessionTargets} plain={plain}>
         <CardHeader>
           <CardTitle>Multiple profiles found</CardTitle>
           <CardDescription>
@@ -2136,7 +2206,7 @@ export function RegistrationForm({
 
   if (step === "confirm" && matchedMember) {
     return (
-      <FormShell plain={plain}>
+      <FormShell sessionTargets={currentSessionTargets} plain={plain}>
         <CardHeader>
           <CardTitle>Is this you?</CardTitle>
           <CardDescription>
@@ -2164,7 +2234,7 @@ export function RegistrationForm({
             <Button
               className="flex-1"
               onClick={() => {
-                if (matchedMember.isVolunteer) {
+                if (matchedMember.isVolunteer && !registerAsParticipant) {
                   setStep("volunteer-blocked")
                   return
                 }
@@ -2198,7 +2268,7 @@ export function RegistrationForm({
 
   if (step === "early-confirm" && matchedMember) {
     return (
-      <FormShell plain={plain}>
+      <FormShell sessionTargets={currentSessionTargets} plain={plain}>
         <CardHeader>
           <CardTitle>Is this you?</CardTitle>
           <CardDescription>
@@ -2246,7 +2316,7 @@ export function RegistrationForm({
 
   if (step === "early-disambiguate" && candidates) {
     return (
-      <FormShell plain={plain}>
+      <FormShell sessionTargets={currentSessionTargets} plain={plain}>
         <CardHeader>
           <CardTitle>Multiple profiles found</CardTitle>
           <CardDescription>
@@ -2288,7 +2358,7 @@ export function RegistrationForm({
   }
 
   return (
-    <FormShell plain={plain} ref={cardRef} className="pt-0">
+    <FormShell sessionTargets={currentSessionTargets} plain={plain} ref={cardRef} className="pt-0">
       {/* No bottom padding here, and none on the CardContent below: the Card's own
           `gap-6` is the single spacer between the header and the fields. Both used
           to add their own padding on top of that gap, which read as a title crowded
@@ -2341,6 +2411,10 @@ export function RegistrationForm({
 
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {cluster && sessionRegistrationEnabled && <div className="flex items-start gap-2">
+            <Checkbox id="sessionRegistration-participant" checked={registerAsParticipant} onCheckedChange={(checked) => setRegisterAsParticipant(checked === true)} />
+            <Label htmlFor="sessionRegistration-participant">If I volunteer at these events, register me as a participant for the selected sessions.</Label>
+          </div>}
           {/* ── Personal Information ── */}
           {currentSectionKey === "personal" && (
             <>

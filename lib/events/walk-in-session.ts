@@ -45,7 +45,7 @@ export type WalkInSessionEvent = {
  * share a timestamp to the millisecond; without it the winner would be whatever
  * order Postgres felt like returning, and the door would drift between requests.
  */
-const LATEST_FIRST = [{ createdAt: "desc" }, { date: "desc" }] as const
+export const LATEST_SESSION_FIRST = [{ createdAt: "desc" }, { date: "desc" }, { id: "desc" }] as const
 
 /** The event's most recently created session, whatever its open state. */
 export async function latestWalkInSession(eventId: string): Promise<
@@ -53,7 +53,7 @@ export async function latestWalkInSession(eventId: string): Promise<
 > {
   return db.eventOccurrence.findFirst({
     where: { eventId },
-    orderBy: [...LATEST_FIRST],
+    orderBy: [...LATEST_SESSION_FIRST],
     select: { id: true, isOpen: true, date: true },
   })
 }
@@ -65,7 +65,7 @@ export async function latestWalkInSession(eventId: string): Promise<
  * returns null for them without a query, and `resolveWalkInAccess` ignores the
  * value entirely for that type.
  */
-export async function resolveWalkInSession(
+export async function resolveActiveSession(
   event: WalkInSessionEvent
 ): Promise<WalkInSessionRef | null> {
   if (event.type === "OneTime") return null
@@ -73,3 +73,7 @@ export async function resolveWalkInSession(
   const latest = await latestWalkInSession(event.id)
   return latest ? { id: latest.id, isOpen: latest.isOpen } : null
 }
+
+/** Compatibility name for existing door callers. */
+export const resolveWalkInSession = resolveActiveSession
+export const latestActiveSession = latestWalkInSession

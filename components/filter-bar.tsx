@@ -107,14 +107,16 @@ export function FilterBar({
 
 export function FilterField({
   label,
+  htmlFor,
   children,
 }: {
   label: string
+  htmlFor?: string
   children: React.ReactNode
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <Label className="text-muted-foreground">{label}</Label>
+      <Label htmlFor={htmlFor} className="text-muted-foreground">{label}</Label>
       {children}
     </div>
   )

@@ -9,6 +9,7 @@ type OccurrenceWithAttendance = {
   id: string
   date: Date
   isOpen: boolean
+  requiresOpen?: boolean
   isStandalone: boolean
   attendeeCount: number
   seriesId: string | null
@@ -47,6 +48,7 @@ export type EmittedOccurrence = {
   id: string
   date: string
   isOpen: boolean
+  requiresOpen?: boolean
   attendeeCount: number
   /** Registered check-ins only — see {@link OccurrenceWithAttendance.participantCount}. */
   participantCount: number
@@ -63,6 +65,7 @@ function emitOccurrence(occurrence: OccurrenceWithAttendance): EmittedOccurrence
     id: occurrence.id,
     date: occurrence.date.toISOString(),
     isOpen: occurrence.isOpen,
+    ...(occurrence.requiresOpen === undefined ? {} : { requiresOpen: occurrence.requiresOpen }),
     attendeeCount: occurrence.attendeeCount,
     participantCount: occurrence.participantCount ?? occurrence.attendeeCount,
     isStandalone: occurrence.isStandalone,

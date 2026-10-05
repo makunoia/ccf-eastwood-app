@@ -12,6 +12,7 @@ export function StatCard({
   icon,
   caption,
   genderBar,
+  turnoutBar,
 }: {
   label: string
   value: ReactNode
@@ -19,8 +20,12 @@ export function StatCard({
   /** Sub-copy under the figure — what it counts, and over what window. */
   caption?: ReactNode
   genderBar?: { men: number; women: number }
+  turnoutBar?: { checkedIn: number; total: number }
 }) {
   const genderTotal = (genderBar?.men ?? 0) + (genderBar?.women ?? 0)
+  const turnoutPercent = turnoutBar && turnoutBar.total > 0
+    ? Math.min(100, Math.max(0, turnoutBar.checkedIn / turnoutBar.total * 100))
+    : 0
   return (
     // `h-full` so a row of tiles squares up on the tallest one — captions wrap
     // to different line counts, and without it every border sits at its own
@@ -38,6 +43,33 @@ export function StatCard({
       {/* Pinned to the bottom of the (now equal-height) tile so captions line up
           across the row instead of floating at their own heights. */}
       {caption && <p className="mt-auto text-xs text-muted-foreground">{caption}</p>}
+      {turnoutBar && (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div
+                className="absolute inset-x-0 bottom-0 h-3 cursor-default focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+                tabIndex={0}
+                role={turnoutBar.total > 0 ? "progressbar" : "img"}
+                aria-label="Turnout"
+                aria-valuemin={turnoutBar.total > 0 ? 0 : undefined}
+                aria-valuemax={turnoutBar.total > 0 ? 100 : undefined}
+                aria-valuenow={turnoutBar.total > 0 ? turnoutPercent : undefined}
+                aria-valuetext={turnoutBar.total > 0 ? `${turnoutBar.checkedIn} of ${turnoutBar.total} checked in` : undefined}
+              >
+                <div className="absolute inset-x-0 bottom-0 h-1 overflow-hidden bg-muted">
+                  <div className="h-full bg-primary" style={{ width: `${turnoutPercent}%` }} />
+                </div>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent>
+              {turnoutBar.total === 0
+                ? "No registrations or check-ins yet"
+                : `${turnoutBar.checkedIn} of ${turnoutBar.total} checked in · ${turnoutBar.total - turnoutBar.checkedIn} not checked in`}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      )}
       {genderBar && genderTotal > 0 && (
         <TooltipProvider>
           <div className="absolute bottom-0 left-0 right-0 flex h-1">

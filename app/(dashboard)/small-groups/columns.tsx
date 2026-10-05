@@ -26,6 +26,7 @@ import {
 import Link from "next/link"
 import { buildSelectionColumn } from "@/components/batch/selection-column"
 import { deleteSmallGroup } from "./actions"
+import { dGroupScheduleLabel } from "@/lib/small-groups/list-filters"
 
 export type SmallGroupRow = {
   id: string
@@ -212,15 +213,14 @@ export function buildColumns(selectable = false): ColumnDef<SmallGroupRow>[] {
         ),
     },
     {
-      accessorKey: "tempMemberCount",
-      header: "Temp Members",
-      meta: { label: "Temp Members", width: "narrow" },
-      cell: ({ row }) =>
-        row.original.tempMemberCount > 0 ? (
-          row.original.tempMemberCount
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        ),
+      id: "schedule",
+      accessorFn: dGroupScheduleLabel,
+      header: "Schedule",
+      meta: { label: "Schedule", width: "text" },
+      cell: ({ row }) => {
+        const label = dGroupScheduleLabel(row.original)
+        return <span className={label === "Not set" ? "text-muted-foreground" : undefined}>{label}</span>
+      },
     },
     {
       id: "actions",

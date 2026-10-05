@@ -7,8 +7,9 @@ import type { PrismaClient } from "@/app/generated/prisma/client"
  * dashboard's Turnout KPI uses, so a session's rate and the event's rate are
  * spoken in one vocabulary. It is deliberately *not* narrowed to the session:
  * `EventRegistrant` is one row per person per event series with no link to an
- * occurrence other than attendance itself, so there is no per-session RSVP to
- * scope to. The cost is that on a long-running Recurring event the roster grows
+ * occurrence through attendance and optional SessionRegistration rows. This remains the
+ * series turnout measure; session registration attendance is reported separately against that
+ * session’s expected participants. On a long-running Recurring event the roster grows
  * forever — see the note in `lib/events/turnout.ts`, and the surfaces that print
  * the denominator inline because of it.
  *

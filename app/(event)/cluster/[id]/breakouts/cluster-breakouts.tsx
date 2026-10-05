@@ -68,7 +68,7 @@ export function ClusterBreakouts({
             <p className="text-sm font-medium">This day has no breakout groups yet</p>
             <p className="text-sm text-muted-foreground">
               Collab breakouts are set up fresh for the session. Add them below, or
-              carry a ministry&apos;s existing tables over as a starting point.
+              carry a ministry&apos;s existing breakout groups over as a starting point.
             </p>
           </div>
           <Button variant="outline" size="sm" onClick={() => setCarryOverOpen(true)}>

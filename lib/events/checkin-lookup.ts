@@ -1,3 +1,4 @@
+import { recordSessionAttendance } from "@/lib/events/session-registration"
 import "server-only"
 
 import { db } from "@/lib/db"
@@ -218,19 +219,7 @@ export async function recordCheckinAttendance(
   occurrenceId: string | null
 ): Promise<void> {
   if (occurrenceId !== null) {
-    if (subject.kind === "volunteer") {
-      await db.occurrenceAttendee.upsert({
-        where: { occurrenceId_volunteerId: { occurrenceId, volunteerId: subject.id } },
-        create: { occurrenceId, volunteerId: subject.id },
-        update: {},
-      })
-    } else {
-      await db.occurrenceAttendee.upsert({
-        where: { occurrenceId_registrantId: { occurrenceId, registrantId: subject.id } },
-        create: { occurrenceId, registrantId: subject.id },
-        update: {},
-      })
-    }
+    await recordSessionAttendance(occurrenceId, subject)
     return
   }
 

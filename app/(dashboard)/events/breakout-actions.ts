@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
+import { isBreakoutStaff } from "@/lib/breakouts/staffing"
 import { db } from "@/lib/db"
 import { requireBreakoutWrite } from "@/lib/events/require-event-write"
 import { breakoutGroupSchema } from "@/lib/validations/breakout-group"
@@ -816,7 +817,8 @@ async function surfaceBreakoutSet(
 export async function autoAssignRegistrantToBreakout(
   registrantId: string,
   eventId: string,
-  breakoutSet: BreakoutSet = "event"
+  breakoutSet: BreakoutSet = "event",
+  occurrenceId?: string | null
 ): Promise<void> {
   try {
     const owner = await resolveSurfaceBreakoutOwner(eventId, breakoutSet)
@@ -854,26 +856,7 @@ export async function autoAssignRegistrantToBreakout(
       if (seatedElsewhere) return
     }
 
-    if (registrant?.memberId) {
-      // AND, not a spread: a group filter may itself carry an `OR`, and a second
-      // `OR` key in the same object would replace it — leaving a check that
-      // matches a facilitator of any table anywhere.
-      const isFacilitator = await db.breakoutGroup.findFirst({
-        where: {
-          AND: [
-            thisSet,
-            {
-              OR: [
-                { facilitator: { memberId: registrant.memberId } },
-                { coFacilitator: { memberId: registrant.memberId } },
-              ],
-            },
-          ],
-        },
-        select: { id: true },
-      })
-      if (isFacilitator) return
-    }
+    if (registrant?.memberId && await isBreakoutStaff(registrant.memberId, thisSet, occurrenceId)) return
 
     const matches = await matchBreakoutGroups(registrantId, owner, {
       excludeAssigned: true,
@@ -1032,32 +1015,9 @@ async function isCheckedInFor(
 }
 
 /** Does this person run one of the owner's tables? They attend as staff, not as a guest. */
-async function facilitatesAnyGroup(
-  registrantId: string,
-  groups: Prisma.BreakoutGroupWhereInput
-): Promise<boolean> {
-  const registrant = await db.eventRegistrant.findUnique({
-    where: { id: registrantId },
-    select: { memberId: true },
-  })
-  if (!registrant?.memberId) return false
-  // AND, not a spread: `groups` is a caller-supplied filter that may itself carry
-  // an `OR`, and two `OR` keys in one object silently overwrite each other.
-  const group = await db.breakoutGroup.findFirst({
-    where: {
-      AND: [
-        groups,
-        {
-          OR: [
-            { facilitator: { memberId: registrant.memberId } },
-            { coFacilitator: { memberId: registrant.memberId } },
-          ],
-        },
-      ],
-    },
-    select: { id: true },
-  })
-  return group !== null
+async function facilitatesAnyGroup(registrantId: string, groups: Prisma.BreakoutGroupWhereInput, occurrenceId?: string | null): Promise<boolean> {
+  const registrant = await db.eventRegistrant.findUnique({ where: { id: registrantId }, select: { memberId: true } })
+  return !!registrant?.memberId && await isBreakoutStaff(registrant.memberId, groups, occurrenceId)
 }
 
 /**
@@ -1121,7 +1081,7 @@ export async function getCheckinBreakoutChoices(
     // `fetchBreakoutAvailability`.
     const thisSet = await surfaceBreakoutSet(eventId, breakoutSet, clusterId)
 
-    if (await facilitatesAnyGroup(registrantId, thisSet)) {
+    if (await facilitatesAnyGroup(registrantId, thisSet, occurrenceId)) {
       return { success: true, data: null }
     }
 

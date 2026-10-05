@@ -28,10 +28,12 @@ export function isCheckinLive({
   isOpen,
   date,
   today,
+  requiresOpen = false,
 }: {
   isOpen: boolean
   date: Date | string
   today: string
+  requiresOpen?: boolean
 }): boolean {
-  return isOpen || utcDayOf(date) === today
+  return isOpen || (!requiresOpen && utcDayOf(date) === today)
 }
