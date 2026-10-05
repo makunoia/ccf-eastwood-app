@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation"
 import { IconUsersGroup } from "@tabler/icons-react"
 
+import { dGroupScheduleLabel } from "@/lib/small-groups/list-filters"
 import { DataTable } from "@/components/ui/data-table"
 import { Card, CardContent } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -69,8 +70,8 @@ function SmallGroupCard({ group, allIds }: { group: SmallGroupRow; allIds: strin
               <span>{group.memberCount}</span>
               <span className="text-muted-foreground">Life Stage</span>
               <span>{group.lifeStages.length > 0 ? group.lifeStages.map((ls) => ls.name).join(", ") : <span className="text-muted-foreground">—</span>}</span>
-              <span className="text-muted-foreground">Temp Members</span>
-              <span>{group.tempMemberCount > 0 ? group.tempMemberCount : <span className="text-muted-foreground">—</span>}</span>
+              <span className="text-muted-foreground">Schedule</span>
+              <span>{dGroupScheduleLabel(group)}</span>
             </div>
           </div>
         </div>
@@ -95,7 +96,7 @@ export function SmallGroupsTable({
         {groups.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
             <IconUsersGroup className="size-8" />
-            <p className="text-sm">No DGroups yet</p>
+            <p className="text-sm">No DGroups found</p>
           </div>
         ) : (
           groups.map((group) => (
@@ -108,13 +109,13 @@ export function SmallGroupsTable({
       <div className="hidden md:flex md:flex-1 md:flex-col">
         <DataTable
           tableKey="small-groups"
-          rowLabel={{ one: "small group", many: "small groups" }}
+          rowLabel={{ one: "DGroup", many: "DGroups" }}
           columns={columns}
           data={groups}
           emptyState={
             <>
               <IconUsersGroup className="size-8" />
-              <p className="text-sm">No DGroups yet</p>
+              <p className="text-sm">No DGroups found</p>
             </>
           }
         />

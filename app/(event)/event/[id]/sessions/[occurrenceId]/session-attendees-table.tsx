@@ -652,11 +652,10 @@ export function SessionAttendeesTable({
         />
       </div>
 
-      {sessionRegistrations.length > 0 && <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      {sessionRegistrations.length > 0 && <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
         <StatCard icon={<Users className="size-4" />} label="Registered for this session" value={registrationStats.expected} />
         <StatCard icon={<UserCheck className="size-4" />} label="Checked in" value={registrationStats.checkedIn} />
         <StatCard icon={<Users className="size-4" />} label="Not checked in" value={registrationStats.notCheckedIn} />
-        <StatCard icon={<Target className="size-4" />} label="Registration attendance rate" value={formatTurnoutRate(registrationStats.rate)} />
       </div>}
       <Tabs
         value={activeTab}

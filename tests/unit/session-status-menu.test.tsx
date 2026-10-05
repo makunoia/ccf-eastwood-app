@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+
+import type { SessionRegistrationRow } from "@/app/(event)/event/[id]/sessions/[occurrenceId]/session-registration-roster"
 
 import { TooltipProvider } from "@/components/ui/tooltip"
 import {
@@ -75,7 +77,12 @@ function makeRow(overrides: Partial<AttendeeRow> = {}): AttendeeRow {
   }
 }
 
-function renderTable(rows: AttendeeRow[], canEdit = true, totalRegistrants = rows.length) {
+function renderTable(
+  rows: AttendeeRow[],
+  canEdit = true,
+  totalRegistrants = rows.length,
+  sessionRegistrations: SessionRegistrationRow[] = [],
+) {
   // The app mounts the provider in the event-workspace layout; the table only consumes it.
   return render(
     <TooltipProvider>
@@ -83,6 +90,7 @@ function renderTable(rows: AttendeeRow[], canEdit = true, totalRegistrants = row
         eventId="evt-1"
         occurrenceId="occ-1"
         attendees={rows}
+        sessionRegistrations={sessionRegistrations}
         breakoutGroups={[]}
         breakoutStats={[]}
         volunteerOptions={[]}
@@ -182,42 +190,96 @@ describe("session attendee status menu", () => {
   })
 })
 
-/**
- * The Turnout tile.
- *
- * This is where the registrants-versus-attendance question lives: a session is
- * one sitting, so "of the people on our list, how many came *today*" has an
- * answer. The tile is derived from the same rows the table renders, so it moves
- * with an optimistic edit instead of trailing a server round-trip.
- */
+/** The session pool is the identity-deduplicated union of registrations and arrivals. */
 describe("session turnout tile", () => {
   function makeAttendee(isVolunteer: boolean, i: number) {
-    return makeRow({ id: `a-${i}`, name: `Person ${i}`, isVolunteer, isMember: true })
+    return makeRow({
+      id: `a-${i}`,
+      subjectId: `reg-${i}`,
+      personKey: `member:${i}`,
+      kind: isVolunteer ? "volunteer" : "registrant",
+      name: `Person ${i}`,
+      isVolunteer,
+      isMember: true,
+    })
   }
 
-  it("states the rate with its denominator spelled out", () => {
-    renderTable([makeAttendee(false, 1), makeAttendee(false, 2)], true, 8)
+  function registrations(count: number): SessionRegistrationRow[] {
+    return Array.from({ length: count }, (_, index) => ({
+      registrantId: `reg-${index + 1}`,
+      personKey: `member:${index + 1}`,
+      name: `Person ${index + 1}`,
+      isMember: true,
+      checkedIn: false,
+    }))
+  }
 
-    expect(screen.getByText("25%")).toBeDefined()
-    expect(screen.getByText(/2 of 8 registered checked in/)).toBeDefined()
+  function expectTurnout(rate: string, ratio: string) {
+    const bar = screen.getByRole("progressbar", { name: "Turnout" })
+    expect(bar.getAttribute("aria-valuetext")).toBe(ratio)
+    expect(within(bar.parentElement!).getByText(rate)).toBeDefined()
+    return bar
+  }
+
+  it("uses session registrations rather than the series roster as its denominator", () => {
+    renderTable([makeAttendee(false, 1), makeAttendee(false, 2)], true, 80, registrations(8))
+    expectTurnout("25%", "2 of 8 checked in")
   })
 
-  // Regression: the numerator is participants, not everyone in the room.
-  // Volunteers hold no registration, so counting them could exceed 100%.
-  it("leaves volunteers out of the numerator", () => {
-    renderTable([makeAttendee(false, 1), makeAttendee(true, 2), makeAttendee(true, 3)], true, 4)
-
-    expect(screen.getByText("25%")).toBeDefined()
-    expect(screen.getByText(/1 of 4 registered checked in/)).toBeDefined()
+  it("includes volunteers and walk-ins in both the numerator and the session pool", () => {
+    renderTable(
+      [makeAttendee(false, 1), makeAttendee(true, 5), makeAttendee(false, 6)],
+      true,
+      80,
+      registrations(4),
+    )
+    expectTurnout("50%", "3 of 6 checked in")
   })
 
-  it("says so plainly when nobody registered, rather than showing a rate", () => {
-    renderTable([makeAttendee(false, 1)], true, 0)
-    expect(screen.getByText("No registrations yet")).toBeDefined()
+  it("shows full turnout for arrivals when nobody registered for the session", () => {
+    renderTable([makeAttendee(false, 1)], true, 80)
+    expectTurnout("100%", "1 of 1 checked in")
   })
 
-  it("names the no-shows in the singular when there is one", () => {
-    renderTable([makeAttendee(false, 1)], true, 2)
-    expect(screen.getByText(/1 no-show$/)).toBeDefined()
+  it("shows no rate when there are neither session registrations nor arrivals", async () => {
+    renderTable([], true, 80)
+    const bar = screen.getByRole("img", { name: "Turnout" })
+    expect(within(bar.parentElement!).getByText("—")).toBeDefined()
+    expect(bar.hasAttribute("aria-valuenow")).toBe(false)
+    fireEvent.focus(bar)
+    expect((await screen.findByRole("tooltip")).textContent).toBe("No registrations or check-ins yet")
+  })
+
+  it("shows registered people who have not checked in in the tooltip", async () => {
+    renderTable([makeAttendee(false, 1)], true, 80, registrations(2))
+    fireEvent.focus(expectTurnout("50%", "1 of 2 checked in"))
+    expect((await screen.findByRole("tooltip")).textContent).toBe("1 of 2 checked in · 1 not checked in")
+  })
+
+  it("counts each person once across registration and attendance rows", () => {
+    renderTable(
+      [makeAttendee(false, 1), { ...makeAttendee(true, 1), id: "duplicate-arrival" }],
+      true,
+      80,
+      [...registrations(2), { ...registrations(1)[0], registrantId: "duplicate-registration" }],
+    )
+    expectTurnout("50%", "1 of 2 checked in")
+  })
+
+  it("updates turnout when refreshed attendance props arrive", () => {
+    const props = {
+      eventId: "evt-1",
+      occurrenceId: "occ-1",
+      breakoutGroups: [],
+      breakoutStats: [],
+      volunteerOptions: [],
+      totalRegistrants: 80,
+      sessionRegistrations: registrations(2),
+      canEdit: true,
+    }
+    const view = render(<TooltipProvider><SessionAttendeesTable {...props} attendees={[makeAttendee(false, 1)]} /></TooltipProvider>)
+    expectTurnout("50%", "1 of 2 checked in")
+    view.rerender(<TooltipProvider><SessionAttendeesTable {...props} attendees={[]} /></TooltipProvider>)
+    expectTurnout("0%", "0 of 2 checked in")
   })
 })

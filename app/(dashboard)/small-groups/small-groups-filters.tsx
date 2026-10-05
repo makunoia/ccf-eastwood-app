@@ -1,153 +1,92 @@
 "use client"
 
+import { startTransition, useId, useOptimistic } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { FilterBar, FilterField } from "@/components/filter-bar"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { PersonCombobox } from "@/components/ui/person-combobox"
+import { formatDayOfWeek } from "@/lib/format/schedule"
+import { DGROUP_FILTER_KEYS, type DGroupFilters } from "@/lib/small-groups/list-filters"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
-type LifeStageOption = { id: string; name: string }
-
-type SmallGroupsFiltersProps = {
-  lifeStages: LifeStageOption[]
-  search: string
-  lifeStageId: string
-  genderFocus: string
-  meetingFormat: string
-  status: string
-  groupType: string
-}
+type Option = { id: string; name: string }
+type FilterDefinition = { key: Exclude<keyof DGroupFilters, "search">; label: string; all: string; options: Option[] }
+const option = (id: string, name: string): Option => ({ id, name })
 
 export function SmallGroupsFilters({
-  lifeStages,
-  search,
-  lifeStageId,
-  genderFocus,
-  meetingFormat,
-  status,
-  groupType,
-}: SmallGroupsFiltersProps) {
+  lifeStages, filters, cities, languages, parentGroups, leaders,
+}: {
+  lifeStages: Option[]
+  filters: DGroupFilters
+  cities: string[]
+  languages: string[]
+  parentGroups: Option[]
+  leaders: Option[]
+}) {
+  const leaderFilterId = useId()
   const router = useRouter()
   const pathname = usePathname()
+  const [current, setOptimistic] = useOptimistic(filters)
+  const activeCount = DGROUP_FILTER_KEYS.filter((key) => key !== "search" && Boolean(current[key])).length
+  const definitions: FilterDefinition[] = [
+    { key: "status", label: "Status", all: "All statuses", options: [option("Active", "Active"), option("Pending", "Pending"), option("Inactive", "Inactive")] },
+    { key: "groupType", label: "Group type", all: "All types", options: [option("Regular", "Regular"), option("Couples", "Couples")] },
+    { key: "lifeStageId", label: "Life stage", all: "All life stages", options: [...lifeStages, option("missing", "No life stage set")] },
+    { key: "genderFocus", label: "Gender focus", all: "All genders", options: [option("Male", "Men"), option("Female", "Women"), option("Mixed", "Mixed")] },
+    { key: "meetingFormat", label: "Meeting format", all: "All formats", options: [option("Online", "Online"), option("InPerson", "In person"), option("Hybrid", "Hybrid")] },
+    { key: "day", label: "Meeting day", all: "Any day", options: [...Array.from({ length: 7 }, (_, day) => option(String(day), formatDayOfWeek(day))), option("missing", "Day not set")] },
+    { key: "timeOfDay", label: "Meeting time", all: "Any time", options: [option("morning", "Morning (before 12 PM)"), option("afternoon", "Afternoon (12–6 PM)"), option("evening", "Evening (6 PM onwards)"), option("missing", "Time not set")] },
+    { key: "city", label: "City", all: "All cities", options: cities.map((city) => option(city, city)) },
+    { key: "language", label: "Language", all: "All languages", options: languages.map((language) => option(language, language)) },
+    { key: "leader", label: "Leader", all: "All leaders", options: leaders },
+    { key: "parent", label: "Parent DGroup", all: "All parent groups", options: [option("missing", "No parent group"), option("satellite", "Outside satellite"), ...parentGroups] },
+  ]
 
-  const activeCount = [lifeStageId, genderFocus, meetingFormat, status, groupType].filter(Boolean).length
-  const hasFilters = Boolean(search) || activeCount > 0
-
-  function buildUrl(overrides: Record<string, string>) {
+  function update(next: DGroupFilters) {
     const params = new URLSearchParams()
-    const current = { search, lifeStageId, genderFocus, meetingFormat, status, groupType, ...overrides }
-    if (current.search) params.set("search", current.search)
-    if (current.lifeStageId) params.set("lifeStageId", current.lifeStageId)
-    if (current.genderFocus) params.set("genderFocus", current.genderFocus)
-    if (current.meetingFormat) params.set("meetingFormat", current.meetingFormat)
-    if (current.status) params.set("status", current.status)
-    if (current.groupType) params.set("groupType", current.groupType)
+    for (const key of DGROUP_FILTER_KEYS) if (next[key]) params.set(key, next[key])
     const qs = params.toString()
-    return qs ? `${pathname}?${qs}` : pathname
-  }
-
-  function setFilter(key: string, value: string) {
-    router.replace(buildUrl({ [key]: value }))
+    startTransition(() => {
+      setOptimistic(next)
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
+    })
   }
 
   return (
     <FilterBar
-      searchValue={search}
+      searchValue={current.search}
       searchPlaceholder="Search groups or leaders..."
-      onSearch={(value) => setFilter("search", value)}
+      onSearch={(search) => update({ ...current, search })}
       activeCount={activeCount}
-      hasActive={hasFilters}
-      onClear={() => router.replace(pathname)}
+      hasActive={Boolean(current.search) || activeCount > 0}
+      onClear={() => update(Object.fromEntries(DGROUP_FILTER_KEYS.map((key) => [key, ""])) as DGroupFilters)}
     >
-      <FilterField label="Life Stage">
-        <Select
-          value={lifeStageId || "all"}
-          onValueChange={(v) => setFilter("lifeStageId", v === "all" ? "" : v)}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Life Stage" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Life Stages</SelectItem>
-            {lifeStages.map((ls) => (
-              <SelectItem key={ls.id} value={ls.id}>
-                {ls.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </FilterField>
-
-      <FilterField label="Group Type">
-        <Select
-          value={groupType || "all"}
-          onValueChange={(v) => setFilter("groupType", v === "all" ? "" : v)}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Group Type" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Types</SelectItem>
-            <SelectItem value="Regular">Regular</SelectItem>
-            <SelectItem value="Couples">Couples</SelectItem>
-          </SelectContent>
-        </Select>
-      </FilterField>
-
-      <FilterField label="Gender Focus">
-        <Select
-          value={genderFocus || "all"}
-          onValueChange={(v) => setFilter("genderFocus", v === "all" ? "" : v)}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Gender Focus" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Genders</SelectItem>
-            <SelectItem value="Male">Men</SelectItem>
-            <SelectItem value="Female">Women</SelectItem>
-            <SelectItem value="Mixed">Mixed</SelectItem>
-          </SelectContent>
-        </Select>
-      </FilterField>
-
-      <FilterField label="Format">
-        <Select
-          value={meetingFormat || "all"}
-          onValueChange={(v) => setFilter("meetingFormat", v === "all" ? "" : v)}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Format" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Formats</SelectItem>
-            <SelectItem value="Online">Online</SelectItem>
-            <SelectItem value="InPerson">In Person</SelectItem>
-            <SelectItem value="Hybrid">Hybrid</SelectItem>
-          </SelectContent>
-        </Select>
-      </FilterField>
-
-      <FilterField label="Status">
-        <Select
-          value={status || "all"}
-          onValueChange={(v) => setFilter("status", v === "all" ? "" : v)}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Statuses</SelectItem>
-            <SelectItem value="Active">Active</SelectItem>
-            <SelectItem value="Pending">Pending</SelectItem>
-            <SelectItem value="Inactive">Inactive</SelectItem>
-          </SelectContent>
-        </Select>
-      </FilterField>
+      {definitions.map(({ key, label, all, options }) => (
+        <FilterField key={key} label={label} htmlFor={key === "leader" ? leaderFilterId : undefined}>
+          {key === "leader" ? (
+            <PersonCombobox
+              id={leaderFilterId}
+              options={options.map(({ id, name }) => ({ value: id, label: name }))}
+              value={current.leader}
+              onValueChange={(leader) => update({ ...current, leader })}
+              placeholder="All leaders"
+              searchPlaceholder="Search leaders..."
+              emptyText="No leaders found."
+              clearable
+              clearLabel="All leaders"
+            />
+          ) : (
+            <Select value={current[key] || "all"} onValueChange={(value) => update({ ...current, [key]: value === "all" ? "" : value })}>
+              <SelectTrigger className="w-full" aria-label={label}>
+                <SelectValue placeholder={all} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{all}</SelectItem>
+                {options.map(({ id, name }) => <SelectItem key={id} value={id}>{name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          )}
+        </FilterField>
+      ))}
     </FilterBar>
   )
 }
