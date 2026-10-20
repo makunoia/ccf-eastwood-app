@@ -358,6 +358,7 @@ export async function assignCatchMechRegistrantToGroup(
         where: { id: existing.id },
         data: {
           status: "Pending",
+          capacityOverrideApprovedAt: null,
           smallGroupId: groupId,
           resolvedAt: null,
         },
@@ -367,6 +368,7 @@ export async function assignCatchMechRegistrantToGroup(
       await db.smallGroupMemberRequest.create({
         data: {
           status: "Pending",
+          capacityOverrideApprovedAt: null,
           smallGroupId: groupId,
           guestId: registrant.guestId ?? undefined,
           memberId: registrant.memberId ?? undefined,
@@ -449,7 +451,7 @@ export async function reopenCatchMechRequest(
       if (request.status === "Rejected") {
         const reopened = await tx.smallGroupMemberRequest.updateMany({
           where: { id: request.id, status: "Rejected", registrantCancelledAt: null },
-          data: { status: "Pending", resolvedAt: null, declineReason: null, notes: null },
+          data: { capacityOverrideApprovedAt: null, status: "Pending", resolvedAt: null, declineReason: null, notes: null },
         })
         if (reopened.count !== 1) throw new Error("This request has already changed.")
         await tx.smallGroupLog.create({
@@ -478,7 +480,7 @@ export async function reopenCatchMechRequest(
         // Clear the request's memberId BEFORE deleting the member — the FK cascades.
         await tx.smallGroupMemberRequest.update({
           where: { id: request.id },
-          data: { status: "Pending", resolvedAt: null, guestId, memberId: null },
+          data: { capacityOverrideApprovedAt: null, status: "Pending", resolvedAt: null, guestId, memberId: null },
         })
         await tx.smallGroupLog.create({
           data: {
@@ -503,7 +505,7 @@ export async function reopenCatchMechRequest(
         })
         await tx.smallGroupMemberRequest.update({
           where: { id: request.id },
-          data: { status: "Pending", resolvedAt: null },
+          data: { capacityOverrideApprovedAt: null, status: "Pending", resolvedAt: null },
         })
         await tx.smallGroupLog.create({
           data: {

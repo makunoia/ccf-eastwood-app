@@ -52,6 +52,7 @@ export async function advancePendingInterest(
         where: { id: targeted.id, status: "Pending", smallGroupId: targeted.smallGroupId },
         data: {
           smallGroupId: options.groupId,
+          capacityOverrideApprovedAt: null,
           status: options.status,
           resolvedAt: options.status === "Confirmed" ? new Date() : null,
           assignedByUserId: options.actorId,
@@ -84,6 +85,7 @@ export async function advancePendingInterest(
     where: { id: request.id, origin: "RegistrationIntent", status: "Pending", smallGroupId: null },
     data: {
       smallGroupId: options.groupId,
+      capacityOverrideApprovedAt: null,
       origin: "Assignment",
       status: options.status,
       resolvedAt: options.status === "Confirmed" ? new Date() : null,

@@ -315,7 +315,7 @@ describe("catch-mech dashboard count — integration", () => {
       data: { eventId: event.id, breakoutGroupId: breakout.id, facilitatorVolunteerId: volunteer.id },
     })
     const guest = await db.guest.create({ data: { firstName: "Gina", lastName: "Guest", language: [] } })
-    const reg = await db.eventRegistrant.create({ data: { eventId: event.id, guestId: guest.id } })
+    const reg = await db.eventRegistrant.create({ data: { attendedAt: new Date(), eventId: event.id, guestId: guest.id } })
     await db.breakoutGroupMember.create({ data: { breakoutGroupId: breakout.id, registrantId: reg.id } })
 
     const result = await submitCatchMechConfirmations(session.token, [

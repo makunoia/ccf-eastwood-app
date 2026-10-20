@@ -1,6 +1,9 @@
 "use client"
 
 import * as React from "react"
+import { Button } from "@/components/ui/button"
+import { useRouter } from "next/navigation"
+import { catchMechEmptyMessage, CATCH_MECH_ELIGIBILITY_ERROR } from "@/lib/catch-mech/eligibility-copy"
 import {
   submitCatchMechConfirmations,
   createSmallGroupForTimothy,
@@ -31,6 +34,7 @@ type RowData = {
 }
 
 type Props = {
+  oneTime?: boolean
   token: string
   groupName: string
   isTimothy: boolean
@@ -88,9 +92,10 @@ function DecisionToggle({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy: _isTimothy, candidates, rows }: Props) {
+export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy: _isTimothy, candidates, rows, oneTime = false }: Props) {
   // Resolved (confirmed/rejected) registrants are filtered out server-side, so every
   // row here still needs a decision.
+  const router = useRouter()
   const pendingRows = rows
 
   // With one destination there is nothing to choose — the server implies it.
@@ -170,7 +175,8 @@ export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy
           />
         </div>
 
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+        {error === CATCH_MECH_ELIGIBILITY_ERROR && <button type="button" className="text-sm underline" onClick={() => { setNeedsGroupName(false); setDeclineQueue([]); setDecisions({}); setError(""); router.refresh() }}>Refresh choices</button>}
 
         <button
           type="button"
@@ -314,7 +320,7 @@ export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy
         <div className="rounded-lg border bg-muted/30 px-4 py-3">
           <p className="font-medium text-sm">{current.name}</p>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {current.type === "guest" ? "First-time attendee" : "Returning member"}
+            {current.type === "guest" ? "Guest" : "Member"}
           </p>
         </div>
 
@@ -359,7 +365,8 @@ export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy
               className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring resize-none"
             />
           )}
-          {reasonError && <p className="text-xs text-destructive">{reasonError}</p>}
+          {reasonError === CATCH_MECH_ELIGIBILITY_ERROR && <button type="button" className="text-sm underline" onClick={() => { setDeclineQueue([]); setDecisions({}); setReasonError(""); router.refresh() }}>Refresh choices</button>}
+        {reasonError && <p className="text-xs text-destructive">{reasonError}</p>}
         </div>
 
         <div className="flex items-center gap-2">
@@ -388,10 +395,14 @@ export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy
   if (pendingRows.length === 0) {
     return (
       <div className="text-center space-y-2 py-4">
-        <p className="font-medium">All members reviewed</p>
+        <p className="font-medium">No eligible participants</p>
         <p className="text-sm text-muted-foreground">
-          Everyone from your breakout group has already been confirmed or declined.
+          {catchMechEmptyMessage(oneTime)}
         </p>
+        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+        <Button onClick={() => { void handleSubmit() }} disabled={submitting}>
+          {submitting ? "Submitting…" : "Submit no placements"}
+        </Button>
       </div>
     )
   }
@@ -495,7 +506,7 @@ export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy
               <div className="min-w-0 sm:flex-1">
                 <p className="font-medium text-sm wrap-break-word">{r.name}</p>
                 <p className="text-xs text-muted-foreground">
-                  {r.type === "guest" ? "First-time attendee" : "Returning member"}
+                  {r.type === "guest" ? "Guest" : "Member"}
                 </p>
               </div>
               <DecisionToggle
@@ -537,7 +548,8 @@ export function CatchMechConfirmClient({ token, groupName: _groupName, isTimothy
         ))}
       </div>
 
-      {error && <p className="text-sm text-destructive text-center">{error}</p>}
+      {error && <p role="alert" className="text-sm text-destructive text-center">{error}</p>}
+      {error === CATCH_MECH_ELIGIBILITY_ERROR && <button type="button" className="text-sm underline" onClick={() => { setDecisions({}); setDeclineQueue([]); setNeedsGroupName(false); setError(""); router.refresh() }}>Refresh choices</button>}
 
       <button
         type="button"

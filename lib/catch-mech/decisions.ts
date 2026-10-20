@@ -22,7 +22,7 @@ export type ConfirmDecision = {
   registrantId: string
   status: "confirmed" | "pending" | "declined"
   // Which of the faci's groups absorbs this person. Required on confirm when the
-  // faci has more than one candidate group; ignored otherwise.
+  // faci has more than one candidate group; otherwise the owned group is implied.
   targetGroupId?: string
   declineReason?: DeclineReason
   // Free-text detail, only used when declineReason is "Others"
@@ -56,11 +56,12 @@ export function validateTargets(
   decisions: ConfirmDecision[],
   candidates: CandidateGroup[]
 ): string | null {
-  if (candidates.length <= 1) return null
+  if (candidates.length === 0) return null
   for (const d of decisions) {
     if (d.status !== "confirmed") continue
     if (!d.targetGroupId) {
-      return "Please choose which DGroup each confirmed person will join"
+      if (candidates.length > 1) return "Please choose which DGroup each confirmed person will join"
+      continue
     }
     if (!candidates.some((c) => c.id === d.targetGroupId)) {
       return "You can only confirm people into a DGroup you lead"

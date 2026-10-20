@@ -37,6 +37,7 @@ export const RESOLVABLE_REQUEST_SELECT = {
   fromGroupId: true,
   breakoutGroupId: true,
   status: true,
+  capacityOverrideApprovedAt: true,
   guest: { select: PROMOTABLE_GUEST_SELECT },
   member: { select: { firstName: true, lastName: true } },
 } satisfies Prisma.SmallGroupMemberRequestSelect
@@ -142,6 +143,8 @@ export async function resolveMemberRequest(
   if (request.smallGroupId !== group.id) return { outcome: "skipped", reason: "wrong-group" }
   if (!request.guestId && !request.memberId) return { outcome: "skipped", reason: "no-person" }
 
+  // Only a trusted assignment action writes this approval for the current destination.
+  enforceCapacity = enforceCapacity && !request.capacityOverrideApprovedAt
   const now = new Date()
   const performedBy = {
     performedByMemberId: actor.memberId ?? null,

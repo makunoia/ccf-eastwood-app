@@ -109,7 +109,7 @@ export async function resolveConfirmations(
   /** The faci's Member — public flow has no User, so this is the only attribution. */
   actorMemberId: string | null,
   sourceLabel: string
-): Promise<void> {
+): Promise<string[]> {
   const now = new Date()
   const suffix = `${sourceLabel}${eventName ? ` of ${eventName}` : ""}`
 
@@ -164,7 +164,7 @@ export async function resolveConfirmations(
   }
 
   const all = [...declines, ...guestConfirms, ...memberConfirms]
-  if (all.length === 0) return
+  if (all.length === 0) return []
 
   // ── One read for every pending request this batch could resolve ────────────
   const guestIds = all.map((a) => a.registrant.guestId).filter((id): id is string => !!id)
@@ -174,27 +174,33 @@ export async function resolveConfirmations(
   const pendingRequests = await tx.smallGroupMemberRequest.findMany({
     where: {
       status: "Pending",
-      smallGroupId: { in: groupIds },
-      OR: [
-        ...(guestIds.length > 0 ? [{ guestId: { in: guestIds } }] : []),
-        ...(memberIds.length > 0 ? [{ memberId: { in: memberIds } }] : []),
+      AND: [
+        { OR: [
+          { smallGroupId: { in: groupIds } },
+          { origin: "RegistrationIntent", smallGroupId: null },
+        ] },
+        { OR: [
+          ...(guestIds.length > 0 ? [{ guestId: { in: guestIds } }] : []),
+          ...(memberIds.length > 0 ? [{ memberId: { in: memberIds } }] : []),
+        ] },
       ],
     },
-    select: { id: true, guestId: true, memberId: true, smallGroupId: true },
+    select: { id: true, guestId: true, memberId: true, smallGroupId: true, origin: true, sourceEventId: true },
   })
+  const affectedInterestEvents = new Set<string>()
 
   /** Pending request ids for one person in one group — usually zero or one. */
-  const requestsFor = (a: Actionable): string[] => {
-    const key = a.registrant.memberId
-      ? `m:${a.registrant.memberId}`
-      : `g:${a.registrant.guestId}`
-    return pendingRequests
-      .filter(
-        (r) =>
-          r.smallGroupId === a.smallGroupId &&
-          (r.memberId ? `m:${r.memberId}` : `g:${r.guestId}`) === key
-      )
-      .map((r) => r.id)
+  const requestsFor = (a: Actionable, includeInterest = false): string[] => {
+    const key = a.registrant.memberId ? `m:${a.registrant.memberId}` : `g:${a.registrant.guestId}`
+    const matching = pendingRequests.filter((request) =>
+      (request.smallGroupId === a.smallGroupId ||
+        (includeInterest && request.origin === "RegistrationIntent" && request.smallGroupId === null)) &&
+      (request.memberId ? `m:${request.memberId}` : `g:${request.guestId}`) === key
+    )
+    for (const request of matching) {
+      if (request.sourceEventId) affectedInterestEvents.add(request.sourceEventId)
+    }
+    return matching.map((request) => request.id)
   }
 
   const personName = (r: FetchedRegistrant) =>
@@ -311,12 +317,14 @@ export async function resolveConfirmations(
       description: `${guest.firstName} ${guest.lastName} confirmed via ${suffix} and joined the group`,
     })
 
-    const existing = requestsFor(a)
+    const existing = requestsFor(a, true)
     if (existing.length > 0) {
       await tx.smallGroupMemberRequest.updateMany({
         where: { id: { in: existing } },
         data: {
           status: "Confirmed",
+          smallGroupId: a.smallGroupId,
+          origin: "Assignment",
           resolvedAt: now,
           memberId: newMember.id,
           guestId: null,
@@ -351,11 +359,11 @@ export async function resolveConfirmations(
       description: `${personName(a.registrant)} confirmed via ${suffix} and joined the group`,
     })
 
-    const existing = requestsFor(a)
+    const existing = requestsFor(a, true)
     if (existing.length > 0) {
       await tx.smallGroupMemberRequest.updateMany({
         where: { id: { in: existing } },
-        data: { status: "Confirmed", resolvedAt: now, ...breakoutLink },
+        data: { status: "Confirmed", smallGroupId: a.smallGroupId, origin: "Assignment", resolvedAt: now, ...breakoutLink },
       })
     } else {
       // No pre-existing request — create a confirmed record so the admin page tracks it
@@ -392,4 +400,5 @@ export async function resolveConfirmations(
   if (logs.length > 0) {
     await tx.smallGroupLog.createMany({ data: logs })
   }
+  return [...affectedInterestEvents]
 }

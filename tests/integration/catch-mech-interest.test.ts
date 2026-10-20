@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
+import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
 import { auth } from "@/lib/auth"
 import {
@@ -287,4 +288,116 @@ describe("Catch Mech event interest", () => {
     expect((await reopenCatchMechRequest(request.id, event.id)).success).toBe(false)
     expect((await db.smallGroupMemberRequest.findUniqueOrThrow({ where: { id: request.id } })).status).toBe("Rejected")
   })
+})
+
+describe("manual DGroup interest assignment", () => {
+  it("allows an active unmatched group, but suggested assignment still requires a match", async () => {
+    const { event, group } = await seed()
+    await db.smallGroup.update({ where: { id: group.id }, data: { genderFocus: "Male" } })
+    const guest = await db.guest.create({ data: { firstName: "Maria", lastName: "Santos", gender: "Female", language: [] } })
+    const request = await db.smallGroupMemberRequest.create({ data: { guestId: guest.id, origin: "RegistrationIntent", sourceEventId: event.id } })
+    expect((await assignCatchMechInterest(event.id, request.id, group.id)).success).toBe(false)
+    expect(await assignCatchMechInterest(event.id, request.id, group.id, { mode: "manual" })).toEqual({ success: true, data: "awaiting-confirmation" })
+  })
+  it.each(["leader", "admin"])("requires explicit capacity approval and honors it on %s confirmation", async (surface) => {
+    const { event, group } = await seed()
+    const token = `leader-${surface}`
+    await db.smallGroup.update({ where: { id: group.id }, data: { memberLimit: 0, leaderConfirmationToken: token } })
+    const guest = await db.guest.create({ data: { firstName: "Maria", lastName: "Santos", language: [] } })
+    const request = await db.smallGroupMemberRequest.create({ data: { guestId: guest.id, origin: "RegistrationIntent", sourceEventId: event.id } })
+    expect((await assignCatchMechInterest(event.id, request.id, group.id, { mode: "manual" })).success).toBe(false)
+    expect((await assignCatchMechInterest(event.id, request.id, group.id, { mode: "suggested", overrideCapacity: true })).success).toBe(false)
+    expect(await assignCatchMechInterest(event.id, request.id, group.id, { mode: "manual", overrideCapacity: true })).toEqual({ success: true, data: "awaiting-confirmation" })
+    expect((await db.smallGroupMemberRequest.findUniqueOrThrow({ where: { id: request.id } })).capacityOverrideApprovedAt).not.toBeNull()
+    expect(await db.smallGroupLog.count({ where: { smallGroupId: group.id, performedByUserId: "u1", description: { contains: "over capacity" } } })).toBe(1)
+    vi.mocked(revalidatePath).mockClear()
+    if (surface === "admin") expect((await resolveMemberRequestsBatch([request.id], "approve")).success).toBe(true)
+    else {
+      const { submitMemberConfirmations } = await import("@/app/small-group-confirmation/[token]/actions")
+      expect((await submitMemberConfirmations(token, [{ requestId: request.id, status: "confirmed" }])).success).toBe(true)
+    }
+    expect(revalidatePath).toHaveBeenCalledWith(`/event/${event.id}/catch-mech`, "layout")
+    expect((await db.smallGroupMemberRequest.findUniqueOrThrow({ where: { id: request.id } })).status).toBe("Confirmed")
+    expect((await db.guest.findUniqueOrThrow({ where: { id: guest.id } })).memberId).not.toBeNull()
+  })
+  it("places an ungrouped member over capacity and rejects competing assignments to the same request", async () => {
+    const { event, group } = await seed()
+    await db.smallGroup.update({ where: { id: group.id }, data: { memberLimit: 0 } })
+    const member = await db.member.create({ data: { firstName: "Ana", lastName: "Member", language: [], dateJoined: new Date() } })
+    const request = await db.smallGroupMemberRequest.create({ data: { memberId: member.id, origin: "RegistrationIntent", sourceEventId: event.id } })
+    const results = await Promise.all([1, 2].map(() => assignCatchMechInterest(event.id, request.id, group.id, { mode: "manual", overrideCapacity: true })))
+    expect(results.filter((result) => result.success)).toHaveLength(1)
+    expect((await db.member.findUniqueOrThrow({ where: { id: member.id } })).smallGroupId).toBe(group.id)
+    expect(await db.smallGroupLog.count({ where: { smallGroupId: group.id, description: { contains: "over capacity" } } })).toBe(1)
+  })
+  it("does not expose manual groups without event access and DGroup write permission", async () => {
+    const { event, group } = await seed()
+    const { getCatchMechInterestGroups } = await import("@/app/(event)/event/[id]/catch-mech/interest-actions")
+    const guest = await db.guest.create({ data: { firstName: "Mia", lastName: "Guest", language: [] } })
+    const request = await db.smallGroupMemberRequest.create({ data: { guestId: guest.id, origin: "RegistrationIntent", sourceEventId: event.id } })
+    vi.mocked(auth).mockResolvedValue({ user: { id: "u1", role: "Staff", permissions: [{ feature: "Events", actions: ["Read"] }], eventAccess: [event.id] } } as never)
+    expect((await getCatchMechInterestGroups(event.id, request.id)).success).toBe(false)
+    expect((await assignCatchMechInterest(event.id, request.id, group.id, { mode: "manual" })).success).toBe(false)
+    vi.mocked(auth).mockResolvedValue({ user: { id: "u1", role: "Staff", permissions: [{ feature: "Events", actions: ["Read"] }, { feature: "SmallGroups", actions: ["Write"] }], eventAccess: ["another-event"] } } as never)
+    expect((await getCatchMechInterestGroups(event.id, request.id)).success).toBe(false)
+  })
+  it("offers only active groups and clears approval when the destination changes", async () => {
+    const { event, group } = await seed()
+    await db.smallGroup.update({ where: { id: group.id }, data: { memberLimit: 0 } })
+    const other = await db.smallGroup.create({ data: { name: "Other", leaderId: group.leaderId } })
+    await db.smallGroup.create({ data: { name: "Inactive", leaderId: group.leaderId, status: "Inactive" } })
+    await db.smallGroup.create({ data: { name: "Pending", leaderId: group.leaderId, status: "Pending" } })
+    const guest = await db.guest.create({ data: { firstName: "Mia", lastName: "Guest", language: [] } })
+    const request = await db.smallGroupMemberRequest.create({ data: { guestId: guest.id, origin: "RegistrationIntent", sourceEventId: event.id } })
+    const { getCatchMechInterestGroups } = await import("@/app/(event)/event/[id]/catch-mech/interest-actions")
+    const options = await getCatchMechInterestGroups(event.id, request.id)
+    expect(options.success && options.data.map((option) => option.id).sort()).toEqual([group.id, other.id].sort())
+    await assignCatchMechInterest(event.id, request.id, group.id, { mode: "manual", overrideCapacity: true })
+    const { advancePendingInterest } = await import("@/lib/small-groups/advance-interest")
+    await db.$transaction((tx) => advancePendingInterest(tx, { person: { guestId: guest.id }, groupId: other.id, status: "Pending", actorId: "u1" }))
+    expect((await db.smallGroupMemberRequest.findUniqueOrThrow({ where: { id: request.id } })).capacityOverrideApprovedAt).toBeNull()
+  })
+})
+
+it("does not let concurrent assignments exceed the last seat without approval", async () => {
+  const { event, group } = await seed()
+  await db.smallGroup.update({ where: { id: group.id }, data: { memberLimit: 1 } })
+  const requests = []
+  for (const firstName of ["First", "Second"]) {
+    const member = await db.member.create({ data: { firstName, lastName: "Seeker", dateJoined: new Date(), language: [] } })
+    requests.push(await db.smallGroupMemberRequest.create({ data: { memberId: member.id, origin: "RegistrationIntent", sourceEventId: event.id } }))
+  }
+  const results = await Promise.all(requests.map((request) => assignCatchMechInterest(event.id, request.id, group.id, { mode: "manual" })))
+  expect(results.filter((result) => result.success)).toHaveLength(1)
+  expect(await db.member.count({ where: { smallGroupId: group.id } })).toBe(1)
+  expect(await db.smallGroupMemberRequest.count({ where: { capacityOverrideApprovedAt: { not: null } } })).toBe(0)
+})
+
+it("does not offer or assign a leader's own group through manual interest assignment", async () => {
+  const { event, group } = await seed()
+  const interest = await db.smallGroupMemberRequest.create({ data: { memberId: group.leaderId, origin: "RegistrationIntent", sourceEventId: event.id } })
+  const { getCatchMechInterestGroups } = await import("@/app/(event)/event/[id]/catch-mech/interest-actions")
+  const options = await getCatchMechInterestGroups(event.id, interest.id)
+  expect(options.success && options.data.some((option) => option.id === group.id)).toBe(false)
+  expect((await assignCatchMechInterest(event.id, interest.id, group.id, { mode: "manual", overrideCapacity: true })).success).toBe(false)
+})
+
+it.each(["leader", "admin"])("serializes concurrent %s confirmations for the last seat", async (surface) => {
+  const { event, group } = await seed()
+  const token = `capacity-race-${surface}`
+  await db.smallGroup.update({ where: { id: group.id }, data: { memberLimit: 1, leaderConfirmationToken: token } })
+  const requests = []
+  for (const firstName of ["First", "Second"]) {
+    const guest = await db.guest.create({ data: { firstName, lastName: "Seeker", language: [] } })
+    const request = await db.smallGroupMemberRequest.create({ data: { guestId: guest.id, origin: "RegistrationIntent", sourceEventId: event.id } })
+    expect((await assignCatchMechInterest(event.id, request.id, group.id, { mode: "manual" })).success).toBe(true)
+    requests.push(request)
+  }
+  const { submitMemberConfirmations } = await import("@/app/small-group-confirmation/[token]/actions")
+  await Promise.all(requests.map((request) => surface === "leader"
+    ? submitMemberConfirmations(token, [{ requestId: request.id, status: "confirmed" }])
+    : resolveMemberRequestsBatch([request.id], "approve")))
+  expect(await db.member.count({ where: { smallGroupId: group.id } })).toBe(1)
+  expect(await db.smallGroupMemberRequest.count({ where: { sourceEventId: event.id, status: "Confirmed" } })).toBe(1)
+  expect(await db.smallGroupMemberRequest.count({ where: { sourceEventId: event.id, status: "Pending" } })).toBe(1)
 })

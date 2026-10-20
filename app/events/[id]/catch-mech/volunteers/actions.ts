@@ -1,7 +1,9 @@
 "use server"
 
+import { eligibleCatchMechRegistrantIds, assertCatchMechEligibility, CatchMechEligibilityError } from "@/lib/catch-mech/eligibility"
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
+import { withSerializableRetry } from "@/lib/db/serializable-retry"
 import type { Prisma } from "@/app/generated/prisma/client"
 import { formatPhilippinePhone } from "@/lib/utils"
 import { contactHintFrom } from "@/lib/contact-hint"
@@ -182,9 +184,11 @@ export async function searchCatchMechVolunteerParticipants(
 
     // `is` keeps a null relation from matching: a registrant with no member row
     // must not fall into the member branch just because the filter is nullable.
+    const eligibleIds = await eligibleCatchMechRegistrantIds(session.eventId)
     const registrants = await db.eventRegistrant.findMany({
       where: {
         eventId: session.eventId,
+        id: { in: [...eligibleIds] },
         OR: [
           { member: { is: { smallGroupId: null, ...(nameMatch as Prisma.MemberWhereInput) } } },
           { guest: { is: { memberId: null, ...(nameMatch as Prisma.GuestWhereInput) } } },
@@ -194,7 +198,7 @@ export async function searchCatchMechVolunteerParticipants(
       // created in the same millisecond, and the dedup below keeps whichever
       // comes first — without a total order that choice flips between runs.
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-      take: PARTICIPANT_RESULT_LIMIT,
+
       select: {
         id: true,
         memberId: true,
@@ -229,7 +233,7 @@ export async function searchCatchMechVolunteerParticipants(
     }
 
     results.sort((a, b) => a.name.localeCompare(b.name))
-    return { success: true, data: results }
+    return { success: true, data: results.slice(0, PARTICIPANT_RESULT_LIMIT) }
   } catch (err) {
     console.error("[searchCatchMechVolunteerParticipants]", err)
     return { success: false, error: "Search failed. Please try again." }
@@ -340,8 +344,10 @@ export async function submitCatchMechVolunteerPlacements(
     ]
     const member = session.volunteer.member
     let createdGroupId: string | null = null
+    let affectedInterestEvents: string[] = []
 
-    await db.$transaction(async (tx) => {
+    await withSerializableRetry(async (tx) => {
+      await assertCatchMechEligibility(session.eventId, registrantIds, tx)
       if (createsGroup) {
         const fresh = await tx.member.findUnique({
           where: { id: member.id },
@@ -390,7 +396,7 @@ export async function submitCatchMechVolunteerPlacements(
         groupId: decision.targetGroupId ?? null,
       }))
 
-      await resolveConfirmations(
+      affectedInterestEvents = await resolveConfirmations(
         null,
         session.volunteer.id,
         resolved,
@@ -414,6 +420,7 @@ export async function submitCatchMechVolunteerPlacements(
       })
     }, { timeout: 30000 })
 
+    for (const interestEventId of affectedInterestEvents) revalidatePath(`/event/${interestEventId}/catch-mech`, "layout")
     for (const groupId of [...existingGroupIds, createdGroupId]) {
       if (groupId) revalidatePath(`/small-groups/${groupId}`)
     }
@@ -424,6 +431,7 @@ export async function submitCatchMechVolunteerPlacements(
 
     return { success: true, data: { placedCount: placements.length, createdGroupId } }
   } catch (err) {
+    if (err instanceof CatchMechEligibilityError) return { success: false, error: err.message }
     if (err instanceof AlreadyLeadsGroupError) {
       return {
         success: false,

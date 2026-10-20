@@ -1,8 +1,10 @@
 "use server"
 
+import { z } from "zod"
 import { revalidatePath } from "next/cache"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
+import { withSerializableRetry } from "@/lib/db/serializable-retry"
 import { canAccessEvent, canWrite } from "@/lib/permissions"
 import { logMembershipMove } from "@/lib/small-groups/membership-log"
 import { advancePendingInterest } from "@/lib/small-groups/advance-interest"
@@ -75,8 +77,13 @@ export async function getCatchMechInterestMatches(
 export async function assignCatchMechInterest(
   eventId: string,
   requestId: string,
-  groupId: string
+  groupId: string,
+  options: { mode?: "suggested" | "manual"; overrideCapacity?: boolean } = {}
 ): Promise<ActionResult<"placed" | "awaiting-confirmation">> {
+  const parsed = z.object({ mode: z.enum(["suggested", "manual"]).default("suggested"), overrideCapacity: z.boolean().default(false) }).safeParse(options)
+  if (!parsed.success || !z.string().min(1).safeParse(groupId).success) return { success: false, error: "Invalid assignment options." }
+  const { mode, overrideCapacity } = parsed.data
+  if (overrideCapacity && mode !== "manual") return { success: false, error: "Capacity overrides require manual assignment." }
   const actorId = await interestActor(eventId)
   if (!actorId) return { success: false, error: "Unauthorized." }
   try {
@@ -84,28 +91,49 @@ export async function assignCatchMechInterest(
     if (!request) return { success: false, error: "This interest request has already changed." }
 
     // Only offer a group the established matching engine currently considers
-    // eligible for this person. The action rechecks after the inline list loads.
-    const levels = await matchingLevels(eventId, request)
-    if (!levels.some((level) => level.matches.some((match) => match.groupId === groupId))) {
+    // eligible for this person. Manual selection deliberately bypasses matching.
+    const levels = mode === "suggested" ? await matchingLevels(eventId, request) : []
+    if (mode === "suggested" && !levels.some((level) => level.matches.some((match) => match.groupId === groupId))) {
       return { success: false, error: "This DGroup is no longer a match. Refresh the suggestions." }
     }
 
-    const outcome = await db.$transaction(async (tx) => {
+    const outcome = await withSerializableRetry(async (tx) => {
+      const request = await tx.smallGroupMemberRequest.findFirst({
+        where: { id: requestId, sourceEventId: eventId, origin: "RegistrationIntent", status: "Pending", smallGroupId: null },
+        select: { id: true, memberId: true, guestId: true },
+      })
+      if (!request) throw new InterestActionError("This interest request has already changed.")
       const group = await tx.smallGroup.findUnique({
         where: { id: groupId },
-        select: { status: true, memberLimit: true, _count: { select: { members: true } } },
+        select: { status: true, leaderId: true, memberLimit: true, _count: { select: { members: true } } },
       })
-      if (!group || group.status === "Inactive") throw new InterestActionError("This DGroup is no longer available.")
+      if (!group || group.status === "Inactive" || (mode === "manual" && group.status !== "Active")) throw new InterestActionError("This DGroup is no longer available.")
 
+      if (request.memberId && group.leaderId === request.memberId) throw new InterestActionError("A leader cannot be assigned to their own DGroup.")
+
+      const full = group.memberLimit !== null && group._count.members >= group.memberLimit
+      if (full && !overrideCapacity) throw new InterestActionError("This DGroup is full. Use manual assignment and confirm Assign over capacity.")
+      const approvedAt = full && overrideCapacity ? new Date() : null
+      // Claim the request before membership writes. A competing assignment cannot reuse it.
+      const claimed = await tx.smallGroupMemberRequest.updateMany({
+        where: { id: requestId, status: "Pending", origin: "RegistrationIntent", smallGroupId: null },
+        data: { capacityOverrideApprovedAt: approvedAt },
+      })
+      if (claimed.count !== 1) throw new InterestActionError("This interest request has already changed.")
+      async function saveOverride() {
+        await tx.smallGroupMemberRequest.update({ where: { id: requestId }, data: { capacityOverrideApprovedAt: approvedAt } })
+        if (approvedAt) await tx.smallGroupLog.create({ data: {
+          smallGroupId: groupId, memberId: request!.memberId, guestId: request!.guestId,
+          action: "TempAssignmentCreated", performedByUserId: actorId,
+          description: `Admin approved assignment over capacity to this DGroup at ${approvedAt.toISOString()} from event DGroup interest`,
+        } })
+      }
       if (request.memberId) {
         const member = await tx.member.findUnique({
           where: { id: request.memberId },
           select: { firstName: true, lastName: true, smallGroupId: true },
         })
         if (!member || member.smallGroupId === groupId) throw new InterestActionError("This member's DGroup details have changed.")
-        if (group.memberLimit !== null && group._count.members >= group.memberLimit) {
-          throw new InterestActionError("This DGroup has reached its member limit.")
-        }
         await advancePendingInterest(tx, {
           person: { memberId: request.memberId },
           groupId,
@@ -114,6 +142,7 @@ export async function assignCatchMechInterest(
           fromGroupId: member.smallGroupId,
           requestId,
         })
+        await saveOverride()
         if (member.smallGroupId) {
           await tx.smallGroupLog.create({
             data: {
@@ -161,6 +190,7 @@ export async function assignCatchMechInterest(
         actorId,
         requestId,
       })
+      await saveOverride()
       await tx.smallGroupLog.create({
         data: {
           smallGroupId: groupId,
@@ -173,7 +203,7 @@ export async function assignCatchMechInterest(
       return "awaiting-confirmation" as const
     })
 
-    revalidatePath(`/event/${eventId}/catch-mech`)
+    revalidatePath(`/event/${eventId}/catch-mech`, "layout")
     revalidatePath(`/small-groups/${groupId}`)
     revalidatePath("/small-groups")
     if (request.memberId) revalidatePath(`/members/${request.memberId}`)
@@ -196,7 +226,7 @@ export async function dismissCatchMechInterest(
       data: { status: "Rejected", resolvedAt: new Date() },
     })
     if (updated.count !== 1) return { success: false, error: "This interest request has already changed." }
-    revalidatePath(`/event/${eventId}/catch-mech`)
+    revalidatePath(`/event/${eventId}/catch-mech`, "layout")
     revalidatePath("/small-groups")
     return { success: true, data: undefined }
   } catch {
@@ -220,10 +250,33 @@ export async function deleteCatchMechInterest(
       },
     })
     if (deleted.count !== 1) return { success: false, error: "This interest request has already changed." }
-    revalidatePath(`/event/${eventId}/catch-mech`)
+    revalidatePath(`/event/${eventId}/catch-mech`, "layout")
     revalidatePath("/small-groups")
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to delete DGroup interest." }
   }
+}
+
+
+export type InterestGroupOption = {
+  id: string; name: string; leaderName: string; memberCount: number; memberLimit: number | null
+  meetingFormat: string | null; locationCity: string | null; scheduleDayOfWeek: number | null; scheduleTimeStart: string | null
+}
+
+export async function getCatchMechInterestGroups(eventId: string, requestId: string): Promise<ActionResult<InterestGroupOption[]>> {
+  if (!(await interestActor(eventId))) return { success: false, error: "Unauthorized." }
+  try {
+    const request = await pendingInterest(eventId, requestId)
+    if (!request) return { success: false, error: "This interest request has already changed." }
+    const groups = await db.smallGroup.findMany({
+      where: { status: "Active", ...(request.memberId ? { leaderId: { not: request.memberId } } : {}) }, orderBy: [{ name: "asc" }, { id: "asc" }],
+      select: { id: true, name: true, memberLimit: true, meetingFormat: true, locationCity: true,
+        scheduleDayOfWeek: true, scheduleTimeStart: true,
+        leader: { select: { firstName: true, lastName: true } }, _count: { select: { members: true } } },
+    })
+    return { success: true, data: groups.map(({ leader, _count, ...group }) => ({ ...group,
+      leaderName: `${leader.firstName} ${leader.lastName}`, memberCount: _count.members,
+    })) }
+  } catch { return { success: false, error: "Failed to load active DGroups." } }
 }

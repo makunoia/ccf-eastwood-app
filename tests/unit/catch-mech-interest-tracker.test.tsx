@@ -36,11 +36,12 @@ describe("Catch Mech DGroup interest tracker", () => {
 
   it("offers deletion for pending and dismissed interests only when staff can manage them", async () => {
     const { container } = render(<InterestTracker eventId="e1" rows={rows} canManage canViewMembers={false} canViewGuests={false} />)
-    expect(screen.getAllByRole("button", { name: "Delete" })).toHaveLength(2)
+    expect(screen.getAllByRole("button", { name: /Actions for/ })).toHaveLength(2)
     expect(container.textContent).toContain("Dismissed Person")
 
     vi.mocked(deleteCatchMechInterest).mockResolvedValue({ success: true, data: undefined })
-    fireEvent.click(screen.getAllByRole("button", { name: "Delete" })[1])
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Actions for Dismissed Person" }), { button: 0, ctrlKey: false, pointerType: "mouse" })
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Delete" }))
     const dialog = screen.getByRole("alertdialog")
     expect(within(dialog).getByText(/Delete Dismissed Person/)).toBeDefined()
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete request" }))

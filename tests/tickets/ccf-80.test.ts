@@ -49,8 +49,8 @@ async function seedTimothyFixture() {
   const guest1 = await db.guest.create({ data: { firstName: "Alice", lastName: "Guest", language: [] } })
   const guest2 = await db.guest.create({ data: { firstName: "Bob", lastName: "Guest", language: [] } })
 
-  const reg1 = await db.eventRegistrant.create({ data: { eventId: event.id, guestId: guest1.id } })
-  const reg2 = await db.eventRegistrant.create({ data: { eventId: event.id, guestId: guest2.id } })
+  const reg1 = await db.eventRegistrant.create({ data: { attendedAt: new Date(), eventId: event.id, guestId: guest1.id } })
+  const reg2 = await db.eventRegistrant.create({ data: { attendedAt: new Date(), eventId: event.id, guestId: guest2.id } })
   await db.breakoutGroupMember.createMany({
     data: [
       { breakoutGroupId: breakout.id, registrantId: reg1.id },

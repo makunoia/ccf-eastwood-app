@@ -231,3 +231,9 @@ describe("applyDeclineReasons", () => {
     expect(staged).toEqual(original)
   })
 })
+
+it("rejects a forged destination even when the facilitator leads only one group", () => {
+  expect(validateTargets([
+    { registrantId: "a", status: "confirmed", targetGroupId: "foreign-group" },
+  ], [{ id: "own-group", name: "Own group" }])).toMatch(/only confirm people into a DGroup you lead/i)
+})

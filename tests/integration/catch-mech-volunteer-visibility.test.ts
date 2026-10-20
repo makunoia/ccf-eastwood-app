@@ -93,7 +93,7 @@ describe("Catch Mech volunteer placement visibility", () => {
       data: { firstName: "Mia", lastName: "Guest", language: [] },
     })
     const registrant = await db.eventRegistrant.create({
-      data: { eventId: event.id, guestId: guest.id },
+      data: { attendedAt: new Date(), eventId: event.id, guestId: guest.id },
     })
 
     const result = await submitCatchMechVolunteerPlacements(
@@ -131,7 +131,7 @@ describe("Catch Mech volunteer placement visibility", () => {
       data: { firstName: "Ken", lastName: "Seeker", dateJoined: new Date(), language: [] },
     })
     const registrant = await db.eventRegistrant.create({
-      data: { eventId: event.id, memberId: member.id },
+      data: { attendedAt: new Date(), eventId: event.id, memberId: member.id },
     })
     // Same person, different destination, raised by another path entirely.
     const seeker = await db.smallGroupMemberRequest.create({
@@ -142,17 +142,15 @@ describe("Catch Mech volunteer placement visibility", () => {
       await tokenFor(event.id),
       [{ registrantId: registrant.id, smallGroupId: group.id }]
     )
-    expect(result.success).toBe(true)
+    expect(result.success).toBe(false)
 
     const attributed = await getVolunteerPlacementRequestIds(event.id)
     expect(attributed.has(seeker.id)).toBe(false)
-    const placed = await db.smallGroupMemberRequest.findFirstOrThrow({
-      where: { memberId: member.id, smallGroupId: group.id },
-    })
-    expect([...attributed]).toEqual([placed.id])
+    expect([...attributed]).toEqual([])
+    expect(await db.smallGroupMemberRequest.count({ where: { memberId: member.id, smallGroupId: group.id } })).toBe(0)
   })
 
-  it("keeps an existing breakout link when a volunteer confirms the same person", async () => {
+  it("keeps an existing breakout link in the shared confirmation resolver", async () => {
     const { event, group } = await seed()
     const breakout = await db.breakoutGroup.create({
       data: { eventId: event.id, name: "Table 1", linkedSmallGroupId: group.id, language: [] },
@@ -161,7 +159,7 @@ describe("Catch Mech volunteer placement visibility", () => {
       data: { firstName: "Rio", lastName: "Table", dateJoined: new Date(), language: [] },
     })
     const registrant = await db.eventRegistrant.create({
-      data: { eventId: event.id, memberId: member.id },
+      data: { attendedAt: new Date(), eventId: event.id, memberId: member.id },
     })
     const pending = await db.smallGroupMemberRequest.create({
       data: {
@@ -172,11 +170,10 @@ describe("Catch Mech volunteer placement visibility", () => {
       },
     })
 
-    const result = await submitCatchMechVolunteerPlacements(
-      await tokenFor(event.id),
-      [{ registrantId: registrant.id, smallGroupId: group.id }]
-    )
-    expect(result.success).toBe(true)
+    const { prefetchRegistrantData, resolveConfirmations } = await import("@/lib/catch-mech/confirmations")
+    const decisions = [{ registrantId: registrant.id, status: "confirmed" as const, groupId: group.id }]
+    const { registrantMap, takenEmails } = await prefetchRegistrantData(decisions)
+    await db.$transaction((tx) => resolveConfirmations(null, null, decisions, registrantMap, takenEmails, tx, event.name, null, "Catch Mech"))
 
     // Regression: the volunteer flow passes a null breakoutGroupId, which used to
     // overwrite the link and drop this person out of the breakout's own counts.
@@ -193,7 +190,7 @@ describe("Catch Mech volunteer placement visibility", () => {
       data: { firstName: "Lia", lastName: "Undone", dateJoined: new Date(), language: [] },
     })
     const registrant = await db.eventRegistrant.create({
-      data: { eventId: event.id, memberId: member.id },
+      data: { attendedAt: new Date(), eventId: event.id, memberId: member.id },
     })
     const result = await submitCatchMechVolunteerPlacements(
       await tokenFor(event.id),
@@ -224,7 +221,7 @@ describe("Catch Mech volunteer placement visibility", () => {
       data: { firstName: "Joy", lastName: "Guest", language: [] },
     })
     const registrant = await db.eventRegistrant.create({
-      data: { eventId: event.id, guestId: guest.id },
+      data: { attendedAt: new Date(), eventId: event.id, guestId: guest.id },
     })
     const result = await submitCatchMechVolunteerPlacements(
       await tokenFor(event.id),

@@ -106,6 +106,7 @@ describe("personNameOf", () => {
     fromGroupId: null,
     breakoutGroupId: null,
     status: "Pending" as const,
+    capacityOverrideApprovedAt: null,
     guest: null,
     member: null,
   }

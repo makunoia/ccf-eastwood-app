@@ -3,6 +3,8 @@
 import * as React from "react"
 import { type ColumnDef } from "@tanstack/react-table"
 import Link from "next/link"
+import type { CatchMechAttendance } from "@/lib/catch-mech/attendance"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Badge } from "@/components/ui/badge"
 import { FilterBar, FilterField } from "@/components/filter-bar"
 import { PageHeader } from "@/components/page-header"
@@ -18,6 +20,7 @@ import { CatchMechUndoButton } from "../catch-mech-undo-button"
 import { SLUG_CONFIG, type CatchMechSlug } from "../status-slug"
 
 export type StatusListRow = {
+  attendance?: CatchMechAttendance
   requestId: string
   registrantId: string
   name: string
@@ -75,6 +78,36 @@ function buildColumns({
       accessorKey: "breakoutGroupName",
       header: "Breakout Group",
       meta: { label: "Breakout Group", width: "name" },
+    },
+    {
+      id: "attendance",
+      sortDescFirst: false,
+      accessorFn: (row) => row.attendance?.sessionsAttended ?? 0,
+      header: "Attendance",
+      meta: { label: "Attendance", width: "text", align: "right" },
+      cell: ({ row }) => {
+        const attendance = row.original.attendance
+        if (!attendance) return blank
+        if (attendance.oneTime) return attendance.sessionsAttended ? "Attended" : "Not attended"
+        return `${attendance.sessionsAttended} ${attendance.sessionsAttended === 1 ? "session" : "sessions"} · ${attendance.returnCount} ${attendance.returnCount === 1 ? "return" : "returns"}`
+      },
+    },
+    {
+      id: "attendanceRate", sortDescFirst: false, accessorFn: (row) => row.attendance?.attendanceRate ?? undefined,
+      header: () => <Tooltip><TooltipTrigger asChild><button type="button" className="text-left underline decoration-dotted underline-offset-4" aria-label="Attendance rate explanation">Attendance rate</button></TooltipTrigger><TooltipContent className="max-w-xs">Share of recorded sessions attended from signup through yesterday in Manila. Attendance counts and last attended include today. Volunteer-only visits and session registrations do not count.</TooltipContent></Tooltip>,
+      meta: { label: "Attendance rate", width: "narrow", align: "right" },
+      sortUndefined: "last",
+      cell: ({ row }) => row.original.attendance?.attendanceRate == null ? blank : `${Math.round(row.original.attendance.attendanceRate * 100)}%`,
+    },
+    {
+      id: "signedUpAt", accessorFn: (row) => row.attendance?.signedUpAt,
+      header: "Signed up", meta: { label: "Signed up", width: "date" },
+      cell: ({ row }) => row.original.attendance ? new Date(row.original.attendance.signedUpAt).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric", timeZone: "Asia/Manila" }) : blank,
+    },
+    {
+      id: "lastAttendedAt", accessorFn: (row) => row.attendance?.lastAttendedAt ?? undefined,
+      header: "Last attended", meta: { label: "Last attended", width: "date" }, sortUndefined: "last",
+      cell: ({ row }) => row.original.attendance?.lastAttendedAt ? new Date(row.original.attendance.lastAttendedAt).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric", timeZone: "Asia/Manila" }) : blank,
     },
     isDeclined
       ? {
