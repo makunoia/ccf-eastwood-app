@@ -106,7 +106,7 @@ async function seed(opts: SeedOpts = {}) {
       },
     })
     const registrant = await db.eventRegistrant.create({
-      data: { eventId: event.id, guestId: guest.id },
+      data: { attendedAt: new Date(), eventId: event.id, guestId: guest.id },
     })
     await db.breakoutGroupMember.create({
       data: { breakoutGroupId: breakout.id, registrantId: registrant.id },

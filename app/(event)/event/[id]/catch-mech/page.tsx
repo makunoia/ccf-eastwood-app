@@ -3,7 +3,7 @@ import { notFound } from "next/navigation"
 import Link from "next/link"
 import { AlertTriangle, ChevronRight, ClipboardCheck, UserX, Users } from "lucide-react"
 import { auth } from "@/lib/auth"
-import { canRead, canWrite } from "@/lib/permissions"
+import { canRead } from "@/lib/permissions"
 import { db } from "@/lib/db"
 import { unassignedCandidateWhere } from "@/lib/breakouts/candidate-pool"
 import { resolveCatchMechScope } from "@/lib/catch-mech/scope"
@@ -12,8 +12,6 @@ import { CatchMechTable } from "./catch-mech-table"
 import { WeeklyConfirmationsChart } from "./weekly-confirmations-chart"
 import { buildWeeklyBuckets } from "./weekly-buckets"
 import { buildCatchMechGroupRows, type CatchMechStats } from "./aggregate"
-import { InterestTracker } from "./interest-tracker"
-import { loadEventInterests } from "./interest-data"
 
 export const metadata: Metadata = {
   title: "Catch Mech",
@@ -172,9 +170,9 @@ async function getCatchMechData(eventId: string) {
     where: { eventId, ...unassignedCandidateWhere(scope.seatedWhere) },
   })
 
-  const interests = await loadEventInterests(eventId)
+  const interestCount = await db.smallGroupMemberRequest.count({ where: { sourceEventId: eventId, status: "Pending", smallGroupId: null } })
 
-  return { groupRows, stats, weeklyBuckets, response, volunteerResponse, unseatedCount, interests, scope }
+  return { groupRows, stats, weeklyBuckets, response, volunteerResponse, unseatedCount, interestCount, scope }
 }
 
 /** Whole-number percentage, guarding a zero denominator. */
@@ -416,7 +414,7 @@ export default async function CatchMechAdminPage({
   const data = await getCatchMechData(id)
   if (!data) notFound()
 
-  const { groupRows, stats, weeklyBuckets, response, volunteerResponse, unseatedCount, interests, scope } =
+  const { groupRows, stats, weeklyBuckets, response, volunteerResponse, unseatedCount, interestCount, scope } =
     data
 
   // A table with neither facilitator nor co-faci contributes nothing to the
@@ -428,8 +426,6 @@ export default async function CatchMechAdminPage({
 
   const session = await auth()
   const canViewMember = canRead(session, "Members")
-  const canViewGuest = canRead(session, "Guests")
-  const canManageInterests = canWrite(session, "SmallGroups")
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">
@@ -473,13 +469,10 @@ export default async function CatchMechAdminPage({
 
       {unseatedCount > 0 && <UnseatedCard eventId={id} count={unseatedCount} />}
 
-      <InterestTracker
-        eventId={id}
-        rows={interests}
-        canManage={canManageInterests}
-        canViewMembers={canViewMember}
-        canViewGuests={canViewGuest}
-      />
+      <Link href={`/event/${id}/catch-mech/interest`} className="flex items-center justify-between gap-4 rounded-lg border p-4 transition-colors hover:bg-muted/40">
+        <span><span className="font-medium">DGroup interest</span><span className="mt-1 block text-sm text-muted-foreground">{interestCount} awaiting placement</span></span>
+        <ChevronRight className="size-4 text-muted-foreground" aria-hidden />
+      </Link>
 
       <WeeklyConfirmationsChart
         buckets={weeklyBuckets}

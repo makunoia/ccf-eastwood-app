@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
+import { loadCatchMechAttendance } from "@/lib/catch-mech/attendance-server"
 import { db } from "@/lib/db"
 import { formatDeclineReason } from "@/lib/decline-reason"
 import { personKeyFor } from "@/lib/clusters/roster"
@@ -305,10 +306,12 @@ export default async function StatusListPage({
   const data = await getStatusListData(eventId, status)
   if (!data) notFound()
 
+  const attendance = await loadCatchMechAttendance(eventId)
+
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">
       <StatusListClient
-        rows={data.rows}
+        rows={data.rows.map((row) => ({ ...row, attendance: attendance.get(row.registrantId) }))}
         status={status}
         eventId={eventId}
         breakoutGroups={data.breakoutGroups}

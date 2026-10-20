@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
+import { withSerializableRetry } from "@/lib/db/serializable-retry"
 import { auth } from "@/lib/auth"
 import { canRead, canWrite } from "@/lib/permissions"
 import {
@@ -970,7 +971,7 @@ export async function resolveMemberRequestsBatch(
     // — promoting the same guest into a second Member.
     for (const id of new Set(ids)) {
       try {
-        const result = await db.$transaction(async (tx) => {
+        const result = await withSerializableRetry(async (tx) => {
           // Read inside the transaction, never from a prefetch: the not-pending
           // guard is only honest if it sees the row as it stands right now.
           const request = await tx.smallGroupMemberRequest.findUnique({
@@ -1044,7 +1045,7 @@ export async function resolveMemberRequestsBatch(
         revalidatePath(`/event/${eventId}/dashboard`)
       }
     }
-    for (const eventId of interestEventIds) revalidatePath(`/event/${eventId}/catch-mech`)
+    for (const eventId of interestEventIds) revalidatePath(`/event/${eventId}/catch-mech`, "layout")
 
     return { success: true, data: { resolved, failed } }
   } catch {
@@ -1100,7 +1101,7 @@ export async function dismissSeekerRequest(requestId: string): Promise<ActionRes
     })
 
     revalidatePath("/small-groups")
-    if (request.sourceEventId) revalidatePath(`/event/${request.sourceEventId}/catch-mech`)
+    if (request.sourceEventId) revalidatePath(`/event/${request.sourceEventId}/catch-mech`, "layout")
     return { success: true, data: undefined }
   } catch {
     return { success: false, error: "Failed to dismiss request" }

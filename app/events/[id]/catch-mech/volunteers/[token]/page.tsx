@@ -1,3 +1,4 @@
+import { eligibleCatchMechRegistrantIds } from "@/lib/catch-mech/eligibility"
 import { notFound } from "next/navigation"
 import { db } from "@/lib/db"
 import { FormClosed } from "@/components/form-closed"
@@ -14,6 +15,7 @@ async function getSessionData(token: string) {
       event: {
         select: {
           id: true,
+          type: true,
           name: true,
           useMinistryBrand: true,
           brandMinistryId: true,
@@ -60,15 +62,7 @@ async function getSessionData(token: string) {
   // absorbed. This count exists purely to decide between the search form and the
   // "everyone is already connected" empty state; the eligibility rule matches
   // `searchCatchMechVolunteerParticipants` so the two can never disagree.
-  const eligibleCount = await db.eventRegistrant.count({
-    where: {
-      eventId: session.eventId,
-      OR: [
-        { member: { is: { smallGroupId: null } } },
-        { guest: { is: { memberId: null } } },
-      ],
-    },
-  })
+  const eligibleCount = (await eligibleCatchMechRegistrantIds(session.eventId)).size
 
   return {
     eventId: session.eventId,
@@ -105,6 +99,7 @@ export default async function CatchMechVolunteerPlacementPage({
       <div className="rounded-lg border bg-card p-6">
         <VolunteerPlacementForm
           token={token}
+          oneTime={data.event.type === "OneTime"}
           volunteerName={data.volunteerName}
           hasEligibleParticipants={data.eligibleCount > 0}
           groups={data.groups}

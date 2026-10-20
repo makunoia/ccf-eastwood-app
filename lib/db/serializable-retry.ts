@@ -14,12 +14,14 @@ function isTransactionWriteConflict(error: unknown): boolean {
 
 /** Retry the whole read-and-write decision after a serializable conflict. */
 export async function withSerializableRetry<T>(
-  run: (tx: Prisma.TransactionClient) => Promise<T>
+  run: (tx: Prisma.TransactionClient) => Promise<T>,
+  options: { timeout?: number } = {}
 ): Promise<T> {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       return await db.$transaction(run, {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        ...options,
       })
     } catch (error) {
       if (

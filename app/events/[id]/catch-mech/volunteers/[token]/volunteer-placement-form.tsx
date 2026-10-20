@@ -1,6 +1,8 @@
 "use client"
 
 import * as React from "react"
+import { useRouter } from "next/navigation"
+import { catchMechEmptyMessage, CATCH_MECH_ELIGIBILITY_ERROR } from "@/lib/catch-mech/eligibility-copy"
 import { IconLoader2, IconSearch, IconX } from "@tabler/icons-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -25,6 +27,7 @@ type SmallGroup = {
 }
 
 type Props = {
+  oneTime?: boolean
   token: string
   volunteerName: string
   /** Whether anyone at this event is still eligible to be placed. */
@@ -40,7 +43,9 @@ export function VolunteerPlacementForm({
   volunteerName,
   hasEligibleParticipants,
   groups,
+  oneTime = false,
 }: Props) {
+  const router = useRouter()
   const [query, setQuery] = React.useState("")
   const [results, setResults] = React.useState<VolunteerParticipantResult[]>([])
   const [searching, setSearching] = React.useState(false)
@@ -188,10 +193,14 @@ export function VolunteerPlacementForm({
   if (!hasEligibleParticipants) {
     return (
       <div className="space-y-3 py-3 text-center">
-        <h1 className="text-xl font-semibold">Everyone is already connected</h1>
+        <h1 className="text-xl font-semibold">No eligible participants</h1>
         <p className="text-sm text-muted-foreground">
-          There are no event participants waiting to join a DGroup.
+          {catchMechEmptyMessage(oneTime)}
         </p>
+        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+        <Button onClick={() => { void handleSubmit() }} disabled={submitting}>
+          {submitting ? "Saving…" : "Submit no placements"}
+        </Button>
       </div>
     )
   }
@@ -264,7 +273,7 @@ export function VolunteerPlacementForm({
                         )}
                       </span>
                       <span className="block text-xs text-muted-foreground">
-                        {participant.kind === "Guest" ? "First-time attendee" : "Returning member"}
+                        {participant.kind === "Guest" ? "Guest" : "Member"}
                         {participant.contactHint && ` · ${participant.contactHint}`}
                       </span>
                     </span>
@@ -300,7 +309,7 @@ export function VolunteerPlacementForm({
                       {participant.name}
                     </span>
                     <span className="block text-xs text-muted-foreground">
-                      {participant.kind === "Guest" ? "First-time attendee" : "Returning member"}
+                      {participant.kind === "Guest" ? "Guest" : "Member"}
                     </span>
                   </span>
                   <button
@@ -367,7 +376,8 @@ export function VolunteerPlacementForm({
         </div>
       )}
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+      {error === CATCH_MECH_ELIGIBILITY_ERROR && <Button variant="outline" onClick={() => { setSelected([]); setDestinations({}); setResults([]); setQuery(""); setSearched(false); setError(""); router.refresh() }}>Refresh choices</Button>}
 
       <Button className="w-full" onClick={handleSubmit} disabled={submitting}>
         {submitting

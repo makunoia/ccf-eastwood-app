@@ -2,9 +2,9 @@ import { db } from "@/lib/db"
 import type { InterestRow } from "./interest-tracker"
 
 /** Event-scoped history follows an interest request even after placement. */
-export async function loadEventInterests(eventId: string): Promise<InterestRow[]> {
+export async function loadEventInterests(eventId: string, requestId?: string): Promise<InterestRow[]> {
   const requests = await db.smallGroupMemberRequest.findMany({
-    where: { sourceEventId: eventId },
+    where: { sourceEventId: eventId, ...(requestId ? { id: requestId } : {}) },
     orderBy: { createdAt: "desc" },
     select: {
       id: true,
@@ -22,7 +22,7 @@ export async function loadEventInterests(eventId: string): Promise<InterestRow[]
     if (!person) return []
     return [{
       id: request.id,
-      createdAt: request.createdAt,
+      createdAt: request.createdAt.toISOString(),
       personId: person.id,
       personName: `${person.firstName} ${person.lastName}`,
       personType: request.member ? "Member" as const : "Guest" as const,

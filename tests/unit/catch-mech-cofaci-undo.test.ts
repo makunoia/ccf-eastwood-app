@@ -57,7 +57,7 @@ async function seedScaffold() {
 
 async function addGuestRegistrant(eventId: string, breakoutId: string, firstName: string) {
   const guest = await db.guest.create({ data: { firstName, lastName: "Guest", language: [] } })
-  const reg = await db.eventRegistrant.create({ data: { eventId, guestId: guest.id } })
+  const reg = await db.eventRegistrant.create({ data: { attendedAt: new Date(), eventId, guestId: guest.id } })
   await db.breakoutGroupMember.create({ data: { breakoutGroupId: breakoutId, registrantId: reg.id } })
   return { guest, reg }
 }
@@ -130,6 +130,7 @@ describe("catch-mech — independent co-facilitator decisions + admin undo", () 
       where: { guestId: guest.id, status: "Rejected" },
     })
 
+    await db.smallGroupMemberRequest.update({ where: { id: rejected.id }, data: { capacityOverrideApprovedAt: new Date() } })
     const res = await reopenCatchMechRequest(rejected.id, s.event.id)
     expect(res.success).toBe(true)
 
@@ -137,6 +138,7 @@ describe("catch-mech — independent co-facilitator decisions + admin undo", () 
     expect(after?.status).toBe("Pending")
     expect(after?.declineReason).toBeNull()
     expect(after?.resolvedAt).toBeNull()
+    expect(after?.capacityOverrideApprovedAt).toBeNull()
   })
 
   it("undoing a confirmed promoted guest deletes the member and restores the guest", async () => {
@@ -174,7 +176,7 @@ describe("catch-mech — independent co-facilitator decisions + admin undo", () 
     const existing = await db.member.create({
       data: { firstName: "Mark", lastName: "Member", dateJoined: new Date(), language: [] },
     })
-    const reg = await db.eventRegistrant.create({ data: { eventId: s.event.id, memberId: existing.id } })
+    const reg = await db.eventRegistrant.create({ data: { attendedAt: new Date(), eventId: s.event.id, memberId: existing.id } })
     await db.breakoutGroupMember.create({ data: { breakoutGroupId: s.breakout.id, registrantId: reg.id } })
 
     await submitCatchMechConfirmations(s.leadSession.token, [
@@ -270,7 +272,7 @@ describe("catch-mech — edge cases & regressions", () => {
     const s = await seedScaffold()
     const { guest, reg } = await addGuestRegistrant(s.event.id, s.breakout.id, "Gina")
     const otherEvent = await db.event.create({ data: { name: "E2", type: "OneTime", startDate: new Date(), endDate: new Date() } })
-    const reg2 = await db.eventRegistrant.create({ data: { eventId: otherEvent.id, guestId: guest.id } })
+    const reg2 = await db.eventRegistrant.create({ data: { attendedAt: new Date(), eventId: otherEvent.id, guestId: guest.id } })
 
     await submitCatchMechConfirmations(s.leadSession.token, [{ registrantId: reg.id, status: "confirmed" }])
     const confirmed = await db.smallGroupMemberRequest.findFirstOrThrow({ where: { status: "Confirmed" }, select: { id: true, memberId: true } })

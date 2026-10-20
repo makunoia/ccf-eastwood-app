@@ -84,7 +84,7 @@ async function seedCatchMech(opts: { faciLeadsGroup: boolean }) {
 
 async function addGuestRegistrant(eventId: string, breakoutId: string, firstName: string) {
   const guest = await db.guest.create({ data: { firstName, lastName: "Guest", language: [] } })
-  const reg = await db.eventRegistrant.create({ data: { eventId, guestId: guest.id } })
+  const reg = await db.eventRegistrant.create({ data: { attendedAt: new Date(), eventId, guestId: guest.id } })
   await db.breakoutGroupMember.create({ data: { breakoutGroupId: breakoutId, registrantId: reg.id } })
   return { guest, reg }
 }

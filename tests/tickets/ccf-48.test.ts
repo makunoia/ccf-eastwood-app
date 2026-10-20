@@ -74,7 +74,7 @@ async function seedGuestRegistrant(eventId: string, breakoutGroupId: string) {
     select: { id: true },
   })
   const registrant = await db.eventRegistrant.create({
-    data: { eventId, guestId: guest.id },
+    data: { attendedAt: new Date(), eventId, guestId: guest.id },
     select: { id: true },
   })
   await db.breakoutGroupMember.create({
@@ -94,16 +94,14 @@ describe("CCF-48 — Activity logs include event name context", () => {
         select: { id: true },
       })
       const registrant = await db.eventRegistrant.create({
-        data: { eventId: event.id, memberId: member.id },
+        data: { attendedAt: new Date(), eventId: event.id, memberId: member.id },
         select: { id: true },
       })
       await db.breakoutGroupMember.create({
         data: { breakoutGroupId: breakoutGroup.id, registrantId: registrant.id },
       })
 
-      await db.smallGroupMemberRequest.create({
-        data: { smallGroupId: smallGroup.id, memberId: member.id, status: "Pending", breakoutGroupId: breakoutGroup.id },
-      })
+
 
       await submitCatchMechConfirmations(session.token, [
         { registrantId: registrant.id, status: "declined", declineReason: "NotInterested" },

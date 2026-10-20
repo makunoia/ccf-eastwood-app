@@ -5,6 +5,7 @@ import { CatchMechConfirmClient } from "./catch-mech-confirm-client"
 import { FormClosed } from "@/components/form-closed"
 import { getFormConfig, resolveFormTheme } from "@/lib/forms/config"
 import { resolveEventBrand } from "@/lib/forms/event-brand"
+import { eligibleCatchMechRegistrantIds } from "@/lib/catch-mech/eligibility"
 import { resolveCatchMechTargets } from "@/lib/catch-mech/targets"
 
 export const metadata: Metadata = {
@@ -21,6 +22,7 @@ export async function getSessionData(token: string) {
       event: {
         select: {
           name: true,
+          type: true,
           useMinistryBrand: true,
           brandMinistryId: true,
           logoUrl: true,
@@ -153,9 +155,12 @@ export async function getSessionData(token: string) {
     type: "member" | "guest"
   }
 
+  const eligibleIds = await eligibleCatchMechRegistrantIds(session.eventId)
   const rows: RegistrantRow[] = []
+  const seenPeople = new Set<string>()
   for (const m of members) {
     const r = m.registrant
+    if (!eligibleIds.has(r.id)) continue
     // Skip anonymous registrants
     if (!r.memberId && !r.guestId) continue
     // Skip already-promoted guests
@@ -177,6 +182,9 @@ export async function getSessionData(token: string) {
       type = "guest"
     }
 
+    const key = `${type}:${r.memberId ?? r.guestId}`
+    if (seenPeople.has(key)) continue
+    seenPeople.add(key)
     rows.push({ registrantId: r.id, name, type })
   }
 
@@ -257,6 +265,7 @@ export default async function CatchMechConfirmPage({
         <div className="w-full max-w-md rounded-lg border bg-card p-6">
           <CatchMechConfirmClient
             token={data.token}
+            oneTime={data.event.type === "OneTime"}
             groupName={data.groupName}
             isTimothy={data.isTimothy}
             candidates={data.candidates}

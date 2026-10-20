@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
+import { withSerializableRetry } from "@/lib/db/serializable-retry"
 import {
   RESOLVABLE_REQUEST_SELECT,
   resolveMemberRequest,
@@ -76,7 +77,7 @@ export async function submitMemberConfirmations(
       requestsWithBreakout.map((r) => [r.id, eventNameByBreakoutId.get(r.breakoutGroupId!) ?? null])
     )
 
-    await db.$transaction(async (tx) => {
+    await withSerializableRetry(async (tx) => {
       // Existing members confirmed into this group. A promoted guest is a brand
       // new Member who leads nothing, so only these can hold a satellite.
       const confirmedMemberIds: string[] = []
@@ -137,7 +138,7 @@ export async function submitMemberConfirmations(
     for (const guestId of affectedGuestIds) {
       revalidatePath(`/guests/${guestId}`)
     }
-    for (const eventId of affectedInterestEventIds) revalidatePath(`/event/${eventId}/catch-mech`)
+    for (const eventId of affectedInterestEventIds) revalidatePath(`/event/${eventId}/catch-mech`, "layout")
 
     // Revalidate catch-mech admin pages for any requests linked to a breakout group
     const requestIds = decisions.map((d) => d.requestId)

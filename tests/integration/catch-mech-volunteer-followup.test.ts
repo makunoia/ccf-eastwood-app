@@ -93,7 +93,7 @@ describe("Catch Mech volunteer follow-up", () => {
       data: { firstName: "Mia", lastName: "Guest", language: [] },
     })
     const registrant = await db.eventRegistrant.create({
-      data: { eventId: event.id, guestId: guest.id },
+      data: { attendedAt: new Date(), eventId: event.id, guestId: guest.id },
     })
     const verified = await verifyCatchMechVolunteer(event.id, "09171234567")
     if (!verified.success) throw new Error(verified.error)
@@ -151,7 +151,7 @@ describe("Catch Mech volunteer follow-up", () => {
         data: { firstName: "Mia", lastName: "Guest", language: [] },
       })
       const registrant = await db.eventRegistrant.create({
-        data: { eventId: event.id, guestId: guest.id },
+        data: { attendedAt: new Date(), eventId: event.id, guestId: guest.id },
       })
       const verified = await verifyCatchMechVolunteer(event.id, "09171234567")
       if (!verified.success) throw new Error(verified.error)
@@ -265,7 +265,7 @@ describe("Catch Mech volunteer follow-up", () => {
         },
       })
       const guestRegistrant = await db.eventRegistrant.create({
-        data: { eventId: base.event.id, guestId: guest.id },
+        data: { attendedAt: new Date(), eventId: base.event.id, guestId: guest.id },
       })
       return { ...base, token: tokenOf(verified.data), guest, guestRegistrant }
     }
@@ -315,7 +315,7 @@ describe("Catch Mech volunteer follow-up", () => {
           smallGroupId: group.id,
         },
       })
-      await db.eventRegistrant.create({ data: { eventId: event.id, memberId: placed.id } })
+      await db.eventRegistrant.create({ data: { attendedAt: new Date(), eventId: event.id, memberId: placed.id } })
       // A guest who has since been promoted to a member.
       const promotedMember = await db.member.create({
         data: { firstName: "Maria", lastName: "Reyes", dateJoined: new Date(), language: [] },
@@ -331,7 +331,7 @@ describe("Catch Mech volunteer follow-up", () => {
 
     it("returns one entry per person even with duplicate registrant rows", async () => {
       const { token, event, guest, guestRegistrant } = await seedSearchable()
-      await db.eventRegistrant.create({ data: { eventId: event.id, guestId: guest.id } })
+      await db.eventRegistrant.create({ data: { attendedAt: new Date(), eventId: event.id, guestId: guest.id } })
 
       const result = await searchCatchMechVolunteerParticipants(token, "Maria")
       expect(result.success && result.data.map((r) => r.registrantId)).toEqual([
@@ -367,13 +367,13 @@ describe("Catch Mech volunteer follow-up", () => {
         data: { firstName: "Mia", lastName: "Guest", language: [] },
       })
       const guestRegistrant = await db.eventRegistrant.create({
-        data: { eventId: event.id, guestId: guest.id },
+        data: { attendedAt: new Date(), eventId: event.id, guestId: guest.id },
       })
       const existing = await db.member.create({
         data: { firstName: "Noel", lastName: "Member", dateJoined: new Date(), language: [] },
       })
       const memberRegistrant = await db.eventRegistrant.create({
-        data: { eventId: event.id, memberId: existing.id },
+        data: { attendedAt: new Date(), eventId: event.id, memberId: existing.id },
       })
 
       const verified = await verifyCatchMechVolunteer(event.id, "09171234567")
@@ -427,7 +427,7 @@ describe("Catch Mech volunteer follow-up", () => {
           const guest = await db.guest.create({
             data: { firstName, lastName: "Attendee", language: [] },
           })
-          return db.eventRegistrant.create({ data: { eventId: event.id, guestId: guest.id } })
+          return db.eventRegistrant.create({ data: { attendedAt: new Date(), eventId: event.id, guestId: guest.id } })
         })
       )
 

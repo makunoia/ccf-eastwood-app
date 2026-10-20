@@ -1,6 +1,7 @@
 "use server"
 
 import { db } from "@/lib/db"
+import { withSerializableRetry } from "@/lib/db/serializable-retry"
 import { resolveCatchMechTargets } from "@/lib/catch-mech/targets"
 import { resolveCatchMechScope } from "@/lib/catch-mech/scope"
 import {
@@ -24,6 +25,7 @@ import {
   submitterName,
   tallyDecisions,
 } from "@/lib/catch-mech/submission-log"
+import { assertCatchMechEligibility, CatchMechEligibilityError } from "@/lib/catch-mech/eligibility"
 import { revalidatePath } from "next/cache"
 import { formatPhilippinePhone } from "@/lib/utils"
 
@@ -153,6 +155,7 @@ export async function submitCatchMechConfirmations(
       return { success: false, error: "A registrant is not part of this event's breakout group" }
     }
 
+    await assertCatchMechEligibility(session.eventId, decisions.map((d) => d.registrantId))
     const { candidates, declineGroupId } = resolveCatchMechTargets(session)
 
     const targetError = validateTargets(decisions, candidates)
@@ -184,13 +187,15 @@ export async function submitCatchMechConfirmations(
       ...new Set(resolved.map((d) => d.groupId).filter((id): id is string => id !== null)),
     ]
 
-    await db.$transaction(async (tx) => {
+    let affectedInterestEvents: string[] = []
+    await withSerializableRetry(async (tx) => {
+      await assertCatchMechEligibility(session.eventId, decisions.map((d) => d.registrantId), tx)
       // Activate any targeted group that was pre-created via the volunteer info form
       await tx.smallGroup.updateMany({
         where: { id: { in: touchedGroupIds }, status: "Pending" },
         data: { status: "Active" },
       })
-      await resolveConfirmations(
+      affectedInterestEvents = await resolveConfirmations(
         session.breakoutGroupId,
         session.facilitatorVolunteerId,
         resolved,
@@ -216,6 +221,7 @@ export async function submitCatchMechConfirmations(
     }, { timeout: 30000 })
 
     safeRevalidate(() => {
+      for (const interestEventId of affectedInterestEvents) revalidatePath(`/event/${interestEventId}/catch-mech`, "layout")
       for (const groupId of touchedGroupIds) revalidatePath(`/small-groups/${groupId}`)
       revalidatePath(`/event/${session.eventId}/catch-mech`, "layout")
       revalidatePath(`/event/${session.eventId}/dashboard`)
@@ -223,6 +229,7 @@ export async function submitCatchMechConfirmations(
 
     return { success: true, requiresGroupName: false }
   } catch (err) {
+    if (err instanceof CatchMechEligibilityError) return { success: false, error: err.message }
     console.error("[submitCatchMechConfirmations]", err)
     return { success: false, error: "Could not save your confirmations. Please try again." }
   }
@@ -249,7 +256,8 @@ async function persistGrouplessDeclines(
 
   const { registrantMap } = await prefetchRegistrantData(declined)
 
-  await db.$transaction(async (tx) => {
+  await withSerializableRetry(async (tx) => {
+    await assertCatchMechEligibility(session.eventId, decisions.map((d) => d.registrantId), tx)
     // No early return on an empty decline list — this is the one path where a
     // faci's answer can produce zero member requests, so the submission row is
     // the only record that they responded at all.
@@ -326,6 +334,7 @@ export async function createSmallGroupForTimothy(
 
   let eventId: string | null = null
   let breakoutGroupId: string | null = null
+  let affectedInterestEvents: string[] = []
 
   try {
     const session = await db.catchMechSession.findUnique({
@@ -373,7 +382,8 @@ export async function createSmallGroupForTimothy(
     ])
     const eventName = event?.name ?? null
 
-    await db.$transaction(async (tx) => {
+    await withSerializableRetry(async (tx) => {
+      await assertCatchMechEligibility(session.eventId, decisions.map((d) => d.registrantId), tx)
       // Create the small group
       const created = await tx.smallGroup.create({
         data: { name: groupName.trim(), leaderId: faciMember.id },
@@ -397,7 +407,7 @@ export async function createSmallGroupForTimothy(
 
       // The new group is this Timothy's only destination — every confirm and decline
       // resolves to it.
-      await resolveConfirmations(
+      affectedInterestEvents = await resolveConfirmations(
         session.breakoutGroupId,
         session.facilitatorVolunteerId,
         decisions.map((d) => ({ ...d, groupId: created.id })),
@@ -423,11 +433,13 @@ export async function createSmallGroupForTimothy(
       })
     }, { timeout: 30000 })
   } catch (err) {
+    if (err instanceof CatchMechEligibilityError) return { success: false, error: err.message }
     console.error("[createSmallGroupForTimothy]", err)
     return { success: false, error: "Failed to create DGroup" }
   }
 
   safeRevalidate(() => {
+    for (const interestEventId of affectedInterestEvents) revalidatePath(`/event/${interestEventId}/catch-mech`, "layout")
     revalidatePath("/small-groups")
     revalidatePath(`/event/${eventId}/catch-mech`, "layout")
     revalidatePath(`/event/${eventId}/breakouts/${breakoutGroupId}`)

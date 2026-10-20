@@ -77,7 +77,7 @@ async function seedBaseData() {
   })
 
   const registrant = await db.eventRegistrant.create({
-    data: { eventId: event.id, guestId: guest.id },
+    data: { attendedAt: new Date(), eventId: event.id, guestId: guest.id },
   })
 
   await db.breakoutGroupMember.create({
