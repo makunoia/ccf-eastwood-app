@@ -538,6 +538,8 @@ The Sessions list is the one that used to be a table and isn't any more. A sessi
 
 ### CSV Exports
 
+Session attendance exports include optional breakout table, facilitator and co-facilitator columns. `EventOccurrence.breakoutSnapshot` freezes the event-owned table roster and effective session substitutes on an open → closed check-in transition. Open sessions export live seating; closed sessions use only their saved record, never today's seating as historical data. Legacy sessions without a snapshot say `Not recorded`. Repeated close requests preserve the snapshot; deliberately reopening and closing a session replaces it with the corrected roster. No historical backfill. The snapshot covers the whole table roster so expected-but-absent participants and later attendance imports can resolve against the saved assignment too.
+
 Every person-list export offers a **column picker**, never a fixed header row. Four layers, and a new surface writes only the first:
 
 | Layer | Where |

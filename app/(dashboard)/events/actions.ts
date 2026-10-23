@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { db } from "@/lib/db"
 import { withSerializableRetry } from "@/lib/db/serializable-retry"
+import { requireEventWrite } from "@/lib/events/require-event-write"
+import { buildSessionBreakoutSnapshot, loadSessionBreakoutGroups } from "@/lib/exports/session-breakouts-server"
 import { auth } from "@/lib/auth"
 import { canWrite } from "@/lib/permissions"
 import {
@@ -1488,9 +1490,20 @@ export async function setOccurrenceCheckinOpen(
     })
     if (!occurrence) return { success: false, error: "Session not found" }
 
-    await db.eventOccurrence.update({
-      where: { id: occurrenceId },
-      data: { isOpen },
+    const denial = await requireEventWrite(occurrence.eventId)
+    if (denial) return { success: false, error: denial.error }
+
+    await withSerializableRetry(async (tx) => {
+      const current = await tx.eventOccurrence.findUniqueOrThrow({ where: { id: occurrenceId }, select: { isOpen: true } })
+      // Only an actual open → closed transition records history. Repeated close
+      // requests must not rewrite it after the event's tables have changed.
+      const snapshot = !isOpen && current.isOpen
+        ? buildSessionBreakoutSnapshot(await loadSessionBreakoutGroups(tx, occurrence.eventId, [occurrenceId]), occurrenceId)
+        : undefined
+      await tx.eventOccurrence.update({
+        where: { id: occurrenceId },
+        data: { isOpen, ...(snapshot ? { breakoutSnapshot: snapshot } : {}) },
+      })
     })
 
     // Reported back so the UI can say what happened to the door instead of

@@ -3,6 +3,8 @@
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { canAccessEvent, canExport } from "@/lib/permissions"
+import { sessionBreakoutDetails, sessionBreakoutSnapshotSchema } from "@/lib/exports/session-breakouts"
+import { buildSessionBreakoutSnapshot, loadSessionBreakoutGroups } from "@/lib/exports/session-breakouts-server"
 import {
   buildSessionAttendanceColumns,
   type SessionAttendanceColumnState,
@@ -41,38 +43,47 @@ export async function getSessionsAttendanceExport(
   if (!canAccessEvent(session, eventId)) return { success: false, error: "Unauthorized." }
 
   try {
-    const personSelect = { firstName: true, lastName: true, nickname: true, phone: true, email: true } as const
-    const registrantSelect = { id: true, memberId: true, firstName: true, lastName: true, nickname: true, email: true, mobileNumber: true,
-      member: { select: personSelect }, guest: { select: personSelect } } as const
-    const occurrences = await db.eventOccurrence.findMany({
-      where: { eventId, ...(occurrenceId ? { id: occurrenceId } : {}) }, orderBy: { date: "asc" },
-      select: { id: true, date: true, series: { select: { title: true } },
-        sessionRegistrations: { select: { registrant: { select: registrantSelect } } },
-        attendees: { orderBy: { checkedInAt: "asc" }, select: { checkedInAt: true,
-          registrant: { select: registrantSelect }, volunteer: { select: { member: { select: personSelect } } } } },
-      },
-    })
-    const rows: SessionAttendanceExportRow[] = occurrences.flatMap((occurrence) => {
-      const base = { sessionDate: occurrence.date.toISOString().split("T")[0], seriesTitle: occurrence.series?.title ?? null }
-      const expectedRegistrantIds = new Set(occurrence.sessionRegistrations.map((sessionRegistration) => sessionRegistration.registrant.id))
-      const presentIds = new Set(occurrence.attendees.flatMap((a) => a.registrant ? [a.registrant.id] : []))
-      const participantRow = (registrant: (typeof occurrence.sessionRegistrations)[number]["registrant"], checkedInAt: Date | null): SessionAttendanceExportRow => {
-        const person = registrant.member ?? registrant.guest
-        return { ...base, firstName: person?.firstName ?? registrant.firstName ?? "", lastName: person?.lastName ?? registrant.lastName ?? "",
-          nickname: registrant.nickname ?? person?.nickname ?? null, mobile: person?.phone ?? registrant.mobileNumber ?? "",
-          email: person?.email ?? registrant.email ?? null, type: registrant.memberId ? "Member" : "Guest", sessionRegistration: expectedRegistrantIds.has(registrant.id), checkedInAt: checkedInAt?.toISOString() ?? null }
-      }
-      return [
-        ...occurrence.attendees.map((attendee): SessionAttendanceExportRow => {
-          if (attendee.registrant) return participantRow(attendee.registrant, attendee.checkedInAt)
-          const member = attendee.volunteer!.member
-          return { ...base, firstName: member.firstName, lastName: member.lastName, nickname: member.nickname, mobile: member.phone ?? "", email: member.email, type: "Volunteer", sessionRegistration: false, checkedInAt: attendee.checkedInAt.toISOString() }
-        }),
-        ...occurrence.sessionRegistrations.filter((sessionRegistration) => !presentIds.has(sessionRegistration.registrant.id)).map((sessionRegistration) => participantRow(sessionRegistration.registrant, null)),
-      ]
-    })
+    // Closing check-in and changing tables must not land between reading the
+    // session state and loading its live roster. Read both from one DB snapshot.
+    return await db.$transaction(async (tx) => {
+      const personSelect = { firstName: true, lastName: true, nickname: true, phone: true, email: true } as const
+      const registrantSelect = { id: true, memberId: true, guestId: true, firstName: true, lastName: true, nickname: true, email: true, mobileNumber: true,
+        member: { select: personSelect }, guest: { select: personSelect } } as const
+      const occurrences = await tx.eventOccurrence.findMany({
+        where: { eventId, ...(occurrenceId ? { id: occurrenceId } : {}) }, orderBy: { date: "asc" },
+        select: { id: true, date: true, isOpen: true, breakoutSnapshot: true, series: { select: { title: true } },
+          sessionRegistrations: { select: { registrant: { select: registrantSelect } } },
+          attendees: { orderBy: { checkedInAt: "asc" }, select: { checkedInAt: true,
+            registrant: { select: registrantSelect }, volunteer: { select: { memberId: true, member: { select: personSelect } } } } },
+        },
+      })
+      const openIds = occurrences.filter((o) => o.isOpen).map((o) => o.id)
+      const liveGroups = openIds.length ? await loadSessionBreakoutGroups(tx, eventId, openIds) : []
+      const rows: SessionAttendanceExportRow[] = occurrences.flatMap((occurrence) => {
+        const saved = sessionBreakoutSnapshotSchema.safeParse(occurrence.breakoutSnapshot)
+        const snapshot = occurrence.isOpen ? buildSessionBreakoutSnapshot(liveGroups, occurrence.id) : saved.success ? saved.data : null
+        const breakoutRecord = occurrence.isOpen ? "Live assignments" : snapshot ? "Saved at session close" : "Not recorded"
+        const base = { sessionDate: occurrence.date.toISOString().split("T")[0], seriesTitle: occurrence.series?.title ?? null, breakoutRecord } as const
+        const expectedRegistrantIds = new Set(occurrence.sessionRegistrations.map((sessionRegistration) => sessionRegistration.registrant.id))
+        const presentIds = new Set(occurrence.attendees.flatMap((a) => a.registrant ? [a.registrant.id] : []))
+        const participantRow = (registrant: (typeof occurrence.sessionRegistrations)[number]["registrant"], checkedInAt: Date | null): SessionAttendanceExportRow => {
+          const person = registrant.member ?? registrant.guest
+          return { ...base, ...sessionBreakoutDetails(snapshot, registrant), firstName: person?.firstName ?? registrant.firstName ?? "", lastName: person?.lastName ?? registrant.lastName ?? "",
+            nickname: registrant.nickname ?? person?.nickname ?? null, mobile: person?.phone ?? registrant.mobileNumber ?? "",
+            email: person?.email ?? registrant.email ?? null, type: registrant.memberId ? "Member" : "Guest", sessionRegistration: expectedRegistrantIds.has(registrant.id), checkedInAt: checkedInAt?.toISOString() ?? null }
+        }
+        return [
+          ...occurrence.attendees.map((attendee): SessionAttendanceExportRow => {
+            if (attendee.registrant) return participantRow(attendee.registrant, attendee.checkedInAt)
+            const member = attendee.volunteer!.member
+            return { ...base, ...sessionBreakoutDetails(snapshot, { memberId: attendee.volunteer!.memberId }), firstName: member.firstName, lastName: member.lastName, nickname: member.nickname, mobile: member.phone ?? "", email: member.email, type: "Volunteer", sessionRegistration: false, checkedInAt: attendee.checkedInAt.toISOString() }
+          }),
+          ...occurrence.sessionRegistrations.filter((sessionRegistration) => !presentIds.has(sessionRegistration.registrant.id)).map((sessionRegistration) => participantRow(sessionRegistration.registrant, null)),
+        ]
+      })
 
-    return { success: true, data: { rows, columns: buildSessionAttendanceColumns(rows) } }
+      return { success: true as const, data: { rows, columns: buildSessionAttendanceColumns(rows) } }
+    }, { isolationLevel: "RepeatableRead", timeout: 30_000 })
   } catch {
     return { success: false, error: "Failed to export attendance." }
   }

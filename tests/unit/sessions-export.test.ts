@@ -10,6 +10,8 @@ import {
 } from "@/lib/exports/session-attendance"
 import { defaultSelectedColumns } from "@/lib/exports/columns"
 import { getSessionsAttendanceExport } from "@/app/(event)/event/[id]/sessions/export-actions"
+import { setOccurrenceCheckinOpen } from "@/app/(dashboard)/events/actions"
+import * as sessionBreakoutsServer from "@/lib/exports/session-breakouts-server"
 
 vi.mock("@/lib/auth", () => ({
   auth: vi.fn(),
@@ -176,6 +178,19 @@ describe("session attendance columns", () => {
     expect(columns.every((c) => c.core)).toBe(true)
   })
 
+  it("offers breakout details only when populated and exports them through the column picker", () => {
+    expect(buildSessionAttendanceColumns([row]).map((c) => c.key)).not.toContain("breakoutGroup")
+    const seated = { ...row, breakoutGroup: "Table 4", facilitator: "Vince Tan", coFacilitator: "Maria Santos", breakoutRecord: "Saved at session close" as const }
+    const columns = buildSessionAttendanceColumns([seated])
+    expect(columns.filter((c) => c.group === "Breakout").map((c) => c.key)).toEqual([
+      "breakoutGroup", "facilitator", "coFacilitator", "breakoutRecord",
+    ])
+    expect(buildSessionAttendanceTable([seated, row], ["facilitator", "breakoutGroup", "coFacilitator"]))
+      .toEqual({ headers: ["Breakout Group / Table", "Facilitator", "Co-facilitator"], cells: [
+        ["Table 4", "Vince Tan", "Maria Santos"], [undefined, undefined, undefined],
+      ] })
+  })
+
   it("renders the ticked columns in registry order, not tick order", () => {
     const { headers } = buildSessionAttendanceTable(
       [row],
@@ -323,8 +338,130 @@ describe("getSessionsAttendanceExport", () => {
       },
     })
 
-    return { event, occurrence, secondOccurrence }
+    return { event, occurrence, secondOccurrence, memberRegistrant, guestRegistrant, volunteer, member }
   }
+
+  it("preserves each closed session's table and substitute facilitator after regrouping and deletion", async () => {
+    const { event, occurrence, secondOccurrence, memberRegistrant, guestRegistrant, volunteer, member } = await seedEventWithAttendance()
+    const group = await db.breakoutGroup.create({ data: {
+      eventId: event.id, name: "Table 4", facilitatorId: volunteer.id,
+      members: { create: [{ registrantId: memberRegistrant.id }, { registrantId: guestRegistrant.id }] },
+    } })
+    const substitute = await db.volunteer.create({ data: {
+      memberId: member.id, eventId: event.id, committeeId: volunteer.committeeId, preferredRoleId: volunteer.preferredRoleId,
+    } })
+    await db.breakoutGroup.update({ where: { id: group.id }, data: { coFacilitatorId: substitute.id } })
+    await db.occurrenceSubFacilitator.create({ data: {
+      occurrenceId: secondOccurrence.id, breakoutGroupId: group.id, role: "Facilitator", substituteId: substitute.id,
+    } })
+    await db.occurrenceSubFacilitator.create({ data: {
+      occurrenceId: secondOccurrence.id, breakoutGroupId: group.id, role: "CoFacilitator", substituteId: volunteer.id,
+    } })
+    expect((await setOccurrenceCheckinOpen(occurrence.id, true)).success).toBe(true)
+    const live = await getSessionsAttendanceExport(event.id, occurrence.id)
+    expect(live.success && live.data.rows.find((r) => r.firstName === "Pedro")).toMatchObject({
+      breakoutGroup: "Table 4", facilitator: "Vince Tan", coFacilitator: "Maria Santos", breakoutRecord: "Live assignments",
+    })
+    expect((await setOccurrenceCheckinOpen(occurrence.id, false)).success).toBe(true)
+    await db.breakoutGroup.update({ where: { id: group.id }, data: { name: "Table 8" } })
+    expect((await setOccurrenceCheckinOpen(secondOccurrence.id, true)).success).toBe(true)
+    expect((await setOccurrenceCheckinOpen(secondOccurrence.id, false)).success).toBe(true)
+    // Neither today's table nor renamed facilitator profiles can rewrite history.
+    await db.member.update({ where: { id: volunteer.memberId }, data: { firstName: "Renamed" } })
+    await db.breakoutGroup.delete({ where: { id: group.id } })
+    expect((await setOccurrenceCheckinOpen(occurrence.id, false)).success).toBe(true)
+    const result = await getSessionsAttendanceExport(event.id)
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(result.data.rows.filter((r) => r.sessionDate === "2026-03-01" && ["Maria", "Pedro", "Renamed"].includes(r.firstName)))
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({ type: "Member", breakoutGroup: "Table 4", facilitator: "Vince Tan", breakoutRecord: "Saved at session close" }),
+        expect.objectContaining({ type: "Guest", breakoutGroup: "Table 4", facilitator: "Vince Tan" }),
+        expect.objectContaining({ type: "Volunteer", breakoutGroup: "Table 4", facilitator: "Vince Tan" }),
+      ]))
+    expect(result.data.rows.find((r) => r.sessionDate === "2026-03-08")).toMatchObject({
+      breakoutGroup: "Table 8", facilitator: "Maria Santos", coFacilitator: "Vince Tan", breakoutRecord: "Saved at session close",
+    })
+    expect(result.data.rows.find((r) => r.firstName === "Ana")).toMatchObject({ breakoutGroup: null, facilitator: null })
+  })
+
+  it("does not invent legacy session assignments from current seating", async () => {
+    const { event, occurrence, memberRegistrant, volunteer } = await seedEventWithAttendance()
+    await db.breakoutGroup.create({ data: {
+      eventId: event.id, name: "Current table", facilitatorId: volunteer.id,
+      members: { create: { registrantId: memberRegistrant.id } },
+    } })
+    const result = await getSessionsAttendanceExport(event.id, occurrence.id)
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(result.data.rows.every((r) => r.breakoutGroup === null && r.breakoutRecord === "Not recorded")).toBe(true)
+  })
+
+  it("reads a consistent roster if check-in closes and seating changes during an export", async () => {
+    const { event, occurrence, memberRegistrant } = await seedEventWithAttendance()
+    const group = await db.breakoutGroup.create({ data: {
+      eventId: event.id, name: "Before close", members: { create: { registrantId: memberRegistrant.id } },
+    } })
+    await setOccurrenceCheckinOpen(occurrence.id, true)
+    const load = sessionBreakoutsServer.loadSessionBreakoutGroups
+    const spy = vi.spyOn(sessionBreakoutsServer, "loadSessionBreakoutGroups").mockImplementationOnce(async (...args) => {
+      // The export has read isOpen, but has not queried the roster yet.
+      expect((await setOccurrenceCheckinOpen(occurrence.id, false)).success).toBe(true)
+      await db.breakoutGroup.update({ where: { id: group.id }, data: { name: "After close" } })
+      return load(...args)
+    })
+    try {
+      const result = await getSessionsAttendanceExport(event.id, occurrence.id)
+      expect(result.success && result.data.rows.find((r) => r.firstName === "Maria")).toMatchObject({
+        breakoutGroup: "Before close", breakoutRecord: "Live assignments",
+      })
+      expect(spy).toHaveBeenCalled()
+    } finally {
+      spy.mockRestore()
+    }
+    const closed = await getSessionsAttendanceExport(event.id, occurrence.id)
+    expect(closed.success && closed.data.rows.find((r) => r.firstName === "Maria")).toMatchObject({
+      breakoutGroup: "Before close", breakoutRecord: "Saved at session close",
+    })
+  })
+
+  it("captures an empty roster and does not borrow another event's tables", async () => {
+    const { event, occurrence, memberRegistrant } = await seedEventWithAttendance()
+    const other = await db.event.create({ data: { name: "Other", type: "Recurring", startDate: new Date(), endDate: new Date() } })
+    await db.breakoutGroup.create({ data: { eventId: other.id, name: "Other table", members: { create: { registrantId: memberRegistrant.id } } } })
+    await setOccurrenceCheckinOpen(occurrence.id, true)
+    await setOccurrenceCheckinOpen(occurrence.id, false)
+    const result = await getSessionsAttendanceExport(event.id, occurrence.id)
+    expect(result.success && result.data.rows.every((r) => r.breakoutGroup === null && r.breakoutRecord === "Saved at session close")).toBe(true)
+  })
+
+  it("allows an explicit reopen and close to save corrections, including expected absent participants", async () => {
+    const { event, occurrence, guestRegistrant } = await seedEventWithAttendance()
+    await db.occurrenceAttendee.deleteMany({ where: { occurrenceId: occurrence.id, registrantId: guestRegistrant.id } })
+    await db.sessionRegistration.create({ data: { occurrenceId: occurrence.id, registrantId: guestRegistrant.id } })
+    const group = await db.breakoutGroup.create({ data: {
+      eventId: event.id, name: "Table 1", members: { create: { registrantId: guestRegistrant.id } },
+    } })
+    await setOccurrenceCheckinOpen(occurrence.id, true)
+    await setOccurrenceCheckinOpen(occurrence.id, false)
+    await db.breakoutGroup.update({ where: { id: group.id }, data: { name: "Corrected table" } })
+    await setOccurrenceCheckinOpen(occurrence.id, true)
+    await setOccurrenceCheckinOpen(occurrence.id, false)
+    const result = await getSessionsAttendanceExport(event.id, occurrence.id)
+    expect(result.success && result.data.rows.find((r) => r.firstName === "Pedro")).toMatchObject({
+      breakoutGroup: "Corrected table", sessionRegistration: true, checkedInAt: null, breakoutRecord: "Saved at session close",
+    })
+  })
+
+  it("does not let a staffer close and snapshot another event's session", async () => {
+    const { occurrence } = await seedEventWithAttendance()
+    await db.eventOccurrence.update({ where: { id: occurrence.id }, data: { isOpen: true } })
+    vi.mocked(auth).mockResolvedValue({ user: {
+      ...adminSession.user, role: "Staff", permissions: [{ feature: "Events", actions: ["Read", "Write"] }], eventAccess: ["another-event"],
+    } } as never)
+    expect(await setOccurrenceCheckinOpen(occurrence.id, false)).toEqual({ success: false, error: "Unauthorized." })
+    expect(await db.eventOccurrence.findUnique({ where: { id: occurrence.id } })).toMatchObject({ isOpen: true, breakoutSnapshot: null })
+  })
 
   it("returns one row per check-in with resolved names, types, and series", async () => {
     const { event } = await seedEventWithAttendance()
