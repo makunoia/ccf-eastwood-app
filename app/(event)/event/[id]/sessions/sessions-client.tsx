@@ -613,7 +613,7 @@ export function SessionsClient({
   const { open: openAttendanceExport, dialog: attendanceExportDialog } =
     useExportColumnsDialog<SessionAttendanceExportRow, SessionAttendanceGroup>({
       title: "Export attendance",
-      description: `Everyone who checked in across all ${title.toLowerCase()} — registrants and volunteers alike, one row per check-in.`,
+      description: `Expected participants and everyone checked in across all ${title.toLowerCase()}. Breakout details are saved when check-in closes; open sessions use current assignments. Earlier sessions may have no saved breakout record.`,
       groups: SESSION_ATTENDANCE_GROUPS,
       unit: ["check-in", "check-ins"],
       emptyMessage: "No attendance to export yet.",

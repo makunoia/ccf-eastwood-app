@@ -33,7 +33,7 @@ export function SessionExportButton({
   >({
     title: "Export attendance",
     description:
-      "Expected participants and everyone checked in to this session, with session registration and attendance recorded separately.",
+      "Expected participants and everyone checked in to this session. Breakout details are saved when check-in closes; open sessions use current assignments. Earlier sessions may have no saved breakout record.",
     groups: SESSION_ATTENDANCE_GROUPS,
     unit: ["person", "people"],
     emptyMessage: "No session registration or attendance to export yet.",

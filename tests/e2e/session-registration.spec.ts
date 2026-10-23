@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto"
+import { readFile } from "node:fs/promises"
 import { Client } from "pg"
 import { test as adminTest, expect } from "./fixtures/admin-session"
 
@@ -149,4 +150,51 @@ test("admin session and breakout rosters show expected participants", async ({ a
   await page.screenshot({ path: test.info().outputPath("churchie-sessionRegistration-roster.png"), fullPage: true })
   await page.goto(`/event/${sessionRegistration.eventId}/breakouts/${groupId}`)
   await expect(page.getByRole("cell", { name: "Expected", exact: true })).toBeVisible()
+})
+
+test("a closed session exports saved breakout details after tables change", async ({ adminPage: page, sessionRegistration: fixture }) => {
+  const { client, eventId, occurrenceId, memberId } = fixture
+  const registrantId = randomUUID(), groupId = randomUUID(), facilitatorMemberId = randomUUID()
+  const committeeId = randomUUID(), roleId = randomUUID(), volunteerId = randomUUID()
+  try {
+    await client.query(`INSERT INTO "Member" (id, "firstName", "lastName", "dateJoined", language, "updatedAt") VALUES ($1, 'Saved', 'Facilitator', NOW(), '{}', NOW())`, [facilitatorMemberId])
+    await client.query(`INSERT INTO "VolunteerCommittee" (id, name, "eventId", "updatedAt") VALUES ($1, 'Facilitators', $2, NOW())`, [committeeId, eventId])
+    await client.query(`INSERT INTO "CommitteeRole" (id, name, "committeeId", "updatedAt") VALUES ($1, 'Facilitator', $2, NOW())`, [roleId, committeeId])
+    await client.query(`INSERT INTO "Volunteer" (id, "memberId", "eventId", "committeeId", "preferredRoleId", "updatedAt") VALUES ($1, $2, $3, $4, $5, NOW())`, [volunteerId, facilitatorMemberId, eventId, committeeId, roleId])
+    await client.query(`INSERT INTO "EventRegistrant" (id, "eventId", "memberId", "updatedAt") VALUES ($1, $2, $3, NOW())`, [registrantId, eventId, memberId])
+    await client.query(`INSERT INTO "OccurrenceAttendee" (id, "occurrenceId", "registrantId") VALUES ($1, $2, $3)`, [randomUUID(), occurrenceId, registrantId])
+    await client.query(`INSERT INTO "BreakoutGroup" (id, "eventId", name, "facilitatorId", language, "updatedAt") VALUES ($1, $2, 'Table 7', $3, '{}', NOW())`, [groupId, eventId, volunteerId])
+    await client.query(`INSERT INTO "BreakoutGroupMember" ("breakoutGroupId", "registrantId") VALUES ($1, $2)`, [groupId, registrantId])
+
+    await page.goto(`/event/${eventId}/sessions`)
+    // This switch changes only after its server action completes, so wait for
+    // the server-confirmed state rather than check()'s immediate DOM assertion.
+    await page.getByRole("switch", { name: "Check-in closed", exact: true }).click()
+    await expect(page.getByRole("switch", { name: "Check-in open", exact: true })).toBeEnabled()
+    await page.getByRole("switch", { name: "Check-in open", exact: true }).click()
+    await expect.poll(async () => {
+      const result = await client.query(`SELECT "breakoutSnapshot" FROM "EventOccurrence" WHERE id = $1`, [occurrenceId])
+      return result.rows[0].breakoutSnapshot?.groups[0]?.name
+    }).toBe("Table 7")
+    await client.query(`UPDATE "BreakoutGroup" SET name = 'Table 99' WHERE id = $1`, [groupId])
+    await client.query(`UPDATE "Member" SET "firstName" = 'Changed' WHERE id = $1`, [facilitatorMemberId])
+
+    await page.goto(`/event/${eventId}/sessions/${occurrenceId}`)
+    await page.getByRole("button", { name: "Export", exact: true }).click()
+    const dialog = page.getByRole("dialog", { name: "Export attendance", exact: true })
+    await expect(dialog.getByRole("checkbox", { name: "Breakout Group / Table", exact: true })).toBeChecked()
+    await expect(dialog.getByRole("checkbox", { name: "Facilitator", exact: true })).toBeChecked()
+    const downloadPromise = page.waitForEvent("download")
+    await dialog.getByRole("button", { name: "Download CSV", exact: true }).click()
+    const download = await downloadPromise
+    const csv = await readFile((await download.path())!, "utf8")
+    expect(csv).toContain("Breakout Group / Table,Facilitator,Breakout Record")
+    expect(csv).toContain("Table 7,Saved Facilitator,Saved at session close")
+    expect(csv).not.toContain("Table 99")
+    expect(csv).not.toContain("Changed Facilitator")
+  } finally {
+    await client.query(`DELETE FROM "BreakoutGroup" WHERE id = $1`, [groupId])
+    await client.query(`DELETE FROM "Volunteer" WHERE id = $1`, [volunteerId])
+    await client.query(`DELETE FROM "Member" WHERE id = $1`, [facilitatorMemberId])
+  }
 })

@@ -910,6 +910,9 @@ model EventOccurrence {
   notes     String?
   isOpen    Boolean              @default(false)
   isStandalone Boolean           @default(false)
+  // Frozen when check-in closes. Null on legacy sessions: never infer history
+  // from today's standing seating or facilitator assignments.
+  breakoutSnapshot Json?
   createdAt DateTime             @default(now())
   updatedAt DateTime             @updatedAt
 

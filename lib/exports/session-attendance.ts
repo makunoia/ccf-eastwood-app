@@ -30,12 +30,17 @@ export type SessionAttendanceExportRow = {
   type: "Member" | "Guest" | "Volunteer"
   sessionRegistration?: boolean
   checkedInAt: string | null // ISO datetime
+  breakoutGroup?: string | null
+  facilitator?: string | null
+  coFacilitator?: string | null
+  breakoutRecord?: "Live assignments" | "Saved at session close" | "Not recorded"
 }
 
 export const SESSION_ATTENDANCE_GROUPS = [
   "Session",
   "Personal Information",
   "Check-in",
+  "Breakout",
 ] as const
 
 export type SessionAttendanceGroup = (typeof SESSION_ATTENDANCE_GROUPS)[number]
@@ -73,6 +78,10 @@ const COLUMNS: readonly ColumnDef[] = [
   { key: "sessionRegistration", label: "Expected", group: "Check-in", toggle: null, optional: true, hasData: (rows) => rows.some((r) => !!r.sessionRegistration), value: (r) => r.sessionRegistration ? "Expected" : "" },
   { key: "attendance", label: "Attendance", group: "Check-in", toggle: null, optional: true, hasData: (rows) => rows.some((r) => !!r.sessionRegistration), value: (r) => r.checkedInAt ? "Checked in" : "Not checked in" },
   { key: "checkedInAt", label: "Checked In", group: "Check-in", toggle: null, value: (r) => formatCheckInTime(r.checkedInAt) },
+  { key: "breakoutGroup", label: "Breakout Group / Table", group: "Breakout", toggle: null, optional: true, value: (r) => r.breakoutGroup },
+  { key: "facilitator", label: "Facilitator", group: "Breakout", toggle: null, optional: true, value: (r) => r.facilitator },
+  { key: "coFacilitator", label: "Co-facilitator", group: "Breakout", toggle: null, optional: true, value: (r) => r.coFacilitator },
+  { key: "breakoutRecord", label: "Breakout Record", group: "Breakout", toggle: null, optional: true, value: (r) => r.breakoutRecord },
 ]
 
 export function sessionAttendanceColumns(): ColumnDef[] {
