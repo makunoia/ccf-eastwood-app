@@ -1078,33 +1078,98 @@ async function checkIsDescendant(
  * entry: that table is scoped to a group, and a seeker has none.
  */
 export async function dismissSeekerRequest(requestId: string): Promise<ActionResult> {
+  const result = await dismissSeekerRequestsBatch([requestId])
+  if (!result.success) return result
+  if (result.data.dismissed === 1) return { success: true, data: undefined }
+  return {
+    success: false,
+    error: result.data.failed[0]?.reason ?? "Request not found",
+  }
+}
+
+export type DismissSeekersResult = {
+  dismissed: number
+  failed: BatchFailure[]
+}
+
+/**
+ * Remove selected seekers from the active queue while keeping their request
+ * history and matching profiles. Each row settles independently so one stale
+ * selection does not block the rest of the batch.
+ */
+export async function dismissSeekerRequestsBatch(
+  ids: string[]
+): Promise<ActionResult<DismissSeekersResult>> {
   const authError = await requireWrite()
   if (authError) return { success: false, error: authError.error }
 
-  try {
-    const request = await db.smallGroupMemberRequest.findUnique({
-      where: { id: requestId },
-      select: { status: true, origin: true, smallGroupId: true, sourceEventId: true },
-    })
-    if (!request) return { success: false, error: "Request not found" }
-    if (request.origin !== "RegistrationIntent" || request.smallGroupId) {
-      // Group-targeted requests are resolved by their leader, not dismissed here.
-      return { success: false, error: "Request not found" }
-    }
-    if (request.status !== "Pending") {
-      return { success: false, error: "This request has already been resolved" }
-    }
+  if (ids.length === 0) {
+    return { success: true, data: { dismissed: 0, failed: [] } }
+  }
 
-    await db.smallGroupMemberRequest.update({
-      where: { id: requestId },
-      data: { status: "Rejected", resolvedAt: new Date() },
-    })
+  try {
+    let dismissed = 0
+    const failed: BatchFailure[] = []
+    const sourceEventIds = new Set<string>()
+
+    for (const id of new Set(ids)) {
+      try {
+        const outcome = await withSerializableRetry(async (tx) => {
+          const request = await tx.smallGroupMemberRequest.findUnique({
+            where: { id },
+            select: {
+              status: true,
+              origin: true,
+              smallGroupId: true,
+              sourceEventId: true,
+              guest: { select: { firstName: true, lastName: true } },
+              member: { select: { firstName: true, lastName: true } },
+            },
+          })
+          if (!request) return { kind: "failed" as const, name: "Unknown", reason: "no longer exists" }
+
+          const person = request.member ?? request.guest
+          const name = person ? `${person.firstName} ${person.lastName}`.trim() : "Unknown"
+          if (request.origin !== "RegistrationIntent" || request.smallGroupId) {
+            return { kind: "failed" as const, name, reason: "is no longer a seeker" }
+          }
+          if (request.status !== "Pending") {
+            return { kind: "failed" as const, name, reason: "already resolved" }
+          }
+
+          const updated = await tx.smallGroupMemberRequest.updateMany({
+            where: {
+              id,
+              status: "Pending",
+              origin: "RegistrationIntent",
+              smallGroupId: null,
+            },
+            data: { status: "Rejected", resolvedAt: new Date() },
+          })
+          if (updated.count !== 1) {
+            return { kind: "failed" as const, name, reason: "already resolved" }
+          }
+          return { kind: "dismissed" as const, sourceEventId: request.sourceEventId }
+        })
+
+        if (outcome.kind === "failed") {
+          failed.push({ id, name: outcome.name, reason: outcome.reason })
+          continue
+        }
+        dismissed++
+        if (outcome.sourceEventId) sourceEventIds.add(outcome.sourceEventId)
+      } catch {
+        failed.push({ id, name: "Unknown", reason: "could not be dismissed" })
+      }
+    }
 
     revalidatePath("/small-groups")
-    if (request.sourceEventId) revalidatePath(`/event/${request.sourceEventId}/catch-mech`, "layout")
-    return { success: true, data: undefined }
+    for (const eventId of sourceEventIds) {
+      revalidatePath(`/event/${eventId}/catch-mech`, "layout")
+    }
+    return { success: true, data: { dismissed, failed } }
   } catch {
-    return { success: false, error: "Failed to dismiss request" }
+    return { success: false, error: "Failed to dismiss requests" }
   }
 }
 

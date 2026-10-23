@@ -52,7 +52,7 @@ import {
 } from "@/lib/events/occurrence-series"
 import { isWithinRegistrationWindow } from "@/lib/events/registration-window"
 import { registrationSessionTargets, validateSessionTargets, SessionTargetChanged, recordSessionAttendance, hasSessionParticipantRegistration, type SessionTarget } from "@/lib/events/session-registration"
-import { latestWalkInSession } from "@/lib/events/walk-in-session"
+import { latestWalkInSession, validateWalkInSessionTarget, WalkInSessionChanged } from "@/lib/events/walk-in-session"
 import { fieldsForContext } from "@/lib/forms/context-config"
 import { getEffectiveFormConfig } from "@/lib/forms/context-config-server"
 import {
@@ -104,7 +104,7 @@ type ActionResult<T = void> =
  * Matching on the copy to decide that would break the first time anyone rewords
  * it, so the reason travels as its own field.
  */
-export type RegistrationFailureReason = "alreadyRegistered" | "sessionChanged"
+export type RegistrationFailureReason = "alreadyRegistered" | "sessionChanged" | "walkInSessionChanged"
 
 type RegistrationResult<T> =
   | { success: true; data: T }
@@ -682,6 +682,7 @@ export async function createRegistrant(
   }
 
   try {
+    if (walkIn) await validateWalkInSessionTarget(eventId, walkIn.occurrenceId)
     const sessionTargets = !walkIn ? await registrationSessionTargets(eventId) : null
     validateSessionTargets(sessionTargets, parsed.data.sessionOccurrenceIds, [eventId])
     const sessionOccurrenceId = sessionTargets?.[0]?.occurrenceId ?? null
@@ -938,6 +939,9 @@ export async function createRegistrant(
       return { success: true, data: result }
     }
   } catch (error) {
+    if (error instanceof WalkInSessionChanged) {
+      return { success: false, error: error.message, reason: "walkInSessionChanged" }
+    }
     if (error instanceof SessionTargetChanged) return { success: false, error: error.message, reason: "sessionChanged", sessionTargets: error.targets }
     // A contact collision is the person's to fix, so it has to survive the
     // catch-all as itself rather than becoming "please try again".
@@ -2282,7 +2286,10 @@ export async function createHouseholdRegistration(
         skippedVolunteers,
       },
     }
-  } catch {
+  } catch (error) {
+    if (error instanceof WalkInSessionChanged) {
+      return { success: false, error: error.message, reason: "walkInSessionChanged" }
+    }
     // The primary is already registered at this point; surface that rather than
     // implying nothing happened.
     return {

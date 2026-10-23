@@ -1645,6 +1645,10 @@ export function RegistrationForm({
       setCurrentSessionTargets(result.sessionTargets ?? [])
       window.scrollTo({ top: 0, behavior: "smooth" })
       toast.error(result.error)
+    } else if (result.reason === "walkInSessionChanged") {
+      router.refresh()
+      window.scrollTo({ top: 0, behavior: "smooth" })
+      toast.error(result.error)
     } else if (result.reason === "alreadyRegistered") {
       /**
        * The backstop for the people step 0 can't catch: someone the dedup ladder

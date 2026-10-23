@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest"
 import { db } from "@/lib/db"
 import { FORM_FIELD_KEYS, FORM_SECTION_KEYS } from "@/lib/forms/context-config"
 import { createRegistrant } from "@/app/(dashboard)/events/actions"
+import { setWalkInOccurrence } from "@/app/(dashboard)/events/form-config-actions"
 
 // Walk-in registration parity: the check-in kiosk "Register now" path goes
 // through `createRegistrant(..., walkIn)` — the same action as public
@@ -112,9 +113,10 @@ describe("Walk-in registration parity with public registration", () => {
     it("session walk-in creates Guest + EventRegistrant + OccurrenceAttendee", async () => {
       const event = await seedEvent("MultiDay")
       const occurrence = await db.eventOccurrence.create({
-        data: { eventId: event.id, date: new Date() },
+        data: { eventId: event.id, date: new Date(), isOpen: true },
         select: { id: true },
       })
+      await setWalkInOccurrence(event.id, occurrence.id)
 
       const result = await walkIn(event.id, {}, occurrence.id)
       expect(result.success).toBe(true)
@@ -280,6 +282,7 @@ describe("Walk-in registration parity with public registration", () => {
         data: { eventId: event.id, date: new Date(), isOpen: true },
         select: { id: true },
       })
+      await setWalkInOccurrence(event.id, occurrence.id)
 
       // If walk-in mode didn't skip autoCheckinIfOpenRecurringSession, the
       // second insert for the same occurrence would violate the unique

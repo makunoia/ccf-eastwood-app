@@ -359,6 +359,7 @@ describe("walk-in attendance", () => {
     const registrant = await db.eventRegistrant.create({
       data: { eventId: event.id, firstName: "Juan", lastName: "dela Cruz" },
     })
+    await setWalkInOccurrence(event.id, occurrence.id)
 
     await checkInWalkInRegistrant(registrant.id, occurrence.id)
 

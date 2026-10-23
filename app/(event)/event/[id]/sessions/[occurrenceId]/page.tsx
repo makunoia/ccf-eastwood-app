@@ -17,11 +17,15 @@ async function getOccurrenceDetail(occurrenceId: string) {
     where: { id: occurrenceId },
     include: {
       sessionRegistrations: { include: { registrant: { select: { id: true, firstName: true, lastName: true, memberId: true, guestId: true, member: { select: { firstName: true, lastName: true } }, guest: { select: { firstName: true, lastName: true } } } } } },
+      clusterLinks: {
+        select: { cluster: { select: { sessionRegistrationEnabled: true } } },
+      },
       event: {
         select: {
           id: true,
           name: true,
           type: true,
+          sessionRegistrationEnabled: true,
           allMinistries: true,
           ministries: { include: { ministry: { select: { name: true } } } },
         },
@@ -237,6 +241,9 @@ export default async function OccurrenceDetailPage({
     siblingOccurrences,
   } = data
   const canEdit = canWrite(session, "Events")
+  const sessionRegistrationEnabled =
+    occurrence.event.sessionRegistrationEnabled ||
+    occurrence.clusterLinks.some((link) => link.cluster.sessionRegistrationEnabled)
 
   const currentIndex = siblingOccurrences.findIndex((o) => o.id === occurrenceId)
   const prevOccurrenceId = currentIndex > 0 ? siblingOccurrences[currentIndex - 1].id : null
@@ -462,6 +469,7 @@ export default async function OccurrenceDetailPage({
         <SessionAttendeesTable
           eventId={id}
           occurrenceId={occurrenceId}
+          sessionRegistrationEnabled={sessionRegistrationEnabled}
           sessionRegistrations={occurrence.sessionRegistrations.map((sessionRegistration) => ({ registrantId: sessionRegistration.registrantId, personKey: sessionRegistration.registrant.memberId ? `member:${sessionRegistration.registrant.memberId}` : sessionRegistration.registrant.guestId ? `guest:${sessionRegistration.registrant.guestId}` : `registrant:${sessionRegistration.registrantId}`, name: getAttendeeName(sessionRegistration.registrant) ?? "Unknown", isMember: !!sessionRegistration.registrant.memberId, checkedIn: false }))}
           attendees={attendeesWithStats}
           breakoutGroups={breakoutGroupOptions}

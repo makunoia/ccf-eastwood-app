@@ -144,7 +144,7 @@ test("admin session and breakout rosters show expected participants", async ({ a
   await expect(page.getByRole("tooltip")).toHaveText("1 of 2 checked in · 1 not checked in")
   await turnoutBar.blur()
   await expect(page.getByText("Series turnout", { exact: true })).toHaveCount(0)
-  await page.getByRole("tab", { name: "Registered for this session (1)", exact: true }).click()
+  await page.getByRole("tab", { name: "Pre-registered (1)", exact: true }).click()
   await expect(page.getByRole("link", { name: "Maria Session", exact: true })).toBeVisible()
   await expect(page.getByRole("cell", { name: "Not checked in", exact: true })).toBeVisible()
   await page.screenshot({ path: test.info().outputPath("churchie-sessionRegistration-roster.png"), fullPage: true })

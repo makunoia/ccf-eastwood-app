@@ -6,6 +6,7 @@ import Link from "next/link"
 import { IconUserSearch } from "@tabler/icons-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,6 +18,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { DataTable } from "@/components/ui/data-table"
+import { buildSelectionColumn } from "@/components/batch/selection-column"
+import { useBatchSelection } from "@/components/batch/batch-selection-provider"
 import { emailColumn, phoneColumn } from "@/lib/tables/columns/contact"
 import { dismissSeekerRequest } from "./actions"
 
@@ -63,13 +66,16 @@ function profileHref(row: SeekerRow) {
 }
 
 function buildColumns({
+  selectable,
   canWrite,
   onDismiss,
 }: {
+  selectable: boolean
   canWrite: boolean
   onDismiss: (row: SeekerRow) => void
 }): ColumnDef<SeekerRow>[] {
   return [
+    ...(selectable ? [buildSelectionColumn<SeekerRow>()] : []),
     {
       id: "person",
       accessorFn: (row) => row.personName,
@@ -154,10 +160,13 @@ export function SeekersTable({
   seekers: SeekerRow[]
   canWrite: boolean
 }) {
+  const selection = useBatchSelection()
+  const selectable = canWrite && (selection?.enabled ?? false)
+  const cardSelecting = selectable && (selection?.selectMode ?? false)
   const [dismissing, setDismissing] = React.useState<SeekerRow | null>(null)
   const columns = React.useMemo(
-    () => buildColumns({ canWrite, onDismiss: setDismissing }),
-    [canWrite],
+    () => buildColumns({ selectable, canWrite, onDismiss: setDismissing }),
+    [selectable, canWrite],
   )
   const [pending, setPending] = React.useState(false)
 
@@ -191,44 +200,71 @@ export function SeekersTable({
     <>
       {/* Mobile cards */}
       <div className="flex flex-col gap-2 md:hidden">
-        {seekers.map((s) => (
-          <div key={s.id} className="rounded-lg border p-4">
-            <div className="flex items-center justify-between gap-2">
-              <Link href={profileHref(s)} className={LINK_CLASS}>
-                {s.personName}
-              </Link>
-              <span
-                className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium ${PERSON_BADGE[s.personType]}`}
-              >
-                {s.personType}
-              </span>
+        {seekers.map((s) => {
+          const checked = selection?.isSelected(s.id) ?? false
+          return (
+            <div
+              key={s.id}
+              className="rounded-lg border p-4 transition-colors data-[selected=true]:border-primary data-[selected=true]:bg-primary/5"
+              data-selected={checked}
+              onClick={() => {
+                if (cardSelecting) selection?.toggle(s.id)
+              }}
+            >
+              <div className="flex items-start gap-3">
+                {cardSelecting && (
+                  <Checkbox
+                    checked={checked}
+                    onClick={(event) => event.stopPropagation()}
+                    onCheckedChange={() => selection?.toggle(s.id)}
+                    aria-label={`Select ${s.personName}'s request`}
+                    className="mt-0.5"
+                  />
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <Link
+                      href={profileHref(s)}
+                      className={LINK_CLASS}
+                      onClick={(event) => cardSelecting && event.preventDefault()}
+                    >
+                      {s.personName}
+                    </Link>
+                    <span
+                      className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium ${PERSON_BADGE[s.personType]}`}
+                    >
+                      {s.personType}
+                    </span>
+                  </div>
+                  <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
+                    <span className="text-muted-foreground">Asked at</span>
+                    <span>{s.sourceEventName ?? "—"}</span>
+                    <span className="text-muted-foreground">Contact</span>
+                    <span>{s.personPhone ?? s.personEmail ?? "—"}</span>
+                    {s.currentGroupName && (
+                      <>
+                        <span className="text-muted-foreground">Current</span>
+                        <span>{s.currentGroupName}</span>
+                      </>
+                    )}
+                    <span className="text-muted-foreground">Asked</span>
+                    <span>{formatDate(s.createdAt)}</span>
+                  </div>
+                  {canWrite && !cardSelecting && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-3 w-full"
+                      onClick={() => setDismissing(s)}
+                    >
+                      Dismiss
+                    </Button>
+                  )}
+                </div>
+              </div>
             </div>
-            <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
-              <span className="text-muted-foreground">Asked at</span>
-              <span>{s.sourceEventName ?? "—"}</span>
-              <span className="text-muted-foreground">Contact</span>
-              <span>{s.personPhone ?? s.personEmail ?? "—"}</span>
-              {s.currentGroupName && (
-                <>
-                  <span className="text-muted-foreground">Current</span>
-                  <span>{s.currentGroupName}</span>
-                </>
-              )}
-              <span className="text-muted-foreground">Asked</span>
-              <span>{formatDate(s.createdAt)}</span>
-            </div>
-            {canWrite && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-3 w-full"
-                onClick={() => setDismissing(s)}
-              >
-                Dismiss
-              </Button>
-            )}
-          </div>
-        ))}
+          )
+        })}
       </div>
 
       {/* Desktop table */}

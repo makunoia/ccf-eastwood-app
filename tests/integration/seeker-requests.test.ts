@@ -5,7 +5,10 @@ import {
   countSeekerRequests,
   createSeekerRequestFromRegistration,
 } from "@/lib/small-groups/seeker-requests"
-import { dismissSeekerRequest } from "@/app/(dashboard)/small-groups/actions"
+import {
+  dismissSeekerRequest,
+  dismissSeekerRequestsBatch,
+} from "@/app/(dashboard)/small-groups/actions"
 import {
   createRegistrant,
   saveCheckinMatchingProfile,
@@ -323,6 +326,44 @@ describe("DGroup seeker requests", () => {
   })
 
   describe("integration — dismissing a seeker", () => {
+    it("dismisses multiple selected seekers in one action", async () => {
+      const event = await seedEvent()
+      const first = await seedGuest("Ana", "Cruz")
+      const second = await seedGuest("Bea", "Reyes")
+      await createSeekerRequestFromRegistration({ guestId: first.id }, event.id)
+      await createSeekerRequestFromRegistration({ guestId: second.id }, event.id)
+      const requests = await db.smallGroupMemberRequest.findMany({
+        where: SEEKER_REQUEST_WHERE,
+        orderBy: { createdAt: "asc" },
+      })
+
+      const result = await dismissSeekerRequestsBatch(requests.map((request) => request.id))
+
+      expect(result).toEqual({ success: true, data: { dismissed: 2, failed: [] } })
+      expect(await countSeekerRequests()).toBe(0)
+      expect(
+        await db.smallGroupMemberRequest.count({ where: { status: "Rejected" } })
+      ).toBe(2)
+    })
+
+    it("dismisses valid rows and reports stale selections individually", async () => {
+      const event = await seedEvent()
+      const guest = await seedGuest()
+      await createSeekerRequestFromRegistration({ guestId: guest.id }, event.id)
+      const request = await db.smallGroupMemberRequest.findFirstOrThrow({
+        where: SEEKER_REQUEST_WHERE,
+      })
+
+      const result = await dismissSeekerRequestsBatch([request.id, "no-such-request"])
+
+      expect(result.success).toBe(true)
+      if (!result.success) return
+      expect(result.data.dismissed).toBe(1)
+      expect(result.data.failed).toEqual([
+        { id: "no-such-request", name: "Unknown", reason: "no longer exists" },
+      ])
+    })
+
     it("resolves the request as Rejected rather than deleting it", async () => {
       const event = await seedEvent()
       const guest = await seedGuest()

@@ -4,7 +4,7 @@ import {
   setWalkInLatestSession,
   setWalkInOccurrence,
 } from "@/app/(dashboard)/events/form-config-actions"
-import { setOccurrenceCheckinOpen } from "@/app/(dashboard)/events/actions"
+import { createRegistrant, setOccurrenceCheckinOpen } from "@/app/(dashboard)/events/actions"
 import { setFormOpen } from "@/app/(dashboard)/forms/actions"
 import { getFormConfig } from "@/lib/forms/config"
 import { resolveWalkInAccess } from "@/lib/events/walk-in-access"
@@ -314,6 +314,7 @@ describe("checkInWalkInRegistrant", () => {
     const event = await seedEvent("Sunday Service")
     const occurrence = await seedOccurrence(event.id, "2026-08-09", true, "2026-08-09T01:00:00Z")
     const registrant = await seedRegistrant(event.id)
+    await setWalkInOccurrence(event.id, occurrence.id)
 
     await checkInWalkInRegistrant(registrant.id, occurrence.id)
 
@@ -324,7 +325,7 @@ describe("checkInWalkInRegistrant", () => {
     ).toBe(1)
   })
 
-  it("ignores a session belonging to a different event", async () => {
+  it("rejects a session belonging to a different event", async () => {
     // A hand-edited POST naming another event's session would otherwise add an
     // attendee row there, inflating every figure that counts occurrence
     // attendance for an event this person never registered for.
@@ -333,7 +334,9 @@ describe("checkInWalkInRegistrant", () => {
     const foreign = await seedOccurrence(theirs.id, "2026-08-09", true, "2026-08-09T01:00:00Z")
     const registrant = await seedRegistrant(mine.id)
 
-    await checkInWalkInRegistrant(registrant.id, foreign.id)
+    await expect(checkInWalkInRegistrant(registrant.id, foreign.id)).rejects.toThrow(
+      "active session has changed"
+    )
 
     expect(await db.occurrenceAttendee.count()).toBe(0)
   })
@@ -349,5 +352,75 @@ describe("checkInWalkInRegistrant", () => {
     expect(
       (await db.eventRegistrant.findUniqueOrThrow({ where: { id: registrant.id } })).attendedAt
     ).not.toBeNull()
+  })
+})
+
+describe("walk-in submission target", () => {
+  const payload = {
+    firstName: "Walk-in",
+    lastName: "Guest",
+    mobileNumber: "+63 917 555 0101",
+  }
+
+  it("creates registration and attendance together for the current session", async () => {
+    const event = await seedEvent("Sunday Service")
+    const occurrence = await seedOccurrence(event.id, "2026-08-09", true, "2026-08-09T01:00:00Z")
+    await setWalkInOccurrence(event.id, occurrence.id)
+
+    const result = await createRegistrant(
+      event.id,
+      payload,
+      null,
+      null,
+      false,
+      null,
+      { occurrenceId: occurrence.id },
+    )
+
+    expect(result.success).toBe(true)
+    expect(await db.eventRegistrant.count({ where: { eventId: event.id } })).toBe(1)
+    expect(await db.occurrenceAttendee.count({ where: { occurrenceId: occurrence.id } })).toBe(1)
+  })
+
+  it("rejects a stale Latest-mode session without creating registration or attendance", async () => {
+    const event = await seedEvent("Sunday Service")
+    const former = await seedOccurrence(event.id, "2026-08-09", true, "2026-08-09T01:00:00Z")
+    await setWalkInLatestSession(event.id)
+    await seedOccurrence(event.id, "2026-08-16", true, "2026-08-16T01:00:00Z")
+
+    const result = await createRegistrant(
+      event.id,
+      payload,
+      null,
+      null,
+      false,
+      null,
+      { occurrenceId: former.id },
+    )
+
+    expect(result).toMatchObject({ success: false, reason: "walkInSessionChanged" })
+    expect(await db.eventRegistrant.count({ where: { eventId: event.id } })).toBe(0)
+    expect(await db.occurrenceAttendee.count()).toBe(0)
+  })
+
+  it("rejects a closed pinned session without creating registration or attendance", async () => {
+    const event = await seedEvent("Sunday Service")
+    const occurrence = await seedOccurrence(event.id, "2026-08-09", true, "2026-08-09T01:00:00Z")
+    await setWalkInOccurrence(event.id, occurrence.id)
+    await db.eventOccurrence.update({ where: { id: occurrence.id }, data: { isOpen: false } })
+
+    const result = await createRegistrant(
+      event.id,
+      payload,
+      null,
+      null,
+      false,
+      null,
+      { occurrenceId: occurrence.id },
+    )
+
+    expect(result).toMatchObject({ success: false, reason: "walkInSessionChanged" })
+    expect(await db.eventRegistrant.count({ where: { eventId: event.id } })).toBe(0)
+    expect(await db.occurrenceAttendee.count()).toBe(0)
   })
 })
