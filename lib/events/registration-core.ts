@@ -1,6 +1,7 @@
 import { isBreakoutStaff } from "@/lib/breakouts/staffing"
 import { withSerializableRetry } from "@/lib/db/serializable-retry"
-import { assertSessionTarget, convertVolunteerAttendance, recordSessionAttendance } from "@/lib/events/session-registration"
+import { assertSessionTarget, convertVolunteerAttendance, recordSessionAttendance, recordSessionAttendanceInTransaction } from "@/lib/events/session-registration"
+import { assertWalkInSessionTarget, validateWalkInSessionTarget } from "@/lib/events/walk-in-session"
 import "server-only"
 
 import { revalidatePath } from "next/cache"
@@ -322,22 +323,19 @@ export async function assignBreakoutForRegistrant(
 // Sessions (MultiDay/Recurring) record an OccurrenceAttendee; OneTime events
 // set attendedAt — only when null, preserving the first check-in time.
 //
-// The session id arrives in a submitted payload from a *public* route, so it is
-// re-scoped to the registrant's own event before anything is written. The page
-// only ever renders the id `resolveWalkInSession` chose, so this changes nothing
-// for real traffic; what it stops is a hand-edited POST recording attendance at
-// another event's session, which would quietly inflate that event's numbers on
-// every surface that counts occurrence attendance. Silent rather than an error:
-// the registration itself succeeded, and there is no one at the door to act on
-// a failure about an id they never saw.
+// The session id arrives in a submitted payload from a *public* route. Re-resolve
+// the event's current target before writing: this blocks both hand-edited foreign
+// ids and a legitimate tablet whose rendered session became stale while someone
+// was filling in the form.
 export async function checkInWalkInRegistrant(registrantId: string, occurrenceId: string | null) {
-  if (occurrenceId !== null) {
-    const occurrence = await db.eventOccurrence.findFirst({
-      where: { id: occurrenceId, event: { registrants: { some: { id: registrantId } } } },
-      select: { id: true },
-    })
-    if (!occurrence) return
+  const registrant = await db.eventRegistrant.findUnique({
+    where: { id: registrantId },
+    select: { eventId: true },
+  })
+  if (!registrant) return
+  await validateWalkInSessionTarget(registrant.eventId, occurrenceId)
 
+  if (occurrenceId !== null) {
     await recordSessionAttendance(occurrenceId, { kind: "registrant", id: registrantId })
   } else {
     await db.eventRegistrant.updateMany({
@@ -1024,6 +1022,9 @@ export async function completeEventRegistration(opts: {
   // Creating/reusing the series row and confirming session registration is one serializable decision.
   const registration = await withSerializableRetry(async (tx) => {
     if (sessionOccurrenceId) await assertSessionTarget(tx, eventId, sessionOccurrenceId, clusterId)
+    if (walkIn) {
+      await assertWalkInSessionTarget(tx, eventId, walkIn.occurrenceId, clusterId)
+    }
     const held = sessionOccurrenceId ? await tx.eventRegistrant.findFirst({ where: {
       eventId, ...("memberId" in person ? { memberId: person.memberId } : { guestId: person.guestId }),
     }, select: { id: true } }) : null
@@ -1044,6 +1045,18 @@ export async function completeEventRegistration(opts: {
       alreadyRegisteredForSession = !!await tx.sessionRegistration.findUnique({ where: { occurrenceId_registrantId: key } })
       await tx.sessionRegistration.upsert({ where: { occurrenceId_registrantId: key }, create: key, update: {} })
       await convertVolunteerAttendance(tx, sessionOccurrenceId, registrant.id)
+    }
+    if (walkIn?.occurrenceId) {
+      await recordSessionAttendanceInTransaction(
+        tx,
+        walkIn.occurrenceId,
+        { kind: "registrant", id: registrant.id },
+      )
+    } else if (walkIn) {
+      await tx.eventRegistrant.updateMany({
+        where: { id: registrant.id, attendedAt: null },
+        data: { attendedAt: new Date() },
+      })
     }
     return { id: registrant.id, reused: !!existingId }
   })
@@ -1084,9 +1097,5 @@ export async function completeEventRegistration(opts: {
   // registrations days later). That inflated every check-in figure that reads
   // occurrence attendance — per-event dashboards and the cluster day roll-up.
   // Attendance now comes only from the check-in kiosk or an explicit walk-in.
-  if (walkIn) {
-    await checkInWalkInRegistrant(registrantId, walkIn.occurrenceId)
-  }
-
   return { id: registrantId, breakoutGroup, ...(sessionOccurrenceId ? { alreadyRegisteredForSession } : {}) }
 }

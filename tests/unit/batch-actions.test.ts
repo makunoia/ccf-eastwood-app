@@ -14,6 +14,7 @@ import {
 } from "@/app/(dashboard)/members/actions"
 import {
   deleteSmallGroupsBatch,
+  dismissSeekerRequestsBatch,
   setSmallGroupsLifeStageBatch,
 } from "@/app/(dashboard)/small-groups/actions"
 
@@ -256,5 +257,28 @@ describe("authorization", () => {
 
     expect(result.success).toBe(false)
     expect(await db.guest.findUnique({ where: { id: guest.id } })).not.toBeNull()
+  })
+
+  it("rejects seeker batch dismissal without DGroup write permission", async () => {
+    vi.mocked(auth).mockResolvedValueOnce({
+      user: {
+        id: "staff",
+        name: "Staff",
+        email: "staff@example.com",
+        username: "staff",
+        role: "Staff",
+        permissions: [],
+        eventAccess: [],
+        totpEnabled: false,
+        mustChangePassword: false,
+        requiresTotpSetup: false,
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any)
+
+    expect(await dismissSeekerRequestsBatch([])).toEqual({
+      success: false,
+      error: "Unauthorized.",
+    })
   })
 })

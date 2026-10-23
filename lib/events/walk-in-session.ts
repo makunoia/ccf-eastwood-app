@@ -1,5 +1,11 @@
 import { db } from "@/lib/db"
-import type { EventType, WalkInSessionMode } from "@/app/generated/prisma/client"
+import type { EventType, Prisma, WalkInSessionMode } from "@/app/generated/prisma/client"
+
+export class WalkInSessionChanged extends Error {
+  constructor() {
+    super("The active session has changed. Please review the refreshed walk-in form and submit again.")
+  }
+}
 
 /**
  * Which session an event's walk-in door is aimed at right now.
@@ -77,3 +83,78 @@ export async function resolveActiveSession(
 /** Compatibility name for existing door callers. */
 export const resolveWalkInSession = resolveActiveSession
 export const latestActiveSession = latestWalkInSession
+
+/**
+ * Recheck the session a walk-in form rendered before accepting its submission.
+ *
+ * The id in the public payload is only the session the tablet last saw. The
+ * event's current mode/pin and the session's open state remain authoritative.
+ * This transaction-scoped version closes the race between an initial Server
+ * Action check and creation of the registrant/attendance rows.
+ */
+export async function assertWalkInSessionTarget(
+  tx: Prisma.TransactionClient,
+  eventId: string,
+  expectedOccurrenceId: string | null,
+  clusterId?: string | null,
+) {
+  // An Event Day owns an explicit per-event session link. It is independent of
+  // the event's standalone walk-in pin, so validating it against that pin would
+  // reject a legitimate shared-door arrival. Re-read the link in the same
+  // transaction instead, which still catches a day being re-pointed while the
+  // form is submitting.
+  if (clusterId) {
+    const link = await tx.eventClusterEvent.findUnique({
+      where: { clusterId_eventId: { clusterId, eventId } },
+      select: {
+        occurrenceId: true,
+        occurrence: { select: { eventId: true } },
+        event: { select: { type: true } },
+      },
+    })
+    const valid = link?.event.type === "OneTime"
+      ? expectedOccurrenceId === null
+      : !!expectedOccurrenceId &&
+        link?.occurrenceId === expectedOccurrenceId &&
+        link.occurrence?.eventId === eventId
+    if (!valid) throw new WalkInSessionChanged()
+    return
+  }
+
+  const event = await tx.event.findUnique({
+    where: { id: eventId },
+    select: {
+      type: true,
+      walkInSessionMode: true,
+      walkInOccurrence: { select: { id: true, isOpen: true } },
+    },
+  })
+
+  if (!event) throw new WalkInSessionChanged()
+  if (event.type === "OneTime") {
+    if (expectedOccurrenceId !== null) throw new WalkInSessionChanged()
+    return
+  }
+
+  const current = event.walkInSessionMode === "Pinned"
+    ? event.walkInOccurrence
+    : await tx.eventOccurrence.findFirst({
+        where: { eventId },
+        orderBy: [...LATEST_SESSION_FIRST],
+        select: { id: true, isOpen: true },
+      })
+
+  if (!current?.isOpen || current.id !== expectedOccurrenceId) {
+    throw new WalkInSessionChanged()
+  }
+}
+
+/** Fast rejection before profile resolution; the transaction repeats this check. */
+export async function validateWalkInSessionTarget(
+  eventId: string,
+  expectedOccurrenceId: string | null,
+) {
+  await db.$transaction((tx) =>
+    assertWalkInSessionTarget(tx, eventId, expectedOccurrenceId)
+  )
+}

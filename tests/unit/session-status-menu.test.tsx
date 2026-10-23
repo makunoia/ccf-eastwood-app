@@ -89,6 +89,7 @@ function renderTable(
       <SessionAttendeesTable
         eventId="evt-1"
         occurrenceId="occ-1"
+        sessionRegistrationEnabled
         attendees={rows}
         sessionRegistrations={sessionRegistrations}
         breakoutGroups={[]}
@@ -224,6 +225,7 @@ describe("session turnout tile", () => {
   it("uses session registrations rather than the series roster as its denominator", () => {
     renderTable([makeAttendee(false, 1), makeAttendee(false, 2)], true, 80, registrations(8))
     expectTurnout("25%", "2 of 8 checked in")
+    expect(screen.getByRole("tab", { name: "Pre-registered (8)" })).toBeDefined()
   })
 
   it("includes volunteers and walk-ins in both the numerator and the session pool", () => {
@@ -270,6 +272,7 @@ describe("session turnout tile", () => {
     const props = {
       eventId: "evt-1",
       occurrenceId: "occ-1",
+      sessionRegistrationEnabled: true,
       breakoutGroups: [],
       breakoutStats: [],
       volunteerOptions: [],
@@ -281,5 +284,61 @@ describe("session turnout tile", () => {
     expectTurnout("50%", "1 of 2 checked in")
     view.rerender(<TooltipProvider><SessionAttendeesTable {...props} attendees={[]} /></TooltipProvider>)
     expectTurnout("0%", "0 of 2 checked in")
+  })
+
+  it("hides registration-derived UI when session registration is disabled", () => {
+    render(
+      <TooltipProvider>
+        <SessionAttendeesTable
+          eventId="evt-1"
+          occurrenceId="occ-1"
+          sessionRegistrationEnabled={false}
+          attendees={[makeAttendee(false, 1)]}
+          sessionRegistrations={registrations(2)}
+          breakoutGroups={[]}
+          breakoutStats={[]}
+          volunteerOptions={[]}
+          totalRegistrants={80}
+          canEdit
+        />
+      </TooltipProvider>,
+    )
+
+    expect(screen.queryByText("Turnout")).toBeNull()
+    expect(screen.queryByRole("tab", { name: /Pre-registered/ })).toBeNull()
+    expect(screen.queryByText("Pre-registered")).toBeNull()
+  })
+
+  it("returns to attendees if a refresh disables registration on the open tab", () => {
+    const registrationsForSession = registrations(2)
+    const shared = {
+      eventId: "evt-1",
+      occurrenceId: "occ-1",
+      attendees: [makeAttendee(false, 1)],
+      sessionRegistrations: registrationsForSession,
+      breakoutGroups: [],
+      breakoutStats: [],
+      volunteerOptions: [],
+      totalRegistrants: 80,
+      canEdit: true,
+    }
+    const view = render(
+      <TooltipProvider>
+        <SessionAttendeesTable {...shared} sessionRegistrationEnabled />
+      </TooltipProvider>,
+    )
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Pre-registered (2)" }), {
+      button: 0,
+      ctrlKey: false,
+    })
+    expect(screen.getByRole("tab", { name: "Pre-registered (2)" }).getAttribute("aria-selected")).toBe("true")
+
+    view.rerender(
+      <TooltipProvider>
+        <SessionAttendeesTable {...shared} sessionRegistrationEnabled={false} />
+      </TooltipProvider>,
+    )
+
+    expect(screen.getByRole("tab", { name: "Attendees" }).getAttribute("aria-selected")).toBe("true")
   })
 })

@@ -472,6 +472,7 @@ function buildBreakoutStatColumns({
 export function SessionAttendeesTable({
   eventId,
   occurrenceId,
+  sessionRegistrationEnabled,
   attendees,
   sessionRegistrations = [],
   breakoutGroups,
@@ -482,6 +483,7 @@ export function SessionAttendeesTable({
 }: {
   eventId: string
   occurrenceId: string
+  sessionRegistrationEnabled: boolean
   attendees: AttendeeRow[]
   sessionRegistrations?: SessionRegistrationRow[]
   breakoutGroups: BreakoutGroupOption[]
@@ -493,6 +495,11 @@ export function SessionAttendeesTable({
 }) {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<SessionTab>("attendees")
+  // A router refresh can turn the setting off without remounting this client
+  // component. Do not leave Radix pointed at a tab that no longer exists.
+  const visibleTab = !sessionRegistrationEnabled && activeTab === "sessionRegistration"
+    ? "attendees"
+    : activeTab
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all")
   const [breakoutFilter, setBreakoutFilter] = useState("all")
   const [statusSortDirection, setStatusSortDirection] = useState<AttendeeSortDirection>("asc")
@@ -626,7 +633,12 @@ export function SessionAttendeesTable({
           widths, and four tiles in the ~512px that leaves squeezes the uppercase
           labels into two lines each. Three-up is the middle step — five tiles only
           lay out in one row once the viewport is wide enough to afford them. */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-5">
+      <div
+        className={cn(
+          "grid grid-cols-2 gap-3 lg:grid-cols-3",
+          sessionRegistrationEnabled ? "xl:grid-cols-5" : "xl:grid-cols-4",
+        )}
+      >
         <StatCard
           label="Total"
           value={stats.totalCount}
@@ -644,21 +656,37 @@ export function SessionAttendeesTable({
           value={stats.volunteersPresent}
           icon={<UserCheck className="size-4" />}
         />
-        <StatCard
-          label="Turnout"
-          value={formatTurnoutRate(turnout.rate)}
-          turnoutBar={{ checkedIn: turnout.checkedIn, total: turnout.total }}
-          icon={<Target className="size-4" />}
-        />
+        {sessionRegistrationEnabled && (
+          <StatCard
+            label="Turnout"
+            value={formatTurnoutRate(turnout.rate)}
+            turnoutBar={{ checkedIn: turnout.checkedIn, total: turnout.total }}
+            icon={<Target className="size-4" />}
+          />
+        )}
       </div>
 
-      {sessionRegistrations.length > 0 && <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-        <StatCard icon={<Users className="size-4" />} label="Registered for this session" value={registrationStats.expected} />
-        <StatCard icon={<UserCheck className="size-4" />} label="Checked in" value={registrationStats.checkedIn} />
-        <StatCard icon={<Users className="size-4" />} label="Not checked in" value={registrationStats.notCheckedIn} />
-      </div>}
+      {sessionRegistrationEnabled && sessionRegistrations.length > 0 && (
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+          <StatCard
+            icon={<Users className="size-4" />}
+            label="Pre-registered"
+            value={registrationStats.expected}
+          />
+          <StatCard
+            icon={<UserCheck className="size-4" />}
+            label="Checked in"
+            value={registrationStats.checkedIn}
+          />
+          <StatCard
+            icon={<Users className="size-4" />}
+            label="Not checked in"
+            value={registrationStats.notCheckedIn}
+          />
+        </div>
+      )}
       <Tabs
-        value={activeTab}
+        value={visibleTab}
         onValueChange={(value) => setActiveTab(value as SessionTab)}
         className="space-y-3"
       >
@@ -666,7 +694,11 @@ export function SessionAttendeesTable({
           <TabsTrigger value="attendees" className="after:-bottom-px">
             Attendees
           </TabsTrigger>
-          <TabsTrigger value="sessionRegistration" className="after:-bottom-px">Registered for this session ({sessionRegistrations.length})</TabsTrigger>
+          {sessionRegistrationEnabled && (
+            <TabsTrigger value="sessionRegistration" className="after:-bottom-px">
+              Pre-registered ({sessionRegistrations.length})
+            </TabsTrigger>
+          )}
           <TabsTrigger value="breakouts" className="after:-bottom-px">
             Breakout Groups
           </TabsTrigger>
@@ -675,7 +707,7 @@ export function SessionAttendeesTable({
         {/* Wraps rather than scrolls sideways: a filter you have to swipe to
             discover is a filter nobody uses. Controls are also finger-sized below
             `lg` and only shrink to the compact desktop height above it. */}
-        {activeTab === "attendees" && (
+        {visibleTab === "attendees" && (
           <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 px-3 py-2">
             <ToggleGroup
               type="single"
@@ -715,7 +747,11 @@ export function SessionAttendeesTable({
           </div>
         )}
 
-        <TabsContent value="sessionRegistration" className="mt-0"><SessionRegistrationRoster eventId={eventId} rows={registeredRows} /></TabsContent>
+        {sessionRegistrationEnabled && (
+          <TabsContent value="sessionRegistration" className="mt-0">
+            <SessionRegistrationRoster eventId={eventId} rows={registeredRows} />
+          </TabsContent>
+        )}
         <TabsContent value="attendees" className="mt-0">
           {rows.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">

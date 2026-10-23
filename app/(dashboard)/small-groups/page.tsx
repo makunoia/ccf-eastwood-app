@@ -22,6 +22,7 @@ import { SmallGroupsFilters } from "./small-groups-filters"
 import { SmallGroupsTabs } from "./small-groups-tabs"
 import { RequestsTable, type RequestRow } from "./requests-table"
 import { RequestBatchActions } from "./request-batch-actions"
+import { SeekerBatchActions } from "./seeker-batch-actions"
 import { SeekersTable, type SeekerRow } from "./seekers-table"
 import { deleteSmallGroupsBatch, setSmallGroupsLifeStageBatch } from "./actions"
 
@@ -211,9 +212,13 @@ export default async function SmallGroupsPage({
   // One provider, scoped to whichever tab is showing — the two tables select
   // different things (groups to delete vs. requests to settle) and a selection
   // must never survive a tab switch into rows it doesn't describe.
-  const selectionEnabled = writable && (tab === "all" || tab === "requests")
+  const selectionEnabled = writable && (tab === "all" || tab === "requests" || tab === "seeking")
   const selectableIds =
-    tab === "requests" ? requests.map((r) => r.id) : groups.map((g) => g.id)
+    tab === "requests"
+      ? requests.map((r) => r.id)
+      : tab === "seeking"
+        ? seekers.map((s) => s.id)
+        : groups.map((g) => g.id)
 
   return (
     <BatchSelectionProvider
@@ -240,6 +245,8 @@ export default async function SmallGroupsPage({
               </BatchActionHeader>
             ) : tab === "requests" ? (
               <RequestBatchActions />
+            ) : tab === "seeking" ? (
+              <SeekerBatchActions />
             ) : undefined
           }
         />

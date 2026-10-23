@@ -82,24 +82,33 @@ export async function convertVolunteerAttendance(tx: Prisma.TransactionClient, o
     create: { occurrenceId, registrantId, checkedInAt: earliest }, update: { checkedInAt: earliest } })
 }
 
+export async function recordSessionAttendanceInTransaction(
+  tx: Prisma.TransactionClient,
+  occurrenceId: string,
+  subject: { kind: "registrant" | "volunteer"; id: string },
+  checkedInAt?: Date,
+) {
+  const occurrence = await tx.eventOccurrence.findUniqueOrThrow({ where: { id: occurrenceId }, select: { eventId: true } })
+  const override = subject.kind === "volunteer" ? await sessionParticipantForVolunteer(tx, occurrenceId, subject.id) : null
+  const resolved = override ? { kind: "registrant" as const, id: override.registrantId } : subject
+  if (resolved.kind === "registrant") {
+    const registrant = await tx.eventRegistrant.findFirst({ where: { id: resolved.id, eventId: occurrence.eventId }, select: { id: true } })
+    if (!registrant) throw new Error("Invalid attendance subject")
+    const sessionRegistration = await tx.sessionRegistration.findUnique({ where: { occurrenceId_registrantId: { occurrenceId, registrantId: resolved.id } } })
+    if (sessionRegistration) await convertVolunteerAttendance(tx, occurrenceId, resolved.id)
+    await tx.occurrenceAttendee.upsert({ where: { occurrenceId_registrantId: { occurrenceId, registrantId: resolved.id } }, create: { occurrenceId, registrantId: resolved.id, checkedInAt }, update: {} })
+  } else {
+    const volunteer = await tx.volunteer.findFirst({ where: { id: resolved.id, eventId: occurrence.eventId }, select: { id: true } })
+    if (!volunteer) throw new Error("Invalid attendance subject")
+    await tx.occurrenceAttendee.upsert({ where: { occurrenceId_volunteerId: { occurrenceId, volunteerId: resolved.id } }, create: { occurrenceId, volunteerId: resolved.id, checkedInAt }, update: {} })
+  }
+}
+
 export async function recordSessionAttendance(occurrenceId: string, subject: { kind: "registrant" | "volunteer"; id: string }, checkedInAt?: Date) {
   const { withSerializableRetry } = await import("@/lib/db/serializable-retry")
-  await withSerializableRetry(async (tx) => {
-    const occurrence = await tx.eventOccurrence.findUniqueOrThrow({ where: { id: occurrenceId }, select: { eventId: true } })
-    const override = subject.kind === "volunteer" ? await sessionParticipantForVolunteer(tx, occurrenceId, subject.id) : null
-    const resolved = override ? { kind: "registrant" as const, id: override.registrantId } : subject
-    if (resolved.kind === "registrant") {
-      const registrant = await tx.eventRegistrant.findFirst({ where: { id: resolved.id, eventId: occurrence.eventId }, select: { id: true } })
-      if (!registrant) throw new Error("Invalid attendance subject")
-      const sessionRegistration = await tx.sessionRegistration.findUnique({ where: { occurrenceId_registrantId: { occurrenceId, registrantId: resolved.id } } })
-      if (sessionRegistration) await convertVolunteerAttendance(tx, occurrenceId, resolved.id)
-      await tx.occurrenceAttendee.upsert({ where: { occurrenceId_registrantId: { occurrenceId, registrantId: resolved.id } }, create: { occurrenceId, registrantId: resolved.id, checkedInAt }, update: {} })
-    } else {
-      const volunteer = await tx.volunteer.findFirst({ where: { id: resolved.id, eventId: occurrence.eventId }, select: { id: true } })
-      if (!volunteer) throw new Error("Invalid attendance subject")
-      await tx.occurrenceAttendee.upsert({ where: { occurrenceId_volunteerId: { occurrenceId, volunteerId: resolved.id } }, create: { occurrenceId, volunteerId: resolved.id, checkedInAt }, update: {} })
-    }
-  })
+  await withSerializableRetry((tx) =>
+    recordSessionAttendanceInTransaction(tx, occurrenceId, subject, checkedInAt)
+  )
 }
 
 export async function hasSessionParticipantRegistration(eventId: string, memberId: string, occurrenceId: string | null | undefined) {
